@@ -1,0 +1,517 @@
+package net.benelog.spidersense.api;
+
+import java.util.List;
+import java.util.Map;
+
+import net.benelog.spidersense.query.JvmView;
+import net.benelog.spidersense.query.MetricQueries;
+import net.benelog.spidersense.query.Queries;
+import net.benelog.spidersense.query.Stats;
+import net.benelog.spidersense.query.Window;
+import net.benelog.spidersense.store.LogRecord;
+import net.benelog.spidersense.store.MetricPoint;
+import net.benelog.spidersense.store.SpanRecord;
+import net.benelog.spidersense.store.Tingle;
+import net.benelog.spidersense.store.Tingles;
+import net.benelog.spidersilk.json.Json;
+
+/**
+ * The wire format, written by hand, in one place.
+ *
+ * <p>api.md is the contract and this file is its implementation: every field name
+ * the UI reads appears here literally, so a change to the contract is a change to
+ * one file and a reader can check the two side by side.
+ *
+ * <p>Two rules run through it. A duration that has no value — a percentile of an
+ * empty bucket, the rate of the first point of a series — is written as
+ * {@code null}, never as a zero that would draw a line down to the axis. And
+ * {@code NaN} never reaches the wire, because it is not JSON.
+ */
+public final class Codecs {
+
+    private Codecs() {
+    }
+
+    // --- primitives ---------------------------------------------------------
+
+    /** A double, or {@code null} when it is not a number (an absent value). */
+    static Json.JsonObject put(Json.JsonObject object, String key, double value) {
+        if (Double.isNaN(value) || Double.isInfinite(value)) {
+            return object.putNull(key);
+        }
+        return object.put(key, round(value));
+    }
+
+    static Json.JsonObject put(Json.JsonObject object, String key, Long value) {
+        return value == null ? object.putNull(key) : object.put(key, value.longValue());
+    }
+
+    /** Three decimals: a millisecond duration is not interesting below a microsecond. */
+    static double round(double value) {
+        return Math.round(value * 1000.0) / 1000.0;
+    }
+
+    static Json.JsonArray longs(long[] values) {
+        Json.JsonArray array = Json.arr();
+        for (long value : values) {
+            array.add(value);
+        }
+        return array;
+    }
+
+    static Json.JsonArray doubles(double[] values) {
+        Json.JsonArray array = Json.arr();
+        for (double value : values) {
+            if (Double.isNaN(value) || Double.isInfinite(value)) {
+                array.add((Json.JsonValue) null);
+            } else {
+                array.add(round(value));
+            }
+        }
+        return array;
+    }
+
+    /** The same, with {@code null} wherever the bucket held no requests. */
+    static Json.JsonArray doubles(double[] values, long[] counts) {
+        Json.JsonArray array = Json.arr();
+        for (int i = 0; i < values.length; i++) {
+            if (i < counts.length && counts[i] == 0) {
+                array.add((Json.JsonValue) null);
+            } else if (Double.isNaN(values[i]) || Double.isInfinite(values[i])) {
+                array.add((Json.JsonValue) null);
+            } else {
+                array.add(round(values[i]));
+            }
+        }
+        return array;
+    }
+
+    /** An attribute map: string, number, boolean, or an array of those. */
+    static Json.JsonObject attributes(Map<String, Object> attributes) {
+        Json.JsonObject object = Json.obj();
+        attributes.forEach((key, value) -> object.put(key, value(value)));
+        return object;
+    }
+
+    private static Json.JsonValue value(Object value) {
+        Json.JsonObject holder = Json.obj();
+        switch (value) {
+            case null -> holder.putNull("v");
+            case String text -> holder.put("v", text);
+            case Long number -> holder.put("v", number.longValue());
+            case Integer number -> holder.put("v", number.longValue());
+            case Double number -> put(holder, "v", number.doubleValue());
+            case Boolean flag -> holder.put("v", flag.booleanValue());
+            case List<?> list -> {
+                Json.JsonArray array = Json.arr();
+                for (Object element : list) {
+                    array.add(value(element));
+                }
+                holder.put("v", array);
+            }
+            default -> holder.put("v", String.valueOf(value));
+        }
+        return holder.get("v");
+    }
+
+    static Json.JsonObject window(Window window) {
+        return Json.obj()
+                .put("from", window.from())
+                .put("to", window.to())
+                .put("bucketMs", window.bucketMs());
+    }
+
+    static Json.JsonArray strings(List<String> values) {
+        return Json.arr().addAll(values);
+    }
+
+    // --- the contract's objects ---------------------------------------------
+
+    static Json.JsonObject totals(Stats.Totals totals) {
+        Json.JsonObject object = Json.obj()
+                .put("requests", totals.requests())
+                .put("errors", totals.errors())
+                .put("errorRate", round(totals.errorRate()))
+                .put("rps", round(totals.rps()));
+        put(object, "p50Ms", totals.p50Ms());
+        put(object, "p95Ms", totals.p95Ms());
+        put(object, "p99Ms", totals.p99Ms());
+        put(object, "maxMs", totals.maxMs());
+        return object;
+    }
+
+    static Json.JsonObject serviceSummary(Stats.ServiceSummary service) {
+        Json.JsonObject object = Json.obj()
+                .put("name", service.name())
+                .put("language", service.language())
+                .put("embedded", service.embedded())
+                .put("firstSeen", service.firstSeen())
+                .put("lastSeen", service.lastSeen())
+                .put("requests", service.totals().requests())
+                .put("errors", service.totals().errors())
+                .put("errorRate", round(service.totals().errorRate()))
+                .put("rps", round(service.totals().rps()));
+        put(object, "p50Ms", service.totals().p50Ms());
+        put(object, "p95Ms", service.totals().p95Ms());
+        put(object, "p99Ms", service.totals().p99Ms());
+        put(object, "maxMs", service.totals().maxMs());
+        return object
+                .put("sparkline", longs(service.sparkline()))
+                .put("hasJvm", service.hasJvm());
+    }
+
+    static Json.JsonArray serviceSummaries(List<Stats.ServiceSummary> services) {
+        Json.JsonArray array = Json.arr();
+        services.forEach(service -> array.add(serviceSummary(service)));
+        return array;
+    }
+
+    static Json.JsonObject tingle(Tingle tingle) {
+        Json.JsonObject object = Json.obj()
+                .put("kind", tingle.kind())
+                .put("at", tingle.at())
+                .put("service", tingle.service())
+                .put("title", tingle.title())
+                .put("detail", tingle.detail())
+                .put("traceId", tingle.traceId())
+                .put("spanId", tingle.spanId());
+        return put(object, "durationMs", tingle.durationMs());
+    }
+
+    static Json.JsonArray tingles(List<Tingle> tingles) {
+        Json.JsonArray array = Json.arr();
+        tingles.forEach(tingle -> array.add(tingle(tingle)));
+        return array;
+    }
+
+    /** The overview's aligned arrays; percentiles are null in an empty bucket. */
+    static Json.JsonObject overviewSeries(Stats.Buckets buckets) {
+        return Json.obj()
+                .put("t", longs(buckets.t()))
+                .put("requests", longs(buckets.requests()))
+                .put("errors", longs(buckets.errors()))
+                .put("p95Ms", doubles(buckets.p95Ms(), buckets.requests()));
+    }
+
+    static Json.JsonObject serviceSeries(Stats.Buckets buckets) {
+        return Json.obj()
+                .put("t", longs(buckets.t()))
+                .put("requests", longs(buckets.requests()))
+                .put("errors", longs(buckets.errors()))
+                .put("p50Ms", doubles(buckets.p50Ms(), buckets.requests()))
+                .put("p95Ms", doubles(buckets.p95Ms(), buckets.requests()))
+                .put("p99Ms", doubles(buckets.p99Ms(), buckets.requests()));
+    }
+
+    static Json.JsonObject endpoint(Stats.EndpointStats endpoint) {
+        Json.JsonObject statusCodes = Json.obj();
+        endpoint.statusCodes().forEach((code, count) -> statusCodes.put(code, count.longValue()));
+        Json.JsonObject object = Json.obj()
+                .put("endpointId", endpoint.endpointId())
+                .put("service", endpoint.service())
+                .put("method", endpoint.method())
+                .put("route", endpoint.route())
+                .put("name", endpoint.name())
+                .put("kind", endpoint.kind())
+                .put("calls", endpoint.calls())
+                .put("errors", endpoint.errors())
+                .put("errorRate", round(endpoint.errorRate()))
+                .put("rps", round(endpoint.rps()));
+        put(object, "avgMs", endpoint.avgMs());
+        put(object, "p50Ms", endpoint.p50Ms());
+        put(object, "p95Ms", endpoint.p95Ms());
+        put(object, "p99Ms", endpoint.p99Ms());
+        put(object, "maxMs", endpoint.maxMs());
+        put(object, "totalMs", endpoint.totalMs());
+        return object.put("statusCodes", statusCodes);
+    }
+
+    static Json.JsonArray endpoints(List<Stats.EndpointStats> endpoints) {
+        Json.JsonArray array = Json.arr();
+        endpoints.forEach(endpoint -> array.add(endpoint(endpoint)));
+        return array;
+    }
+
+    static Json.JsonObject query(Stats.QueryStats query) {
+        Json.JsonArray callers = Json.arr();
+        query.callers().forEach(caller -> callers.add(Json.obj()
+                .put("endpoint", caller.endpoint())
+                .put("service", caller.service())
+                .put("calls", caller.calls())));
+        Json.JsonObject object = Json.obj()
+                .put("queryId", query.queryId())
+                .put("service", query.service())
+                .put("system", query.system())
+                .put("namespace", query.namespace())
+                .put("operation", query.operation())
+                .put("table", query.table())
+                .put("statement", query.statement())
+                .put("calls", query.calls())
+                .put("errors", query.errors());
+        put(object, "avgMs", query.avgMs());
+        put(object, "p50Ms", query.p50Ms());
+        put(object, "p95Ms", query.p95Ms());
+        put(object, "maxMs", query.maxMs());
+        put(object, "totalMs", query.totalMs());
+        return object
+                .put("slowCalls", query.slowCalls())
+                .put("callers", callers)
+                .put("lastSeen", query.lastSeen());
+    }
+
+    static Json.JsonArray queries(List<Stats.QueryStats> queries) {
+        Json.JsonArray array = Json.arr();
+        queries.forEach(query -> array.add(query(query)));
+        return array;
+    }
+
+    static Json.JsonObject errorGroup(Stats.ErrorGroup group) {
+        Json.JsonArray endpoints = Json.arr();
+        group.endpoints().forEach(endpoint -> endpoints.add(Json.obj()
+                .put("name", endpoint.name())
+                .put("count", endpoint.count())));
+        Json.JsonObject sample = null;
+        if (group.sample() != null) {
+            sample = Json.obj()
+                    .put("traceId", group.sample().traceId())
+                    .put("spanId", group.sample().spanId())
+                    .put("at", group.sample().at())
+                    .put("message", group.sample().message())
+                    .put("stacktrace", group.sample().stacktrace());
+        }
+        return Json.obj()
+                .put("errorId", group.errorId())
+                .put("service", group.service())
+                .put("type", group.type())
+                .put("message", group.message())
+                .put("count", group.count())
+                .put("firstSeen", group.firstSeen())
+                .put("lastSeen", group.lastSeen())
+                .put("endpoints", endpoints)
+                .put("sample", sample);
+    }
+
+    static Json.JsonArray errorGroups(List<Stats.ErrorGroup> groups) {
+        Json.JsonArray array = Json.arr();
+        groups.forEach(group -> array.add(errorGroup(group)));
+        return array;
+    }
+
+    static Json.JsonObject traceSummary(Stats.TraceSummary trace) {
+        Json.JsonObject object = Json.obj()
+                .put("traceId", trace.traceId())
+                .put("start", trace.start());
+        put(object, "durationMs", trace.durationMs());
+        object.put("rootName", trace.rootName())
+                .put("rootService", trace.rootService())
+                .put("rootKind", trace.rootKind())
+                .put("services", strings(trace.services()))
+                .put("spanCount", trace.spanCount())
+                .put("errorCount", trace.errorCount())
+                .put("dbCount", trace.dbCount());
+        put(object, "httpStatus", trace.httpStatus());
+        return object.put("slow", trace.slow()).put("error", trace.error());
+    }
+
+    static Json.JsonArray traceSummaries(List<Stats.TraceSummary> traces) {
+        Json.JsonArray array = Json.arr();
+        traces.forEach(trace -> array.add(traceSummary(trace)));
+        return array;
+    }
+
+    static Json.JsonObject span(SpanRecord span, Tingles tingles) {
+        Json.JsonArray events = Json.arr();
+        for (SpanRecord.SpanEvent event : span.events()) {
+            events.add(Json.obj()
+                    .put("name", event.name())
+                    .put("time", event.timeNanos() / 1_000_000L)
+                    .put("attributes", attributes(event.attributes())));
+        }
+        Json.JsonObject object = Json.obj()
+                .put("spanId", span.spanId())
+                .put("parentSpanId", span.parentSpanId())
+                .put("service", span.service())
+                .put("name", span.name())
+                .put("kind", span.kind())
+                .put("start", span.startMillis())
+                .put("startNs", span.startNanos());
+        put(object, "durationMs", span.durationMillis());
+        return object
+                .put("durationNs", span.durationNanos())
+                .put("status", span.status())
+                .put("statusMessage", span.statusMessage())
+                .put("attributes", attributes(span.attributes()))
+                .put("events", events)
+                .put("scope", span.scope())
+                .put("category", span.category())
+                .put("summary", span.summary())
+                .put("slow", tingles.isSlow(span))
+                .put("error", span.isError());
+    }
+
+    static Json.JsonObject trace(Queries.TraceDetail trace, Tingles tingles) {
+        Json.JsonArray spans = Json.arr();
+        trace.spans().forEach(span -> spans.add(span(span, tingles)));
+        Json.JsonObject object = Json.obj()
+                .put("traceId", trace.traceId())
+                .put("start", trace.start())
+                .put("end", trace.end());
+        put(object, "durationMs", trace.durationMs());
+        return object
+                .put("services", strings(trace.services()))
+                .put("spans", spans)
+                .put("logs", logs(trace.logs()));
+    }
+
+    static Json.JsonObject log(LogRecord log) {
+        return Json.obj()
+                .put("id", log.id())
+                .put("at", log.at())
+                .put("service", log.service())
+                .put("severity", log.severity())
+                .put("severityNumber", log.severityNumber())
+                .put("body", log.body())
+                .put("logger", log.logger())
+                .put("traceId", log.traceId())
+                .put("spanId", log.spanId())
+                .put("attributes", attributes(log.attributes()));
+    }
+
+    static Json.JsonArray logs(List<LogRecord> logs) {
+        Json.JsonArray array = Json.arr();
+        logs.forEach(log -> array.add(log(log)));
+        return array;
+    }
+
+    static Json.JsonArray dependencies(List<Stats.Dependency> dependencies) {
+        Json.JsonArray array = Json.arr();
+        for (Stats.Dependency dependency : dependencies) {
+            Json.JsonObject object = Json.obj()
+                    .put("kind", dependency.kind())
+                    .put("target", dependency.target())
+                    .put("calls", dependency.calls())
+                    .put("errors", dependency.errors());
+            put(object, "avgMs", dependency.avgMs());
+            put(object, "p95Ms", dependency.p95Ms());
+            array.add(object);
+        }
+        return array;
+    }
+
+    /** Arrays, not objects: five thousand points have to stay small on the wire. */
+    static Json.JsonArray xlog(List<Stats.XlogPoint> points) {
+        Json.JsonArray array = Json.arr();
+        for (Stats.XlogPoint point : points) {
+            array.add(Json.arr()
+                    .add(point.start())
+                    .add(round(point.durationMs()))
+                    .add(point.service())
+                    .add(point.endpoint())
+                    .add(point.traceId())
+                    .add(point.flags()));
+        }
+        return array;
+    }
+
+    static Json.JsonArray metricCatalog(List<MetricQueries.MetricMeta> catalog) {
+        Json.JsonArray array = Json.arr();
+        for (MetricQueries.MetricMeta metric : catalog) {
+            array.add(Json.obj()
+                    .put("name", metric.name())
+                    .put("type", metric.type())
+                    .put("unit", metric.unit())
+                    .put("description", metric.description())
+                    .put("services", strings(metric.services()))
+                    .put("series", metric.seriesCount()));
+        }
+        return array;
+    }
+
+    /**
+     * One metric series. A histogram carries its count, estimated p95 and maximum
+     * beside the mean, because a mean alone hides exactly what a histogram is for.
+     */
+    static Json.JsonObject series(MetricQueries.SeriesData data, boolean rate) {
+        List<MetricPoint> points = data.points();
+        long[] t = new long[points.size()];
+        double[] values = new double[points.size()];
+        for (int i = 0; i < points.size(); i++) {
+            t[i] = points.get(i).at();
+            values[i] = points.get(i).value();
+        }
+        if (rate && data.monotonic()) {
+            values = MetricQueries.rate(points);
+        }
+        Json.JsonObject object = Json.obj()
+                .put("service", data.service())
+                .put("attributes", attributes(data.attributes()))
+                .put("t", longs(t))
+                .put("v", doubles(values));
+        if ("histogram".equals(data.type())) {
+            Json.JsonArray counts = Json.arr();
+            double[] p95 = new double[points.size()];
+            double[] max = new double[points.size()];
+            for (int i = 0; i < points.size(); i++) {
+                counts.add(points.get(i).count());
+                p95[i] = points.get(i).percentile(0.95);
+                max[i] = points.get(i).max();
+            }
+            object.put("count", counts).put("p95", doubles(p95)).put("max", doubles(max));
+        }
+        return object;
+    }
+
+    static Json.JsonObject jvm(JvmView jvm) {
+        Json.JsonArray pools = Json.arr();
+        for (JvmView.Pool pool : jvm.pools()) {
+            pools.add(Json.obj()
+                    .put("name", pool.name())
+                    .put("type", pool.type())
+                    .put("t", longs(pool.t()))
+                    .put("used", doubles(pool.used())));
+        }
+        Json.JsonArray gc = Json.arr();
+        for (JvmView.Gc collector : jvm.gc()) {
+            gc.add(Json.obj()
+                    .put("name", collector.name())
+                    .put("action", collector.action())
+                    .put("t", longs(collector.t()))
+                    .put("count", longs(collector.count()))
+                    .put("durationMs", doubles(collector.durationMs())));
+        }
+        Json.JsonObject runtime = Json.obj().put("jvm", jvm.runtime().jvm());
+        put(runtime, "pid", jvm.runtime().pid());
+        runtime.put("host", jvm.runtime().host());
+        put(runtime, "cpuCount", jvm.runtime().cpuCount());
+
+        return Json.obj()
+                .put("service", jvm.service())
+                .put("runtime", runtime)
+                .put("heap", Json.obj()
+                        .put("t", longs(jvm.heap().t()))
+                        .put("used", doubles(jvm.heap().used()))
+                        .put("committed", doubles(jvm.heap().committed()))
+                        .put("limit", doubles(jvm.heap().limit())))
+                .put("nonHeap", Json.obj()
+                        .put("t", longs(jvm.nonHeap().t()))
+                        .put("used", doubles(jvm.nonHeap().used()))
+                        .put("committed", doubles(jvm.nonHeap().committed())))
+                .put("pools", pools)
+                .put("gc", gc)
+                .put("threads", Json.obj()
+                        .put("t", longs(jvm.threads().t()))
+                        .put("count", doubles(jvm.threads().count()))
+                        .put("daemon", doubles(jvm.threads().daemon())))
+                .put("cpu", Json.obj()
+                        .put("t", longs(jvm.cpu().t()))
+                        .put("utilization", doubles(jvm.cpu().utilization()))
+                        .put("systemLoad1m", doubles(jvm.cpu().systemLoad1m())))
+                .put("classes", Json.obj()
+                        .put("t", longs(jvm.classes().t()))
+                        .put("loaded", doubles(jvm.classes().loaded())));
+    }
+
+    static Json.JsonObject error(String message) {
+        return Json.obj().put("error", message);
+    }
+}

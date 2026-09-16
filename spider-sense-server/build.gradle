@@ -1,0 +1,70 @@
+plugins {
+    id 'java'
+    id 'application'
+    id 'com.gradleup.shadow' version '9.6.1'
+}
+
+description = 'Spider Sense: OTLP receiver, H2-backed store, JSON API and static UI'
+
+ext {
+    // The protobuf runtime opentelemetry-proto is generated against; protobuf-java-util
+    // must match it exactly or JsonFormat and the generated classes disagree at runtime.
+    protobufVersion = '4.35.1'
+}
+
+dependencies {
+    implementation "net.benelog.spidersilk:spider-silk-core:${rootProject.ext.spiderSilkVersion}"
+    implementation "io.opentelemetry.proto:opentelemetry-proto:${rootProject.ext.otelProtoVersion}"
+    implementation "com.google.protobuf:protobuf-java-util:${protobufVersion}"
+    implementation "com.h2database:h2:${rootProject.ext.h2Version}"
+    runtimeOnly 'org.slf4j:slf4j-simple:2.0.17'
+
+    testImplementation "net.benelog.spidersilk:spider-silk-test:${rootProject.ext.spiderSilkVersion}"
+    testImplementation "org.junit.jupiter:junit-jupiter:${rootProject.ext.junitVersion}"
+    testImplementation "org.assertj:assertj-core:${rootProject.ext.assertjVersion}"
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+application {
+    mainClass = 'net.benelog.spidersense.server.SpiderSenseServer'
+}
+
+jar {
+    manifest {
+        attributes 'Main-Class': application.mainClass.get()
+    }
+}
+
+shadowJar {
+    archiveClassifier = 'all'
+    // INCLUDE so mergeServiceFiles actually sees every META-INF/services entry;
+    // the default EXCLUDE drops duplicates before the transformer runs.
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
+    mergeServiceFiles()
+    // Signatures of shaded dependencies do not survive being repacked.
+    exclude 'META-INF/*.SF'
+    exclude 'META-INF/*.DSA'
+    exclude 'META-INF/*.RSA'
+    manifest {
+        attributes 'Main-Class': application.mainClass.get()
+    }
+}
+
+// The agent module nests this fat jar inside the distributable jar; it consumes it
+// as project(path: ':spider-sense-server', configuration: 'serverJar').
+configurations.create('serverJar') {
+    canBeConsumed = true
+    canBeResolved = false
+}
+
+artifacts {
+    serverJar(tasks.shadowJar)
+}
+
+test {
+    // Quiet by default; -PsenseLogLevel=info -PsenseVerbose=true when a handler's
+    // stack trace is what a failing test is actually about.
+    systemProperty 'org.slf4j.simpleLogger.defaultLogLevel',
+            project.findProperty('senseLogLevel') ?: 'warn'
+    testLogging.showStandardStreams = Boolean.valueOf(project.findProperty('senseVerbose') ?: 'false')
+}

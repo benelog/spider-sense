@@ -296,3 +296,62 @@ For a monotonic sum (`jvm.cpu.time`, `jvm.gc.duration`'s count), `v` is the rate
 
 `GET /` and every path without an `/api/` or `/v1/` prefix that has no file: the UI's `index.html` (the router is hash-based, so this is mostly `/`).
 `GET /assets/**`: files under `public/assets`.
+
+## Clarifications
+
+Decisions the server made where this document left room, recorded so the UI can rely on them.
+
+### Endpoint identity
+
+An entry span's endpoint name is `METHOD route` when `http.route` is present **and is not a servlet-mapping wildcard** (`/`, `/*`, or anything ending in `/*`); otherwise it is the span name.
+A wildcard mapping says "everything", so honouring it would collapse every endpoint of a Spring Boot application into `GET /*`, and OpenTelemetry already names a server span `METHOD route` or just `METHOD`.
+`endpointId` is the first 12 hex characters of the SHA-256 of `service + " " + name`; `queryId` hashes `service\0system\0statement` and `errorId` hashes `service\0type\0normalisedMessage` the same way.
+
+### Callers and error endpoints
+
+`QueryStats.callers[].endpoint` and `ErrorGroup.endpoints[].name` are the nearest **entry span up the parent chain within the trace**, not the trace's root.
+A query issued by the second service of a two-service trace is therefore attributed to that service's own endpoint.
+A span whose chain leaves the window is reported as `(no endpoint)`.
+
+### Nulls in series
+
+Every duration that has no value is `null`, never `0`: a percentile in a bucket with no requests, the first point of a `rate=true` series, an estimated `p95` for a histogram point that carries no buckets.
+`jvm.nonHeap` has no `limit` array and `cpu.systemLoad1m` is an empty array on a platform that reports no load average.
+
+### Ordering and sorting
+
+`GET /api/metrics` is sorted by metric name.
+`GET /api/endpoints` and `GET /api/services/{name}.endpoints` are sorted by total time descending; `queries` defaults to `sort=total`; `errors` is sorted by count descending.
+Lists paged with `before` are newest first, with the row id breaking a tie inside the same millisecond.
+
+### Free-text search
+
+`q` on `/api/traces` matches, case-insensitively, any span name or any part of the span's attribute JSON in that trace (storage.md's `LOWER(name) LIKE ? OR LOWER(attributes) LIKE ?`).
+Span **event** attributes — notably `exception.message` — are not searched; search an error's endpoint or type instead, or use `/api/errors`.
+`q` on `/api/logs` matches the body and the attribute JSON.
+
+### Metrics
+
+`step` on `/api/metrics/series` is accepted and ignored: the exporter's interval already sets the resolution, and resampling a second time blurs the spike the chart is being read for.
+`rate=true` only changes `v` for a monotonic sum; other types are unaffected.
+An exponential histogram is stored as a histogram with count, sum, min and max only, so its `p95` is `null`.
+`runtime.jvm` is `process.runtime.name + " " + process.runtime.version`, falling back to `process.runtime.description`.
+`GET /api/jvm` without `service` answers for the first service that sent any `jvm.*` metric, which locally is usually the only one.
+
+### Errors
+
+`ErrorGroup.message` is the normalised message (digits become `?`, quoted strings become `'?'`); `sample.message` is one real message as received.
+`ErrorGroup.type` is the exception type, else `error.type`, else the literal `error`.
+
+### Status and ingest
+
+`/api/status.storage.path` is `null` and `sizeBytes` is `0` for an in-memory database (the fallback, and the one the tests use).
+`counts.spans` counts stored spans, so spans dropped by the self-monitoring rule are not in it.
+A request body that is neither `application/x-protobuf` (also accepted as `application/protobuf`) nor `application/json` is `415`; an undecodable body of an accepted type is `400`.
+OTLP/JSON ids are accepted as hex (what the OTLP specification says) and as base64 (what protobuf's own JSON mapping produces); the two are told apart by length, since only a hex id is exactly 32 or 16 characters of `[0-9a-f]`.
+
+### Tingles
+
+Tingles are rows in the `tingle` table, so `/api/overview.tingles` survives a restart and is visible to every Spider Sense process sharing the database; design.md's in-memory mirror of the last 500 is not kept, as it would be a second source of truth for the same list.
+An error tingle is raised for an entry span that failed and for any other span carrying an exception event of its own, so a failure that propagated up a trace does not produce one tingle per frame.
+`slow-query` uses the span's summary as its `title` and the statement as its `detail`.

@@ -1,0 +1,185 @@
+package net.benelog.spidersense.ingest;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.util.List;
+
+import io.opentelemetry.proto.collector.trace.v1.ExportTraceServiceRequest;
+import io.opentelemetry.proto.trace.v1.Span;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
+
+import net.benelog.spidersense.Otlp;
+import net.benelog.spidersense.TestStore;
+import net.benelog.spidersense.store.Batch;
+import net.benelog.spidersense.store.SpanRecord;
+import net.benelog.spidersense.store.Store;
+
+class OtlpDecoderTest {
+
+    private static final String TRACE = "4bf92f3577b34da6a3ce929d0e0e4736";
+    private static final String ROOT = "00f067aa0ba902b7";
+    private static final String CHILD = "00f067aa0ba902b8";
+
+    private final Store store = new Store(TestStore.memoryUrl(), null, 24, 500, 100, null);
+    private final OtlpDecoder decoder = new OtlpDecoder(store, () -> 4000);
+
+    @AfterEach
+    void close() {
+        store.close();
+    }
+
+    @Test
+    void decodesAServerSpanAndItsDatabaseChild() {
+        Span.Builder root = Otlp.span(TRACE, ROOT, "GET /orders/{id}", Span.SpanKind.SPAN_KIND_SERVER,
+                1_700_000_000_000L, 152,
+                Otlp.attr("http.request.method", "GET"),
+                Otlp.attr("http.route", "/orders/{id}"),
+                Otlp.attr("http.response.status_code", 200));
+        Span.Builder child = Otlp.child(root, CHILD, "SELECT orders", Span.SpanKind.SPAN_KIND_CLIENT,
+                1_700_000_000_010L, 200,
+                Otlp.attr("db.system", "h2"),
+                Otlp.attr("db.statement", "select * from orders where id = ?"),
+                Otlp.attr("db.operation", "SELECT"),
+                Otlp.attr("db.sql.table", "orders"));
+
+        Batch batch = decoder.accept(Otlp.traces(Otlp.service("spring-orders"), root, child));
+
+        assertThat(batch.spans()).hasSize(2);
+        SpanRecord server = batch.spans().get(0);
+        assertThat(server.traceId()).isEqualTo(TRACE);
+        assertThat(server.spanId()).isEqualTo(ROOT);
+        assertThat(server.parentSpanId()).isNull();
+        assertThat(server.kind()).isEqualTo("SERVER");
+        assertThat(server.service()).isEqualTo("spring-orders");
+        assertThat(server.scope()).isEqualTo(Otlp.SCOPE);
+        assertThat(server.endpointName()).isEqualTo("GET /orders/{id}");
+        assertThat(server.durationMillis()).isEqualTo(152.0);
+
+        SpanRecord query = batch.spans().get(1);
+        assertThat(query.parentSpanId()).isEqualTo(ROOT);
+        assertThat(query.dbStatement()).isEqualTo("select * from orders where id = ?");
+        assertThat(query.category()).isEqualTo("db");
+        // 200 ms over the 100 ms threshold: one slow-query tingle, and nothing for the fast root.
+        assertThat(batch.tingles()).hasSize(1);
+    }
+
+    @Test
+    void decodesTheOlderGenerationOfAttributesToo() {
+        Span.Builder root = Otlp.span(TRACE, ROOT, "GET", Span.SpanKind.SPAN_KIND_SERVER,
+                1_700_000_000_000L, 5,
+                Otlp.attr("http.method", "GET"),
+                Otlp.attr("http.target", "/orders"),
+                Otlp.attr("http.status_code", 404));
+
+        Batch batch = decoder.accept(Otlp.traces(Otlp.service("legacy"), root));
+
+        SpanRecord span = batch.spans().get(0);
+        assertThat(span.httpMethod()).isEqualTo("GET");
+        assertThat(span.urlPath()).isEqualTo("/orders");
+        assertThat(span.httpStatus()).isEqualTo(404L);
+    }
+
+    @Test
+    void aResourceWithoutAServiceNameFallsBackToUnknownService() {
+        Span.Builder root = Otlp.span(TRACE, ROOT, "GET", Span.SpanKind.SPAN_KIND_SERVER, 1, 1);
+
+        Batch batch = decoder.accept(Otlp.traces(Otlp.resource(), root));
+
+        assertThat(batch.spans().get(0).service()).isEqualTo(OtlpDecoder.UNKNOWN_SERVICE);
+    }
+
+    @Test
+    void spansAimedAtOurOwnPortAreDroppedSoTheUiNeverMonitorsItself() {
+        Span.Builder ours = Otlp.span(TRACE, ROOT, "GET /api/overview", Span.SpanKind.SPAN_KIND_SERVER,
+                1_700_000_000_000L, 5, Otlp.attr("server.port", 4000));
+        Span.Builder theirs = Otlp.span(TRACE, CHILD, "GET /orders", Span.SpanKind.SPAN_KIND_SERVER,
+                1_700_000_000_000L, 5, Otlp.attr("server.port", 8081));
+
+        Batch batch = decoder.accept(Otlp.traces(Otlp.service("silk-bookstore"), ours, theirs));
+
+        assertThat(batch.spans()).hasSize(1);
+        assertThat(batch.spans().get(0).spanId()).isEqualTo(CHILD);
+    }
+
+    @Test
+    void anExceptionEventBecomesAnErrorWithItsStacktrace() {
+        Span.Builder failing = Otlp.failing(
+                Otlp.span(TRACE, ROOT, "POST /orders", Span.SpanKind.SPAN_KIND_SERVER, 1, 1),
+                "java.lang.IllegalStateException", "Order 42 is already shipped", "at Orders.ship(..)");
+
+        Batch batch = decoder.accept(Otlp.traces(Otlp.service("spring-orders"), failing));
+
+        SpanRecord span = batch.spans().get(0);
+        assertThat(span.isError()).isTrue();
+        assertThat(span.status()).isEqualTo("ERROR");
+        assertThat(span.errorType()).isEqualTo("java.lang.IllegalStateException");
+        assertThat(span.stacktrace()).isEqualTo("at Orders.ship(..)");
+    }
+
+    @Test
+    void decodesGaugeAndHistogramMetrics() {
+        decoder.accept(Otlp.gauge(Otlp.service("spring-orders"), "jvm.memory.used", "By",
+                1_700_000_000_000L, 1024, Otlp.attr("jvm.memory.type", "heap")));
+        Batch batch = decoder.accept(Otlp.histogram(Otlp.service("spring-orders"), "jvm.gc.duration",
+                1_700_000_000_000L, 4, 0.2, new double[]{0.01, 0.1}, new long[]{2, 1, 1},
+                Otlp.attr("jvm.gc.name", "G1 Young Generation")));
+
+        assertThat(batch.metrics()).hasSize(1);
+        Batch.MetricSample sample = batch.metrics().get(0);
+        assertThat(sample.type()).isEqualTo("histogram");
+        assertThat(sample.temporality()).isEqualTo("CUMULATIVE");
+        assertThat(sample.point().count()).isEqualTo(4);
+        assertThat(sample.point().hasBuckets()).isTrue();
+    }
+
+    @Test
+    void decodesLogsWithTheSeverityTableAndTheScopeAsLogger() {
+        Batch batch = decoder.accept(Otlp.logs(Otlp.service("spring-orders"), "o.s.boot.StartupInfoLogger",
+                Otlp.log(1_700_000_000_000L, 9, "Started in 2.1 seconds", TRACE, ROOT),
+                Otlp.log(1_700_000_000_001L, 17, "Boom", null, null)));
+
+        assertThat(batch.logs()).hasSize(2);
+        assertThat(batch.logs().get(0).severity()).isEqualTo("INFO");
+        assertThat(batch.logs().get(0).logger()).isEqualTo("o.s.boot.StartupInfoLogger");
+        assertThat(batch.logs().get(0).traceId()).isEqualTo(TRACE);
+        assertThat(batch.logs().get(1).severity()).isEqualTo("ERROR");
+        assertThat(batch.logs().get(1).traceId()).isNull();
+    }
+
+    @Test
+    void protobufAndTheTwoJsonIdEncodingsAllDecodeToTheSameSpan() throws Exception {
+        ExportTraceServiceRequest request = Otlp.traces(Otlp.service("spring-orders"),
+                Otlp.span(TRACE, ROOT, "GET /orders", Span.SpanKind.SPAN_KIND_SERVER, 1_700_000_000_000L,
+                        5, Otlp.attr("http.route", "/orders")));
+
+        // OTLP/JSON as the specification writes it: hex ids.
+        String hexJson = """
+                {"resourceSpans":[{"resource":{"attributes":[
+                  {"key":"service.name","value":{"stringValue":"spring-orders"}}]},
+                 "scopeSpans":[{"scope":{"name":"io.opentelemetry.test"},"spans":[
+                  {"traceId":"%s","spanId":"%s","name":"GET /orders","kind":2,
+                   "startTimeUnixNano":"1700000000000000000","endTimeUnixNano":"1700000005000000000",
+                   "attributes":[{"key":"http.route","value":{"stringValue":"/orders"}}]}]}]}]}
+                """.formatted(TRACE, ROOT);
+        // Protobuf's own JSON mapping: bytes are base64.
+        String base64Json = hexJson
+                .replace(TRACE, java.util.Base64.getEncoder()
+                        .encodeToString(java.util.HexFormat.of().parseHex(TRACE)))
+                .replace(ROOT, java.util.Base64.getEncoder()
+                        .encodeToString(java.util.HexFormat.of().parseHex(ROOT)));
+
+        for (String json : List.of(hexJson, base64Json)) {
+            ExportTraceServiceRequest.Builder parsed = ExportTraceServiceRequest.newBuilder();
+            OtlpJson.merge(json, parsed);
+            Batch batch = decoder.accept(parsed.build());
+
+            assertThat(batch.spans()).hasSize(1);
+            assertThat(batch.spans().get(0).traceId()).isEqualTo(TRACE);
+            assertThat(batch.spans().get(0).spanId()).isEqualTo(ROOT);
+            assertThat(batch.spans().get(0).kind()).isEqualTo("SERVER");
+        }
+        assertThat(request.getResourceSpansCount()).isEqualTo(1);
+    }
+}

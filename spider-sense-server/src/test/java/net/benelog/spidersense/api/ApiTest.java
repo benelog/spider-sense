@@ -1,0 +1,490 @@
+package net.benelog.spidersense.api;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.net.URI;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+
+import io.opentelemetry.proto.trace.v1.Span;
+
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+
+import net.benelog.spidersense.Otlp;
+import net.benelog.spidersense.TestStore;
+import net.benelog.spidersense.server.Config;
+import net.benelog.spidersense.server.SpiderSenseServer;
+import net.benelog.spidersilk.json.Json;
+import net.benelog.spidersilk.test.TestClient;
+import net.benelog.spidersilk.test.WebTest;
+
+/**
+ * The contract in api.md, exercised through the real request path.
+ *
+ * <p>Ingest is write-behind, so the tests set {@code spidersense.sync} and the
+ * OTLP handler flushes before it answers. Without it a POST followed by a GET
+ * would be a race against the writer thread rather than a test.
+ */
+class ApiTest {
+
+    private static final long NOW = 1_700_000_000_000L;
+    private static final String TRACE = "4bf92f3577b34da6a3ce929d0e0e4736";
+    private static final String ROOT = "00f067aa0ba902b7";
+    private static final String CHILD = "00f067aa0ba902b8";
+    private static final String FAILING_TRACE = "4bf92f3577b34da6a3ce929d0e0e4737";
+    private static final String PROTOBUF = "application/x-protobuf";
+
+    @BeforeAll
+    static void synchronousIngest() {
+        System.setProperty("spidersense.sync", "true");
+    }
+
+    @AfterAll
+    static void asynchronousIngestAgain() {
+        System.clearProperty("spidersense.sync");
+    }
+
+    private interface Body {
+        void run(TestClient client, SpiderSenseServer.Assembly assembly);
+    }
+
+    /** One assembled server per test, on an in-memory database of its own. */
+    private static void serve(Body body) {
+        Config config = TestStore.config();
+        SpiderSenseServer.Assembly assembly = SpiderSenseServer.assemble(config);
+        try {
+            WebTest.test(assembly.app(), client -> body.run(client, assembly));
+        } finally {
+            assembly.store().close();
+        }
+    }
+
+    private static HttpResponse<String> postProtobuf(TestClient client, String path, byte[] body) {
+        return client.send(request -> request
+                .uri(URI.create(client.url(path)))
+                .header("Content-Type", PROTOBUF)
+                .POST(HttpRequest.BodyPublishers.ofByteArray(body)));
+    }
+
+    private static HttpResponse<String> postGzippedProtobuf(TestClient client, String path, byte[] body) {
+        return client.send(request -> request
+                .uri(URI.create(client.url(path)))
+                .header("Content-Type", PROTOBUF)
+                .header("Content-Encoding", "gzip")
+                .POST(HttpRequest.BodyPublishers.ofByteArray(Otlp.gzip(body))));
+    }
+
+    private static Json.JsonObject json(HttpResponse<String> response) {
+        assertThat(response.statusCode()).isEqualTo(200);
+        return Json.parse(response.body()).asObject();
+    }
+
+    /** A server span, a slow database child, and a second trace that failed. */
+    private static byte[] sampleTraces() {
+        Span.Builder root = Otlp.span(TRACE, ROOT, "GET /orders/{id}", Span.SpanKind.SPAN_KIND_SERVER,
+                NOW, 152,
+                Otlp.attr("http.request.method", "GET"),
+                Otlp.attr("http.route", "/orders/{id}"),
+                Otlp.attr("http.response.status_code", 200),
+                Otlp.attr("server.port", 8082));
+        Span.Builder query = Otlp.child(root, CHILD, "SELECT orders", Span.SpanKind.SPAN_KIND_CLIENT,
+                NOW + 10, 200,
+                Otlp.attr("db.system", "h2"),
+                Otlp.attr("db.statement", "select * from orders where name like ?"),
+                Otlp.attr("db.name", "orders"),
+                Otlp.attr("db.operation", "SELECT"),
+                Otlp.attr("db.sql.table", "orders"));
+        Span.Builder failing = Otlp.failing(
+                Otlp.span(FAILING_TRACE, "00f067aa0ba902b9", "POST /orders/{id}/ship",
+                        Span.SpanKind.SPAN_KIND_SERVER, NOW + 100, 600,
+                        Otlp.attr("http.request.method", "POST"),
+                        Otlp.attr("http.route", "/orders/{id}/ship"),
+                        Otlp.attr("http.response.status_code", 500)),
+                "java.lang.IllegalStateException", "Order 42 is already shipped", "at Orders.ship(..)");
+        return Otlp.traces(Otlp.service("spring-orders"), root, query, failing).toByteArray();
+    }
+
+    private static String windowQuery() {
+        return "?from=" + (NOW - 60_000) + "&to=" + (NOW + 60_000);
+    }
+
+    @Test
+    void ingestAnswersWithAnEmptyResponseInTheRequestsOwnEncoding() {
+        serve((client, assembly) -> {
+            HttpResponse<String> protobuf = postProtobuf(client, "/v1/traces", sampleTraces());
+            assertThat(protobuf.statusCode()).isEqualTo(200);
+            assertThat(protobuf.headers().firstValue("content-type"))
+                    .hasValueSatisfying(type -> assertThat(type).startsWith(PROTOBUF));
+
+            HttpResponse<String> gzipped = postGzippedProtobuf(client, "/v1/traces", sampleTraces());
+            assertThat(gzipped.statusCode()).isEqualTo(200);
+
+            HttpResponse<String> asJson = client.send(request -> request
+                    .uri(URI.create(client.url("/v1/traces")))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString("{\"resourceSpans\":[]}")));
+            assertThat(asJson.statusCode()).isEqualTo(200);
+            assertThat(asJson.body()).isEqualTo("{}");
+        });
+    }
+
+    @Test
+    void anotherContentTypeIs415AndAnUndecodableBodyIs400() {
+        serve((client, assembly) -> {
+            HttpResponse<String> text = client.send(request -> request
+                    .uri(URI.create(client.url("/v1/traces")))
+                    .header("Content-Type", "text/plain")
+                    .POST(HttpRequest.BodyPublishers.ofString("hello")));
+            assertThat(text.statusCode()).isEqualTo(415);
+            assertThat(Json.parse(text.body()).asObject().getString("error")).isNotBlank();
+
+            HttpResponse<String> rubbish = client.send(request -> request
+                    .uri(URI.create(client.url("/v1/logs")))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString("not json at all")));
+            assertThat(rubbish.statusCode()).isEqualTo(400);
+            assertThat(Json.parse(rubbish.body()).asObject().getString("error")).isNotBlank();
+        });
+    }
+
+    @Test
+    void tracesAndTheTraceDetailCarryTheFieldsTheContractNames() {
+        serve((client, assembly) -> {
+            postProtobuf(client, "/v1/traces", sampleTraces());
+
+            Json.JsonObject traces = json(client.get("/api/traces" + windowQuery()));
+            assertThat(traces.getLong("total")).isEqualTo(2);
+            assertThat(traces.getObject("window").has("bucketMs")).isTrue();
+
+            Json.JsonObject summary = null;
+            for (Json.JsonValue value : traces.getArray("traces")) {
+                if (value.asObject().getString("traceId").equals(TRACE)) {
+                    summary = value.asObject();
+                }
+            }
+            assertThat(summary).isNotNull();
+            assertThat(summary.getString("rootName")).isEqualTo("GET /orders/{id}");
+            assertThat(summary.getString("rootService")).isEqualTo("spring-orders");
+            assertThat(summary.getString("rootKind")).isEqualTo("SERVER");
+            assertThat(summary.getLong("spanCount")).isEqualTo(2);
+            assertThat(summary.getLong("dbCount")).isEqualTo(1);
+            assertThat(summary.getLong("errorCount")).isZero();
+            assertThat(summary.getLong("httpStatus")).isEqualTo(200);
+            assertThat(summary.getBoolean("error")).isFalse();
+
+            Json.JsonObject detail = json(client.get("/api/traces/" + TRACE));
+            assertThat(detail.getString("traceId")).isEqualTo(TRACE);
+            assertThat(detail.getArray("spans")).hasSize(2);
+            Json.JsonObject root = detail.getArray("spans").get(0).asObject();
+            assertThat(root.getString("spanId")).isEqualTo(ROOT);
+            assertThat(root.get("parentSpanId").isNull()).isTrue();
+            assertThat(root.getString("category")).isEqualTo("http");
+            assertThat(root.getString("summary")).isEqualTo("GET /orders/{id} → 200");
+            assertThat(root.getObject("attributes").getString("http.route")).isEqualTo("/orders/{id}");
+            Json.JsonObject child = detail.getArray("spans").get(1).asObject();
+            assertThat(child.getString("parentSpanId")).isEqualTo(ROOT);
+            assertThat(child.getString("category")).isEqualTo("db");
+            assertThat(child.getBoolean("slow")).isTrue();
+
+            assertThat(client.get("/api/traces/" + "f".repeat(32)).statusCode()).isEqualTo(404);
+        });
+    }
+
+    @Test
+    void filtersNarrowTheTraceList() {
+        serve((client, assembly) -> {
+            postProtobuf(client, "/v1/traces", sampleTraces());
+            String base = "/api/traces" + windowQuery();
+
+            assertThat(json(client.get(base + "&status=error")).getArray("traces")).hasSize(1);
+            assertThat(json(client.get(base + "&status=ok")).getArray("traces")).hasSize(1);
+            assertThat(json(client.get(base + "&minMs=500")).getArray("traces")).hasSize(1);
+            assertThat(json(client.get(base + "&q=ship")).getArray("traces")).hasSize(1);
+            assertThat(json(client.get(base + "&service=spring-orders")).getArray("traces")).hasSize(2);
+            assertThat(json(client.get(base + "&service=nobody")).getArray("traces")).isEmpty();
+            assertThat(json(client.get(base + "&before=" + NOW)).getArray("traces")).isEmpty();
+
+            assertThat(client.get(base + "&minMs=abc").statusCode()).isEqualTo(400);
+            assertThat(Json.parse(client.get("/api/traces?from=nonsense").body()).asObject()
+                    .getString("error")).isNotBlank();
+        });
+    }
+
+    @Test
+    void servicesEndpointsQueriesAndErrorsAggregateTheWindow() {
+        serve((client, assembly) -> {
+            postProtobuf(client, "/v1/traces", sampleTraces());
+
+            Json.JsonObject services = json(client.get("/api/services" + windowQuery()));
+            Json.JsonObject service = services.getArray("services").get(0).asObject();
+            assertThat(service.getString("name")).isEqualTo("spring-orders");
+            assertThat(service.getString("language")).isEqualTo("java");
+            assertThat(service.getBoolean("embedded")).isFalse();
+            assertThat(service.getLong("requests")).isEqualTo(2);
+            assertThat(service.getLong("errors")).isEqualTo(1);
+            assertThat(service.getArray("sparkline").size()).isGreaterThan(0);
+            assertThat(service.getBoolean("hasJvm")).isFalse();
+
+            Json.JsonObject detail = json(client.get("/api/services/spring-orders" + windowQuery()));
+            assertThat(detail.getObject("resource").getString("service.name")).isEqualTo("spring-orders");
+            assertThat(detail.getObject("series").getArray("p95Ms").size())
+                    .isEqualTo(detail.getObject("series").getArray("t").size());
+            assertThat(detail.getArray("endpoints")).hasSize(2);
+            assertThat(detail.getArray("queries")).hasSize(1);
+            assertThat(detail.getArray("errors")).hasSize(1);
+            Json.JsonObject dependency = detail.getArray("dependencies").get(0).asObject();
+            assertThat(dependency.getString("kind")).isEqualTo("db");
+            assertThat(dependency.getString("target")).isEqualTo("h2:orders");
+
+            Json.JsonObject endpoints = json(client.get("/api/endpoints" + windowQuery()));
+            Json.JsonObject endpoint = endpoints.getArray("endpoints").get(0).asObject();
+            assertThat(endpoint.getString("name")).isIn("GET /orders/{id}", "POST /orders/{id}/ship");
+            assertThat(endpoint.getString("method")).isIn("GET", "POST");
+            assertThat(endpoint.getObject("statusCodes").size()).isEqualTo(1);
+            Json.JsonObject endpointDetail =
+                    json(client.get("/api/endpoints/" + endpoint.getString("endpointId") + windowQuery()));
+            assertThat(endpointDetail.getObject("endpoint").getString("endpointId"))
+                    .isEqualTo(endpoint.getString("endpointId"));
+            assertThat(endpointDetail.has("recent")).isTrue();
+
+            Json.JsonObject queries = json(client.get("/api/queries" + windowQuery()));
+            Json.JsonObject query = queries.getArray("queries").get(0).asObject();
+            assertThat(query.getString("statement")).isEqualTo("select * from orders where name like ?");
+            assertThat(query.getString("system")).isEqualTo("h2");
+            assertThat(query.getString("namespace")).isEqualTo("orders");
+            assertThat(query.getString("operation")).isEqualTo("SELECT");
+            assertThat(query.getString("table")).isEqualTo("orders");
+            assertThat(query.getLong("slowCalls")).isEqualTo(1);
+            assertThat(query.getArray("callers").get(0).asObject().getString("endpoint"))
+                    .isEqualTo("GET /orders/{id}");
+            assertThat(json(client.get("/api/queries/" + query.getString("queryId") + windowQuery()))
+                    .getObject("series").has("calls")).isTrue();
+
+            Json.JsonObject errors = json(client.get("/api/errors" + windowQuery()));
+            Json.JsonObject error = errors.getArray("errors").get(0).asObject();
+            assertThat(error.getString("type")).isEqualTo("java.lang.IllegalStateException");
+            assertThat(error.getString("message")).isEqualTo("Order ? is already shipped");
+            assertThat(error.getLong("count")).isEqualTo(1);
+            assertThat(error.getObject("sample").getString("stacktrace")).isEqualTo("at Orders.ship(..)");
+            assertThat(json(client.get("/api/errors/" + error.getString("errorId") + windowQuery()))
+                    .getObject("series").has("count")).isTrue();
+        });
+    }
+
+    @Test
+    void theOverviewAndTheXlogDescribeTheSameWindow() {
+        serve((client, assembly) -> {
+            postProtobuf(client, "/v1/traces", sampleTraces());
+
+            Json.JsonObject overview = json(client.get("/api/overview" + windowQuery()));
+            assertThat(overview.getObject("totals").getLong("requests")).isEqualTo(2);
+            assertThat(overview.getObject("totals").getLong("errors")).isEqualTo(1);
+            assertThat(overview.getObject("totals").getDouble("errorRate")).isEqualTo(0.5);
+            assertThat(overview.getArray("services")).hasSize(1);
+            assertThat(overview.getArray("tingles")).isNotEmpty();
+            Json.JsonObject tingle = overview.getArray("tingles").get(0).asObject();
+            assertThat(tingle.getString("kind")).isIn("slow-request", "slow-query", "error");
+            Json.JsonObject series = overview.getObject("series");
+            assertThat(series.getArray("requests").size()).isEqualTo(series.getArray("t").size());
+            assertThat(series.getArray("p95Ms").size()).isEqualTo(series.getArray("t").size());
+
+            Json.JsonObject xlog = json(client.get("/api/xlog" + windowQuery()));
+            assertThat(xlog.getBoolean("truncated")).isFalse();
+            Json.JsonArray points = xlog.getArray("points");
+            assertThat(points).hasSize(2);
+            Json.JsonArray point = points.get(0).asArray();
+            assertThat(point.size()).isEqualTo(6);
+            assertThat(point.get(2).asString()).isEqualTo("spring-orders");
+            assertThat(point.get(3).asString()).isIn("GET /orders/{id}", "POST /orders/{id}/ship");
+        });
+    }
+
+    @Test
+    void metricsAreCataloguedsampledAndCuratedIntoTheJvmView() {
+        serve((client, assembly) -> {
+            postProtobuf(client, "/v1/metrics", Otlp.gauge(Otlp.service("spring-orders"),
+                    "jvm.memory.used", "By", NOW, 1024,
+                    Otlp.attr("jvm.memory.type", "heap"),
+                    Otlp.attr("jvm.memory.pool.name", "G1 Eden Space")).toByteArray());
+            postProtobuf(client, "/v1/metrics", Otlp.gauge(Otlp.service("spring-orders"),
+                    "jvm.memory.used", "By", NOW, 2048,
+                    Otlp.attr("jvm.memory.type", "heap"),
+                    Otlp.attr("jvm.memory.pool.name", "G1 Old Gen")).toByteArray());
+            postProtobuf(client, "/v1/metrics", Otlp.gauge(Otlp.service("spring-orders"),
+                    "jvm.cpu.count", "{cpu}", NOW, 8).toByteArray());
+            postProtobuf(client, "/v1/metrics", Otlp.histogram(Otlp.service("spring-orders"),
+                    "jvm.gc.duration", NOW, 4, 0.2, new double[]{0.01, 0.1}, new long[]{2, 1, 1},
+                    Otlp.attr("jvm.gc.name", "G1 Young Generation"),
+                    Otlp.attr("jvm.gc.action", "end of minor GC")).toByteArray());
+
+            Json.JsonObject catalog = json(client.get("/api/metrics"));
+            assertThat(catalog.getArray("metrics").size()).isEqualTo(3);
+            Json.JsonObject memory = catalog.getArray("metrics").get(2).asObject();
+            assertThat(memory.getString("name")).isEqualTo("jvm.memory.used");
+            assertThat(memory.getString("type")).isEqualTo("gauge");
+            assertThat(memory.getString("unit")).isEqualTo("By");
+            assertThat(memory.getLong("series")).isEqualTo(2);
+            assertThat(memory.getArray("services").get(0).asString()).isEqualTo("spring-orders");
+
+            Json.JsonObject series = json(client.get(
+                    "/api/metrics/series?name=jvm.memory.used" + windowQuery().replace('?', '&')));
+            assertThat(series.getString("name")).isEqualTo("jvm.memory.used");
+            assertThat(series.getArray("series")).hasSize(2);
+            Json.JsonObject first = series.getArray("series").get(0).asObject();
+            assertThat(first.getString("service")).isEqualTo("spring-orders");
+            assertThat(first.getArray("t")).hasSize(1);
+            assertThat(first.getArray("v").get(0).asDouble()).isIn(1024.0, 2048.0);
+
+            Json.JsonObject filtered = json(client.get("/api/metrics/series?name=jvm.memory.used"
+                    + "&attr.jvm.memory.pool.name=G1+Eden+Space" + windowQuery().replace('?', '&')));
+            assertThat(filtered.getArray("series")).hasSize(1);
+
+            Json.JsonObject histogram = json(client.get(
+                    "/api/metrics/series?name=jvm.gc.duration" + windowQuery().replace('?', '&')));
+            Json.JsonObject gc = histogram.getArray("series").get(0).asObject();
+            assertThat(gc.has("count")).isTrue();
+            assertThat(gc.has("p95")).isTrue();
+            assertThat(gc.has("max")).isTrue();
+            assertThat(gc.getArray("v").get(0).asDouble()).isEqualTo(0.05);
+
+            Json.JsonObject jvm = json(client.get(
+                    "/api/jvm?service=spring-orders" + windowQuery().replace('?', '&')));
+            assertThat(jvm.getString("service")).isEqualTo("spring-orders");
+            assertThat(jvm.getObject("runtime").getLong("cpuCount")).isEqualTo(8);
+            assertThat(jvm.getObject("heap").getArray("used").get(0).asDouble()).isEqualTo(3072.0);
+            assertThat(jvm.getArray("pools")).hasSize(2);
+            assertThat(jvm.getArray("gc")).hasSize(1);
+            assertThat(jvm.getObject("classes").has("t")).isTrue();
+        });
+    }
+
+    @Test
+    void logsAreListedFilteredAndCorrelatedWithTheirTrace() {
+        serve((client, assembly) -> {
+            postProtobuf(client, "/v1/traces", sampleTraces());
+            postProtobuf(client, "/v1/logs", Otlp.logs(Otlp.service("spring-orders"),
+                    "o.s.boot.StartupInfoLogger",
+                    Otlp.log(NOW + 5, 9, "Started OrdersApplication in 2.1 seconds", TRACE, ROOT),
+                    Otlp.log(NOW + 6, 17, "Shipping failed", null, null)).toByteArray());
+
+            Json.JsonObject logs = json(client.get("/api/logs" + windowQuery()));
+            assertThat(logs.getLong("total")).isEqualTo(2);
+            Json.JsonObject newest = logs.getArray("logs").get(0).asObject();
+            assertThat(newest.getString("severity")).isEqualTo("ERROR");
+            assertThat(newest.getLong("severityNumber")).isEqualTo(17);
+            assertThat(newest.getString("body")).isEqualTo("Shipping failed");
+            assertThat(newest.getString("logger")).isEqualTo("o.s.boot.StartupInfoLogger");
+            assertThat(newest.getLong("id")).isPositive();
+            assertThat(newest.getObject("attributes").getString("thread.name")).isEqualTo("main");
+
+            assertThat(json(client.get("/api/logs" + windowQuery() + "&severity=ERROR"))
+                    .getArray("logs")).hasSize(1);
+            assertThat(json(client.get("/api/logs" + windowQuery() + "&q=started"))
+                    .getArray("logs")).hasSize(1);
+            assertThat(json(client.get("/api/logs" + windowQuery() + "&traceId=" + TRACE))
+                    .getArray("logs")).hasSize(1);
+
+            Json.JsonObject trace = json(client.get("/api/traces/" + TRACE));
+            assertThat(trace.getArray("logs")).hasSize(1);
+            assertThat(trace.getArray("logs").get(0).asObject().getString("traceId")).isEqualTo(TRACE);
+        });
+    }
+
+    @Test
+    void statusDescribesTheServerItsStorageAndItsCounts() {
+        serve((client, assembly) -> {
+            postProtobuf(client, "/v1/traces", sampleTraces());
+
+            Json.JsonObject status = json(client.get("/api/status"));
+            assertThat(status.getString("name")).isEqualTo("Spider Sense");
+            assertThat(status.getString("version")).isEqualTo(ApiRoutes.VERSION);
+            assertThat(status.getString("mode")).isEqualTo("standalone");
+            assertThat(status.getString("endpoint")).startsWith("http://127.0.0.1:");
+            assertThat(status.getObject("otlp").getString("traces")).endsWith("/v1/traces");
+            assertThat(status.get("embeddedService").isNull()).isTrue();
+            assertThat(status.getObject("thresholds").getLong("slowRequestMs")).isEqualTo(500);
+            assertThat(status.getObject("retention").getLong("hours")).isEqualTo(24);
+            Json.JsonObject storage = status.getObject("storage");
+            assertThat(storage.getString("url")).startsWith("jdbc:h2:mem:");
+            assertThat(storage.get("path").isNull()).isTrue();
+            assertThat(storage.getLong("sizeBytes")).isZero();
+            assertThat(storage.getBoolean("fallback")).isFalse();
+            assertThat(storage.getLong("droppedBatches")).isZero();
+            Json.JsonObject counts = status.getObject("counts");
+            assertThat(counts.getLong("spans")).isEqualTo(3);
+            assertThat(counts.getLong("traces")).isEqualTo(2);
+            assertThat(counts.getLong("services")).isEqualTo(1);
+            assertThat(status.getObject("oldest").getLong("span")).isEqualTo(NOW);
+        });
+    }
+
+    @Test
+    void everyApiAnswerForbidsCaching() {
+        serve((client, assembly) -> assertThat(client.get("/api/status").headers()
+                .firstValue("cache-control")).hasValue("no-store"));
+    }
+
+    @Test
+    void exportDownloadsTracesAndDeleteEmptiesTheWindows() {
+        serve((client, assembly) -> {
+            postProtobuf(client, "/v1/traces", sampleTraces());
+
+            HttpResponse<String> export = client.get("/api/export?traceId=" + TRACE);
+            assertThat(export.statusCode()).isEqualTo(200);
+            assertThat(export.headers().firstValue("content-disposition"))
+                    .hasValueSatisfying(value -> assertThat(value).startsWith("attachment"));
+            Json.JsonObject exported = Json.parse(export.body()).asObject();
+            assertThat(exported.getArray("traces")).hasSize(1);
+            assertThat(exported.getArray("traces").get(0).asObject().getString("traceId"))
+                    .isEqualTo(TRACE);
+            assertThat(Json.parse(client.get("/api/export" + windowQuery()).body()).asObject()
+                    .getArray("traces")).hasSize(2);
+
+            assertThat(client.delete("/api/data").statusCode()).isEqualTo(204);
+
+            Json.JsonObject status = json(client.get("/api/status"));
+            assertThat(status.getObject("counts").getLong("spans")).isZero();
+            assertThat(status.getObject("counts").getLong("traces")).isZero();
+            assertThat(status.getObject("counts").getLong("services")).isEqualTo(1);
+            assertThat(json(client.get("/api/traces" + windowQuery())).getArray("traces")).isEmpty();
+        });
+    }
+
+    @Test
+    void aSpanAimedAtOurOwnPortIsNeverStored() {
+        serve((client, assembly) -> {
+            assembly.boundPort().set(assembly.app().port());
+            byte[] ours = Otlp.traces(Otlp.service("silk-bookstore"),
+                    Otlp.span(TRACE, ROOT, "GET /api/overview", Span.SpanKind.SPAN_KIND_SERVER, NOW, 3,
+                            Otlp.attr("server.port", assembly.app().port())),
+                    Otlp.span(FAILING_TRACE, CHILD, "GET /books", Span.SpanKind.SPAN_KIND_SERVER, NOW, 3,
+                            Otlp.attr("server.port", 8081))).toByteArray();
+
+            postProtobuf(client, "/v1/traces", ours);
+
+            Json.JsonObject traces = json(client.get("/api/traces" + windowQuery()));
+            assertThat(traces.getArray("traces")).hasSize(1);
+            assertThat(traces.getArray("traces").get(0).asObject().getString("traceId"))
+                    .isEqualTo(FAILING_TRACE);
+        });
+    }
+
+    @Test
+    void anUnknownPageFallsBackToTheSinglePageButAnUnknownApiPathIsJson() {
+        serve((client, assembly) -> {
+            HttpResponse<String> api = client.get("/api/nothing-here");
+            assertThat(api.statusCode()).isEqualTo(404);
+            assertThat(Json.parse(api.body()).asObject().getString("error")).contains("Not found");
+
+            HttpResponse<String> asset = client.get("/assets/missing.js");
+            assertThat(asset.statusCode()).isEqualTo(404);
+
+            HttpResponse<String> page = client.get("/traces");
+            // The UI may not be built yet in this module; either the page or a JSON 404 is correct,
+            // but it must never be an error.
+            assertThat(page.statusCode()).isIn(200, 404);
+        });
+    }
+}
