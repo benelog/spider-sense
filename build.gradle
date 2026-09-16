@@ -1,0 +1,42 @@
+// Spider Sense: a local-development APM built on OpenTelemetry and Spider Silk.
+//
+// Versions every subproject shares are named here once; a subproject's
+// build.gradle states only what is its own.
+plugins {
+    id 'base'
+}
+
+ext {
+    spiderSilkVersion = '1.0.0'
+    otelAgentVersion = '2.31.1'          // io.opentelemetry.javaagent:opentelemetry-javaagent
+    otelProtoVersion = '1.11.0-alpha'    // io.opentelemetry.proto:opentelemetry-proto
+    junitVersion = '6.1.3'
+    assertjVersion = '3.27.7'
+    h2Version = '2.5.250'
+    springJdbcVersion = '7.0.9'
+    springBootVersion = '4.1.1'
+}
+
+subprojects {
+    repositories {
+        mavenCentral()
+    }
+
+    plugins.withId('java') {
+        java {
+            sourceCompatibility = JavaVersion.VERSION_21
+            targetCompatibility = JavaVersion.VERSION_21
+        }
+        tasks.withType(JavaCompile).configureEach {
+            options.release = 21
+            options.encoding = 'UTF-8'
+        }
+        tasks.withType(Test).configureEach {
+            useJUnitPlatform()
+            testLogging {
+                events 'failed'
+                exceptionFormat 'full'
+            }
+        }
+    }
+}
