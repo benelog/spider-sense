@@ -1,0 +1,50 @@
+// silk-bookstore: a Spider Silk demo application with deliberately slow
+// queries and endpoints, so Spider Sense has something worth showing.
+//
+// The net.benelog.spidersilk plugin carries the packaging conventions
+// (the application plugin, precompiled jte, Jib, native-image); this file
+// states only what belongs to this example. Its version is a literal because
+// a plugins {} block cannot read the root project's ext values.
+plugins {
+    id 'net.benelog.spidersilk' version '1.0.0'
+    id 'application'
+}
+
+spiderSilk {
+    jte()
+}
+
+// Only this example needs it, so it is not in the root ext block: the API the
+// tracing filter calls to rename a server span after its route.
+ext.otelApiVersion = '1.66.0'
+
+dependencies {
+    implementation "net.benelog.spidersilk:spider-silk-core:${spiderSilkVersion}"
+    implementation "org.springframework:spring-jdbc:${springJdbcVersion}"
+    implementation "com.h2database:h2:${h2Version}"
+
+    // Without the OpenTelemetry agent every call on this API is a no-op, so the
+    // app runs unchanged with no agent attached. See web/Tracing.java.
+    implementation "io.opentelemetry:opentelemetry-api:${otelApiVersion}"
+
+    runtimeOnly 'org.slf4j:slf4j-simple:2.0.19'
+
+    testImplementation "net.benelog.spidersilk:spider-silk-test:${spiderSilkVersion}"
+    testImplementation "org.junit.jupiter:junit-jupiter:${junitVersion}"
+    testImplementation "org.assertj:assertj-core:${assertjVersion}"
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+application {
+    mainClass = 'bookstore.BookstoreApp'
+
+    // The OpenTelemetry agent reads otel.service.name in premain, long before
+    // any line of this application runs, so setting it from main() would be too
+    // late. It is a JVM argument of the start script instead; a JAVA_OPTS or a
+    // -D on the command line still wins, because the script appends those after
+    // DEFAULT_JVM_OPTS.
+    applicationDefaultJvmArgs = [
+            '-Dotel.service.name=silk-bookstore',
+            '-Dorg.slf4j.simpleLogger.defaultLogLevel=warn'
+    ]
+}
