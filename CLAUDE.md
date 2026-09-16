@@ -29,9 +29,9 @@ Read `docs/design.md` (architecture and decisions), `docs/api.md` (the JSON cont
 ```bash
 ./gradlew build                                   # every module, all tests
 ./gradlew :spider-sense-agent:senseJar            # the single jar: spider-sense-agent/build/libs/spider-sense-<version>.jar
-scripts/demo.sh                                   # standalone Spider Sense + both example apps + load generator
-scripts/demo-embedded.sh                          # silk-bookstore alone with the embedded (Glowroot-style) UI
+scripts/demo.sh                                   # both example apps, each with its own embedded Spider Sense (:4000, :4001), plus the load generator
+scripts/demo-shared.sh                            # one standalone Spider Sense both apps forward to
 ```
 
-Ports: Spider Sense 4000, silk-bookstore 8081, spring-orders 8082.
+Ports: silk-bookstore 8081 (embedded Spider Sense 4000), spring-orders 8082 (embedded Spider Sense 4001); the shared standalone Spider Sense also uses 4000.
 H2 files for the examples live under `~/db/spider-sense/`.

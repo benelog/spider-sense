@@ -71,8 +71,8 @@ Two deliberately misbehaving applications and a load generator, so there is some
 - [examples/load-gen](examples/load-gen): drives both at a few requests per second.
 
 ```bash
-scripts/demo.sh             # standalone Spider Sense + both apps forwarding + load generator
-scripts/demo-embedded.sh    # the bookstore alone with the embedded UI
+scripts/demo.sh             # each app with its own embedded Spider Sense (:4000 and :4001), no extra process
+scripts/demo-shared.sh      # one standalone Spider Sense both apps forward to, so a cross-service trace shows in one UI
 ```
 
 ## How it is built

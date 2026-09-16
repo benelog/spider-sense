@@ -111,7 +111,7 @@ Three applications under `examples/`, all sending to whichever Spider Sense they
 - `spring-orders`: Spring Boot 4.1 with Spring Data JPA and H2, an orders/customers domain; a slow report endpoint (JPQL over a large table), a lazy-loading N+1 page, an endpoint that calls `silk-bookstore` over HTTP so a trace spans two services, a checkout that fails with a business exception, and a "flaky" endpoint that fails 20% of the time.
 - `load-gen`: a plain Java program that hits both apps at a randomised rate so the dashboards fill up without manual clicking. It is instrumented too (`java.net.http`), so some traces start at the client.
 
-`scripts/demo.sh` builds the jar, starts Spider Sense standalone, starts both apps in forwarding agent mode, then the load generator, and prints the URL; `scripts/demo-embedded.sh` runs `silk-bookstore` alone with the embedded UI to show the Glowroot-style mode.
+`scripts/demo.sh` builds the jar and starts both apps in agent mode, each hosting its own Spider Sense UI (bookstore on 4000, orders on 4001) with no extra process, then the load generator; `scripts/demo-shared.sh` is the other layout, one standalone Spider Sense that both apps forward to, which is where a trace crossing both services shows up in one place.
 
 ## What was considered and rejected
 

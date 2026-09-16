@@ -1,15 +1,22 @@
 #!/usr/bin/env bash
-# Runs the whole demo: Spider Sense standalone on :4000, silk-bookstore on :8081
-# and spring-orders on :8082 both instrumented and forwarding to it, then the
-# load generator. Ctrl-C stops everything.
+# The default demo, Glowroot-style: no separate process. Each application runs
+# with -javaagent:spider-sense.jar and hosts its own Spider Sense UI on a port
+# of its own, next to the application's port.
+#
+#   silk-bookstore  :8081   Spider Sense UI inside it  :4000
+#   spring-orders   :8082   Spider Sense UI inside it  :4001
+#
+# The load generator drives both. Ctrl-C stops everything.
 #
 #   scripts/demo.sh            build first, then run
 #   scripts/demo.sh --no-build run what is already built
 #   RPS=8 scripts/demo.sh      load generator rate (default 4)
+#
+# scripts/demo-shared.sh is the other layout: one standalone Spider Sense that
+# both applications forward to, so a trace crossing both shows in one UI.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-SENSE_PORT="${SENSE_PORT:-4000}"
 RPS="${RPS:-4}"
 LOGS="build/demo-logs"
 mkdir -p "$LOGS"
@@ -21,7 +28,7 @@ if [[ "${1:-}" != "--no-build" ]]; then
         :examples:load-gen:installDist
 fi
 
-SENSE_JAR="$(ls spider-sense-agent/build/libs/spider-sense-*.jar | grep -v -- '-launcher' | head -1)"
+SENSE_JAR="$PWD/$(ls spider-sense-agent/build/libs/spider-sense-*.jar | grep -v -- '-launcher' | head -1)"
 BOOKSTORE="examples/silk-bookstore/build/install/silk-bookstore/bin/silk-bookstore"
 ORDERS_JAR="$(ls examples/spring-orders/build/libs/spring-orders-*.jar | grep -v -- '-plain' | head -1)"
 LOADGEN="examples/load-gen/build/install/load-gen/bin/load-gen"
@@ -44,31 +51,25 @@ wait_for() {   # wait_for <url> <name>
     return 1
 }
 
-echo "Spider Sense (standalone) -> $LOGS/spider-sense.log"
-java -jar "$SENSE_JAR" --port="$SENSE_PORT" >"$LOGS/spider-sense.log" 2>&1 &
-pids+=($!)
-wait_for "http://127.0.0.1:$SENSE_PORT/api/status" "Spider Sense"
-
-AGENT_OPTS="-javaagent:$PWD/$SENSE_JAR -Dspidersense.collector=http://127.0.0.1:$SENSE_PORT"
-
-echo "silk-bookstore (:8081) -> $LOGS/silk-bookstore.log"
-JAVA_OPTS="$AGENT_OPTS -Dotel.service.name=silk-bookstore" "$BOOKSTORE" >"$LOGS/silk-bookstore.log" 2>&1 &
+echo "silk-bookstore (:8081, Spider Sense :4000) -> $LOGS/silk-bookstore.log"
+JAVA_OPTS="-javaagent:$SENSE_JAR -Dspidersense.port=4000 -Dotel.service.name=silk-bookstore" \
+    "$BOOKSTORE" >"$LOGS/silk-bookstore.log" 2>&1 &
 pids+=($!)
 
-echo "spring-orders (:8082) -> $LOGS/spring-orders.log"
-java $AGENT_OPTS -Dotel.service.name=spring-orders -jar "$ORDERS_JAR" >"$LOGS/spring-orders.log" 2>&1 &
+echo "spring-orders (:8082, Spider Sense :4001) -> $LOGS/spring-orders.log"
+java -javaagent:"$SENSE_JAR" -Dspidersense.port=4001 -Dotel.service.name=spring-orders \
+    -jar "$ORDERS_JAR" >"$LOGS/spring-orders.log" 2>&1 &
 pids+=($!)
 
 wait_for "http://127.0.0.1:8081/api/health" "silk-bookstore"
 wait_for "http://127.0.0.1:8082/api/health" "spring-orders"
 
 echo
-echo "  Spider Sense UI : http://127.0.0.1:$SENSE_PORT"
-echo "  silk-bookstore  : http://127.0.0.1:8081"
-echo "  spring-orders   : http://127.0.0.1:8082"
+echo "  silk-bookstore  : http://127.0.0.1:8081   Spider Sense: http://127.0.0.1:4000"
+echo "  spring-orders   : http://127.0.0.1:8082   Spider Sense: http://127.0.0.1:4001"
 echo
 echo "load-gen ($RPS rps) -> $LOGS/load-gen.log"
-JAVA_OPTS="$AGENT_OPTS -Dotel.service.name=load-gen" "$LOADGEN" --rps="$RPS" >"$LOGS/load-gen.log" 2>&1 &
+"$LOADGEN" --rps="$RPS" >"$LOGS/load-gen.log" 2>&1 &
 pids+=($!)
 
 echo "Ctrl-C to stop."
