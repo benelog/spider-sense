@@ -68,7 +68,7 @@ echo "  silk-bookstore  : http://127.0.0.1:8081"
 echo "  spring-orders   : http://127.0.0.1:8082"
 echo
 echo "load-gen ($RPS rps) -> $LOGS/load-gen.log"
-JAVA_OPTS="$AGENT_OPTS -Dotel.service.name=load-gen" "$LOADGEN" --rps="$RPS" >"$LOGS/load-gen.log" 2>&1 &
+JAVA_OPTS="$AGENT_OPTS -Dotel.service.name=load-gen" "$LOADGEN" --rps="$RPS" --wait=90 >"$LOGS/load-gen.log" 2>&1 &
 pids+=($!)
 
 echo "Ctrl-C to stop."

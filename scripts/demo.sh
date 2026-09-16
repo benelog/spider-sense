@@ -69,7 +69,7 @@ echo "  silk-bookstore  : http://127.0.0.1:8081   Spider Sense: http://127.0.0.1
 echo "  spring-orders   : http://127.0.0.1:8082   Spider Sense: http://127.0.0.1:4001"
 echo
 echo "load-gen ($RPS rps) -> $LOGS/load-gen.log"
-"$LOADGEN" --rps="$RPS" >"$LOGS/load-gen.log" 2>&1 &
+"$LOADGEN" --rps="$RPS" --wait=90 >"$LOGS/load-gen.log" 2>&1 &
 pids+=($!)
 
 echo "Ctrl-C to stop."
