@@ -1,0 +1,42 @@
+// The Spring Boot Gradle plugin is applied through buildscript rather than the plugins {} block
+// so that the version comes from the root build.gradle ext block (springBootVersion) like every other version.
+buildscript {
+    repositories {
+        mavenCentral()
+        gradlePluginPortal()
+    }
+    dependencies {
+        classpath "org.springframework.boot:spring-boot-gradle-plugin:${rootProject.ext.springBootVersion}"
+    }
+}
+
+apply plugin: 'java'
+apply plugin: 'org.springframework.boot'
+
+// Boot 4's Gradle plugin does not apply dependency management by itself.
+// Gradle's own platform() support is used instead of io.spring.dependency-management (faster, one less plugin).
+dependencies {
+    implementation platform(org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES)
+
+    // Boot 4 renamed spring-boot-starter-web to spring-boot-starter-webmvc and split the blocking
+    // HTTP clients (RestClient/RestTemplate) out into spring-boot-starter-restclient.
+    implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+    implementation 'org.springframework.boot:spring-boot-starter-restclient'
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+
+    runtimeOnly "com.h2database:h2:${rootProject.ext.h2Version}"
+
+    testImplementation platform(org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES)
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('bootJar') {
+    archiveFileName = "spring-orders-${project.version}.jar"
+}
+
+tasks.named('test') {
+    // The seeded data set is tiny in tests; keep the whole run well under 20 s.
+    maxHeapSize = '1g'
+}
