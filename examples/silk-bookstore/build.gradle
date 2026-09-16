@@ -6,7 +6,7 @@
 // states only what belongs to this example. Its version is a literal because
 // a plugins {} block cannot read the root project's ext values.
 plugins {
-    id 'net.benelog.spidersilk' version '1.0.0'
+    id 'net.benelog.spidersilk' version '1.1.0'
     id 'application'
 }
 

@@ -23,7 +23,6 @@ Read `docs/design.md` (architecture and decisions), `docs/storage.md` (the H2 sc
 - **Every agent-facing answer comes from the same `Queries` as the UI**, and its text rendering is deterministic over the window (`docs/agent.md`); the CLI never renders on its own, it prints what the server or the in-process renderer produced.
 - **No frontend build.** Plain HTML/CSS/ES modules; the only vendored library is uPlot.
 - Versions shared across modules are declared once in the root `build.gradle` `ext` block.
-- **Spider Silk is a local snapshot for now.** `spiderSilkVersion` names `1.1.0-SNAPSHOT`, resolved from `mavenLocal()`, because the server and the bookstore use `req.route()` and `RequestCompletion.exception()`, which the released 1.0.0 lacks. Publish it from the `spider-silk` checkout beside this one with `./gradlew :spider-silk-core:publishToMavenLocal :spider-silk-test:publishToMavenLocal -Pversion=1.1.0-SNAPSHOT` before the first build (the whole-build publish stops at the Maven parent, whose hand-written POM pins the released version), and drop both the snapshot and `mavenLocal()` once the next Spider Silk release is on Maven Central.
 - Markdown is one sentence per line (as in Spider Silk).
 - Commit messages say what the change does, without conventional-commit prefixes and without issue references.
 
