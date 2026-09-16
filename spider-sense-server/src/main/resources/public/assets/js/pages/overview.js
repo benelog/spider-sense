@@ -4,20 +4,54 @@ import * as api from '../api.js';
 import * as router from '../router.js';
 import { h, fill, icon, panel, stat, chip, serviceChip, serviceColor, renderList, spinner, errorBox, emptyState, snippetBlocks, seedServices } from '../ui.js';
 import { timeSeries, sparkline, legend } from '../charts.js';
+import { histogramBars, apdexClass, fmtApdex } from '../buckets.js';
+import { chartMode, loadToggle, throughputSpec, throughputLegend } from '../loadchart.js';
 import { dur, count, rate, pct, rel, bothTimes } from '../format.js';
 
 const KIND_ICON = { 'slow-request': 'turtle', 'slow-query': 'database', error: 'bolt' };
 const KIND_LABEL = { 'slow-request': 'Slow request', 'slow-query': 'Slow query', error: 'Error' };
+
+/** The seven tiles of docs/ui.md Overview item 1; the Service page shows the same row. */
+export function statTiles(totals, thresholds) {
+  const t = totals || {};
+  const slow = (thresholds && thresholds.slowRequestMs) || 500;
+  return [
+    stat(count(t.requests), 'total', 'requests'),
+    stat(fmtApdex(t.apdex), '', 'apdex', { class: apdexClass(t.apdex), title: 'Apdex, T = ' + dur(slow) }),
+    stat(pct(t.errorRate || 0), '', 'error rate', { class: t.errorRate > 0.01 ? 'is-bad' : '' }),
+    stat(dur(t.p50Ms), '', 'p50'),
+    stat(dur(t.p95Ms), '', 'p95', { class: t.p95Ms > slow ? 'is-warn' : '' }),
+    stat(dur(t.p99Ms), '', 'p99'),
+    stat(rate(t.rps || 0), '/s', 'requests per second'),
+  ];
+}
 
 export function render(root, ctx) {
   let destroyed = false;
   let chart = null;
   let tingles = [];
 
+  let mode = chartMode(ctx.query, 'requests');
+  let lastSeries = {};
+
   const statsRow = h('div.stat-row', h('div.stat', h('div.stat-caption', 'Loading')));
   const chartBody = h('div.chart');
   const chartLegend = h('div');
-  const chartPanel = panel({ title: 'Throughput and latency' }, chartLegend, chartBody);
+  const modeBox = h('div.row', { style: { gap: '2px' } });
+  const chartPanel = panel({ title: 'Throughput and latency', actions: modeBox }, chartLegend, chartBody);
+  const summaryBody = h('div');
+  const summaryPanel = panel({ title: 'Response summary' }, summaryBody);
+  const chartRow = h('div.grid-2-1', chartPanel, summaryPanel);
+
+  function paintModeToggle() {
+    fill(modeBox, loadToggle(mode, (next) => {
+      mode = next;
+      router.setQuery({ chart: next === 'requests' ? '' : next });
+      paintModeToggle();
+      paintChart(lastSeries);
+    }));
+  }
+  paintModeToggle();
   const servicesBody = h('div.service-cards');
   const servicesPanel = panel({
     title: 'Services',
@@ -34,39 +68,17 @@ export function render(root, ctx) {
   function build() {
     if (built) return;
     built = true;
-    fill(page, statsRow, chartPanel, servicesPanel, tinglePanel);
+    fill(page, statsRow, chartRow, servicesPanel, tinglePanel);
   }
 
   function paintStats(totals, thresholds) {
-    const slow = (thresholds && thresholds.slowRequestMs) || 500;
-    fill(statsRow,
-      stat(count(totals.requests), 'total', 'requests'),
-      stat(pct(totals.errorRate || 0), '', 'error rate', { class: totals.errorRate > 0.01 ? 'is-bad' : '' }),
-      stat(dur(totals.p50Ms), '', 'p50'),
-      stat(dur(totals.p95Ms), '', 'p95', { class: totals.p95Ms > slow ? 'is-warn' : '' }),
-      stat(dur(totals.p99Ms), '', 'p99'),
-      stat(rate(totals.rps || 0), '/s', 'requests per second'));
+    fill(statsRow, statTiles(totals, thresholds));
   }
 
   function paintChart(series) {
-    const spec = {
-      height: 220,
-      t: series.t || [],
-      series: [
-        { label: 'Requests', values: series.requests || [], color: 'silk', type: 'bar', scale: 'y' },
-        { label: 'Errors', values: series.errors || [], color: 'err', type: 'bar', scale: 'y' },
-        { label: 'p95', values: series.p95Ms || [], color: 'accent', type: 'line', scale: 'ms', width: 2 },
-      ],
-      axes: [
-        { scale: 'y', side: 3, label: 'Requests' },
-        { scale: 'ms', side: 1, label: 'p95 (ms)', color: 'accent' },
-      ],
-    };
-    fill(chartLegend, legend([
-      { label: 'Requests per bucket', color: 'silk' },
-      { label: 'Errors', color: 'err' },
-      { label: 'p95 response time, right axis', color: 'accent' },
-    ]));
+    lastSeries = series;
+    const spec = throughputSpec(series, mode, { height: 220, p95: true });
+    fill(chartLegend, legend(throughputLegend(mode, { p95: true })));
     if (chart) chart.update(spec);
     else chart = timeSeries(chartBody, spec);
   }
@@ -98,7 +110,8 @@ export function render(root, ctx) {
       h('div.sc-stats',
         h('div', h('b', rate(s.rps || 0)), 'rps'),
         h('div', h('b', dur(s.p95Ms)), 'p95'),
-        h('div', h('b', { class: s.errorRate > 0.01 ? 'bad' : '' }, pct(s.errorRate || 0)), 'errors')),
+        h('div', h('b', { class: s.errorRate > 0.01 ? 'bad' : '' }, pct(s.errorRate || 0)), 'errors'),
+        h('div', h('b', { class: apdexClass(s.apdex) === 'is-bad' ? 'bad' : apdexClass(s.apdex) === 'is-warn' ? 'warned' : '' }, fmtApdex(s.apdex)), 'apdex')),
       h('div.sc-foot',
         sparkline(s.sparkline || [], { color, label: s.name + ' requests per bucket' }),
         s.hasJvm ? h('a.link-btn', {
@@ -156,8 +169,12 @@ export function render(root, ctx) {
         return;
       }
       build();
+      // a same-page hash change only calls refresh(), so `chart` is re-read here
+      const wanted = chartMode(router.currentRoute().query, 'requests');
+      if (wanted !== mode) { mode = wanted; paintModeToggle(); }
       paintStats(data.totals || {}, (api.state.status || {}).thresholds);
       paintChart(data.series || {});
+      fill(summaryBody, histogramBars((data.totals || {}).histogram));
       paintServices(services);
       tingles = data.tingles || [];
       paintTingles();

@@ -18,7 +18,7 @@ One jar, one JVM option, and a browser tab that shows every request, every SQL s
 
 It is a sibling of [Spider Silk](https://github.com/benelog/spider-silk), the web framework its UI is built with, and it follows the same idea: thin by design.
 
-- **Glowroot's deployment, OpenTelemetry's data.**
+- **A Glowroot-style deployment, OpenTelemetry data.**
   `-javaagent:spider-sense.jar` is all it takes, like Glowroot.
   Unlike Glowroot, the instrumentation is the stock [OpenTelemetry Java agent](https://github.com/open-telemetry/opentelemetry-java-instrumentation) and the collector speaks OTLP/HTTP, so anything that emits OpenTelemetry can send to it.
 - **Nothing to install, and the data outlives the application.**
@@ -55,17 +55,18 @@ Every `otel.*` system property and `OTEL_*` environment variable of the OpenTele
 
 | Page | What it answers |
 |---|---|
-| Overview | Is anything wrong right now: request rate, error rate, p95, and the feed of *tingles* (slow requests, slow queries, errors) as they happen. |
-| Services, Endpoints | Which route costs the most: calls, rps, p50/p95/p99, errors, status codes, and the queries and errors behind it. |
-| XLog | Scouter's view: every request as a dot on time × response time; drag over a cluster to see those traces. |
-| Traces | The list, the waterfall, a span drawer with every attribute and stack trace, and a Scouter-style profile view: what the request did, step by step, with gap times. |
+| Overview | Is anything wrong right now: request rate, Apdex, error rate, p95, requests by response-time bucket, and the feed of *tingles* (slow requests, slow queries, errors) as they happen. |
+| Map | A Pinpoint-style server map: services, databases and external hosts as nodes, calls as edges; click a node for its response summary. |
+| Services, Endpoints | Which route costs the most: calls, rps, Apdex, p50/p95/p99, errors, status codes, and the queries and errors behind it. |
+| Scatter | A Scouter- and Pinpoint-style scatter: every request as a dot on time × response time, or as a heatmap; drag over a cluster to see those traces. |
+| Traces | The list, the waterfall, a span drawer with every attribute and stack trace, and a Scouter-style profile view: what the request did, step by step, with gap and self times. |
 | Queries | SQL statements grouped as the agent sanitised them: calls, avg, p95, max, total time, who calls them. |
 | Errors | Exceptions grouped by type and message, with a sample stack trace and the traces they occurred in. |
 | Logs | The application's log records with trace ids, so a trace and its log lines are one click apart. |
-| JVM, Metrics | Heap, GC, threads, CPU, classes from the agent's JVM metrics, and an explorer for every other metric. |
+| JVM, Metrics | Heap, GC, threads, CPU, classes and connection pools from the agent's metrics, and an explorer for every other metric. |
 
 <p align="center">
-  <img src="docs/images/xlog.jpg" alt="XLog: every request as a dot on time by response time" width="440">
+  <img src="docs/images/scatter.jpg" alt="Scatter: every request as a dot on time by response time" width="440">
   <img src="docs/images/trace-waterfall.jpg" alt="A trace across spring-orders and silk-bookstore as a waterfall" width="440">
 </p>
 <p align="center">

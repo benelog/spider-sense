@@ -130,7 +130,9 @@ export function traces(extra, opts) { return getJSON('/api/traces', params(extra
 
 export function trace(id) { return getJSON('/api/traces/' + encodeURIComponent(id)); }
 
-export function xlog(extra, opts) { return getJSON('/api/xlog', params(extra, opts)); }
+export function scatter(extra, opts) { return getJSON('/api/scatter', params(extra, opts)); }
+
+export function map(opts) { return getJSON('/api/map', params({}, { ...opts, service: null })); }
 
 export function queries(extra, opts) { return getJSON('/api/queries', params(extra, opts)); }
 

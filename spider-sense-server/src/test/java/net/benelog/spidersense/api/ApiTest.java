@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.net.URI;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.ArrayList;
+import java.util.List;
 
 import io.opentelemetry.proto.trace.v1.Span;
 
@@ -79,6 +81,25 @@ class ApiTest {
     private static Json.JsonObject json(HttpResponse<String> response) {
         assertThat(response.statusCode()).isEqualTo(200);
         return Json.parse(response.body()).asObject();
+    }
+
+    /** A JSON array of counts, as a list one assertion can compare. */
+    private static List<Long> counts(Json.JsonArray array) {
+        List<Long> values = new ArrayList<>();
+        for (Json.JsonValue value : array) {
+            values.add(value.asLong());
+        }
+        return values;
+    }
+
+    /** The node of a service map with this id, or null. */
+    private static Json.JsonObject node(Json.JsonObject map, String id) {
+        for (Json.JsonValue value : map.getArray("nodes")) {
+            if (value.asObject().getString("id").equals(id)) {
+                return value.asObject();
+            }
+        }
+        return null;
     }
 
     /** A server span, a slow database child, and a second trace that failed. */
@@ -226,12 +247,23 @@ class ApiTest {
             assertThat(service.getLong("errors")).isEqualTo(1);
             assertThat(service.getArray("sparkline").size()).isGreaterThan(0);
             assertThat(service.getBoolean("hasJvm")).isFalse();
+            assertThat(service.getDouble("apdex")).isEqualTo(0.5);
+            assertThat(counts(service.getArray("histogram"))).containsExactly(0L, 1L, 0L, 0L, 1L);
 
             Json.JsonObject detail = json(client.get("/api/services/spring-orders" + windowQuery()));
             assertThat(detail.getObject("resource").getString("service.name")).isEqualTo("spring-orders");
             assertThat(detail.getObject("series").getArray("p95Ms").size())
                     .isEqualTo(detail.getObject("series").getArray("t").size());
             assertThat(detail.getArray("endpoints")).hasSize(2);
+            Json.JsonObject ok = null;
+            for (Json.JsonValue value : detail.getArray("endpoints")) {
+                if (value.asObject().getString("name").equals("GET /orders/{id}")) {
+                    ok = value.asObject();
+                }
+            }
+            assertThat(ok).isNotNull();
+            assertThat(ok.getDouble("apdex")).isEqualTo(1.0);
+            assertThat(counts(ok.getArray("histogram"))).containsExactly(0L, 1L, 0L, 0L, 0L);
             assertThat(detail.getArray("queries")).hasSize(1);
             assertThat(detail.getArray("errors")).hasSize(1);
             Json.JsonObject dependency = detail.getArray("dependencies").get(0).asObject();
@@ -274,7 +306,7 @@ class ApiTest {
     }
 
     @Test
-    void theOverviewAndTheXlogDescribeTheSameWindow() {
+    void theOverviewAndTheScatterDescribeTheSameWindow() {
         serve((client, assembly) -> {
             postProtobuf(client, "/v1/traces", sampleTraces());
 
@@ -282,6 +314,10 @@ class ApiTest {
             assertThat(overview.getObject("totals").getLong("requests")).isEqualTo(2);
             assertThat(overview.getObject("totals").getLong("errors")).isEqualTo(1);
             assertThat(overview.getObject("totals").getDouble("errorRate")).isEqualTo(0.5);
+            // A 152 ms request lands in the second bucket, the failing one in the error slot.
+            assertThat(overview.getObject("totals").getDouble("apdex")).isEqualTo(0.5);
+            assertThat(counts(overview.getObject("totals").getArray("histogram")))
+                    .containsExactly(0L, 1L, 0L, 0L, 1L);
             assertThat(overview.getArray("services")).hasSize(1);
             assertThat(overview.getArray("tingles")).isNotEmpty();
             Json.JsonObject tingle = overview.getArray("tingles").get(0).asObject();
@@ -289,15 +325,111 @@ class ApiTest {
             Json.JsonObject series = overview.getObject("series");
             assertThat(series.getArray("requests").size()).isEqualTo(series.getArray("t").size());
             assertThat(series.getArray("p95Ms").size()).isEqualTo(series.getArray("t").size());
+            Json.JsonArray seriesHistogram = series.getArray("histogram");
+            assertThat(seriesHistogram).hasSize(4);
+            for (Json.JsonValue bucket : seriesHistogram) {
+                assertThat(bucket.asArray().size()).isEqualTo(series.getArray("t").size());
+            }
 
-            Json.JsonObject xlog = json(client.get("/api/xlog" + windowQuery()));
-            assertThat(xlog.getBoolean("truncated")).isFalse();
-            Json.JsonArray points = xlog.getArray("points");
+            Json.JsonObject scatter = json(client.get("/api/scatter" + windowQuery()));
+            assertThat(scatter.getBoolean("truncated")).isFalse();
+            Json.JsonArray points = scatter.getArray("points");
             assertThat(points).hasSize(2);
             Json.JsonArray point = points.get(0).asArray();
             assertThat(point.size()).isEqualTo(6);
             assertThat(point.get(2).asString()).isEqualTo("spring-orders");
             assertThat(point.get(3).asString()).isIn("GET /orders/{id}", "POST /orders/{id}/ship");
+        });
+    }
+
+    /**
+     * A two-service trace: the clients call spring-orders, which calls its database
+     * and the bookstore over HTTP. The outbound HTTP span is the call to the
+     * bookstore, so the map must show the bookstore rather than {@code localhost:8081}.
+     */
+    @Test
+    void theMapShowsTheUserTheServicesAndTheirTargetsWithoutDoubleCountingACall() {
+        serve((client, assembly) -> {
+            Span.Builder root = Otlp.span(TRACE, ROOT, "GET /orders/{id}",
+                    Span.SpanKind.SPAN_KIND_SERVER, NOW, 80,
+                    Otlp.attr("http.request.method", "GET"),
+                    Otlp.attr("http.route", "/orders/{id}"),
+                    Otlp.attr("http.response.status_code", 200));
+            Span.Builder outbound = Otlp.child(root, CHILD, "GET", Span.SpanKind.SPAN_KIND_CLIENT,
+                    NOW + 5, 40,
+                    Otlp.attr("http.request.method", "GET"),
+                    Otlp.attr("url.full", "http://localhost:8081/books"),
+                    Otlp.attr("server.address", "localhost"),
+                    Otlp.attr("server.port", 8081));
+            Span.Builder query = Otlp.child(root, "00f067aa0ba902c1", "SELECT orders",
+                    Span.SpanKind.SPAN_KIND_CLIENT, NOW + 50, 10,
+                    Otlp.attr("db.system", "h2"),
+                    Otlp.attr("db.statement", "select * from orders where id = ?"),
+                    Otlp.attr("db.name", "orders"));
+            Span.Builder served = Otlp.child(outbound, "00f067aa0ba902c2", "GET /books",
+                    Span.SpanKind.SPAN_KIND_SERVER, NOW + 6, 30,
+                    Otlp.attr("http.request.method", "GET"),
+                    Otlp.attr("http.route", "/books"));
+
+            postProtobuf(client, "/v1/traces", Otlp.traces(
+                    Otlp.resourceSpans(Otlp.service("spring-orders"), root, outbound, query),
+                    Otlp.resourceSpans(Otlp.service("silk-bookstore"), served)).toByteArray());
+
+            Json.JsonObject map = json(client.get("/api/map" + windowQuery()));
+            assertThat(map.getObject("window").has("bucketMs")).isTrue();
+            assertThat(map.getArray("nodes")).hasSize(4);
+            assertThat(node(map, "user").getString("name")).isEqualTo("Clients");
+            Json.JsonObject orders = node(map, "svc:spring-orders");
+            assertThat(orders.getString("kind")).isEqualTo("service");
+            assertThat(orders.getLong("requests")).isEqualTo(1);
+            assertThat(orders.getDouble("apdex")).isEqualTo(1.0);
+            assertThat(counts(orders.getArray("histogram"))).containsExactly(1L, 0L, 0L, 0L, 0L);
+            assertThat(orders.getBoolean("hasJvm")).isFalse();
+            assertThat(node(map, "svc:silk-bookstore")).isNotNull();
+            Json.JsonObject database = node(map, "db:h2:orders");
+            assertThat(database.getString("name")).isEqualTo("h2:orders");
+            assertThat(database.getLong("calls")).isEqualTo(1);
+            assertThat(database.getDouble("avgMs")).isEqualTo(10.0);
+            assertThat(node(map, "http:localhost:8081")).isNull();
+
+            List<String> edges = new ArrayList<>();
+            for (Json.JsonValue value : map.getArray("edges")) {
+                edges.add(value.asObject().getString("from") + " -> "
+                        + value.asObject().getString("to"));
+            }
+            assertThat(edges).containsExactlyInAnyOrder(
+                    "user -> svc:spring-orders",
+                    "svc:spring-orders -> svc:silk-bookstore",
+                    "svc:spring-orders -> db:h2:orders");
+        });
+    }
+
+    @Test
+    void theJvmViewCuratesTheConnectionPoolsOfEveryDataSource() {
+        serve((client, assembly) -> {
+            postProtobuf(client, "/v1/metrics", Otlp.sum(Otlp.service("spring-orders"),
+                    "db.client.connections.usage", "{connection}", NOW, 3, false,
+                    Otlp.attr("pool.name", "HikariPool-1"),
+                    Otlp.attr("state", "used")).toByteArray());
+            postProtobuf(client, "/v1/metrics", Otlp.sum(Otlp.service("spring-orders"),
+                    "db.client.connections.usage", "{connection}", NOW, 5, false,
+                    Otlp.attr("pool.name", "HikariPool-1"),
+                    Otlp.attr("state", "idle")).toByteArray());
+            postProtobuf(client, "/v1/metrics", Otlp.sum(Otlp.service("spring-orders"),
+                    "db.client.connections.max", "{connection}", NOW, 10, false,
+                    Otlp.attr("pool.name", "HikariPool-1")).toByteArray());
+
+            Json.JsonObject jvm = json(client.get(
+                    "/api/jvm?service=spring-orders" + windowQuery().replace('?', '&')));
+            assertThat(jvm.getArray("connectionPools")).hasSize(1);
+            Json.JsonObject pool = jvm.getArray("connectionPools").get(0).asObject();
+            assertThat(pool.getString("name")).isEqualTo("HikariPool-1");
+            assertThat(pool.getArray("t")).hasSize(1);
+            assertThat(pool.getArray("used").get(0).asDouble()).isEqualTo(3.0);
+            assertThat(pool.getArray("idle").get(0).asDouble()).isEqualTo(5.0);
+            assertThat(pool.getArray("max").get(0).asDouble()).isEqualTo(10.0);
+            // Nothing reported a queue, so the pending series is null per point, never zero.
+            assertThat(pool.getArray("pending").get(0).isNull()).isTrue();
         });
     }
 
@@ -405,6 +537,8 @@ class ApiTest {
             assertThat(status.getObject("otlp").getString("traces")).endsWith("/v1/traces");
             assertThat(status.get("embeddedService").isNull()).isTrue();
             assertThat(status.getObject("thresholds").getLong("slowRequestMs")).isEqualTo(500);
+            assertThat(counts(status.getObject("thresholds").getArray("responseBucketsMs")))
+                    .containsExactly(125L, 500L, 2000L);
             assertThat(status.getObject("retention").getLong("hours")).isEqualTo(24);
             Json.JsonObject storage = status.getObject("storage");
             assertThat(storage.getString("url")).startsWith("jdbc:h2:mem:");

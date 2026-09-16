@@ -8,30 +8,52 @@ import {
   spinner, errorBox, serviceColor,
 } from '../ui.js';
 import { timeSeries, legend } from '../charts.js';
+import { histogramBars, apdexClass, fmtApdex } from '../buckets.js';
+import { chartMode, loadToggle, throughputSpec, throughputLegend } from '../loadchart.js';
+import { statTiles } from './overview.js';
 import { oneLineSql } from '../sql.js';
 import { dur, count, rate, pct, rel, bothTimes, truncate } from '../format.js';
 
-/** The three RED charts, shared with the Endpoint page. */
-export function redCharts() {
+/**
+ * The three RED charts, shared with the Endpoint page. The first carries the
+ * Requests | Load toggle; `chart` in the hash query wins, Load is the default here.
+ */
+export function redCharts(opts = {}) {
   const bodies = [h('div.chart'), h('div.chart'), h('div.chart')];
   const legends = [h('div'), h('div'), h('div')];
   const charts = [null, null, null];
+  let mode = chartMode(opts.query, 'load');
+  let lastSeries = {};
+  const modeBox = h('div.row', { style: { gap: '2px' } });
   const node = h('div.grid-3',
-    panel({ title: 'Requests and errors' }, legends[0], bodies[0]),
+    panel({ title: 'Requests and errors', actions: modeBox }, legends[0], bodies[0]),
     panel({ title: 'Response time' }, legends[1], bodies[1]),
     panel({ title: 'Error rate' }, legends[2], bodies[2]));
 
+  function paintModeToggle() {
+    fill(modeBox, loadToggle(mode, (next) => {
+      mode = next;
+      // written out in full, so the Overview and this page share the choice
+      router.setQuery({ chart: next });
+      paintModeToggle();
+      node.apply(lastSeries);
+    }));
+  }
+  paintModeToggle();
+
+  /** A same-page hash change only calls refresh(), so `chart` is re-read here. */
+  node.syncMode = () => {
+    const next = chartMode(router.currentRoute().query, 'load');
+    if (next === mode) return;
+    mode = next;
+    paintModeToggle();
+  };
+
   node.apply = (series) => {
+    lastSeries = series;
     const t = series.t || [];
     const specs = [
-      {
-        height: 160, t,
-        series: [
-          { label: 'Requests', values: series.requests || [], color: 'silk', type: 'bar' },
-          { label: 'Errors', values: series.errors || [], color: 'err', type: 'bar' },
-        ],
-        axes: [{ scale: 'y' }],
-      },
+      throughputSpec(series, mode, { height: 160 }),
       {
         height: 160, t,
         series: [
@@ -48,7 +70,7 @@ export function redCharts() {
       },
     ];
     const legendSets = [
-      [{ label: 'Requests', color: 'silk' }, { label: 'Errors', color: 'err' }],
+      throughputLegend(mode),
       [{ label: 'p50', color: 'series5' }, { label: 'p95', color: 'accent' }, { label: 'p99', color: 'warn' }],
       [{ label: 'Errors as a share of requests', color: 'err' }],
     ];
@@ -75,6 +97,10 @@ export function endpointTable(rows, sortState, onSort) {
     { key: 'route', label: 'Endpoint', cls: 'wide', render: (e) => h('span.cell-ellipsis', { title: e.name }, e.route || e.name) },
     { key: 'calls', label: 'Calls', align: 'right', width: '72px', render: (e) => count(e.calls) },
     { key: 'rps', label: 'rps', align: 'right', width: '62px', render: (e) => rate(e.rps || 0) },
+    {
+      key: 'apdex', label: 'Apdex', align: 'right', width: '66px',
+      render: (e) => h('span', { class: apdexClass(e.apdex) === 'is-bad' ? 'bad' : apdexClass(e.apdex) === 'is-warn' ? 'warned' : '' }, fmtApdex(e.apdex)),
+    },
     { key: 'avgMs', label: 'avg', align: 'right', width: '74px', render: (e) => dur(e.avgMs) },
     { key: 'p50Ms', label: 'p50', align: 'right', width: '74px', render: (e) => dur(e.p50Ms) },
     { key: 'p95Ms', label: 'p95', align: 'right', width: '74px', render: (e) => dur(e.p95Ms) },
@@ -105,7 +131,8 @@ export function render(root, ctx) {
 
   const head = h('div.trace-head');
   const headPanel = panel({}, head);
-  const red = redCharts();
+  const statsRow = h('div.stat-row');
+  const red = redCharts({ query: ctx.query });
   const endpointBody = h('div', spinner());
   const endpointPanel = panel({ title: 'Endpoints' }, endpointBody);
   const queriesBody = h('div');
@@ -126,7 +153,7 @@ export function render(root, ctx) {
   function build() {
     if (built) return;
     built = true;
-    fill(page, headPanel, red, endpointPanel, half, depsPanel, resourcePanel);
+    fill(page, headPanel, statsRow, red, endpointPanel, half, depsPanel, resourcePanel);
   }
 
   function paintHead(summary, resource) {
@@ -140,10 +167,11 @@ export function render(root, ctx) {
         r['process.runtime.name'] ? chip(r['process.runtime.name'] + ' ' + (r['process.runtime.version'] || '')) : null,
         r['host.name'] ? chip(r['host.name'], { title: 'host.name' }) : null,
         r['process.pid'] ? chip('pid ' + r['process.pid']) : null),
-      h('div.row', { style: { marginLeft: 'auto', gap: '8px' } },
+      h('div.row', { style: { marginLeft: 'auto', gap: '12px' } },
         h('span.muted', { style: { fontSize: '11px' }, title: bothTimes(summary.lastSeen) }, 'last seen ' + rel(summary.lastSeen)),
         summary.hasJvm ? h('a.btn', { href: router.href('/jvm', { ...api.sharedQuery(), service: name }) }, icon('jvm'), 'JVM') : null,
-        h('a.btn', { href: router.href('/traces', { ...api.sharedQuery(), service: name }) }, icon('trace'), 'Traces')));
+        h('a.btn', { href: router.href('/traces', { ...api.sharedQuery(), service: name }) }, icon('trace'), 'Traces'),
+        histogramBars(summary.histogram, { compact: true })));
   }
 
   function sortedEndpoints() {
@@ -220,6 +248,8 @@ export function render(root, ctx) {
       if (destroyed) return;
       build();
       paintHead(data.service || {}, data.resource);
+      fill(statsRow, statTiles(data.service || {}, (api.state.status || {}).thresholds));
+      red.syncMode();
       red.apply(data.series || {});
       endpoints = data.endpoints || [];
       paintEndpoints();

@@ -1,7 +1,7 @@
 # Spider Sense: UI specification
 
 The UI lives in `spider-sense-server/src/main/resources/public` and is served by Spider Silk's static files.
-No build step: plain HTML, one CSS file, ES modules, and [uPlot](https://github.com/leeoniya/uPlot) (MIT, vendored under `public/assets/vendor/`) for time-series charts and the XLog scatter.
+No build step: plain HTML, one CSS file, ES modules, and [uPlot](https://github.com/leeoniya/uPlot) (MIT, vendored under `public/assets/vendor/`) for time-series charts and the scatter; the service map is hand-drawn SVG.
 All data comes from [api.md](api.md); the page never renders server-side.
 
 ## Identity
@@ -36,6 +36,10 @@ Dark is the default; `prefers-color-scheme: light` and a toggle in the top bar (
 Fonts: system UI stack for text, a monospace stack for ids, statements, and stack traces.
 Series colours for services and span categories come from a fixed 8-colour list derived from the palette (accent, silk, ok, warn, then four muted hues), assigned per service in first-seen order.
 
+**Response-time buckets** (`/api/status.thresholds.responseBucketsMs`, four buckets and errors, see api.md) have one fixed colour each, used wherever a histogram or a load chart appears: `--bucket-1` = `--ok`, `--bucket-2` = `--series-8` (teal), `--bucket-3` = `--warn`, `--bucket-4` = `--accent`, errors `--err`.
+Their labels are built from the bounds: `≤125 ms`, `≤500 ms`, `≤2 s`, `>2 s`, `error`.
+**Apdex** is shown with one decimal less than the API carries (`0.93`), coloured `--err` below 0.7 and `--warn` below 0.85, plain otherwise; the tile's caption says `apdex` and its title says the T it was computed with.
+
 **Tone of the copy.** Short and factual, no exclamation marks. Empty states explain how to send data (the OTLP endpoint from `/api/status` in a copyable snippet) rather than say "No data".
 
 ## Layout
@@ -46,8 +50,9 @@ Series colours for services and span categories come from a fixed 8-colour list 
 │   Sense      ├──────────────────────────────────────────────────────────────┤
 │              │                                                              │
 │ Overview     │                                                              │
-│ Services     │                        page content                          │
-│ XLog         │                                                              │
+│ Map          │                        page content                          │
+│ Services     │                                                              │
+│ Scatter      │                                                              │
 │ Traces       │                                                              │
 │ Queries      │                                                              │
 │ Errors       │                                                              │
@@ -74,50 +79,69 @@ Routing is hash-based (`#/`, `#/services/spring-orders`, `#/traces/<id>`, ...). 
 
 ### Overview `#/`
 
-1. **Stat tiles** in one row: requests, error rate, p50 / p95 / p99, rps. Each has the number large, the unit small, and a 1-word caption. Colour only where it carries meaning: error rate > 1% is `--err`, p95 above the slow threshold is `--warn`.
-2. **Throughput & latency** chart (uPlot, full width, 220 px): bars for requests per bucket (silk grey), errors stacked in `--err`, and p95 as a line on a second y-axis in accent.
-3. **Services**: one card per service: name, language chip, `embedded` chip when applicable, rps / p95 / error rate, a sparkline (inline SVG, 120×28), and a "JVM" link when `hasJvm`. Click → service page.
+1. **Stat tiles** in one row: requests, Apdex, error rate, p50 / p95 / p99, rps. Each has the number large, the unit small, and a 1-word caption. Colour only where it carries meaning: error rate > 1% is `--err`, p95 above the slow threshold is `--warn`, Apdex as above.
+2. **Throughput & latency** chart (uPlot, 220 px) with a two-way toggle in the panel head, **Requests** | **Load**, remembered in the hash query (`chart=load`). Requests: bars for requests per bucket (silk grey), errors stacked in `--err`. Load (a Pinpoint-style load chart): the same bars split into the four response-time buckets stacked bottom-up in the bucket colours, errors on top in `--err`. In both, p95 is a line on a second y-axis in accent. Beside it, one third of the width, the **Response summary**: five vertical bars (the four buckets and errors) in the bucket colours, the count above each bar and the label beneath, the share as a tooltip; the tallest bar sets the scale. Under 900 px the two stack.
+3. **Services**: one card per service: name, language chip, `embedded` chip when applicable, rps / p95 / error rate / Apdex, a sparkline (inline SVG, 120×28), and a "JVM" link when `hasJvm`. Click → service page.
 4. **Tingles**: the feed, newest first: icon by kind (turtle for slow request, database for slow query, bolt for error), service chip, title, detail, relative time. Click → trace. Live events prepend with a 300 ms slide.
 
 Empty state (no service yet): the logo large, one sentence, and the snippet dialog's content inline: the `-javaagent` line, the `OTEL_EXPORTER_OTLP_ENDPOINT`/`PROTOCOL` pair, and a `curl` for OTLP/JSON.
 
+### Map `#/map`
+
+A Pinpoint-style server map, over `/api/map`.
+A full-height panel holding one SVG, drawn by hand (no library), laid out left to right in columns: the `user` node first, then services ordered by the longest path from a source (a service nobody traced calls is a source), then the external nodes (databases, hosts, destinations) in the last column; within a column nodes are sorted by name and spaced evenly.
+The layout is computed once per node set and kept while Live refreshes the numbers, so nodes do not jump.
+
+- **Nodes**: a rounded rectangle (200×64) with a kind icon (service, database, trace for http, log for messaging, a person for `user`), the name (ellipsised, full name in a `<title>`), and for a service a second line `rps · p95 · error rate` (ellipsised to the space left) with a 5-bar mini histogram (40×14) in the bucket colours in the bottom-right corner, never overlapping the text. The border is `--line`; it turns `--err` when the error rate is over 1% and `--warn` when the Apdex is under 0.85. The service filter in the top bar dims every node and edge that is not the chosen service or its neighbour.
+- **Edges**: a cubic curve from the right edge of the caller to the left edge of the callee with an arrowhead, stroke width `1 + log10(calls)` capped at 5, `--silk` at 60% or `--err` when the edge has errors. An edge that skips a column bows around the nodes in between (its control points are pushed up or down by 0.6 row pitches, away from the nearest node it would otherwise cross) so no edge runs under a node. The label sits above the curve at 40% of its length on a small `--bg-panel` halo so it never touches the arrowhead: `calls` (and `errors` in `--err` when any); avg and p95 are the hover tooltip.
+- **Click a node** → the drawer (as the span drawer, 420 px): the name and kind, for a service the stat tiles (requests, Apdex, error rate, p95, rps), the **Response summary** bars, the **Load** chart for the window (fetched from `/api/services/{name}`, the same chart as on the Overview in load mode), and buttons: Service, Scatter, Traces (each filtered to the service). For an external node: calls, errors, avg, p95, and the services that call it with their counts.
+- Hover a node or an edge highlights it and its neighbours.
+- Empty state (no edge at all): the usual sentence and the snippet.
+- The SVG has a minimum width of `columns × 260` px and scrolls horizontally inside the panel on narrow screens; the panel height is the viewport minus the top bar, at least 420 px.
+
 ### Services `#/services` and `#/services/{name}`
 
-List: a table (name, language, requests, rps, error rate, p50, p95, p99, sparkline, last seen). Row click → detail.
+List: a table (name, language, requests, rps, error rate, Apdex, p50, p95, p99, sparkline, last seen). Row click → detail.
 
 Detail:
 
-1. Header: name, resource chips (`telemetry.sdk.language`, `process.runtime.name` + version, `host.name`, `process.pid`), "JVM" button when applicable, "Traces" button (→ Traces filtered).
-2. Three charts in a row (RED): requests/errors, latency p50/p95/p99, error rate %.
-3. **Endpoints** table: method chip, route, calls, rps, avg, p50, p95, p99, max, errors, a status-code mini-bar (2xx green / 4xx warn / 5xx err). Sortable by clicking a header; default total time. Row click → endpoint page.
-4. Two half-width panels: **Top queries** (statement truncated to one line in monospace, calls, avg, p95, total) and **Top errors** (type, message, count, last seen). Both link to their pages.
-5. **Dependencies**: kind icon, target, calls, errors, avg, p95.
-6. **Resource attributes**: a collapsed key/value table.
+1. Header: name, resource chips (`telemetry.sdk.language`, `process.runtime.name` + version, `host.name`, `process.pid`), "JVM" button when applicable, "Traces" button (→ Traces filtered), and on the right the compact **Response summary** (the five bars, 120×28, counts in the tooltip).
+2. **Stat tiles**: requests, Apdex, error rate, p50, p95, p99, rps, as on the Overview.
+3. Three charts in a row (RED): requests, latency p50/p95/p99, error rate %. The first has the **Requests** | **Load** toggle of the Overview and defaults to Load; the choice is shared with the Overview (`chart=` in the hash query).
+4. **Endpoints** table: method chip, route, calls, rps, Apdex, avg, p50, p95, p99, max, errors, a status-code mini-bar (2xx green / 4xx warn / 5xx err). Sortable by clicking a header; default total time. Row click → endpoint page.
+5. Two half-width panels: **Top queries** (statement truncated to one line in monospace, calls, avg, p95, total) and **Top errors** (type, message, count, last seen). Both link to their pages.
+6. **Dependencies**: kind icon, target, calls, errors, avg, p95.
+7. **Resource attributes**: a collapsed key/value table.
 
 ### Endpoint `#/endpoints/{endpointId}`
 
-Header (method, route, service), the RED charts, then tabs: **Slowest traces**, **Recent traces**, **Queries**, **Errors**. Trace rows as on the Traces page.
+Header (method, route, service, Apdex and the compact Response summary), the RED charts (with the same Requests | Load toggle), then tabs: **Slowest traces**, **Recent traces**, **Queries**, **Errors**. Trace rows as on the Traces page.
 
-### XLog `#/xlog`
+### Scatter `#/scatter`
 
-The Scouter view. A full-height uPlot scatter: x = time, y = response time (log scale toggle, default linear with the y-max at the window's p99 × 1.5 and a "▲ n above" note for clipped points), one dot per request, 3 px, service colour, error points drawn as `--err` crosses on top, slow points ringed in `--warn`.
-Drag a rectangle → the selection becomes the filter of a trace list beneath (`/api/traces` with `from`, `to`, `minMs`, `maxMs` from the rectangle, plus the current service). Esc clears.
+A Scouter- and Pinpoint-style scatter chart (Scouter calls it the XLog), named for what it is: every request is a point on time × response time.
+A full-height uPlot chart in one of two modes, **Dots** | **Heatmap**, chosen with a toggle in the bar and remembered in the hash query (`mode=heatmap`):
+
+- **Dots** (default): x = time, y = response time (log scale toggle, default linear with the y-max at the window's p99 × 1.5 and a "▲ n above" note for clipped points), one dot per request, 3 px, service colour, error points drawn as `--err` crosses on top, slow points ringed in `--warn`.
+- **Heatmap** (a Pinpoint-style alternative for dense windows): the same axes, the plot area divided into cells 6 px wide and 24 rows tall (rows follow the y scale, so log-spaced under log scale), each cell filled in accent with an alpha proportional to the square root of its count over the densest cell; a cell with any error gets a 1 px `--err` outline. Hover shows the cell's time span, response-time span, count and errors.
+
+Above the chart: a legend of services (click to hide/show), the **Success** and **Failed** toggles (Pinpoint-style; both on by default, one off hides those points, and the counts, the selection and the y-max follow), the Log scale toggle, the mode toggle, counts (points, errors, slow), and the "truncated" notice when the API cut the list.
+Drag a rectangle in either mode → the selection becomes the filter of a trace list beneath (`/api/traces` with `from`, `to`, `minMs`, `maxMs` from the rectangle, plus the current service and `status=error|ok` when only one of Success/Failed is on). Esc clears.
 Live on: points stream in from the right every 2 s (refetch of the last 10 s merged in, deduplicated by traceId); the x-axis slides.
-Hover: a tooltip with endpoint, service, duration, time; click → trace.
-Above the chart: a legend of services (click to hide/show), counts (points, errors, slow), and the "truncated" notice when the API cut the list.
+Hover in Dots: a tooltip with endpoint, service, duration, time; click → trace.
 
 ### Traces `#/traces` and `#/traces/{traceId}`
 
 List page:
 
-- **Query bar**: free text (`q`), min duration (`minMs`), status (`all`/`error`/`ok`), the endpoint (from the current service's endpoints, when a service is selected). Enter or a 400 ms debounce applies.
+- **Query bar**: free text (`q`), a duration range (`minMs` and `maxMs`, two small number fields joined by "–"), status (`all`/`error`/`ok`), the endpoint (from the current service's endpoints, when a service is selected). Enter or a 400 ms debounce applies.
 - **Table**: time, root name (bold) + service chip(s), duration with a proportional bar (width relative to the slowest in the list, colour by slow/error), spans, DB calls, status code, error/slow markers. Newest first, "Load more" pages with `before`.
 
 Detail page:
 
 1. Header: root name, trace id (monospace, click to copy), start time, total duration, services, span count, error count. Buttons: **Waterfall** / **Profile** view toggle, **Export** (`/api/export?traceId=`), **Logs** count anchor.
-2. **Waterfall** (default): a tree of spans, indentation by depth, collapsible nodes, each row: service colour bar, name, category icon, the bar on a shared time axis (offset and duration proportional), duration label. Errors have a red bar and a bolt; slow DB spans a warn ring. Row click opens the **span drawer** on the right (420 px): name, service, kind, timing (start offset, duration, % of trace), status, then attributes as a key/value table (long values in `<pre>`, `db.statement` pretty-printed SQL keywords uppercased and line-broken on major clauses), events with their attributes and the stack trace in a scrollable `<pre>`, and the scope name.
-3. **Profile** (Scouter-style): the same spans as a flat chronological table: `#`, start offset (`+12.3 ms`), gap since the previous step, elapsed, depth as indentation, one-line summary (`SELECT orders … (h2)`, `GET http://localhost:8081/api/books/{id} → 200`), service. Steps over the slow threshold are tinted `--warn`, errors `--err`. This is the view for reading what a request did, in order.
+2. **Waterfall** (default): a tree of spans, indentation by depth, collapsible nodes, each row: service colour bar, name, category icon, the bar on a shared time axis (offset and duration proportional), duration label. Errors have a red bar and a bolt; slow DB spans a warn ring. Row click opens the **span drawer** on the right (420 px): name, service, kind, timing (start offset, duration, % of trace, self time), status, then attributes as a key/value table (long values in `<pre>`, `db.statement` pretty-printed SQL keywords uppercased and line-broken on major clauses), events with their attributes and the stack trace in a scrollable `<pre>`, and the scope name.
+3. **Profile** (a Scouter-style profile with Pinpoint-style call-tree columns): the same spans as a flat table: `#`, start offset (`+12.3 ms`), gap since the previous step, elapsed, **self** (elapsed minus the durations of the direct children, never below zero), **%** (self as a share of the trace), depth as indentation, one-line summary (`SELECT orders … (h2)`, `GET http://localhost:8081/api/books/{id} → 200`), service. Chronological by default; the Elapsed and Self headers sort descending (the gap column shows `-` then), the Start header restores the order. The three largest self times that are at least 5% of the trace are marked `hot` (a `--accent` tint and a bold value), so the step that actually spent the time is visible without reading every row. Steps over the slow threshold are tinted `--warn`, errors `--err`. This is the view for reading what a request did, in order, and where the time went.
 4. **Logs**: log records of the trace, oldest first, each with severity chip, time offset, logger, body.
 
 ### Queries `#/queries` and `#/queries/{queryId}`
@@ -136,7 +160,7 @@ A query bar: text (`q`), minimum severity, a `traceId` field (prefilled when arr
 
 ### JVM `#/jvm`
 
-Requires a service (the top-bar filter; when "all", a picker of services with `hasJvm`). Runtime header (JVM, pid, host, cpu count), then a 2-column grid of uPlot charts: heap used/committed/limit, non-heap used/committed, memory pools (one line per pool), GC count and duration per bucket (bars), threads, CPU utilisation (%, 0–100) with system load, loaded classes. Units on the axes (`MiB`, `ms`, `%`).
+Requires a service (the top-bar filter; when "all", a picker of services with `hasJvm`). Runtime header (JVM, pid, host, cpu count), then a 2-column grid of uPlot charts: heap used/committed/limit, non-heap used/committed, memory pools (one line per pool), GC count and duration per bucket (bars), threads, CPU utilisation (%, 0–100) with system load, loaded classes, and one **Connection pool** chart per pool in `connectionPools` (a Pinpoint-style data source panel): used as an accent area, idle as a silk line, max as a dashed warn line, pending requests as `--err` bars on a right axis; the panel title carries the pool name. Units on the axes (`MiB`, `ms`, `%`, connections).
 
 ### Metrics `#/metrics`
 
@@ -150,9 +174,10 @@ Explorer: left a searchable catalog list (name, type chip, unit, series count); 
 ## Behaviour and quality
 
 - Every list re-renders in place without losing scroll or selection when Live refreshes it.
-- Numbers: durations with 1 decimal under 100 ms, 0 decimals above, `s` above 10 s; counts with thousands separators; rates with 2 decimals; percentages with 1 decimal.
+- Numbers: durations with 1 decimal under 100 ms, 0 decimals above, `s` above 10 s; counts with thousands separators; rates with 2 decimals; percentages with 1 decimal. A count axis only ever shows whole numbers (uPlot `incrs` of 1, 2, 5, 10, ...), so a series that stays at 0 or 1 does not print the same tick three times.
 - Times: `HH:mm:ss` within today, `MMM d HH:mm:ss` otherwise; relative ("12 s ago") in feeds, absolute in tables, both in tooltips.
-- Keyboard: `/` focuses the query bar, `Esc` closes a drawer, `L` toggles Live, `[`/`]` step the time range.
+- Keyboard: `/` focuses the query bar, `Esc` closes a drawer or clears a scatter selection, `L` toggles Live, `[`/`]` step the time range.
+- The mock (`?mock=1`, `assets/js/dev/mock.js`) answers every endpoint in api.md including `/api/map`, `/api/scatter`, the histograms and the connection pools, so every page can be developed without a server.
 - The page works at 360 px wide: tables scroll horizontally inside their panel, charts shrink, the drawer becomes a full-screen sheet.
 - Accessibility: every icon-only control has an `aria-label`; colour is never the only carrier of meaning (errors also get a bolt, slow also gets a ring or a turtle).
 - No external requests at all: fonts are system fonts, uPlot is vendored, the logo is inline.

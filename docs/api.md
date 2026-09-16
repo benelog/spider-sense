@@ -39,7 +39,7 @@ Partial-success is never reported (everything decodable is stored).
   "endpoint": "http://127.0.0.1:4000",
   "otlp": { "traces": "http://127.0.0.1:4000/v1/traces", "metrics": "...", "logs": "..." },
   "embeddedService": "silk-bookstore" | null,
-  "thresholds": { "slowRequestMs": 500, "slowQueryMs": 100 },
+  "thresholds": { "slowRequestMs": 500, "slowQueryMs": 100, "responseBucketsMs": [125, 500, 2000] },
   "retention": { "hours": 24 },
   "storage": { "url": "jdbc:h2:~/db/spider-sense/sense;AUTO_SERVER=TRUE", "path": "/home/me/db/spider-sense/sense.mv.db", "sizeBytes": 12345678, "fallback": false, "fallbackReason": null, "droppedBatches": 0, "queued": 0 },
   "counts": { "spans": 12345, "traces": 2345, "logs": 456, "metricSeries": 78, "services": 2 },
@@ -75,17 +75,25 @@ data: {"name":"spring-orders","firstSeen":1758000000000}
 ```json
 {
   "window": { "from": 1758000000000, "to": 1758000900000, "bucketMs": 15000 },
-  "totals": { "requests": 1200, "errors": 12, "errorRate": 0.01, "rps": 1.33, "p50Ms": 12.1, "p95Ms": 210.4, "p99Ms": 840.0, "maxMs": 1532.4 },
+  "totals": { "requests": 1200, "errors": 12, "errorRate": 0.01, "rps": 1.33, "p50Ms": 12.1, "p95Ms": 210.4, "p99Ms": 840.0, "maxMs": 1532.4,
+              "apdex": 0.93, "histogram": [900, 200, 70, 18, 12] },
   "services": [ <ServiceSummary> ],
   "tingles": [ <Tingle> ],            // newest first, at most 50, within window
   "series": {                          // one point per bucket, aligned across arrays, oldest first
     "t": [1758000000000, ...],
     "requests": [12, ...],
     "errors": [0, ...],
-    "p95Ms": [120.5, ...]              // null where the bucket is empty
+    "p95Ms": [120.5, ...],             // null where the bucket is empty
+    "histogram": [[9, ...], [2, ...], [1, ...], [0, ...]]   // non-error requests per response-time bucket, one array per bucket
   }
 }
 ```
+
+**Response-time buckets and Apdex** (a Pinpoint-style response summary, load chart and Apdex score).
+`thresholds.responseBucketsMs` is `[T/4, T, 4T]` with `T = slowRequestMs`, so the default buckets are `≤125 ms`, `≤500 ms`, `≤2 s`, `>2 s`.
+Everywhere a `histogram` appears it is five counts: the non-error requests in each of the four buckets, then the error count; the five sum to `requests`.
+`apdex` is `(histogram[0] + histogram[1] + histogram[2] / 2) / requests` (satisfied up to `T`, tolerating up to `4T`, errors frustrated), rounded to three decimals, `null` when there is no request.
+In a `series`, `histogram` is four aligned arrays, one per bucket; the errors of a time bucket are already in `series.errors`.
 
 `ServiceSummary`:
 
@@ -98,6 +106,7 @@ data: {"name":"spring-orders","firstSeen":1758000000000}
   "lastSeen": 1758000900000,
   "requests": 800, "errors": 10, "errorRate": 0.0125, "rps": 0.9,
   "p50Ms": 10.0, "p95Ms": 300.0, "p99Ms": 900.0, "maxMs": 1532.4,
+  "apdex": 0.91, "histogram": [600, 150, 30, 10, 10],
   "sparkline": [3, 5, 0, 8, ...],   // requests per bucket, oldest first, same buckets as overview.series.t
   "hasJvm": true                    // any jvm.* metric seen
 }
@@ -120,7 +129,7 @@ data: {"name":"spring-orders","firstSeen":1758000000000}
   "service": <ServiceSummary>,
   "resource": { "service.name": "…", "telemetry.sdk.name": "opentelemetry", "process.runtime.version": "21.0.4", ... },   // string values only, sorted by key
   "window": { "from": ..., "to": ..., "bucketMs": ... },
-  "series": { "t": [...], "requests": [...], "errors": [...], "p50Ms": [...], "p95Ms": [...], "p99Ms": [...] },
+  "series": { "t": [...], "requests": [...], "errors": [...], "p50Ms": [...], "p95Ms": [...], "p99Ms": [...], "histogram": [[...], [...], [...], [...]] },
   "endpoints": [ <EndpointStats> ],   // sorted by total time desc
   "queries": [ <QueryStats> ],        // top 10 by total time
   "errors": [ <ErrorGroup> ],         // top 10 by count
@@ -134,6 +143,7 @@ data: {"name":"spring-orders","firstSeen":1758000000000}
 { "endpointId": "…", "service": "…", "method": "GET" | null, "route": "/orders/{id}", "name": "GET /orders/{id}", "kind": "SERVER",
   "calls": 120, "errors": 2, "errorRate": 0.0167, "rps": 0.13,
   "avgMs": 12.0, "p50Ms": 9.0, "p95Ms": 40.0, "p99Ms": 90.0, "maxMs": 300.0, "totalMs": 1440.0,
+  "apdex": 0.98, "histogram": [110, 6, 2, 0, 2],
   "statusCodes": { "200": 118, "500": 2 } }
 ```
 
@@ -186,9 +196,43 @@ data: {"name":"spring-orders","firstSeen":1758000000000}
   "slow": false, "error": false }
 ```
 
-## XLog (Scouter-style scatter)
+## Service map
 
-`GET /api/xlog?from&to&service&endpointId&limit=5000`
+`GET /api/map?from&to`
+
+The topology of the window, drawn Pinpoint-style: one node per service, per database, per external HTTP host, per messaging destination, plus one `user` node for the traffic that comes from outside every traced service.
+
+```json
+{
+  "window": {...},
+  "nodes": [
+    { "id": "user", "kind": "user", "name": "Clients" },
+    { "id": "svc:spring-orders", "kind": "service", "name": "spring-orders",
+      "requests": 800, "errors": 10, "errorRate": 0.0125, "rps": 0.9,
+      "p50Ms": 10.0, "p95Ms": 300.0, "p99Ms": 900.0, "maxMs": 1532.4,
+      "apdex": 0.91, "histogram": [600, 150, 30, 10, 10], "hasJvm": true },
+    { "id": "db:h2:orders", "kind": "db", "name": "h2:orders", "calls": 2400, "errors": 0, "avgMs": 4.2, "p95Ms": 9.1 },
+    { "id": "http:localhost:8081", "kind": "http", "name": "localhost:8081", "calls": 12, "errors": 0, "avgMs": 30.0, "p95Ms": 80.0 }
+  ],
+  "edges": [
+    { "from": "user", "to": "svc:spring-orders", "calls": 780, "errors": 10, "avgMs": 42.0, "p95Ms": 300.0 },
+    { "from": "svc:spring-orders", "to": "svc:silk-bookstore", "calls": 120, "errors": 0, "avgMs": 25.0, "p95Ms": 60.0 },
+    { "from": "svc:spring-orders", "to": "db:h2:orders", "calls": 2400, "errors": 0, "avgMs": 4.2, "p95Ms": 9.1 }
+  ]
+}
+```
+
+- A `service` node exists for every service with an entry span in the window; its numbers are the `ServiceSummary` numbers.
+- A `service → service` edge is counted from the entry spans of the callee whose parent span, in the same trace, belongs to another service; `calls`, `errors`, `avgMs` and `p95Ms` are those entry spans'.
+- A `user → service` edge is counted from `SERVER` and `CONSUMER` entry spans whose parent is absent or not stored: the request came from something that is not traced.
+- Every other node is an outbound target, grouped as `GET /api/services/{name}.dependencies` groups them (`kind` is `db`, `http`, `messaging` or `rpc`; `name` is the dependency's `target`), and an edge from each service that calls it.
+  An outbound span whose child is an entry span of another service is that `service → service` edge and not an external target, so a call to `localhost:8081` shows as a call to `silk-bookstore` when the bookstore is traced too.
+- A node with no edge is not listed, so a service whose only traffic is calls to itself does not appear.
+- "Not stored" means not stored at all, whatever the window: a parent that was traced but starts before the window still counts as a traced caller, not as a user.
+
+## Scatter (response-time scatter)
+
+`GET /api/scatter?from&to&service&endpointId&limit=5000`
 
 One point per entry span in the window (newest first, cut at `limit`; the answer says when it was cut so the UI can shrink the window).
 
@@ -288,9 +332,14 @@ For a monotonic sum (`jvm.cpu.time`, `jvm.gc.duration`'s count), `v` is the rate
   "gc":      [ { "name": "G1 Young Generation", "action": "end of minor GC", "t": [...], "count": [...], "durationMs": [...] } ],   // per bucket
   "threads": { "t": [...], "count": [...], "daemon": [...] },
   "cpu":     { "t": [...], "utilization": [...], "systemLoad1m": [...] },
-  "classes": { "t": [...], "loaded": [...] }
+  "classes": { "t": [...], "loaded": [...] },
+  "connectionPools": [ { "name": "HikariPool-1", "t": [...], "used": [...], "idle": [...], "max": [...], "pending": [...] } ]
 }
 ```
+
+`connectionPools` is a Pinpoint-style "data source" panel: one entry per JDBC pool the agent instruments (HikariCP, Tomcat JDBC, c3p0, ...), empty when the service reports none.
+It is read from `db.client.connections.usage` (attribute `state` = `used` | `idle`, pool from `pool.name`), `db.client.connections.max` and `db.client.connections.pending_requests`, or from their stable-semconv names `db.client.connection.count` (`db.client.connection.state`, `db.client.connection.pool.name`), `db.client.connection.max` and `db.client.connection.pending_requests`.
+`max` and `pending` are `null` where the pool reports no such series.
 
 ## Static UI
 
@@ -350,6 +399,12 @@ An exponential histogram is stored as a histogram with count, sum, min and max o
 That rule drops only `SERVER` spans on the server's own port; a `CLIENT` span calling that port is an application genuinely talking to Spider Sense and stays in its trace.
 A request body that is neither `application/x-protobuf` (also accepted as `application/protobuf`) nor `application/json` is `415`; an undecodable body of an accepted type is `400`.
 OTLP/JSON ids are accepted as hex (what the OTLP specification says) and as base64 (what protobuf's own JSON mapping produces); the two are told apart by length, since only a hex id is exactly 32 or 16 characters of `[0-9a-f]`.
+
+### Apdex and the histogram
+
+The bucket bounds come from the server's `slowRequestMs`, not from the client, so every page and every service share one scale and the legend can be built from `/api/status`.
+An error request is counted in the fifth histogram slot only, whatever its duration, so a failing endpoint that answers fast still lowers the Apdex.
+`apdex` is `null`, never `0`, when nothing was requested.
 
 ### Tingles
 

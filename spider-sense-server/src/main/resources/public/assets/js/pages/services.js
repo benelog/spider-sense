@@ -4,6 +4,7 @@ import * as api from '../api.js';
 import * as router from '../router.js';
 import { h, fill, panel, table, fillRows, chip, serviceColor, comparator, spinner, errorBox, emptyState, snippetBlocks, seedServices } from '../ui.js';
 import { sparkline } from '../charts.js';
+import { apdexClass, fmtApdex } from '../buckets.js';
 import { dur, count, rate, pct, rel, bothTimes } from '../format.js';
 
 export function render(root, ctx) {
@@ -27,6 +28,7 @@ export function render(root, ctx) {
     { key: 'requests', label: 'Requests', align: 'right', width: '84px', render: (s) => count(s.requests) },
     { key: 'rps', label: 'rps', align: 'right', width: '64px', render: (s) => rate(s.rps || 0) },
     { key: 'errorRate', label: 'Errors', align: 'right', width: '72px', render: (s) => h('span', { class: s.errorRate > 0.01 ? 'bad' : '' }, pct(s.errorRate || 0)) },
+    { key: 'apdex', label: 'Apdex', align: 'right', width: '70px', render: (s) => h('span', { class: apdexClass(s.apdex) === 'is-bad' ? 'bad' : apdexClass(s.apdex) === 'is-warn' ? 'warned' : '' }, fmtApdex(s.apdex)) },
     { key: 'p50Ms', label: 'p50', align: 'right', width: '78px', render: (s) => dur(s.p50Ms) },
     { key: 'p95Ms', label: 'p95', align: 'right', width: '78px', render: (s) => dur(s.p95Ms) },
     { key: 'p99Ms', label: 'p99', align: 'right', width: '78px', render: (s) => dur(s.p99Ms) },

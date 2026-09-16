@@ -25,7 +25,8 @@ import net.benelog.spidersense.store.ServiceInfo;
  * a JVM.
  */
 public record JvmView(String service, Runtime runtime, Memory heap, Memory nonHeap, List<Pool> pools,
-        List<Gc> gc, Threads threads, Cpu cpu, Classes classes) {
+        List<Gc> gc, Threads threads, Cpu cpu, Classes classes,
+        List<ConnectionPool> connectionPools) {
 
     public record Runtime(String jvm, Long pid, String host, Long cpuCount) {
     }
@@ -50,6 +51,11 @@ public record JvmView(String service, Runtime runtime, Memory heap, Memory nonHe
     public record Classes(long[] t, double[] loaded) {
     }
 
+    /** One JDBC pool; {@code max} and {@code pending} are null per point when unreported. */
+    public record ConnectionPool(String name, long[] t, double[] used, double[] idle, double[] max,
+            double[] pending) {
+    }
+
     private static final long[] NO_TIME = {};
     private static final double[] NO_VALUES = {};
 
@@ -67,7 +73,8 @@ public record JvmView(String service, Runtime runtime, Memory heap, Memory nonHe
                 threads(metrics.series(MetricSeriesNames.THREAD_COUNT, name, Map.of(), window)),
                 cpu(metrics.series(MetricSeriesNames.CPU_UTILIZATION, name, Map.of(), window),
                         metrics.series(MetricSeriesNames.SYSTEM_LOAD_1M, name, Map.of(), window)),
-                classes(metrics.series(MetricSeriesNames.CLASS_COUNT, name, Map.of(), window)));
+                classes(metrics.series(MetricSeriesNames.CLASS_COUNT, name, Map.of(), window)),
+                connectionPools(metrics, name, window));
     }
 
     private static Runtime runtime(MetricQueries metrics, ServiceInfo service, String name, Window window) {
@@ -163,6 +170,55 @@ public record JvmView(String service, Runtime runtime, Memory heap, Memory nonHe
                 loadByTime.isEmpty() ? NO_VALUES : align(loadByTime, t));
     }
 
+    /**
+     * The data-source panel: used, idle, maximum and waiting connections of every
+     * JDBC pool the agent instruments.
+     *
+     * <p>Two generations of semantic conventions name these metrics differently and
+     * an application reports one or the other, so the older spelling is asked for
+     * first and the stable one second. A pool that reports no maximum and no queue
+     * writes a null per point rather than a shorter array, so every array of a pool
+     * lines up with its own timeline.
+     */
+    private static List<ConnectionPool> connectionPools(MetricQueries metrics, String service,
+            Window window) {
+        List<SeriesData> usage =
+                metrics.series(MetricSeriesNames.POOL_CONNECTIONS, service, Map.of(), window);
+        List<SeriesData> max =
+                metrics.series(MetricSeriesNames.POOL_CONNECTIONS_MAX, service, Map.of(), window);
+        List<SeriesData> pending =
+                metrics.series(MetricSeriesNames.POOL_CONNECTIONS_PENDING, service, Map.of(), window);
+        String stateKey = MetricSeriesNames.POOL_STATE;
+        String poolKey = MetricSeriesNames.POOL_CONNECTIONS_NAME;
+        if (usage.isEmpty()) {
+            usage = metrics.series(MetricSeriesNames.CONNECTION_COUNT, service, Map.of(), window);
+            max = metrics.series(MetricSeriesNames.CONNECTION_MAX, service, Map.of(), window);
+            pending = metrics.series(MetricSeriesNames.CONNECTION_PENDING, service, Map.of(), window);
+            stateKey = MetricSeriesNames.CONNECTION_STATE;
+            poolKey = MetricSeriesNames.CONNECTION_POOL_NAME;
+        }
+        TreeSet<String> names = new TreeSet<>();
+        for (SeriesData data : usage) {
+            String name = data.attribute(poolKey);
+            if (name != null) {
+                names.add(name);
+            }
+        }
+        List<ConnectionPool> pools = new ArrayList<>();
+        for (String name : names) {
+            TreeMap<Long, Double> used = sum(matching(usage,
+                    Map.of(poolKey, name, stateKey, MetricSeriesNames.STATE_USED)));
+            TreeMap<Long, Double> idle = sum(matching(usage,
+                    Map.of(poolKey, name, stateKey, MetricSeriesNames.STATE_IDLE)));
+            TreeMap<Long, Double> limit = sum(matching(max, Map.of(poolKey, name)));
+            TreeMap<Long, Double> waiting = sum(matching(pending, Map.of(poolKey, name)));
+            long[] t = timeline(used, idle, limit, waiting);
+            pools.add(new ConnectionPool(name, t, align(used, t), align(idle, t), align(limit, t),
+                    align(waiting, t)));
+        }
+        return pools;
+    }
+
     private static Classes classes(List<SeriesData> series) {
         TreeMap<Long, Double> loaded = sum(series);
         long[] t = timeline(loaded);
@@ -241,6 +297,6 @@ public record JvmView(String service, Runtime runtime, Memory heap, Memory nonHe
                 new Memory(NO_TIME, NO_VALUES, NO_VALUES, NO_VALUES),
                 new Memory(NO_TIME, NO_VALUES, NO_VALUES, NO_VALUES),
                 List.of(), List.of(), new Threads(NO_TIME, NO_VALUES, NO_VALUES),
-                new Cpu(NO_TIME, NO_VALUES, NO_VALUES), new Classes(NO_TIME, NO_VALUES));
+                new Cpu(NO_TIME, NO_VALUES, NO_VALUES), new Classes(NO_TIME, NO_VALUES), List.of());
     }
 }

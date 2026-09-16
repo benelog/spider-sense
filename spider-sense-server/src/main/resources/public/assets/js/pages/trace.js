@@ -19,6 +19,7 @@ export function render(root, ctx) {
   let destroyed = false;
   let data = null;
   let view = ctx.query.view === 'profile' ? 'profile' : 'waterfall';
+  let profileSort = ctx.query.sort === 'elapsed' || ctx.query.sort === 'self' ? ctx.query.sort : 'start';
   let selectedSpan = ctx.query.span || null;
   const collapsed = new Set();
 
@@ -162,19 +163,44 @@ export function render(root, ctx) {
   function paintProfile() {
     const spans = (data.spans || []).slice().sort((a, b) => sms(a) - sms(b) || b.durationMs - a.durationMs);
     const depths = depthMap(data.spans || []);
+    const self = selfTimes(data.spans || []);
     const t0 = (data.spans && data.spans.length) ? Math.min(...data.spans.map(sms)) : data.start;
+    const total = Math.max(1, data.durationMs || 1);
     const slowMs = ((api.state.status || {}).thresholds || {}).slowRequestMs || 500;
     let prevEnd = t0;
-    const rows = spans.map((span, i) => {
+    let rows = spans.map((span, i) => {
       const gap = sms(span) - prevEnd;
       prevEnd = Math.max(prevEnd, sms(span));
-      return { span, index: i + 1, startOffset: sms(span) - t0, gap, depth: depths.get(span.spanId) || 0 };
+      return {
+        span, index: i + 1, startOffset: sms(span) - t0, gap,
+        depth: depths.get(span.spanId) || 0,
+        self: self.get(span.spanId) || 0,
+      };
     });
+    // The three steps that actually spent the time, and only when they spent enough
+    // of it to be worth reading: at least 5% of the trace.
+    const hot = new Set(rows.slice()
+      .sort((a, b) => b.self - a.self)
+      .filter((r) => r.self > 0 && r.self / total >= 0.05)
+      .slice(0, 3)
+      .map((r) => r.span.spanId));
+    const chronological = profileSort === 'start';
+    if (!chronological) {
+      rows = rows.slice().sort((a, b) => (profileSort === 'self' ? b.self - a.self : b.span.durationMs - a.span.durationMs));
+    }
+    const sortState = { key: profileSort, dir: chronological ? 'asc' : 'desc' };
+    const onSort = (key) => {
+      profileSort = key;
+      router.setQuery({ sort: key === 'start' ? '' : key });
+      paintProfile();
+    };
     fill(bodyBox, table([
       { key: 'index', label: '#', align: 'right', sortable: false, width: '44px', render: (r) => h('span.muted.mono', String(r.index)) },
-      { key: 'start', label: 'Start', align: 'right', sortable: false, width: '84px', render: (r) => h('span.mono', offset(r.startOffset)) },
-      { key: 'gap', label: 'Gap', align: 'right', sortable: false, width: '76px', render: (r) => (r.gap > 0.5 ? h('span.mono.muted', dur(r.gap)) : h('span.muted', '-')) },
-      { key: 'elapsed', label: 'Elapsed', align: 'right', sortable: false, width: '84px', render: (r) => h('span.mono', dur(r.span.durationMs)) },
+      { key: 'start', label: 'Start', align: 'right', width: '84px', render: (r) => h('span.mono', offset(r.startOffset)) },
+      { key: 'gap', label: 'Gap', align: 'right', sortable: false, width: '76px', render: (r) => (chronological && r.gap > 0.5 ? h('span.mono.muted', dur(r.gap)) : h('span.muted', '-')) },
+      { key: 'elapsed', label: 'Elapsed', align: 'right', width: '84px', render: (r) => h('span.mono', dur(r.span.durationMs)) },
+      { key: 'self', label: 'Self', align: 'right', width: '84px', render: (r) => h('span.mono.self-value', dur(r.self)) },
+      { key: 'pct', label: '%', align: 'right', sortable: false, width: '58px', render: (r) => h('span.mono.muted', ((r.self / total) * 100).toFixed(1)) },
       {
         key: 'step', label: 'Step', sortable: false, cls: 'wide',
         render: (r) => h('span.cell-ellipsis', { style: { paddingLeft: r.depth * 14 + 'px' }, title: r.span.summary || r.span.name },
@@ -186,11 +212,27 @@ export function render(root, ctx) {
       { key: 'service', label: 'Service', sortable: false, width: '150px', render: (r) => serviceChip(r.span.service) },
     ], {
       rows,
+      sort: sortState,
+      onSort,
       rowKey: (r) => r.span.spanId,
-      rowClass: (r) => 'profile-row' + (r.span.error ? ' err' : r.span.slow || r.span.durationMs > slowMs ? ' warn' : ''),
+      rowClass: (r) => 'profile-row' + (r.span.error ? ' err' : r.span.slow || r.span.durationMs > slowMs ? ' warn' : '') + (hot.has(r.span.spanId) ? ' hot' : ''),
       onRowClick: (r) => openSpan(r.span),
       empty: 'This trace has no span.',
     }));
+  }
+
+  /** Elapsed minus the durations of the direct children, never below zero. */
+  function selfTimes(spans) {
+    const byId = new Map(spans.map((s) => [s.spanId, s]));
+    const childSum = new Map();
+    for (const s of spans) {
+      const parent = s.parentSpanId && byId.has(s.parentSpanId) ? s.parentSpanId : null;
+      if (!parent) continue;
+      childSum.set(parent, (childSum.get(parent) || 0) + (s.durationMs || 0));
+    }
+    const out = new Map();
+    for (const s of spans) out.set(s.spanId, Math.max(0, (s.durationMs || 0) - (childSum.get(s.spanId) || 0)));
+    return out;
   }
 
   function depthMap(spans) {
@@ -232,6 +274,7 @@ export function render(root, ctx) {
   function spanBody(span) {
     const t0 = (data.spans && data.spans.length) ? Math.min(...data.spans.map(sms)) : data.start;
     const total = Math.max(1, data.durationMs || 1);
+    const selfMs = selfTimes(data.spans || []).get(span.spanId) || 0;
     const attrs = Object.entries(span.attributes || {}).sort((a, b) => a[0].localeCompare(b[0]));
     return [
       h('dl.kv',
@@ -240,6 +283,7 @@ export function render(root, ctx) {
         h('dt', 'kind'), h('dd', span.kind || 'INTERNAL'),
         h('dt', 'start'), h('dd', offset(sms(span) - t0) + ' (' + timeMs(span.start) + ')'),
         h('dt', 'duration'), h('dd', dur(span.durationMs) + ' · ' + ((span.durationMs / total) * 100).toFixed(1) + '% of trace'),
+        h('dt', 'self'), h('dd', dur(selfMs) + ' · ' + ((selfMs / total) * 100).toFixed(1) + '% of trace'),
         h('dt', 'status'), h('dd', { class: span.error ? 'bad' : '' }, (span.status || 'UNSET') + (span.statusMessage ? ' — ' + span.statusMessage : '')),
         h('dt', 'scope'), h('dd', span.scope || '—')),
       attrs.length ? h('div',

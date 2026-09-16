@@ -25,6 +25,7 @@ import io.opentelemetry.proto.metrics.v1.Metric;
 import io.opentelemetry.proto.metrics.v1.NumberDataPoint;
 import io.opentelemetry.proto.metrics.v1.ResourceMetrics;
 import io.opentelemetry.proto.metrics.v1.ScopeMetrics;
+import io.opentelemetry.proto.metrics.v1.Sum;
 import io.opentelemetry.proto.resource.v1.Resource;
 import io.opentelemetry.proto.trace.v1.ResourceSpans;
 import io.opentelemetry.proto.trace.v1.ScopeSpans;
@@ -93,14 +94,25 @@ public final class Otlp {
     }
 
     public static ExportTraceServiceRequest traces(Resource resource, Span.Builder... spans) {
+        return traces(resourceSpans(resource, spans));
+    }
+
+    /** One export carrying several resources, as a shared collector receives them. */
+    public static ExportTraceServiceRequest traces(ResourceSpans.Builder... resources) {
+        ExportTraceServiceRequest.Builder request = ExportTraceServiceRequest.newBuilder();
+        for (ResourceSpans.Builder resource : resources) {
+            request.addResourceSpans(resource);
+        }
+        return request.build();
+    }
+
+    public static ResourceSpans.Builder resourceSpans(Resource resource, Span.Builder... spans) {
         ScopeSpans.Builder scope = ScopeSpans.newBuilder()
                 .setScope(InstrumentationScope.newBuilder().setName(SCOPE));
         for (Span.Builder span : spans) {
             scope.addSpans(span);
         }
-        return ExportTraceServiceRequest.newBuilder()
-                .addResourceSpans(ResourceSpans.newBuilder().setResource(resource).addScopeSpans(scope))
-                .build();
+        return ResourceSpans.newBuilder().setResource(resource).addScopeSpans(scope);
     }
 
     public static ExportMetricsServiceRequest gauge(Resource resource, String name, String unit,
@@ -112,6 +124,23 @@ public final class Otlp {
                 .build();
         Metric metric = Metric.newBuilder().setName(name).setUnit(unit)
                 .setGauge(Gauge.newBuilder().addDataPoints(point)).build();
+        return metrics(resource, metric);
+    }
+
+    /** A sum; the connection-pool metrics are non-monotonic ones. */
+    public static ExportMetricsServiceRequest sum(Resource resource, String name, String unit,
+            long at, double value, boolean monotonic, KeyValue... attributes) {
+        NumberDataPoint point = NumberDataPoint.newBuilder()
+                .setTimeUnixNano(at * 1_000_000L)
+                .setAsDouble(value)
+                .addAllAttributes(List.of(attributes))
+                .build();
+        Metric metric = Metric.newBuilder().setName(name).setUnit(unit)
+                .setSum(Sum.newBuilder()
+                        .setIsMonotonic(monotonic)
+                        .setAggregationTemporality(AggregationTemporality.AGGREGATION_TEMPORALITY_CUMULATIVE)
+                        .addDataPoints(point))
+                .build();
         return metrics(resource, metric);
     }
 

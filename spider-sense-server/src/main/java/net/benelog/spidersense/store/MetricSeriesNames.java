@@ -20,6 +20,29 @@ public final class MetricSeriesNames {
     /** Not every platform reports a load average; the series may simply be absent. */
     public static final String SYSTEM_LOAD_1M = "jvm.system.cpu.load_1m";
 
+    /**
+     * The JDBC connection-pool metrics, in the spelling the agent still emits and
+     * in the stable one that replaces it.
+     *
+     * <p>Both generations are read, the older one first, because which of them an
+     * application reports depends on the agent it happens to run with.
+     */
+    public static final String POOL_CONNECTIONS = "db.client.connections.usage";
+    public static final String POOL_CONNECTIONS_MAX = "db.client.connections.max";
+    public static final String POOL_CONNECTIONS_PENDING = "db.client.connections.pending_requests";
+    public static final String POOL_STATE = "state";
+    public static final String POOL_CONNECTIONS_NAME = "pool.name";
+
+    public static final String CONNECTION_COUNT = "db.client.connection.count";
+    public static final String CONNECTION_MAX = "db.client.connection.max";
+    public static final String CONNECTION_PENDING = "db.client.connection.pending_requests";
+    public static final String CONNECTION_STATE = "db.client.connection.state";
+    public static final String CONNECTION_POOL_NAME = "db.client.connection.pool.name";
+
+    /** The two states a pooled connection is counted in. */
+    public static final String STATE_USED = "used";
+    public static final String STATE_IDLE = "idle";
+
     public static final String MEMORY_TYPE = "jvm.memory.type";
     public static final String POOL_NAME = "jvm.memory.pool.name";
     public static final String GC_NAME = "jvm.gc.name";

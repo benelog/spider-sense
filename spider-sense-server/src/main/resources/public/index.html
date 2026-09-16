@@ -20,11 +20,18 @@
       <rect x="2.5" y="2.5" width="11" height="4.5" rx="1.2"/><rect x="2.5" y="9" width="11" height="4.5" rx="1.2"/>
       <path d="M5 4.75h.01M5 11.25h.01"/>
     </g>
-    <g id="i-xlog" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+    <g id="i-scatter" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
       <path d="M2.5 2.5v11h11"/><circle cx="5.5" cy="10.5" r="1"/><circle cx="8" cy="7" r="1"/><circle cx="11" cy="9.5" r="1"/><circle cx="12.5" cy="4.5" r="1"/>
     </g>
     <g id="i-trace" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
       <path d="M2.5 4h11M4.5 8h8M6.5 12h5"/>
+    </g>
+    <g id="i-map" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="3" cy="8" r="1.8"/><circle cx="8.5" cy="4" r="1.8"/><circle cx="8.5" cy="12" r="1.8"/><circle cx="13.5" cy="8" r="1.8"/>
+      <path d="M4.5 7.1 7 5M4.5 8.9 7 11M10.1 5.1 12.3 6.8M10.1 10.9l2.2-1.7"/>
+    </g>
+    <g id="i-user" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="8" cy="5.5" r="2.8"/><path d="M2.8 13.8a5.2 5.2 0 0 1 10.4 0"/>
     </g>
     <g id="i-database" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
       <ellipse cx="8" cy="4" rx="5" ry="2"/><path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4"/><path d="M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
@@ -85,7 +92,7 @@
 
   <aside id="sidebar" aria-label="Sections">
     <a class="brand" href="#/" aria-label="Spider Sense, overview">
-      <svg class="brand-mark" viewBox="0 0 200 200" role="img" aria-hidden="true" focusable="false">
+      <svg class="brand-mark" width="64" height="64" viewBox="0 0 200 200" role="img" aria-hidden="true" focusable="false">
         <g fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round">
           <g opacity="0.7">
             <path d="M 100 100 L 100 10"/><path d="M 100 100 L 163.6 36.4"/><path d="M 100 100 L 190 100"/>
@@ -114,8 +121,9 @@
 
     <nav id="nav" aria-label="Main">
       <a href="#/" data-nav="/"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-overview"/></svg><span>Overview</span></a>
+      <a href="#/map" data-nav="/map"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-map"/></svg><span>Map</span></a>
       <a href="#/services" data-nav="/services"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-service"/></svg><span>Services</span></a>
-      <a href="#/xlog" data-nav="/xlog"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-xlog"/></svg><span>XLog</span></a>
+      <a href="#/scatter" data-nav="/scatter"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-scatter"/></svg><span>Scatter</span></a>
       <a href="#/traces" data-nav="/traces"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-trace"/></svg><span>Traces</span></a>
       <a href="#/queries" data-nav="/queries"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-database"/></svg><span>Queries</span></a>
       <a href="#/errors" data-nav="/errors"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-bolt"/></svg><span>Errors</span></a>

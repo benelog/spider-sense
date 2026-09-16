@@ -46,6 +46,11 @@ public final class Codecs {
         return value == null ? object.putNull(key) : object.put(key, value.longValue());
     }
 
+    /** A score that is absent rather than zero — an Apdex over no request at all. */
+    static Json.JsonObject put(Json.JsonObject object, String key, Double value) {
+        return value == null ? object.putNull(key) : put(object, key, value.doubleValue());
+    }
+
     /** Three decimals: a millisecond duration is not interesting below a microsecond. */
     static double round(double value) {
         return Math.round(value * 1000.0) / 1000.0;
@@ -55,6 +60,15 @@ public final class Codecs {
         Json.JsonArray array = Json.arr();
         for (long value : values) {
             array.add(value);
+        }
+        return array;
+    }
+
+    /** The response-time histogram of a series: one array of counts per bucket. */
+    static Json.JsonArray histogram(long[][] buckets) {
+        Json.JsonArray array = Json.arr();
+        for (long[] bucket : buckets) {
+            array.add(longs(bucket));
         }
         return array;
     }
@@ -137,7 +151,8 @@ public final class Codecs {
         put(object, "p95Ms", totals.p95Ms());
         put(object, "p99Ms", totals.p99Ms());
         put(object, "maxMs", totals.maxMs());
-        return object;
+        put(object, "apdex", totals.apdex());
+        return object.put("histogram", longs(totals.histogram()));
     }
 
     static Json.JsonObject serviceSummary(Stats.ServiceSummary service) {
@@ -155,7 +170,9 @@ public final class Codecs {
         put(object, "p95Ms", service.totals().p95Ms());
         put(object, "p99Ms", service.totals().p99Ms());
         put(object, "maxMs", service.totals().maxMs());
+        put(object, "apdex", service.totals().apdex());
         return object
+                .put("histogram", longs(service.totals().histogram()))
                 .put("sparkline", longs(service.sparkline()))
                 .put("hasJvm", service.hasJvm());
     }
@@ -190,7 +207,8 @@ public final class Codecs {
                 .put("t", longs(buckets.t()))
                 .put("requests", longs(buckets.requests()))
                 .put("errors", longs(buckets.errors()))
-                .put("p95Ms", doubles(buckets.p95Ms(), buckets.requests()));
+                .put("p95Ms", doubles(buckets.p95Ms(), buckets.requests()))
+                .put("histogram", histogram(buckets.histogram()));
     }
 
     static Json.JsonObject serviceSeries(Stats.Buckets buckets) {
@@ -200,7 +218,8 @@ public final class Codecs {
                 .put("errors", longs(buckets.errors()))
                 .put("p50Ms", doubles(buckets.p50Ms(), buckets.requests()))
                 .put("p95Ms", doubles(buckets.p95Ms(), buckets.requests()))
-                .put("p99Ms", doubles(buckets.p99Ms(), buckets.requests()));
+                .put("p99Ms", doubles(buckets.p99Ms(), buckets.requests()))
+                .put("histogram", histogram(buckets.histogram()));
     }
 
     static Json.JsonObject endpoint(Stats.EndpointStats endpoint) {
@@ -223,7 +242,10 @@ public final class Codecs {
         put(object, "p99Ms", endpoint.p99Ms());
         put(object, "maxMs", endpoint.maxMs());
         put(object, "totalMs", endpoint.totalMs());
-        return object.put("statusCodes", statusCodes);
+        put(object, "apdex", endpoint.apdex());
+        return object
+                .put("histogram", longs(endpoint.histogram()))
+                .put("statusCodes", statusCodes);
     }
 
     static Json.JsonArray endpoints(List<Stats.EndpointStats> endpoints) {
@@ -398,10 +420,58 @@ public final class Codecs {
         return array;
     }
 
+    /**
+     * The service map. A service node carries the service summary's numbers; every
+     * other node carries the numbers of the calls made to it, so the two halves of
+     * {@link Stats.Node} are never written together.
+     */
+    static Json.JsonObject map(Window window, Stats.ServiceMap map) {
+        Json.JsonArray nodes = Json.arr();
+        for (Stats.Node node : map.nodes()) {
+            Json.JsonObject object = Json.obj()
+                    .put("id", node.id())
+                    .put("kind", node.kind())
+                    .put("name", node.name());
+            if (node.isService()) {
+                Stats.Totals totals = node.totals();
+                object.put("requests", totals.requests())
+                        .put("errors", totals.errors())
+                        .put("errorRate", round(totals.errorRate()))
+                        .put("rps", round(totals.rps()));
+                put(object, "p50Ms", totals.p50Ms());
+                put(object, "p95Ms", totals.p95Ms());
+                put(object, "p99Ms", totals.p99Ms());
+                put(object, "maxMs", totals.maxMs());
+                put(object, "apdex", totals.apdex());
+                object.put("histogram", longs(totals.histogram())).put("hasJvm", node.hasJvm());
+            } else if (!"user".equals(node.kind())) {
+                object.put("calls", node.calls()).put("errors", node.errors());
+                put(object, "avgMs", node.avgMs());
+                put(object, "p95Ms", node.p95Ms());
+            }
+            nodes.add(object);
+        }
+        Json.JsonArray edges = Json.arr();
+        for (Stats.Edge edge : map.edges()) {
+            Json.JsonObject object = Json.obj()
+                    .put("from", edge.from())
+                    .put("to", edge.to())
+                    .put("calls", edge.calls())
+                    .put("errors", edge.errors());
+            put(object, "avgMs", edge.avgMs());
+            put(object, "p95Ms", edge.p95Ms());
+            edges.add(object);
+        }
+        return Json.obj()
+                .put("window", window(window))
+                .put("nodes", nodes)
+                .put("edges", edges);
+    }
+
     /** Arrays, not objects: five thousand points have to stay small on the wire. */
-    static Json.JsonArray xlog(List<Stats.XlogPoint> points) {
+    static Json.JsonArray scatter(List<Stats.ScatterPoint> points) {
         Json.JsonArray array = Json.arr();
-        for (Stats.XlogPoint point : points) {
+        for (Stats.ScatterPoint point : points) {
             array.add(Json.arr()
                     .add(point.start())
                     .add(round(point.durationMs()))
@@ -479,6 +549,16 @@ public final class Codecs {
                     .put("count", longs(collector.count()))
                     .put("durationMs", doubles(collector.durationMs())));
         }
+        Json.JsonArray connectionPools = Json.arr();
+        for (JvmView.ConnectionPool pool : jvm.connectionPools()) {
+            connectionPools.add(Json.obj()
+                    .put("name", pool.name())
+                    .put("t", longs(pool.t()))
+                    .put("used", doubles(pool.used()))
+                    .put("idle", doubles(pool.idle()))
+                    .put("max", doubles(pool.max()))
+                    .put("pending", doubles(pool.pending())));
+        }
         Json.JsonObject runtime = Json.obj().put("jvm", jvm.runtime().jvm());
         put(runtime, "pid", jvm.runtime().pid());
         runtime.put("host", jvm.runtime().host());
@@ -508,7 +588,8 @@ public final class Codecs {
                         .put("systemLoad1m", doubles(jvm.cpu().systemLoad1m())))
                 .put("classes", Json.obj()
                         .put("t", longs(jvm.classes().t()))
-                        .put("loaded", doubles(jvm.classes().loaded())));
+                        .put("loaded", doubles(jvm.classes().loaded())))
+                .put("connectionPools", connectionPools);
     }
 
     static Json.JsonObject error(String message) {

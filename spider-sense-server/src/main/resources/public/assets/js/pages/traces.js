@@ -56,6 +56,7 @@ export function render(root, ctx) {
   const filter = {
     q: q.q || '',
     minMs: q.minMs || '',
+    maxMs: q.maxMs || '',
     status: q.status || 'all',
     endpointId: q.endpointId || '',
   };
@@ -67,6 +68,7 @@ export function render(root, ctx) {
 
   const input = h('input', { type: 'search', placeholder: 'Search span names and attributes', value: filter.q, 'aria-label': 'Search traces' });
   const minInput = h('input', { type: 'number', min: '0', step: '10', placeholder: 'ms', value: filter.minMs, 'aria-label': 'Minimum duration in milliseconds' });
+  const maxInput = h('input', { type: 'number', min: '0', step: '10', placeholder: 'ms', value: filter.maxMs, 'aria-label': 'Maximum duration in milliseconds' });
   const statusSelect = h('select', { 'aria-label': 'Status filter' },
     h('option', { value: 'all' }, 'Any status'),
     h('option', { value: 'error' }, 'Errors only'),
@@ -78,9 +80,10 @@ export function render(root, ctx) {
   const apply = debounce(() => {
     filter.q = input.value.trim();
     filter.minMs = minInput.value;
+    filter.maxMs = maxInput.value;
     filter.status = statusSelect.value;
     filter.endpointId = endpointSelect.value;
-    router.setQuery({ q: filter.q, minMs: filter.minMs, status: filter.status === 'all' ? '' : filter.status, endpointId: filter.endpointId });
+    router.setQuery({ q: filter.q, minMs: filter.minMs, maxMs: filter.maxMs, status: filter.status === 'all' ? '' : filter.status, endpointId: filter.endpointId });
     rows = [];
     load();
   }, 400);
@@ -88,13 +91,14 @@ export function render(root, ctx) {
   input.addEventListener('input', apply);
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') apply.flush(); });
   minInput.addEventListener('input', apply);
+  maxInput.addEventListener('input', apply);
   statusSelect.addEventListener('change', () => apply.flush());
   endpointSelect.addEventListener('change', () => apply.flush());
 
   const countLabel = h('span.muted', { style: { marginLeft: 'auto', fontSize: '11px' } });
   const bar = h('div.querybar',
     h('div.search', icon('search'), input),
-    h('label', 'Min', minInput),
+    h('label.range-field', 'Min', minInput, h('span.range-dash', '–'), 'Max', maxInput),
     statusSelect,
     endpointSelect,
     countLabel);
@@ -111,7 +115,7 @@ export function render(root, ctx) {
   function paint() {
     countLabel.textContent = rows.length ? count(rows.length) + ' of ' + count(total) : '';
     if (!rows.length && !loading) {
-      const hasFilter = filter.q || filter.minMs || filter.status !== 'all' || filter.endpointId;
+      const hasFilter = filter.q || filter.minMs || filter.maxMs || filter.status !== 'all' || filter.endpointId;
       tableNode = null;
       fill(body, hasFilter || (api.state.status && api.state.status.counts && api.state.status.counts.traces)
         ? traceTable([], {})
@@ -148,6 +152,7 @@ export function render(root, ctx) {
       const res = await api.traces({
         q: filter.q,
         minMs: filter.minMs,
+        maxMs: filter.maxMs,
         status: filter.status === 'all' ? '' : filter.status,
         endpointId: filter.endpointId,
         limit: 50,

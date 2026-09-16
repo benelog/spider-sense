@@ -19,11 +19,18 @@ public final class Stats {
     private Stats() {
     }
 
-    /** The RED numbers over a window. */
+    /**
+     * The RED numbers over a window, with the response-time histogram beside them.
+     *
+     * <p>{@code histogram} is the five counts {@link ResponseBuckets} describes and
+     * {@code apdex} is the score they imply, {@code null} when nothing was
+     * requested.
+     */
     public record Totals(long requests, long errors, double errorRate, double rps,
-            double p50Ms, double p95Ms, double p99Ms, double maxMs) {
+            double p50Ms, double p95Ms, double p99Ms, double maxMs, long[] histogram, Double apdex) {
 
-        public static final Totals EMPTY = new Totals(0, 0, 0, 0, 0, 0, 0, 0);
+        public static final Totals EMPTY =
+                new Totals(0, 0, 0, 0, 0, 0, 0, 0, ResponseBuckets.empty(), null);
     }
 
     /**
@@ -32,7 +39,7 @@ public final class Stats {
      * would draw a line down to the axis.
      */
     public record Buckets(long[] t, long[] requests, long[] errors,
-            double[] p50Ms, double[] p95Ms, double[] p99Ms) {
+            double[] p50Ms, double[] p95Ms, double[] p99Ms, long[][] histogram) {
     }
 
     public record ServiceSummary(String name, String language, boolean embedded,
@@ -42,7 +49,7 @@ public final class Stats {
     public record EndpointStats(String endpointId, String service, String method, String route,
             String name, String kind, long calls, long errors, double errorRate, double rps,
             double avgMs, double p50Ms, double p95Ms, double p99Ms, double maxMs, double totalMs,
-            Map<String, Long> statusCodes) {
+            long[] histogram, Double apdex, Map<String, Long> statusCodes) {
     }
 
     /** Which endpoint issued a query, and how often. */
@@ -75,8 +82,52 @@ public final class Stats {
             double avgMs, double p95Ms) {
     }
 
-    /** One dot on the XLog scatter. Flags: 1 error, 2 slow, 4 contains a slow query. */
-    public record XlogPoint(long start, double durationMs, String service, String endpoint,
+    /**
+     * The topology of a window: what calls what, as the service map draws it.
+     *
+     * <p>A node with no edge is not listed, so the map is the traffic that
+     * happened rather than the inventory of everything ever seen.
+     */
+    public record ServiceMap(List<Node> nodes, List<Edge> edges) {
+    }
+
+    /**
+     * One node of the map.
+     *
+     * <p>A service node carries the {@link ServiceSummary} numbers, so the map and
+     * the service page cannot disagree; every other node carries the numbers of the
+     * calls made to it. The unused half is zero, which is what the wire leaves out.
+     *
+     * @param kind {@code user}, {@code service}, {@code db}, {@code http},
+     *        {@code messaging} or {@code rpc}
+     */
+    public record Node(String id, String kind, String name, Totals totals, boolean hasJvm,
+            long calls, long errors, double avgMs, double p95Ms) {
+
+        public static Node user() {
+            return new Node("user", "user", "Clients", null, false, 0, 0, 0, 0);
+        }
+
+        public static Node service(ServiceSummary summary) {
+            return new Node("svc:" + summary.name(), "service", summary.name(), summary.totals(),
+                    summary.hasJvm(), 0, 0, 0, 0);
+        }
+
+        public static Node target(String kind, String target, long calls, long errors,
+                double avgMs, double p95Ms) {
+            return new Node(kind + ":" + target, kind, target, null, false, calls, errors, avgMs, p95Ms);
+        }
+
+        public boolean isService() {
+            return totals != null;
+        }
+    }
+
+    public record Edge(String from, String to, long calls, long errors, double avgMs, double p95Ms) {
+    }
+
+    /** One dot on the scatter. Flags: 1 error, 2 slow, 4 contains a slow query. */
+    public record ScatterPoint(long start, double durationMs, String service, String endpoint,
             String traceId, int flags) {
 
         public static final int ERROR = 1;

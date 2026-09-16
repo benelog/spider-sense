@@ -78,7 +78,9 @@ public final class ApiRoutes {
                 .put("embeddedService", store.services().embeddedService())
                 .put("thresholds", Json.obj()
                         .put("slowRequestMs", store.tingles().slowRequestMs())
-                        .put("slowQueryMs", store.tingles().slowQueryMs()))
+                        .put("slowQueryMs", store.tingles().slowQueryMs())
+                        // The scale of every histogram, so the UI builds its legend from here.
+                        .put("responseBucketsMs", Codecs.longs(queries.responseBuckets().bounds())))
                 .put("retention", Json.obj().put("hours", config.retentionHours()))
                 .put("storage", Json.obj()
                         .put("url", storage.url())

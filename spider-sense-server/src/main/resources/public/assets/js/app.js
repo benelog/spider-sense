@@ -12,7 +12,8 @@ import * as overview from './pages/overview.js';
 import * as services from './pages/services.js';
 import * as servicePage from './pages/service.js';
 import * as endpointPage from './pages/endpoint.js';
-import * as xlog from './pages/xlog.js';
+import * as scatter from './pages/scatter.js';
+import * as mapPage from './pages/map.js';
 import * as traces from './pages/traces.js';
 import * as tracePage from './pages/trace.js';
 import * as queries from './pages/queries.js';
@@ -25,10 +26,11 @@ import * as metrics from './pages/metrics.js';
 
 const PAGES = [
   ['/', overview, 'Overview', '/'],
+  ['/map', mapPage, 'Service map', '/map'],
   ['/services', services, 'Services', '/services'],
   ['/services/:name', servicePage, 'Service', '/services'],
   ['/endpoints/:id', endpointPage, 'Endpoint', '/services'],
-  ['/xlog', xlog, 'XLog', '/xlog'],
+  ['/scatter', scatter, 'Response time scatter', '/scatter'],
   ['/traces', traces, 'Traces', '/traces'],
   ['/traces/:id', tracePage, 'Trace', '/traces'],
   ['/queries', queries, 'Queries', '/queries'],

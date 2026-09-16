@@ -23,6 +23,10 @@ export function themeColors() {
     warn: v('--warn', '#f0b64b'),
     err: v('--err', '#e5484d'),
     silk: v('--silk', '#8a93a6'),
+    bucket1: v('--bucket-1', '#5ec27f'),
+    bucket2: v('--bucket-2', '#35c0b6'),
+    bucket3: v('--bucket-3', '#f0b64b'),
+    bucket4: v('--bucket-4', '#e2603f'),
     series: readSeriesColors(),
   };
 }
@@ -58,6 +62,13 @@ function timeAxis(colors, opts = {}) {
   };
 }
 
+/** Scales that count things; their axes and their range stay on whole numbers. */
+const COUNT_INCRS = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000, 1000000];
+
+function isCountScale(scale) {
+  return scale !== 'ms' && scale !== 'pct' && scale !== 'load';
+}
+
 function valueAxis(colors, o = {}) {
   return {
     scale: o.scale || 'y',
@@ -71,6 +82,7 @@ function valueAxis(colors, o = {}) {
     labelSize: o.label ? 18 : 0,
     labelFont: uiFont(),
     labelGap: 2,
+    incrs: o.count !== false && isCountScale(o.scale || 'y') ? COUNT_INCRS : undefined,
     values: o.values || ((u, splits) => splits.map((s) => fmtCount(s))),
   };
 }
@@ -92,9 +104,11 @@ class Chart {
     this.rebuild();
   }
 
+  /** The container's content box: clientWidth still counts the padding. */
   width() {
-    const w = this.container.clientWidth;
-    return Math.max(120, w || 600);
+    const cs = getComputedStyle(this.container);
+    const pad = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+    return Math.max(120, (this.container.clientWidth || 600) - pad);
   }
 
   rebuild() {
@@ -154,19 +168,56 @@ function tooltipFor(plot, container) {
 export function timeSeries(container, spec) {
   const chart = new Chart(container, (w, h, colors) => {
     const xs = (spec.t || []).map((ms) => ms / 1000);
-    const data = [xs, ...spec.series.map((s) => s.values.map((v) => (v == null ? null : v)))];
+    // Stacking: a series with `stack: <key>` sits on the previous series carrying the
+    // same key, so its data column holds the cumulative value.
+    const running = new Map();
+    const values = spec.series.map((s) => {
+      const raw = s.values || [];
+      if (!s.stack) return raw.map((v) => (v == null ? null : v));
+      const under = running.get(s.stack) || [];
+      const out = raw.map((v, i) => (under[i] || 0) + (v == null ? 0 : v));
+      running.set(s.stack, out);
+      return out;
+    });
+    // uPlot paints series in order, so the tallest cumulative series goes first and
+    // the ones below it paint over it; `column` maps a spec series to its data column.
+    const order = spec.series.map((s, i) => i);
+    const groups = new Map();
+    spec.series.forEach((s, i) => {
+      if (!s.stack) return;
+      if (!groups.has(s.stack)) groups.set(s.stack, []);
+      groups.get(s.stack).push(i);
+    });
+    for (const slots of groups.values()) {
+      const reversed = slots.slice().reverse();
+      slots.forEach((slot, k) => { order[slot] = reversed[k]; });
+    }
+    const column = [];
+    order.forEach((specIndex, k) => { column[specIndex] = k + 1; });
+    const data = [xs, ...order.map((i) => values[i])];
     const scales = { x: { time: true } };
     const series = [{ label: 'Time' }];
-    const bars = spec.series.filter((s) => s.type === 'bar').length;
-    let barIndex = 0;
-    for (const s of spec.series) {
+    // One bar slot per stack group, one per unstacked bar series.
+    const slotKeys = [];
+    const slotOf = new Map();
+    spec.series.forEach((s, i) => {
+      if (s.type !== 'bar') return;
+      const key = s.stack ? 'stack:' + s.stack : 'bar:' + i;
+      let k = slotKeys.indexOf(key);
+      if (k < 0) { k = slotKeys.length; slotKeys.push(key); }
+      slotOf.set(i, k);
+    });
+    const bars = slotKeys.length;
+    for (const specIndex of order) {
+      const s = spec.series[specIndex];
       const color = resolveColor(s.color, colors);
       const scale = s.scale || 'y';
       scales[scale] = scales[scale] || { range: rangeFor(scale, spec) };
       if (s.type === 'bar') {
-        const idx = barIndex++;
+        const idx = slotOf.get(specIndex);
         series.push({
-          label: s.label, scale, stroke: color, fill: withAlpha(color, s.fillAlpha == null ? 0.85 : s.fillAlpha),
+          // a stacked bar is opaque, so the segment under it does not tint it
+          label: s.label, scale, stroke: color, fill: withAlpha(color, s.fillAlpha == null ? (s.stack ? 1 : 0.85) : s.fillAlpha),
           width: 0, points: { show: false },
           paths: uPlot.paths.bars({ size: [bars > 1 && idx > 0 ? 0.62 : 0.72, 24, 1], align: 0, radius: 0.15 }),
           value: (u, v) => fmtCount(v),
@@ -218,10 +269,10 @@ export function timeSeries(container, spec) {
             const { idx, left, top } = u.cursor;
             if (idx == null || left < 0) { tip.classList.remove('show'); return; }
             const rows = spec.series.map((s, i) => {
-              const v = u.data[i + 1][idx];
+              const v = (s.values || [])[idx];      // the raw value, not the stacked one
               if (v == null) return null;
               const color = resolveColor(s.color, colors);
-              return `<span class="k"><i style="background:${color}"></i>${escapeHtml(s.label)}</span><span class="v">${escapeHtml(u.series[i + 1].value(u, v))}</span>`;
+              return `<span class="k"><i style="background:${color}"></i>${escapeHtml(s.label)}</span><span class="v">${escapeHtml(u.series[column[i]].value(u, v))}</span>`;
             }).filter(Boolean);
             if (!rows.length) { tip.classList.remove('show'); return; }
             tip.innerHTML = `<div class="t">${clock(u.data[0][idx] * 1000)}</div>${rows.join('')}`;
@@ -245,6 +296,9 @@ export function timeSeries(container, spec) {
 
 function rangeFor(scale, spec) {
   if (scale === 'pct') return (u, min, max) => [0, Math.max(1, max * 1.15)];
+  // A count scale never shrinks below [0, 1], so a series that stays at 0 still
+  // gets whole-number ticks rather than thirds.
+  if (isCountScale(scale)) return (u, min, max) => [0, Math.max(1, max == null || max <= 0 ? 1 : max * 1.15)];
   return (u, min, max) => [0, max == null || max <= 0 ? 1 : max * 1.15];
 }
 
@@ -326,13 +380,15 @@ export function sparkline(values, opts = {}) {
 }
 
 /**
- * The XLog scatter: one dot per request, drawn by hand in a draw hook.
+ * The response-time scatter: one dot per request, or a density heatmap, drawn by
+ * hand in a draw hook.
  * points: [start, durationMs, service, endpoint, traceId, flags]
- * opts: { height, logScale, yMax, hidden:Set(service), onSelect(rect), onPick(point), onHover }
+ * opts: { height, mode, logScale, yMax, hidden:Set(service), onSelect(rect), onPick(point) }
  */
-export function xlogScatter(container, opts) {
+export function scatterChart(container, opts) {
   const state = {
     points: opts.points || [],
+    mode: opts.mode === 'heatmap' ? 'heatmap' : 'dots',
     logScale: !!opts.logScale,
     hidden: opts.hidden || new Set(),
     window: opts.window,
@@ -347,7 +403,63 @@ export function xlogScatter(container, opts) {
     const top = state.yMax || Math.max(10, ...ys) * 1.05;
     const data = [xs.length ? xs : [state.window.from / 1000, state.window.to / 1000], xs.length ? ys : [null, null]];
 
+    // The heatmap's cells, in CSS pixels, recomputed on every draw so the hover can
+    // read the same bins the canvas shows.
+    let bins = null;
+    const CELL_W = 6, ROWS = 24;
+
+    // Cell coordinates are CSS pixels inside the plotting area, the space valToPos
+    // and posToVal speak; the canvas adds the bbox offset and the pixel ratio.
+    const binPoints = (u) => {
+      const dpr = devicePixelRatio || 1;
+      const width = u.bbox.width / dpr, height = u.bbox.height / dpr;
+      const cols = Math.max(1, Math.round(width / CELL_W));
+      const cellW = width / cols, cellH = height / ROWS;
+      const cells = new Map();
+      let max = 0;
+      for (const p of visible) {
+        const x = u.valToPos(p[0] / 1000, 'x');
+        const y = u.valToPos(Math.max(p[1], floor || 0.0001), 'y');
+        if (x < -0.5 || x > width + 0.5 || y < -0.5 || y > height + 0.5) continue;
+        const c = Math.min(cols - 1, Math.max(0, Math.floor(x / cellW)));
+        const r = Math.min(ROWS - 1, Math.max(0, Math.floor(y / cellH)));
+        const key = c + ':' + r;
+        let cell = cells.get(key);
+        if (!cell) { cell = { c, r, count: 0, errors: 0 }; cells.set(key, cell); }
+        cell.count++;
+        if (p[5] & 1) cell.errors++;
+        if (cell.count > max) max = cell.count;
+      }
+      return { cells, cols, rows: ROWS, cellW, cellH, width, height, max };
+    };
+
+    const drawHeatmap = (u) => {
+      const dpr = devicePixelRatio || 1;
+      const ctx = u.ctx;
+      bins = binPoints(u);
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(u.bbox.left, u.bbox.top, u.bbox.width, u.bbox.height);
+      ctx.clip();
+      for (const cell of bins.cells.values()) {
+        const x = u.bbox.left + cell.c * bins.cellW * dpr;
+        const y = u.bbox.top + cell.r * bins.cellH * dpr;
+        const cw = bins.cellW * dpr, ch = bins.cellH * dpr;
+        const alpha = Math.max(0.08, Math.sqrt(cell.count / Math.max(1, bins.max)));
+        ctx.fillStyle = withAlpha(colors.accent, alpha);
+        ctx.fillRect(x, y, cw, ch);
+        if (cell.errors) {
+          ctx.strokeStyle = colors.err;
+          ctx.lineWidth = 1 * dpr;
+          ctx.strokeRect(x + dpr / 2, y + dpr / 2, cw - dpr, ch - dpr);
+        }
+      }
+      ctx.restore();
+    };
+
     const drawPoints = (u) => {
+      if (state.mode === 'heatmap') { drawHeatmap(u); return; }
+      bins = null;
       const ctx = u.ctx;
       const { left, top: t, width, height } = u.bbox;
       ctx.save();
@@ -411,7 +523,7 @@ export function xlogScatter(container, opts) {
         ],
         axes: [
           timeAxis(colors),
-          valueAxis(colors, { scale: 'y', label: 'Response time (ms)', size: 60, values: (u, splits) => splits.map((s) => durBare(s)) }),
+          valueAxis(colors, { scale: 'y', count: false, label: 'Response time (ms)', size: 60, values: (u, splits) => splits.map((s) => durBare(s)) }),
         ],
         legend: { show: false },
         cursor: {
@@ -449,7 +561,30 @@ export function xlogScatter(container, opts) {
           }
           return best;
         };
+        const showHeatmapTip = (ev) => {
+          over.style.cursor = 'crosshair';
+          const rect = over.getBoundingClientRect();
+          const px = ev.clientX - rect.left, py = ev.clientY - rect.top;
+          const cell = bins
+            ? bins.cells.get(Math.floor(px / bins.cellW) + ':' + Math.floor(py / bins.cellH))
+            : null;
+          if (!cell) { tip.classList.remove('show'); return; }
+          const x0 = plot.posToVal(cell.c * bins.cellW, 'x') * 1000;
+          const x1 = plot.posToVal((cell.c + 1) * bins.cellW, 'x') * 1000;
+          const yTop = plot.posToVal(cell.r * bins.cellH, 'y');
+          const yBottom = plot.posToVal((cell.r + 1) * bins.cellH, 'y');
+          tip.innerHTML = `<div class="t">${clock(x0)} – ${clock(x1)}</div>` +
+            `<span class="k">Response time</span><span class="v">${durBare(Math.max(0, yBottom))} – ${durBare(Math.max(0, yTop))} ms</span>` +
+            `<span class="k">Requests</span><span class="v">${fmtCount(cell.count)}</span>` +
+            (cell.errors ? `<span class="k">Errors</span><span class="v">${fmtCount(cell.errors)}</span>` : '');
+          tip.classList.add('show');
+          const tw = tip.offsetWidth;
+          tip.style.left = Math.min(Math.max((cell.c + 0.5) * bins.cellW - tw / 2, 4), rect.width - tw - 4) + 'px';
+          tip.style.top = Math.max(4, cell.r * bins.cellH - tip.offsetHeight - 10) + 'px';
+        };
+
         over.addEventListener('mousemove', (ev) => {
+          if (state.mode === 'heatmap') { showHeatmapTip(ev); return; }
           const p = pick(ev);
           if (!p) { tip.classList.remove('show'); over.style.cursor = 'crosshair'; return; }
           over.style.cursor = 'pointer';
@@ -466,6 +601,7 @@ export function xlogScatter(container, opts) {
         });
         over.addEventListener('mouseleave', () => tip.classList.remove('show'));
         over.addEventListener('click', (ev) => {
+          if (state.mode === 'heatmap') return;      // a cell is not one trace
           const p = pick(ev);
           if (p && opts.onPick) opts.onPick(p);
         });
@@ -478,6 +614,7 @@ export function xlogScatter(container, opts) {
     if (window) state.window = window;
     chart.rebuild();
   };
+  chart.setMode = (mode) => { state.mode = mode === 'heatmap' ? 'heatmap' : 'dots'; chart.rebuild(); };
   chart.setLogScale = (on) => { state.logScale = on; chart.rebuild(); };
   chart.setHidden = (hidden) => { state.hidden = hidden; chart.rebuild(); };
   chart.setYMax = (v) => { state.yMax = v; chart.rebuild(); };

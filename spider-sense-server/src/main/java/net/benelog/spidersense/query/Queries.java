@@ -48,11 +48,18 @@ public final class Queries {
     private final Sql sql;
     private final Tingles tingles;
     private final ServiceRegistry services;
+    private final ResponseBuckets responseBuckets;
 
     public Queries(Sql sql, Tingles tingles, ServiceRegistry services) {
         this.sql = sql;
         this.tingles = tingles;
         this.services = services;
+        this.responseBuckets = new ResponseBuckets(tingles.slowRequestMs());
+    }
+
+    /** The scale the histograms are counted on, which {@code /api/status} also reports. */
+    public ResponseBuckets responseBuckets() {
+        return responseBuckets;
     }
 
     // --- filters -------------------------------------------------------------
@@ -77,7 +84,8 @@ public final class Queries {
     public Stats.Totals totals(Window window, String service) {
         Clause where = entryWindow(window, service);
         String query = "SELECT COUNT(*) AS calls, SUM(CASE WHEN error THEN 1 ELSE 0 END) AS errors,"
-                + " MAX(duration_ns) AS max_ns, " + PERCENTILES + " FROM span WHERE " + where.sql();
+                + " MAX(duration_ns) AS max_ns, " + responseBuckets.columns() + ", " + PERCENTILES
+                + " FROM span WHERE " + where.sql();
         Stats.Totals totals = sql.queryOne(query, where.params(),
                 rs -> totals(rs, window.rangeSeconds()));
         return totals == null ? Stats.Totals.EMPTY : totals;
@@ -86,11 +94,12 @@ public final class Queries {
     private static Stats.Totals totals(ResultSet rs, double seconds) throws SQLException {
         long calls = rs.getLong("calls");
         long errors = rs.getLong("errors");
+        long[] histogram = ResponseBuckets.histogram(rs, errors);
         return new Stats.Totals(calls, errors,
                 calls == 0 ? 0 : (double) errors / calls,
                 calls / seconds,
                 Rows.ms(rs, "p50_ns"), Rows.ms(rs, "p95_ns"), Rows.ms(rs, "p99_ns"),
-                Rows.ms(rs, "max_ns"));
+                Rows.ms(rs, "max_ns"), histogram, ResponseBuckets.apdex(histogram, calls));
     }
 
     /** Requests, errors and percentiles per bucket. */
@@ -101,7 +110,8 @@ public final class Queries {
         }
         long bucket = window.bucketMs();
         String query = "SELECT start_ms / " + bucket + " AS b, COUNT(*) AS calls,"
-                + " SUM(CASE WHEN error THEN 1 ELSE 0 END) AS errors, " + PERCENTILES
+                + " SUM(CASE WHEN error THEN 1 ELSE 0 END) AS errors, " + responseBuckets.columns()
+                + ", " + PERCENTILES
                 + " FROM span WHERE " + where.sql() + " GROUP BY start_ms / " + bucket;
 
         long[] t = window.bucketStarts();
@@ -110,6 +120,7 @@ public final class Queries {
         double[] p50 = new double[t.length];
         double[] p95 = new double[t.length];
         double[] p99 = new double[t.length];
+        long[][] histogram = ResponseBuckets.emptySeries(t.length);
         long first = window.alignedFrom() / bucket;
         sql.query(query, where.params(), rs -> {
             int i = (int) (rs.getLong("b") - first);
@@ -119,10 +130,14 @@ public final class Queries {
                 p50[i] = Rows.ms(rs, "p50_ns");
                 p95[i] = Rows.ms(rs, "p95_ns");
                 p99[i] = Rows.ms(rs, "p99_ns");
+                long[] counts = ResponseBuckets.histogram(rs, errors[i]);
+                for (int slot = 0; slot < histogram.length; slot++) {
+                    histogram[slot][i] = counts[slot];
+                }
             }
             return null;
         });
-        return new Stats.Buckets(t, requests, errors, p50, p95, p99);
+        return new Stats.Buckets(t, requests, errors, p50, p95, p99, histogram);
     }
 
     // --- services ------------------------------------------------------------
@@ -131,7 +146,7 @@ public final class Queries {
         Map<String, Stats.Totals> byService = new HashMap<>();
         Clause where = entryWindow(window, null);
         sql.query("SELECT service, COUNT(*) AS calls, SUM(CASE WHEN error THEN 1 ELSE 0 END) AS errors,"
-                + " MAX(duration_ns) AS max_ns, " + PERCENTILES
+                + " MAX(duration_ns) AS max_ns, " + responseBuckets.columns() + ", " + PERCENTILES
                 + " FROM span WHERE " + where.sql() + " GROUP BY service", where.params(), rs -> {
                     byService.put(rs.getString("service"), totals(rs, window.rangeSeconds()));
                     return null;
@@ -201,7 +216,7 @@ public final class Queries {
         String query = "SELECT endpoint_id, service, MAX(endpoint) AS name, MAX(http_method) AS method,"
                 + " MAX(http_route) AS route, MAX(kind) AS kind, COUNT(*) AS calls,"
                 + " SUM(CASE WHEN error THEN 1 ELSE 0 END) AS errors, SUM(duration_ns) AS total_ns,"
-                + " MAX(duration_ns) AS max_ns, " + PERCENTILES
+                + " MAX(duration_ns) AS max_ns, " + responseBuckets.columns() + ", " + PERCENTILES
                 + " FROM span WHERE " + where.sql()
                 + " GROUP BY endpoint_id, service ORDER BY total_ns DESC";
 
@@ -212,12 +227,14 @@ public final class Queries {
             long calls = rs.getLong("calls");
             long errors = rs.getLong("errors");
             double totalMs = Rows.ms(rs, "total_ns");
+            long[] histogram = ResponseBuckets.histogram(rs, errors);
             return new Stats.EndpointStats(id, rs.getString("service"), rs.getString("method"),
                     rs.getString("route"), rs.getString("name"), rs.getString("kind"), calls, errors,
                     calls == 0 ? 0 : (double) errors / calls, calls / seconds,
                     calls == 0 ? 0 : totalMs / calls,
                     Rows.ms(rs, "p50_ns"), Rows.ms(rs, "p95_ns"), Rows.ms(rs, "p99_ns"),
                     Rows.ms(rs, "max_ns"), totalMs,
+                    histogram, ResponseBuckets.apdex(histogram, calls),
                     statusCodes.getOrDefault(id, Map.of()));
         });
     }
@@ -345,7 +362,8 @@ public final class Queries {
                     }
                     return null;
                 });
-        return new Stats.Buckets(t, counts, errors, new double[t.length], p95, new double[t.length]);
+        return new Stats.Buckets(t, counts, errors, new double[t.length], p95, new double[t.length],
+                ResponseBuckets.emptySeries(t.length));
     }
 
     // --- errors --------------------------------------------------------------
@@ -544,9 +562,9 @@ public final class Queries {
                 + " LIMIT " + Math.max(1, limit), where.params(), Rows::trace);
     }
 
-    // --- xlog ----------------------------------------------------------------
+    // --- scatter -------------------------------------------------------------
 
-    public List<Stats.XlogPoint> xlog(Window window, String service, String endpointId, int limit) {
+    public List<Stats.ScatterPoint> scatter(Window window, String service, String endpointId, int limit) {
         Clause where = entryWindow(window, service);
         if (endpointId != null) {
             where = where.and("endpoint_id = ?", endpointId);
@@ -569,19 +587,19 @@ public final class Queries {
                         + " AND trace_id IN (" + Sql.placeholders(traceIds.size()) + ")",
                 Arrays.asList(traceIds.toArray()), rs -> rs.getString(1)));
 
-        List<Stats.XlogPoint> points = new ArrayList<>(rows.size());
+        List<Stats.ScatterPoint> points = new ArrayList<>(rows.size());
         for (Object[] row : rows) {
             int flags = 0;
             if ((Boolean) row[5]) {
-                flags |= Stats.XlogPoint.ERROR;
+                flags |= Stats.ScatterPoint.ERROR;
             }
             if ((Boolean) row[6]) {
-                flags |= Stats.XlogPoint.SLOW;
+                flags |= Stats.ScatterPoint.SLOW;
             }
             if (withSlowQuery.contains((String) row[4])) {
-                flags |= Stats.XlogPoint.SLOW_QUERY;
+                flags |= Stats.ScatterPoint.SLOW_QUERY;
             }
-            points.add(new Stats.XlogPoint((Long) row[0], Rows.ms((Long) row[1]), (String) row[2],
+            points.add(new Stats.ScatterPoint((Long) row[0], Rows.ms((Long) row[1]), (String) row[2],
                     (String) row[3], (String) row[4], flags));
         }
         return points;
@@ -649,19 +667,9 @@ public final class Queries {
         List<Stats.Dependency> dependencies = new ArrayList<>();
         byTarget.forEach((key, group) -> {
             String[] parts = key.split("\0", 2);
-            double[] durations = new double[group.size()];
-            long errors = 0;
-            double total = 0;
-            for (int i = 0; i < group.size(); i++) {
-                durations[i] = group.get(i).durationMillis();
-                total += durations[i];
-                if (group.get(i).isError()) {
-                    errors++;
-                }
-            }
-            Arrays.sort(durations);
-            dependencies.add(new Stats.Dependency(parts[0], parts[1], group.size(), errors,
-                    total / group.size(), percentile(durations, 0.95)));
+            CallStats stats = CallStats.of(group);
+            dependencies.add(new Stats.Dependency(parts[0], parts[1], stats.calls(), stats.errors(),
+                    stats.avgMs(), stats.p95Ms()));
         });
         dependencies.sort((a, b) -> Long.compare(b.calls(), a.calls()));
         return dependencies;
@@ -702,6 +710,183 @@ public final class Queries {
         }
         int rank = (int) Math.ceil(fraction * sorted.length);
         return sorted[Math.min(sorted.length - 1, Math.max(0, rank - 1))];
+    }
+
+    // --- the service map -----------------------------------------------------
+
+    /**
+     * The topology of the window: who called whom, as the map draws it.
+     *
+     * <p>Four reads make it. The self-join over parent and child spans finds the
+     * calls between two traced services; the entry spans with no stored parent are
+     * the traffic from outside, which becomes the {@code user} node; the outbound
+     * spans are the databases, hosts and queues nobody traces. An outbound span
+     * whose child is another service's entry span is already one of the first kind,
+     * so it is dropped from the third: a call to {@code localhost:8081} shows as a
+     * call to the bookstore when the bookstore is traced too.
+     *
+     * <p>A service node's numbers are the {@link Stats.ServiceSummary} numbers, so
+     * the map and the service page can never disagree.
+     */
+    public Stats.ServiceMap map(Window window) {
+        Map<String, Stats.ServiceSummary> summaries = new LinkedHashMap<>();
+        Set<String> named = new LinkedHashSet<>();
+        for (Stats.ServiceSummary summary : services(window)) {
+            summaries.put(summary.name(), summary);
+            if (summary.totals().requests() > 0) {
+                named.add(summary.name());
+            }
+        }
+        List<Stats.Edge> edges = new ArrayList<>(serviceEdges(window, named));
+        edges.addAll(userEdges(window));
+        List<Stats.Node> targets = new ArrayList<>();
+        edges.addAll(targetEdges(window, targets));
+
+        Map<String, Stats.Node> nodes = new LinkedHashMap<>();
+        nodes.put("user", Stats.Node.user());
+        for (String name : named) {
+            Stats.ServiceSummary summary = summaries.getOrDefault(name,
+                    new Stats.ServiceSummary(name, null, false, 0, 0, Stats.Totals.EMPTY,
+                            new long[window.bucketCount()], false));
+            nodes.put("svc:" + name, Stats.Node.service(summary));
+        }
+        for (Stats.Node target : targets) {
+            nodes.put(target.id(), target);
+        }
+
+        Set<String> connected = new HashSet<>();
+        for (Stats.Edge edge : edges) {
+            connected.add(edge.from());
+            connected.add(edge.to());
+        }
+        List<Stats.Node> listed = new ArrayList<>();
+        for (Stats.Node node : nodes.values()) {
+            if (connected.contains(node.id())) {
+                listed.add(node);
+            }
+        }
+        listed.sort(Queries::byNodeOrder);
+        edges.sort((a, b) -> Long.compare(b.calls(), a.calls()));
+        return new Stats.ServiceMap(listed, edges);
+    }
+
+    /** The user first, then the services by name, then everything they call. */
+    private static int byNodeOrder(Stats.Node a, Stats.Node b) {
+        int rank = Integer.compare(rank(a), rank(b));
+        return rank != 0 ? rank : a.name().compareTo(b.name());
+    }
+
+    private static int rank(Stats.Node node) {
+        if ("user".equals(node.kind())) {
+            return 0;
+        }
+        return node.isService() ? 1 : 2;
+    }
+
+    /** One edge per pair of services whose spans are parent and child in a trace. */
+    private List<Stats.Edge> serviceEdges(Window window, Set<String> named) {
+        List<Stats.Edge> edges = sql.query(
+                "SELECT p.service AS caller, c.service AS callee, COUNT(*) AS calls,"
+                        + " SUM(CASE WHEN c.error THEN 1 ELSE 0 END) AS errors,"
+                        + " SUM(c.duration_ns) AS total_ns,"
+                        + " PERCENTILE_DISC(0.95) WITHIN GROUP (ORDER BY c.duration_ns) AS p95_ns"
+                        + " FROM span c JOIN span p ON p.trace_id = c.trace_id"
+                        + " AND p.span_id = c.parent_span_id"
+                        + " WHERE c.start_ms BETWEEN ? AND ? AND c.entry AND p.service <> c.service"
+                        + " GROUP BY p.service, c.service",
+                List.of(window.from(), window.to()), rs -> {
+                    long calls = rs.getLong("calls");
+                    return new Stats.Edge("svc:" + rs.getString("caller"),
+                            "svc:" + rs.getString("callee"), calls, rs.getLong("errors"),
+                            calls == 0 ? 0 : Rows.ms(rs, "total_ns") / calls, Rows.ms(rs, "p95_ns"));
+                });
+        for (Stats.Edge edge : edges) {
+            // The caller is on the map even when it served no request of its own.
+            named.add(edge.from().substring("svc:".length()));
+        }
+        return edges;
+    }
+
+    /** Entry spans that nothing traced started: the traffic from outside. */
+    private List<Stats.Edge> userEdges(Window window) {
+        return sql.query("SELECT c.service AS callee, COUNT(*) AS calls,"
+                        + " SUM(CASE WHEN c.error THEN 1 ELSE 0 END) AS errors,"
+                        + " SUM(c.duration_ns) AS total_ns,"
+                        + " PERCENTILE_DISC(0.95) WITHIN GROUP (ORDER BY c.duration_ns) AS p95_ns"
+                        + " FROM span c WHERE c.start_ms BETWEEN ? AND ? AND c.entry"
+                        + " AND c.kind IN ('SERVER', 'CONSUMER')"
+                        + " AND (c.parent_span_id IS NULL OR NOT EXISTS (SELECT 1 FROM span p"
+                        + " WHERE p.trace_id = c.trace_id AND p.span_id = c.parent_span_id))"
+                        + " GROUP BY c.service",
+                List.of(window.from(), window.to()), rs -> {
+                    long calls = rs.getLong("calls");
+                    return new Stats.Edge("user", "svc:" + rs.getString("callee"), calls,
+                            rs.getLong("errors"),
+                            calls == 0 ? 0 : Rows.ms(rs, "total_ns") / calls, Rows.ms(rs, "p95_ns"));
+                });
+    }
+
+    /**
+     * The databases, hosts and queues every service calls, and one edge per caller.
+     * The outbound spans that turned out to be calls to another traced service are
+     * left out: they are already {@code service → service} edges.
+     */
+    private List<Stats.Edge> targetEdges(Window window, List<Stats.Node> nodes) {
+        Set<String> crossService = new HashSet<>(sql.query(
+                "SELECT DISTINCT c.parent_span_id FROM span c JOIN span p"
+                        + " ON p.trace_id = c.trace_id AND p.span_id = c.parent_span_id"
+                        + " WHERE c.start_ms BETWEEN ? AND ? AND c.entry AND p.service <> c.service",
+                List.of(window.from(), window.to()), rs -> rs.getString(1)));
+
+        Clause where = window(window, null)
+                .and("NOT entry")
+                .and("category IN ('http', 'db', 'messaging', 'rpc')");
+        List<SpanRecord> spans = sql.query("SELECT " + Rows.SPAN_COLUMNS + " FROM span WHERE "
+                + where.sql() + " LIMIT " + MAX_DEPENDENCY_ROWS, where.params(), Rows::span);
+
+        Map<String, List<SpanRecord>> byTarget = new LinkedHashMap<>();
+        Map<String, List<SpanRecord>> byCaller = new LinkedHashMap<>();
+        for (SpanRecord span : spans) {
+            if (crossService.contains(span.spanId())) {
+                continue;
+            }
+            String id = span.category() + ":" + target(span);
+            byTarget.computeIfAbsent(id, k -> new ArrayList<>()).add(span);
+            byCaller.computeIfAbsent(id + "\0" + span.service(), k -> new ArrayList<>()).add(span);
+        }
+        byTarget.forEach((id, group) -> {
+            CallStats stats = CallStats.of(group);
+            nodes.add(Stats.Node.target(group.get(0).category(), target(group.get(0)),
+                    stats.calls(), stats.errors(), stats.avgMs(), stats.p95Ms()));
+        });
+        List<Stats.Edge> edges = new ArrayList<>();
+        byCaller.forEach((key, group) -> {
+            String[] parts = key.split("\0", 2);
+            CallStats stats = CallStats.of(group);
+            edges.add(new Stats.Edge("svc:" + parts[1], parts[0], stats.calls(), stats.errors(),
+                    stats.avgMs(), stats.p95Ms()));
+        });
+        return edges;
+    }
+
+    /** Calls, errors, mean and p95 over a group of spans read row by row. */
+    private record CallStats(long calls, long errors, double avgMs, double p95Ms) {
+
+        static CallStats of(List<SpanRecord> spans) {
+            double[] durations = new double[spans.size()];
+            long errors = 0;
+            double total = 0;
+            for (int i = 0; i < spans.size(); i++) {
+                durations[i] = spans.get(i).durationMillis();
+                total += durations[i];
+                if (spans.get(i).isError()) {
+                    errors++;
+                }
+            }
+            Arrays.sort(durations);
+            return new CallStats(spans.size(), errors,
+                    spans.isEmpty() ? 0 : total / spans.size(), percentile(durations, 0.95));
+        }
     }
 
     // --- counts --------------------------------------------------------------

@@ -16,7 +16,7 @@ import net.benelog.spidersilk.json.Json;
 
 /**
  * The read endpoints about traffic: the overview, services, endpoints, traces,
- * the XLog scatter, queries, errors and logs.
+ * the scatter, the service map, queries, errors and logs.
  *
  * <p>Each handler is the same three steps — read the window and the filters,
  * ask {@link Queries} for records, render with {@link Codecs} — so what an
@@ -43,7 +43,8 @@ public final class TraceApi {
         app.get("/api/endpoints/{endpointId}", "One endpoint in detail", this::endpoint);
         app.get("/api/traces", "Trace list", this::traces);
         app.get("/api/traces/{traceId}", "One trace with its spans and logs", this::trace);
-        app.get("/api/xlog", "One point per entry span", this::xlog);
+        app.get("/api/scatter", "One point per entry span", this::scatter);
+        app.get("/api/map", "Services, their callers and what they call", this::map);
         app.get("/api/queries", "Database statements grouped", this::queries);
         app.get("/api/queries/{queryId}", "One query group in detail", this::query);
         app.get("/api/errors", "Errors grouped", this::errors);
@@ -165,15 +166,20 @@ public final class TraceApi {
         return WebResponse.json(Codecs.trace(trace, store.tingles()));
     }
 
-    public WebResponse xlog(WebRequest req) {
+    public WebResponse scatter(WebRequest req) {
         Window window = Params.window(req);
         int limit = Params.limit(req, 5000, 50_000);
-        List<Stats.XlogPoint> points = queries.xlog(window, Params.service(req),
+        List<Stats.ScatterPoint> points = queries.scatter(window, Params.service(req),
                 req.queryParamOrNull("endpointId"), limit);
         return WebResponse.json(Json.obj()
                 .put("window", Codecs.window(window))
                 .put("truncated", points.size() >= limit)
-                .put("points", Codecs.xlog(points)));
+                .put("points", Codecs.scatter(points)));
+    }
+
+    public WebResponse map(WebRequest req) {
+        Window window = Params.window(req);
+        return WebResponse.json(Codecs.map(window, queries.map(window)));
     }
 
     public WebResponse queries(WebRequest req) {

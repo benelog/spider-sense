@@ -148,6 +148,32 @@ export function render(root, ctx) {
         series: [{ label: 'loaded', values: classes.loaded || [], color: 'series8', type: 'line', width: 2 }],
         axes: [{ scale: 'y', label: 'Classes' }],
       }, [{ label: 'loaded classes', color: 'series8' }]);
+
+      // One panel per JDBC pool; nothing is added when the service reports none.
+      const pools2 = data.connectionPools || [];
+      for (const [id, box] of charts) {
+        if (!id.startsWith('pool:') || pools2.some((p) => 'pool:' + p.name === id)) continue;
+        if (box.chart) box.chart.destroy();
+        box.node.remove();
+        charts.delete(id);
+      }
+      for (const pool of pools2) {
+        chartPanel('pool:' + pool.name, 'Connection pool ' + pool.name, {
+          height: 170, t: pool.t || [],
+          series: [
+            { label: 'used', values: pool.used || [], color: 'accent', type: 'area', width: 2 },
+            { label: 'idle', values: pool.idle || [], color: 'silk', type: 'line', width: 1.6 },
+            { label: 'max', values: pool.max || [], color: 'warn', type: 'line', width: 1.4, dash: [4, 3] },
+            { label: 'pending', values: pool.pending || [], color: 'err', type: 'bar', scale: 'pending' },
+          ],
+          axes: [{ scale: 'y', label: 'connections' }, { scale: 'pending', side: 1, label: 'pending', color: 'err' }],
+        }, [
+          { label: 'used', color: 'accent' },
+          { label: 'idle', color: 'silk' },
+          { label: 'max', color: 'warn' },
+          { label: 'pending requests, right axis', color: 'err' },
+        ]);
+      }
     } catch (e) {
       if (destroyed) return;
       reset();

@@ -1,9 +1,10 @@
-// XLog: the Scouter scatter. Every request is a dot; drag a rectangle to list those traces.
+// Scatter: every request is a point on time × response time, as dots or as a
+// heatmap. Drag a rectangle to list those traces. docs/ui.md "Scatter".
 
 import * as api from '../api.js';
 import * as router from '../router.js';
 import { h, fill, panel, spinner, errorBox, serviceColor, seedServices, emptyState, snippetBlocks } from '../ui.js';
-import { xlogScatter, legend } from '../charts.js';
+import { scatterChart, legend } from '../charts.js';
 import { traceTable } from './traces.js';
 import { count, dur, clock } from '../format.js';
 
@@ -16,6 +17,12 @@ export function render(root, ctx) {
   let truncated = false;
   const hidden = new Set();
 
+  ctx.setTitle('Response time scatter');
+
+  let mode = ctx.query.mode === 'heatmap' ? 'heatmap' : 'dots';
+  let showOk = ctx.query.hide !== 'ok';
+  let showErr = ctx.query.hide !== 'err';
+
   const logToggle = h('button.btn', {
     type: 'button', 'aria-pressed': String(ctx.query.log === '1'),
     onclick: () => {
@@ -26,12 +33,49 @@ export function render(root, ctx) {
     },
   }, 'Log scale');
 
+  /** Success and Failed: both on by default, one off hides those points everywhere. */
+  function statusButton(id, label) {
+    const btn = h('button.btn', {
+      type: 'button', 'aria-pressed': String(id === 'ok' ? showOk : showErr),
+      onclick: () => {
+        if (id === 'ok') showOk = !showOk; else showErr = !showErr;
+        if (!showOk && !showErr) { if (id === 'ok') showOk = true; else showErr = true; }
+        btn.setAttribute('aria-pressed', String(id === 'ok' ? showOk : showErr));
+        okBtn.setAttribute('aria-pressed', String(showOk));
+        errBtn.setAttribute('aria-pressed', String(showErr));
+        router.setQuery({ hide: showOk && showErr ? '' : showOk ? 'err' : 'ok' });
+        paintBar();
+        if (chart) { chart.setPoints(shown()); chart.setYMax(yMaxOf()); }
+        loadTraces();
+      },
+    }, label);
+    return btn;
+  }
+  const okBtn = statusButton('ok', 'Success');
+  const errBtn = statusButton('err', 'Failed');
+
+  const modeBox = h('div.row', { style: { gap: '2px' }, role: 'group', 'aria-label': 'Chart mode' });
+  function paintModeToggle() {
+    const make = (id, label) => h('button.btn', {
+      type: 'button', 'aria-pressed': String(mode === id),
+      onclick: () => {
+        if (mode === id) return;
+        mode = id;
+        router.setQuery({ mode: id === 'dots' ? '' : id });
+        paintModeToggle();
+        if (chart) chart.setMode(mode);
+      },
+    }, label);
+    fill(modeBox, make('dots', 'Dots'), make('heatmap', 'Heatmap'));
+  }
+  paintModeToggle();
+
   const legendBox = h('div');
-  const counts = h('div.xlog-counts');
+  const counts = h('div.scatter-counts');
   const clipNote = h('span.clip-note');
-  const selBox = h('span.xlog-sel');
+  const selBox = h('span.scatter-sel');
   selBox.hidden = true;
-  const bar = h('div.xlog-bar', legendBox, logToggle, clipNote, counts);
+  const bar = h('div.scatter-bar', legendBox, okBtn, errBtn, logToggle, modeBox, clipNote, counts);
   const chartBody = h('div.chart', { style: { minHeight: '380px' } }, spinner());
   const chartPanel = panel({
     title: 'Response time over time',
@@ -49,17 +93,26 @@ export function render(root, ctx) {
 
   let listNode = null;
 
+  /** The points the Success / Failed toggles leave; the chart hides services itself. */
+  function shown() {
+    return points.filter((p) => ((p[5] & 1) ? showErr : showOk));
+  }
+
+  function visible() {
+    return shown().filter((p) => !hidden.has(p[2]));
+  }
+
   function stats() {
-    const visible = points.filter((p) => !hidden.has(p[2]));
+    const list = visible();
     return {
-      total: visible.length,
-      errors: visible.filter((p) => p[5] & 1).length,
-      slow: visible.filter((p) => p[5] & 2).length,
+      total: list.length,
+      errors: list.filter((p) => p[5] & 1).length,
+      slow: list.filter((p) => p[5] & 2).length,
     };
   }
 
   function yMaxOf() {
-    const ds = points.filter((p) => !hidden.has(p[2])).map((p) => p[1]).sort((a, b) => a - b);
+    const ds = visible().map((p) => p[1]).sort((a, b) => a - b);
     if (!ds.length) return 100;
     const p99 = ds[Math.min(ds.length - 1, Math.floor(ds.length * 0.99))];
     return Math.max(10, p99 * 1.5);
@@ -70,7 +123,7 @@ export function render(root, ctx) {
     seedServices(services);
     fill(legendBox, legend(services.map((s) => ({
       label: s, color: serviceColor(s), off: hidden.has(s),
-      value: count(points.filter((p) => p[2] === s).length),
+      value: count(shown().filter((p) => p[2] === s).length),
     })), {
       onToggle: (item) => {
         if (hidden.has(item.label)) hidden.delete(item.label); else hidden.add(item.label);
@@ -84,7 +137,7 @@ export function render(root, ctx) {
       h('span', h('b', { class: s.errors ? 'bad' : '' }, count(s.errors)), ' errors'),
       h('span', h('b', { class: s.slow ? 'warned' : '' }, count(s.slow)), ' slow'));
     const max = yMaxOf();
-    const above = points.filter((p) => !hidden.has(p[2]) && p[1] > max).length;
+    const above = visible().filter((p) => p[1] > max).length;
     clipNote.textContent = above ? '▲ ' + count(above) + ' above ' + dur(max) : '';
     clipNote.title = above ? 'Points above the axis maximum; switch to log scale to see them.' : '';
     if (truncated) {
@@ -116,6 +169,7 @@ export function render(root, ctx) {
   async function loadTraces() {
     try {
       const extra = { limit: 50 };
+      if (showOk !== showErr) extra.status = showErr ? 'error' : 'ok';
       let opts;
       if (selection) {
         extra.minMs = Math.round(selection.minMs);
@@ -139,11 +193,12 @@ export function render(root, ctx) {
   function makeChart(window) {
     if (chart) { chart.destroy(); chart = null; }
     fill(chartBody);
-    chart = xlogScatter(chartBody, {
+    chart = scatterChart(chartBody, {
       height: Math.max(320, Math.round(innerHeight * 0.42)),
-      points,
+      points: shown(),
       window,
       hidden,
+      mode,
       logScale: logToggle.getAttribute('aria-pressed') === 'true',
       yMax: yMaxOf(),
       onSelect: (rect) => {
@@ -159,7 +214,7 @@ export function render(root, ctx) {
     try {
       const now = Date.now();
       const opts = incremental ? { window: { from: now - 10000, to: now } } : undefined;
-      const res = await api.xlog({ limit: 5000 }, opts);
+      const res = await api.scatter({ limit: 5000 }, opts);
       if (destroyed) return;
       truncated = !!res.truncated;
       const incoming = res.points || [];
@@ -169,7 +224,7 @@ export function render(root, ctx) {
         const w = api.windowFor();
         points = points.concat(fresh).filter((p) => p[0] >= w.from);
         paintBar();
-        if (chart) chart.setPoints(points, w);
+        if (chart) chart.setPoints(shown(), w);
       } else {
         points = incoming;
         const w = (res.window && res.window.from) ? res.window : api.windowFor();

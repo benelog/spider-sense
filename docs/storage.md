@@ -175,9 +175,11 @@ Metric points are written on the same path; a series row is looked up by `(servi
 
 Every API answer is one or a few SQL statements over the window:
 
-- Lists (`trace`, `log`, `tingle`, XLog points): `WHERE start_ms BETWEEN ? AND ?` with the filters as further predicates, `ORDER BY start_ms DESC LIMIT ?`.
+- Lists (`trace`, `log`, `tingle`, scatter points): `WHERE start_ms BETWEEN ? AND ?` with the filters as further predicates, `ORDER BY start_ms DESC LIMIT ?`.
 - Aggregations (services, endpoints, queries, errors): `GROUP BY` over `span` with `COUNT(*)`, `SUM(...)`, `MAX(...)`, and `PERCENTILE_DISC(0.5|0.95|0.99) WITHIN GROUP (ORDER BY duration_ns)` (H2 2.x supports it).
-- Time series: `GROUP BY start_ms / :bucket` for counts, errors and percentiles per bucket.
+  The response-time histogram is four more `SUM(CASE WHEN NOT error AND duration_ns <= :bound ...)` columns in the same statements, with the bounds derived from `slow.request.ms`; Apdex is arithmetic over them in Java.
+- Time series: `GROUP BY start_ms / :bucket` for counts, errors, histogram buckets and percentiles per bucket.
+- The service map: `service → service` edges are one self-join, `span c JOIN span p ON p.trace_id = c.trace_id AND p.span_id = c.parent_span_id WHERE c.entry AND p.service <> c.service`, grouped by the two services; the external targets reuse the dependency scan (outbound spans of the window, capped at 20,000 rows) minus the spans that self-join found.
 - A trace: `SELECT ... FROM span WHERE trace_id = ? ORDER BY start_ns`, plus its logs.
 - Free-text search (`q`): `LOWER(name) LIKE ? OR LOWER(attributes) LIKE ?` within the window; a scan of the window is acceptable at local-development volumes.
 - JVM and metrics: `metric_point` joined with `metric_series`, resampled in Java where the API asks for it.

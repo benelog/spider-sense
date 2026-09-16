@@ -435,6 +435,32 @@ function inWindow(w, service) {
   return traces.filter((t) => t.start >= w.from && t.start <= w.to && (!service || t.services.includes(service)));
 }
 
+const RESPONSE_BUCKETS = [SLOW_REQUEST_MS / 4, SLOW_REQUEST_MS, SLOW_REQUEST_MS * 4];
+
+/** Four response-time buckets and the errors, as docs/api.md defines them. */
+function bucketOf(durationMs) {
+  if (durationMs <= RESPONSE_BUCKETS[0]) return 0;
+  if (durationMs <= RESPONSE_BUCKETS[1]) return 1;
+  if (durationMs <= RESPONSE_BUCKETS[2]) return 2;
+  return 3;
+}
+
+function histogramOf(entries) {
+  const out = [0, 0, 0, 0, 0];
+  for (const e of entries) {
+    if (e.error) out[4]++;
+    else out[bucketOf(e.durationMs)]++;
+  }
+  return out;
+}
+
+/** (h0 + h1 + h2 / 2) / requests, null when nothing was requested. */
+function apdexOf(histogram) {
+  const total = histogram.reduce((a, b) => a + b, 0);
+  if (!total) return null;
+  return Math.round(((histogram[0] + histogram[1] + histogram[2] / 2) / total) * 1000) / 1000;
+}
+
 function percentile(sorted, p) {
   if (!sorted.length) return 0;
   const i = Math.min(sorted.length - 1, Math.max(0, Math.ceil((p / 100) * sorted.length) - 1));
@@ -465,16 +491,18 @@ function seriesFor(entries, w) {
   const requests = t.map(() => 0);
   const errors = t.map(() => 0);
   const durations = t.map(() => []);
+  const histogram = [t.map(() => 0), t.map(() => 0), t.map(() => 0), t.map(() => 0)];
   for (const { span } of entries) {
     const b = Math.floor(span.start / w.bucketMs) * w.bucketMs;
     const i = index.get(b);
     if (i === undefined) continue;
     requests[i]++;
     if (span.error) errors[i]++;
+    else histogram[bucketOf(span.durationMs)][i]++;
     durations[i].push(span.durationMs);
   }
   const pct = (p) => durations.map((d) => (d.length ? percentile(d.slice().sort((a, b) => a - b), p) : null));
-  return { t, requests, errors, p50Ms: pct(50), p95Ms: pct(95), p99Ms: pct(99) };
+  return { t, requests, errors, p50Ms: pct(50), p95Ms: pct(95), p99Ms: pct(99), histogram };
 }
 
 function summaryFor(service, w) {
@@ -484,6 +512,7 @@ function summaryFor(service, w) {
   const errors = entries.filter((e) => e.span.error).length;
   const series = seriesFor(entries, w);
   const secs = Math.max(1, (w.to - w.from) / 1000);
+  const histogram = histogramOf(entries.map((e) => e.span));
   return {
     name: service,
     language: def.language,
@@ -498,6 +527,8 @@ function summaryFor(service, w) {
     p95Ms: percentile(durations, 95),
     p99Ms: percentile(durations, 99),
     maxMs: durations.length ? durations[durations.length - 1] : 0,
+    apdex: apdexOf(histogram),
+    histogram,
     sparkline: series.requests,
     hasJvm: def.hasJvm,
   };
@@ -514,9 +545,10 @@ function endpointStats(w, service) {
       if (!ep) continue;
       let agg = byId.get(ep.endpointId);
       if (!agg) {
-        agg = { ep, durations: [], errors: 0, statusCodes: {} };
+        agg = { ep, durations: [], errors: 0, statusCodes: {}, calls: [] };
         byId.set(ep.endpointId, agg);
       }
+      agg.calls.push(s);
       agg.durations.push(s.durationMs);
       if (s.error) agg.errors++;
       const code = String(s.attributes['http.response.status_code'] || 200);
@@ -524,9 +556,10 @@ function endpointStats(w, service) {
     }
   }
   const secs = Math.max(1, (w.to - w.from) / 1000);
-  return [...byId.values()].map(({ ep, durations, errors, statusCodes }) => {
+  return [...byId.values()].map(({ ep, durations, errors, statusCodes, calls }) => {
     const sorted = durations.slice().sort((a, b) => a - b);
     const total = durations.reduce((a, b) => a + b, 0);
+    const histogram = histogramOf(calls);
     return {
       endpointId: ep.endpointId, service: ep.service, method: ep.method, route: ep.route, name: ep.name, kind: 'SERVER',
       calls: durations.length, errors, errorRate: durations.length ? errors / durations.length : 0,
@@ -535,6 +568,8 @@ function endpointStats(w, service) {
       p50Ms: percentile(sorted, 50), p95Ms: percentile(sorted, 95), p99Ms: percentile(sorted, 99),
       maxMs: sorted.length ? sorted[sorted.length - 1] : 0,
       totalMs: Math.round(total * 100) / 100,
+      apdex: apdexOf(histogram),
+      histogram,
       statusCodes,
     };
   }).sort((a, b) => b.totalMs - a.totalMs);
@@ -639,6 +674,81 @@ function dependencies(w, service) {
   }).sort((a, b) => b.calls - a.calls);
 }
 
+/**
+ * The topology of the window: the user, one node per service, one per database or
+ * external host, and the edges between them. docs/api.md "Service map".
+ */
+function mapView(w) {
+  const list = inWindow(w);
+  const edges = new Map();
+  const external = new Map();
+  const addEdge = (from, to, span) => {
+    const key = from + '|' + to;
+    let agg = edges.get(key);
+    if (!agg) { agg = { from, to, durations: [], errors: 0 }; edges.set(key, agg); }
+    agg.durations.push(span.durationMs);
+    if (span.error) agg.errors++;
+  };
+  for (const t of list) {
+    const byId = new Map(t.spans.map((s) => [s.spanId, s]));
+    const entryParent = new Set(t.spans.filter((s) => s.kind === 'SERVER' && s.parentSpanId).map((s) => s.parentSpanId));
+    for (const s of t.spans) {
+      if (s.kind === 'SERVER') {
+        const parent = s.parentSpanId ? byId.get(s.parentSpanId) : null;
+        if (!parent) addEdge('user', 'svc:' + s.service, s);
+        else if (parent.service !== s.service) addEdge('svc:' + parent.service, 'svc:' + s.service, s);
+        continue;
+      }
+      if (s.kind !== 'CLIENT') continue;
+      // an outbound call that lands in another traced service is that service edge
+      if (entryParent.has(s.spanId)) continue;
+      const kind = s.category === 'db' ? 'db' : 'http';
+      const name = kind === 'db'
+        ? s.attributes['db.system'] + ':' + s.attributes['db.name']
+        : s.attributes['server.address'] + ':' + s.attributes['server.port'];
+      const id = kind + ':' + name;
+      let node = external.get(id);
+      if (!node) { node = { id, kind, name, durations: [], errors: 0 }; external.set(id, node); }
+      node.durations.push(s.durationMs);
+      if (s.error) node.errors++;
+      addEdge('svc:' + s.service, id, s);
+    }
+  }
+  const stats = (durations) => {
+    const sorted = durations.slice().sort((a, b) => a - b);
+    return {
+      calls: durations.length,
+      avgMs: Math.round((durations.reduce((a, b) => a + b, 0) / Math.max(1, durations.length)) * 100) / 100,
+      p95Ms: percentile(sorted, 95),
+    };
+  };
+  const used = new Set();
+  for (const e of edges.values()) { used.add(e.from); used.add(e.to); }
+  const nodes = [];
+  if (used.has('user')) nodes.push({ id: 'user', kind: 'user', name: 'Clients' });
+  for (const def of SERVICES) {
+    const id = 'svc:' + def.name;
+    if (!used.has(id)) continue;
+    const sum = summaryFor(def.name, w);
+    nodes.push({
+      id, kind: 'service', name: def.name,
+      requests: sum.requests, errors: sum.errors, errorRate: sum.errorRate, rps: sum.rps,
+      p50Ms: sum.p50Ms, p95Ms: sum.p95Ms, p99Ms: sum.p99Ms, maxMs: sum.maxMs,
+      apdex: sum.apdex, histogram: sum.histogram, hasJvm: sum.hasJvm,
+    });
+  }
+  for (const node of external.values()) {
+    if (!used.has(node.id)) continue;
+    const { durations, errors, ...rest } = node;
+    nodes.push({ ...rest, errors, ...stats(durations) });
+  }
+  return {
+    window: w,
+    nodes,
+    edges: [...edges.values()].map(({ from, to, durations, errors }) => ({ from, to, errors, ...stats(durations) })),
+  };
+}
+
 // --- JVM and metrics ----------------------------------------------------
 
 const JVM_POOLS = ['G1 Eden Space', 'G1 Old Gen', 'G1 Survivor Space'];
@@ -682,6 +792,17 @@ function jvmView(service, w) {
     threads: { t, count: t.map((x, i) => Math.round(wave(i, service === 'spring-orders' ? 48 : 32, 5, 11))), daemon: t.map((x, i) => Math.round(wave(i, service === 'spring-orders' ? 38 : 24, 3, 11))) },
     cpu: { t, utilization: t.map((x, i) => Math.round(Math.max(0.01, wave(i, 0.22, 0.14, 13)) * 1000) / 1000), systemLoad1m: t.map((x, i) => Math.round(wave(i, 1.4, 0.7, 17) * 100) / 100) },
     classes: { t, loaded: t.map((x, i) => 11800 + i * 3 + (service === 'spring-orders' ? 4200 : 0)) },
+    // Only the Spring application runs a JDBC pool the agent instruments.
+    connectionPools: service === 'spring-orders'
+      ? [{
+        name: 'HikariPool-1',
+        t,
+        used: t.map((x, i) => Math.max(0, Math.round(wave(i, 4, 3, 6)))),
+        idle: t.map((x, i) => Math.max(0, 10 - Math.round(wave(i, 4, 3, 6)))),
+        max: t.map(() => 10),
+        pending: t.map((x, i) => (i % 11 === 0 ? 2 : i % 5 === 0 ? 1 : 0)),
+      }]
+      : [],
   };
 }
 
@@ -746,7 +867,7 @@ function statusBody() {
       logs: ENDPOINT_BASE + '/v1/logs',
     },
     embeddedService: null,
-    thresholds: { slowRequestMs: SLOW_REQUEST_MS, slowQueryMs: SLOW_QUERY_MS },
+    thresholds: { slowRequestMs: SLOW_REQUEST_MS, slowQueryMs: SLOW_QUERY_MS, responseBucketsMs: RESPONSE_BUCKETS },
     retention: { hours: 24 },
     storage: {
       url: 'jdbc:h2:file:~/db/spider-sense/store;AUTO_SERVER=TRUE',
@@ -778,6 +899,7 @@ const ROUTES = [
     const errors = entries.filter((e) => e.span.error).length;
     const series = seriesFor(entries, w);
     const secs = Math.max(1, (w.to - w.from) / 1000);
+    const histogram = histogramOf(entries.map((e) => e.span));
     return {
       window: w,
       totals: {
@@ -786,10 +908,12 @@ const ROUTES = [
         rps: Math.round((entries.length / secs) * 100) / 100,
         p50Ms: percentile(durations, 50), p95Ms: percentile(durations, 95), p99Ms: percentile(durations, 99),
         maxMs: durations.length ? durations[durations.length - 1] : 0,
+        apdex: apdexOf(histogram),
+        histogram,
       },
       services: SERVICES.map((s) => summaryFor(s.name, w)),
       tingles: tingles.filter((t) => t.at >= w.from && t.at <= w.to).slice(-50).reverse(),
-      series: { t: series.t, requests: series.requests, errors: series.errors, p95Ms: series.p95Ms },
+      series: { t: series.t, requests: series.requests, errors: series.errors, p95Ms: series.p95Ms, histogram: series.histogram },
     };
   }],
 
@@ -820,7 +944,7 @@ const ROUTES = [
     const ep = ENDPOINTS.find((e) => e.endpointId === id);
     if (!ep) return { status: 404, body: { error: 'no such endpoint' } };
     const stats = endpointStats(w, ep.service).find((e) => e.endpointId === id)
-      || { endpointId: id, service: ep.service, method: ep.method, route: ep.route, name: ep.name, kind: 'SERVER', calls: 0, errors: 0, errorRate: 0, rps: 0, avgMs: 0, p50Ms: 0, p95Ms: 0, p99Ms: 0, maxMs: 0, totalMs: 0, statusCodes: {} };
+      || { endpointId: id, service: ep.service, method: ep.method, route: ep.route, name: ep.name, kind: 'SERVER', calls: 0, errors: 0, errorRate: 0, rps: 0, avgMs: 0, p50Ms: 0, p95Ms: 0, p99Ms: 0, maxMs: 0, totalMs: 0, apdex: null, histogram: [0, 0, 0, 0, 0], statusCodes: {} };
     const list = inWindow(w, ep.service).filter((t) => t.endpointId === id);
     const entries = list.map((t) => ({ span: t.spans[0], trace: t }));
     return {
@@ -863,7 +987,7 @@ const ROUTES = [
     };
   }],
 
-  [/^\/api\/xlog$/, (m, q) => {
+  [/^\/api\/scatter$/, (m, q) => {
     const w = windowOf(q);
     let list = inWindow(w, q.service);
     if (q.endpointId) list = list.filter((t) => t.endpointId === q.endpointId);
@@ -882,6 +1006,8 @@ const ROUTES = [
       }),
     };
   }],
+
+  [/^\/api\/map$/, (m, q) => mapView(windowOf(q))],
 
   [/^\/api\/queries$/, (m, q) => {
     const w = windowOf(q);

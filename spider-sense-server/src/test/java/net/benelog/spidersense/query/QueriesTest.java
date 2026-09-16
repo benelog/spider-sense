@@ -63,6 +63,40 @@ class QueriesTest {
     }
 
     @Test
+    void theResponseBucketsAreDerivedFromTheSlowRequestThresholdAndApdexFollowsFromThem() {
+        ResponseBuckets buckets = new ResponseBuckets(500);
+
+        assertThat(buckets.bounds()).containsExactly(125L, 500L, 2000L);
+        // Satisfied up to T, tolerating up to 4T at half weight, errors frustrated.
+        assertThat(ResponseBuckets.apdex(new long[]{1, 1, 2, 4, 2}, 10)).isEqualTo(0.3);
+        assertThat(ResponseBuckets.apdex(new long[]{0, 0, 0, 0, 0}, 0)).isNull();
+    }
+
+    @Test
+    void theHistogramCountsEachResponseTimeBucketAndKeepsTheErrorsApart() {
+        long[] durations = {50, 300, 1000, 5000};
+        for (int i = 0; i < durations.length; i++) {
+            decoder.accept(Otlp.traces(Otlp.service("orders"),
+                    Otlp.span(traceId(i + 1), spanId(i + 1), "GET /orders",
+                            Span.SpanKind.SPAN_KIND_SERVER, NOW, durations[i])));
+        }
+        // An error is counted in the fifth slot only, however fast it answered.
+        decoder.accept(Otlp.traces(Otlp.service("orders"), Otlp.failing(
+                Otlp.span(traceId(5), spanId(5), "GET /orders", Span.SpanKind.SPAN_KIND_SERVER,
+                        NOW, 1),
+                "java.lang.IllegalStateException", "no", "at Orders.list")));
+        flush();
+
+        Stats.Totals totals = queries.totals(window, null);
+
+        assertThat(totals.requests()).isEqualTo(5);
+        assertThat(totals.histogram()).containsExactly(1, 1, 1, 1, 1);
+        assertThat(totals.apdex()).isEqualTo(0.5);
+        Stats.Buckets buckets = queries.buckets(window, null, null);
+        assertThat(buckets.histogram()).hasDimensions(4, buckets.t().length);
+    }
+
+    @Test
     void endpointsGroupOnTheEndpointIdentityRule() {
         decoder.accept(Otlp.traces(Otlp.service("orders"),
                 Otlp.span(traceId(1), spanId(1), "GET /orders/42", Span.SpanKind.SPAN_KIND_SERVER,

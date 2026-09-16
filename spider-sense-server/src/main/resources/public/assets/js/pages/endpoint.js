@@ -4,6 +4,7 @@ import * as api from '../api.js';
 import * as router from '../router.js';
 import { h, fill, panel, table, chip, methodChip, statusBar, tabs, spinner, errorBox, serviceChip } from '../ui.js';
 import { redCharts } from './service.js';
+import { histogramBars, apdexClass, fmtApdex } from '../buckets.js';
 import { traceTable } from './traces.js';
 import { oneLineSql } from '../sql.js';
 import { dur, count, rate, rel, bothTimes, truncate } from '../format.js';
@@ -16,7 +17,7 @@ export function render(root, ctx) {
 
   const head = h('div.trace-head');
   const headPanel = panel({}, head);
-  const red = redCharts();
+  const red = redCharts({ query: ctx.query });
   const tabsBody = h('div', spinner());
   const tabsPanel = panel({}, tabsBody);
 
@@ -40,10 +41,12 @@ export function render(root, ctx) {
       h('div.row', { style: { marginLeft: 'auto', gap: '18px' } },
         item('calls', count(e.calls)),
         item('rps', rate(e.rps || 0)),
+        item('apdex', h('span', { class: apdexClass(e.apdex) === 'is-bad' ? 'bad' : apdexClass(e.apdex) === 'is-warn' ? 'warned' : '' }, fmtApdex(e.apdex))),
         item('p95', dur(e.p95Ms)),
         item('max', dur(e.maxMs)),
         item('errors', e.errors ? h('span.bad', count(e.errors)) : '0'),
-        h('div.th-item', h('span.k', 'status'), statusBar(e.statusCodes))));
+        h('div.th-item', h('span.k', 'status'), statusBar(e.statusCodes)),
+        histogramBars(e.histogram, { compact: true })));
   }
 
   function item(k, v) {
@@ -105,6 +108,7 @@ export function render(root, ctx) {
       const e = data.endpoint || {};
       ctx.setTitle(e.name || 'Endpoint');
       paintHead(e);
+      red.syncMode();
       red.apply(data.series || {});
       paintTabs();
     } catch (err) {
