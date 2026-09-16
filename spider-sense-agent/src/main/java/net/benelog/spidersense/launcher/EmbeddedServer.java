@@ -1,0 +1,63 @@
+package net.benelog.spidersense.launcher;
+
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.nio.file.Path;
+import java.util.List;
+
+/**
+ * Starts the collector + UI inside the current JVM, in its own class loader.
+ *
+ * <p>{@code SpiderSenseServer.main} binds and returns in agent mode (its Jetty pool is daemon), and
+ * blocks in standalone mode. It is invoked reflectively because the launcher has no compile-time
+ * dependency on the server, and with the context class loader set to the {@link SenseClassLoader}
+ * so anything the server looks up by thread context finds the server's own jar.
+ */
+final class EmbeddedServer {
+
+    static final String SERVER_CLASS = "net.benelog.spidersense.server.SpiderSenseServer";
+
+    /** Non-null once started; keeps the loader alive and makes a second attach a no-op. */
+    private static volatile SenseClassLoader started;
+
+    private EmbeddedServer() {
+    }
+
+    /**
+     * @return {@code false} when a server is already running in this JVM, {@code true} when this
+     *         call started one (in standalone mode the call does not return until shutdown)
+     */
+    static synchronized boolean start(Config config) throws Exception {
+        if (started != null) {
+            return false;
+        }
+        Path jar = NestedJar.serverJar();
+        SenseClassLoader loader = new SenseClassLoader(jar);
+        // Set before the call: in standalone mode main() never returns, and in agent mode a second
+        // agentmain must not start a second server while the first is still binding.
+        started = loader;
+        Thread current = Thread.currentThread();
+        ClassLoader previous = current.getContextClassLoader();
+        try {
+            current.setContextClassLoader(loader);
+            Class<?> server = Class.forName(SERVER_CLASS, true, loader);
+            Method main = server.getMethod("main", String[].class);
+            List<String> args = config.toServerArgs();
+            main.invoke(null, (Object) args.toArray(new String[0]));
+        } catch (InvocationTargetException e) {
+            started = null;
+            Throwable cause = e.getCause();
+            throw cause instanceof Exception ex ? ex : new IllegalStateException(cause);
+        } catch (Exception | LinkageError e) {
+            started = null;
+            throw e instanceof Exception ex ? ex : new IllegalStateException(e);
+        } finally {
+            current.setContextClassLoader(previous);
+        }
+        return true;
+    }
+
+    static boolean isRunning() {
+        return started != null;
+    }
+}

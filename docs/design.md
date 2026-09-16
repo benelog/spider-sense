@@ -48,17 +48,17 @@ The server never sees the application's classes, and the application never sees 
 2. Unless `spidersense.collector` is set: extract the nested jar, create the `SenseClassLoader`, and invoke `net.benelog.spidersense.server.SpiderSenseServer.main(String[])` with `--port=<port> --mode=agent ...`, on the current thread with the context class loader set to the `SenseClassLoader`. `main` returns once the port is bound (Spider Silk's `start` returns after binding). A failure here is logged to stderr and swallowed: Spider Sense must never prevent the application from starting.
 3. Set defaults for the OpenTelemetry agent, only where the user has not set the property or its environment variable already:
    - `otel.exporter.otlp.protocol=http/protobuf`
-   - `otel.exporter.otlp.endpoint=http://localhost:<port>` (or `spidersense.collector`)
+   - `otel.exporter.otlp.endpoint=http://127.0.0.1:<port>` (or `spidersense.collector`); the literal address rather than `localhost`, which may resolve to `::1` while the UI binds `127.0.0.1`
    - `otel.service.name` = `spidersense.service` if given, else the OTel agent's own default (`unknown_service:java`); the UI shows the jar/main class hint from resource attributes when the name is the default.
    - `otel.bsp.schedule.delay=1000`, `otel.blrp.schedule.delay=1000`, `otel.metric.export.interval=5000`: a local tool should show a request within a second or two.
    - `otel.metrics.exporter=otlp`, `otel.logs.exporter=otlp`, `otel.traces.exporter=otlp`
-   - `otel.javaagent.exclude-class-loaders=net.benelog.spidersense.launcher.SenseClassLoader`: the agent skips every class the UI server's loader defines, so the UI's own Jetty requests never become spans. (Verified in the agent source: `GlobalIgnoredTypesConfigurer` already ignores `ExtensionClassLoader` this way, and `otel.javaagent.exclude-class-loaders` feeds `IgnoredTypesBuilder.ignoreClassLoader`.)
+   - `otel.javaagent.exclude-class-loaders=net.benelog.spidersense.launcher.SenseClassLoader` (appended to the user's own list when one is set): the agent skips every class the UI server's loader defines, so the UI's own Jetty requests never become spans. (Verified in the agent source: `GlobalIgnoredTypesConfigurer` already ignores `ExtensionClassLoader` this way, and `otel.javaagent.exclude-class-loaders` feeds `IgnoredTypesBuilder.ignoreClassLoader`.)
    - `otel.instrumentation.runtime-telemetry.enabled=true` (JVM metrics; already the default, stated for clarity)
 4. Call `io.opentelemetry.javaagent.OpenTelemetryAgent.premain(agentArgs, inst)`. Its jar-location check only requires a `Premain-Class` attribute in the manifest of the jar that class came from (verified against 2.31.1's `verifyJarManifestMainClassIsThis`), so our manifest satisfies it.
 
 `SpiderSenseMain.main` (standalone) does step 2 with `--mode=standalone` and then blocks (`join`).
 
-Even with the class-loader exclusion in place, the collector drops any span whose `server.port` attribute equals its own port and whose service is the one it is embedded in; belt and braces, so a misconfiguration never shows the UI monitoring itself.
+Even with the class-loader exclusion in place, the collector drops any `SERVER` span whose `server.port` attribute equals its own port and whose service is the one it is embedded in; belt and braces, so a misconfiguration never shows the UI monitoring itself. `CLIENT` spans are kept: an application that calls Spider Sense's port is doing something real, and that call belongs in its trace.
 
 The UI server's Jetty thread pool is marked daemon in agent mode (`JettyServer.threadPool(...)` with `QueuedThreadPool.setDaemon(true)`) and `shutdownHook(false)`, so a short-lived command-line application still exits when its `main` returns.
 
