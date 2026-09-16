@@ -17,6 +17,9 @@ import java.util.Map;
  * @param retentionHours   rows older than this are swept
  * @param embeddedService  the {@code service.name} of the JVM the server runs inside, or null
  *                         when nobody knows it yet — see {@code ServiceRegistry}
+ * @param appPackages      comma-separated package prefixes that count as application code in a
+ *                         finding's {@code code} frames; empty means "everything that is not a
+ *                         known framework" (agent.md)
  */
 public record Config(
         String host,
@@ -26,7 +29,8 @@ public record Config(
         int retentionHours,
         long slowRequestMs,
         long slowQueryMs,
-        String embeddedService) {
+        String embeddedService,
+        String appPackages) {
 
     public static final String AGENT = "agent";
     public static final String STANDALONE = "standalone";
@@ -54,7 +58,8 @@ public record Config(
                 number(values, "retention.hours", 24L).intValue(),
                 number(values, "slow.request.ms", 500L),
                 number(values, "slow.query.ms", 100L),
-                embeddedService(values));
+                embeddedService(values),
+                string(values, "app.packages", ""));
     }
 
     public boolean agentMode() {

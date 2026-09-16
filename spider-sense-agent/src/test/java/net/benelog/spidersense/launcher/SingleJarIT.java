@@ -162,6 +162,110 @@ class SingleJarIT {
         }
     }
 
+    // --- the command line ---------------------------------------------------------------------
+
+    /**
+     * The CLI of agent.md from the packaged jar: first against the Spider Sense inside the running
+     * application, then against the file it left behind.
+     *
+     * <p>The second half is the promise that matters: the application is gone, its UI with it, and
+     * the same commands still answer, because the database is a file and {@code AUTO_SERVER=TRUE}
+     * never made it the server's private property.
+     */
+    @Test
+    void theCommandLineAsksTheRunningSpiderSenseAndThenTheFileItLeftBehind() throws Exception {
+        int port = freePort();
+        Path log = work.resolve("cli-app.log");
+        Path database = work.resolve("cli-db/sense");
+        String base = "http://127.0.0.1:" + port;
+
+        Process app = start(log,
+                javaBinary.toString(),
+                "-javaagent:" + senseJar,
+                "-Dspidersense.port=" + port,
+                "-Dspidersense.db=" + database,
+                "-Dsample.linger.ms=60000",
+                "-Dotel.service.name=sample",
+                "-cp", testClasses,
+                "net.benelog.spidersense.launcher.SampleApp");
+        try {
+            await("GET /api/status answering in agent mode", log, app,
+                    () -> get(base + "/api/status"),
+                    body -> compact(body).contains("\"mode\":\"agent\""));
+
+            Command mark = cli("mark", "before", "--note=the first run", "--url=" + base);
+            assertThat(mark.exit()).as("mark: %s", mark.err()).isZero();
+            assertThat(mark.out()).startsWith("mark before at ").contains("the first run");
+
+            await("a trace whose root service is sample", log, app,
+                    () -> get(base + "/api/traces?limit=50"),
+                    body -> compact(body).contains("\"rootService\":\"sample\""));
+
+            Command findings = cli("findings", "--since=before", "--url=" + base);
+            assertThat(findings.exit()).as("findings: %s", findings.err()).isZero();
+            assertThat(findings.out()).startsWith("# findings  ");
+
+            Command status = cli("status", "--url=" + base);
+            assertThat(status.exit()).as("status: %s", status.err()).isZero();
+            assertThat(status.out()).startsWith("# status");
+            assertThat(status.out()).as("the server it asked is the one in the application").contains("agent");
+
+            Command passed = cli("check", "--max-errors=0", "--url=" + base);
+            assertThat(passed.exit()).as("the sample's requests carry no error: %s", passed.out()).isZero();
+            assertThat(passed.out()).startsWith("# check  pass");
+
+            Command failed = cli("check", "--max-p95-ms=0", "--url=" + base);
+            assertThat(failed.exit()).as("no request is faster than nothing: %s", failed.out()).isEqualTo(1);
+            assertThat(failed.out()).startsWith("# check  fail");
+
+            Command nonsense = cli("nonsense", "--url=" + base);
+            assertThat(nonsense.exit()).isEqualTo(2);
+            assertThat(nonsense.err()).contains("unknown command: nonsense");
+        } finally {
+            app.destroy();
+            if (!app.waitFor(30, TimeUnit.SECONDS)) {
+                app.destroyForcibly();
+            }
+        }
+
+        // Nothing is listening on that port any more, and --db says so without asking.
+        Command file = cli("status", "--db=" + database);
+        assertThat(file.exit()).as("status from the file: %s", file.err()).isZero();
+        assertThat(file.out()).startsWith("# status");
+        assertThat(file.out()).as("no server answered, so the mode is the file").contains("file");
+        assertThat(file.err()).isEmpty();
+
+        Command marks = cli("marks", "--db=" + database);
+        assertThat(marks.exit()).isZero();
+        assertThat(marks.out()).as("the mark written through the running server").contains("before");
+
+        Command findings = cli("findings", "--since=1h", "--db=" + database);
+        assertThat(findings.exit()).as("findings from the file: %s", findings.err()).isZero();
+        assertThat(findings.out()).startsWith("# findings  ");
+    }
+
+    /** One run of {@code java -jar spider-sense.jar <command>}, with its streams kept apart. */
+    private record Command(int exit, String out, String err) {
+    }
+
+    private int commands;
+
+    private Command cli(String... args) throws Exception {
+        List<String> command = new ArrayList<>(List.of(javaBinary.toString(), "-jar", senseJar.toString()));
+        command.addAll(List.of(args));
+        int run = ++commands;
+        Path out = work.resolve("cli-" + run + ".out");
+        Path err = work.resolve("cli-" + run + ".err");
+        Process process = new ProcessBuilder(command)
+                .directory(work.toFile())
+                .redirectOutput(out.toFile())
+                .redirectError(err.toFile())
+                .start();
+        assertThat(process.waitFor(60, TimeUnit.SECONDS))
+                .as("the command finishes: %s", String.join(" ", command)).isTrue();
+        return new Command(process.exitValue(), read(out), read(err));
+    }
+
     // --- plumbing -----------------------------------------------------------------------------
 
     private Process start(Path log, String... command) throws IOException {

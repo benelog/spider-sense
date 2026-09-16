@@ -230,10 +230,11 @@ public record SpanRecord(
                 }
             }
             case "http" -> {
+                // A client span is named by its method alone; the URL is what says where it went.
+                String url = "CLIENT".equals(kind) ? attr("url.full") : null;
+                String head = url == null ? name : name + " " + url;
                 Long status = httpStatus();
-                if (status != null) {
-                    return name + " → " + status;
-                }
+                return status == null ? head : head + " → " + status;
             }
             default -> {
                 // fall through to the span name

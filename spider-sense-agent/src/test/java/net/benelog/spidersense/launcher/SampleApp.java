@@ -59,8 +59,10 @@ public final class SampleApp {
             server.stop(0);
             pool.shutdownNow();
         }
-        // otel.bsp.schedule.delay is 1000 ms by our defaults; give the batch two turns.
-        Thread.sleep(4000);
+        // otel.bsp.schedule.delay is 1000 ms by our defaults; give the batch two turns. The CLI test
+        // keeps the application up longer than that, because it runs a handful of commands against
+        // the UI inside it and the UI dies with the application.
+        Thread.sleep(Long.getLong("sample.linger.ms", 4000L));
         System.out.println("sample: done");
     }
 }

@@ -1,5 +1,8 @@
 package net.benelog.spidersense.launcher;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+
 /**
  * The {@code Main-Class} of the distributable jar: {@code java -jar spider-sense.jar}.
  *
@@ -12,7 +15,13 @@ public final class SpiderSenseMain {
     private SpiderSenseMain() {
     }
 
+    /** The CLI entry point inside the nested server jar; see {@code docs/agent.md}. */
+    static final String CLI_CLASS = "net.benelog.spidersense.cli.Cli";
+
     public static void main(String[] args) throws Exception {
+        if (isCommand(args)) {
+            System.exit(runCommand(args));
+        }
         for (String arg : args) {
             if ("--help".equals(arg) || "-h".equals(arg)) {
                 printHelp();
@@ -27,6 +36,43 @@ public final class SpiderSenseMain {
         printBanner(config);
         // Blocks until the server is stopped.
         EmbeddedServer.start(config);
+    }
+
+    /**
+     * A first argument that does not start with {@code -} is a CLI command ({@code findings},
+     * {@code trace}, {@code mark}, ...); flags alone mean the standalone server.
+     */
+    static boolean isCommand(String[] args) {
+        return args != null && args.length > 0 && args[0] != null && !args[0].isEmpty()
+                && !args[0].startsWith("-");
+    }
+
+    /**
+     * Runs {@code Cli.run(String[])} from the nested server jar in its own {@link SenseClassLoader}
+     * and returns its exit code, so the launcher itself stays free of every dependency. Errors of
+     * the command are the CLI's to print; only the failure to load it at all is reported here.
+     */
+    static int runCommand(String[] args) {
+        try {
+            SenseClassLoader loader = new SenseClassLoader(NestedJar.serverJar());
+            Thread current = Thread.currentThread();
+            ClassLoader previous = current.getContextClassLoader();
+            try {
+                current.setContextClassLoader(loader);
+                Class<?> cli = Class.forName(CLI_CLASS, true, loader);
+                Method run = cli.getMethod("run", String[].class);
+                return (Integer) run.invoke(null, (Object) args);
+            } catch (InvocationTargetException e) {
+                Throwable cause = e.getCause() == null ? e : e.getCause();
+                System.err.println("spider-sense: " + cause);
+                return 2;
+            } finally {
+                current.setContextClassLoader(previous);
+            }
+        } catch (Exception | LinkageError e) {
+            System.err.println("spider-sense: could not start the command line: " + e);
+            return 2;
+        }
     }
 
     static void printBanner(Config config) {
@@ -56,6 +102,11 @@ public final class SpiderSenseMain {
                   java -javaagent:spider-sense.jar -Dspidersense.collector=http://127.0.0.1:4000 -jar app.jar
                                                                         instrument an app, UI elsewhere
                   java -jar spider-sense.jar                             the collector and UI alone
+                  java -jar spider-sense.jar <command> [options]         ask a running Spider Sense, or the
+                                                                        database file, from the terminal:
+                                                                        status, findings, trace <id>, traces,
+                                                                        endpoints, queries, errors, logs,
+                                                                        mark <name>, marks, compare, check, help
 
                 Options (as --key=value here, as -Dspidersense.key=value under -javaagent):
 

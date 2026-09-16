@@ -1,0 +1,106 @@
+package net.benelog.spidersense.store;
+
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.regex.Pattern;
+
+/**
+ * Named moments: {@code before}, {@code after-fix}, {@code start}.
+ *
+ * <p>A mark is what turns "did my change help" into a question with an answer:
+ * {@code compare --before=before --after=after} needs two instants, and an agent
+ * thinks in names rather than in epoch milliseconds (agent.md). The rows are
+ * shared like everything else in the database and swept with the retention, so a
+ * mark written by the CLI is visible to the UI and to the next process.
+ *
+ * <p>The writer inserts a {@code start} mark of its own whenever a service
+ * reports a process id it has not stored, which is what {@code since=start}
+ * resolves to — "since the application was last restarted", with no cooperation
+ * from anybody.
+ */
+public final class Marks {
+
+    /** One named moment. {@code service} and {@code note} are optional. */
+    public record Mark(long id, long at, String name, String service, String note) {
+    }
+
+    /** What a mark may be called; the same expression api.md states. */
+    public static final Pattern NAME = Pattern.compile("[A-Za-z0-9._-]{1,64}");
+
+    /** The name the writer uses for an automatic mark. */
+    public static final String START = "start";
+
+    private static final int MAX_NOTE = 1024;
+
+    private final Sql sql;
+
+    public Marks(Sql sql) {
+        this.sql = sql;
+    }
+
+    /**
+     * Records a mark.
+     *
+     * @param at the instant, or null for now
+     * @throws IllegalArgumentException when the name is not {@link #NAME}
+     */
+    public Mark create(String name, String service, String note, Long at) {
+        if (name == null || !NAME.matcher(name).matches()) {
+            throw new IllegalArgumentException(
+                    "A mark name is 1 to 64 characters of [A-Za-z0-9._-]: " + name);
+        }
+        long when = at == null ? System.currentTimeMillis() : at;
+        String cutNote = note != null && note.length() > MAX_NOTE ? note.substring(0, MAX_NOTE) : note;
+        long id = sql.with(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "INSERT INTO mark (at_ms, name, service, note) VALUES (?, ?, ?, ?)",
+                    Statement.RETURN_GENERATED_KEYS)) {
+                statement.setLong(1, when);
+                statement.setString(2, name);
+                statement.setString(3, service);
+                statement.setString(4, cutNote);
+                statement.executeUpdate();
+                try (ResultSet keys = statement.getGeneratedKeys()) {
+                    return keys.next() ? keys.getLong(1) : 0L;
+                }
+            }
+        }, "insert mark");
+        return new Mark(id, when, name, service, cutNote);
+    }
+
+    /** The newest marks, newest first. */
+    public List<Mark> list(int limit) {
+        return new ArrayList<>(sql.query(
+                "SELECT * FROM mark ORDER BY at_ms DESC, id DESC LIMIT " + Math.max(1, limit),
+                List.of(), Marks::map));
+    }
+
+    /**
+     * The newest mark with this name, or null.
+     *
+     * <p>When a service is named its own mark wins, because two applications
+     * sharing the database both write a {@code start}; with none of that service
+     * the newest of any service is the honest answer rather than nothing at all.
+     */
+    public Mark newest(String name, String service) {
+        if (service != null) {
+            Mark ofService = sql.queryOne(
+                    "SELECT * FROM mark WHERE name = ? AND service = ? ORDER BY at_ms DESC, id DESC LIMIT 1",
+                    List.of(name, service), Marks::map);
+            if (ofService != null) {
+                return ofService;
+            }
+        }
+        return sql.queryOne("SELECT * FROM mark WHERE name = ? ORDER BY at_ms DESC, id DESC LIMIT 1",
+                List.of(name), Marks::map);
+    }
+
+    private static Mark map(ResultSet rs) throws SQLException {
+        return new Mark(rs.getLong("id"), rs.getLong("at_ms"), rs.getString("name"),
+                rs.getString("service"), rs.getString("note"));
+    }
+}

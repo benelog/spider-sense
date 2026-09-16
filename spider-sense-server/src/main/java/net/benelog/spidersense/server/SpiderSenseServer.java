@@ -10,9 +10,11 @@ import org.eclipse.jetty.util.thread.QueuedThreadPool;
 import org.eclipse.jetty.util.thread.ScheduledExecutorScheduler;
 import org.eclipse.jetty.util.thread.Scheduler;
 
+import net.benelog.spidersense.api.AgentApi;
 import net.benelog.spidersense.api.ApiRoutes;
 import net.benelog.spidersense.api.EventsApi;
 import net.benelog.spidersense.api.MetricsApi;
+import net.benelog.spidersense.api.Reports;
 import net.benelog.spidersense.api.TraceApi;
 import net.benelog.spidersense.ingest.OtlpDecoder;
 import net.benelog.spidersense.ingest.OtlpReceiver;
@@ -80,12 +82,14 @@ public final class SpiderSenseServer implements AutoCloseable {
 
         Queries queries = new Queries(store.sql(), store.tingles(), store.services());
         MetricQueries metrics = new MetricQueries(store.sql());
+        Reports reports = new Reports(config, store, boundPort::get);
 
         App app = new App();
         new OtlpReceiver(new OtlpDecoder(store, boundPort::get), store.writer()).register(app);
-        new ApiRoutes(config, store, queries, boundPort::get).register(app);
-        new TraceApi(store, queries).register(app);
-        new MetricsApi(metrics, store.services()).register(app);
+        new ApiRoutes(config, store, queries, reports, boundPort::get).register(app);
+        new TraceApi(queries, reports).register(app);
+        new MetricsApi(metrics, store.services(), reports.selectors()).register(app);
+        new AgentApi(reports).register(app);
         new EventsApi(store, queries).register(app);
         app.error(HttpStatus.NOT_FOUND, SpiderSenseServer::notFound);
         app.server((a, port) -> server(a, port, config));
@@ -157,7 +161,11 @@ public final class SpiderSenseServer implements AutoCloseable {
                 return WebResponse.html(index);
             }
         }
-        return WebResponse.json(Json.obj().put("error", "Not found: " + path))
+        // A handler that threw a 404 said why ("No such trace: …"); keep its words. The
+        // framework's own "Not Found: /path" for an unmatched route is not worth keeping.
+        String message = req.errorMessage();
+        boolean generic = message == null || message.isBlank() || message.startsWith("Not Found");
+        return WebResponse.json(Json.obj().put("error", generic ? "Not found: " + path : message))
                 .status(HttpStatus.NOT_FOUND);
     }
 

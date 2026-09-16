@@ -6,7 +6,6 @@ import java.util.function.IntSupplier;
 import net.benelog.spidersense.query.Queries;
 import net.benelog.spidersense.query.Window;
 import net.benelog.spidersense.server.Config;
-import net.benelog.spidersense.store.Database;
 import net.benelog.spidersense.store.Store;
 import net.benelog.spidersilk.App;
 import net.benelog.spidersilk.HttpStatus;
@@ -29,13 +28,17 @@ public final class ApiRoutes {
     private final Config config;
     private final Store store;
     private final Queries queries;
+    private final Reports reports;
+    private final Params params;
     private final IntSupplier port;
     private final long startedAt = System.currentTimeMillis();
 
-    public ApiRoutes(Config config, Store store, Queries queries, IntSupplier port) {
+    public ApiRoutes(Config config, Store store, Queries queries, Reports reports, IntSupplier port) {
         this.config = config;
         this.store = store;
         this.queries = queries;
+        this.reports = reports;
+        this.params = new Params(reports.selectors());
         this.port = port;
     }
 
@@ -62,43 +65,8 @@ public final class ApiRoutes {
     }
 
     public WebResponse status(WebRequest req) {
-        String endpoint = config.endpoint(port.getAsInt());
-        Database.Storage storage = store.database().storage();
-        return WebResponse.json(Json.obj()
-                .put("name", NAME)
-                .put("version", VERSION)
-                .put("mode", config.mode())
-                .put("startedAt", startedAt)
-                .put("now", System.currentTimeMillis())
-                .put("endpoint", endpoint)
-                .put("otlp", Json.obj()
-                        .put("traces", endpoint + "/v1/traces")
-                        .put("metrics", endpoint + "/v1/metrics")
-                        .put("logs", endpoint + "/v1/logs"))
-                .put("embeddedService", store.services().embeddedService())
-                .put("thresholds", Json.obj()
-                        .put("slowRequestMs", store.tingles().slowRequestMs())
-                        .put("slowQueryMs", store.tingles().slowQueryMs())
-                        // The scale of every histogram, so the UI builds its legend from here.
-                        .put("responseBucketsMs", Codecs.longs(queries.responseBuckets().bounds())))
-                .put("retention", Json.obj().put("hours", config.retentionHours()))
-                .put("storage", Json.obj()
-                        .put("url", storage.url())
-                        .put("path", storage.path())
-                        .put("sizeBytes", storage.sizeBytes())
-                        .put("fallback", storage.fallback())
-                        .put("fallbackReason", storage.fallbackReason())
-                        .put("droppedBatches", store.writer().droppedBatches())
-                        .put("queued", store.writer().queued()))
-                .put("counts", Json.obj()
-                        .put("spans", queries.spanCount())
-                        .put("traces", queries.traceCount())
-                        .put("logs", queries.logCount())
-                        .put("metricSeries", queries.metricSeriesCount())
-                        .put("services", store.services().count()))
-                .put("oldest", Json.obj()
-                        .put("span", queries.oldestSpan())
-                        .put("log", queries.oldestLog())));
+        return Params.answer(req,
+                reports.status(config.mode(), config.endpoint(port.getAsInt()), startedAt));
     }
 
     public WebResponse clear(WebRequest req) {
@@ -116,7 +84,7 @@ public final class ApiRoutes {
         if (traceId != null) {
             traceIds = List.of(traceId);
         } else {
-            Window window = Params.window(req);
+            Window window = params.window(req);
             Queries.TraceFilter filter = new Queries.TraceFilter(window, Params.service(req), null,
                     null, null, null, null, null, Params.limit(req, 1000, 10_000));
             traceIds = queries.traces(filter).stream().map(t -> t.traceId()).toList();

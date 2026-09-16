@@ -1,0 +1,61 @@
+package net.benelog.spidersense.cli;
+
+/**
+ * The table agent.md's CLI section prints, and the same table a usage error
+ * prints after its one line.
+ *
+ * <p>Plain ASCII on purpose: this is the one output of the CLI that is written
+ * here rather than rendered by the server, and a console that cannot show an
+ * ellipsis should still be able to show the help.
+ */
+final class Help {
+
+    static final String TEXT = """
+            Spider Sense: ask a running Spider Sense, or the database file, from the terminal.
+
+              java -jar spider-sense.jar <command> [arguments] [options]
+
+            Commands:
+              status                       what is running, where the database is, how much it holds
+              findings                     the findings of the window
+              trace <traceId> [--full]     one trace as a tree
+              traces [--status=error|ok] [--min-ms=<n>] [--q=<text>] [--limit=20]
+                                           the newest traces
+              endpoints                    the endpoints of the window
+              queries                      the database statements of the window
+              errors                       the errors of the window
+              logs [--severity=WARN] [--q=<text>] [--trace=<traceId>]
+                                           log lines
+              mark <name> [--note=<text>]  records a mark now
+              marks                        lists marks
+              compare --before=<selector> --after=<selector> [--until=<selector>]
+                                           the two windows side by side
+              check [--max-p95-ms=] [--max-errors=] [--max-error-rate=]
+                    [--max-queries-per-request=] [--max-slow-queries=]
+                    [--max-n-plus-one=] [--min-apdex=] [--endpoint=]
+                                           pass or fail, in the exit code
+              help                         this table
+
+            Common options:
+              --since=<selector>   default 15m
+              --until=<selector>   default now
+              --service=<name>     one service
+              --limit=<n>          the lists: findings, traces, queries, errors, logs, marks
+              --url=<base url>     default http://127.0.0.1:4000, or SPIDERSENSE_URL
+              --db=<path or jdbc url>   read the database directly, without asking any server
+              --json               the JSON of api.md instead of the text
+              --full               whole statements, every repeated span
+
+            A selector is a duration (30s, 5m, 2h, 1d), epoch milliseconds, a mark name,
+            start (the newest automatic start mark) or now.
+
+            With no --url and nothing listening, the database file is read in process; the
+            thresholds are then --slow.request.ms, --slow.query.ms and --app.packages, since
+            no server is there to ask.
+
+            Exit codes: 0 success, 1 check failed, 2 usage or connection error,
+            3 check had no request to judge, 4 not found (a trace id, a mark name).""";
+
+    private Help() {
+    }
+}

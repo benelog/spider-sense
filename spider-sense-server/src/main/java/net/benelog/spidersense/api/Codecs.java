@@ -3,12 +3,16 @@ package net.benelog.spidersense.api;
 import java.util.List;
 import java.util.Map;
 
+import net.benelog.spidersense.query.Check;
+import net.benelog.spidersense.query.Compare;
+import net.benelog.spidersense.query.Findings;
 import net.benelog.spidersense.query.JvmView;
 import net.benelog.spidersense.query.MetricQueries;
 import net.benelog.spidersense.query.Queries;
 import net.benelog.spidersense.query.Stats;
 import net.benelog.spidersense.query.Window;
 import net.benelog.spidersense.store.LogRecord;
+import net.benelog.spidersense.store.Marks;
 import net.benelog.spidersense.store.MetricPoint;
 import net.benelog.spidersense.store.SpanRecord;
 import net.benelog.spidersense.store.Tingle;
@@ -594,5 +598,175 @@ public final class Codecs {
 
     static Json.JsonObject error(String message) {
         return Json.obj().put("error", message);
+    }
+
+    // --- the agent interface --------------------------------------------------
+
+    static Json.JsonObject mark(Marks.Mark mark) {
+        return Json.obj()
+                .put("id", mark.id())
+                .put("at", mark.at())
+                .put("name", mark.name())
+                .put("service", mark.service())
+                .put("note", mark.note());
+    }
+
+    static Json.JsonArray marks(List<Marks.Mark> marks) {
+        Json.JsonArray array = Json.arr();
+        marks.forEach(mark -> array.add(mark(mark)));
+        return array;
+    }
+
+    static Json.JsonObject finding(Findings.Finding finding) {
+        Json.JsonObject numbers = Json.obj();
+        finding.numbers().forEach((key, value) -> any(numbers, key, value));
+        return Json.obj()
+                .put("id", finding.id())
+                .put("kind", finding.kind())
+                .put("severity", finding.severity())
+                .put("service", finding.service())
+                .put("title", finding.title())
+                .put("why", finding.why())
+                .put("subject", Json.obj()
+                        .put("endpointId", finding.subject().endpointId())
+                        .put("queryId", finding.subject().queryId())
+                        .put("errorId", finding.subject().errorId())
+                        .put("pool", finding.subject().pool()))
+                .put("numbers", numbers)
+                .put("statement", finding.statement())
+                .put("code", strings(finding.code()))
+                .put("traces", strings(finding.traces()));
+    }
+
+    static Json.JsonArray findings(List<Findings.Finding> findings) {
+        Json.JsonArray array = Json.arr();
+        findings.forEach(finding -> array.add(finding(finding)));
+        return array;
+    }
+
+    /**
+     * A finding's {@code numbers}, whose keys are the kind's own.
+     *
+     * <p>They are data rather than schema — every kind names different ones — so
+     * they are written by the type of the value, which is the one place in this file
+     * that does not read like the contract, because the contract itself says
+     * "kind-specific".
+     */
+    private static void any(Json.JsonObject object, String key, Object value) {
+        switch (value) {
+            case null -> object.putNull(key);
+            case String text -> object.put(key, text);
+            case Double number -> put(object, key, number.doubleValue());
+            case Float number -> put(object, key, number.doubleValue());
+            case Number number -> object.put(key, number.longValue());
+            case Boolean flag -> object.put(key, flag.booleanValue());
+            case List<?> list -> {
+                Json.JsonArray array = Json.arr();
+                for (Object element : list) {
+                    if (element instanceof Map<?, ?> map) {
+                        Json.JsonObject inner = Json.obj();
+                        map.forEach((name, each) -> any(inner, String.valueOf(name), each));
+                        array.add(inner);
+                    } else {
+                        array.add(String.valueOf(element));
+                    }
+                }
+                object.put(key, array);
+            }
+            default -> object.put(key, String.valueOf(value));
+        }
+    }
+
+    static Json.JsonObject comparison(Compare.Comparison comparison) {
+        Json.JsonArray endpoints = Json.arr();
+        for (Compare.EndpointDiff diff : comparison.endpoints()) {
+            endpoints.add(Json.obj()
+                    .put("endpointId", diff.endpointId())
+                    .put("service", diff.service())
+                    .put("name", diff.name())
+                    .put("before", side(diff.before()))
+                    .put("after", side(diff.after()))
+                    .put("verdict", diff.verdict()));
+        }
+        Json.JsonArray queries = Json.arr();
+        for (Compare.QueryDiff diff : comparison.queries()) {
+            queries.add(Json.obj()
+                    .put("queryId", diff.queryId())
+                    .put("service", diff.service())
+                    .put("statement", diff.statement())
+                    .put("before", querySide(diff.before()))
+                    .put("after", querySide(diff.after()))
+                    .put("verdict", diff.verdict()));
+        }
+        Json.JsonArray errors = Json.arr();
+        for (Compare.ErrorDiff diff : comparison.errors()) {
+            errors.add(Json.obj()
+                    .put("errorId", diff.errorId())
+                    .put("service", diff.service())
+                    .put("type", diff.type())
+                    .put("message", diff.message())
+                    .put("before", diff.before())
+                    .put("after", diff.after())
+                    .put("verdict", diff.verdict()));
+        }
+        return Json.obj()
+                .put("before", Json.obj()
+                        .put("from", comparison.before().from())
+                        .put("to", comparison.before().to()))
+                .put("after", Json.obj()
+                        .put("from", comparison.after().from())
+                        .put("to", comparison.after().to()))
+                .put("totals", Json.obj()
+                        .put("before", totals(comparison.beforeTotals()))
+                        .put("after", totals(comparison.afterTotals())))
+                .put("endpoints", endpoints)
+                .put("queries", queries)
+                .put("errors", errors);
+    }
+
+    private static Json.JsonValue side(Compare.Side side) {
+        if (side == null) {
+            return null;
+        }
+        Json.JsonObject object = Json.obj()
+                .put("calls", side.calls())
+                .put("errors", side.errors());
+        put(object, "p50Ms", side.p50Ms());
+        put(object, "p95Ms", side.p95Ms());
+        put(object, "maxMs", side.maxMs());
+        put(object, "dbCallsPerRequest", side.dbCallsPerRequest());
+        put(object, "dbMsPerRequest", side.dbMsPerRequest());
+        return object;
+    }
+
+    private static Json.JsonValue querySide(Compare.QuerySide side) {
+        if (side == null) {
+            return null;
+        }
+        Json.JsonObject object = Json.obj().put("calls", side.calls());
+        put(object, "callsPerRequest", side.callsPerRequest());
+        put(object, "p95Ms", side.p95Ms());
+        put(object, "totalMs", side.totalMs());
+        return object;
+    }
+
+    static Json.JsonObject checkResult(Check.CheckResult result) {
+        Json.JsonArray checks = Json.arr();
+        for (Check.RuleCheck check : result.checks()) {
+            Json.JsonObject object = Json.obj().put("rule", check.rule());
+            put(object, "limit", check.limit());
+            put(object, "actual", check.actual());
+            checks.add(object.put("pass", check.pass()).put("detail", check.detail()));
+        }
+        Json.JsonObject object = Json.obj();
+        if (result.pass() == null) {
+            object.putNull("pass");
+        } else {
+            object.put("pass", result.pass().booleanValue());
+        }
+        return object
+                .put("requests", result.requests())
+                .put("reason", result.reason())
+                .put("checks", checks);
     }
 }

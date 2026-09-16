@@ -25,7 +25,7 @@ public final class Sweeper implements AutoCloseable {
     /** The time column each table is swept by. */
     private static final String[][] TABLE_AND_COLUMN = {
             {"span", "start_ms"}, {"trace", "start_ms"}, {"log", "at_ms"},
-            {"metric_point", "at_ms"}, {"tingle", "at_ms"}};
+            {"metric_point", "at_ms"}, {"tingle", "at_ms"}, {"mark", "at_ms"}};
 
     private final Sql sql;
     private final int retentionHours;

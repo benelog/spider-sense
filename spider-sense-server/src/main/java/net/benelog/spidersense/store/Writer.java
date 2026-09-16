@@ -423,6 +423,11 @@ public final class Writer implements AutoCloseable {
     /**
      * {@code first_seen} must survive, so this is an update-then-insert rather
      * than a MERGE that would overwrite it.
+     *
+     * <p>The stored process id is read first, because a sighting whose
+     * {@code process.pid} is new to this service means the application was
+     * restarted, and that moment is worth a {@code start} mark: it is what
+     * {@code since=start} resolves to, and nobody had to ask for it (agent.md).
      */
     private void mergeServices(Connection connection, List<Batch> batches) throws SQLException {
         Map<String, Batch.Sighting> sightings = new LinkedHashMap<>();
@@ -435,6 +440,7 @@ public final class Writer implements AutoCloseable {
             Object language = sighting.resource().get("telemetry.sdk.language");
             Object pid = sighting.resource().get("process.pid");
             String resource = AttrJson.encode(sighting.resource());
+            markRestart(connection, sighting, pid);
             try (PreparedStatement update = connection.prepareStatement(
                     "UPDATE service SET language = ?, pid = ?, last_seen = ?, resource = ? WHERE name = ?")) {
                 update.setString(1, language == null ? null : String.valueOf(language));
@@ -457,6 +463,44 @@ public final class Writer implements AutoCloseable {
                 insert.setString(6, resource);
                 insert.executeUpdate();
             }
+        }
+    }
+
+    /**
+     * A {@code start} mark for a service whose process id is new.
+     *
+     * <p>"New" is both a service nobody has stored yet and a service whose stored
+     * pid differs: the second is the restart an agent has just caused by rebuilding
+     * and running the application again. A sighting without a {@code process.pid}
+     * marks nothing, since there is nothing to compare.
+     */
+    private void markRestart(Connection connection, Batch.Sighting sighting, Object pid)
+            throws SQLException {
+        if (!(pid instanceof Number number)) {
+            return;
+        }
+        Long stored = null;
+        boolean known = false;
+        try (PreparedStatement select = connection.prepareStatement(
+                "SELECT pid FROM service WHERE name = ?")) {
+            select.setString(1, sighting.name());
+            try (ResultSet rs = select.executeQuery()) {
+                if (rs.next()) {
+                    known = true;
+                    stored = Sql.longOrNull(rs, "pid");
+                }
+            }
+        }
+        if (known && stored != null && stored == number.longValue()) {
+            return;
+        }
+        try (PreparedStatement insert = connection.prepareStatement(
+                "INSERT INTO mark (at_ms, name, service, note) VALUES (?, ?, ?, ?)")) {
+            insert.setLong(1, sighting.at());
+            insert.setString(2, Marks.START);
+            insert.setString(3, sighting.name());
+            insert.setString(4, "pid " + number.longValue());
+            insert.executeUpdate();
         }
     }
 

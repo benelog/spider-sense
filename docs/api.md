@@ -47,7 +47,7 @@ Partial-success is never reported (everything decodable is stored).
 }
 ```
 
-`DELETE /api/data` → `204`. Deletes every span, trace, log, metric point and tingle (services and metric metadata stay).
+`DELETE /api/data` → `204`. Deletes every span, trace, log, metric point, tingle and mark (services and metric metadata stay).
 
 `GET /api/export?from&to&service&traceId` → `application/json` download (`Content-Disposition: attachment`) of `{ "traces": [<trace as in GET /api/traces/{id}>...] }`. `traceId` alone exports one trace.
 
@@ -340,6 +340,80 @@ For a monotonic sum (`jvm.cpu.time`, `jvm.gc.duration`'s count), `v` is the rate
 `connectionPools` is a Pinpoint-style "data source" panel: one entry per JDBC pool the agent instruments (HikariCP, Tomcat JDBC, c3p0, ...), empty when the service reports none.
 It is read from `db.client.connections.usage` (attribute `state` = `used` | `idle`, pool from `pool.name`), `db.client.connections.max` and `db.client.connections.pending_requests`, or from their stable-semconv names `db.client.connection.count` (`db.client.connection.state`, `db.client.connection.pool.name`), `db.client.connection.max` and `db.client.connection.pending_requests`.
 `max` and `pending` are `null` where the pool reports no such series.
+
+## Agent-facing endpoints
+
+The semantics (time selectors, the finding rules, verdicts, the text renderings) are specified in [agent.md](agent.md); this section is the wire shape only.
+
+### Time selectors
+
+`since` and `until` are accepted by the endpoints below and by every windowed endpoint of this document, as an alternative to `from`/`to`; `from`/`to` win when both are given.
+A selector is a duration (`30s`, `5m`, `2h`, `1d`), epoch milliseconds (13 or more digits), a mark name (the newest mark with that name), `start` (the newest automatic start mark, of `service` when given) or `now`.
+`since` defaults to `15m`, `until` to `now`.
+An unknown mark name is `404`; a `since` after `until` is `400`.
+
+### Text rendering
+
+`format=text`, or an `Accept` header whose first type is `text/markdown` or `text/plain`, answers `text/markdown; charset=utf-8` instead of JSON on: `/api/status`, `/api/findings`, `/api/marks`, `/api/compare`, `/api/check`, `/api/traces`, `/api/traces/{id}`, `/api/endpoints`, `/api/queries`, `/api/errors`, `/api/logs`, `/api/services`.
+`full=true` keeps statements whole and expands collapsed spans.
+The format of each rendering is in agent.md.
+
+### Marks
+
+`GET /api/marks?limit=50` → `{ "marks": [ <Mark> ] }`, newest first.
+
+`POST /api/marks` with `{ "name": "before", "note": "…" | null, "service": "…" | null, "at": <epoch ms> | absent }` → `201` `<Mark>`.
+`name` is required and matches `[A-Za-z0-9._-]{1,64}`, else `400`.
+
+`Mark`:
+
+```json
+{ "id": 12, "at": 1758000000000, "name": "before", "service": "spring-orders" | null, "note": "pid 12345" | null }
+```
+
+A mark named `start` is inserted by the writer when a service reports a `process.pid` it has not stored for that service.
+
+### Findings
+
+`GET /api/findings?since&until&service&limit=20` → `{ "window": {...}, "requests": 120, "findings": [ <Finding> ] }`, ranked as agent.md says; `limit` is at most 100.
+
+`Finding`:
+
+```json
+{ "id": "n-plus-one:1a2b3c4d5e6f", "kind": "error" | "n-plus-one" | "slow-query" | "slow-endpoint" | "pool-exhausted",
+  "severity": "high" | "medium" | "low", "service": "…", "title": "…", "why": "…",
+  "subject": { "endpointId": "…" | null, "queryId": "…" | null, "errorId": "…" | null, "pool": "…" | null },
+  "numbers": { ...kind-specific, see agent.md... },
+  "statement": "…" | null, "code": [ "orders.OrderService.load(OrderService.java:41)" ], "traces": [ "<traceId>" ] }
+```
+
+### Compare
+
+`GET /api/compare?before=<selector>&after=<selector>&until=<selector>&service` → the two windows `[before, after)` and `[after, until)`:
+
+```json
+{ "before": { "from": …, "to": … }, "after": { "from": …, "to": … },
+  "totals": { "before": <Totals>, "after": <Totals> },
+  "endpoints": [ { "endpointId": "…", "service": "…", "name": "…", "before": <Side> | null, "after": <Side> | null, "verdict": "better" | "worse" | "same" | "new" | "gone" } ],
+  "queries":   [ { "queryId": "…", "service": "…", "statement": "…", "before": <QuerySide> | null, "after": <QuerySide> | null, "verdict": "…" } ],
+  "errors":    [ { "errorId": "…", "service": "…", "type": "…", "message": "…", "before": 0, "after": 3, "verdict": "…" } ] }
+```
+
+`Side` is `{ "calls", "errors", "p50Ms", "p95Ms", "maxMs", "dbCallsPerRequest", "dbMsPerRequest" }`; `QuerySide` is `{ "calls", "callsPerRequest", "p95Ms", "totalMs" }`.
+`before` and `after` are required; a missing one is `400`.
+
+### Check
+
+`GET /api/check?since&until&service&endpoint&maxP95Ms&maxErrors&maxErrorRate&maxQueriesPerRequest&maxSlowQueries&maxNPlusOne&minApdex`
+
+```json
+{ "pass": true | false | null, "requests": 12, "reason": "no requests in the window" | null,
+  "checks": [ { "rule": "maxP95Ms", "limit": 500, "actual": 812.4, "pass": false, "detail": "GET /orders/report p95 812.4 ms over 3 calls" } ] }
+```
+
+With no rule given the defaults are `maxErrors=0`, `maxNPlusOne=0`, `maxP95Ms=<slowRequestMs>`.
+`endpoint` is an `endpointId` or an endpoint name.
+The response also carries the verdict as the header `X-Spider-Sense-Pass: true|false|none`, so the CLI can ask once for the text rendering and still exit with a code rather than parse prose for a word.
 
 ## Static UI
 

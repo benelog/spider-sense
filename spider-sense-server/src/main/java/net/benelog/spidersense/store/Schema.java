@@ -11,7 +11,7 @@ package net.benelog.spidersense.store;
  */
 public final class Schema {
 
-    public static final int VERSION = 2;
+    public static final int VERSION = 3;
 
     private Schema() {
     }
@@ -148,6 +148,15 @@ public final class Schema {
             )""",
             "CREATE INDEX IF NOT EXISTS tingle_at ON tingle (at_ms)",
             """
+            CREATE TABLE IF NOT EXISTS mark (
+                id       BIGINT AUTO_INCREMENT PRIMARY KEY,
+                at_ms    BIGINT NOT NULL,
+                name     VARCHAR(64) NOT NULL,
+                service  VARCHAR(255),
+                note     VARCHAR(1024)
+            )""",
+            "CREATE INDEX IF NOT EXISTS mark_at ON mark (at_ms)",
+            """
             CREATE TABLE IF NOT EXISTS meta (
                 key   VARCHAR(64) PRIMARY KEY,
                 value VARCHAR(4096) NOT NULL
@@ -155,12 +164,27 @@ public final class Schema {
     };
 
     /** The tables the data lives in, in the order they must be emptied. */
-    static final String[] DATA_TABLES = {"span", "trace", "log", "metric_point", "tingle"};
+    static final String[] DATA_TABLES = {"span", "trace", "log", "metric_point", "tingle", "mark"};
 
     static void create(Sql sql) {
+        create(sql, true);
+    }
+
+    /**
+     * @param upgrade whether a database of another version is dropped and recreated
+     *                (the server's way) or refused (the CLI's way: a command that
+     *                reads a file must never empty it under a running older server)
+     */
+    static void create(Sql sql, boolean upgrade) {
         sql.execute(TABLES);
         Long stored = sql.queryOne("SELECT value FROM meta WHERE key = 'schema_version'",
                 java.util.List.of(), rs -> Long.valueOf(rs.getString(1)));
+        if (stored != null && stored != VERSION && !upgrade) {
+            throw new IllegalStateException("the database is schema version " + stored
+                    + " and this Spider Sense expects " + VERSION
+                    + "; start an application or the standalone server with this version first"
+                    + " (it recreates the tables), or point --db at another file");
+        }
         if (stored == null) {
             sql.update("MERGE INTO meta (key, value) KEY(key) VALUES (?, ?)",
                     java.util.List.of("schema_version", String.valueOf(VERSION)));
@@ -168,7 +192,7 @@ public final class Schema {
                     java.util.List.of("created_at", String.valueOf(System.currentTimeMillis())));
         } else if (stored != VERSION) {
             for (String table : new String[]{"span", "trace", "log", "metric_point", "metric_series",
-                    "metric", "tingle", "service"}) {
+                    "metric", "tingle", "mark", "service"}) {
                 sql.execute("DROP TABLE IF EXISTS " + table);
             }
             sql.execute(TABLES);

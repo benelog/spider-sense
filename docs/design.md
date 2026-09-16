@@ -23,6 +23,7 @@ The UI is a Spider Silk application (`net.benelog.spidersilk`), and the product 
 | **Agent** (Glowroot-style) | `java -javaagent:spider-sense.jar -jar app.jar` | The OpenTelemetry Java agent instruments the app. An embedded collector + UI starts inside the same JVM on port 4000 and receives the agent's OTLP export over loopback. |
 | **Agent, forwarding** | `java -javaagent:spider-sense.jar -Dspidersense.collector=http://localhost:4000 -jar app.jar` | Same instrumentation, no embedded UI: the agent exports to a Spider Sense running elsewhere. Several apps share one UI this way. |
 | **Standalone** (SigNoz/OpenObserve-style) | `java -jar spider-sense.jar` | Collector + UI only, on port 4000. Anything that speaks OTLP/HTTP can send to it: the modes above, another language's SDK, a Collector. |
+| **CLI** | `java -jar spider-sense.jar findings --since=start` | No server: a command that asks the running Spider Sense over HTTP, or reads the H2 file directly when none is running, and prints text. For people in a terminal and for AI agents; see [agent.md](agent.md). |
 
 The jar is Java 21+ (Spider Silk's floor). The monitored application can be any JVM the OpenTelemetry agent supports, but the embedded UI needs 21+, so agent mode requires 21+.
 
@@ -58,6 +59,7 @@ The server never sees the application's classes, and the application never sees 
 4. Call `io.opentelemetry.javaagent.OpenTelemetryAgent.premain(agentArgs, inst)`. Its jar-location check only requires a `Premain-Class` attribute in the manifest of the jar that class came from (verified against 2.31.1's `verifyJarManifestMainClassIsThis`), so our manifest satisfies it.
 
 `SpiderSenseMain.main` (standalone) does step 2 with `--mode=standalone` and then blocks (`join`).
+When its first argument does not start with `-` it is a CLI command instead: the launcher loads the nested jar the same way and invokes `net.benelog.spidersense.cli.Cli.run(String[])`, exiting with what it returns ([agent.md](agent.md)).
 
 Even with the class-loader exclusion in place, the collector drops any `SERVER` span whose `server.port` attribute equals its own port and whose service is the one it is embedded in; belt and braces, so a misconfiguration never shows the UI monitoring itself. `CLIENT` spans are kept: an application that calls Spider Sense's port is doing something real, and that call belongs in its trace.
 
@@ -78,6 +80,7 @@ All via system properties (agent mode has no other channel before `main`); the s
 | `spidersense.slow.request.ms` | `500` | a server span slower than this is a "tingle" |
 | `spidersense.slow.query.ms` | `100` | a DB span slower than this is a "tingle" |
 | `spidersense.open` | `false` | agent mode: open the browser at startup (`java.awt.Desktop`), best effort |
+| `spidersense.app.packages` | unset | comma-separated package prefixes that count as application code in a finding's `code` frames; unset means "everything that is not a known framework" ([agent.md](agent.md)) |
 
 Every `otel.*` property still works as documented by the OpenTelemetry agent; Spider Sense only fills in defaults.
 
@@ -90,6 +93,7 @@ Gradle module `spider-sense-server`. A Spider Silk `App` with three concerns:
    - `Tingles` are also rows, but the last 500 are mirrored in memory for the SSE stream and the Overview feed.
    - `EventBus`: ingest notifications to SSE subscribers, coalesced to at most 4 messages/second.
 3. **JSON API + static UI**: the contract in [api.md](api.md); the UI in `src/main/resources/public` per [ui.md](ui.md).
+4. **The agent interface**: findings, marks, compare, check and a Markdown rendering of every list, over the same `Queries` as the UI, plus the CLI that fronts them; specified in [agent.md](agent.md).
 
 Semantic conventions: the OpenTelemetry Java agent still emits the older database attributes by default (`db.system`, `db.statement`, `db.name`, `db.operation`, `db.sql.table`) and the stable HTTP ones (`http.request.method`, `http.route`, `url.path`, `http.response.status_code`, `server.port`); with `otel.semconv-stability.opt-in=database` it emits `db.system.name`, `db.query.text`, `db.namespace`, `db.operation.name`, `db.collection.name`. The decoder normalises both generations into `SpanRecord`'s accessors, and also the pre-stable HTTP names (`http.method`, `http.target`, `http.status_code`) for other SDKs.
 

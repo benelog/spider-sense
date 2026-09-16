@@ -239,6 +239,41 @@ public final class Queries {
         });
     }
 
+    /** The database work the requests of one endpoint did: calls and time, summed. */
+    public record DbWork(long calls, double totalMs) {
+
+        public static final DbWork NONE = new DbWork(0, 0);
+    }
+
+    /**
+     * How much database work each endpoint's requests did, by endpoint id.
+     *
+     * <p>The join is "a database span of the same trace and the same service"
+     * (storage.md): the database work of a downstream service belongs to that
+     * service's own endpoint, not to the one that called it. A finding's
+     * {@code dbShare} and a comparison's {@code dbCallsPerRequest} are the same
+     * question, so they are one statement.
+     */
+    public Map<String, DbWork> databaseWork(Window window, String service) {
+        List<Object> params = new ArrayList<>(List.of(window.from(), window.to(),
+                window.from(), window.to()));
+        String where = "e.entry AND e.endpoint_id IS NOT NULL AND e.start_ms BETWEEN ? AND ?"
+                + " AND d.start_ms BETWEEN ? AND ?";
+        if (service != null) {
+            where = where + " AND e.service = ?";
+            params.add(service);
+        }
+        Map<String, DbWork> work = new HashMap<>();
+        sql.query("SELECT e.endpoint_id AS id, COUNT(*) AS calls, SUM(d.duration_ns) AS total_ns"
+                + " FROM span e JOIN span d ON d.trace_id = e.trace_id AND d.service = e.service"
+                + " AND d.query_id IS NOT NULL WHERE " + where + " GROUP BY e.endpoint_id",
+                params, rs -> {
+                    work.put(rs.getString("id"), new DbWork(rs.getLong("calls"), Rows.ms(rs, "total_ns")));
+                    return null;
+                });
+        return work;
+    }
+
     private Map<String, Map<String, Long>> statusCodes(Clause where) {
         Map<String, Map<String, Long>> byEndpoint = new HashMap<>();
         sql.query("SELECT endpoint_id, http_status, COUNT(*) AS calls FROM span WHERE " + where.sql()
@@ -951,9 +986,10 @@ public final class Queries {
      * every query and every error group of one page from a single scan, which
      * storage.md accepts at local-development volumes.
      */
-    private record Ancestry(Map<String, Entry> entries, Map<String, String> parents) {
+    record Ancestry(Map<String, Entry> entries, Map<String, String> parents) {
 
-        record Entry(String endpoint, String service) {
+        /** The entry span itself, so a finding can count the requests it affected. */
+        record Entry(String spanId, String endpoint, String service) {
         }
 
         static Ancestry of(Sql sql, Window window) {
@@ -968,7 +1004,8 @@ public final class Queries {
                         }
                         if (rs.getBoolean("entry")) {
                             String endpoint = rs.getString("endpoint");
-                            entries.put(spanId, new Entry(endpoint == null ? rs.getString("name") : endpoint,
+                            entries.put(spanId, new Entry(spanId,
+                                    endpoint == null ? rs.getString("name") : endpoint,
                                     rs.getString("service")));
                         }
                         return null;

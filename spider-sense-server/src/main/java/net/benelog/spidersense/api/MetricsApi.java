@@ -23,10 +23,13 @@ public final class MetricsApi {
 
     private final MetricQueries metrics;
     private final ServiceRegistry services;
+    private final Params params;
 
-    public MetricsApi(MetricQueries metrics, ServiceRegistry services) {
+    public MetricsApi(MetricQueries metrics, ServiceRegistry services,
+            net.benelog.spidersense.query.Selectors selectors) {
         this.metrics = metrics;
         this.services = services;
+        this.params = new Params(selectors);
     }
 
     public void register(App app) {
@@ -42,7 +45,7 @@ public final class MetricsApi {
 
     public WebResponse series(WebRequest req) {
         String name = req.queryParam("name");
-        Window window = Params.window(req);
+        Window window = params.window(req);
         boolean rate = req.queryParam("rate", Boolean::parseBoolean, false);
         List<MetricQueries.SeriesData> series = metrics.series(name, Params.service(req),
                 Params.attributeFilters(req), window);
@@ -59,7 +62,7 @@ public final class MetricsApi {
     }
 
     public WebResponse jvm(WebRequest req) {
-        Window window = Params.window(req);
+        Window window = params.window(req);
         String name = Params.service(req);
         if (name == null) {
             name = firstServiceWithJvm();

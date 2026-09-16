@@ -180,7 +180,15 @@ public record JvmView(String service, Runtime runtime, Memory heap, Memory nonHe
      * writes a null per point rather than a shorter array, so every array of a pool
      * lines up with its own timeline.
      */
-    private static List<ConnectionPool> connectionPools(MetricQueries metrics, String service,
+    /**
+     * The JDBC pools one service reports, read from either generation of the
+     * semantic conventions.
+     *
+     * <p>Public because a {@code pool-exhausted} finding asks the same question of
+     * the same series (agent.md), and two readings of "what did the pool do" would
+     * be two answers.
+     */
+    public static List<ConnectionPool> connectionPools(MetricQueries metrics, String service,
             Window window) {
         List<SeriesData> usage =
                 metrics.series(MetricSeriesNames.POOL_CONNECTIONS, service, Map.of(), window);

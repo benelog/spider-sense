@@ -82,6 +82,23 @@ The data is in an H2 file under `~/db/spider-sense/`, so the screens are still t
 
 <p align="center"><img src="docs/images/services-standalone.jpg" alt="The standalone UI showing both services after the applications were stopped" width="900"></p>
 
+## For AI agents
+
+The same jar is a command line, and the answers are made for an agent's loop: change the code, run, hit a few endpoints, read what to fix, check that the fix held.
+
+```bash
+java -jar spider-sense.jar mark before                     # name the moment
+# exercise the endpoints, or run the tests
+java -jar spider-sense.jar findings --since=before          # ranked: N+1, slow queries, slow endpoints, errors, exhausted pools
+java -jar spider-sense.jar trace 4bf92f3577b34da6a3ce929d0e0e4736   # one request as a tree, repeats collapsed
+# fix, restart
+java -jar spider-sense.jar compare --before=before --after=start     # the same endpoints and queries, side by side
+java -jar spider-sense.jar check --max-queries-per-request=10       # exit code 0 or 1
+```
+
+Every command prints Markdown (`--json` for the JSON), asks the running Spider Sense over HTTP, and reads the H2 file directly when none is running, so it still answers after the application has crashed.
+`skills/spider-sense/` is a skill that teaches an agent the whole loop; [docs/agent.md](docs/agent.md) is the specification.
+
 ## The examples
 
 Two deliberately misbehaving applications and a load generator, so there is something to look at:

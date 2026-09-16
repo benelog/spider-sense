@@ -19,7 +19,7 @@ An application that uses H2 itself loads its own copy of the driver in its own c
 
 ## What is stored
 
-One row per span, log record, metric point and tingle, plus a per-trace summary row that the writer maintains, so the lists and aggregations the API serves are SQL over indexed columns rather than a scan of blobs.
+One row per span, log record, metric point, tingle and mark (a named moment, see [agent.md](agent.md)), plus a per-trace summary row that the writer maintains, so the lists and aggregations the API serves are SQL over indexed columns rather than a scan of blobs.
 Attributes and events are kept as JSON text in the same row; the columns beside them are the values the queries need, extracted once at ingest.
 
 ```sql
@@ -153,20 +153,29 @@ CREATE TABLE IF NOT EXISTS tingle (
 );
 CREATE INDEX IF NOT EXISTS tingle_at ON tingle (at_ms);
 
+CREATE TABLE IF NOT EXISTS mark (
+    id       BIGINT AUTO_INCREMENT PRIMARY KEY,
+    at_ms    BIGINT NOT NULL,
+    name     VARCHAR(64) NOT NULL,         -- [A-Za-z0-9._-]; "start" is written by the writer
+    service  VARCHAR(255),
+    note     VARCHAR(1024)
+);
+CREATE INDEX IF NOT EXISTS mark_at ON mark (at_ms);
+
 CREATE TABLE IF NOT EXISTS meta (
     key   VARCHAR(64) PRIMARY KEY,
     value VARCHAR(4096) NOT NULL             -- schema_version, created_at
 );
 ```
 
-The schema is created with `IF NOT EXISTS` at startup; `meta.schema_version` starts at `1`, and a later version that changes a table drops and recreates it (the data is a cache of a development session, not a record).
+The schema is created with `IF NOT EXISTS` at startup; `meta.schema_version` is `3` (the `mark` table arrived with it), and a version that changes a table drops and recreates every table (the data is a cache of a development session, not a record).
 
 ## How it is written
 
 Ingest never touches the database on the request thread.
 The OTLP handler decodes the request into records and hands them to a `Writer`: a bounded queue (10,000 batches; when full, the oldest batch is dropped and a counter shown on `/api/status` increments) drained by one daemon thread that flushes every 200 ms or as soon as 500 records are waiting, in one transaction per flush with JDBC batch inserts.
 After each flush the writer recomputes the `trace` rows of the trace ids the flush touched (`MERGE INTO trace ... SELECT ... FROM span WHERE trace_id IN (...) GROUP BY trace_id`), because a trace's spans arrive in several exports and from several services, and publishes the flush's tingles and counts to the SSE stream.
-The `service` row is merged on every flush that carries the service.
+The `service` row is merged on every flush that carries the service; when the sighting carries a `process.pid` that differs from the stored one (or the row is new), the writer also inserts a `mark` named `start` for that service with the note `pid <pid>`, which is what `since=start` resolves to.
 A JVM shutdown hook flushes what is queued.
 
 Metric points are written on the same path; a series row is looked up by `(service, name, attr_hash)` through a small in-memory cache of ids.
@@ -181,16 +190,21 @@ Every API answer is one or a few SQL statements over the window:
 - Time series: `GROUP BY start_ms / :bucket` for counts, errors, histogram buckets and percentiles per bucket.
 - The service map: `service → service` edges are one self-join, `span c JOIN span p ON p.trace_id = c.trace_id AND p.span_id = c.parent_span_id WHERE c.entry AND p.service <> c.service`, grouped by the two services; the external targets reuse the dependency scan (outbound spans of the window, capped at 20,000 rows) minus the spans that self-join found.
 - A trace: `SELECT ... FROM span WHERE trace_id = ? ORDER BY start_ns`, plus its logs.
+- Findings (agent.md): `n-plus-one` is `GROUP BY trace_id, query_id HAVING COUNT(*) >= 5` over the database spans of the window, attributed to the entry span by the same parent-chain walk the query callers use; `dbCallsPerRequest` and `dbMsPerRequest` of an endpoint join the endpoint's entry spans with the database spans of the same trace and service; the other kinds are the endpoint, query and error aggregations above, filtered by the thresholds.
+- A time selector that names a mark: `SELECT at_ms FROM mark WHERE name = ? [AND service = ?] ORDER BY at_ms DESC LIMIT 1`.
 - Free-text search (`q`): `LOWER(name) LIKE ? OR LOWER(attributes) LIKE ?` within the window; a scan of the window is acceptable at local-development volumes.
 - JVM and metrics: `metric_point` joined with `metric_series`, resampled in Java where the API asks for it.
 
 Connections come from H2's `JdbcConnectionPool` (max 8); the writer holds one of its own.
 Reads are plain JDBC through one small helper (`Sql.query(sql, params, rowMapper)`); no ORM, no spring-jdbc, so the nested server jar carries only H2 beyond what it already has.
 
+The CLI (agent.md) reads the same way when no server answers: it opens the same URL, so it joins a running auto-server or, when none is running, opens the file itself for the length of the command, and runs the same `Queries` without a writer or a sweeper.
+Its open refuses a missing file and refuses another `schema_version` instead of dropping the tables, since the database it joined may belong to an older server that is still writing to it.
+
 ## Retention
 
 `spidersense.retention.hours` (default `24`).
-A daemon sweeper runs a minute after start and every five minutes after that: `DELETE FROM span|trace|log|metric_point|tingle WHERE <time> < now - retention`, then `metric_series` rows with no points.
+A daemon sweeper runs a minute after start and every five minutes after that: `DELETE FROM span|trace|log|metric_point|tingle|mark WHERE <time> < now - retention`, then `metric_series` rows with no points.
 `DELETE /api/data` runs the same deletes without the time bound.
 At 24 hours of a few requests per second the file stays in the low hundreds of megabytes; H2 reclaims space on the next compaction when the database closes.
 `spidersense.retention.spans` and the other count caps from the earlier in-memory design are gone; time is the only retention.

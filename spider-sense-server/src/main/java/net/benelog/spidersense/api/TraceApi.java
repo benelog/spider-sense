@@ -6,7 +6,6 @@ import java.util.List;
 import net.benelog.spidersense.query.Queries;
 import net.benelog.spidersense.query.Stats;
 import net.benelog.spidersense.query.Window;
-import net.benelog.spidersense.store.Store;
 import net.benelog.spidersilk.App;
 import net.benelog.spidersilk.HttpException;
 import net.benelog.spidersilk.HttpStatus;
@@ -21,18 +20,24 @@ import net.benelog.spidersilk.json.Json;
  * <p>Each handler is the same three steps — read the window and the filters,
  * ask {@link Queries} for records, render with {@link Codecs} — so what an
  * endpoint answers is visible without following anything.
+ *
+ * <p>The seven endpoints that also answer Markdown (api.md) go through
+ * {@link Reports} instead of rendering here, because the CLI answers those same
+ * seven with no server running and there must be one implementation of each.
  */
 public final class TraceApi {
 
     private static final int DETAIL_TRACES = 20;
     private static final int TOP_N = 10;
 
-    private final Store store;
     private final Queries queries;
+    private final Reports reports;
+    private final Params params;
 
-    public TraceApi(Store store, Queries queries) {
-        this.store = store;
+    public TraceApi(Queries queries, Reports reports) {
         this.queries = queries;
+        this.reports = reports;
+        this.params = new Params(reports.selectors());
     }
 
     public void register(App app) {
@@ -53,7 +58,7 @@ public final class TraceApi {
     }
 
     public WebResponse overview(WebRequest req) {
-        Window window = Params.window(req);
+        Window window = params.window(req);
         return WebResponse.json(Json.obj()
                 .put("window", Codecs.window(window))
                 .put("totals", Codecs.totals(queries.totals(window, null)))
@@ -63,14 +68,12 @@ public final class TraceApi {
     }
 
     public WebResponse services(WebRequest req) {
-        Window window = Params.window(req);
-        return WebResponse.json(Json.obj()
-                .put("services", Codecs.serviceSummaries(queries.services(window))));
+        return Params.answer(req, reports.services(params.window(req)));
     }
 
     public WebResponse service(WebRequest req) {
         String name = req.pathParam("name");
-        Window window = Params.window(req);
+        Window window = params.window(req);
         Stats.ServiceSummary summary = queries.service(name, window);
         if (summary == null) {
             throw new HttpException(HttpStatus.NOT_FOUND, "No such service: " + name);
@@ -89,14 +92,12 @@ public final class TraceApi {
     }
 
     public WebResponse endpoints(WebRequest req) {
-        Window window = Params.window(req);
-        return WebResponse.json(Json.obj().put("endpoints",
-                Codecs.endpoints(queries.endpoints(window, Params.service(req), null))));
+        return Params.answer(req, reports.endpoints(params.window(req), Params.service(req)));
     }
 
     public WebResponse endpoint(WebRequest req) {
         String endpointId = req.pathParam("endpointId");
-        Window window = Params.window(req);
+        Window window = params.window(req);
         List<Stats.EndpointStats> found = queries.endpoints(window, null, endpointId);
         if (found.isEmpty()) {
             throw new HttpException(HttpStatus.NOT_FOUND, "No such endpoint in this window: " + endpointId);
@@ -142,7 +143,7 @@ public final class TraceApi {
 
     public WebResponse traces(WebRequest req) {
         Queries.TraceFilter filter = new Queries.TraceFilter(
-                Params.window(req),
+                params.window(req),
                 Params.service(req),
                 req.queryParamOrNull("endpointId"),
                 Params.optionalLong(req, "minMs"),
@@ -151,23 +152,20 @@ public final class TraceApi {
                 req.queryParamOrNull("q"),
                 Params.optionalLong(req, "before"),
                 Params.limit(req, 50, 1000));
-        return WebResponse.json(Json.obj()
-                .put("traces", Codecs.traceSummaries(queries.traces(filter)))
-                .put("total", queries.traceTotal(filter))
-                .put("window", Codecs.window(filter.window())));
+        return Params.answer(req, reports.traces(filter, Params.full(req)));
     }
 
     public WebResponse trace(WebRequest req) {
         String traceId = req.pathParam("traceId");
-        Queries.TraceDetail trace = queries.trace(traceId);
-        if (trace == null) {
+        Reports.Report report = reports.trace(traceId, Params.full(req));
+        if (report == null) {
             throw new HttpException(HttpStatus.NOT_FOUND, "No such trace: " + traceId);
         }
-        return WebResponse.json(Codecs.trace(trace, store.tingles()));
+        return Params.answer(req, report);
     }
 
     public WebResponse scatter(WebRequest req) {
-        Window window = Params.window(req);
+        Window window = params.window(req);
         int limit = Params.limit(req, 5000, 50_000);
         List<Stats.ScatterPoint> points = queries.scatter(window, Params.service(req),
                 req.queryParamOrNull("endpointId"), limit);
@@ -178,19 +176,18 @@ public final class TraceApi {
     }
 
     public WebResponse map(WebRequest req) {
-        Window window = Params.window(req);
+        Window window = params.window(req);
         return WebResponse.json(Codecs.map(window, queries.map(window)));
     }
 
     public WebResponse queries(WebRequest req) {
-        Window window = Params.window(req);
-        return WebResponse.json(Json.obj().put("queries", Codecs.queries(queries.queries(window,
-                Params.service(req), req.queryParamOrNull("sort"), Params.limit(req, 100, 1000), null))));
+        return Params.answer(req, reports.queries(params.window(req), Params.service(req),
+                req.queryParamOrNull("sort"), Params.limit(req, 100, 1000), Params.full(req)));
     }
 
     public WebResponse query(WebRequest req) {
         String queryId = req.pathParam("queryId");
-        Window window = Params.window(req);
+        Window window = params.window(req);
         List<Stats.QueryStats> found = queries.queries(window, null, "total", 1, queryId);
         if (found.isEmpty()) {
             throw new HttpException(HttpStatus.NOT_FOUND, "No such query in this window: " + queryId);
@@ -207,14 +204,13 @@ public final class TraceApi {
     }
 
     public WebResponse errors(WebRequest req) {
-        Window window = Params.window(req);
-        return WebResponse.json(Json.obj().put("errors", Codecs.errorGroups(
-                queries.errors(window, Params.service(req), Params.limit(req, 100, 1000), null))));
+        return Params.answer(req, reports.errors(params.window(req), Params.service(req),
+                Params.limit(req, 100, 1000), Params.full(req)));
     }
 
     public WebResponse error(WebRequest req) {
         String errorId = req.pathParam("errorId");
-        Window window = Params.window(req);
+        Window window = params.window(req);
         List<Stats.ErrorGroup> found = queries.errors(window, null, 1, errorId);
         if (found.isEmpty()) {
             throw new HttpException(HttpStatus.NOT_FOUND, "No such error in this window: " + errorId);
@@ -231,15 +227,13 @@ public final class TraceApi {
 
     public WebResponse logs(WebRequest req) {
         Queries.LogFilter filter = new Queries.LogFilter(
-                Params.window(req),
+                params.window(req),
                 Params.service(req),
                 req.queryParamOrNull("severity"),
                 req.queryParamOrNull("q"),
                 req.queryParamOrNull("traceId"),
                 Params.optionalLong(req, "before"),
                 Params.limit(req, 200, 5000));
-        return WebResponse.json(Json.obj()
-                .put("logs", Codecs.logs(queries.logs(filter)))
-                .put("total", queries.logTotal(filter)));
+        return Params.answer(req, reports.logs(filter));
     }
 }

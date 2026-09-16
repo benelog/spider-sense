@@ -38,6 +38,10 @@ public final class Database implements AutoCloseable {
     private static final long OPEN_RETRY_PAUSE_MS = 500;
 
     private Database(String url, Path file, String fallbackReason) {
+        this(url, file, fallbackReason, true);
+    }
+
+    private Database(String url, Path file, String fallbackReason, boolean upgrade) {
         this.url = url;
         this.file = file;
         this.fallbackReason = fallbackReason;
@@ -45,7 +49,7 @@ public final class Database implements AutoCloseable {
         this.pool.setMaxConnections(MAX_CONNECTIONS);
         this.sql = new Sql(pool);
         try {
-            Schema.create(sql);
+            Schema.create(sql, upgrade);
         } catch (RuntimeException e) {
             pool.dispose();
             throw e;
@@ -70,6 +74,31 @@ public final class Database implements AutoCloseable {
             String memory = "jdbc:h2:mem:spidersense-" + ProcessHandle.current().pid()
                     + ";DB_CLOSE_DELAY=-1;NON_KEYWORDS=KEY,VALUE";
             return new Database(memory, null, reason);
+        }
+    }
+
+    /**
+     * The CLI's open: the file must already exist, its schema must be this version,
+     * and there is no in-memory fallback, because a command that answers from an
+     * empty database instead of saying why would be worse than no answer.
+     *
+     * <p>Refusing another schema version matters: {@code AUTO_SERVER=TRUE} joins the
+     * database of whatever Spider Sense is running, and the server's own open would
+     * drop that server's tables from under it.
+     *
+     * @throws IllegalStateException when the file is missing or of another version
+     */
+    public static Database openExisting(String url, Path file) {
+        if (file != null && !Files.isRegularFile(file)) {
+            throw new IllegalStateException("no Spider Sense database at " + file
+                    + "; start an application with -javaagent:spider-sense.jar first");
+        }
+        try {
+            return new Database(url, file, null, false);
+        } catch (IllegalStateException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            throw new IllegalStateException("could not open " + url + ": " + e.getMessage(), e);
         }
     }
 
