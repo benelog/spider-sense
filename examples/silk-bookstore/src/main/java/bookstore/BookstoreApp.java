@@ -70,20 +70,27 @@ public class BookstoreApp {
         app.gzip();
 
         // A bad rating, or a body missing a key, is the caller's mistake: 400.
-        // Anything else is a 500 that Tracing records on the span.
+        // Anything else is the framework's 500, whose body is filled in below and
+        // whose exception the request logger hands to Tracing.
         app.exception(IllegalArgumentException.class, (req, e) ->
                 problem(req, HttpStatus.BAD_REQUEST, e.getMessage()));
 
+        // A 404 thrown as HttpException is a status, not a failure: it comes
+        // here for its body without passing through any exception handler.
         app.error(HttpStatus.NOT_FOUND, req -> problem(req, HttpStatus.NOT_FOUND,
                 Objects.requireNonNullElse(req.errorMessage(), "Not found")));
+        app.error(HttpStatus.INTERNAL_SERVER_ERROR, req -> problem(req,
+                HttpStatus.INTERNAL_SERVER_ERROR,
+                Objects.requireNonNullElse(req.errorMessage(), "Internal server error")));
 
         registerRoutes(app, context);
-
-        // After the routes, because it reads app.routes(): see Tracing.
         Tracing.install(app);
 
-        app.requestLogger((req, completion) -> System.out.printf("%-4s %-40s %3d %5d ms%n",
-                req.method(), path(req), completion.statusCode(), completion.took().toMillis()));
+        app.requestLogger((req, completion) -> {
+            Tracing.record(completion);
+            System.out.printf("%-4s %-40s %3d %5d ms%n",
+                    req.method(), path(req), completion.statusCode(), completion.took().toMillis());
+        });
 
         return app;
     }

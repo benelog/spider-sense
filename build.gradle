@@ -7,7 +7,11 @@ plugins {
 }
 
 ext {
-    spiderSilkVersion = '1.0.0'
+    // A snapshot from the local Maven repository, until the next Spider Silk
+    // release carries req.route() and RequestCompletion.exception(). Publish it
+    // from a checkout of spider-silk beside this one with
+    //   ./gradlew :spider-silk-core:publishToMavenLocal :spider-silk-test:publishToMavenLocal -Pversion=1.1.0-SNAPSHOT
+    spiderSilkVersion = '1.1.0-SNAPSHOT'
     otelAgentVersion = '2.31.1'          // io.opentelemetry.javaagent:opentelemetry-javaagent
     otelProtoVersion = '1.11.0-alpha'    // io.opentelemetry.proto:opentelemetry-proto
     junitVersion = '6.1.3'
@@ -19,6 +23,7 @@ ext {
 
 subprojects {
     repositories {
+        mavenLocal()        // the Spider Silk snapshot, see spiderSilkVersion above
         mavenCentral()
     }
 

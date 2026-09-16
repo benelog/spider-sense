@@ -3,13 +3,12 @@ package bookstore.web;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.StatusCode;
 import net.benelog.spidersilk.App;
-import net.benelog.spidersilk.HttpException;
-import net.benelog.spidersilk.HttpStatus;
-import net.benelog.spidersilk.WebResponse;
-import net.benelog.spidersilk.json.Json;
+import net.benelog.spidersilk.RequestCompletion;
+import net.benelog.spidersilk.Route;
 
 /**
- * Names this application's server spans after the route that handled them.
+ * Names this application's server spans after the route that handled them, and
+ * records on them the exception a request failed with.
  *
  * <h2>Why this class exists</h2>
  *
@@ -25,15 +24,21 @@ import net.benelog.spidersilk.json.Json;
  * {@code beforeRoute} filter runs after the router picked a route and inside
  * the agent's server span, so {@link Span#current()} there is that span:
  * renaming it to {@code METHOD /route/{template}} and setting {@code http.route}
- * gives Spider Sense the endpoint identity it aggregates on.
+ * gives Spider Sense the endpoint identity it aggregates on. The template is
+ * {@code req.route().path()}, the entry of {@code app.routes()} the router
+ * chose, so the name on the span is the route that actually ran.
  *
- * <p>{@code WebRequest} carries the path and the resolved path variables but not
- * the template they came from, so {@link RouteMatcher} recovers it from
- * {@code app.routes()} — the same table the router used.
+ * <p>The same goes for failures. Spider Silk answers an exception before the
+ * servlet layer (and so the agent) ever sees it, so the exception is recorded
+ * from the request logger, where {@code completion.exception()} is what the
+ * handler threw and {@code completion.statusCode()} is what it became. Only a
+ * 500 is recorded: a 400 for a bad rating is the caller's mistake, and a 404
+ * thrown as {@code HttpException} is a status, not a failure, and never
+ * appears there at all.
  *
  * <p>Nothing here depends on an agent being attached. With no agent on the
  * command line, {@code Span.current()} is the OpenTelemetry API's no-op span and
- * both calls do nothing at all, so this is dead weight rather than a
+ * every call on it does nothing at all, so this is dead weight rather than a
  * requirement: the application runs plain with no change.
  */
 public final class Tracing {
@@ -41,38 +46,27 @@ public final class Tracing {
     private Tracing() {
     }
 
-    /**
-     * Installs the filter. Call it after every route is registered — the
-     * matcher takes a snapshot of {@code app.routes()}.
-     */
+    /** Installs the filter that names the span. Order does not matter: it reads the route off each request. */
     public static void install(App app) {
-        RouteMatcher matcher = new RouteMatcher(app.routes());
         app.beforeRoute(req -> {
-            String template = matcher.match(req.method(), req.path());
-            if (template != null) {
+            Route route = req.route();
+            if (route != null) {
                 Span span = Span.current();
-                span.updateName(req.method() + " " + template);
-                span.setAttribute("http.route", template);
+                span.updateName(req.method() + " " + route.path());
+                span.setAttribute("http.route", route.path());
             }
             return null;   // never answers; it only labels
         });
+    }
 
-        // An exception no other handler maps is a 500, and the span should say
-        // which one: Spider Silk catches it before the servlet layer (and so the
-        // agent) ever sees it, so the exception event is recorded here. Mapped
-        // exceptions (a 400 for a bad rating) are the caller's mistake and stay
-        // out of the error list.
-        app.exception(RuntimeException.class, (req, e) -> {
-            if (e instanceof HttpException http) {   // a deliberate status, not a failure
-                return WebResponse.json(Json.obj().put("error", http.getMessage())).status(http.status());
-            }
-            Span span = Span.current();
-            span.recordException(e);
-            span.setStatus(StatusCode.ERROR, e.getMessage());
-            return WebResponse.json(Json.obj()
-                    .put("error", e.getClass().getSimpleName() + ": " + e.getMessage())
-                    .put("path", req.path()))
-                    .status(HttpStatus.INTERNAL_SERVER_ERROR);
-        });
+    /** Called from the request logger: puts the exception behind a 500 on the span. */
+    public static void record(RequestCompletion completion) {
+        Exception exception = completion.exception();
+        if (exception == null || completion.statusCode() < 500) {
+            return;
+        }
+        Span span = Span.current();
+        span.recordException(exception);
+        span.setStatus(StatusCode.ERROR, exception.getMessage());
     }
 }

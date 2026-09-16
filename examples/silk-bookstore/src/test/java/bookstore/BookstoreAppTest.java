@@ -1,13 +1,9 @@
 package bookstore;
 
-import java.util.List;
-
 import javax.sql.DataSource;
 
 import bookstore.service.Seeder;
-import bookstore.web.RouteMatcher;
 import net.benelog.spidersilk.App;
-import net.benelog.spidersilk.Route;
 import net.benelog.spidersilk.test.WebTest;
 import org.h2.jdbcx.JdbcConnectionPool;
 import org.junit.jupiter.api.BeforeAll;
@@ -124,34 +120,18 @@ class BookstoreAppTest {
         });
     }
 
+    /** The 500 the flaky endpoint answers carries the same JSON problem shape as every other API error. */
     @Test
-    void theRouteMatcherRecoversTheTemplateTheRouterUsed() {
-        RouteMatcher matcher = new RouteMatcher(List.of(
-                new Route("GET", "/"),
-                new Route("GET", "/books"),
-                new Route("GET", "/books/{id}"),
-                new Route("GET", "/api/books/search"),
-                new Route("GET", "/api/books/{id}"),
-                new Route("GET", "/api/books/{id}/missing"),
-                new Route("POST", "/api/reviews"),
-                new Route("GET", "/files/{path*}")));
-
-        assertThat(matcher.match("GET", "/")).isEqualTo("/");
-        assertThat(matcher.match("GET", "/books")).isEqualTo("/books");
-        assertThat(matcher.match("GET", "/books/12")).isEqualTo("/books/{id}");
-        assertThat(matcher.match("GET", "/books/12/")).isEqualTo("/books/{id}");
-        assertThat(matcher.match("GET", "/api/books/9")).isEqualTo("/api/books/{id}");
-        assertThat(matcher.match("GET", "/api/books/9/missing"))
-                .isEqualTo("/api/books/{id}/missing");
-        assertThat(matcher.match("GET", "/files/docs/a.txt")).isEqualTo("/files/{path*}");
-        assertThat(matcher.match("POST", "/api/reviews")).isEqualTo("/api/reviews");
-
-        // A literal beats a variable where both fit, whatever the registration order.
-        assertThat(matcher.match("GET", "/api/books/search")).isEqualTo("/api/books/search");
-        // Method and shape both have to match.
-        assertThat(matcher.match("GET", "/api/reviews")).isNull();
-        assertThat(matcher.match("GET", "/books/12/extra")).isNull();
-        assertThat(matcher.match("GET", "/nope")).isNull();
+    void aServerErrorIsAJsonProblemToo() {
+        WebTest.test(app, client -> {
+            for (int i = 0; i < 40; i++) {
+                var response = client.get("/api/flaky");
+                if (response.statusCode() == 500) {
+                    assertThat(response.body()).contains("\"error\"");
+                    return;
+                }
+            }
+        });
     }
 
     @Test
