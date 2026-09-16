@@ -70,8 +70,7 @@ public class BookstoreApp {
         app.gzip();
 
         // A bad rating, or a body missing a key, is the caller's mistake: 400.
-        // IllegalStateException is deliberately left unmapped, so /api/flaky is
-        // the 500 it is meant to be.
+        // Anything else is a 500 that Tracing records on the span.
         app.exception(IllegalArgumentException.class, (req, e) ->
                 problem(req, HttpStatus.BAD_REQUEST, e.getMessage()));
 

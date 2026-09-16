@@ -48,7 +48,7 @@ final class Rows {
         return new Stats.TraceSummary(
                 rs.getString("trace_id"),
                 start,
-                Math.max(0, rs.getLong("end_ms") - start),
+                rs.getLong("duration_ns") / 1_000_000.0,
                 rs.getString("root_name"),
                 rs.getString("root_service"),
                 rs.getString("root_kind"),

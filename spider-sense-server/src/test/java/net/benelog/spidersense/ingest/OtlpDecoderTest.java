@@ -91,7 +91,7 @@ class OtlpDecoderTest {
     }
 
     @Test
-    void spansAimedAtOurOwnPortAreDroppedSoTheUiNeverMonitorsItself() {
+    void serverSpansOnOurOwnPortAreDroppedSoTheUiNeverMonitorsItself() {
         Span.Builder ours = Otlp.span(TRACE, ROOT, "GET /api/overview", Span.SpanKind.SPAN_KIND_SERVER,
                 1_700_000_000_000L, 5, Otlp.attr("server.port", 4000));
         Span.Builder theirs = Otlp.span(TRACE, CHILD, "GET /orders", Span.SpanKind.SPAN_KIND_SERVER,
@@ -101,6 +101,22 @@ class OtlpDecoderTest {
 
         assertThat(batch.spans()).hasSize(1);
         assertThat(batch.spans().get(0).spanId()).isEqualTo(CHILD);
+    }
+
+    @Test
+    void aClientCallToOurOwnPortIsRealWorkAndStaysInItsTrace() {
+        // An application posting OTLP to us, or a script reading the API: that call
+        // happened, and dropping it would leave a hole in the caller's trace.
+        Span.Builder caller = Otlp.span(TRACE, ROOT, "POST", Span.SpanKind.SPAN_KIND_CLIENT,
+                1_700_000_000_000L, 5,
+                Otlp.attr("http.request.method", "POST"),
+                Otlp.attr("url.full", "http://localhost:4000/v1/traces"),
+                Otlp.attr("server.port", 4000));
+
+        Batch batch = decoder.accept(Otlp.traces(Otlp.service("silk-bookstore"), caller));
+
+        assertThat(batch.spans()).hasSize(1);
+        assertThat(batch.spans().get(0).kind()).isEqualTo("CLIENT");
     }
 
     @Test

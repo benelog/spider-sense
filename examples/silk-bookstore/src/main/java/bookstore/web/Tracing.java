@@ -1,7 +1,12 @@
 package bookstore.web;
 
 import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.StatusCode;
 import net.benelog.spidersilk.App;
+import net.benelog.spidersilk.HttpException;
+import net.benelog.spidersilk.HttpStatus;
+import net.benelog.spidersilk.WebResponse;
+import net.benelog.spidersilk.json.Json;
 
 /**
  * Names this application's server spans after the route that handled them.
@@ -50,6 +55,24 @@ public final class Tracing {
                 span.setAttribute("http.route", template);
             }
             return null;   // never answers; it only labels
+        });
+
+        // An exception no other handler maps is a 500, and the span should say
+        // which one: Spider Silk catches it before the servlet layer (and so the
+        // agent) ever sees it, so the exception event is recorded here. Mapped
+        // exceptions (a 400 for a bad rating) are the caller's mistake and stay
+        // out of the error list.
+        app.exception(RuntimeException.class, (req, e) -> {
+            if (e instanceof HttpException http) {   // a deliberate status, not a failure
+                return WebResponse.json(Json.obj().put("error", http.getMessage())).status(http.status());
+            }
+            Span span = Span.current();
+            span.recordException(e);
+            span.setStatus(StatusCode.ERROR, e.getMessage());
+            return WebResponse.json(Json.obj()
+                    .put("error", e.getClass().getSimpleName() + ": " + e.getMessage())
+                    .put("path", req.path()))
+                    .status(HttpStatus.INTERNAL_SERVER_ERROR);
         });
     }
 }

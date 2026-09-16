@@ -51,6 +51,8 @@ Every `otel.*` system property and `OTEL_*` environment variable of the OpenTele
 
 ## What you see
 
+<p align="center"><img src="docs/images/overview.jpg" alt="Overview: request rate, error rate, percentiles, the throughput chart, the services, and the tingle feed" width="900"></p>
+
 | Page | What it answers |
 |---|---|
 | Overview | Is anything wrong right now: request rate, error rate, p95, and the feed of *tingles* (slow requests, slow queries, errors) as they happen. |
@@ -61,6 +63,23 @@ Every `otel.*` system property and `OTEL_*` environment variable of the OpenTele
 | Errors | Exceptions grouped by type and message, with a sample stack trace and the traces they occurred in. |
 | Logs | The application's log records with trace ids, so a trace and its log lines are one click apart. |
 | JVM, Metrics | Heap, GC, threads, CPU, classes from the agent's JVM metrics, and an explorer for every other metric. |
+
+<p align="center">
+  <img src="docs/images/xlog.jpg" alt="XLog: every request as a dot on time by response time" width="440">
+  <img src="docs/images/trace-waterfall.jpg" alt="A trace across spring-orders and silk-bookstore as a waterfall" width="440">
+</p>
+<p align="center">
+  <img src="docs/images/trace-profile.jpg" alt="The same trace as a step-by-step profile with gap and elapsed times" width="440">
+  <img src="docs/images/span-drawer.jpg" alt="The span drawer with the SQL statement and every attribute" width="440">
+</p>
+<p align="center">
+  <img src="docs/images/queries.jpg" alt="Queries grouped by statement with calls, average, p95, max and total time" width="440">
+  <img src="docs/images/jvm.jpg" alt="JVM heap, non-heap, memory pools and garbage collection" width="440">
+</p>
+
+The data is in an H2 file under `~/db/spider-sense/`, so the screens are still there after the application has stopped: `java -jar spider-sense.jar` opens the same database.
+
+<p align="center"><img src="docs/images/services-standalone.jpg" alt="The standalone UI showing both services after the applications were stopped" width="900"></p>
 
 ## The examples
 

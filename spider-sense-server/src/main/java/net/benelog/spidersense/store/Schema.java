@@ -11,7 +11,7 @@ package net.benelog.spidersense.store;
  */
 public final class Schema {
 
-    public static final int VERSION = 1;
+    public static final int VERSION = 2;
 
     private Schema() {
     }
@@ -73,6 +73,7 @@ public final class Schema {
                 trace_id     CHAR(32) PRIMARY KEY,
                 start_ms     BIGINT NOT NULL,
                 end_ms       BIGINT NOT NULL,
+                duration_ns  BIGINT NOT NULL,
                 root_span_id CHAR(16),
                 root_name    VARCHAR(1024) NOT NULL,
                 root_service VARCHAR(255) NOT NULL,

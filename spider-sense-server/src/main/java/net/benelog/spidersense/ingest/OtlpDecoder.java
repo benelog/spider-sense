@@ -83,10 +83,20 @@ public final class OtlpDecoder {
     /**
      * Belt and braces against the UI monitoring itself: the OpenTelemetry agent is
      * already told to ignore the server's class loader, but a misconfiguration
-     * would otherwise fill the dashboard with our own requests. A span aimed at our
-     * own port, from the process we live in, is ours.
+     * would otherwise fill the dashboard with our own requests.
+     *
+     * <p>Only {@code SERVER} spans are dropped — one of <em>our</em> requests being
+     * served. A {@code CLIENT} span aimed at the same port is an application
+     * genuinely calling Spider Sense (posting OTLP, reading the API), and that call
+     * belongs in its trace.
+     *
+     * <p>When the embedded service is not known yet, any service counts: a span
+     * served on our own port cannot be anyone else's work.
      */
     private boolean isOurOwnTraffic(SpanRecord span) {
+        if (!"SERVER".equals(span.kind())) {
+            return false;
+        }
         Long port = span.serverPort();
         if (port == null || port.intValue() != ownPort.getAsInt()) {
             return false;

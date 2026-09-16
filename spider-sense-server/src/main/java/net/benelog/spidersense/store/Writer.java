@@ -259,9 +259,9 @@ public final class Writer implements AutoCloseable {
     // --- traces ---
 
     private static final String MERGE_TRACE = """
-            MERGE INTO trace (trace_id, start_ms, end_ms, root_span_id, root_name, root_service, root_kind,
-                services, span_count, error_count, db_count, http_status, slow, error)
-            KEY(trace_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""";
+            MERGE INTO trace (trace_id, start_ms, end_ms, duration_ns, root_span_id, root_name, root_service,
+                root_kind, services, span_count, error_count, db_count, http_status, slow, error)
+            KEY(trace_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""";
 
     /** One row per span of the touched traces, enough to rebuild the summaries. */
     private record TraceSpan(String traceId, String spanId, String parentSpanId, String service,
@@ -313,6 +313,8 @@ public final class Writer implements AutoCloseable {
         }
         long startMs = Long.MAX_VALUE;
         long endMs = Long.MIN_VALUE;
+        long startNs = Long.MAX_VALUE;
+        long endNs = Long.MIN_VALUE;
         int errorCount = 0;
         int dbCount = 0;
         Set<String> services = new LinkedHashSet<>();
@@ -320,6 +322,8 @@ public final class Writer implements AutoCloseable {
         for (TraceSpan span : spans) {
             startMs = Math.min(startMs, span.startMs());
             endMs = Math.max(endMs, span.startMs() + span.durationNs() / 1_000_000L);
+            startNs = Math.min(startNs, span.startNs());
+            endNs = Math.max(endNs, span.startNs() + span.durationNs());
             services.add(span.service());
             if (span.error()) {
                 errorCount++;
@@ -335,13 +339,15 @@ public final class Writer implements AutoCloseable {
         if (root == null) {
             root = spans.get(0);
         }
-        double durationMs = Math.max(0, endMs - startMs);
+        long durationNs = Math.max(0, endNs - startNs);
+        double durationMs = durationNs / 1_000_000.0;
         String rootName = root.endpoint() != null ? root.endpoint() : root.name();
 
         int i = 1;
         statement.setString(i++, traceId);
         statement.setLong(i++, startMs);
         statement.setLong(i++, endMs);
+        statement.setLong(i++, durationNs);
         statement.setString(i++, root.spanId());
         statement.setString(i++, cut(rootName, 1024));
         statement.setString(i++, root.service());

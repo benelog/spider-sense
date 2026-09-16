@@ -9,6 +9,9 @@ import {
 import { formatSql, stackTrace } from '../sql.js';
 import { dur, count, timeMs, bothTimes, offset, full } from '../format.js';
 
+/** A span's start as fractional epoch milliseconds: startNs carries the precision, start is the fallback. */
+const sms = (span) => (span.startNs ? span.startNs / 1e6 : span.start);
+
 const CATEGORY_ICON = { http: 'trace', db: 'database', messaging: 'log', rpc: 'service', internal: 'chart' };
 
 export function render(root, ctx) {
@@ -105,7 +108,7 @@ export function render(root, ctx) {
 
   function paintWaterfall() {
     const spans = data.spans || [];
-    const t0 = data.start;
+    const t0 = (data.spans && data.spans.length) ? Math.min(...data.spans.map(sms)) : data.start;
     const total = Math.max(1, data.durationMs || 1);
     const rows = flatten(spans);
     const box = h('div.waterfall',
@@ -117,7 +120,7 @@ export function render(root, ctx) {
   }
 
   function waterfallRow(span, depth, hasChildren, t0, total) {
-    const startPct = Math.max(0, ((span.start - t0) / total) * 100);
+    const startPct = Math.max(0, ((sms(span) - t0) / total) * 100);
     const widthPct = Math.max(0.4, Math.min(100 - startPct, (span.durationMs / total) * 100));
     const bar = h('span.wf-bar', {
       class: 'wf-bar' + (span.error ? ' err' : ''),
@@ -157,15 +160,15 @@ export function render(root, ctx) {
   // --- profile ----------------------------------------------------------
 
   function paintProfile() {
-    const spans = (data.spans || []).slice().sort((a, b) => a.start - b.start || b.durationMs - a.durationMs);
+    const spans = (data.spans || []).slice().sort((a, b) => sms(a) - sms(b) || b.durationMs - a.durationMs);
     const depths = depthMap(data.spans || []);
-    const t0 = data.start;
+    const t0 = (data.spans && data.spans.length) ? Math.min(...data.spans.map(sms)) : data.start;
     const slowMs = ((api.state.status || {}).thresholds || {}).slowRequestMs || 500;
     let prevEnd = t0;
     const rows = spans.map((span, i) => {
-      const gap = span.start - prevEnd;
-      prevEnd = Math.max(prevEnd, span.start);
-      return { span, index: i + 1, startOffset: span.start - t0, gap, depth: depths.get(span.spanId) || 0 };
+      const gap = sms(span) - prevEnd;
+      prevEnd = Math.max(prevEnd, sms(span));
+      return { span, index: i + 1, startOffset: sms(span) - t0, gap, depth: depths.get(span.spanId) || 0 };
     });
     fill(bodyBox, table([
       { key: 'index', label: '#', align: 'right', sortable: false, width: '44px', render: (r) => h('span.muted.mono', String(r.index)) },
@@ -227,7 +230,7 @@ export function render(root, ctx) {
   }
 
   function spanBody(span) {
-    const t0 = data.start;
+    const t0 = (data.spans && data.spans.length) ? Math.min(...data.spans.map(sms)) : data.start;
     const total = Math.max(1, data.durationMs || 1);
     const attrs = Object.entries(span.attributes || {}).sort((a, b) => a[0].localeCompare(b[0]));
     return [
@@ -235,7 +238,7 @@ export function render(root, ctx) {
         h('dt', 'span id'), h('dd', span.spanId),
         h('dt', 'parent'), h('dd', span.parentSpanId || '—'),
         h('dt', 'kind'), h('dd', span.kind || 'INTERNAL'),
-        h('dt', 'start'), h('dd', offset(span.start - t0) + ' (' + timeMs(span.start) + ')'),
+        h('dt', 'start'), h('dd', offset(sms(span) - t0) + ' (' + timeMs(span.start) + ')'),
         h('dt', 'duration'), h('dd', dur(span.durationMs) + ' · ' + ((span.durationMs / total) * 100).toFixed(1) + '% of trace'),
         h('dt', 'status'), h('dd', { class: span.error ? 'bad' : '' }, (span.status || 'UNSET') + (span.statusMessage ? ' — ' + span.statusMessage : '')),
         h('dt', 'scope'), h('dd', span.scope || '—')),
@@ -272,7 +275,7 @@ export function render(root, ctx) {
 
   function paintLogs() {
     const logs = data.logs || [];
-    const t0 = data.start;
+    const t0 = (data.spans && data.spans.length) ? Math.min(...data.spans.map(sms)) : data.start;
     fill(logsBox, table([
       { key: 'offset', label: 'Offset', align: 'right', sortable: false, width: '80px', render: (l) => h('span.mono.muted', offset(l.at - t0)) },
       { key: 'severity', label: 'Level', sortable: false, width: '68px', render: (l) => severityChip(l.severity) },

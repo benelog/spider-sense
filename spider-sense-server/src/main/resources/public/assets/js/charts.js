@@ -32,6 +32,12 @@ export function retheme() {
   for (const c of charts) c.rebuild();
 }
 
+/** Canvas fonts cannot use CSS variables, so the UI font is resolved once per build. */
+function uiFont(px = 11) {
+  const family = getComputedStyle(document.documentElement).getPropertyValue('--font-ui').trim();
+  return `${px}px ${family || 'system-ui, sans-serif'}`;
+}
+
 function withAlpha(hex, alpha) {
   const m = /^#([0-9a-f]{6})$/i.exec(hex.trim());
   if (!m) return hex;
@@ -46,7 +52,7 @@ function timeAxis(colors, opts = {}) {
     stroke: colors.muted,
     grid: { stroke: withAlpha(colors.line, 0.75), width: 1 },
     ticks: { stroke: withAlpha(colors.line, 0.75), width: 1, size: 4 },
-    font: '11px var(--font-ui)',
+    font: uiFont(),
     space: 70,
     values: (u, splits) => splits.map((s) => (opts.short ? clockShort(s * 1000) : clock(s * 1000))),
   };
@@ -59,11 +65,11 @@ function valueAxis(colors, o = {}) {
     stroke: o.stroke || colors.muted,
     grid: o.grid === false ? { show: false } : { stroke: withAlpha(colors.line, 0.75), width: 1 },
     ticks: { show: false },
-    font: '11px var(--font-ui)',
+    font: uiFont(),
     size: o.size || 52,
     label: o.label,
     labelSize: o.label ? 18 : 0,
-    labelFont: '11px var(--font-ui)',
+    labelFont: uiFont(),
     labelGap: 2,
     values: o.values || ((u, splits) => splits.map((s) => fmtCount(s))),
   };

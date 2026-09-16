@@ -347,6 +347,7 @@ An exponential histogram is stored as a histogram with count, sum, min and max o
 
 `/api/status.storage.path` is `null` and `sizeBytes` is `0` for an in-memory database (the fallback, and the one the tests use).
 `counts.spans` counts stored spans, so spans dropped by the self-monitoring rule are not in it.
+That rule drops only `SERVER` spans on the server's own port; a `CLIENT` span calling that port is an application genuinely talking to Spider Sense and stays in its trace.
 A request body that is neither `application/x-protobuf` (also accepted as `application/protobuf`) nor `application/json` is `415`; an undecodable body of an accepted type is `400`.
 OTLP/JSON ids are accepted as hex (what the OTLP specification says) and as base64 (what protobuf's own JSON mapping produces); the two are told apart by length, since only a hex id is exactly 32 or 16 characters of `[0-9a-f]`.
 

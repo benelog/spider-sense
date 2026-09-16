@@ -450,10 +450,10 @@ public final class Queries {
             where = where.and("t.start_ms < ?", filter.before());
         }
         if (filter.minMs() != null) {
-            where = where.and("(t.end_ms - t.start_ms) >= ?", filter.minMs());
+            where = where.and("t.duration_ns >= ? * 1000000", filter.minMs());
         }
         if (filter.maxMs() != null) {
-            where = where.and("(t.end_ms - t.start_ms) <= ?", filter.maxMs());
+            where = where.and("t.duration_ns <= ? * 1000000", filter.maxMs());
         }
         if ("error".equals(filter.status())) {
             where = where.and("t.error");
@@ -539,7 +539,7 @@ public final class Queries {
         Clause where = new Clause("t.start_ms BETWEEN ? AND ?", window.from(), window.to())
                 .and("EXISTS (SELECT 1 FROM span s WHERE s.trace_id = t.trace_id AND s." + predicate + ")",
                         value);
-        String order = slowest ? "(t.end_ms - t.start_ms) DESC" : "t.start_ms DESC";
+        String order = slowest ? "t.duration_ns DESC" : "t.start_ms DESC";
         return sql.query("SELECT * FROM trace t WHERE " + where.sql() + " ORDER BY " + order
                 + " LIMIT " + Math.max(1, limit), where.params(), Rows::trace);
     }
