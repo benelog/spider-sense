@@ -21,9 +21,9 @@ It is a sibling of [Spider Silk](https://github.com/benelog/spider-silk), the we
 - **Glowroot's deployment, OpenTelemetry's data.**
   `-javaagent:spider-sense.jar` is all it takes, like Glowroot.
   Unlike Glowroot, the instrumentation is the stock [OpenTelemetry Java agent](https://github.com/open-telemetry/opentelemetry-java-instrumentation) and the collector speaks OTLP/HTTP, so anything that emits OpenTelemetry can send to it.
-- **Nothing to install, nothing to keep.**
-  No database, no Docker, no account.
-  Data lives in memory for the life of the process; a restart is a clean slate.
+- **Nothing to install, and the data outlives the application.**
+  No Docker, no account, no server to run.
+  What it collects goes into an H2 file under `~/db/spider-sense/`, so after the application has stopped or crashed, `java -jar spider-sense.jar` opens the same screens on the same data; rows older than a day are swept.
 - **Built for the questions you ask while coding.**
   Which endpoint is slow, which query made it slow, what did that request do step by step, what threw, what did the log say at that moment.
 

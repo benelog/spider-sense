@@ -1,7 +1,7 @@
 # Spider Sense
 
 A local-development APM: one jar, `-javaagent`, OpenTelemetry-native, UI built with Spider Silk.
-Read `docs/design.md` (architecture and decisions), `docs/api.md` (the JSON contract between server and UI), and `docs/ui.md` (pages, look and feel) before changing anything; they are the specification, and a change to behaviour is a change to them first.
+Read `docs/design.md` (architecture and decisions), `docs/storage.md` (the H2 schema, writer, queries, retention), `docs/api.md` (the JSON contract between server and UI), and `docs/ui.md` (pages, look and feel) before changing anything; they are the specification, and a change to behaviour is a change to them first.
 
 ## Modules
 
@@ -18,7 +18,7 @@ Read `docs/design.md` (architecture and decisions), `docs/api.md` (the JSON cont
 - **Spider Silk principles apply to the server**: no reflection-based frameworks, no DI container, routes registered explicitly, JSON written with `Json`/`JsonWriter`, handlers are `WebRequest -> WebResponse`. The Spider Silk agent skill is at `../spider-silk/skills/spider-silk/SKILL.md` with references beside it; consult it before writing web code.
 - **The launcher stays dependency-free and tiny.** Everything else lives in the nested server jar loaded by `SenseClassLoader`.
 - **Nothing in Spider Sense may prevent the monitored application from starting.** Every failure in `premain` is logged and swallowed.
-- **In-memory only.** No database in the server module.
+- **Storage is H2 under `~/db/spider-sense/`** (`docs/storage.md`), opened with `AUTO_SERVER=TRUE` so several processes share it and the data outlives the monitored application. Plain JDBC, no ORM; nothing else keeps state.
 - **No frontend build.** Plain HTML/CSS/ES modules; the only vendored library is uPlot.
 - Versions shared across modules are declared once in the root `build.gradle` `ext` block.
 - Markdown is one sentence per line (as in Spider Silk).

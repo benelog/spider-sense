@@ -40,13 +40,14 @@ Partial-success is never reported (everything decodable is stored).
   "otlp": { "traces": "http://127.0.0.1:4000/v1/traces", "metrics": "...", "logs": "..." },
   "embeddedService": "silk-bookstore" | null,
   "thresholds": { "slowRequestMs": 500, "slowQueryMs": 100 },
-  "retention": { "spans": 200000, "logs": 50000, "metricPoints": 2000 },
+  "retention": { "hours": 24 },
+  "storage": { "url": "jdbc:h2:~/db/spider-sense/sense;AUTO_SERVER=TRUE", "path": "/home/me/db/spider-sense/sense.mv.db", "sizeBytes": 12345678, "fallback": false, "fallbackReason": null, "droppedBatches": 0, "queued": 0 },
   "counts": { "spans": 12345, "traces": 2345, "logs": 456, "metricSeries": 78, "services": 2 },
   "oldest": { "span": 1758000000000, "log": 1758000000000 }
 }
 ```
 
-`DELETE /api/data` → `204`. Clears every store (services stay registered).
+`DELETE /api/data` → `204`. Deletes every span, trace, log, metric point and tingle (services and metric metadata stay).
 
 `GET /api/export?from&to&service&traceId` → `application/json` download (`Content-Disposition: attachment`) of `{ "traces": [<trace as in GET /api/traces/{id}>...] }`. `traceId` alone exports one trace.
 

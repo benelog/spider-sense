@@ -72,9 +72,8 @@ All via system properties (agent mode has no other channel before `main`); the s
 | `spidersense.host` | `127.0.0.1` | bind address; `0.0.0.0` to reach it from another machine |
 | `spidersense.collector` | unset | agent mode: forward to this base URL instead of starting the embedded UI |
 | `spidersense.service` | unset | agent mode: sets `otel.service.name` |
-| `spidersense.retention.spans` | `200000` | ring capacity |
-| `spidersense.retention.logs` | `50000` | ring capacity |
-| `spidersense.retention.metricPoints` | `2000` | points kept per series |
+| `spidersense.db` | `~/db/spider-sense/sense` | H2 database path or `jdbc:h2:` URL (`AUTO_SERVER=TRUE` is appended to a path); see [storage.md](storage.md) |
+| `spidersense.retention.hours` | `24` | rows older than this are deleted by the sweeper |
 | `spidersense.slow.request.ms` | `500` | a server span slower than this is a "tingle" |
 | `spidersense.slow.query.ms` | `100` | a DB span slower than this is a "tingle" |
 | `spidersense.open` | `false` | agent mode: open the browser at startup (`java.awt.Desktop`), best effort |
@@ -86,12 +85,8 @@ Every `otel.*` property still works as documented by the OpenTelemetry agent; Sp
 Gradle module `spider-sense-server`. A Spider Silk `App` with three concerns:
 
 1. **OTLP/HTTP receiver**: `POST /v1/traces`, `/v1/metrics`, `/v1/logs`. `Content-Type: application/x-protobuf` (the agent's format) and `application/json` (browser SDKs, `curl`), `Content-Encoding: gzip` accepted. Decoded with the `io.opentelemetry.proto:opentelemetry-proto` bindings, the same classes the OpenTelemetry Java SDK is generated from. The answer is an empty `Export*ServiceResponse` in the request's content type. There is no gRPC receiver: gRPC needs Netty or Armeria in the jar for a benefit no local setup has; senders set `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf`.
-2. **Store**: in memory, bounded, no persistence. A restart of the monitored process is a fresh slate, which is what local development wants, and it keeps the jar free of a database that the OpenTelemetry agent would otherwise instrument. Structures (`net.benelog.spidersense.store`):
-   - `SpanStore`: ring buffer of `SpanRecord` (capacity `retention.spans`), plus `traceId -> TraceEntry` index maintained on insert and eviction. Reads take a snapshot of the window and aggregate on demand (percentiles by sorting the window's entry-span durations; buckets by time). At 200k spans a full scan is milliseconds, and simplicity wins over pre-aggregation.
-   - `MetricStore`: `(service, metric name, attribute set) -> Series` with a ring of points; gauges and sums keep a double, histograms keep count/sum/min/max/bucket counts. Metric metadata (unit, description, type) is kept per name.
-   - `LogStore`: ring of `LogRecord` with trace and span ids for correlation.
-   - `ServiceRegistry`: the resource attributes of every service seen, first and last seen timestamps, telemetry SDK name/language, whether it is the embedded (agent-mode) service.
-   - `Tingles`: a bounded recent list (500) of noteworthy events: slow request, slow query, error, derived at ingest against the thresholds. The Overview feeds on it and the SSE stream pushes it live.
+2. **Store**: an H2 file database under the user's home, `~/db/spider-sense/sense` with `AUTO_SERVER=TRUE`, shared by every Spider Sense process on the machine and kept after the monitored application stops, so the analysis screen is still there after a restart or a crash. Ingest goes through a write-behind queue and one writer thread; every API answer is SQL over indexed columns. The schema, the writer, the queries and the retention sweeper are specified in [storage.md](storage.md). Two small in-memory pieces remain:
+   - `Tingles` are also rows, but the last 500 are mirrored in memory for the SSE stream and the Overview feed.
    - `EventBus`: ingest notifications to SSE subscribers, coalesced to at most 4 messages/second.
 3. **JSON API + static UI**: the contract in [api.md](api.md); the UI in `src/main/resources/public` per [ui.md](ui.md).
 
@@ -117,7 +112,7 @@ Three applications under `examples/`, all sending to whichever Spider Sense they
 
 - **An OpenTelemetry agent extension instead of our own premain.** The extension mechanism (`extensions/` inside the agent jar, `AgentListener`) would also work, and `ExtensionClassLoader` is already exclusion-listed. Rejected because the UI would then depend on the agent's SPI and lifecycle, and the standalone mode would still need a launcher of its own. A premain that wraps the agent's premain keeps the server a plain program that the agent happens to be pointed at over a standard protocol.
 - **In-process export (a custom `SpanExporter` handing spans straight to the store).** Faster, but it ties the store to the agent's shaded SDK classes and makes the standalone and embedded paths diverge. Loopback OTLP costs nothing measurable and exercises the same code path the standalone mode uses.
-- **Persistence (H2, SQLite, files).** Deferred. The OpenTelemetry agent would instrument a JDBC store inside the app's JVM (the exclusion covers our class loader, but the driver's connection to a file is still work), and a local-dev tool is served well by memory. An export of the current window as JSON is on the API for the case where a trace must be kept.
+- **In-memory only storage.** The first design kept everything in bounded ring buffers and aggregated on demand: simplest, and free of any database inside the application's JVM. Rejected because the analysis screen has to survive the monitored application going down, and because two embedded instances on one machine should show one picture. H2 with `AUTO_SERVER` gives both, and the class-loader exclusion keeps the OpenTelemetry agent away from its JDBC.
 - **A frontend build (React, Vue, TypeScript).** SigNoz and OpenObserve are built that way; Spider Sense is a single jar whose build must stay `./gradlew build` with no Node. The UI is plain ES modules, one CSS file, and uPlot for charts, served by Spider Silk's static files. A template engine was not used either: the UI is one page whose data all comes from the JSON API, and Spider Silk's JSON and SSE support is the part of the framework this application exercises.
 - **gRPC receiver.** See above.
 - **Profiling (Glowroot's stack sampling).** Not part of OpenTelemetry's stable signals in Java; deferred until the profiling signal lands in the agent.
