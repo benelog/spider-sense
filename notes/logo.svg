@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200" role="img" aria-label="Spider Sense">
+  <title>Spider Sense</title>
+
+  <!-- silk strands -->
+  <g fill="none" stroke="#8a93a6" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+    <!-- radials -->
+    <g opacity="0.75">
+      <path d="M 100.0 100.0 L 100.0 10.0"/>
+      <path d="M 100.0 100.0 L 163.6 36.4"/>
+      <path d="M 100.0 100.0 L 190.0 100.0"/>
+      <path d="M 100.0 100.0 L 163.6 163.6"/>
+      <path d="M 100.0 100.0 L 100.0 190.0"/>
+      <path d="M 100.0 100.0 L 36.4 163.6"/>
+      <path d="M 100.0 100.0 L 10.0 100.0"/>
+      <path d="M 100.0 100.0 L 36.4 36.4"/>
+    </g>
+    <!-- spiral rings, sagging between radials -->
+    <path opacity="0.95" d="M 100.0 74.0 Q 107.9 80.9 118.4 81.6 Q 119.1 92.1 126.0 100.0 Q 119.1 107.9 118.4 118.4 Q 107.9 119.1 100.0 126.0 Q 92.1 119.1 81.6 118.4 Q 80.9 107.9 74.0 100.0 Q 80.9 92.1 81.6 81.6 Q 92.1 80.9 100.0 74.0 Z"/>
+    <path opacity="0.85" d="M 100.0 56.0 Q 113.4 67.6 131.1 68.9 Q 132.4 86.6 144.0 100.0 Q 132.4 113.4 131.1 131.1 Q 113.4 132.4 100.0 144.0 Q 86.6 132.4 68.9 131.1 Q 67.6 113.4 56.0 100.0 Q 67.6 86.6 68.9 68.9 Q 86.6 67.6 100.0 56.0 Z"/>
+    <path opacity="0.7" d="M 100.0 38.0 Q 118.9 54.4 143.8 56.2 Q 145.6 81.1 162.0 100.0 Q 145.6 118.9 143.8 143.8 Q 118.9 145.6 100.0 162.0 Q 81.1 145.6 56.2 143.8 Q 54.4 118.9 38.0 100.0 Q 54.4 81.1 56.2 56.2 Q 81.1 54.4 100.0 38.0 Z"/>
+    <path opacity="0.55" d="M 100.0 20.0 Q 124.4 41.2 156.6 43.4 Q 158.8 75.6 180.0 100.0 Q 158.8 124.4 156.6 156.6 Q 124.4 158.8 100.0 180.0 Q 75.6 158.8 43.4 156.6 Q 41.2 124.4 20.0 100.0 Q 41.2 75.6 43.4 43.4 Q 75.6 41.2 100.0 20.0 Z"/>
+  </g>
+
+  <!-- spider at the hub -->
+  <g stroke="#5a3a22" fill="#5a3a22" transform="translate(100 102) scale(1.2) translate(-100 -102)">
+    <g fill="none" stroke-width="1.8" stroke-linecap="round">
+      <path d="M 105 96 Q 114 88 120 82"/>
+      <path d="M 106 100 Q 116 97 124 94"/>
+      <path d="M 106 104 Q 116 106 123 111"/>
+      <path d="M 104 108 Q 112 116 117 123"/>
+      <path d="M 95 96 Q 86 88 80 82"/>
+      <path d="M 94 100 Q 84 97 76 94"/>
+      <path d="M 94 104 Q 84 106 77 111"/>
+      <path d="M 96 108 Q 88 116 83 123"/>
+    </g>
+    <ellipse cx="100" cy="105" rx="6.4" ry="8"/>
+    <ellipse cx="100" cy="94.5" rx="4.4" ry="4"/>
+  </g>
+
+  <!-- the sense: three arcs above the spider's head at (100, 93) -->
+  <g class="sense-arcs" fill="none" stroke="#e2603f" stroke-linecap="round">
+    <path d="M 84.412 84 A 18 18 0 0 1 115.588 84" stroke-width="3" opacity="0.95"/>
+    <path d="M 75.752 79 A 28 28 0 0 1 124.248 79" stroke-width="2.4" opacity="0.7"/>
+    <path d="M 67.091 74 A 38 38 0 0 1 132.909 74" stroke-width="1.8" opacity="0.45"/>
+  </g>
+</svg>

@@ -1,0 +1,1045 @@
+// A fetch and EventSource shim that answers every endpoint in docs/api.md with
+// generated data. Loaded only when the page URL carries ?mock=1.
+
+const START = Date.now() - 15 * 60 * 1000;
+const VERSION = '0.1.0';
+
+let seed = 20260916;
+function rnd() {
+  seed = (seed * 1664525 + 1013904223) % 4294967296;
+  return seed / 4294967296;
+}
+const pick = (arr) => arr[Math.floor(rnd() * arr.length)];
+const between = (a, b) => a + rnd() * (b - a);
+const gauss = () => (rnd() + rnd() + rnd() + rnd() - 2) / 2;
+const hex = (n) => {
+  let s = '';
+  while (s.length < n) s += Math.floor(rnd() * 16).toString(16);
+  return s.slice(0, n);
+};
+const hash = (s) => {
+  let x = 2166136261;
+  for (let i = 0; i < s.length; i++) { x ^= s.charCodeAt(i); x = Math.imul(x, 16777619); }
+  return (x >>> 0).toString(16).padStart(8, '0');
+};
+
+// --- the world ----------------------------------------------------------
+
+const SERVICES = [
+  {
+    name: 'silk-bookstore',
+    language: 'java',
+    embedded: false,
+    hasJvm: true,
+    resource: {
+      'service.name': 'silk-bookstore',
+      'telemetry.sdk.name': 'opentelemetry',
+      'telemetry.sdk.language': 'java',
+      'telemetry.sdk.version': '1.54.0',
+      'process.runtime.name': 'OpenJDK 64-Bit Server VM',
+      'process.runtime.version': '21.0.4+7',
+      'process.pid': '48211',
+      'host.name': 'benelog-dev',
+      'host.arch': 'amd64',
+      'os.type': 'linux',
+    },
+  },
+  {
+    name: 'spring-orders',
+    language: 'java',
+    embedded: false,
+    hasJvm: true,
+    resource: {
+      'service.name': 'spring-orders',
+      'telemetry.sdk.name': 'opentelemetry',
+      'telemetry.sdk.language': 'java',
+      'telemetry.sdk.version': '1.54.0',
+      'process.runtime.name': 'OpenJDK 64-Bit Server VM',
+      'process.runtime.version': '21.0.4+7',
+      'process.pid': '48377',
+      'host.name': 'benelog-dev',
+      'host.arch': 'amd64',
+      'os.type': 'linux',
+    },
+  },
+];
+
+const QUERIES = [
+  { service: 'silk-bookstore', system: 'h2', namespace: 'bookstore', operation: 'SELECT', table: 'books', statement: 'select id, title, author, price from books where id = ?', base: 1.4, jitter: 0.8 },
+  { service: 'silk-bookstore', system: 'h2', namespace: 'bookstore', operation: 'SELECT', table: 'books', statement: "select id, title, author from books where lower(title) like ? order by title", base: 240, jitter: 90 },
+  { service: 'silk-bookstore', system: 'h2', namespace: 'bookstore', operation: 'SELECT', table: 'reviews', statement: 'select id, book_id, rating, body from reviews where book_id = ?', base: 1.1, jitter: 0.6 },
+  { service: 'silk-bookstore', system: 'h2', namespace: 'bookstore', operation: 'SELECT', table: 'books', statement: 'select sleep(?) from books limit ?', base: 620, jitter: 120 },
+  { service: 'spring-orders', system: 'h2', namespace: 'orders', operation: 'SELECT', table: 'orders', statement: 'select o.id, o.customer_id, o.total, o.status from orders o where o.customer_id = ?', base: 2.2, jitter: 1.4 },
+  { service: 'spring-orders', system: 'h2', namespace: 'orders', operation: 'SELECT', table: 'orders', statement: 'select o.id, sum(l.amount) from orders o join order_lines l on l.order_id = o.id where o.created_at between ? and ? group by o.id order by ? desc', base: 310, jitter: 140 },
+  { service: 'spring-orders', system: 'h2', namespace: 'orders', operation: 'SELECT', table: 'customers', statement: 'select c.id, c.name, c.email from customers c where c.id = ?', base: 1.0, jitter: 0.5 },
+  { service: 'spring-orders', system: 'h2', namespace: 'orders', operation: 'UPDATE', table: 'orders', statement: 'update orders set status = ?, shipped_at = ? where id = ?', base: 3.4, jitter: 2.0 },
+  { service: 'spring-orders', system: 'h2', namespace: 'orders', operation: 'INSERT', table: 'order_lines', statement: 'insert into order_lines (order_id, book_id, amount, price) values (?, ?, ?, ?)', base: 2.0, jitter: 1.2 },
+];
+
+const queryOf = (statement) => QUERIES.find((q) => q.statement === statement);
+
+const ERRORS = [
+  {
+    service: 'spring-orders',
+    type: 'com.example.orders.OrderAlreadyShippedException',
+    message: 'Order ? is already shipped',
+    sample: 'Order 4821 is already shipped',
+    stack: [
+      'com.example.orders.OrderAlreadyShippedException: Order 4821 is already shipped',
+      '\tat com.example.orders.ShipmentService.ship(ShipmentService.java:74)',
+      '\tat com.example.orders.OrderController.ship(OrderController.java:112)',
+      '\tat java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)',
+      '\tat org.springframework.web.method.support.InvocableHandlerMethod.doInvoke(InvocableHandlerMethod.java:255)',
+      '\tat org.springframework.web.servlet.DispatcherServlet.doDispatch(DispatcherServlet.java:1089)',
+      '\tat com.example.orders.OrderController.ship(OrderController.java:108)',
+      '\t... 42 more',
+    ].join('\n'),
+  },
+  {
+    service: 'spring-orders',
+    type: 'java.lang.IllegalStateException',
+    message: 'Flaky downstream refused the call',
+    sample: 'Flaky downstream refused the call',
+    stack: [
+      'java.lang.IllegalStateException: Flaky downstream refused the call',
+      '\tat com.example.orders.FlakyController.call(FlakyController.java:38)',
+      '\tat java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1144)',
+      'Caused by: java.net.SocketTimeoutException: Read timed out',
+      '\tat java.base/sun.nio.ch.NioSocketImpl.timedRead(NioSocketImpl.java:280)',
+      '\tat com.example.orders.FlakyController.call(FlakyController.java:33)',
+      '\t... 18 more',
+    ].join('\n'),
+  },
+  {
+    service: 'silk-bookstore',
+    type: 'java.lang.ArithmeticException',
+    message: '/ by zero',
+    sample: '/ by zero',
+    stack: [
+      'java.lang.ArithmeticException: / by zero',
+      '\tat net.benelog.bookstore.PriceCalculator.average(PriceCalculator.java:29)',
+      '\tat net.benelog.bookstore.BookHandler.stats(BookHandler.java:96)',
+      '\tat net.benelog.spidersilk.web.Router.handle(Router.java:141)',
+      '\tat org.eclipse.jetty.server.Server.handle(Server.java:563)',
+    ].join('\n'),
+  },
+];
+
+/** Endpoint templates: base latency in ms, the queries each one runs, error and slow rates. */
+const ENDPOINTS = [
+  { service: 'silk-bookstore', method: 'GET', route: '/api/books/{id}', weight: 30, base: 6, jitter: 4, queries: [0, 2], errorRate: 0.004 },
+  { service: 'silk-bookstore', method: 'GET', route: '/api/books', weight: 14, base: 12, jitter: 8, queries: [0, 0, 2], errorRate: 0.003 },
+  { service: 'silk-bookstore', method: 'GET', route: '/api/books/search', weight: 8, base: 20, jitter: 10, queries: [1], errorRate: 0.004 },
+  { service: 'silk-bookstore', method: 'GET', route: '/api/books/stats', weight: 5, base: 9, jitter: 5, queries: [2], errorRate: 0.06, errorIndex: 2 },
+  { service: 'silk-bookstore', method: 'GET', route: '/slow', weight: 3, base: 40, jitter: 20, queries: [3], errorRate: 0.002 },
+  { service: 'silk-bookstore', method: 'GET', route: '/books/{id}/reviews', weight: 9, base: 14, jitter: 9, queries: [2, 2, 2, 2, 2, 2], errorRate: 0.002 },
+  { service: 'spring-orders', method: 'GET', route: '/orders/{id}', weight: 22, base: 9, jitter: 6, queries: [4, 6], calls: '/api/books/{id}', errorRate: 0.004 },
+  { service: 'spring-orders', method: 'GET', route: '/orders/report', weight: 6, base: 30, jitter: 14, queries: [5], errorRate: 0.005 },
+  { service: 'spring-orders', method: 'POST', route: '/orders/{id}/ship', weight: 7, base: 12, jitter: 7, queries: [4, 7], errorRate: 0.10, errorIndex: 0 },
+  { service: 'spring-orders', method: 'POST', route: '/orders', weight: 9, base: 18, jitter: 10, queries: [6, 8, 8], calls: '/api/books/{id}', errorRate: 0.006 },
+  { service: 'spring-orders', method: 'GET', route: '/orders/flaky', weight: 5, base: 11, jitter: 30, queries: [4], errorRate: 0.20, errorIndex: 1 },
+  { service: 'spring-orders', method: 'GET', route: '/customers/{id}/orders', weight: 11, base: 13, jitter: 8, queries: [6, 4, 4], errorRate: 0.003 },
+];
+
+for (const e of ENDPOINTS) {
+  e.name = e.method + ' ' + e.route;
+  e.endpointId = hash(e.service + '|' + e.name);
+}
+for (const q of QUERIES) q.queryId = hash(q.service + '|' + q.system + '|' + q.statement);
+for (const e of ERRORS) e.errorId = hash(e.service + '|' + e.type + '|' + e.message);
+
+const WEIGHTED = ENDPOINTS.flatMap((e) => Array(e.weight).fill(e));
+
+const LOGGERS = {
+  'silk-bookstore': ['n.b.bookstore.BookHandler', 'n.b.bookstore.BookRepository', 'n.b.s.web.Router', 'o.e.j.s.Server'],
+  'spring-orders': ['c.e.orders.OrderController', 'c.e.orders.OrderRepository', 'o.s.web.client.RestClient', 'o.h.engine.jdbc.spi.SqlStatementLogger'],
+};
+
+const LOG_BODIES = [
+  'Loaded {n} rows in {ms} ms',
+  'Cache miss for key order-{n}',
+  'Calling silk-bookstore for book {n}',
+  'Transaction committed in {ms} ms',
+  'Rejecting request: payload too large',
+  'Retrying after a failed downstream call',
+];
+
+const SLOW_REQUEST_MS = 500;
+const SLOW_QUERY_MS = 100;
+
+// --- generation ---------------------------------------------------------
+
+const traces = [];
+const logs = [];
+const tingles = [];
+let logId = 1;
+
+function spanId() { return hex(16); }
+
+function makeSpan(o) {
+  return {
+    spanId: o.spanId || spanId(),
+    parentSpanId: o.parentSpanId || null,
+    service: o.service,
+    name: o.name,
+    kind: o.kind || 'INTERNAL',
+    start: Math.round(o.start),
+    startNs: Math.round(o.start) * 1e6,
+    durationMs: Math.round(o.durationMs * 100) / 100,
+    durationNs: Math.round(o.durationMs * 1e6),
+    status: o.status || 'UNSET',
+    statusMessage: o.statusMessage || null,
+    attributes: o.attributes || {},
+    events: o.events || [],
+    scope: o.scope || 'io.opentelemetry.spider-sense-mock',
+    category: o.category || 'internal',
+    summary: o.summary || o.name,
+    slow: !!o.slow,
+    error: !!o.error,
+  };
+}
+
+function dbSpan(q, parent, start, service, slowBoost) {
+  let ms = Math.max(0.2, q.base + gauss() * q.jitter);
+  if (slowBoost && rnd() < 0.25) ms *= between(1.6, 3.2);
+  const slow = ms >= SLOW_QUERY_MS;
+  return makeSpan({
+    parentSpanId: parent,
+    service,
+    name: q.operation + ' ' + (q.namespace || '') + '.' + q.table,
+    kind: 'CLIENT',
+    start,
+    durationMs: ms,
+    category: 'db',
+    summary: q.operation + ' ' + q.table + ' (' + q.system + ')',
+    slow,
+    scope: 'io.opentelemetry.jdbc',
+    attributes: {
+      'db.system': q.system,
+      'db.name': q.namespace,
+      'db.operation': q.operation,
+      'db.sql.table': q.table,
+      'db.statement': q.statement,
+      'server.address': 'localhost',
+      'server.port': 9092,
+    },
+  });
+}
+
+function makeTrace(at) {
+  const ep = pick(WEIGHTED);
+  const traceId = hex(32);
+  const rootId = spanId();
+  const spans = [];
+  const isError = rnd() < ep.errorRate;
+  const heavy = rnd() < 0.06;
+
+  let cursor = at + between(0.2, 1.2);
+  const children = [];
+
+  // an outgoing HTTP call that lands in the other service
+  if (ep.calls) {
+    const remote = ENDPOINTS.find((e) => e.route === ep.calls);
+    const clientId = spanId();
+    const serverId = spanId();
+    const remoteStart = cursor + between(0.4, 1.4);
+    const remoteSpans = [];
+    let rCursor = remoteStart + between(0.2, 0.8);
+    for (const qi of remote.queries) {
+      const s = dbSpan(QUERIES[qi], serverId, rCursor, remote.service, heavy);
+      remoteSpans.push(s);
+      rCursor += s.durationMs + between(0.1, 0.5);
+    }
+    const remoteSelf = Math.max(1, remote.base + gauss() * remote.jitter);
+    const remoteDur = (rCursor - remoteStart) + remoteSelf;
+    remoteSpans.unshift(makeSpan({
+      spanId: serverId, parentSpanId: clientId, service: remote.service,
+      name: remote.name, kind: 'SERVER', start: remoteStart, durationMs: remoteDur,
+      category: 'http', summary: remote.name + ' → 200',
+      scope: 'io.opentelemetry.spider-silk',
+      attributes: {
+        'http.request.method': remote.method, 'http.route': remote.route,
+        'url.path': remote.route.replace('{id}', String(Math.floor(between(1, 9000)))),
+        'http.response.status_code': 200, 'server.port': 8081, 'client.address': '127.0.0.1',
+      },
+    }));
+    const clientDur = remoteDur + between(1.2, 4.0);
+    children.push(makeSpan({
+      spanId: clientId, parentSpanId: rootId, service: ep.service,
+      name: 'GET', kind: 'CLIENT', start: cursor, durationMs: clientDur,
+      category: 'http', summary: 'GET http://localhost:8081' + remote.route + ' → 200',
+      scope: 'io.opentelemetry.java-http-client',
+      attributes: {
+        'http.request.method': 'GET', 'url.full': 'http://localhost:8081' + remote.route,
+        'http.response.status_code': 200, 'server.address': 'localhost', 'server.port': 8081,
+      },
+    }));
+    children.push(...remoteSpans);
+    cursor += clientDur + between(0.2, 0.8);
+  }
+
+  for (const qi of ep.queries) {
+    const s = dbSpan(QUERIES[qi], rootId, cursor, ep.service, heavy);
+    children.push(s);
+    cursor += s.durationMs + between(0.1, 0.6);
+  }
+
+  const self = Math.max(1, ep.base + Math.abs(gauss()) * ep.jitter);
+  let total = (cursor - at) + self;
+  if (heavy) total *= between(1.4, 2.6);
+  const slow = total >= SLOW_REQUEST_MS;
+
+  const errorDef = isError ? ERRORS[ep.errorIndex != null ? ep.errorIndex : 2] : null;
+  const statusCode = isError ? (errorDef && errorDef.type.includes('Already') ? 409 : 500) : 200;
+
+  const root = makeSpan({
+    spanId: rootId, service: ep.service, name: ep.name, kind: 'SERVER',
+    start: at, durationMs: total, category: 'http',
+    summary: ep.name + ' → ' + statusCode,
+    status: isError ? 'ERROR' : 'UNSET',
+    statusMessage: isError ? errorDef.sample : null,
+    slow, error: isError,
+    scope: ep.service === 'spring-orders' ? 'io.opentelemetry.spring-webmvc-6.0' : 'io.opentelemetry.spider-silk',
+    attributes: {
+      'http.request.method': ep.method,
+      'http.route': ep.route,
+      'url.path': ep.route.replace('{id}', String(Math.floor(between(1, 9000)))),
+      'http.response.status_code': statusCode,
+      'server.port': ep.service === 'spring-orders' ? 8082 : 8081,
+      'client.address': '127.0.0.1',
+      'user_agent.original': 'load-gen/1.0',
+      'thread.name': 'qtp' + Math.floor(between(100, 999)) + '-' + Math.floor(between(10, 60)),
+    },
+    events: isError ? [{
+      name: 'exception',
+      time: Math.round(at + total * 0.8),
+      attributes: {
+        'exception.type': errorDef.type,
+        'exception.message': errorDef.sample,
+        'exception.stacktrace': errorDef.stack,
+      },
+    }] : [],
+  });
+
+  spans.push(root, ...children);
+  spans.sort((a, b) => a.start - b.start);
+
+  const services = [...new Set(spans.map((s) => s.service))];
+  const trace = {
+    traceId,
+    start: root.start,
+    end: root.start + Math.round(total),
+    durationMs: root.durationMs,
+    rootName: ep.name,
+    rootService: ep.service,
+    rootKind: 'SERVER',
+    services,
+    spanCount: spans.length,
+    errorCount: spans.filter((s) => s.error).length,
+    dbCount: spans.filter((s) => s.category === 'db').length,
+    httpStatus: statusCode,
+    slow,
+    error: isError,
+    spans,
+    endpointId: ep.endpointId,
+    errorId: errorDef ? errorDef.errorId : null,
+  };
+
+  // a couple of logs, one of them carrying the trace id
+  const n = isError ? 3 : rnd() < 0.5 ? 1 : 2;
+  for (let i = 0; i < n; i++) {
+    const severity = isError && i === n - 1 ? 'ERROR' : rnd() < 0.12 ? 'WARN' : rnd() < 0.2 ? 'DEBUG' : 'INFO';
+    logs.push({
+      id: logId++,
+      at: Math.round(at + between(0, total)),
+      service: ep.service,
+      severity,
+      severityNumber: { TRACE: 1, DEBUG: 5, INFO: 9, WARN: 13, ERROR: 17 }[severity],
+      body: severity === 'ERROR'
+        ? errorDef.type + ': ' + errorDef.sample
+        : pick(LOG_BODIES).replace('{n}', String(Math.floor(between(1, 9000)))).replace('{ms}', String(Math.round(between(1, 400)))),
+      logger: pick(LOGGERS[ep.service]),
+      traceId,
+      spanId: rootId,
+      attributes: severity === 'ERROR'
+        ? { 'thread.name': root.attributes['thread.name'], 'exception.type': errorDef.type, 'exception.stacktrace': errorDef.stack }
+        : { 'thread.name': root.attributes['thread.name'] },
+    });
+  }
+
+  if (isError) {
+    tingles.push({ kind: 'error', at: root.start, service: ep.service, title: ep.name, detail: errorDef.type.split('.').pop() + ': ' + errorDef.sample, traceId, spanId: rootId, durationMs: root.durationMs });
+  } else if (slow) {
+    tingles.push({ kind: 'slow-request', at: root.start, service: ep.service, title: ep.name, detail: fmtMs(total), traceId, spanId: rootId, durationMs: root.durationMs });
+  }
+  const slowQuery = spans.find((s) => s.category === 'db' && s.slow);
+  if (slowQuery) {
+    tingles.push({ kind: 'slow-query', at: slowQuery.start, service: slowQuery.service, title: slowQuery.summary, detail: slowQuery.attributes['db.statement'], traceId, spanId: slowQuery.spanId, durationMs: slowQuery.durationMs });
+  }
+
+  return trace;
+}
+
+function fmtMs(ms) { return new Intl.NumberFormat('en-US').format(Math.round(ms)) + ' ms'; }
+
+// seed 15 minutes, roughly 400 traces
+for (let i = 0; i < 400; i++) {
+  traces.push(makeTrace(START + (i / 400) * 15 * 60 * 1000 + between(0, 1800)));
+}
+traces.sort((a, b) => a.start - b.start);
+logs.sort((a, b) => a.at - b.at);
+tingles.sort((a, b) => a.at - b.at);
+
+// --- live ---------------------------------------------------------------
+
+const listeners = new Set();
+let spanTotal = traces.reduce((n, t) => n + t.spanCount, 0);
+
+function emit(type, data) {
+  for (const es of listeners) es._dispatch(type, data);
+}
+
+setInterval(() => {
+  const n = 1 + Math.floor(rnd() * 3);
+  const before = tingles.length;
+  for (let i = 0; i < n; i++) {
+    const t = makeTrace(Date.now() - between(0, 900));
+    traces.push(t);
+    spanTotal += t.spanCount;
+  }
+  traces.sort((a, b) => a.start - b.start);
+  logs.sort((a, b) => a.at - b.at);
+  const cutoff = Date.now() - 60 * 60 * 1000;
+  while (traces.length && traces[0].start < cutoff) traces.shift();
+  for (const t of tingles.slice(before)) emit('tingle', t);
+  emit('stats', {
+    at: Date.now(),
+    spans: spanTotal,
+    traces: traces.length,
+    logs: logs.length,
+    perSecond: { spans: Math.round(n * 8 * 10) / 10, logs: Math.round(n * 1.5 * 10) / 10 },
+  });
+}, 3000);
+
+// --- aggregation --------------------------------------------------------
+
+function windowOf(q) {
+  const to = q.to ? +q.to : Date.now();
+  const from = q.from ? +q.from : to - 15 * 60 * 1000;
+  const spanMs = Math.max(1000, to - from);
+  const bucketMs = spanMs <= 5 * 60000 ? 5000 : spanMs <= 15 * 60000 ? 15000 : spanMs <= 3600000 ? 60000 : spanMs <= 6 * 3600000 ? 300000 : 900000;
+  return { from, to, bucketMs };
+}
+
+function inWindow(w, service) {
+  return traces.filter((t) => t.start >= w.from && t.start <= w.to && (!service || t.services.includes(service)));
+}
+
+function percentile(sorted, p) {
+  if (!sorted.length) return 0;
+  const i = Math.min(sorted.length - 1, Math.max(0, Math.ceil((p / 100) * sorted.length) - 1));
+  return Math.round(sorted[i] * 100) / 100;
+}
+
+function entrySpans(list, service) {
+  const out = [];
+  for (const t of list) {
+    for (const s of t.spans) {
+      if (s.kind !== 'SERVER') continue;
+      if (service && s.service !== service) continue;
+      out.push({ span: s, trace: t });
+    }
+  }
+  return out;
+}
+
+function bucketsOf(w) {
+  const out = [];
+  for (let t = Math.floor(w.from / w.bucketMs) * w.bucketMs; t <= w.to; t += w.bucketMs) out.push(t);
+  return out;
+}
+
+function seriesFor(entries, w) {
+  const t = bucketsOf(w);
+  const index = new Map(t.map((x, i) => [x, i]));
+  const requests = t.map(() => 0);
+  const errors = t.map(() => 0);
+  const durations = t.map(() => []);
+  for (const { span } of entries) {
+    const b = Math.floor(span.start / w.bucketMs) * w.bucketMs;
+    const i = index.get(b);
+    if (i === undefined) continue;
+    requests[i]++;
+    if (span.error) errors[i]++;
+    durations[i].push(span.durationMs);
+  }
+  const pct = (p) => durations.map((d) => (d.length ? percentile(d.slice().sort((a, b) => a - b), p) : null));
+  return { t, requests, errors, p50Ms: pct(50), p95Ms: pct(95), p99Ms: pct(99) };
+}
+
+function summaryFor(service, w) {
+  const def = SERVICES.find((s) => s.name === service);
+  const entries = entrySpans(inWindow(w, service), service);
+  const durations = entries.map((e) => e.span.durationMs).sort((a, b) => a - b);
+  const errors = entries.filter((e) => e.span.error).length;
+  const series = seriesFor(entries, w);
+  const secs = Math.max(1, (w.to - w.from) / 1000);
+  return {
+    name: service,
+    language: def.language,
+    embedded: def.embedded,
+    firstSeen: START,
+    lastSeen: entries.length ? Math.max(...entries.map((e) => e.span.start)) : START,
+    requests: entries.length,
+    errors,
+    errorRate: entries.length ? errors / entries.length : 0,
+    rps: Math.round((entries.length / secs) * 100) / 100,
+    p50Ms: percentile(durations, 50),
+    p95Ms: percentile(durations, 95),
+    p99Ms: percentile(durations, 99),
+    maxMs: durations.length ? durations[durations.length - 1] : 0,
+    sparkline: series.requests,
+    hasJvm: def.hasJvm,
+  };
+}
+
+function endpointStats(w, service) {
+  const list = inWindow(w, service);
+  const byId = new Map();
+  for (const t of list) {
+    for (const s of t.spans) {
+      if (s.kind !== 'SERVER') continue;
+      if (service && s.service !== service) continue;
+      const ep = ENDPOINTS.find((e) => e.name === s.name && e.service === s.service);
+      if (!ep) continue;
+      let agg = byId.get(ep.endpointId);
+      if (!agg) {
+        agg = { ep, durations: [], errors: 0, statusCodes: {} };
+        byId.set(ep.endpointId, agg);
+      }
+      agg.durations.push(s.durationMs);
+      if (s.error) agg.errors++;
+      const code = String(s.attributes['http.response.status_code'] || 200);
+      agg.statusCodes[code] = (agg.statusCodes[code] || 0) + 1;
+    }
+  }
+  const secs = Math.max(1, (w.to - w.from) / 1000);
+  return [...byId.values()].map(({ ep, durations, errors, statusCodes }) => {
+    const sorted = durations.slice().sort((a, b) => a - b);
+    const total = durations.reduce((a, b) => a + b, 0);
+    return {
+      endpointId: ep.endpointId, service: ep.service, method: ep.method, route: ep.route, name: ep.name, kind: 'SERVER',
+      calls: durations.length, errors, errorRate: durations.length ? errors / durations.length : 0,
+      rps: Math.round((durations.length / secs) * 100) / 100,
+      avgMs: Math.round((total / Math.max(1, durations.length)) * 100) / 100,
+      p50Ms: percentile(sorted, 50), p95Ms: percentile(sorted, 95), p99Ms: percentile(sorted, 99),
+      maxMs: sorted.length ? sorted[sorted.length - 1] : 0,
+      totalMs: Math.round(total * 100) / 100,
+      statusCodes,
+    };
+  }).sort((a, b) => b.totalMs - a.totalMs);
+}
+
+function queryStats(w, service) {
+  const list = inWindow(w, service);
+  const byId = new Map();
+  for (const t of list) {
+    const rootEp = ENDPOINTS.find((e) => e.endpointId === t.endpointId);
+    for (const s of t.spans) {
+      if (s.category !== 'db') continue;
+      if (service && s.service !== service) continue;
+      const q = queryOf(s.attributes['db.statement']);
+      if (!q) continue;
+      let agg = byId.get(q.queryId);
+      if (!agg) { agg = { q, durations: [], slow: 0, callers: new Map(), lastSeen: 0, traces: new Set() }; byId.set(q.queryId, agg); }
+      agg.durations.push(s.durationMs);
+      if (s.slow) agg.slow++;
+      agg.lastSeen = Math.max(agg.lastSeen, s.start);
+      agg.traces.add(t.traceId);
+      if (rootEp) {
+        const key = rootEp.service + '|' + rootEp.name;
+        agg.callers.set(key, (agg.callers.get(key) || 0) + 1);
+      }
+    }
+  }
+  return [...byId.values()].map(({ q, durations, slow, callers, lastSeen }) => {
+    const sorted = durations.slice().sort((a, b) => a - b);
+    const total = durations.reduce((a, b) => a + b, 0);
+    return {
+      queryId: q.queryId, service: q.service, system: q.system, namespace: q.namespace,
+      operation: q.operation, table: q.table, statement: q.statement,
+      calls: durations.length, errors: 0,
+      avgMs: Math.round((total / Math.max(1, durations.length)) * 100) / 100,
+      p50Ms: percentile(sorted, 50), p95Ms: percentile(sorted, 95),
+      maxMs: sorted.length ? sorted[sorted.length - 1] : 0,
+      totalMs: Math.round(total * 100) / 100,
+      slowCalls: slow,
+      callers: [...callers.entries()].map(([k, calls]) => ({ endpoint: k.split('|')[1], service: k.split('|')[0], calls })).sort((a, b) => b.calls - a.calls),
+      lastSeen,
+    };
+  });
+}
+
+function errorGroups(w, service) {
+  const list = inWindow(w, service).filter((t) => t.error);
+  const byId = new Map();
+  for (const t of list) {
+    const def = ERRORS.find((e) => e.errorId === t.errorId);
+    if (!def) continue;
+    if (service && def.service !== service) continue;
+    let agg = byId.get(def.errorId);
+    if (!agg) { agg = { def, count: 0, first: Infinity, last: 0, endpoints: new Map(), traces: [] }; byId.set(def.errorId, agg); }
+    agg.count++;
+    agg.first = Math.min(agg.first, t.start);
+    agg.last = Math.max(agg.last, t.start);
+    agg.endpoints.set(t.rootName, (agg.endpoints.get(t.rootName) || 0) + 1);
+    agg.traces.push(t);
+  }
+  return [...byId.values()].map(({ def, count, first, last, endpoints, traces: ts }) => {
+    const sample = ts[ts.length - 1];
+    return {
+      errorId: def.errorId, service: def.service, type: def.type, message: def.message,
+      count, firstSeen: first, lastSeen: last,
+      endpoints: [...endpoints.entries()].map(([name, c]) => ({ name, count: c })).sort((a, b) => b.count - a.count),
+      sample: sample ? { traceId: sample.traceId, spanId: sample.spans[0].spanId, at: sample.start, message: def.sample, stacktrace: def.stack } : null,
+      _traces: ts,
+    };
+  }).sort((a, b) => b.count - a.count);
+}
+
+function summary(t) {
+  const { spans, endpointId, errorId, ...rest } = t;
+  return rest;
+}
+
+function dependencies(w, service) {
+  const list = inWindow(w, service);
+  const by = new Map();
+  for (const t of list) {
+    for (const s of t.spans) {
+      if (s.service !== service || s.kind !== 'CLIENT') continue;
+      const kind = s.category === 'db' ? 'db' : 'http';
+      const target = kind === 'db'
+        ? s.attributes['db.system'] + ':' + s.attributes['db.name']
+        : s.attributes['server.address'] + ':' + s.attributes['server.port'];
+      const key = kind + '|' + target;
+      let agg = by.get(key);
+      if (!agg) { agg = { kind, target, durations: [], errors: 0 }; by.set(key, agg); }
+      agg.durations.push(s.durationMs);
+      if (s.error) agg.errors++;
+    }
+  }
+  return [...by.values()].map(({ kind, target, durations, errors }) => {
+    const sorted = durations.slice().sort((a, b) => a - b);
+    return {
+      kind, target, calls: durations.length, errors,
+      avgMs: Math.round((durations.reduce((a, b) => a + b, 0) / Math.max(1, durations.length)) * 100) / 100,
+      p95Ms: percentile(sorted, 95),
+    };
+  }).sort((a, b) => b.calls - a.calls);
+}
+
+// --- JVM and metrics ----------------------------------------------------
+
+const JVM_POOLS = ['G1 Eden Space', 'G1 Old Gen', 'G1 Survivor Space'];
+
+function jvmView(service, w) {
+  const step = Math.max(5000, w.bucketMs);
+  const t = [];
+  for (let x = Math.floor(w.from / step) * step; x <= w.to; x += step) t.push(x);
+  const wave = (i, base, amp, period) => base + Math.sin((i / period) * Math.PI * 2) * amp;
+  const jitter = () => (Math.sin(t.length * 12.9898) + 1) * 0.5;
+  const def = SERVICES.find((s) => s.name === service);
+  const heapBase = service === 'spring-orders' ? 210 : 120;
+  const used = t.map((x, i) => Math.round((wave(i, heapBase, heapBase * 0.35, 9) + (i % 7) * 3) * 1024 * 1024));
+  return {
+    service,
+    runtime: {
+      jvm: def.resource['process.runtime.name'] + ' ' + def.resource['process.runtime.version'],
+      pid: +def.resource['process.pid'],
+      host: def.resource['host.name'],
+      cpuCount: 8,
+    },
+    heap: {
+      t,
+      used,
+      committed: t.map(() => Math.round((heapBase * 2.1) * 1024 * 1024)),
+      limit: t.map(() => Math.round(1024 * 1024 * 1024)),
+    },
+    nonHeap: {
+      t,
+      used: t.map((x, i) => Math.round(wave(i, 86, 4, 23) * 1024 * 1024)),
+      committed: t.map(() => Math.round(104 * 1024 * 1024)),
+    },
+    pools: JVM_POOLS.map((name, k) => ({
+      name, type: 'heap', t,
+      used: t.map((x, i) => Math.round(wave(i + k * 3, heapBase * (k === 1 ? 0.5 : k === 0 ? 0.35 : 0.08), heapBase * 0.2, 7 + k) * 1024 * 1024)),
+    })),
+    gc: [
+      { name: 'G1 Young Generation', action: 'end of minor GC', t, count: t.map((x, i) => (i % 3 === 0 ? 2 : 1)), durationMs: t.map((x, i) => Math.round(wave(i, 12, 6, 5) * 10) / 10) },
+      { name: 'G1 Concurrent GC', action: 'end of concurrent GC', t, count: t.map((x, i) => (i % 9 === 0 ? 1 : 0)), durationMs: t.map((x, i) => (i % 9 === 0 ? 28.4 : 0)) },
+    ],
+    threads: { t, count: t.map((x, i) => Math.round(wave(i, service === 'spring-orders' ? 48 : 32, 5, 11))), daemon: t.map((x, i) => Math.round(wave(i, service === 'spring-orders' ? 38 : 24, 3, 11))) },
+    cpu: { t, utilization: t.map((x, i) => Math.round(Math.max(0.01, wave(i, 0.22, 0.14, 13)) * 1000) / 1000), systemLoad1m: t.map((x, i) => Math.round(wave(i, 1.4, 0.7, 17) * 100) / 100) },
+    classes: { t, loaded: t.map((x, i) => 11800 + i * 3 + (service === 'spring-orders' ? 4200 : 0)) },
+  };
+}
+
+const METRIC_CATALOG = [
+  { name: 'jvm.memory.used', type: 'gauge', unit: 'By', description: 'Measure of memory used', series: 6 },
+  { name: 'jvm.memory.committed', type: 'gauge', unit: 'By', description: 'Measure of memory committed', series: 6 },
+  { name: 'jvm.thread.count', type: 'gauge', unit: '{thread}', description: 'Number of executing platform threads', series: 2 },
+  { name: 'jvm.class.count', type: 'gauge', unit: '{class}', description: 'Number of classes currently loaded', series: 2 },
+  { name: 'jvm.cpu.recent_utilization', type: 'gauge', unit: '1', description: 'Recent CPU utilization for the process', series: 2 },
+  { name: 'jvm.gc.duration', type: 'histogram', unit: 's', description: 'Duration of JVM garbage collection actions', series: 4 },
+  { name: 'http.server.request.duration', type: 'histogram', unit: 's', description: 'Duration of HTTP server requests', series: 8 },
+  { name: 'jvm.cpu.time', type: 'sum', unit: 's', description: 'CPU time used by the process', series: 2 },
+].map((m) => ({ ...m, services: SERVICES.map((s) => s.name) }));
+
+function metricSeries(name, service, w, rateOn) {
+  const step = Math.max(5000, w.bucketMs);
+  const t = [];
+  for (let x = Math.floor(w.from / step) * step; x <= w.to; x += step) t.push(x);
+  const names = service ? [service] : SERVICES.map((s) => s.name);
+  const meta = METRIC_CATALOG.find((m) => m.name === name) || { type: 'gauge', unit: '' };
+  const out = [];
+  for (const svc of names) {
+    const variants = name === 'jvm.memory.used' || name === 'jvm.memory.committed'
+      ? [{ 'jvm.memory.type': 'heap' }, { 'jvm.memory.type': 'non_heap' }]
+      : name === 'jvm.gc.duration'
+        ? [{ 'jvm.gc.name': 'G1 Young Generation' }, { 'jvm.gc.name': 'G1 Concurrent GC' }]
+        : name === 'http.server.request.duration'
+          ? ENDPOINTS.filter((e) => e.service === svc).slice(0, 3).map((e) => ({ 'http.route': e.route, 'http.request.method': e.method }))
+          : [{}];
+    for (const [k, attributes] of variants.entries()) {
+      const base = meta.type === 'histogram' ? 0.02 + k * 0.05 : name.includes('memory') ? 1.6e8 * (k + 1) : name.includes('thread') ? 40 : name.includes('class') ? 12000 : name.includes('utilization') ? 0.25 : 120;
+      const amp = base * 0.25;
+      const v = t.map((x, i) => Math.round((base + Math.sin((i / 8) * Math.PI * 2 + k) * amp) * 1000) / 1000);
+      const s = { service: svc, attributes, t, v };
+      if (meta.type === 'histogram') {
+        s.count = t.map((x, i) => 20 + ((i + k) % 9));
+        s.p95 = v.map((x) => Math.round(x * 2.4 * 1000) / 1000);
+        s.max = v.map((x) => Math.round(x * 4.1 * 1000) / 1000);
+      }
+      if (meta.type === 'sum' && rateOn) s.v = v.map((x) => Math.round((x / 60) * 1000) / 1000);
+      out.push(s);
+    }
+  }
+  return { name, type: meta.type, unit: meta.unit, series: out };
+}
+
+// --- the routes ---------------------------------------------------------
+
+const ENDPOINT_BASE = location.origin;
+
+function statusBody() {
+  return {
+    name: 'Spider Sense',
+    version: VERSION,
+    mode: 'standalone',
+    startedAt: START,
+    now: Date.now(),
+    endpoint: ENDPOINT_BASE,
+    otlp: {
+      traces: ENDPOINT_BASE + '/v1/traces',
+      metrics: ENDPOINT_BASE + '/v1/metrics',
+      logs: ENDPOINT_BASE + '/v1/logs',
+    },
+    embeddedService: null,
+    thresholds: { slowRequestMs: SLOW_REQUEST_MS, slowQueryMs: SLOW_QUERY_MS },
+    retention: { hours: 24 },
+    storage: {
+      url: 'jdbc:h2:file:~/db/spider-sense/store;AUTO_SERVER=TRUE',
+      path: '/home/benelog/db/spider-sense/store.mv.db',
+      sizeBytes: 38_412_288 + traces.length * 1024,
+      fallback: false,
+      fallbackReason: null,
+      droppedBatches: 0,
+      queued: 0,
+    },
+    counts: {
+      spans: spanTotal,
+      traces: traces.length,
+      logs: logs.length,
+      metricSeries: METRIC_CATALOG.reduce((n, m) => n + m.series, 0),
+      services: SERVICES.length,
+    },
+    oldest: { span: traces.length ? traces[0].start : START, log: logs.length ? logs[0].at : START },
+  };
+}
+
+const ROUTES = [
+  [/^\/api\/status$/, () => statusBody()],
+
+  [/^\/api\/overview$/, (m, q) => {
+    const w = windowOf(q);
+    const entries = entrySpans(inWindow(w), null);
+    const durations = entries.map((e) => e.span.durationMs).sort((a, b) => a - b);
+    const errors = entries.filter((e) => e.span.error).length;
+    const series = seriesFor(entries, w);
+    const secs = Math.max(1, (w.to - w.from) / 1000);
+    return {
+      window: w,
+      totals: {
+        requests: entries.length, errors,
+        errorRate: entries.length ? errors / entries.length : 0,
+        rps: Math.round((entries.length / secs) * 100) / 100,
+        p50Ms: percentile(durations, 50), p95Ms: percentile(durations, 95), p99Ms: percentile(durations, 99),
+        maxMs: durations.length ? durations[durations.length - 1] : 0,
+      },
+      services: SERVICES.map((s) => summaryFor(s.name, w)),
+      tingles: tingles.filter((t) => t.at >= w.from && t.at <= w.to).slice(-50).reverse(),
+      series: { t: series.t, requests: series.requests, errors: series.errors, p95Ms: series.p95Ms },
+    };
+  }],
+
+  [/^\/api\/services$/, (m, q) => ({ services: SERVICES.map((s) => summaryFor(s.name, windowOf(q))) })],
+
+  [/^\/api\/services\/([^/]+)$/, (m, q) => {
+    const name = decodeURIComponent(m[1]);
+    const def = SERVICES.find((s) => s.name === name);
+    if (!def) return { status: 404, body: { error: 'no such service: ' + name } };
+    const w = windowOf(q);
+    return {
+      service: summaryFor(name, w),
+      resource: def.resource,
+      window: w,
+      series: seriesFor(entrySpans(inWindow(w, name), name), w),
+      endpoints: endpointStats(w, name),
+      queries: queryStats(w, name).sort((a, b) => b.totalMs - a.totalMs).slice(0, 10),
+      errors: errorGroups(w, name).slice(0, 10).map(strip),
+      dependencies: dependencies(w, name),
+    };
+  }],
+
+  [/^\/api\/endpoints$/, (m, q) => ({ endpoints: endpointStats(windowOf(q), q.service) })],
+
+  [/^\/api\/endpoints\/([^/]+)$/, (m, q) => {
+    const id = m[1];
+    const w = windowOf(q);
+    const ep = ENDPOINTS.find((e) => e.endpointId === id);
+    if (!ep) return { status: 404, body: { error: 'no such endpoint' } };
+    const stats = endpointStats(w, ep.service).find((e) => e.endpointId === id)
+      || { endpointId: id, service: ep.service, method: ep.method, route: ep.route, name: ep.name, kind: 'SERVER', calls: 0, errors: 0, errorRate: 0, rps: 0, avgMs: 0, p50Ms: 0, p95Ms: 0, p99Ms: 0, maxMs: 0, totalMs: 0, statusCodes: {} };
+    const list = inWindow(w, ep.service).filter((t) => t.endpointId === id);
+    const entries = list.map((t) => ({ span: t.spans[0], trace: t }));
+    return {
+      endpoint: stats,
+      series: seriesFor(entries, w),
+      queries: queryStats(w, ep.service).filter((qs) => ep.queries.some((i) => QUERIES[i].queryId === qs.queryId)),
+      errors: errorGroups(w, ep.service).filter((e) => e.endpoints.some((x) => x.name === ep.name)).map(strip),
+      traces: list.slice().sort((a, b) => b.durationMs - a.durationMs).slice(0, 20).map(summary),
+      recent: list.slice().sort((a, b) => b.start - a.start).slice(0, 20).map(summary),
+    };
+  }],
+
+  [/^\/api\/traces$/, (m, q) => {
+    const w = windowOf(q);
+    let list = inWindow(w, q.service);
+    if (q.endpointId) list = list.filter((t) => t.endpointId === q.endpointId);
+    if (q.minMs) list = list.filter((t) => t.durationMs >= +q.minMs);
+    if (q.maxMs) list = list.filter((t) => t.durationMs <= +q.maxMs);
+    if (q.status === 'error') list = list.filter((t) => t.error);
+    if (q.status === 'ok') list = list.filter((t) => !t.error);
+    if (q.q) {
+      const needle = q.q.toLowerCase();
+      list = list.filter((t) => t.spans.some((s) => s.name.toLowerCase().includes(needle)
+        || Object.values(s.attributes).some((v) => typeof v === 'string' && v.toLowerCase().includes(needle))));
+    }
+    list = list.slice().sort((a, b) => b.start - a.start);
+    const total = list.length;
+    if (q.before) list = list.filter((t) => t.start < +q.before);
+    return { traces: list.slice(0, +(q.limit || 50)).map(summary), total, window: w };
+  }],
+
+  [/^\/api\/traces\/([0-9a-f]+)$/, (m) => {
+    const t = traces.find((x) => x.traceId === m[1]);
+    if (!t) return { status: 404, body: { error: 'no such trace' } };
+    return {
+      traceId: t.traceId, start: t.start, end: t.end, durationMs: t.durationMs,
+      services: t.services,
+      spans: t.spans,
+      logs: logs.filter((l) => l.traceId === t.traceId).sort((a, b) => a.at - b.at),
+    };
+  }],
+
+  [/^\/api\/xlog$/, (m, q) => {
+    const w = windowOf(q);
+    let list = inWindow(w, q.service);
+    if (q.endpointId) list = list.filter((t) => t.endpointId === q.endpointId);
+    const limit = +(q.limit || 5000);
+    const truncated = list.length > limit;
+    list = list.slice(-limit);
+    return {
+      window: w,
+      truncated,
+      points: list.map((t) => {
+        let flags = 0;
+        if (t.error) flags |= 1;
+        if (t.slow) flags |= 2;
+        if (t.spans.some((s) => s.category === 'db' && s.slow)) flags |= 4;
+        return [t.start, t.durationMs, t.rootService, t.rootName, t.traceId, flags];
+      }),
+    };
+  }],
+
+  [/^\/api\/queries$/, (m, q) => {
+    const w = windowOf(q);
+    const key = { total: 'totalMs', avg: 'avgMs', p95: 'p95Ms', max: 'maxMs', calls: 'calls' }[q.sort || 'total'] || 'totalMs';
+    return { queries: queryStats(w, q.service).sort((a, b) => b[key] - a[key]).slice(0, +(q.limit || 100)) };
+  }],
+
+  [/^\/api\/queries\/([^/]+)$/, (m, q) => {
+    const w = windowOf(q);
+    const def = QUERIES.find((x) => x.queryId === m[1]);
+    if (!def) return { status: 404, body: { error: 'no such query' } };
+    const stats = queryStats(w, def.service).find((x) => x.queryId === m[1])
+      || { queryId: m[1], service: def.service, system: def.system, namespace: def.namespace, operation: def.operation, table: def.table, statement: def.statement, calls: 0, errors: 0, avgMs: 0, p50Ms: 0, p95Ms: 0, maxMs: 0, totalMs: 0, slowCalls: 0, callers: [], lastSeen: 0 };
+    const t = bucketsOf(w);
+    const index = new Map(t.map((x, i) => [x, i]));
+    const calls = t.map(() => 0);
+    const buckets = t.map(() => []);
+    const holders = [];
+    for (const tr of inWindow(w, def.service)) {
+      let has = false;
+      for (const s of tr.spans) {
+        if (s.category !== 'db' || s.attributes['db.statement'] !== def.statement) continue;
+        has = true;
+        const b = Math.floor(s.start / w.bucketMs) * w.bucketMs;
+        const i = index.get(b);
+        if (i === undefined) continue;
+        calls[i]++;
+        buckets[i].push(s.durationMs);
+      }
+      if (has) holders.push(tr);
+    }
+    return {
+      query: stats,
+      series: { t, calls, p95Ms: buckets.map((d) => (d.length ? percentile(d.slice().sort((a, b) => a - b), 95) : null)) },
+      traces: holders.sort((a, b) => b.durationMs - a.durationMs).slice(0, 20).map(summary),
+    };
+  }],
+
+  [/^\/api\/errors$/, (m, q) => ({ errors: errorGroups(windowOf(q), q.service).slice(0, +(q.limit || 100)).map(strip) })],
+
+  [/^\/api\/errors\/([^/]+)$/, (m, q) => {
+    const w = windowOf(q);
+    const group = errorGroups(w, null).find((e) => e.errorId === m[1]);
+    if (!group) return { status: 404, body: { error: 'no such error group' } };
+    const t = bucketsOf(w);
+    const index = new Map(t.map((x, i) => [x, i]));
+    const counts = t.map(() => 0);
+    for (const tr of group._traces) {
+      const i = index.get(Math.floor(tr.start / w.bucketMs) * w.bucketMs);
+      if (i !== undefined) counts[i]++;
+    }
+    return {
+      error: strip(group),
+      series: { t, count: counts },
+      traces: group._traces.slice().sort((a, b) => b.start - a.start).slice(0, 20).map(summary),
+    };
+  }],
+
+  [/^\/api\/logs$/, (m, q) => {
+    const w = windowOf(q);
+    const min = { TRACE: 1, DEBUG: 5, INFO: 9, WARN: 13, ERROR: 17 }[q.severity] || 0;
+    let list = logs.filter((l) => l.at >= w.from && l.at <= w.to
+      && (!q.service || l.service === q.service)
+      && (!q.traceId || l.traceId === q.traceId)
+      && l.severityNumber >= min
+      && (!q.q || l.body.toLowerCase().includes(q.q.toLowerCase()) || (l.logger || '').toLowerCase().includes(q.q.toLowerCase())));
+    list = list.slice().sort((a, b) => b.at - a.at);
+    const total = list.length;
+    if (q.before) list = list.filter((l) => l.at < +q.before);
+    return { logs: list.slice(0, +(q.limit || 200)), total };
+  }],
+
+  [/^\/api\/metrics$/, () => ({ metrics: METRIC_CATALOG })],
+
+  [/^\/api\/metrics\/series$/, (m, q) => metricSeries(q.name, q.service, windowOf(q), q.rate === '1')],
+
+  [/^\/api\/jvm$/, (m, q) => {
+    const service = q.service || SERVICES[0].name;
+    return jvmView(service, windowOf(q));
+  }],
+
+  [/^\/api\/export$/, (m, q) => {
+    if (q.traceId) {
+      const t = traces.find((x) => x.traceId === q.traceId);
+      return { traces: t ? [{ traceId: t.traceId, start: t.start, end: t.end, durationMs: t.durationMs, services: t.services, spans: t.spans, logs: logs.filter((l) => l.traceId === t.traceId) }] : [] };
+    }
+    const w = windowOf(q);
+    return { traces: inWindow(w, q.service).map((t) => ({ traceId: t.traceId, start: t.start, end: t.end, durationMs: t.durationMs, services: t.services, spans: t.spans })) };
+  }],
+];
+
+function strip(group) {
+  const { _traces, ...rest } = group;
+  return rest;
+}
+
+// --- shims --------------------------------------------------------------
+
+const realFetch = globalThis.fetch.bind(globalThis);
+
+globalThis.fetch = async function mockFetch(input, init) {
+  const url = new URL(typeof input === 'string' ? input : input.url, location.href);
+  const method = ((init && init.method) || (typeof input !== 'string' && input.method) || 'GET').toUpperCase();
+  if (!url.pathname.startsWith('/api/')) return realFetch(input, init);
+
+  if (url.pathname === '/api/data' && method === 'DELETE') {
+    traces.length = 0;
+    logs.length = 0;
+    tingles.length = 0;
+    spanTotal = 0;
+    return new Response(null, { status: 204 });
+  }
+
+  const query = Object.fromEntries(url.searchParams.entries());
+  for (const [re, handler] of ROUTES) {
+    const m = re.exec(url.pathname);
+    if (!m) continue;
+    await new Promise((r) => setTimeout(r, 12 + rnd() * 40));
+    const result = handler(m, query);
+    const status = result && result.status ? result.status : 200;
+    const body = result && result.status ? result.body : result;
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { 'content-type': 'application/json; charset=utf-8' },
+    });
+  }
+  return new Response(JSON.stringify({ error: 'not found: ' + url.pathname }), {
+    status: 404, headers: { 'content-type': 'application/json; charset=utf-8' },
+  });
+};
+
+class MockEventSource {
+  constructor(url) {
+    this.url = url;
+    this.readyState = 1;
+    this._handlers = new Map();
+    listeners.add(this);
+    setTimeout(() => emit('stats', { at: Date.now(), spans: spanTotal, traces: traces.length, logs: logs.length, perSecond: { spans: 11.2, logs: 2.4 } }), 300);
+  }
+  addEventListener(type, fn) {
+    if (!this._handlers.has(type)) this._handlers.set(type, new Set());
+    this._handlers.get(type).add(fn);
+  }
+  removeEventListener(type, fn) {
+    const set = this._handlers.get(type);
+    if (set) set.delete(fn);
+  }
+  _dispatch(type, data) {
+    const set = this._handlers.get(type);
+    if (!set) return;
+    const ev = { type, data: JSON.stringify(data) };
+    for (const fn of set) { try { fn(ev); } catch (e) { console.error(e); } }
+  }
+  close() { this.readyState = 2; listeners.delete(this); }
+}
+MockEventSource.CONNECTING = 0;
+MockEventSource.OPEN = 1;
+MockEventSource.CLOSED = 2;
+globalThis.EventSource = MockEventSource;
+
+console.info('[spider-sense] mock data: %d traces, %d logs, %d services', traces.length, logs.length, SERVICES.length);
