@@ -33,6 +33,10 @@ public final class Database implements AutoCloseable {
     private final Path file;
     private final String fallbackReason;
 
+    /** How long two Spider Sense processes starting at once may wait for each other's H2. */
+    private static final long OPEN_RETRY_MS = 15_000;
+    private static final long OPEN_RETRY_PAUSE_MS = 500;
+
     private Database(String url, Path file, String fallbackReason) {
         this.url = url;
         this.file = file;
@@ -40,7 +44,12 @@ public final class Database implements AutoCloseable {
         this.pool = JdbcConnectionPool.create(url, "sa", "");
         this.pool.setMaxConnections(MAX_CONNECTIONS);
         this.sql = new Sql(pool);
-        Schema.create(sql);
+        try {
+            Schema.create(sql);
+        } catch (RuntimeException e) {
+            pool.dispose();
+            throw e;
+        }
     }
 
     /**
@@ -53,7 +62,7 @@ public final class Database implements AutoCloseable {
             if (file != null && file.getParent() != null) {
                 Files.createDirectories(file.getParent());
             }
-            return new Database(url, file, null);
+            return openWithRetry(url, file);
         } catch (IOException | RuntimeException e) {
             String reason = e.getClass().getSimpleName() + ": " + e.getMessage();
             LOG.log(System.Logger.Level.WARNING,
@@ -61,6 +70,35 @@ public final class Database implements AutoCloseable {
             String memory = "jdbc:h2:mem:spidersense-" + ProcessHandle.current().pid()
                     + ";DB_CLOSE_DELAY=-1;NON_KEYWORDS=KEY,VALUE";
             return new Database(memory, null, reason);
+        }
+    }
+
+    /**
+     * Two applications started at the same moment both open the shared file: the first
+     * takes it and starts the auto-server, and the second, arriving before the lock file
+     * carries the server's address, is refused with "Lock file recently modified" (or
+     * races the first one's CREATE TABLE). H2 does not wait for that itself, so this does:
+     * a file-backed URL is retried for a few seconds before the caller gives up on it.
+     */
+    private static Database openWithRetry(String url, Path file) {
+        long deadline = System.currentTimeMillis() + OPEN_RETRY_MS;
+        RuntimeException last = null;
+        while (true) {
+            try {
+                return new Database(url, file, null);
+            } catch (RuntimeException e) {
+                last = e;
+                if (file == null || System.currentTimeMillis() >= deadline) {
+                    throw last;
+                }
+                LOG.log(System.Logger.Level.DEBUG, "Spider Sense retrying to open " + url + ": " + e.getMessage());
+                try {
+                    Thread.sleep(OPEN_RETRY_PAUSE_MS);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw last;
+                }
+            }
         }
     }
 
