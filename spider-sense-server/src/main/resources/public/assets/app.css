@@ -157,13 +157,13 @@ button, input, select, textarea { font: inherit; color: inherit; }
   color: var(--text);
 }
 .brand:hover { color: var(--text); }
-.brand-mark { width: 64px; height: 64px; color: var(--text-muted); flex: none; }
+.brand-mark { width: 64px; height: 64px; color: var(--text); flex: none; }
 .brand-name { font-size: 16px; font-weight: 600; line-height: 1.1; letter-spacing: 0.01em; }
 
-.sense-arcs { transform-origin: 100px 93px; }
+.sense-arcs { transform-origin: 100px 96px; }
 @keyframes tingle-pulse {
   0% { transform: scale(1); opacity: 1; }
-  40% { transform: scale(1.22); opacity: 1; }
+  40% { transform: scale(1.1); opacity: 1; }
   100% { transform: scale(1); opacity: 1; }
 }
 .brand-mark.tingle .sense-arcs { animation: tingle-pulse 600ms ease-out; }

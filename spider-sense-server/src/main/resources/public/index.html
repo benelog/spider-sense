@@ -92,29 +92,32 @@
 
   <aside id="sidebar" aria-label="Sections">
     <a class="brand" href="#/" aria-label="Spider Sense, overview">
-      <svg class="brand-mark" width="64" height="64" viewBox="0 0 200 200" role="img" aria-hidden="true" focusable="false">
-        <g fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round">
-          <g opacity="0.7">
-            <path d="M 100 100 L 100 10"/><path d="M 100 100 L 163.6 36.4"/><path d="M 100 100 L 190 100"/>
-            <path d="M 100 100 L 163.6 163.6"/><path d="M 100 100 L 100 190"/><path d="M 100 100 L 36.4 163.6"/>
-            <path d="M 100 100 L 10 100"/><path d="M 100 100 L 36.4 36.4"/>
-          </g>
-          <path opacity="0.95" d="M 100.0 74.0 Q 107.9 80.9 118.4 81.6 Q 119.1 92.1 126.0 100.0 Q 119.1 107.9 118.4 118.4 Q 107.9 119.1 100.0 126.0 Q 92.1 119.1 81.6 118.4 Q 80.9 107.9 74.0 100.0 Q 80.9 92.1 81.6 81.6 Q 92.1 80.9 100.0 74.0 Z"/>
-          <path opacity="0.8" d="M 100.0 56.0 Q 113.4 67.6 131.1 68.9 Q 132.4 86.6 144.0 100.0 Q 132.4 113.4 131.1 131.1 Q 113.4 132.4 100.0 144.0 Q 86.6 132.4 68.9 131.1 Q 67.6 113.4 56.0 100.0 Q 67.6 86.6 68.9 68.9 Q 86.6 67.6 100.0 56.0 Z"/>
-          <path opacity="0.6" d="M 100.0 38.0 Q 118.9 54.4 143.8 56.2 Q 145.6 81.1 162.0 100.0 Q 145.6 118.9 143.8 143.8 Q 118.9 145.6 100.0 162.0 Q 81.1 145.6 56.2 143.8 Q 54.4 118.9 38.0 100.0 Q 54.4 81.1 56.2 56.2 Q 81.1 54.4 100.0 38.0 Z"/>
+      <svg class="brand-mark" width="64" height="64" viewBox="0 0 200 200" aria-hidden="true" focusable="false">
+        <!-- Eight continuous spokes and four closed rings fill the web to its hub. -->
+        <g fill="none" stroke="var(--text-muted)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M100 10V190 M10 100H190 M34 34L166 166 M166 34L34 166"/>
+          <path d="M100 80 Q106.1 85.3 114.1 85.9 Q114.7 93.9 120 100 Q114.7 106.1 114.1 114.1 Q106.1 114.7 100 120 Q93.9 114.7 85.9 114.1 Q85.3 106.1 80 100 Q85.3 93.9 85.9 85.9 Q93.9 85.3 100 80Z"/>
+          <path d="M100 60 Q112.2 70.6 128.3 71.7 Q129.4 87.8 140 100 Q129.4 112.2 128.3 128.3 Q112.2 129.4 100 140 Q87.8 129.4 71.7 128.3 Q70.6 112.2 60 100 Q70.6 87.8 71.7 71.7 Q87.8 70.6 100 60Z"/>
+          <path d="M100 38 Q118.9 54.5 143.8 56.2 Q145.5 81.1 162 100 Q145.5 118.9 143.8 143.8 Q118.9 145.5 100 162 Q81.1 145.5 56.2 143.8 Q54.5 118.9 38 100 Q54.5 81.1 56.2 56.2 Q81.1 54.5 100 38Z"/>
+          <path d="M100 16 Q125.5 38.3 159.4 40.6 Q161.7 74.5 184 100 Q161.7 125.5 159.4 159.4 Q125.5 161.7 100 184 Q74.5 161.7 40.6 159.4 Q38.3 125.5 16 100 Q38.3 74.5 40.6 40.6 Q74.5 38.3 100 16Z" stroke-width="3"/>
         </g>
-        <g stroke="currentColor" fill="currentColor" transform="translate(100 102) scale(1.2) translate(-100 -102)">
-          <g fill="none" stroke-width="3.6" stroke-linecap="round">
-            <path d="M 105 96 Q 114 88 120 82"/><path d="M 106 100 Q 116 97 124 94"/><path d="M 106 104 Q 116 106 123 111"/><path d="M 104 108 Q 112 116 117 123"/>
-            <path d="M 95 96 Q 86 88 80 82"/><path d="M 94 100 Q 84 97 76 94"/><path d="M 94 104 Q 84 106 77 111"/><path d="M 96 108 Q 88 116 83 123"/>
-          </g>
-          <ellipse cx="100" cy="105" rx="6.4" ry="8"/><ellipse cx="100" cy="94.5" rx="4.4" ry="4"/>
+        <!-- A bold, eight-legged silhouette with room between each leg. -->
+        <g fill="none" stroke="currentColor" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M92 103L80 96L78 84 M89 110L72 106L66 95 M89 117L73 123L68 136 M92 124L84 131L84 140"/>
+          <path d="M108 103L120 96L122 84 M111 110L128 106L134 95 M111 117L127 123L132 136 M108 124L116 131L116 140"/>
         </g>
-        <g class="sense-arcs" fill="none" stroke="var(--accent)" stroke-linecap="round">
-          <path d="M 84.412 84 A 18 18 0 0 1 115.588 84" stroke-width="6" opacity="0.95"/>
-          <path d="M 75.752 79 A 28 28 0 0 1 124.248 79" stroke-width="5" opacity="0.7"/>
-          <path d="M 67.091 74 A 38 38 0 0 1 132.909 74" stroke-width="4" opacity="0.45"/>
+        <g fill="currentColor">
+          <circle cx="100" cy="96" r="8"/>
+          <ellipse cx="100" cy="117" rx="13" ry="18"/>
         </g>
+        <!-- The tingle overlays the intact north-east quarter of the web. -->
+        <g class="sense-arcs" fill="none" stroke="var(--accent)" stroke-width="5.5" stroke-linecap="round">
+          <path d="M100 50A22 22 0 0 1 122 72"/>
+          <path d="M100 32A40 40 0 0 1 140 72"/>
+          <path d="M100 14A58 58 0 0 1 158 72"/>
+        </g>
+        <!-- Keep the anomaly anchored to the outer ring / radial intersection as the arcs pulse. -->
+        <circle class="anomaly" cx="159.4" cy="40.6" r="5" fill="var(--accent)"/>
       </svg>
       <span class="brand-name">Spider<br>Sense</span>
     </a>

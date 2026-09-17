@@ -9,11 +9,17 @@ All data comes from [api.md](api.md); the page never renders server-side.
 **Name.** "Spider Sense" is the sibling of "Spider Silk": Silk is the web a spider builds, Sense is what the spider feels through it, the tingle when something on the web moves.
 The UI leans on that image without being cute about it: the product tells you when something is slow or broken before you go looking.
 
-**Logo** (`notes/logo.svg`, also served as `/assets/logo.svg` and as the favicon).
-The Spider Silk logo unchanged as the base: eight radials and four sagging spiral rings in `#8a93a6`, the spider at the hub in `#5a3a22`, 200×200 viewBox.
-Added on top: three concentric arcs of "sense" above the spider (centred on its head, spanning roughly 10 o'clock to 2 o'clock, radii 18/28/38 in the logo's units), stroke `#e2603f`, widths 3/2.4/1.8, opacities 0.95/0.7/0.45, round caps.
-That is the whole difference: same web, same spider, and the tingle.
-A monochrome variant (`logo-mono.svg`, strands and arcs in `currentColor`) for the sidebar at small sizes.
+**Logo** (`notes/logo.svg`, also served as `/assets/logo.svg`).
+The Spider Silk family motif remains: a spider, a web, and the tingle, in a 200×200 viewBox with a transparent background.
+Four closed, scalloped web rings and eight continuous radial strands in `#8a93a6` extend to the hub behind the larger eight-legged spider in `#e2603f`.
+The web stays complete in every quadrant, with the same geometry as Spider Silk; the strands use a 2.2-unit stroke and the outer ring a 3-unit stroke.
+Three evenly spaced coral sensing arcs overlay the intact north-east quarter.
+The anomaly dot sits at (159.4, 40.6), where the north-east radial meets the outer ring, outside the animated group so it stays attached to the web during a pulse.
+The sidebar repeats this geometry inline, with the spider in `currentColor`, the web in `--text-muted`, and the sensing arcs and dot in `--accent`.
+The `.sense-arcs` group retains the event-driven pulse, centred on the spider's head at (100, 96), and respects reduced motion.
+A monochrome variant (`logo-mono.svg`) uses `currentColor` throughout; when embedded as an image it defaults to black.
+The 32×32 favicon uses the same complete web, spider and three sensing arcs on a rounded dark tile, with a light spider for contrast.
+Keep the README and served full-colour SVGs identical, and update the inline sidebar and monochrome geometry together.
 
 **Palette** (the same tokens as the Spider Silk badges, extended for a dark UI):
 
@@ -71,7 +77,7 @@ Their labels are built from the bounds: `≤125 ms`, `≤500 ms`, `≤2 s`, `>2 
 - Top bar: page title on the left; on the right the **service filter** (all services or one; applies to every page that takes `service`), the **time range** (`5m`, `15m`, `1h`, `6h`, `all`; `all` means `from = /api/status.oldest.span`), and the **Live** toggle.
 - **Live** on: the page re-fetches every 5 s and the window's `to` moves with the clock; the SSE `stats` event drives a small "spans/s" readout beside the toggle, and every `tingle` event increments the badge on the sidebar's "tingles" entry and prepends to the Overview feed without a refetch.
 - The sidebar foot shows the mode, the port, the version, and a "how to send data" link that opens the snippet dialog.
-- The **tingle badge**: the accent-coloured dot on the logo's arcs pulses once (CSS animation, 600 ms) when a `tingle` SSE event arrives. Once, not continuously: the tingle is a signal, not a decoration.
+- The **tingle badge**: the logo's accent-coloured sensing arcs pulse once (CSS animation, 600 ms) when a `tingle` SSE event arrives. Once, not continuously: the tingle is a signal, not a decoration.
 
 Routing is hash-based (`#/`, `#/services/spring-orders`, `#/traces/<id>`, ...). The service filter and time range live in the hash query (`#/traces?service=x&range=1h`) so a URL can be shared.
 
