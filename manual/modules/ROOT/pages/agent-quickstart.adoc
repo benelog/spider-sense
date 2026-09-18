@@ -1,0 +1,144 @@
+= Quick Start for Agents
+:navtitle: Quick Start
+
+This chapter gets an AI coding agent from nothing to its first finding: install the skill, choose the CLI or MCP, start the application under the agent, and ask.
+The chapters after it document every command, finding, and transport in full.
+
+== Install the skill
+
+The skill is the agent's manual: the loop, the commands, and the rules that keep an answer honest, in the form an agent loads into its context (xref:agent-skill.adoc[The Agent Skill]).
+The jar carries it, so nothing has to be cloned.
+
+=== Claude Code
+
+Run `init` in the project:
+
+[source,bash]
+----
+java -jar spider-sense.jar init
+----
+
+It writes a Spider Sense block into the project's `CLAUDE.md`, with the jar's absolute path and the commands, and copies the skill into `.claude/skills/spider-sense/`.
+The next Claude Code session finds both without being told.
+A project on the Gradle plugin runs `./gradlew spiderSenseInit` instead, which does the same with the jar the build resolved (xref:agent-skill.adoc#init[init]).
+
+`init` is idempotent, so running it again after a version bump refreshes the jar path and the skill.
+
+=== Codex
+
+Codex reads skills from `~/.codex/skills` for every project, and from a project's own `.codex/skills`.
+Run `init` as above, then copy the skill into either one:
+
+[source,bash]
+----
+java -jar spider-sense.jar init
+mkdir -p .codex/skills
+cp -r .claude/skills/spider-sense .codex/skills/
+----
+
+Codex reads `AGENTS.md` rather than `CLAUDE.md`, so paste the block between `<!-- spider-sense:start -->` and `<!-- spider-sense:end -->` into `AGENTS.md` to have it found the same way.
+
+Cursor and GitHub Copilot read the project's `.claude/skills/`, so the `init` step alone serves them (xref:agent-skill.adoc[Installing the skill by hand]).
+
+[#cli-or-mcp]
+== CLI or MCP
+
+The CLI and MCP answer with the same bytes, because both call the same handlers.
+The choice is decided by what the host can reach.
+
+[cols="1,1,2",options="header"]
+|===
+| Host
+| Use
+| Why
+
+| An agent with a shell (Claude Code, Codex CLI, Gemini CLI, Aider, a script)
+| The CLI and the skill
+| No setup beyond `init`. It works with the application down, `check` is an exit code, output can be piped, and the tool costs no context.
+
+| A host without a shell (Claude Desktop, a browser-based agent, an IDE chat panel)
+| MCP
+| The only case the CLI cannot serve. `init --mcp` writes the host's server entry.
+
+| CI, a build gate
+| The CLI's `check`, or the Gradle plugin's `spiderSenseCheck` task
+| An exit code is what a build understands.
+|===
+
+For MCP, `init --mcp` adds the stdio server to the project's `.mcp.json`, and a host that reaches a running Spider Sense over HTTP is configured with `http://127.0.0.1:4000/mcp` (xref:mcp.adoc[MCP]).
+
+WARNING: Do not enable both the CLI and MCP in one host.
+Two tools that give the same answer make the model choose between them and cost the schema twice.
+
+== Start the application under the agent
+
+Spider Sense does not attach to a running JVM, so the application is restarted with the agent on its command line.
+
+[source,bash]
+----
+java -javaagent:/path/to/spider-sense.jar -jar build/libs/app.jar
+----
+
+Under Gradle, the `net.benelog.spidersense` plugin puts the agent on `bootRun` and `run`, and `JAVA_TOOL_OPTIONS="-javaagent:…"` covers a start command that is not yours to edit.
+xref:agent-loop.adoc[The Loop] lists every way to start, and `java -jar spider-sense.jar status` confirms the application is collecting.
+
+== What it diagnoses
+
+`findings` is the primary answer: a ranked, bounded list of things worth fixing, each with the numbers that justify it, the trace ids that prove it, and the code location when one is known.
+These are its kinds (xref:findings.adoc#kinds[Findings]).
+
+[cols="1,3",options="header"]
+|===
+| Kind
+| What it catches
+
+| `n-plus-one`
+| The same query running 5 or more times under one request.
+
+| `slow-query`
+| A query whose p95 is over the slow-query threshold.
+
+| `slow-endpoint`, `slow-job`, `slow-external`
+| An endpoint, a background job, or an outbound HTTP call whose p95 is over the slow-request threshold.
+
+| `error`, `log-error`
+| An exception group, or an `ERROR` log line no error span already covers.
+
+| `pool-exhausted`
+| A JDBC pool with requests waiting, or every connection in use.
+
+| `gc-pause`, `heap-pressure`, `thread-growth`
+| A long or frequent collection, heap at 90% of its limit, or a thread count that keeps climbing.
+|===
+
+Around the findings, three more commands close the loop.
+`trace <id>` opens one request as a tree, with the statement under a slow query and the stack under an error.
+`compare` puts the window before a mark beside the window after it, with a verdict per endpoint and query.
+`check` turns thresholds into pass or fail in its exit code.
+
+== What to ask
+
+The skill teaches the agent the loop, so a prompt names the goal and the agent runs the commands.
+These are the shapes that work.
+
+Find what is slow::
+"Start the app under Spider Sense, hit the order endpoints, and tell me the top finding with its trace."
+The agent starts the application, runs `mark before`, exercises, then `findings --since=before` and `trace`.
+
+Explain one symptom::
+"GET /orders/\{id} feels slow. Is it the queries?"
+The agent reads the endpoint's finding and opens a trace to show the query count and the statement.
+
+Fix and prove it::
+"Fix the N+1 on the orders page and show me before and after."
+The agent fixes, restarts, exercises the same way, then `compare --before=before --after=after`.
+
+Gate a change::
+"Make sure `/orders` stays under 300 ms p95 with no N+1."
+The agent runs `check --max-p95-ms=300 --max-n-plus-one=0` and reports which rules passed with which limits.
+
+After a crash::
+"The app died under load. What was it doing?"
+The CLI reads the H2 file when nothing is listening, so `findings --since=start` still answers.
+
+An agent that follows the skill quotes only numbers the tool printed, names a trace id as evidence, keeps the window to the run in question, and runs `check` before calling a fix done (xref:agent-loop.adoc[The Loop]).

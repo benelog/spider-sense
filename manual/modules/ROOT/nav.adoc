@@ -13,6 +13,7 @@
 ** xref:pages.adoc[The Pages]
 
 * For AI Agents
+** xref:agent-quickstart.adoc[Quick Start]
 ** xref:agent-loop.adoc[The Loop]
 ** xref:findings.adoc[Findings]
 ** xref:marks-and-compare.adoc[Marks and Compare]
