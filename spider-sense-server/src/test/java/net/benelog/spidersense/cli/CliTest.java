@@ -12,6 +12,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.function.BiConsumer;
 
 import io.opentelemetry.proto.trace.v1.Span;
@@ -379,8 +380,16 @@ class CliTest {
     void initWritesTheBlockAndInstallsTheSkill(@TempDir Path project) throws IOException {
         Run init = run("init", "--dir=" + project, "--jar=/x/spider-sense.jar");
         assertThat(init.exit()).as("stderr: %s", init.err()).isZero();
+        // The count is whatever the packaged skill holds, read from its index rather than
+        // pinned here, so adding a reference page to skills/spider-sense does not break this.
+        String index = new String(Objects.requireNonNull(
+                CliTest.class.getResourceAsStream("/spider-sense/skill/index.txt"), "skill index")
+                .readAllBytes(), UTF_8);
+        long skillFiles = index.lines().filter(line -> !line.isBlank()).count();
+        assertThat(skillFiles).isGreaterThanOrEqualTo(4);
         assertThat(init.out()).isEqualTo("wrote CLAUDE.md block (jar: /x/spider-sense.jar)\n"
-                + "installed skill to " + project.resolve(".claude/skills/spider-sense") + " (4 files)\n");
+                + "installed skill to " + project.resolve(".claude/skills/spider-sense")
+                + " (" + skillFiles + " files)\n");
 
         String claude = Files.readString(project.resolve("CLAUDE.md"), UTF_8);
         assertThat(claude).startsWith("<!-- spider-sense:start -->\n## Spider Sense\n");
