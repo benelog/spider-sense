@@ -85,6 +85,7 @@ All via system properties (agent mode has no other channel before `main`); the s
 | `spidersense.slow.query.ms` | `100` | a DB span slower than this is a "tingle" |
 | `spidersense.open` | `false` | agent mode: open the browser at startup (`java.awt.Desktop`), best effort |
 | `spidersense.app.packages` | unset | comma-separated package prefixes that count as application code in a finding's `code` frames; unset means "everything that is not a known framework" ([agent.md](agent.md)) |
+| `spidersense.ignore.endpoints` | `/actuator/**,/health,/healthz,/livez,/readyz` | comma-separated glob patterns; an entry span whose endpoint matches is not a request ([Ignored endpoints](#ignored-endpoints)); an empty value ignores nothing |
 
 Every `otel.*` property still works as documented by the OpenTelemetry agent; Spider Sense only fills in defaults.
 
@@ -113,6 +114,19 @@ Endpoint identity is `HTTP method + http.route` when a route exists, else the sp
 An entry span is a span of kind `SERVER` or `CONSUMER`, or a root span (no parent) of kind `CLIENT` or `PRODUCER` that is not a database span (it carries no `db.system`/`db.system.name`).
 A client root span is a request someone made — that is how the load generator's `java.net.http` traffic shows up — while a root `INTERNAL` span and a root database span are work the application did to itself: a seeder's tens of thousands of `INSERT`s, or a scheduler's tick, are not requests, and counting them would drown the endpoint list, the request totals, Apdex and `check`.
 Such spans are still stored, still have a `trace` row and still render in the trace tree; they are simply not endpoints, not requests and never `slow request` tingles.
+A root `INTERNAL` span is a **job**: a scheduled method, an `@Async` call, a batch step; jobs have their own finding, `slow-job` ([agent.md](agent.md)), so a slow one is reported without ever being counted as a request.
+
+### Ignored endpoints
+
+A health check polled every few seconds is the most frequent request of a typical Spring Boot application and the least interesting one: it is fast, it never fails, and it dilutes the request count, the Apdex, `check` and every `slow-endpoint` judgement.
+`spidersense.ignore.endpoints` is a comma-separated list of glob patterns; an entry span whose endpoint matches one of them is written with `entry` false, exactly as a root `INTERNAL` span is: stored, in its trace, in the trace list, but not an endpoint, not a request, not in the Apdex, never a `slow request` tingle, never a finding and never a `check` verdict.
+The default is `/actuator/**,/health,/healthz,/livez,/readyz`; an empty value (`-Dspidersense.ignore.endpoints=`) ignores nothing.
+
+A pattern is matched against the endpoint name as design.md defines it (`GET /actuator/health`, or the span name when there is no route).
+A pattern that starts with `/` is matched against the name with its leading `METHOD ` removed, so `/actuator/**` covers every method; a pattern with a method (`GET /actuator/**`) is matched against the whole name.
+When neither matches and the span carries `url.path`, the same patterns are tried against `METHOD url.path` and `url.path`, so a framework that reports no route is still covered.
+`**` matches anything including `/`, `*` matches anything but `/`, `?` matches one character that is not `/`; the match is case-sensitive and covers the whole name.
+The list is shown by `/api/status` as `ignore.endpoints` and by the status text rendering.
 
 Query identity is `(service, db system, statement as the agent sanitised it)`; the agent replaces literals with `?` by default, which is exactly the grouping wanted. A statement is shown at most 2000 characters.
 
@@ -124,6 +138,12 @@ It exists for one thing the agent cannot do: say where a slow query was issued f
 It registers, through `META-INF/services/io.opentelemetry.sdk.autoconfigure.spi.AutoConfigurationCustomizerProvider`, a span processor that implements `io.opentelemetry.sdk.trace.internal.ExtendedSpanProcessor` and does its work in `onEnding(ReadWriteSpan)`.
 That callback runs on the thread that is ending the span, before the span becomes immutable: the duration is already known and an attribute can still be set, which no ordinary `SpanProcessor` callback allows.
 When the span carries a `db.system` or `db.system.name` attribute and has taken at least `spidersense.slow.query.ms` (the environment variable `SPIDERSENSE_SLOW_QUERY_MS` also works; default 100, the same threshold the server calls a tingle, read once when the processor is built), it writes `Thread.currentThread().getStackTrace()` into the span attribute `code.stacktrace`.
+
+It captures the same stack for one more case, the N+1: the individual queries of an N+1 are fast, so the threshold above would never fire on them, and an `n-plus-one` finding would name a statement and no line.
+The processor counts, per thread, how many database spans of the current trace have ended with the same statement (`db.query.text` or `db.statement`, else the span name); the count is keyed by trace id and reset when a span of another trace ends on that thread.
+When a statement reaches its fifth repeat — the same number that makes a query group an N+1 on the server (agent.md) — the stack is captured on that one span and on no later repeat, so the cost is one capture per repeated statement per trace, and the server's `n-plus-one` rule prefers the span of the group that carries `code.stacktrace` for the finding's `code`.
+A trace whose repeats end on several threads is counted per thread and may fall short of five on each; that is a known limit of keeping the counter thread-local, chosen because the alternative is a shared map with the life of every trace to manage.
+At most 256 distinct statements are counted per trace; beyond that the counter stops and nothing else changes.
 The lines are formatted like `Throwable.printStackTrace` writes them (`\tat package.Class.method(File.java:41)`, one per line, no header), so the server reduces them to application frames with exactly the code it already uses for `exception.stacktrace` ([agent.md](agent.md)).
 The leading frames of `Thread.getStackTrace`, of the processor itself and of `io.opentelemetry.` (the SDK's own `end()` path) are dropped, and the trace is cut at 64 frames.
 `isStartRequired()` and `isEndRequired()` are false, `isOnEndingRequired()` is true, and anything thrown inside `onEnding` is swallowed: a missing code location is never worth a broken span.
@@ -143,7 +163,7 @@ Three applications under `examples/`, all sending to whichever Spider Sense they
 ## What was considered and rejected
 
 - **An OpenTelemetry agent extension instead of our own premain.** The extension mechanism (`extensions/` inside the agent jar, `AgentListener`) would also work, and `ExtensionClassLoader` is already exclusion-listed. Rejected because the UI would then depend on the agent's SPI and lifecycle, and the standalone mode would still need a launcher of its own. A premain that wraps the agent's premain keeps the server a plain program that the agent happens to be pointed at over a standard protocol.
-- **…but one small extension beside the premain is worth it.** The stock agent records where an exception was thrown and nothing at all about where a query was issued from, so `slow-query` and `n-plus-one` findings named a statement and left the reader to grep for it. A stack capture on the thread that is ending the span, taken only for database spans already over `slow.query.ms`, costs nothing measurable — the spans it fires on are by definition the slow ones, and it is a few microseconds against a hundred milliseconds — and it turns those findings into a line to open. That is [the extension](#the-extension); it sets one attribute and does nothing else, and the server and the standalone mode stay unaware of it.
+- **…but one small extension beside the premain is worth it.** The stock agent records where an exception was thrown and nothing at all about where a query was issued from, so `slow-query` and `n-plus-one` findings named a statement and left the reader to grep for it. A stack capture on the thread that is ending the span, taken only for database spans already over `slow.query.ms` and for the fifth repeat of a statement within a trace, costs nothing measurable — the slow spans are by definition slow, a few microseconds against a hundred milliseconds, and the repeat capture happens once per repeated statement per trace — and it turns those findings into a line to open. That is [the extension](#the-extension); it sets one attribute and does nothing else, and the server and the standalone mode stay unaware of it.
 - **In-process export (a custom `SpanExporter` handing spans straight to the store).** Faster, but it ties the store to the agent's shaded SDK classes and makes the standalone and embedded paths diverge. Loopback OTLP costs nothing measurable and exercises the same code path the standalone mode uses.
 - **In-memory only storage.** The first design kept everything in bounded ring buffers and aggregated on demand: simplest, and free of any database inside the application's JVM. Rejected because the analysis screen has to survive the monitored application going down, and because two embedded instances on one machine should show one picture. H2 with `AUTO_SERVER` gives both, and the class-loader exclusion keeps the OpenTelemetry agent away from its JDBC.
 - **A frontend build (React, Vue, TypeScript).** SigNoz and OpenObserve are built that way; Spider Sense is a single jar whose build must stay `./gradlew build` with no Node. The UI is plain ES modules, one CSS file, and uPlot for charts, served by Spider Silk's static files. A template engine was not used either: the UI is one page whose data all comes from the JSON API, and Spider Silk's JSON and SSE support is the part of the framework this application exercises.

@@ -58,6 +58,7 @@ Every property is a lazy Gradle `Property`; unset means "leave the jar's own def
 | `slowQueryMs` | `Long` | unset (`100`) | `-Dspidersense.slow.query.ms=` |
 | `open` | `Boolean` | unset (`false`) | `-Dspidersense.open=`: open the browser at startup |
 | `appPackages` | `List<String>` | unset | `-Dspidersense.app.packages=`, the list joined with commas |
+| `ignoreEndpoints` | `List<String>` | unset (the jar's default list) | `-Dspidersense.ignore.endpoints=`, the list joined with commas; an empty list set explicitly (`ignoreEndpoints = []`) passes an empty value, which ignores nothing |
 
 Where the jar comes from, in order: the project property `spiderSense.jar`, then the block's `jar`, then the single file of the `spiderSense` configuration.
 More than one file in the configuration, or none, is an error naming the configuration when a task that needs the jar runs.

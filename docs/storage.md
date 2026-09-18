@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS span (
     duration_ns    BIGINT NOT NULL,
     status         VARCHAR(5) NOT NULL,      -- UNSET OK ERROR
     status_message VARCHAR(4096),
-    entry          BOOLEAN NOT NULL,         -- SERVER/CONSUMER, or a non-db root CLIENT/PRODUCER (design.md)
+    entry          BOOLEAN NOT NULL,         -- SERVER/CONSUMER, or a non-db root CLIENT/PRODUCER, unless the endpoint is ignored (design.md)
     error          BOOLEAN NOT NULL,
     slow           BOOLEAN NOT NULL,         -- entry over slow.request.ms, or db over slow.query.ms
     category       VARCHAR(10) NOT NULL,     -- http db messaging rpc internal
@@ -199,7 +199,7 @@ Every API answer is one or a few SQL statements over the window:
 - Time series: `GROUP BY start_ms / :bucket` for counts, errors, histogram buckets and percentiles per bucket.
 - The service map: `service → service` edges are one self-join, `span c JOIN span p ON p.trace_id = c.trace_id AND p.span_id = c.parent_span_id WHERE c.entry AND p.service <> c.service`, grouped by the two services; the external targets reuse the dependency scan (outbound spans of the window, capped at 20,000 rows) minus the spans that self-join found.
 - A trace: `SELECT ... FROM span WHERE trace_id = ? ORDER BY start_ns`, plus its logs.
-- Findings (agent.md): `n-plus-one` is `GROUP BY trace_id, query_id HAVING COUNT(*) >= 5` over the database spans of the window, attributed to the entry span by the same parent-chain walk the query callers use; `dbCallsPerRequest` and `dbMsPerRequest` of an endpoint join the endpoint's entry spans with the database spans of the same trace and service; the other kinds are the endpoint, query and error aggregations above, filtered by the thresholds.
+- Findings (agent.md): `n-plus-one` is `GROUP BY trace_id, query_id HAVING COUNT(*) >= 5` over the database spans of the window, attributed to the entry span by the same parent-chain walk the query callers use; `dbCallsPerRequest` and `dbMsPerRequest` of an endpoint join the endpoint's entry spans with the database spans of the same trace and service; `slow-job` is the same aggregation over `span WHERE parent_span_id IS NULL AND kind = 'INTERNAL'` grouped by `(service, name)`, with the database work joined the same way; the other kinds are the endpoint, query and error aggregations above, filtered by the thresholds.
 - A time selector that names a mark: `SELECT at_ms FROM mark WHERE name = ? [AND service = ?] ORDER BY at_ms DESC LIMIT 1`.
 - Free-text search (`q`): `LOWER(name) LIKE ? OR LOWER(attributes) LIKE ?` within the window; a scan of the window is acceptable at local-development volumes.
 - JVM and metrics: `metric_point` joined with `metric_series`, resampled in Java where the API asks for it.

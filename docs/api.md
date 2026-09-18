@@ -40,6 +40,7 @@ Partial-success is never reported (everything decodable is stored).
   "otlp": { "traces": "http://127.0.0.1:4000/v1/traces", "metrics": "...", "logs": "..." },
   "embeddedService": "silk-bookstore" | null,
   "thresholds": { "slowRequestMs": 500, "slowQueryMs": 100, "responseBucketsMs": [125, 500, 2000] },
+  "ignore": { "endpoints": ["/actuator/**", "/health", "/healthz", "/livez", "/readyz"] },   // design.md's spidersense.ignore.endpoints, as configured
   "retention": { "hours": 24 },
   "storage": { "url": "jdbc:h2:~/db/spider-sense/sense;AUTO_SERVER=TRUE", "path": "/home/me/db/spider-sense/sense.mv.db", "sizeBytes": 12345678, "fallback": false, "fallbackReason": null, "droppedBatches": 0, "queued": 0 },
   "counts": { "spans": 12345, "traces": 2345, "logs": 456, "metricSeries": 78, "services": 2 },
@@ -380,9 +381,9 @@ A mark named `start` is inserted by the writer when a service reports a `process
 `Finding`:
 
 ```json
-{ "id": "n-plus-one:1a2b3c4d5e6f", "kind": "error" | "n-plus-one" | "slow-query" | "slow-endpoint" | "pool-exhausted",
+{ "id": "n-plus-one:1a2b3c4d5e6f", "kind": "error" | "n-plus-one" | "slow-query" | "slow-endpoint" | "slow-job" | "pool-exhausted",
   "severity": "high" | "medium" | "low", "service": "…", "title": "…", "why": "…",
-  "subject": { "endpointId": "…" | null, "queryId": "…" | null, "errorId": "…" | null, "pool": "…" | null },
+  "subject": { "endpointId": "…" | null, "queryId": "…" | null, "errorId": "…" | null, "pool": "…" | null, "job": "…" | null },
   "numbers": { ...kind-specific, see agent.md... },
   "statement": "…" | null, "code": [ "orders.OrderService.load(OrderService.java:41)" ], "traces": [ "<traceId>" ] }
 ```
@@ -442,6 +443,7 @@ Decisions the server made where this document left room, recorded so the UI can 
 
 An entry span's endpoint name is `METHOD route` when `http.route` is present **and is not a servlet-mapping wildcard** (`/`, `/*`, or anything ending in `/*`); otherwise it is the span name.
 A wildcard mapping says "everything", so honouring it would collapse every endpoint of a Spring Boot application into `GET /*`, and OpenTelemetry already names a server span `METHOD route` or just `METHOD`.
+A span whose endpoint name matches `spidersense.ignore.endpoints` (design.md) is stored with `entry` false and no endpoint: it is in its trace and in `/api/traces`, and in nothing that counts requests.
 `endpointId` is the first 12 hex characters of the SHA-256 of `service + " " + name`; `queryId` hashes `service\0system\0statement` and `errorId` hashes `service\0type\0normalisedMessage` the same way.
 
 ### Callers and error endpoints

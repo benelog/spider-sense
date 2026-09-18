@@ -52,11 +52,13 @@ Their labels are built from the bounds: `≤125 ms`, `≤500 ms`, `≤2 s`, `>2 
 
 ```
 ┌──────────────┬──────────────────────────────────────────────────────────────┐
-│ ◉ Spider     │  ‹page title›              [Service ▾] [Last 15 min ▾] [● Live] │
+│ ◉ Spider     │  ‹page title›     [⚑ Mark] [Service ▾] [Last 15 min ▾] [● Live] │
 │   Sense      ├──────────────────────────────────────────────────────────────┤
 │              │                                                              │
 │ Overview     │                                                              │
-│ Map          │                        page content                          │
+│ Findings     │                                                              │
+│ Compare      │                        page content                          │
+│ Map          │                                                              │
 │ Services     │                                                              │
 │ Scatter      │                                                              │
 │ Traces       │                                                              │
@@ -74,7 +76,9 @@ Their labels are built from the bounds: `≤125 ms`, `≤500 ms`, `≤2 s`, `>2 
 ```
 
 - Sidebar 220 px, collapsible to icons at < 1100 px; a hamburger drawer under 720 px.
-- Top bar: page title on the left; on the right the **service filter** (all services or one; applies to every page that takes `service`), the **time range** (`5m`, `15m`, `1h`, `6h`, `all`; `all` means `from = /api/status.oldest.span`), and the **Live** toggle.
+- Top bar: page title on the left; on the right the **Mark** button, the **service filter** (all services or one; applies to every page that takes `service`), the **time range** (`5m`, `15m`, `1h`, `6h`, `all`; `all` means `from = /api/status.oldest.span`), and the **Live** toggle.
+- **Mark** opens a small dialog: a name field (`[A-Za-z0-9._-]{1,64}`, prefilled with `before` when no mark of the window is named `before`, else `after`), an optional note, and the current service filter as the mark's `service` when one is chosen; OK does `POST /api/marks` and shows a toast naming the mark. It is the person's half of the agent's loop (agent.md): mark, exercise, compare.
+- **Marks on charts**: every time-series chart draws the marks that fall inside its window as a vertical dashed line the full height of the plot with the name as a small label at the top, `--text-muted` for the automatic `start` marks and `--accent` for the others; a mark with a `service` is drawn only when the service filter is off or is that service. The marks come from `GET /api/marks?limit=50`, fetched by the shell on every route change and on every Live refresh and kept in the shared state, so a page never fetches them itself and every chart gets them for free.
 - **Live** on: the page re-fetches every 5 s and the window's `to` moves with the clock; the SSE `stats` event drives a small "spans/s" readout beside the toggle, and every `tingle` event increments the badge on the sidebar's "tingles" entry and prepends to the Overview feed without a refetch.
 - The sidebar foot shows the mode, the port, the version, and a "how to send data" link that opens the snippet dialog.
 - The **tingle badge**: the logo's accent-coloured sensing arcs pulse once (CSS animation, 600 ms) when a `tingle` SSE event arrives. Once, not continuously: the tingle is a signal, not a decoration.
@@ -86,11 +90,34 @@ Routing is hash-based (`#/`, `#/services/spring-orders`, `#/traces/<id>`, ...). 
 ### Overview `#/`
 
 1. **Stat tiles** in one row: requests, Apdex, error rate, p50 / p95 / p99, rps. Each has the number large, the unit small, and a 1-word caption. Colour only where it carries meaning: error rate > 1% is `--err`, p95 above the slow threshold is `--warn`, Apdex as above.
-2. **Throughput & latency** chart (uPlot, 220 px) with a two-way toggle in the panel head, **Requests** | **Load**, remembered in the hash query (`chart=load`). Requests: bars for requests per bucket (silk grey), errors stacked in `--err`. Load (a Pinpoint-style load chart): the same bars split into the four response-time buckets stacked bottom-up in the bucket colours, errors on top in `--err`. In both, p95 is a line on a second y-axis in accent. Beside it, one third of the width, the **Response summary**: five vertical bars (the four buckets and errors) in the bucket colours, the count above each bar and the label beneath, the share as a tooltip; the tallest bar sets the scale. Under 900 px the two stack.
-3. **Services**: one card per service: name, language chip, `embedded` chip when applicable, rps / p95 / error rate / Apdex, a sparkline (inline SVG, 120×28), and a "JVM" link when `hasJvm`. Click → service page.
-4. **Tingles**: the feed, newest first: icon by kind (turtle for slow request, database for slow query, bolt for error), service chip, title, detail, relative time. Click → trace. Live events prepend with a 300 ms slide.
+2. **Findings**: the top five of `GET /api/findings?from&to&service&limit=5`, one row each: a severity dot (`--err` for `high`, `--warn` for `medium`, `--text-muted` for `low`), the kind as a chip, the service chip, the title in bold, and the `why` sentence dimmed on a second line; the first `code` frame in monospace under it when there is one. A row click goes where the finding points: the endpoint page for an `endpointId`, the query page for a `queryId`, the error page for an `errorId`, the JVM page for a `pool`, the first evidence trace for a `job` (a job has no page of its own), and the first evidence trace when there is nothing else. The panel head links to **All findings** (`#/findings`). When there is no finding the panel says `Nothing worth fixing in this window.`
+3. **Throughput & latency** chart (uPlot, 220 px) with a two-way toggle in the panel head, **Requests** | **Load**, remembered in the hash query (`chart=load`). Requests: bars for requests per bucket (silk grey), errors stacked in `--err`. Load (a Pinpoint-style load chart): the same bars split into the four response-time buckets stacked bottom-up in the bucket colours, errors on top in `--err`. In both, p95 is a line on a second y-axis in accent. Beside it, one third of the width, the **Response summary**: five vertical bars (the four buckets and errors) in the bucket colours, the count above each bar and the label beneath, the share as a tooltip; the tallest bar sets the scale. Under 900 px the two stack.
+4. **Services**: one card per service: name, language chip, `embedded` chip when applicable, rps / p95 / error rate / Apdex, a sparkline (inline SVG, 120×28), and a "JVM" link when `hasJvm`. Click → service page.
+5. **Tingles**: the feed, newest first: icon by kind (turtle for slow request, database for slow query, bolt for error), service chip, title, detail, relative time. Click → trace. Live events prepend with a 300 ms slide.
 
 Empty state (no service yet): the logo large, one sentence, and the snippet dialog's content inline: the `-javaagent` line, the `OTEL_EXPORTER_OTLP_ENDPOINT`/`PROTOCOL` pair, and a `curl` for OTLP/JSON.
+
+### Findings `#/findings`
+
+The agent's primary answer (agent.md), for people: `GET /api/findings?from&to&service&limit=100`, ranked as the API ranks it.
+A table: `#`, severity (the dot and the word), kind chip, service chip, title, and the impact number the kind is ranked by in a right-aligned column (`count` for `error`, `medianRepeats × affected` shown as `42 × 3` for `n-plus-one`, `totalMs` for `slow-query`, `slow-endpoint` and `slow-job`, `pendingMax` for `pool-exhausted`).
+A row click expands it in place into the evidence: the `why` sentence, the kind's `numbers` as a key/value grid (durations, counts and rates formatted as everywhere else; `callers` and `endpoints` as a short list), the `statement` pretty-printed when there is one, the `code` frames as a monospace list, and the `traces` as links to the trace page.
+The row also carries a **Go to** link to the subject's page, as the Overview panel's row click does.
+The expanded row survives a Live refresh when the finding is still in the list (keyed by `id`).
+Empty state: `Nothing worth fixing in this window.` with the window named, or the snippet when there was no request at all.
+
+### Compare `#/compare?before=<selector>&after=<selector>&until=<selector>`
+
+The agent's `compare` (agent.md), for people: two windows side by side, `[before, after)` and `[after, until)`.
+A bar above the content: **Before** and **After** selects listing the marks of `GET /api/marks` newest first (`name · time · service`, plus `start` marks), **Until** as a select of the same marks plus `now` (the default), and a **Compare** button; the three selectors live in the hash query and the page fetches `GET /api/compare?before&after&until&service` when both are set.
+When the query names neither, the page picks the two newest marks (`after` the newest, `before` the one before it) and fills the selects; with fewer than two marks it shows an empty state that says two marks are needed, with the **Mark** button's dialog reachable from it and the CLI's `mark before` line in a copyable block.
+
+1. **Totals**: a row of tiles, each showing `before → after` with the after value large: requests, errors, p95, Apdex; the arrow and the after value coloured `--err` when the side got worse by the API's rule (errors grew, p95 grew by more than 20% and 10 ms, Apdex fell) and `--ok` when it got better, plain otherwise.
+2. **Endpoints**: a table in the API's order (worst first): verdict chip (`worse` in `--err`, `better` in `--ok`, `new` and `gone` in `--text-muted`, `same` plain), name with the service chip, then `calls`, `errors`, `p50`, `p95`, `max`, `db calls / request`, `db ms / request`, each cell `before → after` with `—` for a missing side. Row click → the endpoint page.
+3. **Queries**: the same shape with the statement (monospace, one line, full text in the title), `calls`, `calls / request`, `p95`, `total`. Row click → the query page.
+4. **Errors**: verdict, type, message, service chip, `before → after` counts. Row click → the error page.
+
+Live is honoured as on every page, but only `until = now` moves with the clock; the marks do not.
 
 ### Map `#/map`
 
@@ -182,8 +209,8 @@ Explorer: left a searchable catalog list (name, type chip, unit, series count); 
 - Every list re-renders in place without losing scroll or selection when Live refreshes it.
 - Numbers: durations with 1 decimal under 100 ms, 0 decimals above, `s` above 10 s; counts with thousands separators; rates with 2 decimals; percentages with 1 decimal. A count axis only ever shows whole numbers (uPlot `incrs` of 1, 2, 5, 10, ...), so a series that stays at 0 or 1 does not print the same tick three times.
 - Times: `HH:mm:ss` within today, `MMM d HH:mm:ss` otherwise; relative ("12 s ago") in feeds, absolute in tables, both in tooltips.
-- Keyboard: `/` focuses the query bar, `Esc` closes a drawer or clears a scatter selection, `L` toggles Live, `[`/`]` step the time range.
-- The mock (`?mock=1`, `assets/js/dev/mock.js`) answers every endpoint in api.md including `/api/map`, `/api/scatter`, the histograms and the connection pools, so every page can be developed without a server.
+- Keyboard: `/` focuses the query bar, `Esc` closes a drawer or clears a scatter selection, `L` toggles Live, `[`/`]` step the time range, `M` opens the Mark dialog.
+- The mock (`?mock=1`, `assets/js/dev/mock.js`) answers every endpoint in api.md including `/api/map`, `/api/scatter`, `/api/findings`, `/api/marks` (`GET` and `POST`), `/api/compare`, the histograms and the connection pools, so every page can be developed without a server.
 - The page works at 360 px wide: tables scroll horizontally inside their panel, charts shrink, the drawer becomes a full-screen sheet.
 - Accessibility: every icon-only control has an `aria-label`; colour is never the only carrier of meaning (errors also get a bolt, slow also gets a ring or a turtle).
 - No external requests at all: fonts are system fonts, uPlot is vendored, the logo is inline.
