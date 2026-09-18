@@ -175,34 +175,57 @@ JSON stays the default.
 
 Endpoints with a text rendering: `/api/status`, `/api/findings`, `/api/marks`, `/api/compare`, `/api/check`, `/api/traces`, `/api/traces/{id}`, `/api/endpoints`, `/api/queries`, `/api/errors`, `/api/logs`, `/api/services`.
 
+Every example below is output captured from `scripts/demo-shared.sh`, the two example applications running under the agent and forwarding to one standalone Spider Sense, with the home directory anonymised.
+
 Conventions, so that the text is small and stable:
 
-- The first line is a heading naming what it is and the window, in ISO-8601 with the local offset: `# findings  2026-09-17T10:00:00+09:00 → 10:15:00  (15m, all services, 120 requests)`; the range is rounded to the second and written in its largest units (`6s`, `2m 30s`, `15m`, `2h`).
+- The first line is a heading naming what it is and the window, in ISO-8601 with the local offset: `# findings  2026-09-18T12:37:06+09:00 → 12:41:08  (4m 1s, all services, 2456 requests)`; the range is rounded to the second and written in its largest units (`6s`, `2m 30s`, `15m`, `2h`).
 - Lists are Markdown tables; ids are complete (a trace id is 32 hex characters, an endpoint, query or error id 12), because the agent will pass them back.
 - Durations are milliseconds with one decimal and a thousands separator: `1,532.4 ms`; counts are integers; rates are percentages with one decimal.
 - A statement is cut at 200 characters with `…`; `full=true` keeps it whole.
 - Nothing in the body depends on when it was rendered, only on the window; `now` appears only in the heading.
-- An empty result says what was looked for and where: `no findings since 2026-09-17T10:00:00+09:00 (15m, 120 requests)`, and, when there was no request at all, how to send some (the OTLP endpoint).
+- An empty result says what was looked for and where: `no findings since 2026-09-18T12:42:26+09:00 (20s, 16 requests)`, and, when there was no request at all, how to send some (the OTLP endpoint).
 
-**A trace** is an indented tree, one span per line:
+**A trace** is an indented tree, one span per line.
+This one crosses both example applications, and the repeated `SELECT product` spans under the entry span are collapsed into one row that carries the statement:
 
 ```
-# trace 4bf92f3577b34da6a3ce929d0e0e4736  2026-09-17T10:22:01.123+09:00  152.3 ms  spring-orders → silk-bookstore  14 spans, 6 db, 1 error
+# trace 09e96c4c6db157e690716c2615ffd146  2026-09-18T12:37:29.077+09:00  12.2 ms  spring-orders → silk-bookstore  20 spans, 10 db, 0 errors
 
 offset     duration  span
-0.0 ms     152.3 ms  SERVER spring-orders GET /orders/{id} → 500  [slow] [error]
-1.2 ms     3.4 ms      db SELECT orders
-4.8 ms     38.2 ms     db SELECT order_line  × 42, 0.9 ms avg, 38.2 ms total
-43.1 ms    104.0 ms    CLIENT GET http://localhost:8081/api/books/{id} → 200
-43.9 ms    102.8 ms      SERVER silk-bookstore GET /api/books/{id} → 200
-45.0 ms    101.1 ms        db SELECT book  [slow]
-                             SELECT b.* FROM book b WHERE b.title LIKE ?
-147.9 ms   0.1 ms       exception IllegalStateException: no such order 42
-                             orders.OrderService.load(OrderService.java:41)
-                             orders.OrderController.show(OrderController.java:23)
+0.0 ms     12.2 ms   SERVER spring-orders GET /api/orders/{id}/enriched → 200
+0.7 ms     0.6 ms      INTERNAL OrderRepository.findById
+0.7 ms     0.5 ms        INTERNAL Session.find orders.domain.Order
+0.9 ms     0.1 ms          db SELECT orders
+1.4 ms     0.0 ms      db SELECT order_line
+1.6 ms     0.0 ms      db SELECT product  × 4, 0.0 ms avg, 0.0 ms total
+                         select p1_0.id,p1_0.name,p1_0.price,p1_0.sku from product p1_0 where p1_0.id=?
+1.7 ms     0.0 ms      db SELECT customer
+1.8 ms     0.1 ms      INTERNAL Transaction.commit
+2.2 ms     2.7 ms      CLIENT GET http://localhost:8081/api/books/155 → 200
+3.3 ms     1.0 ms        SERVER silk-bookstore GET /api/books/{id} → 200
+3.7 ms     0.1 ms          db SELECT books
+5.6 ms     3.1 ms      CLIENT GET http://localhost:8081/api/books/87 → 200
+6.5 ms     2.0 ms        SERVER silk-bookstore GET /api/books/{id} → 200
+7.2 ms     0.1 ms          db SELECT books
+9.0 ms     2.4 ms      CLIENT GET http://localhost:8081/api/books/27 → 200
+9.9 ms     0.9 ms        SERVER silk-bookstore GET /api/books/{id} → 200
+10.3 ms    0.1 ms          db SELECT books
+```
+
+This one failed, so the span carries its exception and the application frames under it, and the trace's log lines follow:
+
+```
+# trace 2519b548daad800090e8f56de6a5a62a  2026-09-18T12:37:28.565+09:00  3.7 ms  spring-orders  1 spans, 0 db, 1 error
+
+offset     duration  span
+0.0 ms     3.7 ms    SERVER spring-orders GET /api/flaky → 500  [error]
+                       exception IllegalStateException: Payment gateway timeout
+                       orders.web.MiscController.flaky(MiscController.java:24)
 
 logs (2)
-10:22:01.130  WARN   o.s.web.servlet.DispatcherServlet  Resolved [IllegalStateException: no such order 42]
+12:37:28.565  WARN   orders.web.MiscController  Flaky endpoint failing this time: payment gateway timeout
+12:37:28.566  ERROR  org.apache.catalina.core.ContainerBase.[Tomcat].[localhost].[/].[dispatcherServlet]  Servlet.service() for servlet [dispatcherServlet] in context with path [] threw exception [Request processing failed: java.lang.IllegalStateException: Payment gateway timeout] with root cause
 ```
 
 - Two spaces of indentation per depth; the service is named only where it changes from the parent.
