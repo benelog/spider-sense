@@ -34,6 +34,24 @@ class NestedJarTest {
         return jar;
     }
 
+    /** The distributable jar as it really is: both nested jars, side by side. */
+    private Path jarContainingBoth() throws IOException {
+        Path jar = dir.resolve("spider-sense.jar");
+        Manifest manifest = new Manifest();
+        manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, "1.0");
+        manifest.getMainAttributes().putValue("Implementation-Version", "9.9.9");
+        try (OutputStream out = Files.newOutputStream(jar);
+             JarOutputStream jos = new JarOutputStream(out, manifest)) {
+            jos.putNextEntry(new JarEntry(NestedJar.ENTRY));
+            jos.write(payload("the server fat jar"));
+            jos.closeEntry();
+            jos.putNextEntry(new JarEntry(NestedJar.EXTENSION_ENTRY));
+            jos.write(payload("the extension jar"));
+            jos.closeEntry();
+        }
+        return jar;
+    }
+
     private static byte[] payload(String text) {
         return text.getBytes(StandardCharsets.UTF_8);
     }
@@ -108,6 +126,56 @@ class NestedJarTest {
         assertThat(target.getParent().getFileName().toString()).isEqualTo("spider-sense-1.2.3");
         assertThat(target.getParent().getParent())
                 .isEqualTo(Path.of(System.getProperty("java.io.tmpdir")));
+    }
+
+    @Test
+    void theExtensionIsExtractedBesideTheServer() throws IOException {
+        Path jar = jarContainingBoth();
+
+        assertThat(NestedJar.hasEntry(jar, NestedJar.ENTRY)).isTrue();
+        assertThat(NestedJar.hasEntry(jar, NestedJar.EXTENSION_ENTRY)).isTrue();
+
+        Path server = dir.resolve("out").resolve("server.jar");
+        Path extension = dir.resolve("out").resolve("extension.jar");
+        assertThat(NestedJar.extractFrom(jar, NestedJar.ENTRY, server)).isEqualTo(server);
+        assertThat(NestedJar.extractFrom(jar, NestedJar.EXTENSION_ENTRY, extension)).isEqualTo(extension);
+
+        assertThat(server).hasContent("the server fat jar");
+        assertThat(extension).hasContent("the extension jar");
+        assertThat(Files.list(server.getParent()).map(p -> p.getFileName().toString()))
+                .containsExactlyInAnyOrder("server.jar", "extension.jar");
+    }
+
+    @Test
+    void bothNestedJarsLandInTheSameVersionedDirectory() {
+        Path server = NestedJar.targetFile("1.2.3");
+        Path extension = NestedJar.extensionFile("1.2.3");
+        assertThat(extension.getFileName().toString()).isEqualTo("extension.jar");
+        assertThat(extension.getParent()).isEqualTo(server.getParent());
+    }
+
+    @Test
+    void thereIsNoExtensionToPointAtFromExplodedClasses() throws IOException {
+        assertThat(NestedJar.ownJar()).isNull();
+        String previous = System.getProperty(NestedJar.EXTENSION_JAR_PROPERTY);
+        try {
+            System.clearProperty(NestedJar.EXTENSION_JAR_PROPERTY);
+            assertThat(NestedJar.extensionJar()).as("null, not an exception").isNull();
+
+            Path jar = dir.resolve("extension.jar");
+            Files.writeString(jar, "pretend extension jar");
+            System.setProperty(NestedJar.EXTENSION_JAR_PROPERTY, jar.toString());
+            assertThat(NestedJar.extensionJar()).isEqualTo(jar);
+
+            System.setProperty(NestedJar.EXTENSION_JAR_PROPERTY, dir.resolve("gone.jar").toString());
+            assertThatThrownBy(NestedJar::extensionJar).isInstanceOf(IOException.class);
+        } finally {
+            if (previous == null) {
+                System.clearProperty(NestedJar.EXTENSION_JAR_PROPERTY);
+            } else {
+                System.setProperty(NestedJar.EXTENSION_JAR_PROPERTY, previous);
+            }
+        }
     }
 
     @Test

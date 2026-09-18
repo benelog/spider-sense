@@ -69,4 +69,29 @@ class CodeFramesTest {
         assertThat(frames.of(STACKTRACE, Map.of("code.namespace", "orders.Other",
                 "code.function", "run"))).hasSize(2);
     }
+
+    @Test
+    void aSlowQuerySpanCarriesARealStackTraceInCodeStacktrace() {
+        CodeFrames frames = new CodeFrames("");
+        String captured = """
+                \tat org.h2.jdbc.JdbcPreparedStatement.executeQuery(JdbcPreparedStatement.java:120)
+                \tat orders.OrderRepository.load(OrderRepository.java:64)
+                \tat orders.OrderService.report(OrderService.java:18)
+                """;
+
+        assertThat(frames.ofAttributes(Map.of("code.stacktrace", captured))).containsExactly(
+                "orders.OrderRepository.load(OrderRepository.java:64)",
+                "orders.OrderService.report(OrderService.java:18)");
+
+        // It wins over the attribute pair, because it has a file and a line, and falls back to it
+        // when every frame it holds is framework.
+        assertThat(frames.ofAttributes(Map.of("code.stacktrace", captured,
+                "code.namespace", "orders.Other", "code.function", "run")))
+                .containsExactly("orders.OrderRepository.load(OrderRepository.java:64)",
+                        "orders.OrderService.report(OrderService.java:18)");
+        assertThat(frames.ofAttributes(Map.of(
+                "code.stacktrace", "\tat org.h2.jdbc.JdbcStatement.execute(JdbcStatement.java:1)\n",
+                "code.namespace", "orders.Other", "code.function", "run")))
+                .containsExactly("orders.Other.run");
+    }
 }

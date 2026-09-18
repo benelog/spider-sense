@@ -9,6 +9,7 @@ rootProject.name = 'spider-sense'
 
 include 'spider-sense-server'
 include 'spider-sense-agent'
+include 'spider-sense-extension'
 include 'examples:silk-bookstore'
 include 'examples:spring-orders'
 include 'examples:load-gen'

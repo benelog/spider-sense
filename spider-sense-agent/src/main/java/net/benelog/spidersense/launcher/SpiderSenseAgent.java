@@ -3,6 +3,7 @@ package net.benelog.spidersense.launcher;
 import java.lang.instrument.Instrumentation;
 import java.lang.reflect.Method;
 import java.net.URI;
+import java.nio.file.Path;
 
 /**
  * The {@code Premain-Class}/{@code Agent-Class} of the distributable jar.
@@ -99,6 +100,40 @@ public final class SpiderSenseAgent {
         setDefault("otel.logs.exporter", "otlp");
         setDefault("otel.instrumentation.runtime-telemetry.enabled", "true");
         excludeOurClassLoader();
+        addOurExtension();
+    }
+
+    /**
+     * Points the agent at {@code spider-sense/extension.jar}, the one piece of instrumentation that
+     * is ours: it gives a slow database span the stack it was issued from (design.md).
+     *
+     * <p>Not having it is a warning and no more. A finding without a code location is still a
+     * finding, and nothing here may stand between the application and its {@code main}.
+     */
+    private static void addOurExtension() {
+        try {
+            Path extension = NestedJar.extensionJar();
+            if (extension != null) {
+                addExtension(extension.toString());
+            }
+        } catch (Throwable t) {
+            warn("the stack-trace extension is not available; findings will have no code location "
+                    + "for slow queries", t);
+        }
+    }
+
+    /**
+     * Appends a path to {@code otel.javaagent.extensions}, the same shape as the exclusion list: a
+     * user who names extensions of their own keeps them.
+     */
+    static void addExtension(String path) {
+        String key = "otel.javaagent.extensions";
+        String existing = Config.propertyOrEnv(key);
+        if (existing == null) {
+            System.setProperty(key, path);
+        } else if (!existing.contains(path)) {
+            System.setProperty(key, existing + "," + path);
+        }
     }
 
     /**

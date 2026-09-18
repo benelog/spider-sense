@@ -1,0 +1,28 @@
+plugins {
+    id 'java'
+}
+
+description = 'Spider Sense: the OpenTelemetry agent extension that gives a slow database span a stack trace'
+
+dependencies {
+    // compileOnly and nothing else: the agent's ExtensionClassLoader rewrites these references to
+    // the shaded classes inside the agent jar as it loads us, so shipping a copy of the SDK would
+    // be both useless and wrong. The version is the one the packaged agent bundles.
+    compileOnly "io.opentelemetry:opentelemetry-sdk-trace:${rootProject.ext.otelSdkVersion}"
+    compileOnly "io.opentelemetry:opentelemetry-sdk-extension-autoconfigure-spi:${rootProject.ext.otelSdkVersion}"
+
+    testImplementation "io.opentelemetry:opentelemetry-sdk-trace:${rootProject.ext.otelSdkVersion}"
+    testImplementation "io.opentelemetry:opentelemetry-sdk-testing:${rootProject.ext.otelSdkVersion}"
+    testImplementation "org.junit.jupiter:junit-jupiter:${rootProject.ext.junitVersion}"
+    testImplementation "org.assertj:assertj-core:${rootProject.ext.assertjVersion}"
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+jar {
+    manifest {
+        attributes(
+                'Implementation-Title': 'Spider Sense extension',
+                'Implementation-Version': project.version.toString(),
+        )
+    }
+}

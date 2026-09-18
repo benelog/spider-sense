@@ -107,7 +107,8 @@ A stack trace is reduced to its application frames: frames whose package is not 
 
 Framework prefixes dropped by default: `java.`, `javax.`, `jdk.`, `sun.`, `com.sun.`, `jakarta.`, `org.springframework.`, `org.hibernate.`, `org.eclipse.jetty.`, `org.apache.`, `io.opentelemetry.`, `com.zaxxer.`, `org.h2.`, `net.benelog.spidersilk.`, `kotlin.`, `scala.`, `reactor.`, `io.netty.`, `ch.qos.logback.`, `org.slf4j.`, `org.junit.`, `gg.jte.`.
 
-An extension that captures a stack trace for a database span above `slow.query.ms` would make `code` available for slow queries too; it is listed under deferred.
+Slow queries have a code location too, and it is the one thing Spider Sense collects itself: its OpenTelemetry extension ([design.md](design.md#the-extension)) sets `code.stacktrace` on every database span that ran at least `slow.query.ms`, so `slow-query` and `n-plus-one` findings carry `code` just as an error does.
+Those frames are the truest of the three, because they are the span's own thread at the moment the statement finished, not a guess from an attribute; they are reduced by the same rules as `exception.stacktrace` above.
 
 ## Compare
 
@@ -267,5 +268,4 @@ The references list the finding kinds with the fix each usually wants (a fetch j
 
 - **MCP.** The Skill and the CLI cover Claude Code and every agent with a shell, and the text API covers every agent with `curl`. MCP adds a typed tool list for hosts that have neither, at the price of a second protocol to keep in step with the API. When one is wanted it is an adapter over the same handlers, served on the existing port as `POST /mcp` (Streamable HTTP), with six tools at most: `findings`, `trace`, `mark`, `compare`, `check`, `sql`. Nothing in this document needs to change for it.
 - **Read-only SQL** (`POST /api/sql`, and `sql` in the CLI and MCP). A read-only connection with a row limit over the schema in storage.md. Deferred until a question comes up that findings and the tables cannot answer.
-- **Stack traces for slow spans.** The stock agent records none. A small OpenTelemetry extension (a `SpanProcessor` that captures the stack of a database span at its end when it ran longer than `slow.query.ms`, into `code.stacktrace`) would give `code` to `slow-query` and `n-plus-one` findings. Deferred: it is the first piece that is not the stock agent.
 - **`init`.** A command that writes a few lines about Spider Sense into a project's `CLAUDE.md`. Cheap; deferred until the skill has settled.
