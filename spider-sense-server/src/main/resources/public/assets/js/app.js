@@ -5,10 +5,12 @@ import { RANGES, state } from './api.js';
 import * as router from './router.js';
 import * as ui from './ui.js';
 import { h, fill, dialog, copyBlock, closeDrawer, drawerOpen } from './ui.js';
-import { retheme, seedServiceColors } from './charts.js';
+import { retheme, redrawAll, seedServiceColors } from './charts.js';
 import { rate as fmtRate, count as fmtCount, bytes } from './format.js';
 
 import * as overview from './pages/overview.js';
+import * as findingsPage from './pages/findings.js';
+import * as comparePage from './pages/compare.js';
 import * as services from './pages/services.js';
 import * as servicePage from './pages/service.js';
 import * as endpointPage from './pages/endpoint.js';
@@ -26,6 +28,8 @@ import * as metrics from './pages/metrics.js';
 
 const PAGES = [
   ['/', overview, 'Overview', '/'],
+  ['/findings', findingsPage, 'Findings', '/findings'],
+  ['/compare', comparePage, 'Compare', '/compare'],
   ['/map', mapPage, 'Service map', '/map'],
   ['/services', services, 'Services', '/services'],
   ['/services/:name', servicePage, 'Service', '/services'],
@@ -101,7 +105,27 @@ function startLive() {
   clearInterval(liveTimer);
   liveTimer = null;
   if (!state.live) return;
-  liveTimer = setInterval(() => { refreshPage(); }, 5000);
+  liveTimer = setInterval(() => { refreshPage(); loadMarks(); }, 5000);
+}
+
+/**
+ * The marks belong to the shell, not to a page (docs/ui.md): every chart draws
+ * them, so they are fetched once per route change and once per Live tick and kept
+ * in the shared state. A change redraws the charts without refetching their data.
+ */
+function loadMarks() {
+  return api.marks(50).then((res) => {
+    const list = res.marks || [];
+    const before = state.marks.map((m) => m.id + ':' + m.at + ':' + m.name).join(',');
+    state.marks = list;
+    if (before !== list.map((m) => m.id + ':' + m.at + ':' + m.name).join(',')) redrawAll();
+    return list;
+  }).catch(() => state.marks);
+}
+
+/** The Mark button and the `M` key: mark, exercise, compare (docs/agent.md). */
+function markDialog() {
+  ui.markDialog({ onDone: () => loadMarks().then(() => refreshPage()) });
 }
 
 function refreshPage() {
@@ -126,6 +150,7 @@ function markNav(navKey) {
 
 function onRoute(current, changedRoute) {
   syncStateFromQuery(current.query);
+  loadMarks();
   const entry = PAGES.find((p) => p[0] === current.route.pattern);
   if (!entry) return;
   const [, module, title, navKey] = entry;
@@ -276,6 +301,7 @@ function onKey(e) {
     return;
   }
   if (e.key === 'l' || e.key === 'L') { e.preventDefault(); router.setQuery({ live: state.live ? '' : '1' }); return; }
+  if (e.key === 'm' || e.key === 'M') { e.preventDefault(); markDialog(); return; }
   if (e.key === '[' || e.key === ']') {
     e.preventDefault();
     const i = api.rangeIndex(state.range);
@@ -307,6 +333,7 @@ async function boot() {
     themeToggle: document.getElementById('theme-toggle'),
     rateReadout: document.getElementById('rate-readout'),
     tingleBadge: document.getElementById('tingle-badge'),
+    markBtn: document.getElementById('mark-btn'),
     menuBtn: document.getElementById('menu-btn'),
     scrim: document.getElementById('scrim'),
   });
@@ -318,6 +345,7 @@ async function boot() {
   el.serviceSelect.addEventListener('change', () => router.setQuery({ service: el.serviceSelect.value }));
   el.rangeSelect.addEventListener('change', () => router.setQuery({ range: el.rangeSelect.value === '15m' ? '' : el.rangeSelect.value }));
   el.liveToggle.addEventListener('click', () => router.setQuery({ live: state.live ? '' : '1' }));
+  el.markBtn.addEventListener('click', markDialog);
   document.getElementById('send-data-btn').addEventListener('click', sendDataDialog);
   document.getElementById('clear-data-btn').addEventListener('click', clearDataDialog);
   document.getElementById('tingle-link').addEventListener('click', () => { tingleCount = 0; updateBadge(); });

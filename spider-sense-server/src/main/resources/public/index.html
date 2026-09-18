@@ -76,6 +76,16 @@
       <circle cx="14" cy="8.2" r="1.1"/>
       <path d="M4.6 10.6v2M8 10.6v2M11 10.6v2"/>
     </g>
+    <g id="i-flag" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 14.5V2"/><path d="M4 2.8h8.2l-1.9 2.9 1.9 2.9H4z"/>
+    </g>
+    <g id="i-findings" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M2.2 4.4 3.6 5.8 6.2 3.2"/><path d="M2.2 11 3.6 12.4 6.2 9.8"/><path d="M8.4 4.6h5.4M8.4 11.2h5.4"/>
+    </g>
+    <g id="i-compare" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="2.2" y="2.8" width="4.8" height="10.4" rx="1.1"/><rect x="9" y="2.8" width="4.8" height="10.4" rx="1.1"/>
+      <path d="M4.6 10.6V6.2M11.4 10.6V8.4"/>
+    </g>
     <g id="i-menu" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
       <path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11"/>
     </g>
@@ -124,6 +134,8 @@
 
     <nav id="nav" aria-label="Main">
       <a href="#/" data-nav="/"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-overview"/></svg><span>Overview</span></a>
+      <a href="#/findings" data-nav="/findings"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-findings"/></svg><span>Findings</span></a>
+      <a href="#/compare" data-nav="/compare"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-compare"/></svg><span>Compare</span></a>
       <a href="#/map" data-nav="/map"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-map"/></svg><span>Map</span></a>
       <a href="#/services" data-nav="/services"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-service"/></svg><span>Services</span></a>
       <a href="#/scatter" data-nav="/scatter"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-scatter"/></svg><span>Scatter</span></a>
@@ -160,6 +172,9 @@
       <h1 id="page-title">Overview</h1>
       <div class="top-tools">
         <span id="rate-readout" class="rate-readout" hidden></span>
+        <button id="mark-btn" class="icon-btn" type="button" aria-label="Mark this moment" title="Mark this moment (M)">
+          <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-flag"/></svg>
+        </button>
         <label class="field">
           <span class="sr-only">Service</span>
           <select id="service-select" aria-label="Service filter"><option value="">All services</option></select>

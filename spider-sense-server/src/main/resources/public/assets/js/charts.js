@@ -2,6 +2,7 @@
 // every chart rebuilds itself when the theme changes or its container resizes.
 
 import { clock, clockShort, durBare, count as fmtCount } from './format.js';
+import { state } from './api.js';
 import { readSeriesColors, serviceColor as uiServiceColor, seedServices } from './ui.js';
 
 const uPlot = globalThis.uPlot;
@@ -34,6 +35,11 @@ export function themeColors() {
 /** Called by app.js after the theme flips. */
 export function retheme() {
   for (const c of charts) c.rebuild();
+}
+
+/** Called by app.js when the marks changed: the same data, one more line on it. */
+export function redrawAll() {
+  for (const c of charts) if (c.plot) c.plot.redraw();
 }
 
 /** Canvas fonts cannot use CSS variables, so the UI font is resolved once per build. */
@@ -157,6 +163,48 @@ function tooltipFor(plot, container) {
 }
 
 /**
+ * The marks of the shared state, drawn on every time series (docs/ui.md): a dashed
+ * vertical line the full height of the plot with the name beside it, muted for the
+ * automatic `start` marks and accent for the ones a person or an agent made.
+ * A mark that names a service belongs to that service only.
+ */
+function drawMarks(u, colors) {
+  const list = (state.marks || []).filter((m) => m && m.at != null
+    && (!m.service || !state.service || m.service === state.service));
+  if (!list.length) return;
+  const dpr = devicePixelRatio || 1;
+  const ctx = u.ctx;
+  const { left, top, width, height } = u.bbox;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(left, top, width, height);
+  ctx.clip();
+  ctx.lineWidth = Math.max(1, Math.round(dpr));
+  ctx.font = uiFont(11 * dpr);
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  let labelEnd = -Infinity;
+  for (const mark of list.slice().sort((a, b) => a.at - b.at)) {
+    const x = Math.round(u.valToPos(mark.at / 1000, 'x', true)) + 0.5;
+    if (x < left || x > left + width) continue;
+    const color = mark.name === 'start' ? colors.muted : colors.accent;
+    ctx.strokeStyle = color;
+    ctx.setLineDash([4 * dpr, 3 * dpr]);
+    ctx.beginPath();
+    ctx.moveTo(x, top);
+    ctx.lineTo(x, top + height);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // two marks a few seconds apart still get two lines, but only one readable name
+    if (x < labelEnd) continue;
+    ctx.fillStyle = color;
+    ctx.fillText(mark.name, x + 3 * dpr, top + 2 * dpr);
+    labelEnd = x + 3 * dpr + ctx.measureText(mark.name).width + 4 * dpr;
+  }
+  ctx.restore();
+}
+
+/**
  * A time series.
  * spec = {
  *   height, t: [msEpoch], short,
@@ -264,6 +312,7 @@ export function timeSeries(container, spec) {
         },
         padding: [10, 8, 0, 0],
         hooks: {
+          draw: [(u) => drawMarks(u, colors)],
           setCursor: [(u) => {
             const tip = tooltipFor(u, container);
             const { idx, left, top } = u.cursor;
