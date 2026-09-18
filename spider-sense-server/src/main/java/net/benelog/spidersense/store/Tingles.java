@@ -18,10 +18,17 @@ public final class Tingles {
 
     private final long slowRequestMs;
     private final long slowQueryMs;
+    private final IgnoredEndpoints ignored;
 
+    /** The thresholds with the ignore list at its documented default. */
     public Tingles(long slowRequestMs, long slowQueryMs) {
+        this(slowRequestMs, slowQueryMs, IgnoredEndpoints.defaults());
+    }
+
+    public Tingles(long slowRequestMs, long slowQueryMs, IgnoredEndpoints ignored) {
         this.slowRequestMs = slowRequestMs;
         this.slowQueryMs = slowQueryMs;
+        this.ignored = ignored;
     }
 
     public long slowRequestMs() {
@@ -32,10 +39,27 @@ public final class Tingles {
         return slowQueryMs;
     }
 
+    /** The endpoints {@code spidersense.ignore.endpoints} takes out of the request count. */
+    public IgnoredEndpoints ignored() {
+        return ignored;
+    }
+
+    /**
+     * Whether the span counts as a request: an entry span whose endpoint is not
+     * ignored.
+     *
+     * <p>This is the one place the question is answered. {@link SpanRecord#isEntry()}
+     * only knows the span; the ignore list is configuration, and the {@code entry}
+     * column, the {@code slow} column and every tingle have to agree on it.
+     */
+    public boolean isEntry(SpanRecord span) {
+        return span.isEntry() && !ignored.matches(span);
+    }
+
     /** Whether the span is what the {@code span.slow} column means. */
     public boolean isSlow(SpanRecord span) {
         double durationMs = span.durationMillis();
-        return (span.isEntry() && durationMs > slowRequestMs)
+        return (isEntry(span) && durationMs > slowRequestMs)
                 || (span.dbStatement() != null && durationMs > slowQueryMs);
     }
 
@@ -52,7 +76,7 @@ public final class Tingles {
         double durationMs = span.durationMillis();
         long at = span.startMillis();
 
-        if (span.isEntry() && durationMs > slowRequestMs) {
+        if (isEntry(span) && durationMs > slowRequestMs) {
             produced.add(new Tingle(Tingle.SLOW_REQUEST, at, span.service(), span.endpointName(),
                     formatMillis(durationMs), span.traceId(), span.spanId(), durationMs));
         }
@@ -61,7 +85,7 @@ public final class Tingles {
             produced.add(new Tingle(Tingle.SLOW_QUERY, at, span.service(), span.summary(),
                     statement, span.traceId(), span.spanId(), durationMs));
         }
-        if (span.isError() && (span.isEntry() || span.exceptionEvent() != null)) {
+        if (span.isError() && (isEntry(span) || span.exceptionEvent() != null)) {
             String type = span.errorType();
             String message = span.errorMessage();
             String detail = message == null || message.isEmpty() ? type : type + ": " + message;

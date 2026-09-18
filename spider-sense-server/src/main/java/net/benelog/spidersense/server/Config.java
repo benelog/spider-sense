@@ -3,6 +3,8 @@ package net.benelog.spidersense.server;
 import java.util.HashMap;
 import java.util.Map;
 
+import net.benelog.spidersense.store.IgnoredEndpoints;
+
 /**
  * Everything the server is told at startup.
  *
@@ -20,6 +22,10 @@ import java.util.Map;
  * @param appPackages      comma-separated package prefixes that count as application code in a
  *                         finding's {@code code} frames; empty means "everything that is not a
  *                         known framework" (agent.md)
+ * @param ignoreEndpoints  comma-separated glob patterns; an entry span whose endpoint matches one
+ *                         of them is written with {@code entry} false and is therefore not a
+ *                         request (design.md, "Ignored endpoints"). An empty value ignores
+ *                         nothing, which is why {@link #string} only falls back on {@code null}.
  */
 public record Config(
         String host,
@@ -30,7 +36,8 @@ public record Config(
         long slowRequestMs,
         long slowQueryMs,
         String embeddedService,
-        String appPackages) {
+        String appPackages,
+        String ignoreEndpoints) {
 
     public static final String AGENT = "agent";
     public static final String STANDALONE = "standalone";
@@ -59,7 +66,8 @@ public record Config(
                 number(values, "slow.request.ms", 500L),
                 number(values, "slow.query.ms", 100L),
                 embeddedService(values),
-                string(values, "app.packages", ""));
+                string(values, "app.packages", ""),
+                string(values, "ignore.endpoints", IgnoredEndpoints.DEFAULT));
     }
 
     public boolean agentMode() {
@@ -128,6 +136,11 @@ public record Config(
         return property != null ? property : System.getProperty("spidersense.service");
     }
 
+    /**
+     * The argument, else the system property, else the fallback — and the fallback only when
+     * neither was given at all. An explicitly empty value stays empty, which is what
+     * {@code -Dspidersense.ignore.endpoints=} means.
+     */
     private static String string(Map<String, String> values, String key, String fallback) {
         String value = values.get(key);
         if (value == null) {

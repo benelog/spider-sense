@@ -92,6 +92,14 @@ class ApiTest {
         return values;
     }
 
+    private static List<String> strings(Json.JsonArray array) {
+        List<String> values = new ArrayList<>();
+        for (Json.JsonValue value : array) {
+            values.add(value.asString());
+        }
+        return values;
+    }
+
     /** The node of a service map with this id, or null. */
     private static Json.JsonObject node(Json.JsonObject map, String id) {
         for (Json.JsonValue value : map.getArray("nodes")) {
@@ -539,6 +547,8 @@ class ApiTest {
             assertThat(status.getObject("thresholds").getLong("slowRequestMs")).isEqualTo(500);
             assertThat(counts(status.getObject("thresholds").getArray("responseBucketsMs")))
                     .containsExactly(125L, 500L, 2000L);
+            assertThat(strings(status.getObject("ignore").getArray("endpoints")))
+                    .containsExactly("/actuator/**", "/health", "/healthz", "/livez", "/readyz");
             assertThat(status.getObject("retention").getLong("hours")).isEqualTo(24);
             Json.JsonObject storage = status.getObject("storage");
             assertThat(storage.getString("url")).startsWith("jdbc:h2:mem:");

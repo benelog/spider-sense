@@ -108,14 +108,14 @@ class QueriesTest {
                         Otlp.attr("http.route", "/orders/{id}"),
                         Otlp.attr("http.response.status_code", 500)),
                 // A servlet wildcard route must not collapse every endpoint into one.
-                Otlp.span(traceId(3), spanId(3), "GET /health", Span.SpanKind.SPAN_KIND_SERVER,
+                Otlp.span(traceId(3), spanId(3), "GET /inventory", Span.SpanKind.SPAN_KIND_SERVER,
                         NOW, 1, Otlp.attr("http.request.method", "GET"), Otlp.attr("http.route", "/*"))));
         flush();
 
         List<Stats.EndpointStats> endpoints = queries.endpoints(window, null, null);
 
         assertThat(endpoints).extracting(Stats.EndpointStats::name)
-                .containsExactlyInAnyOrder("GET /orders/{id}", "GET /health");
+                .containsExactlyInAnyOrder("GET /orders/{id}", "GET /inventory");
         Stats.EndpointStats orders = endpoints.stream()
                 .filter(e -> e.name().equals("GET /orders/{id}")).findFirst().orElseThrow();
         assertThat(orders.calls()).isEqualTo(2);
@@ -123,6 +123,34 @@ class QueriesTest {
         assertThat(orders.avgMs()).isEqualTo(20.0);
         assertThat(orders.statusCodes()).containsEntry("200", 1L).containsEntry("500", 1L);
         assertThat(orders.endpointId()).isEqualTo(Ids.endpointId("orders", "GET /orders/{id}"));
+    }
+
+    @Test
+    void anIgnoredEndpointIsStoredAndInItsTraceButIsNeverARequest() {
+        decoder.accept(Otlp.traces(Otlp.service("orders"),
+                Otlp.span(traceId(1), spanId(1), "GET /orders", Span.SpanKind.SPAN_KIND_SERVER,
+                        NOW, 10, Otlp.attr("http.request.method", "GET"),
+                        Otlp.attr("http.route", "/orders")),
+                Otlp.span(traceId(2), spanId(2), "GET /actuator/health", Span.SpanKind.SPAN_KIND_SERVER,
+                        NOW, 900, Otlp.attr("http.request.method", "GET"),
+                        Otlp.attr("http.route", "/actuator/health"),
+                        Otlp.attr("http.response.status_code", 200))));
+        flush();
+
+        assertThat(queries.endpoints(window, null, null)).extracting(Stats.EndpointStats::name)
+                .containsExactly("GET /orders");
+        assertThat(queries.totals(window, null).requests()).isEqualTo(1);
+        // Slower than the 500 ms threshold, and still not a slow-request tingle.
+        assertThat(queries.tingles(window, 50)).isEmpty();
+
+        Queries.TraceDetail trace = queries.trace(traceId(2));
+        assertThat(trace).isNotNull();
+        assertThat(trace.spans()).extracting(net.benelog.spidersense.store.SpanRecord::name)
+                .containsExactly("GET /actuator/health");
+        assertThat(queries.traces(
+                new Queries.TraceFilter(window, null, null, null, null, null, null, null, 50)))
+                .extracting(Stats.TraceSummary::traceId)
+                .containsExactlyInAnyOrder(traceId(1), traceId(2));
     }
 
     @Test

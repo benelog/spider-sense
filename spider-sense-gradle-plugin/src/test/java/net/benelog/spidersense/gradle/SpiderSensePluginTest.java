@@ -167,6 +167,7 @@ class SpiderSensePluginTest {
                 slowQueryMs = 50
                 open = true
                 appPackages = ['com.acme.orders', 'com.acme.shared']
+                ignoreEndpoints = ['/actuator/**', '/ping']
                 """.replace("%JAR%", stubJar.toAbsolutePath().toString()));
 
         String output = probe();
@@ -181,6 +182,19 @@ class SpiderSensePluginTest {
         assertThat(output).contains("-Dspidersense.slow.query.ms=50");
         assertThat(output).contains("-Dspidersense.open=true");
         assertThat(output).contains("-Dspidersense.app.packages=com.acme.orders,com.acme.shared");
+        assertThat(output).contains("-Dspidersense.ignore.endpoints=/actuator/**,/ping");
+    }
+
+    @Test
+    void anIgnoreListLeftAloneSaysNothingAndAnEmptyOnePassesAnEmptyValue() throws IOException {
+        assertThat(probe()).doesNotContain("-Dspidersense.ignore.endpoints");
+
+        buildFile("""
+                jar = file('%JAR%')
+                ignoreEndpoints = []
+                """.replace("%JAR%", stubJar.toAbsolutePath().toString()));
+
+        assertThat(probe()).contains("-Dspidersense.ignore.endpoints=]");
     }
 
     @Test

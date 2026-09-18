@@ -77,7 +77,8 @@ public final class SpiderSenseServer implements AutoCloseable {
     /** Builds everything and registers every route, without binding a port. */
     public static Assembly assemble(Config config) {
         Store store = new Store(config.jdbcUrl(), config.databaseFile(), config.retentionHours(),
-                config.slowRequestMs(), config.slowQueryMs(), config.embeddedService());
+                config.slowRequestMs(), config.slowQueryMs(), config.embeddedService(),
+                config.ignoreEndpoints());
         AtomicInteger boundPort = new AtomicInteger(config.port());
 
         Queries queries = new Queries(store.sql(), store.tingles(), store.services());

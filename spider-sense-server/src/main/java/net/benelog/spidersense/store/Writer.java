@@ -211,7 +211,7 @@ public final class Writer implements AutoCloseable {
     }
 
     private void bindSpan(PreparedStatement statement, SpanRecord span) throws SQLException {
-        boolean entry = span.isEntry();
+        boolean entry = tingles.isEntry(span);
         boolean error = span.isError();
         String statementText = span.dbStatement();
         String endpoint = entry ? span.endpointName() : null;

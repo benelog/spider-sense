@@ -47,6 +47,7 @@ All are system properties, given after `-javaagent:` on the same command line; t
 | `spidersense.slow.query.ms` | `100` | the slow-query threshold |
 | `spidersense.open` | `false` | open a browser at startup |
 | `spidersense.app.packages` | unset | comma-separated package prefixes that count as application code in a finding's `code` frames |
+| `spidersense.ignore.endpoints` | `/actuator/**,/health,/healthz,/livez,/readyz` | comma-separated glob patterns; a matching entry span is stored and in its trace but is not a request; an empty value ignores nothing |
 
 Every `otel.*` system property and `OTEL_*` environment variable of the OpenTelemetry agent still applies; Spider Sense only fills in defaults.
 `-Dotel.service.name=` is worth setting always, because the alternative is `unknown_service:java` and `--service=` then has nothing to select.
