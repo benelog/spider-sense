@@ -237,15 +237,24 @@ public final class Findings {
             Repeat first = spans.get(0);
             double totalMs = 0;
             long start = Long.MAX_VALUE;
+            // The extension captures the stack on the fifth repeat, so that one span of the group
+            // knows where the statement is issued from; the others say nothing about it.
+            Map<String, Object> attributes = first.attributes();
+            boolean located = false;
             for (Repeat span : spans) {
                 totalMs += span.totalMs();
                 start = Math.min(start, span.start());
+                if (!located && span.attributes() != null
+                        && span.attributes().containsKey("code.stacktrace")) {
+                    attributes = span.attributes();
+                    located = true;
+                }
             }
             byEndpointAndQuery
                     .computeIfAbsent(first.endpointId() + "\0" + first.queryId(), key -> new ArrayList<>())
                     .add(new Repeat(first.traceId(), first.endpointId(), first.endpoint(), first.service(),
                             first.queryId(), first.statement(), first.queryName(), spans.size(), totalMs,
-                            start, first.attributes()));
+                            start, attributes));
         });
 
         Map<String, Long> requestsByEndpoint = new HashMap<>();
@@ -277,9 +286,15 @@ public final class Findings {
             List<Repeat> newest = new ArrayList<>(affected);
             newest.sort(Comparator.comparingLong(Repeat::start).reversed());
             List<String> traces = new ArrayList<>();
+            List<String> code = List.of();
             for (Repeat repeat : newest) {
                 if (traces.size() < EVIDENCE_TRACES && !traces.contains(repeat.traceId())) {
                     traces.add(repeat.traceId());
+                }
+                if (code.isEmpty()) {
+                    // The newest request that has a code location wins; none has one when the
+                    // application ran without the extension, and then the finding names no line.
+                    code = frames.ofAttributes(repeat.attributes());
                 }
             }
             Finding finding = new Finding(
@@ -291,7 +306,7 @@ public final class Findings {
                             + " per request in that statement",
                     new Subject(first.endpointId(), first.queryId(), null, null),
                     numbers, first.statement(),
-                    frames.ofAttributes(first.attributes()),
+                    code,
                     List.copyOf(traces));
             found.add(new Ranked(finding, affected.size() * (double) median));
         });

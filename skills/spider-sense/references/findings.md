@@ -39,8 +39,9 @@ The thresholds are the server's: `slow.request.ms` is 500 by default and `slow.q
 In the text output the ranked table comes first and these fields follow as one numbered block per row, in that order and mostly without labels:
 `<n>. <id> — <why>`, then the `numbers` on one line as `name value, name value`, then the `statement` when there is one, then the `code` frames one per line, then `traces: <id> <id>`.
 
-**About `code`.** The OpenTelemetry Java agent does not record where a span was started from, so `code` comes only from the `exception.stacktrace` of an error and the `code.function` / `code.namespace` attributes that a few instrumentations set.
-It is therefore reliable for `error` findings and often empty for the others; when it is empty, open a trace from `traces` and read the tree, which names the endpoint and the statement even when it cannot name the line.
+**About `code`.** The OpenTelemetry Java agent does not record where a span was started from, so `code` comes from the `exception.stacktrace` of an error, the `code.function` / `code.namespace` attributes that a few instrumentations set, and the `code.stacktrace` that Spider Sense's own agent extension captures on a database span.
+The extension captures that stack on every database span slower than `slow.query.ms` and on the fifth repeat of a statement within one trace, which is what gives `slow-query` and `n-plus-one` findings a line.
+It is therefore reliable for `error`, `slow-query` and `n-plus-one` findings, and often empty for the others; when it is empty, open a trace from `traces` and read the tree, which names the endpoint and the statement even when it cannot name the line.
 A stack trace is reduced to its application frames by dropping known framework prefixes (`java.`, `jakarta.`, `org.springframework.`, `org.hibernate.`, `org.apache.`, `com.zaxxer.`, `org.h2.`, `io.opentelemetry.` and others).
 When that heuristic guesses wrong, `-Dspidersense.app.packages=com.acme,org.acme` replaces it with an allowlist.
 
@@ -53,6 +54,7 @@ When that heuristic guesses wrong, `-Dspidersense.app.packages=com.acme,org.acme
 Read it as: this endpoint ran that statement `medianRepeats` times in one request, and that cost `msPerRequest`.
 `affected` well below `requests` means only some inputs trigger it, which usually points at a branch or a lazily loaded collection that is only touched sometimes.
 Open a trace from `traces`: the repeated database spans collapse into one `× n` line under the entry span, and the span above them is the code path that loops.
+`code` is the call site of the fifth repeat, captured by the agent extension on the thread that ran it, so it names the line that issues the repeated statement; it is empty only when the application ran without the extension, and then the trace tree is what names the loop.
 
 ### What to do
 

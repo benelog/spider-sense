@@ -4,10 +4,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.Tracer;
+import io.opentelemetry.context.Scope;
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter;
 import io.opentelemetry.sdk.trace.SdkTracerProvider;
 import io.opentelemetry.sdk.trace.data.SpanData;
 import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -133,10 +136,158 @@ class SlowQuerySpanProcessorTest {
                 .hasSize(SlowQuerySpanProcessor.MAX_FRAMES);
     }
 
+
+    @Test
+    void theFifthRepeatOfAFastStatementCarriesTheStackAndNoLaterRepeatDoes() {
+        inOneTrace(() -> {
+            for (int i = 0; i < 6; i++) {
+                query("select * from order_line where order_id = ?");
+            }
+        });
+
+        List<SpanData> repeats = exportedQueries();
+        assertThat(repeats).hasSize(6);
+        for (int i = 0; i < SlowQuerySpanProcessor.N_PLUS_ONE_REPEATS - 1; i++) {
+            assertThat(stacktraceOf(repeats.get(i))).as("repeat " + (i + 1)).isNull();
+        }
+        assertThat(stacktraceOf(repeats.get(4)))
+                .as("the fifth repeat is where the N+1 gets its line")
+                .isNotNull()
+                .contains("SlowQuerySpanProcessorTest");
+        assertThat(stacktraceOf(repeats.get(5)))
+                .as("one capture per statement per trace, not one per repeat")
+                .isNull();
+    }
+
+    @Test
+    void anotherStatementOfTheSameTraceIsCountedOnItsOwn() {
+        inOneTrace(() -> {
+            for (int i = 0; i < 4; i++) {
+                query("select * from order_line where order_id = ?");
+            }
+            for (int i = 0; i < 5; i++) {
+                query("select * from customer where id = ?");
+            }
+        });
+
+        List<SpanData> repeats = exportedQueries();
+        assertThat(repeats).hasSize(9);
+        for (int i = 0; i < 8; i++) {
+            assertThat(stacktraceOf(repeats.get(i))).as("span " + (i + 1)).isNull();
+        }
+        assertThat(stacktraceOf(repeats.get(8)))
+                .as("the fifth repeat of the second statement")
+                .isNotNull();
+    }
+
+    @Test
+    void aSpanOfAnotherTraceOnTheSameThreadStartsTheCountOver() {
+        inOneTrace(() -> {
+            for (int i = 0; i < 4; i++) {
+                query("select * from order_line where order_id = ?");
+            }
+        });
+        inOneTrace(() -> {
+            for (int i = 0; i < 4; i++) {
+                query("select * from order_line where order_id = ?");
+            }
+        });
+
+        List<SpanData> repeats = exportedQueries();
+        assertThat(repeats).hasSize(8);
+        assertThat(repeats).allSatisfy(span -> assertThat(stacktraceOf(span))
+                .as("four repeats in each of two traces is not an N+1 in either")
+                .isNull());
+    }
+
+    @Test
+    void aSpanThatIsNotADatabaseSpanIsNeverCounted() {
+        inOneTrace(() -> {
+            for (int i = 0; i < 4; i++) {
+                tracer.spanBuilder("select * from order_line where order_id = ?").startSpan().end();
+            }
+            query("select * from order_line where order_id = ?");
+        });
+
+        assertThat(exportedQueries())
+                .as("the four spans without db.system did not bring the database span to five")
+                .allSatisfy(span -> assertThat(stacktraceOf(span)).isNull());
+    }
+
+    @Test
+    void aSlowRepeatIsStillCaptured() {
+        inOneTrace(() -> {
+            Span span = tracer.spanBuilder("select * from order_line where order_id = ?")
+                    .setAttribute("db.system", "h2")
+                    .setAttribute("db.query.text", "select * from order_line where order_id = ?")
+                    .startSpan();
+            sleep(THRESHOLD_MS * 2);
+            span.end();
+        });
+
+        assertThat(stacktraceOf(exportedQueries().get(0)))
+                .as("the slow path does not care about the counter")
+                .isNotNull();
+    }
+
+    @Test
+    void beyondTheStatementLimitTheCounterGivesUpQuietly() {
+        inOneTrace(() -> {
+            for (int i = 0; i < SlowQuerySpanProcessor.MAX_STATEMENTS; i++) {
+                query("select * from table_" + i + " where id = ?");
+            }
+            for (int i = 0; i < 6; i++) {
+                query("select * from one_too_many where id = ?");
+            }
+        });
+
+        List<SpanData> repeats = exportedQueries();
+        assertThat(repeats).hasSize(SlowQuerySpanProcessor.MAX_STATEMENTS + 6);
+        assertThat(repeats).allSatisfy(span -> assertThat(stacktraceOf(span))
+                .as("the 257th statement is not counted, and nothing throws")
+                .isNull());
+    }
+
     private SpanData exported() {
         tracerProvider.forceFlush().join(10, TimeUnit.SECONDS);
         assertThat(exporter.getFinishedSpanItems()).hasSize(1);
         return exporter.getFinishedSpanItems().get(0);
+    }
+
+
+    /** The database spans the processor saw, in the order they ended. */
+    private List<SpanData> exportedQueries() {
+        tracerProvider.forceFlush().join(10, TimeUnit.SECONDS);
+        List<SpanData> queries = new ArrayList<>();
+        for (SpanData span : exporter.getFinishedSpanItems()) {
+            if (!span.getName().startsWith("GET ")) {
+                queries.add(span);
+            }
+        }
+        return queries;
+    }
+
+    private static String stacktraceOf(SpanData span) {
+        return span.getAttributes().get(SlowQuerySpanProcessor.CODE_STACKTRACE);
+    }
+
+    /** One entry span, so everything started inside it shares its trace id. */
+    private void inOneTrace(Runnable work) {
+        Span entry = tracer.spanBuilder("GET /orders/{id}").startSpan();
+        try (Scope ignored = entry.makeCurrent()) {
+            work.run();
+        } finally {
+            entry.end();
+        }
+    }
+
+    /** A database span that ends well inside the threshold, so only the counter can fire on it. */
+    private void query(String statement) {
+        tracer.spanBuilder(statement)
+                .setAttribute("db.system", "h2")
+                .setAttribute("db.query.text", statement)
+                .startSpan()
+                .end();
     }
 
     private static void sleep(long millis) {

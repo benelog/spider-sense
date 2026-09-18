@@ -24,6 +24,10 @@ class FindingsTest {
             \tat orders.OrderService.load(OrderService.java:41)
             \tat org.springframework.web.servlet.DispatcherServlet.doService(DispatcherServlet.java:1)
             \tat orders.OrderController.show(OrderController.java:23)""";
+    private static final String QUERY_STACKTRACE = """
+            \tat org.h2.jdbc.JdbcPreparedStatement.executeQuery(JdbcPreparedStatement.java:112)
+            \tat orders.OrderLineRepository.findByOrderId(OrderLineRepository.java:29)
+            \tat orders.OrderService.lines(OrderService.java:54)""";
 
     private final Store store = new Store(TestStore.memoryUrl(), null, 24, 500, 100, null);
     private final OtlpDecoder decoder = new OtlpDecoder(store, () -> 4000);
@@ -129,6 +133,49 @@ class FindingsTest {
         assertThat(finding.subject().endpointId()).isNotBlank();
         assertThat(finding.subject().queryId()).isNotBlank();
         assertThat(finding.traces()).containsExactly(traceId(1));
+    }
+
+    @Test
+    void theNPlusOneTakesItsCodeFromTheRepeatThatCarriesTheStack() {
+        Span.Builder root = entry(1, "/orders/{id}", 60);
+        List<Span.Builder> spans = new ArrayList<>();
+        spans.add(root);
+        for (int i = 0; i < 6; i++) {
+            Span.Builder repeat = query(root, 100 + i,
+                    "select * from order_line where order_id = ?", "order_line", NOW + i, 2);
+            // The extension captures the stack on the fifth repeat and on no other.
+            if (i == 4) {
+                repeat.addAttributes(Otlp.attr("code.stacktrace", QUERY_STACKTRACE));
+            }
+            spans.add(repeat);
+        }
+        decoder.accept(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
+        flush();
+
+        List<Findings.Finding> repeated = of(Findings.N_PLUS_ONE);
+
+        assertThat(repeated).hasSize(1);
+        assertThat(repeated.get(0).code()).containsExactly(
+                "orders.OrderLineRepository.findByOrderId(OrderLineRepository.java:29)",
+                "orders.OrderService.lines(OrderService.java:54)");
+    }
+
+    @Test
+    void anNPlusOneWithoutTheExtensionNamesNoLine() {
+        Span.Builder root = entry(1, "/orders/{id}", 60);
+        List<Span.Builder> spans = new ArrayList<>();
+        spans.add(root);
+        for (int i = 0; i < 6; i++) {
+            spans.add(query(root, 100 + i, "select * from order_line where order_id = ?", "order_line",
+                    NOW + i, 2));
+        }
+        decoder.accept(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
+        flush();
+
+        List<Findings.Finding> repeated = of(Findings.N_PLUS_ONE);
+
+        assertThat(repeated).hasSize(1);
+        assertThat(repeated.get(0).code()).isEmpty();
     }
 
     @Test
