@@ -6,15 +6,20 @@ import * as router from '../router.js';
 import { h, fill, panel, table, chip, serviceChip, renderList, copyBlock, spinner, errorBox, emptyState, snippetBlocks } from '../ui.js';
 import { formatSql } from '../sql.js';
 import { fmtApdex } from '../buckets.js';
-import { count, dur, rate, pct, time, bothTimes, truncate, shortId } from '../format.js';
+import { count, dur, rate, pct, bytes, time, bothTimes, truncate, shortId } from '../format.js';
 
 const KIND_LABEL = {
   error: 'error',
+  'log-error': 'log error',
   'n-plus-one': 'n+1',
   'slow-query': 'slow query',
   'slow-endpoint': 'slow endpoint',
   'slow-job': 'slow job',
+  'slow-external': 'slow external',
   'pool-exhausted': 'pool',
+  'gc-pause': 'gc pause',
+  'heap-pressure': 'heap',
+  'thread-growth': 'threads',
 };
 
 /** The dot and the word, so the severity is not carried by colour alone. */
@@ -42,7 +47,13 @@ export function findingTarget(finding) {
   if (subject.endpointId) return { path: '/endpoints/' + encodeURIComponent(subject.endpointId), query: shared };
   if (subject.queryId) return { path: '/queries/' + encodeURIComponent(subject.queryId), query: shared };
   if (subject.errorId) return { path: '/errors/' + encodeURIComponent(subject.errorId), query: shared };
-  if (subject.pool) return { path: '/jvm', query: { ...shared, service: finding.service || shared.service } };
+  if (subject.pool || subject.jvm) return { path: '/jvm', query: { ...shared, service: finding.service || shared.service } };
+  if (subject.logger) {
+    return {
+      path: '/logs',
+      query: { ...shared, service: finding.service || shared.service, severity: 'ERROR', q: subject.logger },
+    };
+  }
   const trace = (finding.traces || [])[0];
   if (trace) return { path: '/traces/' + encodeURIComponent(trace), query: shared };
   return null;
@@ -58,8 +69,12 @@ export function impactOf(finding) {
   const n = finding.numbers || {};
   switch (finding.kind) {
     case 'error': return h('span.bad', count(n.count));
+    case 'log-error': return h('span.bad', count(n.count));
     case 'n-plus-one': return h('span', count(n.medianRepeats) + ' × ' + count(n.affected));
     case 'pool-exhausted': return h('span', count(n.pendingMax));
+    case 'gc-pause': return h('span', dur(n.worstMs));
+    case 'heap-pressure': return h('span', pct(n.ratioMax));
+    case 'thread-growth': return h('span', '+' + count((n.last || 0) - (n.first || 0)));
     default: return h('span', dur(n.totalMs));
   }
 }
@@ -70,16 +85,24 @@ const NUMBER_LABEL = {
   dbCallsPerRun: 'db calls / run', dbMsPerRun: 'db ms / run', dbShare: 'db share',
   slowCalls: 'slow calls', medianRepeats: 'median repeats', maxRepeats: 'max repeats',
   firstSeen: 'first seen', lastSeen: 'last seen', usedMax: 'used max', pendingMax: 'pending max',
-  at: 'worst at',
+  at: 'worst at', worstMs: 'longest', shareMax: 'worst share', ratioMax: 'worst ratio',
+  gc: 'collector', hotSpan: 'hot span',
 };
+
+/**
+ * The numbers whose unit the key alone does not say: `usedMax` is connections on a
+ * `pool-exhausted` and bytes on a `heap-pressure`, so the kind decides.
+ */
+const BYTE_NUMBERS = { 'heap-pressure': new Set(['usedMax', 'limit']) };
 
 function numberLabel(key) {
   return NUMBER_LABEL[key] || key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase();
 }
 
 /** One value of `numbers`, formatted as the same value is formatted everywhere else. */
-function numberValue(key, value) {
+function numberValue(key, value, kind) {
   if (value === null || value === undefined) return h('span.muted', '-');
+  if (key === 'hotSpan') return hotSpanLine(value);
   if (Array.isArray(value)) {
     if (!value.length) return h('span.muted', 'none');
     return h('ul.f-list', value.slice(0, 5).map((item) => h('li',
@@ -93,15 +116,26 @@ function numberValue(key, value) {
     return h('span', { title: bothTimes(value) }, time(value));
   }
   if (key === 'apdex') return h('span', fmtApdex(value));
-  if (key === 'dbShare') return h('span', pct(value));
+  if (key === 'dbShare' || key === 'shareMax' || key === 'ratioMax') return h('span', pct(value));
+  if ((BYTE_NUMBERS[kind] || new Set()).has(key)) return h('span', bytes(value));
   if (key.endsWith('Ms') || key === 'msPerRequest') return h('span', dur(value));
   if (key.endsWith('PerRequest') || key.endsWith('PerRun') || key === 'max') return h('span', rate(value));
   return h('span', count(value));
 }
 
+/** `SELECT order_line · 312.4 ms self · 62.0%`: where the time went (docs/agent.md). */
+function hotSpanLine(hot) {
+  if (!hot || typeof hot !== 'object') return h('span.muted', '-');
+  return h('span',
+    h('span.mono', truncate(String(hot.name || ''), 120)),
+    h('span.muted', ' · ' + dur(hot.selfMs) + ' self · ' + pct(hot.share)));
+}
+
 /** The expanded row: why, the numbers, the statement, the code and the evidence. */
 export function evidence(finding) {
-  const numbers = Object.entries(finding.numbers || {});
+  // A hot span the finding has no trace for is left out, as the text rendering leaves it out.
+  const numbers = Object.entries(finding.numbers || {})
+    .filter(([key, value]) => key !== 'hotSpan' || value);
   const traces = finding.traces || [];
   const target = findingTarget(finding);
   return h('div.f-evidence',
@@ -109,7 +143,7 @@ export function evidence(finding) {
     numbers.length
       ? h('dl.f-numbers', numbers.map(([key, value]) => h('div',
         h('dt', numberLabel(key)),
-        h('dd', numberValue(key, value)))))
+        h('dd', numberValue(key, value, finding.kind)))))
       : null,
     finding.statement ? copyBlock(formatSql(finding.statement)) : null,
     (finding.code || []).length

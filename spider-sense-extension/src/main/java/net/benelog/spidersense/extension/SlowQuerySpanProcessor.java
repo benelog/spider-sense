@@ -1,6 +1,7 @@
 package net.benelog.spidersense.extension;
 
 import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.trace.SpanKind;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.sdk.trace.ReadWriteSpan;
 import io.opentelemetry.sdk.trace.ReadableSpan;
@@ -10,8 +11,8 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Gives a slow database span, and the fifth repeat of a statement within a trace, the stack it was
- * issued from, as {@code code.stacktrace}.
+ * Gives a slow database span, the fifth repeat of a statement within a trace, and a slow outbound
+ * call the stack it was issued from, as {@code code.stacktrace}.
  *
  * <p>The stock OpenTelemetry agent records where an exception was thrown and nothing about where a
  * query came from, so a {@code slow-query} or {@code n-plus-one} finding could name a statement but
@@ -26,6 +27,10 @@ import java.util.concurrent.TimeUnit;
  * those, the processor counts per thread how many database spans of the current trace have ended
  * with the same statement, and captures the stack once, on the fifth repeat: the same number that
  * makes a query group an N+1 on the server ({@code docs/design.md}, "The extension").
+ *
+ * <p>The third case is a slow outbound call: a {@code CLIENT} span that is not a database span and
+ * took at least {@code spidersense.slow.request.ms}, so a {@code slow-external} finding names the
+ * line that made the call rather than only the host it went to.
  */
 public final class SlowQuerySpanProcessor implements ExtendedSpanProcessor {
 
@@ -51,10 +56,16 @@ public final class SlowQuerySpanProcessor implements ExtendedSpanProcessor {
     static final String THRESHOLD_ENV = "SPIDERSENSE_SLOW_QUERY_MS";
     static final long DEFAULT_THRESHOLD_MS = 100;
 
+    /** The same again for an outbound call: the threshold the server calls a slow request. */
+    static final String REQUEST_THRESHOLD_PROPERTY = "spidersense.slow.request.ms";
+    static final String REQUEST_THRESHOLD_ENV = "SPIDERSENSE_SLOW_REQUEST_MS";
+    static final long DEFAULT_REQUEST_THRESHOLD_MS = 500;
+
     /** A finding wants a line to open, not a core dump. */
     static final int MAX_FRAMES = 64;
 
     private final long thresholdNanos;
+    private final long requestThresholdNanos;
 
     /**
      * The repeats of the trace the thread is in the middle of, and nothing older.
@@ -72,24 +83,39 @@ public final class SlowQuerySpanProcessor implements ExtendedSpanProcessor {
         private final Map<String, Integer> counts = new HashMap<>();
     }
 
-    /** The configured threshold, read once: this runs on every database span that ends. */
+    /** The configured thresholds, read once: this runs on every span that ends. */
     public SlowQuerySpanProcessor() {
-        this(configuredThresholdMillis());
+        this(configuredThresholdMillis(), configuredRequestThresholdMillis());
     }
 
     SlowQuerySpanProcessor(long thresholdMillis) {
+        this(thresholdMillis, DEFAULT_REQUEST_THRESHOLD_MS);
+    }
+
+    SlowQuerySpanProcessor(long thresholdMillis, long requestThresholdMillis) {
         this.thresholdNanos = TimeUnit.MILLISECONDS.toNanos(Math.max(0, thresholdMillis));
+        this.requestThresholdNanos =
+                TimeUnit.MILLISECONDS.toNanos(Math.max(0, requestThresholdMillis));
     }
 
     static long configuredThresholdMillis() {
+        return configured(THRESHOLD_PROPERTY, THRESHOLD_ENV, DEFAULT_THRESHOLD_MS);
+    }
+
+    static long configuredRequestThresholdMillis() {
+        return configured(REQUEST_THRESHOLD_PROPERTY, REQUEST_THRESHOLD_ENV,
+                DEFAULT_REQUEST_THRESHOLD_MS);
+    }
+
+    private static long configured(String property, String environment, long fallback) {
         try {
-            String value = System.getProperty(THRESHOLD_PROPERTY);
+            String value = System.getProperty(property);
             if (value == null || value.isBlank()) {
-                value = System.getenv(THRESHOLD_ENV);
+                value = System.getenv(environment);
             }
-            return value == null || value.isBlank() ? DEFAULT_THRESHOLD_MS : Long.parseLong(value.trim());
+            return value == null || value.isBlank() ? fallback : Long.parseLong(value.trim());
         } catch (RuntimeException e) {
-            return DEFAULT_THRESHOLD_MS;
+            return fallback;
         }
     }
 
@@ -97,6 +123,11 @@ public final class SlowQuerySpanProcessor implements ExtendedSpanProcessor {
     public void onEnding(ReadWriteSpan span) {
         try {
             if (span.getAttribute(DB_SYSTEM) == null && span.getAttribute(DB_SYSTEM_NAME) == null) {
+                // Not a database span: the one other case is a slow outbound call.
+                if (span.getKind() == SpanKind.CLIENT
+                        && span.getLatencyNanos() >= requestThresholdNanos) {
+                    capture(span);
+                }
                 return;
             }
             boolean slow = span.getLatencyNanos() >= thresholdNanos;
@@ -105,15 +136,20 @@ public final class SlowQuerySpanProcessor implements ExtendedSpanProcessor {
             if (!slow && !fifthRepeat) {
                 return;
             }
-            if (span.getAttribute(CODE_STACKTRACE) != null) {
-                return;
-            }
-            String stacktrace = format(Thread.currentThread().getStackTrace());
-            if (!stacktrace.isEmpty()) {
-                span.setAttribute(CODE_STACKTRACE, stacktrace);
-            }
+            capture(span);
         } catch (Throwable swallowed) {
             // Documented: nothing this processor does may reach the application.
+        }
+    }
+
+    /** The stack of the thread ending the span, unless the span already carries one. */
+    private static void capture(ReadWriteSpan span) {
+        if (span.getAttribute(CODE_STACKTRACE) != null) {
+            return;
+        }
+        String stacktrace = format(Thread.currentThread().getStackTrace());
+        if (!stacktrace.isEmpty()) {
+            span.setAttribute(CODE_STACKTRACE, stacktrace);
         }
     }
 

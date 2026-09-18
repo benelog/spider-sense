@@ -3,6 +3,7 @@ package net.benelog.spidersense.extension;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanKind;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Scope;
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter;
@@ -34,7 +35,7 @@ class SlowQuerySpanProcessorTest {
     void start() {
         exporter = InMemorySpanExporter.create();
         tracerProvider = SdkTracerProvider.builder()
-                .addSpanProcessor(new SlowQuerySpanProcessor(THRESHOLD_MS))
+                .addSpanProcessor(new SlowQuerySpanProcessor(THRESHOLD_MS, THRESHOLD_MS))
                 .addSpanProcessor(SimpleSpanProcessor.create(exporter))
                 .build();
         tracer = tracerProvider.get("test");
@@ -87,6 +88,60 @@ class SlowQuerySpanProcessorTest {
         span.end();
 
         assertThat(exported().getAttributes().get(SlowQuerySpanProcessor.CODE_STACKTRACE)).isNull();
+    }
+
+    @Test
+    void aSlowOutboundCallCarriesTheStackItWasMadeFrom() {
+        Span span = tracer.spanBuilder("GET")
+                .setSpanKind(SpanKind.CLIENT)
+                .setAttribute("http.request.method", "GET")
+                .setAttribute("url.full", "http://localhost:8081/api/books/1")
+                .startSpan();
+        sleep(THRESHOLD_MS * 2);
+        span.end();
+
+        String stacktrace = exported().getAttributes().get(SlowQuerySpanProcessor.CODE_STACKTRACE);
+        assertThat(stacktrace).as("code.stacktrace").isNotNull();
+        assertThat(stacktrace.split("\\R")[0])
+                .contains("SlowQuerySpanProcessorTest.aSlowOutboundCallCarriesTheStackItWasMadeFrom");
+    }
+
+    @Test
+    void aFastOutboundCallIsLeftAlone() {
+        Span span = tracer.spanBuilder("GET")
+                .setSpanKind(SpanKind.CLIENT)
+                .setAttribute("http.request.method", "GET")
+                .startSpan();
+        span.end();
+
+        assertThat(exported().getAttributes().get(SlowQuerySpanProcessor.CODE_STACKTRACE)).isNull();
+    }
+
+    @Test
+    void aSlowServerOrInternalSpanIsNotAnOutboundCall() {
+        for (SpanKind kind : List.of(SpanKind.SERVER, SpanKind.INTERNAL)) {
+            Span span = tracer.spanBuilder("GET /orders").setSpanKind(kind).startSpan();
+            sleep(THRESHOLD_MS * 2);
+            span.end();
+        }
+
+        tracerProvider.forceFlush().join(10, TimeUnit.SECONDS);
+        assertThat(exporter.getFinishedSpanItems()).hasSize(2);
+        assertThat(exporter.getFinishedSpanItems())
+                .as("only an outbound call is the third case")
+                .allSatisfy(span -> assertThat(stacktraceOf(span)).isNull());
+    }
+
+    @Test
+    void theRequestThresholdComesFromTheSamePropertyTheServerUses() {
+        assertThat(SlowQuerySpanProcessor.configuredRequestThresholdMillis())
+                .isEqualTo(SlowQuerySpanProcessor.DEFAULT_REQUEST_THRESHOLD_MS);
+        System.setProperty(SlowQuerySpanProcessor.REQUEST_THRESHOLD_PROPERTY, "900");
+        try {
+            assertThat(SlowQuerySpanProcessor.configuredRequestThresholdMillis()).isEqualTo(900);
+        } finally {
+            System.clearProperty(SlowQuerySpanProcessor.REQUEST_THRESHOLD_PROPERTY);
+        }
     }
 
     @Test

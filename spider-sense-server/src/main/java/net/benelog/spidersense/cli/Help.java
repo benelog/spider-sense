@@ -32,7 +32,7 @@ final class Help {
                                            the two windows side by side
               check [--max-p95-ms=] [--max-errors=] [--max-error-rate=]
                     [--max-queries-per-request=] [--max-slow-queries=]
-                    [--max-n-plus-one=] [--min-apdex=] [--endpoint=]
+                    [--max-n-plus-one=] [--max-log-errors=] [--min-apdex=] [--endpoint=]
                                            pass or fail, in the exit code
               sql "<statement>" [--limit=200]
                                            read-only SQL over the store (SELECT only)

@@ -176,6 +176,45 @@ class AgentApiTest {
     }
 
     @Test
+    void theTextNamesTheHotSpanAndTheErrorLogsNoTraceReports() {
+        serve((client, assembly) -> {
+            postProtobuf(client, "/v1/traces", sample());
+            postProtobuf(client, "/v1/logs", Otlp.logs(Otlp.service("orders"),
+                    "orders.web.OrderController",
+                    Otlp.log(NOW + 500, 17, "Payment gateway timeout for order 42", null, null))
+                    .toByteArray());
+
+            String text = client.get("/api/findings?since=5m&format=text").body();
+
+            assertThat(text).contains("| log-error |");
+            assertThat(text).contains("ERROR in OrderController: Payment gateway timeout for order ?");
+            assertThat(text).contains("hot span: GET /orders/{id} → 200 · 587.0 ms self · 65.2%");
+            assertThat(text).as("the object is a line of its own, never a pair on the numbers line")
+                    .doesNotContain("hotSpan");
+
+            Json.JsonObject body = json(client.get("/api/findings?since=5m"));
+            Json.JsonObject logError = null;
+            Json.JsonObject slowEndpoint = null;
+            for (Json.JsonValue value : body.getArray("findings")) {
+                Json.JsonObject finding = value.asObject();
+                if ("log-error".equals(finding.getString("kind"))) {
+                    logError = finding;
+                } else if ("slow-endpoint".equals(finding.getString("kind"))) {
+                    slowEndpoint = finding;
+                }
+            }
+            assertThat(logError).isNotNull();
+            assertThat(logError.getObject("subject").getString("logger"))
+                    .isEqualTo("orders.web.OrderController");
+            assertThat(logError.getObject("numbers").getLong("count")).isEqualTo(1);
+            assertThat(slowEndpoint).isNotNull();
+            Json.JsonObject hot = slowEndpoint.getObject("numbers").getObject("hotSpan");
+            assertThat(hot.getString("category")).isEqualTo("http");
+            assertThat(hot.getDouble("selfMs")).isEqualTo(587.0);
+        });
+    }
+
+    @Test
     void theFormatIsJsonUnlessTextIsAskedForByParameterOrByAccept() {
         serve((client, assembly) -> {
             postProtobuf(client, "/v1/traces", sample());

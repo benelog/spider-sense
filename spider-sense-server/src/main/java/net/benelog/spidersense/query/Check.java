@@ -25,11 +25,12 @@ public final class Check {
     public static final String MAX_QUERIES_PER_REQUEST = "maxQueriesPerRequest";
     public static final String MAX_SLOW_QUERIES = "maxSlowQueries";
     public static final String MAX_N_PLUS_ONE = "maxNPlusOne";
+    public static final String MAX_LOG_ERRORS = "maxLogErrors";
     public static final String MIN_APDEX = "minApdex";
 
     /** The rules in the order agent.md lists them, which is the order they are answered in. */
     public static final List<String> RULES = List.of(MAX_P95_MS, MAX_ERRORS, MAX_ERROR_RATE,
-            MAX_QUERIES_PER_REQUEST, MAX_SLOW_QUERIES, MAX_N_PLUS_ONE, MIN_APDEX);
+            MAX_QUERIES_PER_REQUEST, MAX_SLOW_QUERIES, MAX_N_PLUS_ONE, MAX_LOG_ERRORS, MIN_APDEX);
 
     public static final String NO_REQUESTS = "no requests in the window";
 
@@ -167,6 +168,25 @@ public final class Check {
                 String detail = found.isEmpty() ? "no repeated statement in the window"
                         : Numbers.plural(found.size(), "finding") + ": " + found.get(0).title();
                 yield max(rule, limit, found.size(), detail);
+            }
+            case MAX_LOG_ERRORS -> {
+                // The rule counts the records, not the groups: one logger saying the
+                // same thing 200 times is 200 failures nothing else reports (agent.md).
+                long records = 0;
+                Findings.Finding worst = null;
+                for (Findings.Finding finding : findings.findings(window, service, FINDINGS)) {
+                    if (!Findings.LOG_ERROR.equals(finding.kind())) {
+                        continue;
+                    }
+                    Object count = finding.numbers().get("count");
+                    records += count instanceof Number number ? number.longValue() : 0;
+                    if (worst == null) {
+                        worst = finding;
+                    }
+                }
+                String detail = worst == null ? "no ERROR log outside a failed trace"
+                        : Numbers.plural(records, "record") + ": " + worst.title();
+                yield max(rule, limit, records, detail);
             }
             default -> {
                 Double apdex = apdex(endpoints, endpoint, totals);

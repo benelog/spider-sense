@@ -173,6 +173,10 @@ final class Text {
             text.append('\n').append(n).append(". ").append(finding.id()).append(" — ")
                     .append(finding.why()).append('\n');
             text.append("   ").append(numbers(finding.numbers())).append('\n');
+            String hot = hotSpan(finding.numbers());
+            if (hot != null) {
+                text.append("   ").append(hot).append('\n');
+            }
             if (finding.statement() != null) {
                 text.append("   ").append(statement(finding.statement(), full)).append('\n');
             }
@@ -186,11 +190,41 @@ final class Text {
         return text.toString();
     }
 
-    /** {@code requests 3, affected 3, medianRepeats 42}: the numbers on one line. */
+    /**
+     * {@code requests 3, affected 3, medianRepeats 42}: the numbers on one line.
+     *
+     * <p>{@code hotSpan} is the one value that is an object rather than a scalar or
+     * a list, and it reads as a sentence rather than as a pair, so it gets a line of
+     * its own ({@link #hotSpan}) and is left out here.
+     */
     private static String numbers(Map<String, Object> numbers) {
         List<String> parts = new ArrayList<>();
-        numbers.forEach((key, value) -> parts.add(key + " " + scalar(key, value)));
+        numbers.forEach((key, value) -> {
+            if (!HOT_SPAN.equals(key) && !(value instanceof Map<?, ?>)) {
+                parts.add(key + " " + scalar(key, value));
+            }
+        });
         return String.join(", ", parts);
+    }
+
+    private static final String HOT_SPAN = "hotSpan";
+
+    /**
+     * {@code hot span: SELECT order_line · 312.4 ms self · 62.0%}: where the time
+     * went in the finding's first evidence trace (agent.md).
+     *
+     * @return null when the finding has no hot span, which is a finding with no trace
+     */
+    private static String hotSpan(Map<String, Object> numbers) {
+        if (!(numbers.get(HOT_SPAN) instanceof Map<?, ?> hot)) {
+            return null;
+        }
+        Object selfMs = hot.get("selfMs");
+        Object share = hot.get("share");
+        return "hot span: " + hot.get("name")
+                + " · " + (selfMs instanceof Number self ? Numbers.millis(self.doubleValue()) : "—")
+                + " self · "
+                + (share instanceof Number part ? Numbers.percent(part.doubleValue()) : "—");
     }
 
     /**
@@ -206,7 +240,8 @@ final class Text {
             if ("apdex".equals(key)) {
                 return Numbers.score(number.doubleValue());
             }
-            if (key.endsWith("Share") || key.endsWith("Rate")) {
+            if (key.endsWith("Share") || key.endsWith("Rate")
+                    || key.startsWith("share") || key.startsWith("ratio")) {
                 return Numbers.percent(number.doubleValue());
             }
         }

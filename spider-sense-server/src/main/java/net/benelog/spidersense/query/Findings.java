@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -12,8 +13,11 @@ import java.util.Set;
 
 import net.benelog.spidersense.store.AttrJson;
 import net.benelog.spidersense.store.Ids;
+import net.benelog.spidersense.store.MetricPoint;
+import net.benelog.spidersense.store.MetricSeriesNames;
 import net.benelog.spidersense.store.ServiceInfo;
 import net.benelog.spidersense.store.ServiceRegistry;
+import net.benelog.spidersense.store.SpanRecord;
 import net.benelog.spidersense.store.Sql;
 import net.benelog.spidersense.store.Tingles;
 
@@ -31,11 +35,16 @@ import net.benelog.spidersense.store.Tingles;
 public final class Findings {
 
     public static final String ERROR = "error";
+    public static final String LOG_ERROR = "log-error";
     public static final String N_PLUS_ONE = "n-plus-one";
     public static final String SLOW_QUERY = "slow-query";
     public static final String SLOW_ENDPOINT = "slow-endpoint";
     public static final String SLOW_JOB = "slow-job";
+    public static final String SLOW_EXTERNAL = "slow-external";
     public static final String POOL_EXHAUSTED = "pool-exhausted";
+    public static final String GC_PAUSE = "gc-pause";
+    public static final String HEAP_PRESSURE = "heap-pressure";
+    public static final String THREAD_GROWTH = "thread-growth";
 
     public static final String HIGH = "high";
     public static final String MEDIUM = "medium";
@@ -51,8 +60,31 @@ public final class Findings {
     private static final int CANDIDATES = 500;
     private static final int GROUPS = 100;
 
+    /** The OTLP severity number of {@code ERROR}; a {@code log-error} counts it and worse. */
+    private static final int ERROR_SEVERITY = 17;
+
+    /** A guard on the one rule that reads log rows rather than an aggregate. */
+    private static final int MAX_LOG_ROWS = 20_000;
+
+    /** The title of a {@code log-error} carries this much of the message (agent.md). */
+    private static final int MESSAGE_IN_TITLE = 80;
+
+    /** The traces of a {@code slow-external} group the three slowest are picked from. */
+    private static final int EVIDENCE_CANDIDATES = 200;
+
+    /** A collector taking this share of an export interval is a {@code gc-pause}. */
+    private static final double GC_SHARE = 0.10;
+
+    /** The heap at this share of its limit is {@code heap-pressure}. */
+    private static final double HEAP_RATIO = 0.90;
+
+    /** Threads: this many more than at the start of the window, or twice as many. */
+    private static final int THREADS_GROWN_BY = 50;
+    private static final int THREADS_DOUBLED_FROM = 20;
+
     /** Which group a finding is about; the fields that do not apply are null. */
-    public record Subject(String endpointId, String queryId, String errorId, String pool, String job) {
+    public record Subject(String endpointId, String queryId, String errorId, String pool, String job,
+            String target, String logger, String jvm) {
     }
 
     /**
@@ -92,13 +124,17 @@ public final class Findings {
      * the kinds keep the order agent.md's table has.
      */
     public List<Finding> findings(Window window, String service, int limit) {
+        Ancestors ancestors = new Ancestors(sql, window);
         List<Ranked> found = new ArrayList<>();
         found.addAll(errors(window, service));
-        found.addAll(nPlusOne(window, service));
+        found.addAll(logErrors(window, service, ancestors));
+        found.addAll(nPlusOne(window, service, ancestors));
         found.addAll(slowQueries(window, service));
         found.addAll(slowEndpoints(window, service));
         found.addAll(slowJobs(window, service));
+        found.addAll(slowExternal(window, service, ancestors));
         found.addAll(poolExhausted(window, service));
+        found.addAll(jvm(window, service));
         found.sort(Ranked.ORDER);
 
         List<Finding> ranked = new ArrayList<>(Math.min(found.size(), Math.max(1, limit)));
@@ -114,8 +150,9 @@ public final class Findings {
     /** A finding with the impact it is ranked by inside its kind. */
     private record Ranked(Finding finding, double impact) {
 
-        private static final List<String> KINDS =
-                List.of(ERROR, N_PLUS_ONE, SLOW_QUERY, SLOW_ENDPOINT, SLOW_JOB, POOL_EXHAUSTED);
+        private static final List<String> KINDS = List.of(ERROR, LOG_ERROR, N_PLUS_ONE, SLOW_QUERY,
+                SLOW_ENDPOINT, SLOW_JOB, SLOW_EXTERNAL, POOL_EXHAUSTED, GC_PAUSE, HEAP_PRESSURE,
+                THREAD_GROWTH);
 
         static final Comparator<Ranked> ORDER = Comparator
                 .comparingInt((Ranked r) -> severityRank(r.finding().severity()))
@@ -155,7 +192,7 @@ public final class Findings {
                     ERROR, HIGH, group.service(),
                     simpleName(group.type()) + " in " + where,
                     Numbers.plural(group.count(), "occurrence") + " in " + where + "; " + group.message(),
-                    new Subject(null, null, group.errorId(), null, null),
+                    new Subject(null, null, group.errorId(), null, null, null, null, null),
                     numbers, null,
                     frames.ofStacktrace(stacktrace),
                     traceIds(queries.tracesContaining(window, "error_id = ?", group.errorId(),
@@ -163,6 +200,118 @@ public final class Findings {
             found.add(new Ranked(finding, group.count()));
         }
         return found;
+    }
+
+    // --- log error -----------------------------------------------------------
+
+    /** One {@code ERROR} log record nothing else reports, and where it came from. */
+    private record LogLine(long at, String traceId, String endpoint, Map<String, Object> attributes) {
+    }
+
+    /**
+     * {@code ERROR} log records whose trace has no error span, grouped by
+     * {@code (service, logger, normalised message)}.
+     *
+     * <p>This is what {@code catch (Exception e) { log.error(…, e); return fallback; }}
+     * leaves behind: no span error, no exception event, one line in the log. A
+     * record whose trace does carry an error span is already an {@code error}
+     * finding, so the join drops it rather than reporting it twice (agent.md).
+     *
+     * <p>The grouping is the one {@link Ids#normaliseMessage} defines, which is a
+     * Java regular expression rather than SQL, so the rows are read and grouped
+     * here; the cap is the same order as the dependency scan's.
+     */
+    private List<Ranked> logErrors(Window window, String service, Ancestors ancestors) {
+        List<Object> params = new ArrayList<>(List.of(window.from(), window.to()));
+        String where = "l.at_ms BETWEEN ? AND ? AND l.severity_number >= " + ERROR_SEVERITY
+                + " AND (t.trace_id IS NULL OR t.error_count = 0)";
+        if (service != null) {
+            where = where + " AND l.service = ?";
+            params.add(service);
+        }
+        Map<String, List<LogLine>> byGroup = new LinkedHashMap<>();
+        Map<String, String[]> named = new LinkedHashMap<>();
+        sql.query("SELECT l.service AS service, l.logger AS logger, l.body AS body, l.at_ms AS at_ms,"
+                + " l.trace_id AS trace_id, l.span_id AS span_id, l.attributes AS attributes,"
+                + " t.root_name AS root_name FROM log l"
+                + " LEFT JOIN trace t ON t.trace_id = l.trace_id WHERE " + where
+                + " ORDER BY l.at_ms, l.id LIMIT " + MAX_LOG_ROWS, params, rs -> {
+                    String logger = logger(rs.getString("logger"));
+                    String message = Ids.normaliseMessage(rs.getString("body"));
+                    String key = rs.getString("service") + "\0" + logger + "\0" + message;
+                    named.putIfAbsent(key, new String[]{rs.getString("service"), logger, message});
+                    byGroup.computeIfAbsent(key, k -> new ArrayList<>())
+                            .add(new LogLine(rs.getLong("at_ms"), rs.getString("trace_id"),
+                                    endpointOf(ancestors, rs.getString("span_id"),
+                                            rs.getString("root_name")),
+                                    AttrJson.decode(rs.getString("attributes"))));
+                    return null;
+                });
+
+        List<Ranked> found = new ArrayList<>();
+        byGroup.forEach((key, records) -> {
+            String[] parts = named.get(key);
+            String serviceName = parts[0];
+            String logger = parts[1];
+            String message = parts[2];
+            Map<String, long[]> byEndpoint = new LinkedHashMap<>();
+            for (LogLine record : records) {
+                byEndpoint.computeIfAbsent(record.endpoint(), name -> new long[1])[0]++;
+            }
+            List<Stats.EndpointCount> endpoints = new ArrayList<>();
+            byEndpoint.forEach((name, count) -> endpoints.add(new Stats.EndpointCount(name, count[0])));
+            endpoints.sort((a, b) -> Long.compare(b.count(), a.count()));
+
+            Map<String, Object> numbers = new LinkedHashMap<>();
+            numbers.put("count", (long) records.size());
+            numbers.put("firstSeen", records.get(0).at());
+            numbers.put("lastSeen", records.get(records.size() - 1).at());
+            numbers.put("logger", logger);
+            numbers.put("message", message);
+            numbers.put("endpoints", endpointCounts(endpoints));
+
+            List<String> traces = new ArrayList<>();
+            for (int i = records.size() - 1; i >= 0 && traces.size() < EVIDENCE_TRACES; i--) {
+                String traceId = records.get(i).traceId();
+                if (traceId != null && !traces.contains(traceId)) {
+                    traces.add(traceId);
+                }
+            }
+            String seenIn = endpoints.isEmpty() ? serviceName : endpoints.get(0).name();
+            Finding finding = new Finding(
+                    id(LOG_ERROR, serviceName, logger + "\0" + message),
+                    LOG_ERROR, HIGH, serviceName,
+                    "ERROR in " + simpleName(logger) + ": " + cut(message, MESSAGE_IN_TITLE),
+                    Numbers.plural(records.size(), "record") + " in " + seenIn
+                            + ", none of them on a failed trace; " + message,
+                    new Subject(null, null, null, null, null, null, logger, null),
+                    numbers, null,
+                    frames.ofStacktrace(stacktraceOf(records.get(records.size() - 1).attributes())),
+                    List.copyOf(traces));
+            found.add(new Ranked(finding, records.size()));
+        });
+        return found;
+    }
+
+    /** The endpoint a log record belongs to, as an {@code error} finding's endpoints are found. */
+    private static String endpointOf(Ancestors ancestors, String spanId, String rootName) {
+        if (spanId != null && !spanId.isBlank()) {
+            Queries.Ancestry.Entry entry = ancestors.get().entryOf(spanId);
+            if (entry != null) {
+                return entry.endpoint();
+            }
+        }
+        return rootName == null ? "(no endpoint)" : rootName;
+    }
+
+    /** The logging bridge exports the throwable as an attribute when there was one. */
+    private static String stacktraceOf(Map<String, Object> attributes) {
+        Object stacktrace = attributes == null ? null : attributes.get("exception.stacktrace");
+        return stacktrace == null ? null : String.valueOf(stacktrace);
+    }
+
+    private static String logger(String logger) {
+        return logger == null || logger.isBlank() ? "(no logger)" : logger;
     }
 
     // --- n + 1 ---------------------------------------------------------------
@@ -182,7 +331,7 @@ public final class Findings {
      * callers already use, because two endpoints of one trace each running the
      * statement four times is not an N+1 and grouping by trace alone cannot tell.
      */
-    private List<Ranked> nPlusOne(Window window, String service) {
+    private List<Ranked> nPlusOne(Window window, String service, Ancestors ancestors) {
         List<String[]> candidates = candidates(window, service);
         if (candidates.isEmpty()) {
             return List.of();
@@ -207,7 +356,7 @@ public final class Findings {
             where = where + " AND service = ?";
             params.add(service);
         }
-        Queries.Ancestry ancestry = Queries.Ancestry.of(sql, window);
+        Queries.Ancestry ancestry = ancestors.get();
         Map<String, List<Repeat>> byEntry = new LinkedHashMap<>();
         sql.query("SELECT span_id, trace_id, query_id, service, start_ms, duration_ns, db_statement,"
                 + " db_operation, db_table, attributes FROM span WHERE " + where, params, rs -> {
@@ -306,7 +455,7 @@ public final class Findings {
                     affected.size() + " of " + Numbers.plural(requests, "request") + " repeated it; "
                             + counts(repeats) + " times; " + Numbers.millis(msPerRequest)
                             + " per request in that statement",
-                    new Subject(first.endpointId(), first.queryId(), null, null, null),
+                    new Subject(first.endpointId(), first.queryId(), null, null, null, null, null, null),
                     numbers, first.statement(),
                     code,
                     List.copyOf(traces));
@@ -377,7 +526,7 @@ public final class Findings {
                             + Numbers.plural(query.calls(), "call") + ", "
                             + query.slowCalls() + " of them over " + tingles.slowQueryMs() + " ms; "
                             + Numbers.millis(query.totalMs()) + " in total",
-                    new Subject(null, query.queryId(), null, null, null),
+                    new Subject(null, query.queryId(), null, null, null, null, null, null),
                     numbers, query.statement(),
                     frames.ofAttributes(samples.get(query.queryId())),
                     traceIds(queries.tracesContaining(window, "query_id = ?", query.queryId(),
@@ -409,6 +558,9 @@ public final class Findings {
             double share = endpoint.totalMs() <= 0 ? 0
                     : Math.min(1, work.totalMs() / endpoint.totalMs());
 
+            List<String> traces = traceIds(queries.tracesContaining(window, "endpoint_id = ?",
+                    endpoint.endpointId(), EVIDENCE_TRACES, true));
+
             Map<String, Object> numbers = new LinkedHashMap<>();
             numbers.put("calls", endpoint.calls());
             numbers.put("p50Ms", endpoint.p50Ms());
@@ -419,6 +571,7 @@ public final class Findings {
             numbers.put("dbCallsPerRequest", perRequest);
             numbers.put("dbMsPerRequest", msPerRequest);
             numbers.put("dbShare", share);
+            numbers.put("hotSpan", hotSpan(traces));
 
             String severity = endpoint.p95Ms() > 4 * tingles.slowRequestMs() ? HIGH : MEDIUM;
             Finding finding = new Finding(
@@ -430,10 +583,8 @@ public final class Findings {
                             + Numbers.number(perRequest) + " database calls and "
                             + Numbers.millis(msPerRequest) + " per request, "
                             + Numbers.percent(share) + " of the time",
-                    new Subject(endpoint.endpointId(), null, null, null, null),
-                    numbers, null, List.of(),
-                    traceIds(queries.tracesContaining(window, "endpoint_id = ?", endpoint.endpointId(),
-                            EVIDENCE_TRACES, true)));
+                    new Subject(endpoint.endpointId(), null, null, null, null, null, null, null),
+                    numbers, null, List.of(), traces);
             found.add(new Ranked(finding, endpoint.totalMs()));
         }
         return found;
@@ -476,6 +627,10 @@ public final class Findings {
             double msPerRun = job.runs() == 0 ? 0 : work.totalMs() / job.runs();
             double share = job.totalMs() <= 0 ? 0 : Math.min(1, work.totalMs() / job.totalMs());
 
+            List<String> traces = traceIds(queries.tracesContaining(window,
+                    "parent_span_id IS NULL AND s.kind = 'INTERNAL' AND s.service = ? AND s.name = ?",
+                    List.of(job.service(), job.name()), EVIDENCE_TRACES, true));
+
             Map<String, Object> numbers = new LinkedHashMap<>();
             numbers.put("runs", job.runs());
             numbers.put("p50Ms", job.p50Ms());
@@ -485,6 +640,7 @@ public final class Findings {
             numbers.put("dbCallsPerRun", perRun);
             numbers.put("dbMsPerRun", msPerRun);
             numbers.put("dbShare", share);
+            numbers.put("hotSpan", hotSpan(traces));
 
             String severity = job.p95Ms() > 4 * tingles.slowRequestMs() ? HIGH : MEDIUM;
             Finding finding = new Finding(
@@ -496,13 +652,9 @@ public final class Findings {
                             + Numbers.number(perRun) + " database calls and "
                             + Numbers.millis(msPerRun) + " per run, "
                             + Numbers.percent(share) + " of the time",
-                    new Subject(null, null, null, null, job.name()),
+                    new Subject(null, null, null, null, job.name(), null, null, null),
                     numbers, null,
-                    frames.ofAttributes(samples.get(key)),
-                    traceIds(queries.tracesContaining(window,
-                            "parent_span_id IS NULL AND s.kind = 'INTERNAL' AND s.service = ?"
-                                    + " AND s.name = ?",
-                            List.of(job.service(), job.name()), EVIDENCE_TRACES, true)));
+                    frames.ofAttributes(samples.get(key)), traces);
             found.add(new Ranked(finding, job.totalMs()));
         }
         return found;
@@ -550,6 +702,128 @@ public final class Findings {
             return where + " AND service = ?";
         }
         return where;
+    }
+
+    // --- slow external -------------------------------------------------------
+
+    /**
+     * An outbound HTTP call that is slow: {@code CLIENT} spans of category
+     * {@code http}, grouped by {@code (service, target, span name)}.
+     *
+     * <p>The target is the dependency target of the service map
+     * ({@link Queries#target}), which lives in the span's attributes rather than in
+     * a column, so the group is formed here over the window's outbound spans rather
+     * than by a {@code GROUP BY}; the percentiles are the nearest-rank ones
+     * {@code PERCENTILE_DISC} gives the other rules.
+     */
+    private List<Ranked> slowExternal(Window window, String service, Ancestors ancestors) {
+        Map<String, List<SpanRecord>> byGroup = new LinkedHashMap<>();
+        for (SpanRecord span : queries.outboundHttp(window, service)) {
+            byGroup.computeIfAbsent(
+                    span.service() + "\0" + Queries.target(span) + "\0" + span.name(),
+                    key -> new ArrayList<>()).add(span);
+        }
+        List<Ranked> found = new ArrayList<>();
+        byGroup.forEach((key, calls) -> {
+            String[] parts = key.split("\0", 3);
+            Ranked ranked = external(window, ancestors, parts[0], parts[1], parts[2], calls);
+            if (ranked != null) {
+                found.add(ranked);
+            }
+        });
+        return found;
+    }
+
+    private Ranked external(Window window, Ancestors ancestors, String service, String target,
+            String name, List<SpanRecord> calls) {
+        double[] durations = new double[calls.size()];
+        double totalMs = 0;
+        long errors = 0;
+        SpanRecord newest = null;
+        for (int i = 0; i < calls.size(); i++) {
+            SpanRecord call = calls.get(i);
+            durations[i] = call.durationMillis();
+            totalMs += durations[i];
+            if (call.isError()) {
+                errors++;
+            }
+            if (newest == null || call.startNanos() > newest.startNanos()) {
+                newest = call;
+            }
+        }
+        Arrays.sort(durations);
+        double p95Ms = Queries.percentile(durations, 0.95);
+        if (p95Ms <= tingles.slowRequestMs()) {
+            return null;
+        }
+
+        Map<String, Object> numbers = new LinkedHashMap<>();
+        numbers.put("calls", (long) calls.size());
+        numbers.put("errors", errors);
+        numbers.put("p50Ms", Queries.percentile(durations, 0.5));
+        numbers.put("p95Ms", p95Ms);
+        numbers.put("maxMs", durations[durations.length - 1]);
+        numbers.put("totalMs", totalMs);
+        numbers.put("callers", callers(externalCallers(ancestors, calls, service)));
+
+        String severity = p95Ms > 4 * tingles.slowRequestMs() ? HIGH : MEDIUM;
+        Finding finding = new Finding(
+                id(SLOW_EXTERNAL, service, target + "\0" + name),
+                SLOW_EXTERNAL, severity, service,
+                name + " " + target + " is slow",
+                "p95 " + Numbers.millis(p95Ms) + " over "
+                        + Numbers.plural(calls.size(), "call") + ", "
+                        + Numbers.plural(errors, "error") + "; "
+                        + Numbers.millis(totalMs) + " in total",
+                new Subject(null, null, null, null, null, target, null, null),
+                numbers, null,
+                frames.ofAttributes(newest == null ? null : newest.attributes()),
+                externalTraces(window, calls));
+        return new Ranked(finding, totalMs);
+    }
+
+    /** Which endpoints made the calls: the nearest entry span up the chain, as a query's callers. */
+    private static List<Stats.Caller> externalCallers(Ancestors ancestors, List<SpanRecord> calls,
+            String service) {
+        Queries.Ancestry ancestry = ancestors.get();
+        Map<String, long[]> counts = new LinkedHashMap<>();
+        Map<String, String> byService = new LinkedHashMap<>();
+        for (SpanRecord call : calls) {
+            Queries.Ancestry.Entry entry = ancestry.entryOf(call.spanId());
+            String endpoint = entry == null ? "(no endpoint)" : entry.endpoint();
+            counts.computeIfAbsent(endpoint, name -> new long[1])[0]++;
+            byService.putIfAbsent(endpoint, entry == null ? service : entry.service());
+        }
+        List<Stats.Caller> list = new ArrayList<>();
+        counts.forEach((endpoint, count) ->
+                list.add(new Stats.Caller(endpoint, byService.get(endpoint), count[0])));
+        list.sort((a, b) -> Long.compare(b.calls(), a.calls()));
+        return list;
+    }
+
+    /**
+     * The three slowest traces that contain one of the group's calls.
+     *
+     * <p>The group's target is not a column, so the traces of its slowest calls are
+     * the candidates the store then orders by trace duration; the cap keeps the
+     * {@code IN} list bounded on a group with thousands of calls.
+     */
+    private List<String> externalTraces(Window window, List<SpanRecord> calls) {
+        List<SpanRecord> slowest = new ArrayList<>(calls);
+        slowest.sort(Comparator.comparingDouble((SpanRecord call) -> call.durationMillis()).reversed());
+        Set<String> candidates = new LinkedHashSet<>();
+        for (SpanRecord call : slowest) {
+            if (candidates.size() >= EVIDENCE_CANDIDATES) {
+                break;
+            }
+            candidates.add(call.traceId());
+        }
+        if (candidates.isEmpty()) {
+            return List.of();
+        }
+        return traceIds(queries.tracesContaining(window,
+                "trace_id IN (" + Sql.placeholders(candidates.size()) + ")",
+                new ArrayList<>(candidates), EVIDENCE_TRACES, true));
     }
 
     // --- pool exhausted ------------------------------------------------------
@@ -617,7 +891,7 @@ public final class Findings {
                 pool.name() + " ran out of connections",
                 Numbers.number(worstUsed) + " of " + limit + " connections in use and "
                         + Numbers.number(worstPending) + " requests waiting at the worst point",
-                new Subject(null, null, null, pool.name(), null),
+                new Subject(null, null, null, pool.name(), null, null, null, null),
                 numbers, null, List.of(), List.of());
         return new Ranked(finding, worstPending * 1_000_000 + worstUsed);
     }
@@ -633,7 +907,293 @@ public final class Findings {
         return names;
     }
 
+    // --- the JVM -------------------------------------------------------------
+
+    /**
+     * The three rules that read the JVM page's own series (agent.md).
+     *
+     * <p>A run that is slow because it is collecting or swapping is named for what
+     * it is, instead of producing {@code slow-endpoint} findings that point at the
+     * wrong thing.
+     */
+    private List<Ranked> jvm(Window window, String service) {
+        List<Ranked> found = new ArrayList<>();
+        for (String name : servicesInScope(service)) {
+            for (MetricQueries.SeriesData series :
+                    metrics.series(MetricSeriesNames.GC_DURATION, name, Map.of(), window)) {
+                Ranked paused = gcPause(name, series);
+                if (paused != null) {
+                    found.add(paused);
+                }
+            }
+            add(found, heapPressure(name, window));
+            add(found, threadGrowth(name, window));
+        }
+        return found;
+    }
+
+    private static void add(List<Ranked> found, Ranked ranked) {
+        if (ranked != null) {
+            found.add(ranked);
+        }
+    }
+
+    /**
+     * One collector: its longest single collection, and the worst share of an
+     * export interval its collections took.
+     *
+     * <p>The raw histogram points are read rather than {@link JvmView#gc}'s buckets,
+     * because the rule is about one point's {@code max} and about the sum over the
+     * interval between two points, both of which bucketing has already averaged
+     * away. {@code jvm.gc.duration} is seconds by the semantic conventions, and the
+     * stored unit is trusted over that when it says otherwise.
+     */
+    private Ranked gcPause(String service, MetricQueries.SeriesData series) {
+        List<MetricPoint> points = series.points();
+        if (points.isEmpty()) {
+            return null;
+        }
+        double toMillis = "ms".equals(series.unit()) ? 1 : 1000;
+        boolean cumulative = !"DELTA".equals(series.temporality());
+        double worstMs = 0;
+        long worstAt = points.get(0).at();
+        double shareMax = 0;
+        long shareAt = points.get(0).at();
+        long collections = 0;
+        for (int i = 0; i < points.size(); i++) {
+            MetricPoint point = points.get(i);
+            double longest = point.max() * toMillis;
+            if (longest > worstMs) {
+                worstMs = longest;
+                worstAt = point.at();
+            }
+            if (cumulative && i == 0) {
+                continue;
+            }
+            long count = point.count();
+            double sum = point.sum();
+            if (cumulative) {
+                count -= points.get(i - 1).count();
+                sum -= points.get(i - 1).sum();
+            }
+            if (count > 0) {
+                collections += count;
+            }
+            long interval = i == 0 ? 0 : point.at() - points.get(i - 1).at();
+            if (interval > 0) {
+                double share = Math.max(0, sum) * toMillis / interval;
+                if (share > shareMax) {
+                    shareMax = share;
+                    shareAt = point.at();
+                }
+            }
+        }
+        long threshold = tingles.slowRequestMs();
+        boolean paused = worstMs >= threshold;
+        if (!paused && shareMax < GC_SHARE) {
+            return null;
+        }
+        String name = series.attribute(MetricSeriesNames.GC_NAME);
+        String action = series.attribute(MetricSeriesNames.GC_ACTION);
+        String collector = name == null ? "the collector" : name;
+
+        Map<String, Object> numbers = new LinkedHashMap<>();
+        numbers.put("gc", name);
+        numbers.put("action", action);
+        numbers.put("worstMs", worstMs);
+        numbers.put("shareMax", shareMax);
+        numbers.put("collections", collections);
+        numbers.put("at", paused ? worstAt : shareAt);
+
+        Finding finding = new Finding(
+                id(GC_PAUSE, service, "gc:" + name + "\0" + action),
+                GC_PAUSE, paused ? HIGH : MEDIUM, service,
+                collector + " paused for " + Numbers.millis(worstMs),
+                "the longest single collection took " + Numbers.millis(worstMs) + " over "
+                        + Numbers.plural(collections, "collection") + "; "
+                        + Numbers.percent(shareMax) + " of an export interval at worst",
+                new Subject(null, null, null, null, null, null, null, "gc:" + name),
+                numbers, null, List.of(), List.of());
+        return new Ranked(finding, worstMs);
+    }
+
+    /** The heap against its limit, summed over the pools exactly as the JVM page sums them. */
+    private Ranked heapPressure(String service, Window window) {
+        JvmView.Memory heap = JvmView.heap(metrics, service, window);
+        double ratioMax = 0;
+        double usedMax = 0;
+        double limit = 0;
+        long at = 0;
+        for (int i = 0; i < heap.t().length; i++) {
+            double used = at(heap.used(), i);
+            double max = at(heap.limit(), i);
+            if (Double.isNaN(used) || Double.isNaN(max) || max <= 0) {
+                continue;
+            }
+            double ratio = used / max;
+            if (ratio > ratioMax) {
+                ratioMax = ratio;
+                usedMax = used;
+                limit = max;
+                at = heap.t()[i];
+            }
+        }
+        if (ratioMax < HEAP_RATIO) {
+            return null;
+        }
+        Map<String, Object> numbers = new LinkedHashMap<>();
+        numbers.put("usedMax", usedMax);
+        numbers.put("limit", limit);
+        numbers.put("ratioMax", ratioMax);
+        numbers.put("at", at);
+
+        Finding finding = new Finding(
+                id(HEAP_PRESSURE, service, "heap"),
+                HEAP_PRESSURE, HIGH, service,
+                "heap at " + Numbers.percent(ratioMax) + " of its limit",
+                Numbers.number(usedMax / 1_048_576.0) + " MiB of "
+                        + Numbers.number(limit / 1_048_576.0) + " MiB in use at the worst point",
+                new Subject(null, null, null, null, null, null, null, "heap"),
+                numbers, null, List.of(), List.of());
+        return new Ranked(finding, ratioMax);
+    }
+
+    /** Threads at the end of the window against threads at its start. */
+    private Ranked threadGrowth(String service, Window window) {
+        JvmView.Threads threads = JvmView.threads(metrics, service, window);
+        double first = Double.NaN;
+        double last = Double.NaN;
+        double max = 0;
+        long at = 0;
+        for (int i = 0; i < threads.t().length; i++) {
+            double count = at(threads.count(), i);
+            if (Double.isNaN(count)) {
+                continue;
+            }
+            if (Double.isNaN(first)) {
+                first = count;
+            }
+            last = count;
+            at = threads.t()[i];
+            max = Math.max(max, count);
+        }
+        if (Double.isNaN(first)) {
+            return null;
+        }
+        boolean grew = last - first >= THREADS_GROWN_BY
+                || (first >= THREADS_DOUBLED_FROM && last >= 2 * first);
+        if (!grew) {
+            return null;
+        }
+        Map<String, Object> numbers = new LinkedHashMap<>();
+        numbers.put("first", (long) first);
+        numbers.put("last", (long) last);
+        numbers.put("max", (long) max);
+        numbers.put("at", at);
+
+        Finding finding = new Finding(
+                id(THREAD_GROWTH, service, "threads"),
+                THREAD_GROWTH, MEDIUM, service,
+                "threads grew from " + Numbers.count((long) first) + " to "
+                        + Numbers.count((long) last),
+                Numbers.plural((long) (last - first), "thread") + " more than at the start of the"
+                        + " window, peaking at " + Numbers.count((long) max),
+                new Subject(null, null, null, null, null, null, null, "threads"),
+                numbers, null, List.of(), List.of());
+        return new Ranked(finding, last - first);
+    }
+
+    /** A value of an aligned series, or {@link Double#NaN} when the series is shorter. */
+    private static double at(double[] values, int index) {
+        return values.length > index ? values[index] : Double.NaN;
+    }
+
     // --- shared --------------------------------------------------------------
+
+    /**
+     * The parent-chain walk of one window, loaded at most once for one call of
+     * {@link #findings}.
+     *
+     * <p>Three rules need it — the N+1, the outbound calls and the log errors — and
+     * {@link Queries.Ancestry#of} is a scan of the window's spans, so it is built
+     * lazily and shared rather than built once per rule.
+     */
+    private static final class Ancestors {
+
+        private final Sql sql;
+        private final Window window;
+        private Queries.Ancestry ancestry;
+
+        private Ancestors(Sql sql, Window window) {
+            this.sql = sql;
+            this.window = window;
+        }
+
+        Queries.Ancestry get() {
+            if (ancestry == null) {
+                ancestry = Queries.Ancestry.of(sql, window);
+            }
+            return ancestry;
+        }
+    }
+
+    /**
+     * Where the time went in the finding's first evidence trace.
+     *
+     * <p>A span's self time is its duration less the durations of its direct
+     * children, never below zero — the Profile view's definition — and the hot span
+     * is the largest of them, with that time's share of the trace. It is the first
+     * clue when {@code dbShare} is low: the trace says "here", not "somewhere".
+     *
+     * @return null when the finding has no trace
+     */
+    private Map<String, Object> hotSpan(List<String> traces) {
+        if (traces.isEmpty()) {
+            return null;
+        }
+        Queries.TraceDetail detail = queries.trace(traces.get(0));
+        if (detail == null || detail.spans().isEmpty()) {
+            return null;
+        }
+        Set<String> known = new HashSet<>();
+        for (SpanRecord span : detail.spans()) {
+            known.add(span.spanId());
+        }
+        Map<String, Long> childNanos = new HashMap<>();
+        for (SpanRecord span : detail.spans()) {
+            String parent = span.parentSpanId();
+            if (parent != null && known.contains(parent)) {
+                childNanos.merge(parent, span.durationNanos(), Long::sum);
+            }
+        }
+        SpanRecord hottest = null;
+        long selfNanos = -1;
+        for (SpanRecord span : detail.spans()) {
+            long self = Math.max(0, span.durationNanos()
+                    - childNanos.getOrDefault(span.spanId(), 0L));
+            if (self > selfNanos) {
+                selfNanos = self;
+                hottest = span;
+            }
+        }
+        if (hottest == null) {
+            return null;
+        }
+        double selfMs = selfNanos / 1_000_000.0;
+        Map<String, Object> hot = new LinkedHashMap<>();
+        hot.put("name", hottest.summary());
+        hot.put("category", hottest.category());
+        hot.put("selfMs", selfMs);
+        hot.put("share", detail.durationMs() <= 0 ? 0.0
+                : Math.min(1, selfMs / detail.durationMs()));
+        return hot;
+    }
+
+    /** One line, cut at {@code max} characters with an ellipsis. */
+    private static String cut(String text, int max) {
+        String single = text == null ? "" : text.replaceAll("\\s+", " ").trim();
+        return single.length() <= max ? single : single.substring(0, max) + "…";
+    }
 
     /**
      * The id agent.md promises: stable across windows, because it hashes what the
