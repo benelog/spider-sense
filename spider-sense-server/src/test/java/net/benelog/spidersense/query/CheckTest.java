@@ -141,6 +141,35 @@ class CheckTest {
     }
 
     @Test
+    void aSeedersRootInsertsAreSpansButNotRequests() {
+        // A JPA seeder issues each INSERT in a trace of its own: a root CLIENT span with db.system.
+        int n = ids++;
+        Span.Builder seed = Otlp.span("%032x".formatted(n), "%016x".formatted(n), "INSERT orders",
+                Span.SpanKind.SPAN_KIND_CLIENT, NOW, 900,
+                Otlp.attr("db.system", "h2"),
+                Otlp.attr("db.statement", "insert into orders values (?)"),
+                Otlp.attr("db.operation", "INSERT"),
+                Otlp.attr("db.sql.table", "orders"));
+        decoder.accept(Otlp.traces(Otlp.service("orders"), seed, entry("/orders", 10)));
+        flush();
+
+        assertThat(queries.totals(window, null).requests()).isEqualTo(1);
+        assertThat(queries.endpoints(window, null, null)).extracting(Stats.EndpointStats::name)
+                .containsExactly("GET /orders");
+
+        // The seeder took 900 ms, but only the request is judged, so the p95 rule passes.
+        Check.CheckResult result = check.check(window, null, null, Map.of());
+        assertThat(result.requests()).isEqualTo(1);
+        assertThat(result.pass()).isTrue();
+        assertThat(rule(result, Check.MAX_P95_MS).actual()).isEqualTo(10.0);
+
+        // The span is still there, and still its own trace.
+        assertThat(queries.traces(
+                new Queries.TraceFilter(window, null, null, null, null, null, null, null, 10)))
+                .hasSize(2);
+    }
+
+    @Test
     void repeatedStatementsAreCountedByTheNPlusOneRule() {
         Span.Builder root = entry("/orders/{id}", 60);
         List<Span.Builder> spans = new java.util.ArrayList<>();

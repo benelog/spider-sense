@@ -94,7 +94,7 @@ Each finding carries:
 `numbers` per kind:
 
 - `error`: `count`, `firstSeen`, `lastSeen`, `type`, `message` (normalised), `endpoints` (name and count, as api.md's `ErrorGroup.endpoints`).
-- `n-plus-one`: `requests` (entry spans of the endpoint in the window), `affected` (of them, how many repeated), `medianRepeats`, `maxRepeats`, `msPerRequest` (summed time of the repeated statement, per affected request).
+- `n-plus-one`: `requests` (entry spans of the endpoint in the window, as design.md defines an entry span), `affected` (of them, how many repeated), `medianRepeats`, `maxRepeats`, `msPerRequest` (summed time of the repeated statement, per affected request).
 - `slow-query`: `calls`, `slowCalls`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `callers` (as api.md's `QueryStats.callers`).
 - `slow-endpoint`: `calls`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `apdex`, `dbCallsPerRequest`, `dbMsPerRequest`, `dbShare` (0..1: the part of the endpoint's total time spent in database spans of the same trace and service).
 - `pool-exhausted`: `pool`, `max`, `usedMax`, `pendingMax`, `at` (the worst point).
@@ -128,7 +128,7 @@ The usual use is two marks: `mark before`, exercise, change the code, `mark afte
 }
 ```
 
-`Side` is `{ "calls", "errors", "p50Ms", "p95Ms", "maxMs", "dbCallsPerRequest", "dbMsPerRequest" }`; `QuerySide` is `{ "calls", "callsPerRequest", "p95Ms", "totalMs" }` where `callsPerRequest` divides by the entry spans of the window (of the service when one is given).
+`Side` is `{ "calls", "errors", "p50Ms", "p95Ms", "maxMs", "dbCallsPerRequest", "dbMsPerRequest" }`; `QuerySide` is `{ "calls", "callsPerRequest", "p95Ms", "totalMs" }` where `callsPerRequest` divides by the entry spans of the window (of the service when one is given), as design.md defines an entry span.
 
 Verdicts, in this order:
 
@@ -157,6 +157,7 @@ Rules are query parameters; every rule given is evaluated, and when none is give
 | `minApdex` | the Apdex over the scope |
 
 `endpoint` narrows the scope to one endpoint, by `endpointId` or by name (`GET /orders/{id}`).
+`requests` counts the entry spans in scope, as design.md defines an entry span, so a seeder's or a scheduler's root spans never make a verdict of their own.
 
 ```json
 {

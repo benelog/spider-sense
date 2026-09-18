@@ -14,6 +14,12 @@ class SpanRecordTest {
                 1_000_000_000L, 1_200_000_000L, "UNSET", null, attributes, List.of(), "scope");
     }
 
+    /** The same span with a parent, so the root half of the entry rule is out of the way. */
+    private static SpanRecord child(String name, String kind) {
+        return new SpanRecord("a".repeat(32), "b".repeat(16), "c".repeat(16), "orders", name, kind,
+                1_000_000_000L, 1_200_000_000L, "UNSET", null, Map.of(), List.of(), "scope");
+    }
+
     @Test
     void anHttpRouteNamesTheEndpoint() {
         SpanRecord span = span("GET /orders/{id}", "SERVER",
@@ -80,14 +86,28 @@ class SpanRecordTest {
     }
 
     @Test
-    void anEntrySpanIsAServerAConsumerOrARoot() {
+    void anEntrySpanIsAServerAConsumerOrANonDatabaseClientRoot() {
         assertThat(span("x", "SERVER", Map.of()).isEntry()).isTrue();
         assertThat(span("x", "CONSUMER", Map.of()).isEntry()).isTrue();
-        assertThat(span("x", "CLIENT", Map.of()).isEntry()).isTrue();   // no parent: it starts the trace
+        // No parent and no database: the trace starts at a request someone made.
+        assertThat(span("GET", "CLIENT", Map.of("url.full", "http://localhost:8081/books"))
+                .isEntry()).isTrue();
+        assertThat(span("x", "PRODUCER", Map.of()).isEntry()).isTrue();
 
-        SpanRecord child = new SpanRecord("a".repeat(32), "b".repeat(16), "c".repeat(16), "orders",
-                "x", "CLIENT", 0, 1, "UNSET", null, Map.of(), List.of(), "scope");
-        assertThat(child.isEntry()).isFalse();
+        // A seeder's INSERT is its own trace, but it is work, not a request.
+        assertThat(span("INSERT orders", "CLIENT",
+                Map.of("db.system", "h2", "db.statement", "insert into orders values (?)"))
+                .isEntry()).isFalse();
+        assertThat(span("INSERT orders", "CLIENT",
+                Map.of("db.system.name", "h2", "db.query.text", "insert into orders values (?)"))
+                .isEntry()).isFalse();
+        // So is a root INTERNAL span: a scheduler's tick, a startup task.
+        assertThat(span("seed", "INTERNAL", Map.of()).isEntry()).isFalse();
+
+        assertThat(child("x", "CLIENT").isEntry()).isFalse();
+        assertThat(child("x", "INTERNAL").isEntry()).isFalse();
+        // A server span is an entry wherever it sits: the callee side of a remote call has a parent.
+        assertThat(child("GET /books", "SERVER").isEntry()).isTrue();
     }
 
     @Test

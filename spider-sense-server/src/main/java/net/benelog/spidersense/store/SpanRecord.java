@@ -141,12 +141,23 @@ public record SpanRecord(
     // --- derived classification ---
 
     /**
-     * Whether this span is where work entered the process: a server or consumer
-     * span, or a root span of any kind (a client span that starts a trace is the
-     * entry of that trace, which is how the load generator's requests show up).
+     * Whether this span is where a request entered the process: a server or
+     * consumer span, or a root {@code CLIENT}/{@code PRODUCER} span that is not a
+     * database span. A client span starting a trace is a request someone made,
+     * which is how the load generator's traffic shows up; a root
+     * {@code INTERNAL} span and a root database span are work the application did
+     * to itself — a seeder's tens of thousands of {@code INSERT}s are not
+     * requests, and counting them would drown the endpoints, the totals, Apdex
+     * and {@code check}. Such spans are still stored and still render in the
+     * trace tree; they simply are not endpoints.
      */
     public boolean isEntry() {
-        return "SERVER".equals(kind) || "CONSUMER".equals(kind) || parentSpanId == null;
+        if ("SERVER".equals(kind) || "CONSUMER".equals(kind)) {
+            return true;
+        }
+        return parentSpanId == null
+                && ("CLIENT".equals(kind) || "PRODUCER".equals(kind))
+                && dbSystem() == null;
     }
 
     /** The exception event, or null. Three sources of error are merged; this is one of them. */

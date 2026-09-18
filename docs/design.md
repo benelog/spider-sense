@@ -99,7 +99,10 @@ Semantic conventions: the OpenTelemetry Java agent still emits the older databas
 
 Errors come from three places and are merged: span status `ERROR`, the `exception` span event (`exception.type`, `exception.message`, `exception.stacktrace`), and the `error.type` attribute. An error group is `(service, exception type or error.type, message with digits and quoted strings replaced by `?`)`.
 
-Endpoint identity is `HTTP method + http.route` when a route exists, else the span name; the aggregation keys on entry spans (kind `SERVER` or `CONSUMER`, or a root span of any kind).
+Endpoint identity is `HTTP method + http.route` when a route exists, else the span name; the aggregation keys on entry spans.
+An entry span is a span of kind `SERVER` or `CONSUMER`, or a root span (no parent) of kind `CLIENT` or `PRODUCER` that is not a database span (it carries no `db.system`/`db.system.name`).
+A client root span is a request someone made — that is how the load generator's `java.net.http` traffic shows up — while a root `INTERNAL` span and a root database span are work the application did to itself: a seeder's tens of thousands of `INSERT`s, or a scheduler's tick, are not requests, and counting them would drown the endpoint list, the request totals, Apdex and `check`.
+Such spans are still stored, still have a `trace` row and still render in the trace tree; they are simply not endpoints, not requests and never `slow request` tingles.
 
 Query identity is `(service, db system, statement as the agent sanitised it)`; the agent replaces literals with `?` by default, which is exactly the grouping wanted. A statement is shown at most 2000 characters.
 

@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS span (
     duration_ns    BIGINT NOT NULL,
     status         VARCHAR(5) NOT NULL,      -- UNSET OK ERROR
     status_message VARCHAR(4096),
-    entry          BOOLEAN NOT NULL,         -- SERVER/CONSUMER, or a root
+    entry          BOOLEAN NOT NULL,         -- SERVER/CONSUMER, or a non-db root CLIENT/PRODUCER (design.md)
     error          BOOLEAN NOT NULL,
     slow           BOOLEAN NOT NULL,         -- entry over slow.request.ms, or db over slow.query.ms
     category       VARCHAR(10) NOT NULL,     -- http db messaging rpc internal
@@ -169,6 +169,7 @@ CREATE TABLE IF NOT EXISTS meta (
 ```
 
 The schema is created with `IF NOT EXISTS` at startup; `meta.schema_version` is `3` (the `mark` table arrived with it), and a version that changes a table drops and recreates every table (the data is a cache of a development session, not a record).
+`entry` is decided once, when the row is written, so rows written by an older Spider Sense keep the flag they were written with — a root `INTERNAL` or database span from before the rule narrowed still counts as a request until the retention sweeper removes it.
 
 ## How it is written
 
