@@ -170,6 +170,24 @@ class CheckTest {
     }
 
     @Test
+    void aSlowJobIsNotARequestAndIsInNoVerdict() {
+        // A scheduler tick is a root INTERNAL span: a job (design.md), never a request.
+        int n = ids++;
+        Span.Builder tick = Otlp.span("%032x".formatted(n), "%016x".formatted(n), "ReportJob.run",
+                Span.SpanKind.SPAN_KIND_INTERNAL, NOW, 900);
+        decoder.accept(Otlp.traces(Otlp.service("orders"), tick, entry("/orders", 10)));
+        flush();
+
+        Check.CheckResult result = check.check(window, null, null, Map.of());
+
+        assertThat(result.requests()).isEqualTo(1);
+        assertThat(result.pass()).isTrue();
+        assertThat(rule(result, Check.MAX_P95_MS).actual()).isEqualTo(10.0);
+        assertThat(queries.endpoints(window, null, null)).extracting(Stats.EndpointStats::name)
+                .containsExactly("GET /orders");
+    }
+
+    @Test
     void repeatedStatementsAreCountedByTheNPlusOneRule() {
         Span.Builder root = entry("/orders/{id}", 60);
         List<Span.Builder> spans = new java.util.ArrayList<>();

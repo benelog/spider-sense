@@ -16,6 +16,7 @@ The list is bounded: 20 by default, 100 at most.
 | `n-plus-one` | in one trace, the same query group runs 5 or more times under the same entry span; aggregated per (endpoint, query group) over the window | `high` when the repeats reach 20 or their summed time exceeds `slow.request.ms`, else `medium` | affected requests × median repeats |
 | `slow-query` | a query group whose p95 exceeds `slow.query.ms` | `high` when p95 exceeds ten times the threshold, else `medium` | total time |
 | `slow-endpoint` | an endpoint whose p95 exceeds `slow.request.ms` | `high` when p95 exceeds four times the threshold, else `medium` | total time |
+| `slow-job` | a job (a root `INTERNAL` span: a scheduled method, an `@Async` call, a batch step), grouped by (service, span name), whose p95 exceeds `slow.request.ms` | `high` when p95 exceeds four times the threshold, else `medium` | total time |
 | `pool-exhausted` | a JDBC pool with a point in the window where pending requests are above zero, or used equals max | `high` | pending, then used |
 
 The thresholds are the server's: `slow.request.ms` is 500 by default and `slow.query.ms` is 100.
@@ -28,7 +29,7 @@ The thresholds are the server's: `slow.request.ms` is 500 by default and `slow.q
 | `id` | kind plus 12 hex characters over (kind, service, subject); stable across windows, so the same problem keeps its id between runs |
 | `title` | one line, the claim |
 | `why` | the numbers that justify it, in a sentence: quote this rather than restating it |
-| `subject` | the `endpointId`, `queryId`, `errorId` or `pool` to pass to `endpoints`, `queries`, `errors` or the API |
+| `subject` | the `endpointId`, `queryId`, `errorId`, `pool` or `job` to pass to `endpoints`, `queries`, `errors` or the API |
 | `numbers` | kind-specific, listed below |
 | `statement` | the statement as the OpenTelemetry agent sanitised it, literals already `?`; cut at 200 characters unless `--full` |
 | `code` | application frames, most specific first, at most 5; empty when none is known |
@@ -173,6 +174,45 @@ private final RestClient client;   // constructed in the configuration, reused
 An endpoint that fans out to several independent calls can run them together rather than in sequence; the trace tree shows sequential `CLIENT` spans laid end to end when it does not.
 
 `check --endpoint="GET /orders/report" --max-p95-ms=` scopes the verdict to the one endpoint being worked on.
+
+---
+
+## `slow-job`
+
+`numbers`: `runs`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `dbCallsPerRun`, `dbMsPerRun`, `dbShare` (0..1 in the JSON, the part of the job's total time spent in database spans of the same trace and service; the text prints it as a percentage).
+
+A job is a root `INTERNAL` span: a scheduled method, an `@Async` call, a batch step.
+It is work the application did to itself, so it is never an entry span: it is in no request count, in no Apdex and in no `check` verdict, and this finding is the one place a slow scheduler tick or batch step is reported.
+The group is `(service, span name)` and `subject.job` is that name, so `runs` are the runs of one job rather than the requests of an endpoint.
+
+`dbShare` forks the same way it does for `slow-endpoint`.
+
+- **High `dbShare`**: the job's queries are the problem, and a job is where an N+1 hides best, because nobody is waiting for it. Look for an `n-plus-one` or `slow-query` finding over the same window, and fix it there.
+- **Low `dbShare`**: the time is the job's own code. Open the slowest trace from `traces`: a long stretch with no child spans is the loop to look at, and a `CLIENT` span that dominates is a call that should be batched or moved out of the tick.
+
+The usual fix is one query for the whole batch instead of one query per row.
+
+```java
+// Before: one SELECT per order, every minute
+@Scheduled(fixedDelay = 60_000)
+public void expireOrders() {
+    for (Long id : orders.findPendingIds()) {
+        Order order = orders.findById(id).orElseThrow();   // N queries
+        expire(order);
+    }
+}
+
+// After: one query loads them all
+@Scheduled(fixedDelay = 60_000)
+public void expireOrders() {
+    for (Order order : orders.findAllPending()) {          // one query
+        expire(order);
+    }
+}
+```
+
+A job that has grown slower than its own interval overlaps with itself; `runs` and `p95Ms` over a window of a few minutes say whether it has.
+`check` says nothing about a job, so verify a fix with `compare` over the same exercise, or with `findings` again over a window that starts at the restart (`--since=start`).
 
 ---
 

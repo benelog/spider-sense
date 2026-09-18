@@ -146,6 +146,36 @@ class AgentApiTest {
     }
 
     @Test
+    void aSlowJobIsAFindingOfItsOwnAndCountsAsNoRequest() {
+        serve((client, assembly) -> {
+            Span.Builder tick = Otlp.span("0af7651916cd43dd8448eb211c80319c", "00f067aa0ba90301",
+                    "ReportJob.run", Span.SpanKind.SPAN_KIND_INTERNAL, NOW, 900,
+                    Otlp.attr("code.namespace", "orders.ReportJob"),
+                    Otlp.attr("code.function", "run"));
+            postProtobuf(client, "/v1/traces",
+                    Otlp.traces(Otlp.service("orders"), tick).toByteArray());
+
+            Json.JsonObject body = json(client.get("/api/findings?since=5m"));
+
+            assertThat(body.getLong("requests")).isZero();
+            Json.JsonObject finding = body.getArray("findings").get(0).asObject();
+            assertThat(finding.getString("kind")).isEqualTo("slow-job");
+            assertThat(finding.getString("title")).isEqualTo("ReportJob.run is slow");
+            assertThat(finding.getObject("subject").getString("job")).isEqualTo("ReportJob.run");
+            assertThat(finding.getObject("subject").get("endpointId").isNull()).isTrue();
+            assertThat(finding.getObject("numbers").getLong("runs")).isEqualTo(1);
+            assertThat(finding.getArray("code").get(0).asString()).isEqualTo("orders.ReportJob.run");
+
+            String text = client.get("/api/findings?since=5m&format=text").body();
+            assertThat(text).contains("| slow-job |");
+            assertThat(text).contains("ReportJob.run is slow");
+            assertThat(text).contains("runs 1, p50Ms 900.0");
+            assertThat(text).contains("orders.ReportJob.run");
+            assertThat(text).contains("traces: 0af7651916cd43dd8448eb211c80319c");
+        });
+    }
+
+    @Test
     void theFormatIsJsonUnlessTextIsAskedForByParameterOrByAccept() {
         serve((client, assembly) -> {
             postProtobuf(client, "/v1/traces", sample());

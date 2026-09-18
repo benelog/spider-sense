@@ -274,6 +274,35 @@ public final class Queries {
         return work;
     }
 
+    /**
+     * How much database work each job's runs did, by {@code service\0name}.
+     *
+     * <p>The same join as {@link #databaseWork}, over the root {@code INTERNAL} spans
+     * a {@code slow-job} finding is about (storage.md): a job is not an endpoint, so
+     * it is keyed by the service and the span name rather than by an endpoint id.
+     */
+    public Map<String, DbWork> jobDatabaseWork(Window window, String service) {
+        List<Object> params = new ArrayList<>(List.of(window.from(), window.to(),
+                window.from(), window.to()));
+        String where = "r.parent_span_id IS NULL AND r.kind = 'INTERNAL'"
+                + " AND r.start_ms BETWEEN ? AND ? AND d.start_ms BETWEEN ? AND ?";
+        if (service != null) {
+            where = where + " AND r.service = ?";
+            params.add(service);
+        }
+        Map<String, DbWork> work = new HashMap<>();
+        sql.query("SELECT r.service AS service, r.name AS name, COUNT(d.id) AS calls,"
+                + " SUM(d.duration_ns) AS total_ns"
+                + " FROM span r JOIN span d ON d.trace_id = r.trace_id AND d.service = r.service"
+                + " AND d.query_id IS NOT NULL WHERE " + where + " GROUP BY r.service, r.name",
+                params, rs -> {
+                    work.put(rs.getString("service") + "\0" + rs.getString("name"),
+                            new DbWork(rs.getLong("calls"), Rows.ms(rs, "total_ns")));
+                    return null;
+                });
+        return work;
+    }
+
     private Map<String, Map<String, Long>> statusCodes(Clause where) {
         Map<String, Map<String, Long>> byEndpoint = new HashMap<>();
         sql.query("SELECT endpoint_id, http_status, COUNT(*) AS calls FROM span WHERE " + where.sql()
@@ -589,9 +618,15 @@ public final class Queries {
     /** The slowest traces that contain a span matching {@code predicate}. */
     public List<Stats.TraceSummary> tracesContaining(Window window, String predicate, String value,
             int limit, boolean slowest) {
+        return tracesContaining(window, predicate, List.of(value), limit, slowest);
+    }
+
+    /** The same, for a predicate that binds more than one value (a job's service and name). */
+    public List<Stats.TraceSummary> tracesContaining(Window window, String predicate,
+            List<Object> values, int limit, boolean slowest) {
         Clause where = new Clause("t.start_ms BETWEEN ? AND ?", window.from(), window.to())
                 .and("EXISTS (SELECT 1 FROM span s WHERE s.trace_id = t.trace_id AND s." + predicate + ")",
-                        value);
+                        values.toArray());
         String order = slowest ? "t.duration_ns DESC" : "t.start_ms DESC";
         return sql.query("SELECT * FROM trace t WHERE " + where.sql() + " ORDER BY " + order
                 + " LIMIT " + Math.max(1, limit), where.params(), Rows::trace);
