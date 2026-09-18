@@ -25,7 +25,21 @@ Everything is served by the same `Queries` the UI uses, so the numbers an agent 
 | CLI, `java -jar spider-sense.jar <command>` | this version | Claude Code and every agent with a shell; also works when no Spider Sense is running, straight from the H2 file |
 | Skill, `skills/spider-sense/` | this version | teaches an agent the loop itself: how to start the app under the agent, mark, exercise, read findings, fix, compare, check |
 | Read-only SQL, `POST /api/sql` and `sql` | this version | the question nobody anticipated; the schema in storage.md is already the documentation |
-| MCP | deferred | hosts without a shell; see [Considered and deferred](#considered-and-deferred) |
+| MCP, `POST /mcp` and `mcp` | this version | hosts without a shell; six tools over the same handlers, answering the same text ([MCP](#mcp)) |
+
+### Choosing an interface
+
+The CLI and MCP call the same handlers and print the same bytes, so the choice costs nothing in what is answered; it is decided by what the host can reach.
+
+| Host | Use | Why |
+|---|---|---|
+| An agent with a shell (Claude Code, Codex CLI, Gemini CLI, Aider, a script) | the CLI and the skill | no setup beyond `init`; works with the application down; `check` is an exit code; output can be piped; the tool costs no context |
+| A host without a shell (Claude Desktop, a browser-based agent, an IDE chat panel) | MCP | the only case the CLI cannot serve; `init --mcp` writes the host's server entry |
+| CI, a build gate | the CLI's `check`, or the Gradle plugin's task | an exit code is what a build understands |
+| The application has crashed | the CLI, or MCP over stdio | both open the H2 file in process; MCP over HTTP needs the server up |
+
+Do not enable both in one host: two tools that give the same answer make the model choose between them and cost the schema twice.
+The skill teaches the loop for the CLI; the MCP server's `instructions` field carries the same loop in one paragraph, so neither host is taught something the other is not.
 
 ## Time selectors
 
@@ -226,6 +240,36 @@ Numbers are printed as the store holds them, without a thousands separator, beca
 The CLI command is `sql "<statement>" [--limit=200]`.
 Its direct-file path opens the reader connection the same way, and a database an older Spider Sense created has no reader user in it yet; that is `the database has no read-only user yet; start an application or the standalone server with this version first` on stderr, and exit code 2.
 
+## MCP
+
+For a host that has no shell.
+The server speaks the Model Context Protocol in two transports, and both are the thinnest possible adapter over [Reports](api.md#agent-facing-endpoints): a tool call is one `Reports` call and its result is the text rendering below, so an MCP answer and a CLI answer over the same window are the same bytes.
+
+**Transports.**
+
+- **Streamable HTTP**: `POST /mcp` on the server's own port, one JSON-RPC 2.0 message per request, `Content-Type: application/json` both ways. A request is answered with `200` and the JSON-RPC response; a notification with `202` and no body. The server is stateless: no session id is issued or required, `GET /mcp` is `405`, and a JSON array (the batch of older revisions) is refused with `-32600`.
+- **stdio**: `java -jar spider-sense.jar mcp [--url=<base>] [--db=<path>]`, newline-delimited JSON-RPC on stdin and stdout, nothing else on stdout, diagnostics on stderr; it ends at end of input. `initialize`, `ping` and `tools/list` are answered in process. A `tools/call` goes to the Spider Sense at `--url` (the CLI's default and `SPIDERSENSE_URL` apply) when one answers, else the H2 file is opened in process exactly as the CLI does, with the same stderr line saying so; `--db` reads the file without asking. This is the transport for a host on the same machine, and the one that still answers after the application has crashed.
+
+**Methods.** `initialize` answers the client's `protocolVersion` when it is one the server knows (`2025-06-18`, `2025-03-26`, `2024-11-05`) and `2025-06-18` otherwise, `capabilities: { "tools": {} }`, `serverInfo: { "name": "spider-sense", "version": "<version>" }`, and `instructions`, the loop in one paragraph: start the application under the agent, `mark`, exercise, `findings`, fix, `mark`, `compare`, `check`. `notifications/initialized` is accepted and ignored. `ping` answers `{}`. `tools/list` is the six tools below; `tools/call` runs one. Anything else is `-32601`.
+
+**Tools.** Every argument is the CLI option of the same meaning; a selector is a string as in [Time selectors](#time-selectors).
+
+| Tool | Arguments | Answers |
+|---|---|---|
+| `findings` | `since`, `until`, `service`, `limit` (1–100), `full` | the findings text |
+| `trace` | `traceId` (required), `full` | the trace tree |
+| `mark` | `name` (required, `[A-Za-z0-9._-]{1,64}`), `note`, `service` | the mark, as the CLI prints it |
+| `compare` | `before`, `after` (both required), `until`, `service` | the compare text |
+| `check` | `since`, `until`, `service`, `endpoint`, `maxP95Ms`, `maxErrors`, `maxErrorRate`, `maxQueriesPerRequest`, `maxSlowQueries`, `maxNPlusOne`, `minApdex` | the check text; `structuredContent` carries `{ "pass": true \| false \| null, "requests": n }` so a host need not read the heading for the verdict |
+| `sql` | `sql` (required), `limit` (1–5000) | the sql text |
+
+A result is `{ "content": [ { "type": "text", "text": "<the Markdown>" } ] }`.
+What the CLI reports on stderr with exit code `4` (no such trace, no such mark) or as a `400` (a refused statement, a bad selector) is a tool result with `isError: true` whose text is that message on one line; a missing required argument or an unknown tool is a JSON-RPC `-32602`.
+Tool descriptions are one sentence each and say when to use the tool, not how the output looks; the output is the text rendering and needs no description.
+
+**`init --mcp`** writes the stdio server into the project's `.mcp.json` ([init](#init)) as `mcpServers.spider-sense = { "command": "java", "args": ["-jar", "<jar>", "mcp"] }`, keeping every other entry of an existing file.
+A host that reaches the server over HTTP is configured by hand with `{ "type": "http", "url": "http://127.0.0.1:4000/mcp" }`.
+
 ## Text rendering
 
 Any endpoint listed here answers Markdown when asked with `format=text` or with an `Accept` header whose first type is `text/markdown` or `text/plain`; the response is `text/markdown; charset=utf-8`.
@@ -313,12 +357,13 @@ The launcher stays dependency-free.
 | `compare --before=<selector> --after=<selector> [--until=<selector>]` | the two windows side by side |
 | `check [--max-p95-ms=] [--max-errors=] [--max-error-rate=] [--max-queries-per-request=] [--max-slow-queries=] [--max-n-plus-one=] [--min-apdex=] [--endpoint=]` | pass or fail, in the exit code |
 | `sql "<statement>" [--limit=200]` | one read-only statement over the schema of storage.md |
-| `init [--dir=<project dir>] [--jar=<path>] [--no-skill]` | writes the Spider Sense block into the project's `CLAUDE.md` and installs the skill into its `.claude/skills/` |
+| `init [--dir=<project dir>] [--jar=<path>] [--no-skill] [--mcp]` | writes the Spider Sense block into the project's `CLAUDE.md` and installs the skill into its `.claude/skills/`; `--mcp` also writes the stdio MCP server into its `.mcp.json` |
+| `mcp` | the MCP server over stdio ([MCP](#mcp)); takes `--url` and `--db` and nothing else |
 | `help` | this table |
 
 Common options: `--since=<selector>` (default `15m`), `--until=<selector>`, `--service=<name>`, `--limit=<n>` (the lists: findings, traces, queries, errors, logs, marks, and the rows of `sql`; `endpoints` always lists every endpoint of the window), `--url=<base url>` (default `http://127.0.0.1:4000`, or `SPIDERSENSE_URL`), `--db=<path or jdbc url>`, `--json`, `--full`.
 `compare` takes no `--since`: its windows are the two selectors.
-`init` takes none of them at all: it asks nothing and nobody, and its own options are `--dir`, `--jar` and `--no-skill` ([init](#init)).
+`init` takes none of them at all: it asks nothing and nobody, and its own options are `--dir`, `--jar`, `--no-skill` and `--mcp` ([init](#init)).
 
 Output is the text rendering above; `--json` prints the JSON instead.
 The CLI does not render anything itself: when a Spider Sense is running it fetches `format=text` and prints the body, and when none answers at `--url` it opens the database in process, runs the same queries and the same renderer, and says so on stderr:
@@ -351,7 +396,7 @@ The references list the finding kinds with the fix each usually wants (a fetch j
 ## init
 
 ```
-java -jar spider-sense.jar init [--dir=<project dir>] [--jar=<path>] [--no-skill]
+java -jar spider-sense.jar init [--dir=<project dir>] [--jar=<path>] [--no-skill] [--mcp]
 ```
 
 `init` prepares a project to be worked on under Spider Sense, and it is the one command that reads nothing: no HTTP, no database, no running Spider Sense.
@@ -407,6 +452,10 @@ installed skill to /home/me/project/.claude/skills/spider-sense (4 files)
 
 The first line is `updated CLAUDE.md block (…)` when the markers were already in the file, and the second is `skipped skill (--no-skill)` when the skill was not installed.
 
+**`--mcp`.** A third line, `wrote .mcp.json (spider-sense over stdio)` or `updated .mcp.json (…)`, when the option is given: `<dir>/.mcp.json` gets `mcpServers.spider-sense` set to `{ "command": "java", "args": ["-jar", "<jar path>", "mcp"] }`, the same absolute jar path as the block.
+An existing file is parsed as JSON and every other entry is kept, though the file is rewritten in the server's own JSON formatting; a file that is not a JSON object is left alone with a message on stderr and exit code `2`.
+Without `--mcp` nothing is written and nothing is printed about it: a host with a shell is meant to use the CLI ([Choosing an interface](#choosing-an-interface)), and `init` should not hand it a second tool for the same answers.
+
 ## Considered and deferred
 
-- **MCP.** The Skill and the CLI cover Claude Code and every agent with a shell, and the text API covers every agent with `curl`. MCP adds a typed tool list for hosts that have neither, at the price of a second protocol to keep in step with the API. When one is wanted it is an adapter over the same handlers, served on the existing port as `POST /mcp` (Streamable HTTP), with six tools at most: `findings`, `trace`, `mark`, `compare`, `check`, `sql`. Nothing in this document needs to change for it.
+- **MCP over HTTP only.** The first design served MCP on the existing port and nothing else, which is the least code. Rejected as the only transport because a host on the same machine then loses the one property that makes the CLI trustworthy after a crash: the H2 file can be read with the server gone. The stdio transport reuses the CLI's own decision (a server if one answers, the file otherwise) and adds no third way of answering.

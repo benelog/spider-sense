@@ -104,7 +104,7 @@ Gradle module `spider-sense-server`. A Spider Silk `App` with three concerns:
    - `Tingles` are also rows, but the last 500 are mirrored in memory for the SSE stream and the Overview feed.
    - `EventBus`: ingest notifications to SSE subscribers, coalesced to at most 4 messages/second.
 3. **JSON API + static UI**: the contract in [api.md](api.md); the UI in `src/main/resources/public` per [ui.md](ui.md).
-4. **The agent interface**: findings, marks, compare, check and a Markdown rendering of every list, over the same `Queries` as the UI, plus the CLI that fronts them; specified in [agent.md](agent.md).
+4. **The agent interface**: findings, marks, compare, check and a Markdown rendering of every list, over the same `Queries` as the UI, plus the CLI that fronts them and an MCP adapter (`POST /mcp`, and `mcp` over stdio) for hosts without a shell; specified in [agent.md](agent.md), together with which of the two a host should use.
 
 Semantic conventions: the OpenTelemetry Java agent still emits the older database attributes by default (`db.system`, `db.statement`, `db.name`, `db.operation`, `db.sql.table`) and the stable HTTP ones (`http.request.method`, `http.route`, `url.path`, `http.response.status_code`, `server.port`); with `otel.semconv-stability.opt-in=database` it emits `db.system.name`, `db.query.text`, `db.namespace`, `db.operation.name`, `db.collection.name`. The decoder normalises both generations into `SpanRecord`'s accessors, and also the pre-stable HTTP names (`http.method`, `http.target`, `http.status_code`) for other SDKs.
 

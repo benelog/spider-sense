@@ -430,6 +430,16 @@ The response also carries the verdict as the header `X-Spider-Sense-Pass: true|f
 The statement must be a single `SELECT`, `WITH`, `TABLE`, `VALUES`, `EXPLAIN` or `SHOW`, and it runs as an H2 user that has `SELECT` and nothing else (agent.md, storage.md).
 A refused statement and a statement H2 would not run are both `400`: `{ "error": "…" }`, or the message on one line when the text rendering was asked for.
 
+### MCP
+
+`POST /mcp` with one JSON-RPC 2.0 message as `application/json`; the semantics, the six tools and their arguments are in [agent.md](agent.md#mcp).
+
+- A request (`id` present) is answered `200` with the JSON-RPC response as `application/json`; a notification is answered `202` with no body.
+- No session: no `Mcp-Session-Id` header is issued or read. `GET /mcp` and `DELETE /mcp` are `405`.
+- A body that is not a JSON object, or is a JSON array, is `200` with a JSON-RPC error `-32600`; a method the server does not have is `-32601`; a missing required argument or an unknown tool name is `-32602`.
+- A tool call that the CLI would report with exit code `4` or a `400` is a `200` whose result carries `isError: true` and the message as its one text content.
+- `tools/call` for `check` also carries `structuredContent: { "pass": true | false | null, "requests": 12 }`.
+
 ## Static UI
 
 `GET /` and every path without an `/api/` or `/v1/` prefix that has no file: the UI's `index.html` (the router is hash-based, so this is mostly `/`).

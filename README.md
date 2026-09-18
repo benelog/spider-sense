@@ -129,6 +129,17 @@ java -jar spider-sense.jar check --max-queries-per-request=10       # exit code 
 Every command prints Markdown (`--json` for the JSON), asks the running Spider Sense over HTTP, and reads the H2 file directly when none is running, so it still answers after the application has crashed.
 `skills/spider-sense/` is a skill that teaches an agent the whole loop, and `java -jar spider-sense.jar init` installs it into a project's `.claude/skills/` together with a few lines in the project's `CLAUDE.md` saying where the jar is; [docs/agent.md](docs/agent.md) is the specification.
 
+The same six answers are also an MCP server, for a host that has no shell: `POST /mcp` on the UI's port, or `java -jar spider-sense.jar mcp` over stdio, which `init --mcp` writes into the project's `.mcp.json`.
+The two call the same handlers and print the same bytes, so pick by host, not by taste:
+
+| Host | Use |
+|---|---|
+| An agent with a shell (Claude Code, Codex CLI, Gemini CLI, Aider, a script) | the CLI and the skill: `init`, then the commands above |
+| A host without a shell (Claude Desktop, a browser-based agent, an IDE chat panel) | MCP: `init --mcp`, or `http://127.0.0.1:4000/mcp` |
+| CI or a build gate | `check`, whose exit code is the verdict, or the Gradle plugin's `spiderSense` task |
+
+Not both in one host: two tools with the same answer make the model choose and cost the schema twice.
+
 ## The examples
 
 Two deliberately misbehaving applications and a load generator, so there is something to look at:
