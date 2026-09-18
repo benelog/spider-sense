@@ -23,7 +23,7 @@ The jar is resolved from Maven Central (`net.benelog.spidersense:spider-sense:0.
 The plugin is a plain Gradle plugin published to Maven Central with its marker, which the Gradle Plugin Portal proxies, so the default `pluginManagement` finds it.
 
 The plugin applies nothing else and configures nothing it was not asked to.
-It works the same with the `application` plugin's `run` task, and a project with neither Spring Boot nor `application` gets the `spiderSense` block and the two tasks and nothing attached.
+It works the same with the `application` plugin's `run` task, and a project with neither Spring Boot nor `application` gets the `spiderSense` block and the three tasks and nothing attached.
 
 ### What applying it does
 
@@ -34,7 +34,7 @@ It works the same with the `application` plugin's `run` task, and a project with
    The provider contributes, in this order, `-javaagent:<jar>` and then one `-Dspidersense.<key>=<value>` per property of the block that has a value; the jar is a declared input of the task, so a project dependency on it is built first.
    A task that is not in `attachTo`, or a run with `spiderSense.enabled` false, gets nothing: no argument, no jar resolution.
    Adding a provider rather than editing `jvmArgs` leaves the task's own `jvmArgs` alone, and the arguments are computed when the task runs, so a `spiderSense { }` block anywhere in the build file, before or after `tasks.named('bootRun')`, is seen.
-4. Registers the tasks `spiderSense` and `spiderSenseInit` in the group `spider sense`.
+4. Registers the tasks `spiderSense`, `spiderSenseInit` and `spiderSenseCheck` in the group `spider sense`.
 
 Nothing here touches the Gradle daemon: a `jvmArgumentProvider` reaches only the forked JVM, which is the reason the plugin exists instead of `JAVA_TOOL_OPTIONS` ([the skill's running notes](../skills/spider-sense/references/running.md)).
 
@@ -140,7 +140,7 @@ spiderSense {
 | `minApdex` | `Double` | `--min-apdex=` |
 | `failOnNoRequests` | `Boolean` | default `true`: exit code `3` (no request in the window) fails the build too, because a check that judged nothing is not a pass |
 
-The task is the `spiderSense` task with `check` and those arguments, so it asks the Spider Sense the block implies (`SPIDERSENSE_URL` as above) and prints the check's text rendering; exit code `1` fails the build with `Spider Sense check failed`, `3` with `Spider Sense check had no request to judge` unless `failOnNoRequests` is `false`, and `2` or `4` with the CLI's own message.
+The task is the `spiderSense` task with `check` and those arguments, so it asks the Spider Sense the block implies (`SPIDERSENSE_URL` as above) and prints the check's text rendering; exit code `1` fails the build with `Spider Sense check failed`, `3` with `Spider Sense check had no request to judge` unless `failOnNoRequests` is `false`, and `2` or `4` with `Spider Sense check could not run (exit <n>)`, after the CLI's own message has reached the build log.
 With no rule set the CLI's defaults apply (`maxErrors=0`, `maxNPlusOne=0`, `maxP95Ms=<slow.request.ms>`).
 `-PspiderSense.check.since=before` overrides `since` for one run.
 The task depends on nothing: producing the traffic it judges is the build's job, as in the test setup below.

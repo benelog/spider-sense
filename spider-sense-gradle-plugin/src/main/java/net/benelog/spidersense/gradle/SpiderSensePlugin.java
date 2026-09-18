@@ -1,6 +1,7 @@
 package net.benelog.spidersense.gradle;
 
 import org.gradle.api.Action;
+import org.gradle.api.GradleException;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
@@ -14,6 +15,7 @@ import org.gradle.api.tasks.JavaExec;
 
 import java.io.File;
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.util.List;
@@ -28,14 +30,15 @@ import java.util.concurrent.Callable;
  * application is the one Gradle forks, not Gradle's own; so the whole of this
  * plugin is about getting the option onto that forked command line. It applies
  * nothing else and configures nothing it was not asked to: a project with
- * neither Spring Boot nor {@code application} gets the block and the two tasks,
+ * neither Spring Boot nor {@code application} gets the block and the tasks,
  * and nothing attached.
  *
  * <p>Applying it creates the {@code spiderSense} extension and the
  * {@code spiderSense} configuration, adds a {@link SpiderSenseArguments} to the
  * {@code jvmArgumentProviders} of every {@link JavaExec} task named in
- * {@code attachTo}, and registers the {@code spiderSense} and
- * {@code spiderSenseInit} tasks. An argument provider rather than a write to
+ * {@code attachTo}, and registers the {@code spiderSense},
+ * {@code spiderSenseInit} and {@code spiderSenseCheck} tasks. An argument
+ * provider rather than a write to
  * {@code jvmArgs} leaves the task's own arguments alone and defers every
  * decision to execution time, which is why the block may sit anywhere in the
  * build file and why nothing is resolved for a task that is not attached.
@@ -59,6 +62,9 @@ public class SpiderSensePlugin implements Plugin<Project> {
     /** {@code -PspiderSense.jar=<path>} attaches a jar that is not on Maven Central. */
     public static final String JAR_PROPERTY = "spiderSense.jar";
 
+    /** {@code -PspiderSense.check.since=<selector>} judges another window for one run. */
+    public static final String CHECK_SINCE_PROPERTY = "spiderSense.check.since";
+
     /** The coordinates of the jar, without the version. */
     static final String JAR_COORDINATES = "net.benelog.spidersense:spider-sense";
 
@@ -81,6 +87,12 @@ public class SpiderSensePlugin implements Plugin<Project> {
         // null is Gradle's way of saying "no value at all", so here emptiness can mean
         // what `ignoreEndpoints = []` says it means.
         extension.getIgnoreEndpoints().convention((Iterable<String>) null);
+        // The check block's window and scope: since the application was last
+        // started, the service the block names, and a verdict over nothing is
+        // not a pass.
+        extension.getCheck().getSince().convention("start");
+        extension.getCheck().getService().convention(extension.getService());
+        extension.getCheck().getFailOnNoRequests().convention(true);
 
         Configuration configuration = createConfiguration(project, extension);
 
@@ -98,9 +110,11 @@ public class SpiderSensePlugin implements Plugin<Project> {
                 .orElse(extension.getJar().map(file -> file.getAsFile()));
 
         Provider<List<String>> systemProperties = systemProperties(objects, extension);
+        Provider<List<String>> checkArguments = checkArguments(objects, providers, extension.getCheck());
 
         attach(project, objects, extension, enabled, namedJar, configuration, systemProperties);
-        registerTasks(project, objects, extension, namedJar, configuration, systemProperties, projectDir);
+        registerTasks(project, objects, extension, namedJar, configuration, systemProperties, checkArguments,
+                projectDir);
     }
 
     /**
@@ -145,20 +159,26 @@ public class SpiderSensePlugin implements Plugin<Project> {
     }
 
     /**
-     * The two tasks that run the jar rather than attach it: {@code spiderSense}
+     * The three tasks that run the jar rather than attach it: {@code spiderSense}
      * is {@code java -jar spider-sense.jar} with whatever {@code --args} say, so
      * the standalone server and the whole CLI are one task away in a project
-     * that never checked out this repository, and {@code spiderSenseInit} is the
+     * that never checked out this repository, {@code spiderSenseInit} is the
      * one CLI command that wants the project's own directory and the resolved
-     * jar's path.
+     * jar's path, and {@code spiderSenseCheck} is {@code check} with the rules
+     * of the {@code check { }} block, turned into a build failure.
      *
-     * <p>The jar is the entire class path, so neither task waits for the
-     * application to compile, and the launcher finds the nested server jar
-     * through its own code source exactly as {@code java -jar} would.
+     * <p>The jar is the entire class path, so no task waits for the application
+     * to compile, and the launcher finds the nested server jar through its own
+     * code source exactly as {@code java -jar} would.
+     *
+     * <p>All three run whatever {@code enabled} says: it decides what is
+     * attached to the application's JVM, and asking a Spider Sense that is
+     * already running what it saw is a different question from whether this
+     * build starts one.
      */
     private void registerTasks(Project project, ObjectFactory objects, SpiderSenseExtension extension,
             Provider<File> namedJar, Configuration configuration, Provider<List<String>> systemProperties,
-            File projectDir) {
+            Provider<List<String>> checkArguments, File projectDir) {
         Provider<Boolean> always = objects.property(Boolean.class).value(true);
         FileCollection jar = objects.fileCollection().from(new JarSource(null, namedJar, configuration));
         Provider<String> url = baseUrl(extension);
@@ -182,6 +202,20 @@ public class SpiderSensePlugin implements Plugin<Project> {
                     "--jar=" + options.theJar().getAbsolutePath()));
             task.getArgumentProviders().add(new SpiderSenseArguments(
                     objects.fileCollection(), initArguments, always, false, configuration.getName()));
+        });
+
+        // check is the same run with the block's rules as its command line, and
+        // the exit code read rather than thrown: the CLI has already printed the
+        // verdict by then, and what the build adds is one line saying which of
+        // the four outcomes it was.
+        project.getTasks().register(NAME + "Check", JavaExec.class, task -> {
+            task.setGroup(GROUP);
+            task.setDescription("Runs the Spider Sense check and fails the build when the verdict is fail");
+            run(task, jar, systemProperties, always, configuration.getName(), url);
+            task.getArgumentProviders().add(new SpiderSenseArguments(
+                    objects.fileCollection(), checkArguments, always, false, configuration.getName()));
+            task.setIgnoreExitValue(true);
+            task.doLast(new FailOnVerdict(extension.getCheck().getFailOnNoRequests()));
         });
     }
 
@@ -236,11 +270,57 @@ public class SpiderSensePlugin implements Plugin<Project> {
         arguments.addAll(extension.getIgnoreEndpoints()
                 .map(endpoints -> List.of("-Dspidersense.ignore.endpoints=" + String.join(",", endpoints)))
                 .orElse(List.of()));
+        arguments.addAll(option("retention.spans", extension.getRetentionSpans()));
+        arguments.addAll(option("ingest.max-spans-per-second", extension.getMaxSpansPerSecond()));
         return arguments;
     }
 
     private static Provider<List<String>> option(String key, Provider<?> value) {
         return value.map(v -> List.of("-Dspidersense." + key + "=" + v)).orElse(List.of());
+    }
+
+    /**
+     * The command line of {@code spiderSenseCheck}: {@code check}, the window
+     * and the scope, then one argument per rule the block set, in the order the
+     * documentation's table lists them. A rule left unset says nothing, which is
+     * how the CLI's own default set stays the default.
+     *
+     * <p>{@code -PspiderSense.check.since} wins over the block, so one run can
+     * judge a different window — a mark, say — without the build file knowing.
+     */
+    private Provider<List<String>> checkArguments(ObjectFactory objects, ProviderFactory providers,
+            SpiderSenseCheckExtension check) {
+        ListProperty<String> arguments = objects.listProperty(String.class);
+        arguments.add("check");
+        arguments.addAll(flag("since", providers.gradleProperty(CHECK_SINCE_PROPERTY).orElse(check.getSince())));
+        arguments.addAll(flag("until", check.getUntil()));
+        arguments.addAll(flag("service", check.getService()));
+        arguments.addAll(flag("endpoint", check.getEndpoint()));
+        arguments.addAll(flag("max-p95-ms", check.getMaxP95Ms()));
+        arguments.addAll(flag("max-errors", check.getMaxErrors()));
+        arguments.addAll(flag("max-error-rate", check.getMaxErrorRate()));
+        arguments.addAll(flag("max-queries-per-request", check.getMaxQueriesPerRequest()));
+        arguments.addAll(flag("max-slow-queries", check.getMaxSlowQueries()));
+        arguments.addAll(flag("max-n-plus-one", check.getMaxNPlusOne()));
+        arguments.addAll(flag("max-log-errors", check.getMaxLogErrors()));
+        arguments.addAll(flag("min-apdex", check.getMinApdex()));
+        return arguments;
+    }
+
+    private static Provider<List<String>> flag(String name, Provider<?> value) {
+        return value.map(v -> List.of("--" + name + "=" + plainly(v))).orElse(List.of());
+    }
+
+    /**
+     * A value as the CLI reads it: a decimal point and no grouping, whatever the
+     * build's locale, and no exponent for a small threshold. {@code toString}
+     * would do for a {@code Long}; a {@code Double} needs saying.
+     */
+    private static String plainly(Object value) {
+        if (value instanceof Double number) {
+            return BigDecimal.valueOf(number).stripTrailingZeros().toPlainString();
+        }
+        return String.valueOf(value);
     }
 
     /**
@@ -313,6 +393,41 @@ public class SpiderSensePlugin implements Plugin<Project> {
         @Override
         public void execute(Task task) {
             ((JavaExec) task).environment("SPIDERSENSE_URL", url.get());
+        }
+    }
+
+    /**
+     * Turns the CLI's exit code into the build's verdict, after the CLI has
+     * printed its own rendering: {@code 1} is a failed check, {@code 3} a window
+     * with no request in it, which is not a pass unless the build says it is,
+     * and anything else is the check not having run at all — no Spider Sense at
+     * the URL, or a scope that is not there.
+     *
+     * <p>A named action holding one provider and reading the result off the task
+     * it is given: no {@code Project} is captured, so the configuration cache
+     * can store it.
+     */
+    static final class FailOnVerdict implements Action<Task> {
+
+        private final Provider<Boolean> failOnNoRequests;
+
+        FailOnVerdict(Provider<Boolean> failOnNoRequests) {
+            this.failOnNoRequests = failOnNoRequests;
+        }
+
+        @Override
+        public void execute(Task task) {
+            int exit = ((JavaExec) task).getExecutionResult().get().getExitValue();
+            switch (exit) {
+                case 0 -> { }
+                case 1 -> throw new GradleException("Spider Sense check failed");
+                case 3 -> {
+                    if (failOnNoRequests.get()) {
+                        throw new GradleException("Spider Sense check had no request to judge");
+                    }
+                }
+                default -> throw new GradleException("Spider Sense check could not run (exit " + exit + ")");
+            }
         }
     }
 }

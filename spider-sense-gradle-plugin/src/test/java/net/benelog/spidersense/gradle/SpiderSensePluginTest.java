@@ -57,6 +57,12 @@ class SpiderSensePluginTest {
                         System.out.println("args=" + java.util.Arrays.toString(args));
                         System.out.println("jvmArgs="
                                 + java.lang.management.ManagementFactory.getRuntimeMXBean().getInputArguments());
+                        // The exit code the real CLI would give a verdict, so the check
+                        // task's four outcomes can be run without a Spider Sense.
+                        int exit = Integer.getInteger("stub.exit", 0);
+                        if (exit != 0) {
+                            System.exit(exit);
+                        }
                     }
                 }
                 """);
@@ -83,6 +89,11 @@ class SpiderSensePluginTest {
 
     /** The scratch build, with the body of the {@code spiderSense} block filled in. */
     private void buildFile(String block) throws IOException {
+        buildFile(block, "");
+    }
+
+    /** The same, with something more after the block: a task of the build's own. */
+    private void buildFile(String block, String extra) throws IOException {
         Files.writeString(projectDir.resolve("build.gradle"), """
                 plugins {
                     id 'net.benelog.spidersense'
@@ -109,6 +120,9 @@ class SpiderSensePluginTest {
                             "bootRun=" + contributed('bootRun'),
                             "run=" + contributed('run'),
                             "other=" + contributed('other'),
+                            "check=" + tasks.named('spiderSenseCheck', JavaExec).get()
+                                    .argumentProviders.collectMany { it.asArguments() },
+                            "checkGroup=" + tasks.named('spiderSenseCheck').get().group,
                             "dependencies=" + configurations.spiderSense.allDependencies
                                     .collect { "${it.group}:${it.name}:${it.version}" },
                     ]
@@ -116,7 +130,8 @@ class SpiderSensePluginTest {
                         lines.each { println it }
                     }
                 }
-                """.replace("%BLOCK%", block.indent(4).stripTrailing()));
+                %EXTRA%
+                """.replace("%BLOCK%", block.indent(4).stripTrailing()).replace("%EXTRA%", extra));
     }
 
     /** The project directory as Gradle reports it: a temporary directory may be reached through a symlink. */
@@ -168,6 +183,8 @@ class SpiderSensePluginTest {
                 open = true
                 appPackages = ['com.acme.orders', 'com.acme.shared']
                 ignoreEndpoints = ['/actuator/**', '/ping']
+                retentionSpans = 500000
+                maxSpansPerSecond = 2000
                 """.replace("%JAR%", stubJar.toAbsolutePath().toString()));
 
         String output = probe();
@@ -183,6 +200,16 @@ class SpiderSensePluginTest {
         assertThat(output).contains("-Dspidersense.open=true");
         assertThat(output).contains("-Dspidersense.app.packages=com.acme.orders,com.acme.shared");
         assertThat(output).contains("-Dspidersense.ignore.endpoints=/actuator/**,/ping");
+        assertThat(output).contains("-Dspidersense.retention.spans=500000");
+        assertThat(output).contains("-Dspidersense.ingest.max-spans-per-second=2000");
+    }
+
+    @Test
+    void theCapsAreUnsetUntilTheBlockSetsThem() {
+        String output = probe();
+
+        assertThat(output).doesNotContain("-Dspidersense.retention.spans");
+        assertThat(output).doesNotContain("-Dspidersense.ingest.max-spans-per-second");
     }
 
     @Test
@@ -345,10 +372,161 @@ class SpiderSensePluginTest {
     }
 
     @Test
+    void theCheckTaskIsInTheGroupAndJudgesTheWindowSinceTheApplicationStarted() {
+        String output = probe();
+
+        assertThat(output).contains("checkGroup=spider sense");
+        assertThat(output).contains("check=[check, --since=start, --service=scratch]");
+    }
+
+    @Test
+    void everyRuleOfTheCheckBlockBecomesAnArgument() throws IOException {
+        buildFile("""
+                jar = file('%JAR%')
+                check {
+                    maxP95Ms = 300
+                    maxNPlusOne = 0
+                    minApdex = 0.9
+                }
+                """.replace("%JAR%", stubJar.toAbsolutePath().toString()));
+
+        assertThat(probe()).contains("check=[check, --since=start, --service=scratch,"
+                + " --max-p95-ms=300, --max-n-plus-one=0, --min-apdex=0.9]");
+    }
+
+    @Test
+    void theWholeCheckBlockIsPassedInTheOrderOfTheTable() throws IOException {
+        buildFile("""
+                jar = file('%JAR%')
+                service = 'orders'
+                check {
+                    since = 'before'
+                    until = 'after'
+                    endpoint = 'GET /orders/{id}'
+                    maxP95Ms = 300
+                    maxErrors = 0
+                    maxErrorRate = 0.01
+                    maxQueriesPerRequest = 5.5
+                    maxSlowQueries = 3
+                    maxNPlusOne = 0
+                    maxLogErrors = 2
+                    minApdex = 0.9
+                }
+                """.replace("%JAR%", stubJar.toAbsolutePath().toString()));
+
+        assertThat(probe()).contains("check=[check, --since=before, --until=after, --service=orders,"
+                + " --endpoint=GET /orders/{id}, --max-p95-ms=300, --max-errors=0, --max-error-rate=0.01,"
+                + " --max-queries-per-request=5.5, --max-slow-queries=3, --max-n-plus-one=0,"
+                + " --max-log-errors=2, --min-apdex=0.9]");
+    }
+
+    @Test
+    void theCheckServiceFollowsTheBlockAndCanBeOverridden() throws IOException {
+        buildFile("""
+                jar = file('%JAR%')
+                service = 'orders'
+                """.replace("%JAR%", stubJar.toAbsolutePath().toString()));
+
+        assertThat(probe()).contains("check=[check, --since=start, --service=orders]");
+
+        buildFile("""
+                jar = file('%JAR%')
+                service = 'orders'
+                check {
+                    service = 'bookstore'
+                }
+                """.replace("%JAR%", stubJar.toAbsolutePath().toString()));
+
+        assertThat(probe()).contains("check=[check, --since=start, --service=bookstore]");
+    }
+
+    @Test
+    void theProjectPropertySinceWinsOverTheCheckBlock() throws IOException {
+        buildFile("""
+                jar = file('%JAR%')
+                check {
+                    since = '15m'
+                }
+                """.replace("%JAR%", stubJar.toAbsolutePath().toString()));
+
+        assertThat(probe()).contains("check=[check, --since=15m, --service=scratch]");
+        assertThat(probe("-PspiderSense.check.since=before"))
+                .contains("check=[check, --since=before, --service=scratch]");
+    }
+
+    @Test
+    void theCheckTaskRunsTheJarAndPointsItAtTheSpiderSenseTheBlockImplies() throws IOException {
+        buildFile("""
+                jar = file('%JAR%')
+                port = 4001
+                check {
+                    maxErrors = 0
+                }
+                """.replace("%JAR%", stubJar.toAbsolutePath().toString()));
+
+        String output = gradle("spiderSenseCheck", "-q").build().getOutput();
+
+        assertThat(output).contains("SPIDERSENSE_URL=http://127.0.0.1:4001");
+        assertThat(output).contains("args=[check, --since=start, --service=scratch, --max-errors=0]");
+    }
+
+    @Test
+    void aFailedCheckFailsTheBuildAndTheCliKeepsItsOutput() throws IOException {
+        String output = checkExiting(1, "").buildAndFail().getOutput();
+
+        assertThat(output).contains("Spider Sense check failed");
+        assertThat(output).contains("args=[check, --since=start, --service=scratch]");
+    }
+
+    @Test
+    void aWindowWithNoRequestFailsTheBuildUnlessTheBlockSaysOtherwise() throws IOException {
+        assertThat(checkExiting(3, "").buildAndFail().getOutput())
+                .contains("Spider Sense check had no request to judge");
+
+        assertThat(checkExiting(3, "failOnNoRequests = false").build().getTasks()).isNotEmpty();
+    }
+
+    @Test
+    void aCheckThatCouldNotRunFailsTheBuildWithItsExitCode() throws IOException {
+        assertThat(checkExiting(2, "").buildAndFail().getOutput())
+                .contains("Spider Sense check could not run (exit 2)");
+
+        assertThat(checkExiting(4, "").buildAndFail().getOutput())
+                .contains("Spider Sense check could not run (exit 4)");
+    }
+
+    /**
+     * The check task against a CLI that exits with the given code: the four
+     * verdicts without a Spider Sense to produce them, the stub jar standing in
+     * for the real one.
+     */
+    private GradleRunner checkExiting(int exit, String rules) throws IOException {
+        buildFile("""
+                jar = file('%JAR%')
+                check {
+                %RULES%
+                }
+                """.replace("%JAR%", stubJar.toAbsolutePath().toString())
+                        .replace("%RULES%", rules.indent(4).stripTrailing()),
+                "tasks.named('spiderSenseCheck') { jvmArgs '-Dstub.exit=" + exit + "' }");
+        return gradle("spiderSenseCheck", "-q");
+    }
+
+    @Test
     void theConfigurationCacheIsReused() {
         gradle("probe", "--configuration-cache").build();
 
         BuildResult second = gradle("probe", "--configuration-cache").build();
+
+        assertThat(second.getOutput()).contains("Configuration cache entry reused.");
+    }
+
+    /** The check task stores too: its arguments are providers and its verdict action holds no project. */
+    @Test
+    void theConfigurationCacheIsReusedByTheCheckTask() {
+        gradle("spiderSenseCheck", "--configuration-cache").build();
+
+        BuildResult second = gradle("spiderSenseCheck", "--configuration-cache").build();
 
         assertThat(second.getOutput()).contains("Configuration cache entry reused.");
     }
