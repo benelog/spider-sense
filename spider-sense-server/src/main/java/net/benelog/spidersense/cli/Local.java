@@ -70,7 +70,10 @@ final class Local {
             case "status" -> reports.status("file", null, 0);
             case "findings" -> reports.findings(window(options, reports, service), service,
                     options.limit(Limits.FINDINGS, Limits.FINDINGS_MAX), options.flag("full"));
-            case Options.TRACE -> reports.trace(options.argument(), options.flag("full"));
+            case Options.TRACE -> options.has("diff")
+                    ? reports.traceDiff(options.argument(), options.value("diff", null),
+                            options.flag("full"))
+                    : reports.trace(options.argument(), options.flag("full"));
             case "traces" -> reports.traces(new Queries.TraceFilter(
                     window(options, reports, service), service, null,
                     options.optionalLong("min-ms"), null,

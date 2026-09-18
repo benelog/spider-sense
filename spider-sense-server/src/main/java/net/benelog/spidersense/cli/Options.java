@@ -36,6 +36,7 @@ final class Options {
     static final String MARK = "mark";
     static final String TRACE = "trace";
     static final String SQL = "sql";
+    static final String TAIL = "tail";
 
     /** Options every command takes: where to read from, and how to print it. */
     private static final Set<String> COMMON = Set.of("url", "db", "json", "service",
@@ -47,7 +48,7 @@ final class Options {
     private static final Map<String, Set<String>> COMMANDS = Map.ofEntries(
             Map.entry("status", with()),
             Map.entry("findings", with("since", "until", "limit", "full")),
-            Map.entry(TRACE, with("full")),
+            Map.entry(TRACE, with("full", "diff")),
             Map.entry("traces", with("since", "until", "limit", "full", "status", "min-ms", "q")),
             Map.entry("endpoints", with("since", "until")),
             Map.entry("queries", with("since", "until", "limit", "full")),
@@ -65,6 +66,8 @@ final class Options {
             // a service belong to each message rather than to the command: only where
             // to read is decided here (agent.md).
             Map.entry(MCP, Set.of("url", "db")),
+            Map.entry(TAIL, Set.of("url", "json", "service", "kind", "until-traces",
+                    "timeout")),
             Map.entry(HELP, with()));
 
     /** The commands that take one word of their own, and what that word is called. */

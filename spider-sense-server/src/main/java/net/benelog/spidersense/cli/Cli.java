@@ -3,6 +3,7 @@ package net.benelog.spidersense.cli;
 import java.io.InputStream;
 import java.io.PrintStream;
 
+import net.benelog.spidersense.api.Reports;
 import net.benelog.spidersense.query.Selectors;
 import net.benelog.spidersense.server.Config;
 
@@ -67,7 +68,7 @@ public final class Cli {
             return dispatch(options, defaultUrl, in, out, err);
         } catch (Options.Usage e) {
             return usage(e, err);
-        } catch (Selectors.UnknownMark e) {
+        } catch (Reports.NoSuchTrace | Selectors.UnknownMark e) {
             err.println("spider-sense: " + e.getMessage());
             return NOT_FOUND;
         } catch (Selectors.BadSelector | IllegalArgumentException | IllegalStateException e) {
@@ -99,6 +100,9 @@ public final class Cli {
         }
         if (Options.MCP.equals(options.command())) {
             return Mcp.run(options, defaultUrl, in, out, err);
+        }
+        if (Options.TAIL.equals(options.command())) {
+            return Tail.run(options, defaultUrl, out, err);
         }
         if (options.has("db")) {
             return Local.run(options, out, err);

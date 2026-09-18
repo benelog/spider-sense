@@ -81,6 +81,24 @@ public final class Selectors {
     }
 
     /**
+     * A selector duration as a length of time rather than as an instant:
+     * {@code tail --timeout=30s} is how long to watch, not when to start
+     * (agent.md).
+     *
+     * <p>Only the duration form is one: a mark or {@code now} names a moment, and
+     * a moment is not a timeout.
+     */
+    public static long durationMillis(String selector) {
+        String value = selector == null ? null : selector.trim();
+        Matcher duration = value == null ? null : DURATION.matcher(value);
+        if (duration == null || !duration.matches()) {
+            throw new BadSelector("Not a duration: " + selector
+                    + " (expected one of 30s, 5m, 2h, 1d)");
+        }
+        return Long.parseLong(duration.group(1)) * unitMillis(duration.group(2).charAt(0));
+    }
+
+    /**
      * The window an agent-facing request asks for.
      *
      * <p>{@code from} and {@code to} win when both are given, so every URL the UI

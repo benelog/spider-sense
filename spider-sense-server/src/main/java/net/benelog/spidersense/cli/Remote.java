@@ -118,7 +118,8 @@ final class Remote {
             case "status" -> new Query("/api/status");
             case "findings" -> window(options, new Query("/api/findings"))
                     .add("limit", options.limit(Limits.FINDINGS, Limits.FINDINGS_MAX));
-            case Options.TRACE -> new Query("/api/traces/" + encode(options.argument()));
+            case Options.TRACE -> new Query("/api/traces/" + encode(options.argument()))
+                    .add("diff", options.value("diff", null));
             case "traces" -> window(options, new Query("/api/traces"))
                     .add("status", options.value("status", null))
                     .add("minMs", options.value("min-ms", null))

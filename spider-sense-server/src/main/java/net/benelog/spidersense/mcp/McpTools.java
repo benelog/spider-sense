@@ -36,7 +36,8 @@ public final class McpTools implements McpServer.ToolRunner {
     public McpServer.ToolResult call(String name, Map<String, Object> arguments) {
         try {
             return answer(name, arguments);
-        } catch (Selectors.UnknownMark | Selectors.BadSelector | IllegalArgumentException e) {
+        } catch (Reports.NoSuchTrace | Selectors.UnknownMark | Selectors.BadSelector
+                | IllegalArgumentException e) {
             return McpServer.ToolResult.failed(oneLine(e.getMessage()));
         }
     }
@@ -58,6 +59,10 @@ public final class McpTools implements McpServer.ToolRunner {
 
     private McpServer.ToolResult trace(Map<String, Object> arguments) {
         String traceId = string(arguments, "traceId");
+        String diff = string(arguments, "diff");
+        if (diff != null) {
+            return text(reports.traceDiff(traceId, diff, flag(arguments, "full")));
+        }
         Reports.Report report = reports.trace(traceId, flag(arguments, "full"));
         return report == null
                 ? McpServer.ToolResult.failed("No such trace: " + traceId)

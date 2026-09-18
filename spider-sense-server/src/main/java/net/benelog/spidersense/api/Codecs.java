@@ -390,6 +390,50 @@ public final class Codecs {
                 .put("logs", logs(trace.logs()));
     }
 
+    /**
+     * Two traces aligned, as agent.md's Trace diff writes them.
+     *
+     * <p>A line names only what the alignment worked on — the depth, the category
+     * and the summary — because those are the fields the key was built from, and
+     * a reader that wants the whole span already has the trace id to ask for it.
+     * {@code count} is present only where a line stands for a collapsed group on
+     * either side, and {@code null} on the side that has no such line.
+     */
+    static Json.JsonObject traceDiff(Queries.TraceDetail a, Queries.TraceDetail b,
+            List<Text.DiffLine> lines) {
+        Json.JsonArray array = Json.arr();
+        for (Text.DiffLine line : lines) {
+            Text.TraceLine shown = line.either();
+            Json.JsonObject object = Json.obj()
+                    .put("op", String.valueOf(line.op()))
+                    .put("depth", (long) shown.depth())
+                    .put("summary", shown.span().summary())
+                    .put("category", shown.span().category());
+            put(object, "aMs", line.a() == null ? null : (Double) line.a().durationMs());
+            put(object, "bMs", line.b() == null ? null : (Double) line.b().durationMs());
+            if (line.counted()) {
+                Json.JsonObject count = Json.obj();
+                put(count, "a", line.a() == null ? null : (Long) (long) line.a().count());
+                put(count, "b", line.b() == null ? null : (Long) (long) line.b().count());
+                object.put("count", count);
+            } else {
+                object.putNull("count");
+            }
+            array.add(object);
+        }
+        Json.JsonObject durations = Json.obj();
+        put(durations, "a", (Double) a.durationMs());
+        put(durations, "b", (Double) b.durationMs());
+        return Json.obj()
+                .put("a", a.traceId())
+                .put("b", b.traceId())
+                .put("durationMs", durations)
+                .put("spans", Json.obj()
+                        .put("a", (long) a.spans().size())
+                        .put("b", (long) b.spans().size()))
+                .put("lines", array);
+    }
+
     static Json.JsonObject log(LogRecord log) {
         return Json.obj()
                 .put("id", log.id())

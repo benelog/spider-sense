@@ -18,7 +18,11 @@ final class Help {
             Commands:
               status                       what is running, where the database is, how much it holds
               findings                     the findings of the window
-              trace <traceId> [--full]     one trace as a tree
+              trace <traceId> [--full] [--diff=<traceId>]
+                                           one trace as a tree, or two aligned
+              tail [--kind=slow-request|slow-query|error] [--service=<name>]
+                   [--until-traces=<n>] [--timeout=<duration>]
+                                           tingles as they arrive, one line each
               traces [--status=error|ok] [--min-ms=<n>] [--q=<text>] [--limit=20]
                                            the newest traces
               endpoints                    the endpoints of the window
