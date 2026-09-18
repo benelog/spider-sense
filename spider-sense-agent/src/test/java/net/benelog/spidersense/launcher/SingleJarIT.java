@@ -35,6 +35,7 @@ class SingleJarIT {
 
     private static Path senseJar;
     private static String testClasses;
+    private static String sampleClasspath;
     private static Path javaBinary;
 
     private static final HttpClient HTTP = HttpClient.newBuilder()
@@ -48,6 +49,7 @@ class SingleJarIT {
     static void locateEverything() {
         senseJar = Path.of(required("spidersense.it.jar"));
         testClasses = required("spidersense.it.testClasses");
+        sampleClasspath = required("spidersense.it.sampleClasspath");
         javaBinary = Path.of(System.getProperty("java.home"), "bin", "java");
         assertThat(senseJar).as("the packaged jar").isRegularFile();
     }
@@ -133,6 +135,80 @@ class SingleJarIT {
                 .as("the packaged agent reports its own version, not Spider Sense's")
                 .contains("2.31.1");
         assertThat(output).contains("[spider-sense] UI: " + base);
+    }
+
+    // --- the extension ------------------------------------------------------------------------
+
+    /**
+     * The one thing Spider Sense instruments itself, from the packaged jar: the nested
+     * {@code extension.jar} is extracted, the agent is pointed at it, and the slow H2 statement the
+     * sample runs comes back as a {@code slow-query} finding that names the line it was issued from
+     * (design.md, "The extension"; agent.md, "Code locations").
+     */
+    @Test
+    void aSlowQueryFindingNamesTheCodeThatIssuedIt() throws Exception {
+        int port = freePort();
+        Path log = work.resolve("extension.log");
+        String base = "http://127.0.0.1:" + port;
+
+        Process app = start(log,
+                javaBinary.toString(),
+                "-javaagent:" + senseJar,
+                "-Dspidersense.port=" + port,
+                "-Dspidersense.db=" + throwawayDatabase(),
+                // Four times the 100 ms default, so p95 is over the threshold with room to spare.
+                "-Dsample.db.sleep.ms=400",
+                "-Dsample.linger.ms=30000",
+                "-Dotel.service.name=sample",
+                "-cp", sampleClasspath,
+                "net.benelog.spidersense.launcher.SampleApp");
+
+        String findings;
+        try {
+            await("GET /api/status answering in agent mode", log, app,
+                    () -> get(base + "/api/status"),
+                    body -> compact(body).contains("\"mode\":\"agent\""));
+
+            findings = await("a slow-query finding for the sample's statement", log, app,
+                    () -> get(base + "/api/findings?since=15m&format=json"),
+                    body -> compact(body).contains("\"kind\":\"slow-query\""));
+        } catch (AssertionError e) {
+            app.destroyForcibly();
+            throw new AssertionError(e.getMessage() + "\n--- application output ---\n" + read(log), e);
+        } finally {
+            app.destroy();
+            if (!app.waitFor(30, TimeUnit.SECONDS)) {
+                app.destroyForcibly();
+            }
+        }
+
+        String slowQuery = objects(findings, "findings").stream()
+                .filter(f -> f.contains("\"kind\":\"slow-query\""))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("no slow-query finding in " + findings));
+
+        assertThat(slowQuery).as("the statement the sample ran").contains("sleep(?)");
+        assertThat(codeFrames(slowQuery))
+                .as("code frames of %s\n--- application output ---\n%s", slowQuery, read(log))
+                .isNotEmpty()
+                .anyMatch(frame -> frame.contains("SampleApp"));
+    }
+
+    /** The {@code code} array of one compact finding object. */
+    private static List<String> codeFrames(String compactFinding) {
+        int start = compactFinding.indexOf("\"code\":[");
+        assertThat(start).as("a code array in %s", compactFinding).isNotNegative();
+        start += "\"code\":[".length();
+        int end = compactFinding.indexOf(']', start);
+        String inside = compactFinding.substring(start, end);
+        List<String> frames = new ArrayList<>();
+        for (String each : inside.split("\",\"")) {
+            String frame = each.replace("\"", "").trim();
+            if (!frame.isEmpty()) {
+                frames.add(frame);
+            }
+        }
+        return frames;
     }
 
     // --- standalone mode ----------------------------------------------------------------------
@@ -339,12 +415,17 @@ class SingleJarIT {
 
     /** The objects of the {@code traces} array, each as a compact string. */
     private static List<String> traceSummaries(String body) {
+        return objects(body, "traces");
+    }
+
+    /** The objects of one top-level JSON array, each as a compact string. */
+    private static List<String> objects(String body, String key) {
         String compact = compact(body);
-        int start = compact.indexOf("\"traces\":[");
+        int start = compact.indexOf("\"" + key + "\":[");
         if (start < 0) {
             return List.of();
         }
-        start += "\"traces\":[".length();
+        start += ("\"" + key + "\":[").length();
         int depth = 0;
         int from = -1;
         List<String> out = new ArrayList<>();

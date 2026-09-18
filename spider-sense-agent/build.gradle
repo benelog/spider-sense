@@ -14,14 +14,28 @@ configurations {
     server {
         canBeConsumed = false
     }
+    // The OpenTelemetry agent extension, on its own: it is compiled against the SDK but ships
+    // none of it, because the agent's ExtensionClassLoader supplies the shaded classes.
+    extension {
+        transitive = false
+        canBeConsumed = false
+    }
+    // What SampleApp needs beyond the test classes when SingleJarIT runs it in a JVM of its own.
+    sampleApp {
+        canBeConsumed = false
+    }
 }
 
 dependencies {
     otelAgent "io.opentelemetry.javaagent:opentelemetry-javaagent:${rootProject.ext.otelAgentVersion}"
     server project(path: ':spider-sense-server', configuration: 'serverJar')
+    extension project(':spider-sense-extension')
+
+    sampleApp "com.h2database:h2:${rootProject.ext.h2Version}"
 
     testImplementation "org.junit.jupiter:junit-jupiter:${rootProject.ext.junitVersion}"
     testImplementation "org.assertj:assertj-core:${rootProject.ext.assertjVersion}"
+    testImplementation "com.h2database:h2:${rootProject.ext.h2Version}"
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
@@ -82,6 +96,13 @@ def senseJar = tasks.register('senseJar', Jar) {
         rename { 'server.jar' }
     }
 
+    // Our OpenTelemetry agent extension, extracted beside it and named by
+    // otel.javaagent.extensions (design.md, "The extension").
+    from(configurations.extension) {
+        into 'spider-sense'
+        rename { 'extension.jar' }
+    }
+
     manifest {
         attributes(
                 'Premain-Class': 'net.benelog.spidersense.launcher.SpiderSenseAgent',
@@ -137,6 +158,10 @@ tasks.register('integrationTest', Test) {
     dependsOn senseJar
     systemProperty 'spidersense.it.jar', senseJar.get().archiveFile.get().asFile.absolutePath
     systemProperty 'spidersense.it.testClasses', sourceSets.test.output.classesDirs.asPath
+    // SampleApp runs an H2 statement when asked to, so the packaged extension has a database span
+    // to hang a stack trace on; H2 is not on the test classes directory.
+    systemProperty 'spidersense.it.sampleClasspath',
+            (sourceSets.test.output.classesDirs + configurations.sampleApp).asPath
     testLogging {
         events 'passed', 'failed'
         showStandardStreams = true

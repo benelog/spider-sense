@@ -37,12 +37,14 @@ spider-sense.jar
 ├── net/benelog/spidersense/launcher/**   a handful of classes, no dependencies (Java 21)
 ├── io/opentelemetry/javaagent/**         the OpenTelemetry Java agent, verbatim (bootstrap classes)
 ├── inst/**                               the OpenTelemetry Java agent, verbatim (.classdata, loaded by the agent's own class loader)
-└── spider-sense/server.jar               the collector + UI as a nested fat jar (Spider Silk, Jetty, protobuf, our code)
+├── spider-sense/server.jar               the collector + UI as a nested fat jar (Spider Silk, Jetty, protobuf, our code)
+└── spider-sense/extension.jar            the OpenTelemetry agent extension: a stack trace for a slow database span (below)
 ```
 
 The launcher is deliberately tiny and dependency-free because the OpenTelemetry agent appends the whole jar to the bootstrap class path (`Instrumentation.appendToBootstrapClassLoaderSearch`), so everything at the top level becomes bootstrap-visible.
 The server and its dependencies therefore live in a nested jar that the launcher extracts to `${java.io.tmpdir}/spider-sense-<version>/server.jar` (skipped when already present with the same size) and loads through a dedicated `SenseClassLoader extends URLClassLoader` whose parent is the platform class loader.
 The server never sees the application's classes, and the application never sees Jetty or protobuf from the server.
+The extension is extracted the same way, to `extension.jar` beside it, and is loaded by the OpenTelemetry agent's own `ExtensionClassLoader`, not by ours.
 
 `SpiderSenseAgent.premain` does, in order:
 
@@ -56,6 +58,7 @@ The server never sees the application's classes, and the application never sees 
    - `otel.metrics.exporter=otlp`, `otel.logs.exporter=otlp`, `otel.traces.exporter=otlp`
    - `otel.javaagent.exclude-class-loaders=net.benelog.spidersense.launcher.SenseClassLoader` (appended to the user's own list when one is set): the agent skips every class the UI server's loader defines, so the UI's own Jetty requests never become spans. (Verified in the agent source: `GlobalIgnoredTypesConfigurer` already ignores `ExtensionClassLoader` this way, and `otel.javaagent.exclude-class-loaders` feeds `IgnoredTypesBuilder.ignoreClassLoader`.)
    - `otel.instrumentation.runtime-telemetry.enabled=true` (JVM metrics; already the default, stated for clarity)
+   - `otel.javaagent.extensions=${java.io.tmpdir}/spider-sense-<version>/extension.jar` (appended to the user's own comma-separated list when one is set), our own extension described under [The extension](#the-extension); failing to extract it or to point at it is a warning on stderr and nothing else, because a missing code location is not a reason to hold up the application.
 4. Call `io.opentelemetry.javaagent.OpenTelemetryAgent.premain(agentArgs, inst)`. Its jar-location check only requires a `Premain-Class` attribute in the manifest of the jar that class came from (verified against 2.31.1's `verifyJarManifestMainClassIsThis`), so our manifest satisfies it.
 
 `SpiderSenseMain.main` (standalone) does step 2 with `--mode=standalone` and then blocks (`join`).
@@ -107,6 +110,20 @@ Such spans are still stored, still have a `trace` row and still render in the tr
 
 Query identity is `(service, db system, statement as the agent sanitised it)`; the agent replaces literals with `?` by default, which is exactly the grouping wanted. A statement is shown at most 2000 characters.
 
+## The extension
+
+Gradle module `spider-sense-extension`, packaged as `spider-sense/extension.jar` and the only piece of Spider Sense that is not the stock OpenTelemetry agent.
+It exists for one thing the agent cannot do: say where a slow query was issued from.
+
+It registers, through `META-INF/services/io.opentelemetry.sdk.autoconfigure.spi.AutoConfigurationCustomizerProvider`, a span processor that implements `io.opentelemetry.sdk.trace.internal.ExtendedSpanProcessor` and does its work in `onEnding(ReadWriteSpan)`.
+That callback runs on the thread that is ending the span, before the span becomes immutable: the duration is already known and an attribute can still be set, which no ordinary `SpanProcessor` callback allows.
+When the span carries a `db.system` or `db.system.name` attribute and has taken at least `spidersense.slow.query.ms` (the environment variable `SPIDERSENSE_SLOW_QUERY_MS` also works; default 100, the same threshold the server calls a tingle, read once when the processor is built), it writes `Thread.currentThread().getStackTrace()` into the span attribute `code.stacktrace`.
+The lines are formatted like `Throwable.printStackTrace` writes them (`\tat package.Class.method(File.java:41)`, one per line, no header), so the server reduces them to application frames with exactly the code it already uses for `exception.stacktrace` ([agent.md](agent.md)).
+The leading frames of `Thread.getStackTrace`, of the processor itself and of `io.opentelemetry.` (the SDK's own `end()` path) are dropped, and the trace is cut at 64 frames.
+`isStartRequired()` and `isEndRequired()` are false, `isOnEndingRequired()` is true, and anything thrown inside `onEnding` is swallowed: a missing code location is never worth a broken span.
+
+The module is compiled against `io.opentelemetry:opentelemetry-sdk-trace` and `io.opentelemetry:opentelemetry-sdk-extension-autoconfigure-spi` at the SDK version the packaged agent bundles (`otelSdkVersion` in the root `build.gradle`), `compileOnly` and nothing else: the agent's `ExtensionClassLoader` rewrites the unshaded `io.opentelemetry` references to the agent's own shaded classes as it loads them, so the extension must not ship a copy of the SDK.
+
 ## The examples
 
 Three applications under `examples/`, all sending to whichever Spider Sense they are pointed at, all with deliberately bad behaviour so there is something to see:
@@ -120,6 +137,7 @@ Three applications under `examples/`, all sending to whichever Spider Sense they
 ## What was considered and rejected
 
 - **An OpenTelemetry agent extension instead of our own premain.** The extension mechanism (`extensions/` inside the agent jar, `AgentListener`) would also work, and `ExtensionClassLoader` is already exclusion-listed. Rejected because the UI would then depend on the agent's SPI and lifecycle, and the standalone mode would still need a launcher of its own. A premain that wraps the agent's premain keeps the server a plain program that the agent happens to be pointed at over a standard protocol.
+- **…but one small extension beside the premain is worth it.** The stock agent records where an exception was thrown and nothing at all about where a query was issued from, so `slow-query` and `n-plus-one` findings named a statement and left the reader to grep for it. A stack capture on the thread that is ending the span, taken only for database spans already over `slow.query.ms`, costs nothing measurable — the spans it fires on are by definition the slow ones, and it is a few microseconds against a hundred milliseconds — and it turns those findings into a line to open. That is [the extension](#the-extension); it sets one attribute and does nothing else, and the server and the standalone mode stay unaware of it.
 - **In-process export (a custom `SpanExporter` handing spans straight to the store).** Faster, but it ties the store to the agent's shaded SDK classes and makes the standalone and embedded paths diverge. Loopback OTLP costs nothing measurable and exercises the same code path the standalone mode uses.
 - **In-memory only storage.** The first design kept everything in bounded ring buffers and aggregated on demand: simplest, and free of any database inside the application's JVM. Rejected because the analysis screen has to survive the monitored application going down, and because two embedded instances on one machine should show one picture. H2 with `AUTO_SERVER` gives both, and the class-loader exclusion keeps the OpenTelemetry agent away from its JDBC.
 - **A frontend build (React, Vue, TypeScript).** SigNoz and OpenObserve are built that way; Spider Sense is a single jar whose build must stay `./gradlew build` with no Node. The UI is plain ES modules, one CSS file, and uPlot for charts, served by Spider Silk's static files. A template engine was not used either: the UI is one page whose data all comes from the JSON API, and Spider Silk's JSON and SSE support is the part of the framework this application exercises.
