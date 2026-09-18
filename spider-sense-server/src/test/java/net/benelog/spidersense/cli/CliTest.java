@@ -24,6 +24,7 @@ import net.benelog.spidersense.TestStore;
 import net.benelog.spidersense.ingest.OtlpDecoder;
 import net.benelog.spidersense.server.Config;
 import net.benelog.spidersense.server.SpiderSenseServer;
+import net.benelog.spidersense.store.Database;
 import net.benelog.spidersilk.json.Json;
 
 /**
@@ -162,6 +163,10 @@ class CliTest {
                 .isEqualTo("/api/check?since=15m&endpoint=GET%20%2Forders&maxP95Ms=500&maxNPlusOne=0&format=text");
         assertThat(path("check", "--min-apdex=0.9", "--max-error-rate=0.01"))
                 .isEqualTo("/api/check?since=15m&maxErrorRate=0.01&minApdex=0.9&format=text");
+        assertThat(path("sql", "SELECT 1")).as("the statement travels in the body")
+                .isEqualTo("/api/sql?format=text");
+        assertThat(path("sql", "SELECT 1", "--json", "--limit=10"))
+                .isEqualTo("/api/sql?format=json");
     }
 
     private static String path(String... args) {
@@ -287,6 +292,63 @@ class CliTest {
 
         assertThat(run("findings", "--since=nowhere", db).exit()).isEqualTo(4);
         assertThat(run("mark", "two words", db).exit()).isEqualTo(2);
+    }
+
+    @Test
+    void sqlIsAnsweredOverHttpAndRefusedWhenItIsNotARead() {
+        serve(true, (server, base) -> {
+            Run rows = runAt(base, "sql",
+                    "SELECT service, COUNT(*) AS spans FROM span GROUP BY service", "--url=" + base);
+            assertThat(rows.exit()).isZero();
+            assertThat(rows.out()).startsWith("# sql  1 rows");
+            assertThat(rows.out()).contains("| SERVICE | SPANS |").contains("| orders |");
+
+            Run json = runAt(base, "sql", "SELECT COUNT(*) AS spans FROM span", "--json",
+                    "--url=" + base);
+            assertThat(json.exit()).isZero();
+            assertThat(Json.parse(json.out()).asObject().getLong("rowCount")).isEqualTo(1);
+
+            Run capped = runAt(base, "sql", "SELECT id FROM span ORDER BY id", "--limit=2",
+                    "--url=" + base);
+            assertThat(capped.out()).startsWith("# sql  2 rows (truncated at 2)");
+
+            Run refused = runAt(base, "sql", "DELETE FROM span", "--url=" + base);
+            assertThat(refused.exit()).isEqualTo(2);
+            assertThat(refused.out()).isEmpty();
+            assertThat(refused.err()).as("the server's own line, not a status code")
+                    .isEqualTo("spider-sense: only EXPLAIN, SELECT, SHOW, TABLE, VALUES, WITH"
+                            + " may be run here, and this statement starts with DELETE\n");
+        });
+    }
+
+    /**
+     * The direct-file path answers too — once a server of this version has created
+     * the reader user. A database that predates it says so rather than answering.
+     */
+    @Test
+    void sqlFromTheFileNeedsTheReaderUserAServerCreates() {
+        String url = TestStore.memoryUrl();
+
+        Run tooEarly = run("sql", "SELECT 1", "--db=" + url);
+        assertThat(tooEarly.exit()).isEqualTo(2);
+        assertThat(tooEarly.err())
+                .contains("the database has no read-only user yet")
+                .contains("start an application or the standalone server with this version first");
+        assertThat(tooEarly.out()).isEmpty();
+
+        try (Database opened = Database.open(url, null)) {
+            opened.sql().update("INSERT INTO mark (at_ms, name) VALUES (1, 'before')", List.of());
+
+            Run rows = run("sql", "SELECT name, at_ms FROM mark ORDER BY at_ms", "--db=" + url);
+            assertThat(rows.exit()).isZero();
+            assertThat(rows.out()).startsWith("# sql  1 rows");
+            assertThat(rows.out()).contains("| NAME | AT_MS |").contains("| before | 1 |");
+
+            Run refused = run("sql", "DROP TABLE mark", "--db=" + url);
+            assertThat(refused.exit()).isEqualTo(2);
+            assertThat(run("sql", "SELECT COUNT(*) AS marks FROM mark", "--db=" + url).out())
+                    .contains("| 1 |");
+        }
     }
 
     /**

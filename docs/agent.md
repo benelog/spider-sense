@@ -24,8 +24,8 @@ Everything is served by the same `Queries` the UI uses, so the numbers an agent 
 | HTTP API, `format=text` | this version | anything that can run `curl` |
 | CLI, `java -jar spider-sense.jar <command>` | this version | Claude Code and every agent with a shell; also works when no Spider Sense is running, straight from the H2 file |
 | Skill, `skills/spider-sense/` | this version | teaches an agent the loop itself: how to start the app under the agent, mark, exercise, read findings, fix, compare, check |
+| Read-only SQL, `POST /api/sql` and `sql` | this version | the question nobody anticipated; the schema in storage.md is already the documentation |
 | MCP | deferred | hosts without a shell; see [Considered and deferred](#considered-and-deferred) |
-| Read-only SQL | deferred | questions nobody anticipated; the schema in storage.md is already the documentation |
 
 ## Time selectors
 
@@ -170,12 +170,62 @@ Rules are query parameters; every rule given is evaluated, and when none is give
 }
 ```
 
+## SQL
+
+`POST /api/sql` with `{ "sql": "SELECT …", "limit": 200 }`
+
+The escape hatch, for the question nobody anticipated.
+Findings, compare and check answer what Spider Sense knows to look for; everything else it holds is already documented by the schema in [storage.md](storage.md), and this runs one statement over it.
+`format=text` as a query parameter, or an `Accept` whose first type is `text/markdown` or `text/plain`, selects the Markdown rendering, exactly as on the endpoints above.
+
+```json
+{
+  "columns": ["ENDPOINT", "STATEMENTS"],
+  "rows": [ ["GET /orders/{id}", 42], ["GET /orders", 7] ],
+  "rowCount": 2,
+  "truncated": false,
+  "elapsedMs": 3
+}
+```
+
+`columns` are the labels H2 gives them, which upper-cases an unquoted name (`SERVICE`, `SPANS`), and a value is a JSON number, string, boolean or null, as the store holds it: every instant in the schema is epoch milliseconds and stays a number, and an H2 `TIMESTAMP` a statement computes itself is an ISO string.
+`limit` defaults to 200 and is capped at 5000; a `limit` below 1 is a `400`.
+One row more than the limit is fetched, so `truncated` reports whether the cap cut the answer off rather than guessing at it.
+
+**Read-only, three layers.**
+Each catches what the one before it cannot, and the second is the one that holds:
+
+1. **A statement allowlist.** After the leading whitespace and the `--` and `/* */` comments are stripped, the first keyword must be `SELECT`, `WITH`, `TABLE`, `VALUES`, `EXPLAIN` or `SHOW`, and there must be one statement: a `;` followed by anything but whitespace is refused. String literals and comments make this a scanner over SQL text rather than a parser, which is exactly why it is not the layer that is trusted.
+2. **A user with `SELECT` and nothing else.** The schema creates `spider_sense_reader`, idempotently, on every open by a server of this version, and grants it `SELECT` on schema `PUBLIC` (storage.md); the statement runs on a connection opened as that user, with the same JDBC URL. So H2 itself refuses `INSERT`, `UPDATE`, `DELETE`, `DROP` and `ALTER` with "Not enough rights for object", and the administrator-only functions `FILE_WRITE`, `CSVWRITE`, `FILE_READ`, `LINK_SCHEMA` and `RUNSCRIPT` with "Admin rights are required for this operation", whatever the layer above thought it read.
+3. **The limits of the connection.** `setMaxRows(limit + 1)`, a query timeout of 10 seconds, `setReadOnly(true)`, autocommit off, and a `rollback()` whatever happens.
+
+**Errors.** A statement that is not allowed is a `400` with `{ "error": "…" }` naming the reason, and a statement H2 refuses or cannot parse is a `400` carrying H2's own message.
+In the text rendering an error is that message on one line, because an agent that asked for Markdown should not have to parse a JSON object it did not expect.
+
+The text rendering is a heading and a table:
+
+```
+# sql  2 rows
+
+| ENDPOINT | STATEMENTS |
+| --- | --- |
+| GET /orders/{id} | 42 |
+| GET /orders | 7 |
+```
+
+The heading carries ` (truncated at 200)` when the cap cut the rows off.
+The conventions below hold here too: nothing in the body depends on when it was rendered (`elapsedMs` is in the JSON only), a cell is cut at 200 characters with `…` unless `full=true`, a `|` in a cell is escaped and its newlines collapse to spaces, and a SQL `NULL` is `—`.
+Numbers are printed as the store holds them, without a thousands separator, because a value an agent passes back into the next statement has to survive the round trip.
+
+The CLI command is `sql "<statement>" [--limit=200]`.
+Its direct-file path opens the reader connection the same way, and a database an older Spider Sense created has no reader user in it yet; that is `the database has no read-only user yet; start an application or the standalone server with this version first` on stderr, and exit code 2.
+
 ## Text rendering
 
 Any endpoint listed here answers Markdown when asked with `format=text` or with an `Accept` header whose first type is `text/markdown` or `text/plain`; the response is `text/markdown; charset=utf-8`.
 JSON stays the default.
 
-Endpoints with a text rendering: `/api/status`, `/api/findings`, `/api/marks`, `/api/compare`, `/api/check`, `/api/traces`, `/api/traces/{id}`, `/api/endpoints`, `/api/queries`, `/api/errors`, `/api/logs`, `/api/services`.
+Endpoints with a text rendering: `/api/status`, `/api/findings`, `/api/marks`, `/api/compare`, `/api/check`, `/api/sql`, `/api/traces`, `/api/traces/{id}`, `/api/endpoints`, `/api/queries`, `/api/errors`, `/api/logs`, `/api/services`.
 
 Every example below is output captured from `scripts/demo-shared.sh`, the two example applications running under the agent and forwarding to one standalone Spider Sense, with the home directory anonymised.
 
@@ -256,10 +306,11 @@ The launcher stays dependency-free.
 | `marks` | lists marks |
 | `compare --before=<selector> --after=<selector> [--until=<selector>]` | the two windows side by side |
 | `check [--max-p95-ms=] [--max-errors=] [--max-error-rate=] [--max-queries-per-request=] [--max-slow-queries=] [--max-n-plus-one=] [--min-apdex=] [--endpoint=]` | pass or fail, in the exit code |
+| `sql "<statement>" [--limit=200]` | one read-only statement over the schema of storage.md |
 | `init [--dir=<project dir>] [--jar=<path>] [--no-skill]` | writes the Spider Sense block into the project's `CLAUDE.md` and installs the skill into its `.claude/skills/` |
 | `help` | this table |
 
-Common options: `--since=<selector>` (default `15m`), `--until=<selector>`, `--service=<name>`, `--limit=<n>` (the lists: findings, traces, queries, errors, logs, marks; `endpoints` always lists every endpoint of the window), `--url=<base url>` (default `http://127.0.0.1:4000`, or `SPIDERSENSE_URL`), `--db=<path or jdbc url>`, `--json`, `--full`.
+Common options: `--since=<selector>` (default `15m`), `--until=<selector>`, `--service=<name>`, `--limit=<n>` (the lists: findings, traces, queries, errors, logs, marks, and the rows of `sql`; `endpoints` always lists every endpoint of the window), `--url=<base url>` (default `http://127.0.0.1:4000`, or `SPIDERSENSE_URL`), `--db=<path or jdbc url>`, `--json`, `--full`.
 `compare` takes no `--since`: its windows are the two selectors.
 `init` takes none of them at all: it asks nothing and nobody, and its own options are `--dir`, `--jar` and `--no-skill` ([init](#init)).
 
@@ -353,4 +404,3 @@ The first line is `updated CLAUDE.md block (…)` when the markers were already 
 ## Considered and deferred
 
 - **MCP.** The Skill and the CLI cover Claude Code and every agent with a shell, and the text API covers every agent with `curl`. MCP adds a typed tool list for hosts that have neither, at the price of a second protocol to keep in step with the API. When one is wanted it is an adapter over the same handlers, served on the existing port as `POST /mcp` (Streamable HTTP), with six tools at most: `findings`, `trace`, `mark`, `compare`, `check`, `sql`. Nothing in this document needs to change for it.
-- **Read-only SQL** (`POST /api/sql`, and `sql` in the CLI and MCP). A read-only connection with a row limit over the schema in storage.md. Deferred until a question comes up that findings and the tables cannot answer.

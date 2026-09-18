@@ -17,6 +17,7 @@ import net.benelog.spidersense.query.Window;
 import net.benelog.spidersense.server.Config;
 import net.benelog.spidersense.store.Database;
 import net.benelog.spidersense.store.Marks;
+import net.benelog.spidersense.store.ReadOnlyQuery;
 import net.benelog.spidersense.store.ServiceRegistry;
 import net.benelog.spidersense.store.Sql;
 import net.benelog.spidersense.store.Store;
@@ -59,6 +60,7 @@ public final class Reports implements AutoCloseable {
     private final Compare compare;
     private final Check check;
     private final Selectors selectors;
+    private final ReadOnlyQuery readOnly;
 
     /** The server's way: everything is already open, and the writer's counters exist. */
     public Reports(Config config, Store store, IntSupplier port) {
@@ -99,6 +101,7 @@ public final class Reports implements AutoCloseable {
         this.compare = new Compare(queries);
         this.check = new Check(queries, findings, tingles);
         this.selectors = new Selectors(marks);
+        this.readOnly = new ReadOnlyQuery(database);
     }
 
     // --- what the callers need beside the answers -----------------------------
@@ -299,6 +302,23 @@ public final class Reports implements AutoCloseable {
                 .put("logs", Codecs.logs(logs))
                 .put("total", total);
         return new Report(json, Text.logs(filter.window(), filter.service(), logs, total, endpoint()));
+    }
+
+    /**
+     * One read-only statement over the schema of storage.md: the question findings
+     * cannot answer (agent.md).
+     *
+     * <p>It goes through here like every other answer, and for the same reason:
+     * the CLI's direct-file path must give the same rows as the HTTP one, down to
+     * the row cap and the truncation notice.
+     *
+     * @throws ReadOnlyQuery.Refused when the statement is not one this may run, or
+     *                               when H2 refuses it
+     * @throws IllegalStateException when the database has no reader user yet
+     */
+    public Report sql(String statement, int limit, boolean full) {
+        ReadOnlyQuery.Result result = readOnly.run(statement, limit);
+        return new Report(Codecs.sqlResult(result), Text.sql(result, limit, full));
     }
 
     public Report services(Window window) {

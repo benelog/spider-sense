@@ -7,6 +7,7 @@ import java.util.Map;
 
 import net.benelog.spidersense.query.Selectors;
 import net.benelog.spidersense.query.Window;
+import net.benelog.spidersilk.HttpStatus;
 import net.benelog.spidersilk.WebRequest;
 import net.benelog.spidersilk.WebResponse;
 
@@ -78,6 +79,22 @@ final class Params {
         return wantsText(req)
                 ? WebResponse.text(report.text()).contentType(Text.CONTENT_TYPE)
                 : WebResponse.json(report.json());
+    }
+
+    /**
+     * A {@code 400} in the format the request asked for.
+     *
+     * <p>{@code /api/sql} is the one endpoint whose errors an agent reads as part
+     * of the answer — a rejected statement is a message it has to act on — so a
+     * caller that asked for Markdown gets the message on one line rather than a
+     * JSON object it was not expecting (agent.md).
+     */
+    static WebResponse problem(WebRequest req, String message) {
+        String said = message == null || message.isBlank() ? "Bad request" : message;
+        return wantsText(req)
+                ? WebResponse.text(said + "\n").contentType(Text.CONTENT_TYPE)
+                        .status(HttpStatus.BAD_REQUEST)
+                : WebResponse.json(Codecs.error(said)).status(HttpStatus.BAD_REQUEST);
     }
 
     static int limit(WebRequest req, int fallback, int max) {

@@ -123,6 +123,7 @@ With no rule given the defaults are `--max-errors=0`, `--max-n-plus-one=0` and `
 - **Never quote a number the tool did not print.** Percentages, p95s and call counts come from the output, not from an estimate.
 - **Quote the trace id as evidence.** A claim about an endpoint that names no trace cannot be checked by the user.
 - **Run `check` before calling a fix done**, and say which rules it passed with which limits.
+- **`sql` is the last resort, not the first.** `findings` and the tables come with the thresholds, the ranking and the evidence already applied; reach for [references/sql.md](references/sql.md) when the question is genuinely one none of them has a column for, and say that a capped answer was capped.
 - **Do not change the monitored application's Spider Sense configuration unless asked.** Adding `-javaagent` to start it is the loop; editing the project's ports, thresholds or `spidersense.*` properties is a change to the project.
 - Nothing in Spider Sense may keep the application from starting; if the agent fails it logs and gets out of the way, so an application that starts but sends nothing is a configuration question, answered by `status`.
 
@@ -133,5 +134,6 @@ With no rule given the defaults are `--max-errors=0`, `--max-n-plus-one=0` and `
 | Every command, its flags, its exit codes, and what its output looks like | [references/cli.md](references/cli.md) |
 | Each finding kind: rule, severity, numbers, and the fix with Java examples | [references/findings.md](references/findings.md) |
 | Starting each kind of application under the agent, ports, forwarding, troubleshooting | [references/running.md](references/running.md) |
+| A question none of the commands answers: the schema, and read-only SQL over it | [references/sql.md](references/sql.md) |
 
 `docs/agent.md` in the Spider Sense repository is the specification these files are distilled from; `docs/api.md` is the wire contract when the HTTP API is wanted instead of the CLI.

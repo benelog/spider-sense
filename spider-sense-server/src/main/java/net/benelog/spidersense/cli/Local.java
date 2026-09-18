@@ -89,6 +89,8 @@ final class Local {
             case Options.MARK -> mark(options, reports, service);
             case "marks" -> reports.marks(options.limit(Limits.MARKS, Limits.MARKS_MAX));
             case Options.COMPARE -> compare(options, reports, service);
+            case Options.SQL -> reports.sql(options.argument(),
+                    options.limit(Limits.SQL, Limits.SQL_MAX), options.flag("full"));
             case Options.CHECK -> reports.check(window(options, reports, service), service,
                     options.value("endpoint", null), options.rules());
             default -> throw new Options.Usage("unknown command: " + options.command());

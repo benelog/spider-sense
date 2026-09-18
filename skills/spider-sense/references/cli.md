@@ -21,6 +21,7 @@ The launcher treats a first argument that does not start with `-` as a command a
 | `marks` | lists marks |
 | `compare --before=<selector> --after=<selector> [--until=<selector>]` | the two windows side by side |
 | `check [--max-p95-ms=] [--max-errors=] [--max-error-rate=] [--max-queries-per-request=] [--max-slow-queries=] [--max-n-plus-one=] [--min-apdex=] [--endpoint=]` | pass or fail, in the exit code |
+| `sql "<statement>" [--limit=200]` | one read-only statement over the store, for a question no other command answers ([sql.md](sql.md)) |
 | `init [--dir=<project dir>] [--jar=<path>] [--no-skill]` | writes the Spider Sense block into the project's `CLAUDE.md` and installs this skill into its `.claude/skills/` |
 | `help` | this table |
 
@@ -31,7 +32,7 @@ The launcher treats a first argument that does not start with `-` as a command a
 | `--since=<selector>` | `15m` | start of the window |
 | `--until=<selector>` | `now` | end of the window |
 | `--service=<name>` | every service | narrow to one service |
-| `--limit=<n>` | per list | how many rows: findings 20, traces 20, queries 100, errors 100, logs 200, marks 50 |
+| `--limit=<n>` | per list | how many rows: findings 20, traces 20, queries 100, errors 100, logs 200, marks 50, sql 200 (at most 5000) |
 | `--url=<base url>` | `http://127.0.0.1:4000`, or `SPIDERSENSE_URL` | which Spider Sense to ask |
 | `--db=<path or jdbc url>` | `~/db/spider-sense/sense` | read that database directly, without asking any server |
 | `--json` | off | print the JSON of api.md instead of the text |

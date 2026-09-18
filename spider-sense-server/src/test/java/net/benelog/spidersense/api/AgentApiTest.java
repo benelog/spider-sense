@@ -309,6 +309,98 @@ class AgentApiTest {
     }
 
     @Test
+    void sqlAnswersRowsInBothRenderingsAndSaysWhenItCutThemOff() {
+        serve((client, assembly) -> {
+            postProtobuf(client, "/v1/traces", sample());
+            String group = "{\"sql\":\"SELECT service, COUNT(*) AS spans FROM span GROUP BY service\"}";
+
+            Json.JsonObject body = json(postJson(client, "/api/sql", group));
+            assertThat(body.getArray("columns").get(0).asString()).isEqualTo("SERVICE");
+            assertThat(body.getArray("columns").get(1).asString()).isEqualTo("SPANS");
+            assertThat(body.getLong("rowCount")).isEqualTo(1);
+            assertThat(body.getBoolean("truncated")).isFalse();
+            assertThat(body.has("elapsedMs")).isTrue();
+            Json.JsonArray row = body.getArray("rows").get(0).asArray();
+            assertThat(row.get(0).asString()).isEqualTo("orders");
+            assertThat(row.get(1).asLong()).isEqualTo(9);
+
+            String text = postJson(client, "/api/sql?format=text", group).body();
+            assertThat(text).startsWith("# sql  1 rows\n\n");
+            assertThat(text).contains("| SERVICE | SPANS |");
+            assertThat(text).contains("| orders | 9 |");
+            assertThat(postJson(client, "/api/sql?format=text", group).body())
+                    .as("the same bytes twice").isEqualTo(text);
+
+            String capping = "{\"sql\":\"SELECT id FROM span ORDER BY id\",\"limit\":2}";
+            Json.JsonObject capped = json(postJson(client, "/api/sql", capping));
+            assertThat(capped.getLong("rowCount")).isEqualTo(2);
+            assertThat(capped.getBoolean("truncated")).isTrue();
+            assertThat(postJson(client, "/api/sql?format=text", capping).body())
+                    .startsWith("# sql  2 rows (truncated at 2)");
+
+            Json.JsonObject typed = json(postJson(client, "/api/sql",
+                    "{\"sql\":\"SELECT query_id, entry, duration_ns / 1000000.0 AS ms FROM span"
+                            + " WHERE entry\"}"));
+            Json.JsonArray entry = typed.getArray("rows").get(0).asArray();
+            assertThat(entry.get(0).isNull()).as("a NULL cell is null").isTrue();
+            assertThat(entry.get(1).asBoolean()).isTrue();
+            assertThat(entry.get(2).asDouble()).isEqualTo(900.0);
+            assertThat(postJson(client, "/api/sql?format=text",
+                    "{\"sql\":\"SELECT query_id FROM span WHERE entry\"}").body())
+                    .contains("| — |");
+        });
+    }
+
+    @Test
+    void sqlRefusesEverythingThatIsNotOneReadAndSaysWhyInTheFormatThatWasAsked() {
+        serve((client, assembly) -> {
+            postProtobuf(client, "/v1/traces", sample());
+
+            HttpResponse<String> deleted = postJson(client, "/api/sql",
+                    "{\"sql\":\"DELETE FROM span\"}");
+            assertThat(deleted.statusCode()).isEqualTo(400);
+            assertThat(Json.parse(deleted.body()).asObject().getString("error"))
+                    .contains("EXPLAIN, SELECT, SHOW, TABLE, VALUES, WITH")
+                    .contains("DELETE");
+
+            HttpResponse<String> two = postJson(client, "/api/sql",
+                    "{\"sql\":\"SELECT 1; DELETE FROM span\"}");
+            assertThat(two.statusCode()).isEqualTo(400);
+            assertThat(Json.parse(two.body()).asObject().getString("error"))
+                    .isEqualTo("one statement at a time: there is more after the first ';'");
+
+            HttpResponse<String> broken = postJson(client, "/api/sql",
+                    "{\"sql\":\"SELECT nonesuch FROM span\"}");
+            assertThat(broken.statusCode()).isEqualTo(400);
+            assertThat(Json.parse(broken.body()).asObject().getString("error"))
+                    .as("H2's own message, on one line")
+                    .contains("NONESUCH").doesNotContain("\n");
+
+            HttpResponse<String> zero = postJson(client, "/api/sql",
+                    "{\"sql\":\"SELECT 1\",\"limit\":0}");
+            assertThat(zero.statusCode()).isEqualTo(400);
+            assertThat(Json.parse(zero.body()).asObject().getString("error"))
+                    .isEqualTo("limit must be at least 1");
+
+            HttpResponse<String> asText = postJson(client, "/api/sql?format=text",
+                    "{\"sql\":\"DROP TABLE span\"}");
+            assertThat(asText.statusCode()).isEqualTo(400);
+            assertThat(asText.headers().firstValue("content-type"))
+                    .hasValue("text/markdown; charset=utf-8");
+            assertThat(asText.body().lines().count()).as("one line").isEqualTo(1);
+
+            assertThat(assembly.store().database().sql()
+                    .count("SELECT COUNT(*) FROM span", List.of()))
+                    .as("the span table is still there").isEqualTo(9);
+
+            // A ';' in a literal is not a second statement, and a comment is not a keyword.
+            Json.JsonObject fine = json(postJson(client, "/api/sql",
+                    "{\"sql\":\"-- what is in here\\n  SELECT ';' AS semicolon FROM span WHERE entry\"}"));
+            assertThat(fine.getLong("rowCount")).isEqualTo(1);
+        });
+    }
+
+    @Test
     void theListsTheUiServesAlsoAnswerMarkdown() {
         serve((client, assembly) -> {
             postProtobuf(client, "/v1/traces", sample());

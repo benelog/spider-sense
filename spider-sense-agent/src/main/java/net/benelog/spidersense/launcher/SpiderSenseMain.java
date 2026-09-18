@@ -122,7 +122,7 @@ public final class SpiderSenseMain {
                                                                         database file, from the terminal:
                                                                         status, findings, trace <id>, traces,
                                                                         endpoints, queries, errors, logs,
-                                                                        mark <name>, marks, compare, check, init,
+                                                                        mark <name>, marks, compare, check, sql, init,
                                                                         help
 
                 Options (as --key=value here, as -Dspidersense.key=value under -javaagent):

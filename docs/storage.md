@@ -171,6 +171,14 @@ CREATE TABLE IF NOT EXISTS meta (
 The schema is created with `IF NOT EXISTS` at startup; `meta.schema_version` is `3` (the `mark` table arrived with it), and a version that changes a table drops and recreates every table (the data is a cache of a development session, not a record).
 `entry` is decided once, when the row is written, so rows written by an older Spider Sense keep the flag they were written with — a root `INTERNAL` or database span from before the rule narrowed still counts as a request until the retention sweeper removes it.
 
+## The read-only user
+
+Beside the tables the schema creates one H2 user, `spider_sense_reader`, with `CREATE USER IF NOT EXISTS` and a constant password, and grants it `SELECT` on schema `PUBLIC`.
+It is what `POST /api/sql` and the CLI's `sql` run on ([agent.md](agent.md)): a user with `SELECT` and nothing else, so H2 itself refuses every write, every piece of DDL and the administrator-only functions (`FILE_WRITE`, `CSVWRITE`, `FILE_READ`, `LINK_SCHEMA`, `RUNSCRIPT`) to whatever statement gets that far.
+The grant is on the schema rather than on the tables, so it covers a table a later version adds without a `schema_version` bump, and creating the user is idempotent on every open.
+Only a server's open creates it, never the CLI's: `AUTO_SERVER=TRUE` may have joined the database of an older Spider Sense, and adding a user to it is as much a change to somebody else's database as recreating its tables would be.
+The reader's connection uses the same JDBC URL with the settings a non-administrator may not apply removed — H2 turns most of them into a `SET` at connect time, and `DB_CLOSE_DELAY`, which the in-memory fallback sets, is one an ordinary user is refused — keeping only `AUTO_SERVER` and `NON_KEYWORDS`.
+
 ## How it is written
 
 Ingest never touches the database on the request thread.

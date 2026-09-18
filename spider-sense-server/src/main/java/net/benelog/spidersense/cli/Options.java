@@ -34,6 +34,7 @@ final class Options {
     static final String COMPARE = "compare";
     static final String MARK = "mark";
     static final String TRACE = "trace";
+    static final String SQL = "sql";
 
     /** Options every command takes: where to read from, and how to print it. */
     private static final Set<String> COMMON = Set.of("url", "db", "json", "service",
@@ -55,6 +56,7 @@ final class Options {
             Map.entry("marks", with("limit")),
             Map.entry(COMPARE, with("before", "after", "until", "full")),
             Map.entry(CHECK, with(checkFlags())),
+            Map.entry(SQL, with("limit", "full")),
             // init reads nothing, so none of the common options mean anything to it:
             // --url, --db and the thresholds are all about a window it never opens.
             Map.entry(INIT, Set.of("dir", "jar", "no-skill")),
@@ -63,7 +65,8 @@ final class Options {
     /** The commands that take one word of their own, and what that word is called. */
     private static final Map<String, String> ARGUMENT = Map.of(
             TRACE, "a trace id",
-            MARK, "a mark name");
+            MARK, "a mark name",
+            SQL, "a statement");
 
     private final String command;
     private final String argument;

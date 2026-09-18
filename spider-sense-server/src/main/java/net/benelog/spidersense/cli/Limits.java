@@ -1,5 +1,7 @@
 package net.benelog.spidersense.cli;
 
+import net.benelog.spidersense.store.ReadOnlyQuery;
+
 /**
  * How long a list is when nobody said, and how long it may be asked to be.
  *
@@ -26,6 +28,8 @@ final class Limits {
     static final int LOGS_MAX = 5000;
     static final int MARKS = 50;
     static final int MARKS_MAX = 500;
+    static final int SQL = ReadOnlyQuery.LIMIT;
+    static final int SQL_MAX = ReadOnlyQuery.LIMIT_MAX;
 
     private Limits() {
     }

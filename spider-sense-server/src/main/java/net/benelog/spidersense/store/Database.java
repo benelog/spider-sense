@@ -3,9 +3,14 @@ package net.benelog.spidersense.store;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 
 import org.h2.jdbcx.JdbcConnectionPool;
+import org.h2.jdbcx.JdbcDataSource;
 
 /**
  * The H2 database behind everything: opened, schema-checked, and pooled.
@@ -137,6 +142,67 @@ public final class Database implements AutoCloseable {
 
     public String url() {
         return url;
+    }
+
+    /**
+     * A connection as {@link Schema#READER}, which may only {@code SELECT}: the
+     * second layer of {@code POST /api/sql} (agent.md).
+     *
+     * <p>It is not pooled and it is not the writer's: one statement borrows it,
+     * rolls back and closes it, and nothing else in Spider Sense ever holds it.
+     *
+     * @throws IllegalStateException when the database has no reader user, which is
+     *                               what a database an older Spider Sense created
+     *                               looks like until a server of this version
+     *                               opens it
+     */
+    public Connection reader() {
+        if (!hasReader()) {
+            throw new IllegalStateException("the database has no read-only user yet;"
+                    + " start an application or the standalone server with this version first");
+        }
+        JdbcDataSource source = new JdbcDataSource();
+        source.setURL(readerUrl(url));
+        source.setUser(Schema.READER);
+        source.setPassword(Schema.READER_PASSWORD);
+        try {
+            return source.getConnection();
+        } catch (SQLException e) {
+            throw new IllegalStateException("could not open a read-only connection to " + url
+                    + ": " + e.getMessage(), e);
+        }
+    }
+
+    private boolean hasReader() {
+        return sql.count("SELECT COUNT(*) FROM INFORMATION_SCHEMA.USERS WHERE USER_NAME = ?",
+                List.of(Schema.READER.toUpperCase(Locale.ROOT))) > 0;
+    }
+
+    /**
+     * The settings a reader's URL keeps; every other one is dropped.
+     *
+     * <p>H2 turns most {@code ;NAME=VALUE} settings into a {@code SET} at connect
+     * time, and several of those — {@code DB_CLOSE_DELAY} among them, which the
+     * in-memory fallback sets — are refused to anyone but an administrator, so the
+     * reader could not open the database at all. These two are the only settings
+     * Spider Sense puts in a URL that a reader needs: one to join the shared
+     * auto-server, one to parse {@code meta}'s {@code key} and {@code value}.
+     */
+    private static final Set<String> READER_SETTINGS = Set.of("AUTO_SERVER", "NON_KEYWORDS");
+
+    static String readerUrl(String url) {
+        String[] parts = url.split(";");
+        StringBuilder reader = new StringBuilder(parts[0]);
+        for (int i = 1; i < parts.length; i++) {
+            String setting = parts[i];
+            int equals = setting.indexOf('=');
+            String name = (equals < 0 ? setting : setting.substring(0, equals))
+                    .trim().toUpperCase(Locale.ROOT);
+            if (READER_SETTINGS.contains(name)) {
+                reader.append(';').append(setting);
+            }
+        }
+        return reader.toString();
     }
 
     public Storage storage() {

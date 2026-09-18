@@ -41,11 +41,12 @@ final class Remote {
     static int run(Options options, String base, PrintStream out, PrintStream err) {
         URI uri = URI.create(trimSlash(base) + path(options));
         HttpRequest.Builder request = HttpRequest.newBuilder(uri).timeout(READ);
-        if (Options.MARK.equals(options.command())) {
-            request.header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(markBody(options), StandardCharsets.UTF_8));
-        } else {
+        String body = body(options);
+        if (body == null) {
             request.GET();
+        } else {
+            request.header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8));
         }
 
         HttpResponse<String> response;
@@ -104,6 +105,7 @@ final class Remote {
                     .add("until", options.value("until", null))
                     .add("service", options.value("service", null));
             case Options.CHECK -> check(options);
+            case Options.SQL -> new Query("/api/sql");
             default -> throw new Options.Usage("unknown command: " + options.command());
         };
         if (options.flag("full")) {
@@ -128,12 +130,26 @@ final class Remote {
                 .add("service", options.value("service", null));
     }
 
-    private static String markBody(Options options) {
-        return Json.obj()
-                .put("name", options.argument())
-                .put("note", options.value("note", null))
-                .put("service", options.value("service", null))
-                .toJson();
+    /**
+     * The JSON body of the two commands that post one, or null for a {@code GET}.
+     *
+     * <p>A statement and a mark are what the caller says rather than what it asks
+     * about, so they travel in a body; everything else is a window and some
+     * filters, which are query parameters (api.md).
+     */
+    private static String body(Options options) {
+        return switch (options.command()) {
+            case Options.MARK -> Json.obj()
+                    .put("name", options.argument())
+                    .put("note", options.value("note", null))
+                    .put("service", options.value("service", null))
+                    .toJson();
+            case Options.SQL -> Json.obj()
+                    .put("sql", options.argument())
+                    .put("limit", options.limit(Limits.SQL, Limits.SQL_MAX))
+                    .toJson();
+            default -> null;
+        };
     }
 
     /**
@@ -152,7 +168,14 @@ final class Remote {
         };
     }
 
-    /** The {@code {"error": "..."}} the contract promises, or the body as it came. */
+    /**
+     * The {@code {"error": "..."}} the contract promises, or the body as it came.
+     *
+     * <p>{@code /api/sql} answers its errors in the format that was asked for, so a
+     * refused statement arrives as one line of text rather than as an object
+     * (agent.md); printing that line as it came is what makes the CLI say the same
+     * thing whether a server answered or the file did.
+     */
     private static String message(HttpResponse<String> response) {
         String body = response.body();
         try {
@@ -161,6 +184,10 @@ final class Remote {
             }
         } catch (RuntimeException e) {
             // Not JSON: the status line and the body are all there is to say.
+        }
+        boolean text = response.headers().firstValue("content-type").orElse("").startsWith("text/");
+        if (text && body != null && !body.isBlank()) {
+            return body.trim();
         }
         return "HTTP " + response.statusCode() + (body == null || body.isBlank() ? "" : ": " + body.trim());
     }

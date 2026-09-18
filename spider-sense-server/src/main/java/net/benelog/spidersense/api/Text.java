@@ -18,6 +18,7 @@ import net.benelog.spidersense.query.Stats;
 import net.benelog.spidersense.query.Window;
 import net.benelog.spidersense.store.LogRecord;
 import net.benelog.spidersense.store.Marks;
+import net.benelog.spidersense.store.ReadOnlyQuery;
 import net.benelog.spidersense.store.SpanRecord;
 import net.benelog.spidersense.store.Tingles;
 
@@ -678,6 +679,58 @@ final class Text {
     }
 
     // --- small pieces ---------------------------------------------------------
+
+    // --- sql ------------------------------------------------------------------
+
+    /**
+     * {@code # sql  12 rows} and the table under it.
+     *
+     * <p>No window and no clock: the answer to an arbitrary statement is whatever
+     * the statement asked for, and the one thing the heading can honestly say is
+     * how many rows came back and whether the cap cut them off. How long it took
+     * is in the JSON only, because a body that changed between two identical runs
+     * would stop being diffable (agent.md).
+     */
+    static String sql(ReadOnlyQuery.Result result, int limit, boolean full) {
+        StringBuilder text = new StringBuilder("# sql  ")
+                .append(result.rows().size()).append(" rows");
+        if (result.truncated()) {
+            text.append(" (truncated at ").append(limit).append(')');
+        }
+        text.append("\n\n");
+        List<String> header = new ArrayList<>(result.columns().size());
+        for (String column : result.columns()) {
+            header.add(oneLine(column));
+        }
+        table(text, header);
+        for (List<Object> row : result.rows()) {
+            List<String> cells = new ArrayList<>(row.size());
+            for (Object value : row) {
+                cells.add(cell(value, full));
+            }
+            row(text, cells);
+        }
+        return text.toString();
+    }
+
+    /**
+     * A cell of a SQL answer, said the way the store holds it.
+     *
+     * <p>No thousands separator and no rounding: these are the values of whatever
+     * the statement selected, an epoch millisecond as often as a duration, and a
+     * number a reader has to pass back into another statement must survive the
+     * round trip. Text is cut like a statement, at 200 characters unless
+     * {@code full}.
+     */
+    private static String cell(Object value, boolean full) {
+        return switch (value) {
+            case null -> "—";
+            case Boolean flag -> String.valueOf(flag);
+            case Long number -> String.valueOf(number);
+            case Double number -> String.valueOf(number);
+            default -> statement(String.valueOf(value), full);
+        };
+    }
 
     static String statement(String statement, boolean full) {
         if (statement == null) {

@@ -13,6 +13,27 @@ public final class Schema {
 
     public static final int VERSION = 3;
 
+    /**
+     * The H2 user {@code POST /api/sql} runs on: {@code SELECT} on {@code PUBLIC}
+     * and nothing else (storage.md).
+     *
+     * <p>It is the second of the three layers that keep the escape hatch read-only,
+     * and the only one that is not a guess: a statement allowlist can be fooled by
+     * a string literal, but a user without the right cannot write whatever the
+     * parser thought it saw. H2 refuses {@code INSERT}, {@code UPDATE},
+     * {@code DELETE}, {@code DROP} and {@code ALTER} to it with "Not enough rights
+     * for object", and {@code FILE_WRITE}, {@code CSVWRITE}, {@code FILE_READ},
+     * {@code LINK_SCHEMA} and {@code RUNSCRIPT} with "Admin rights are required for
+     * this operation", because it is not an administrator.
+     *
+     * <p>The password is a constant: the database is a local development cache
+     * behind no port of its own, and a secret nobody can tell anybody would only
+     * be a secret from the next Spider Sense to open the file.
+     */
+    public static final String READER = "spider_sense_reader";
+
+    static final String READER_PASSWORD = "spider-sense-reader";
+
     private Schema() {
     }
 
@@ -199,5 +220,26 @@ public final class Schema {
             sql.update("MERGE INTO meta (key, value) KEY(key) VALUES (?, ?)",
                     java.util.List.of("schema_version", String.valueOf(VERSION)));
         }
+        if (upgrade) {
+            reader(sql);
+        }
+    }
+
+    /**
+     * Creates {@link #READER} and grants it {@code SELECT}, idempotently.
+     *
+     * <p>Only on the server's open. The CLI reads a database that a running older
+     * Spider Sense may own, and creating a user in it is a change to somebody
+     * else's database; a CLI that finds no reader says so instead
+     * ({@link Database#reader()}).
+     *
+     * <p>The grant is on the schema rather than on the tables, so a table this
+     * version does not have yet is covered the moment it is created, and no
+     * version bump is needed for a right that never changes.
+     */
+    static void reader(Sql sql) {
+        sql.execute(
+                "CREATE USER IF NOT EXISTS " + READER + " PASSWORD '" + READER_PASSWORD + "'",
+                "GRANT SELECT ON SCHEMA PUBLIC TO " + READER);
     }
 }

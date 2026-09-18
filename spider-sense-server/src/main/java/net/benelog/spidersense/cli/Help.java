@@ -34,6 +34,8 @@ final class Help {
                     [--max-queries-per-request=] [--max-slow-queries=]
                     [--max-n-plus-one=] [--min-apdex=] [--endpoint=]
                                            pass or fail, in the exit code
+              sql "<statement>" [--limit=200]
+                                           read-only SQL over the store (SELECT only)
               init [--dir=<project dir>] [--jar=<path>] [--no-skill]
                                            writes the Spider Sense block into the project's
                                            CLAUDE.md and installs the skill into .claude/skills/
@@ -43,7 +45,8 @@ final class Help {
               --since=<selector>   default 15m
               --until=<selector>   default now
               --service=<name>     one service
-              --limit=<n>          the lists: findings, traces, queries, errors, logs, marks
+              --limit=<n>          the lists: findings, traces, queries, errors, logs, marks,
+                                   and the rows of sql (default 200, at most 5000)
               --url=<base url>     default http://127.0.0.1:4000, or SPIDERSENSE_URL
               --db=<path or jdbc url>   read the database directly, without asking any server
               --json               the JSON of api.md instead of the text
