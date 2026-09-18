@@ -471,7 +471,11 @@ Commands:
   ack <finding id> [--note=<text>]
                                accepts a known finding, so it is ranked last
   unack <finding id>           withdraws that acknowledgement
-  trace <traceId> [--full]     one trace as a tree
+  trace <traceId> [--full] [--diff=<traceId>]
+                               one trace as a tree, or two aligned
+  tail [--kind=slow-request|slow-query|error] [--service=<name>]
+       [--until-traces=<n>] [--timeout=<duration>]
+                               tingles as they arrive, one line each
   traces [--status=error|ok] [--min-ms=<n>] [--q=<text>] [--limit=20]
                                the newest traces
   endpoints                    the endpoints of the window
@@ -489,6 +493,10 @@ Commands:
                                pass or fail, in the exit code
   sql "<statement>" [--limit=200]
                                read-only SQL over the store (SELECT only)
+  export [--out=<file>]        the window as one JSON document, to the file or to
+                               stdout; a name ending in .gz is gzipped
+  import <file>                that document back into the store, and one line
+                               saying what arrived
   init [--dir=<project dir>] [--jar=<path>] [--no-skill] [--mcp]
                                writes the Spider Sense block into the project's
                                CLAUDE.md and installs the skill into .claude/skills/;
