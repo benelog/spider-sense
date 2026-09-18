@@ -4,6 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
@@ -47,6 +51,78 @@ class DatabaseTest {
                         .as("the server's open recreates the tables").isZero();
             }
         }
+    }
+
+    /**
+     * The second layer of {@code POST /api/sql}, asserted against H2 rather than
+     * assumed: the escape hatch is only as read-only as this user is.
+     */
+    @Test
+    void theReaderUserMaySelectAndNothingElse() throws SQLException {
+        String url = TestStore.memoryUrl();
+        try (Database database = Database.open(url, null)) {
+            database.sql().update("INSERT INTO mark (at_ms, name) VALUES (1, 'kept')", List.of());
+
+            try (Connection reader = database.reader();
+                    Statement statement = reader.createStatement()) {
+                try (ResultSet rs = statement.executeQuery("SELECT COUNT(*) FROM mark")) {
+                    assertThat(rs.next()).isTrue();
+                    assertThat(rs.getLong(1)).as("it may read").isEqualTo(1);
+                }
+
+                refused(statement, "INSERT INTO mark (at_ms, name) VALUES (2, 'no')",
+                        "Not enough rights");
+                refused(statement, "UPDATE mark SET name = 'no'", "Not enough rights");
+                refused(statement, "DELETE FROM mark", "Not enough rights");
+                refused(statement, "DROP TABLE mark", "Not enough rights");
+                refused(statement, "ALTER TABLE span ADD COLUMN evil INT", "Not enough rights");
+                refused(statement, "CREATE TABLE evil (a INT)", "Not enough rights");
+
+                refused(statement, "SELECT FILE_WRITE('x', 'build/tmp/reader.txt')",
+                        "Admin rights are required");
+                refused(statement, "CALL CSVWRITE('build/tmp/reader.csv', 'SELECT 1')",
+                        "Admin rights are required");
+                refused(statement, "SELECT FILE_READ('build.gradle')", "Admin rights are required");
+                refused(statement, "CALL LINK_SCHEMA('X', '', 'jdbc:h2:mem:elsewhere', 'sa', '', 'PUBLIC')",
+                        "Admin rights are required");
+                refused(statement, "RUNSCRIPT FROM 'build/tmp/reader.sql'", "Admin rights are required");
+                refused(statement, "CREATE USER hacker PASSWORD 'x' ADMIN", "Admin rights are required");
+            }
+
+            assertThat(database.sql().count("SELECT COUNT(*) FROM mark", List.of()))
+                    .as("nothing the reader tried got through").isEqualTo(1);
+        }
+    }
+
+    private static void refused(Statement statement, String sql, String why) {
+        assertThatThrownBy(() -> statement.execute(sql))
+                .as(sql)
+                .isInstanceOf(SQLException.class)
+                .hasMessageContaining(why);
+    }
+
+    /**
+     * A database an older Spider Sense created has no reader user, and the CLI's
+     * open does not add one to a database a running server may own: {@code sql}
+     * then says so instead of answering.
+     */
+    @Test
+    void theCliOpenCreatesNoReaderUser() {
+        try (Database cli = Database.openExisting(TestStore.memoryUrl(), null)) {
+            assertThatThrownBy(cli::reader)
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("the database has no read-only user yet");
+        }
+    }
+
+    /** The settings a reader may not apply are dropped; the two it needs are kept. */
+    @Test
+    void theReaderUrlKeepsOnlyWhatANonAdministratorMaySet() {
+        assertThat(Database.readerUrl("jdbc:h2:mem:x;DB_CLOSE_DELAY=-1;NON_KEYWORDS=KEY,VALUE"))
+                .isEqualTo("jdbc:h2:mem:x;NON_KEYWORDS=KEY,VALUE");
+        assertThat(Database.readerUrl("jdbc:h2:~/db/spider-sense/sense;AUTO_SERVER=TRUE"))
+                .isEqualTo("jdbc:h2:~/db/spider-sense/sense;AUTO_SERVER=TRUE");
+        assertThat(Database.readerUrl("jdbc:h2:~/db/sense")).isEqualTo("jdbc:h2:~/db/sense");
     }
 
     @Test

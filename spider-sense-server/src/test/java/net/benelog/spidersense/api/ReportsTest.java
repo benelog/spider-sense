@@ -1,6 +1,7 @@
 package net.benelog.spidersense.api;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.opentelemetry.proto.trace.v1.Span;
 
@@ -12,6 +13,7 @@ import net.benelog.spidersense.ingest.OtlpDecoder;
 import net.benelog.spidersense.query.Window;
 import net.benelog.spidersense.server.Config;
 import net.benelog.spidersense.store.Marks;
+import net.benelog.spidersense.store.ReadOnlyQuery;
 import net.benelog.spidersense.store.Store;
 import net.benelog.spidersilk.json.Json;
 
@@ -58,6 +60,14 @@ class ReportsTest {
                 assertThat(reports.check(window, null, null, java.util.Map.of()).json().asObject()
                         .getBoolean("pass")).isFalse();
                 assertThat(reports.endpoints(window, null).text()).contains("GET /orders/report");
+
+                Reports.Report sql = reports.sql(
+                        "SELECT endpoint, http_status FROM span WHERE entry", 200, false);
+                assertThat(sql.json().asObject().getLong("rowCount")).isEqualTo(1);
+                assertThat(sql.text()).startsWith("# sql  1 rows");
+                assertThat(sql.text()).contains("| GET /orders/report | 200 |");
+                assertThatThrownBy(() -> reports.sql("DELETE FROM span", 200, false))
+                        .isInstanceOf(ReadOnlyQuery.Refused.class);
             }
         }
     }

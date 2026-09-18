@@ -7,6 +7,7 @@ import net.benelog.spidersense.query.Check;
 import net.benelog.spidersense.query.Selectors;
 import net.benelog.spidersense.query.Window;
 import net.benelog.spidersense.store.Marks;
+import net.benelog.spidersense.store.ReadOnlyQuery;
 import net.benelog.spidersilk.App;
 import net.benelog.spidersilk.HttpException;
 import net.benelog.spidersilk.HttpStatus;
@@ -54,6 +55,7 @@ public final class AgentApi {
         app.post("/api/marks", "Record a named moment", this::mark);
         app.get("/api/compare", "Two windows side by side", this::compare);
         app.get("/api/check", "Thresholds as a verdict", this::check);
+        app.post("/api/sql", "Read-only SQL over the store", this::sql);
 
         // A selector is either the caller's mistake or a question about data, and an
         // agent reacts differently to the two; both reach here from every endpoint.
@@ -108,6 +110,33 @@ public final class AgentApi {
         long afterAt = selectors.resolve(after, untilAt, service);
         long beforeAt = selectors.resolve(before, afterAt, service);
         return Params.answer(req, reports.compare(beforeAt, afterAt, untilAt, service, Params.full(req)));
+    }
+
+    /**
+     * The escape hatch: one read-only statement, and its rows.
+     *
+     * <p>A {@code POST} because a statement is a body and not a query parameter,
+     * and the only endpoint here whose errors are part of the answer: a refused
+     * statement or one H2 would not run is a {@code 400} naming the reason, in the
+     * format the request asked for, because an agent that asked for Markdown
+     * cannot read a JSON error it did not expect (agent.md).
+     */
+    public WebResponse sql(WebRequest req) {
+        Json.JsonObject body = req.bodyJson().asObject();
+        String statement = body.optString("sql", null);
+        int limit = ReadOnlyQuery.LIMIT;
+        if (body.has("limit") && !body.get("limit").isNull()) {
+            limit = (int) body.getLong("limit");
+        }
+        if (limit < 1) {
+            return Params.problem(req, "limit must be at least 1");
+        }
+        try {
+            return Params.answer(req, reports.sql(statement,
+                    Math.min(limit, ReadOnlyQuery.LIMIT_MAX), Params.full(req)));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return Params.problem(req, e.getMessage());
+        }
     }
 
     public WebResponse check(WebRequest req) {

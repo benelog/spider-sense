@@ -14,6 +14,7 @@ import net.benelog.spidersense.query.Window;
 import net.benelog.spidersense.store.LogRecord;
 import net.benelog.spidersense.store.Marks;
 import net.benelog.spidersense.store.MetricPoint;
+import net.benelog.spidersense.store.ReadOnlyQuery;
 import net.benelog.spidersense.store.SpanRecord;
 import net.benelog.spidersense.store.Tingle;
 import net.benelog.spidersense.store.Tingles;
@@ -768,5 +769,47 @@ public final class Codecs {
                 .put("requests", result.requests())
                 .put("reason", result.reason())
                 .put("checks", checks);
+    }
+
+    /**
+     * The answer of {@code POST /api/sql}: the columns, the rows, and how the rows
+     * ended.
+     *
+     * <p>{@code truncated} is not a courtesy. An agent that reads 200 rows of an
+     * answer that had 40,000 and says "there are 200" would be wrong, so the cap
+     * is always visible beside the count.
+     */
+    static Json.JsonObject sqlResult(ReadOnlyQuery.Result result) {
+        Json.JsonArray rows = Json.arr();
+        for (List<Object> row : result.rows()) {
+            Json.JsonArray cells = Json.arr();
+            for (Object cell : row) {
+                cell(cells, cell);
+            }
+            rows.add(cells);
+        }
+        return Json.obj()
+                .put("columns", Json.arr().addAll(result.columns()))
+                .put("rows", rows)
+                .put("rowCount", result.rows().size())
+                .put("truncated", result.truncated())
+                .put("elapsedMs", result.elapsedMs());
+    }
+
+    /** A cell stays the type the store holds it as; anything else is its text. */
+    private static void cell(Json.JsonArray cells, Object value) {
+        switch (value) {
+            case null -> cells.add((Json.JsonValue) null);
+            case Boolean flag -> cells.add(flag.booleanValue());
+            case Long number -> cells.add(number.longValue());
+            case Double number -> {
+                if (number.isNaN() || number.isInfinite()) {
+                    cells.add((Json.JsonValue) null);
+                } else {
+                    cells.add(number.doubleValue());
+                }
+            }
+            default -> cells.add(String.valueOf(value));
+        }
     }
 }

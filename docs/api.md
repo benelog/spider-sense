@@ -354,7 +354,7 @@ An unknown mark name is `404`; a `since` after `until` is `400`.
 
 ### Text rendering
 
-`format=text`, or an `Accept` header whose first type is `text/markdown` or `text/plain`, answers `text/markdown; charset=utf-8` instead of JSON on: `/api/status`, `/api/findings`, `/api/marks`, `/api/compare`, `/api/check`, `/api/traces`, `/api/traces/{id}`, `/api/endpoints`, `/api/queries`, `/api/errors`, `/api/logs`, `/api/services`.
+`format=text`, or an `Accept` header whose first type is `text/markdown` or `text/plain`, answers `text/markdown; charset=utf-8` instead of JSON on: `/api/status`, `/api/findings`, `/api/marks`, `/api/compare`, `/api/check`, `/api/sql`, `/api/traces`, `/api/traces/{id}`, `/api/endpoints`, `/api/queries`, `/api/errors`, `/api/logs`, `/api/services`.
 `full=true` keeps statements whole and expands collapsed spans.
 The format of each rendering is in agent.md.
 
@@ -414,6 +414,20 @@ A mark named `start` is inserted by the writer when a service reports a `process
 With no rule given the defaults are `maxErrors=0`, `maxNPlusOne=0`, `maxP95Ms=<slowRequestMs>`.
 `endpoint` is an `endpointId` or an endpoint name.
 The response also carries the verdict as the header `X-Spider-Sense-Pass: true|false|none`, so the CLI can ask once for the text rendering and still exit with a code rather than parse prose for a word.
+
+### SQL
+
+`POST /api/sql` with `{ "sql": "SELECT …", "limit": 200 }`, and `format=text` as a query parameter when the Markdown rendering is wanted:
+
+```json
+{ "columns": ["ENDPOINT", "STATEMENTS"], "rows": [ ["GET /orders/{id}", 42], ["GET /orders", 7] ],
+  "rowCount": 2, "truncated": false, "elapsedMs": 3 }
+```
+
+`columns` are H2's own labels, which upper-case an unquoted name; a cell is a JSON number, string, boolean or null, as the store holds it, and an H2 `TIMESTAMP` is an ISO string.
+`limit` defaults to 200 and is capped at 5000, and a `limit` below 1 is a `400`; `truncated` says whether the cap cut the rows off.
+The statement must be a single `SELECT`, `WITH`, `TABLE`, `VALUES`, `EXPLAIN` or `SHOW`, and it runs as an H2 user that has `SELECT` and nothing else (agent.md, storage.md).
+A refused statement and a statement H2 would not run are both `400`: `{ "error": "…" }`, or the message on one line when the text rendering was asked for.
 
 ## Static UI
 
