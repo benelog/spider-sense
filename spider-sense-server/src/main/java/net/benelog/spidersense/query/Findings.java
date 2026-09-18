@@ -34,6 +34,7 @@ public final class Findings {
     public static final String N_PLUS_ONE = "n-plus-one";
     public static final String SLOW_QUERY = "slow-query";
     public static final String SLOW_ENDPOINT = "slow-endpoint";
+    public static final String SLOW_JOB = "slow-job";
     public static final String POOL_EXHAUSTED = "pool-exhausted";
 
     public static final String HIGH = "high";
@@ -51,7 +52,7 @@ public final class Findings {
     private static final int GROUPS = 100;
 
     /** Which group a finding is about; the fields that do not apply are null. */
-    public record Subject(String endpointId, String queryId, String errorId, String pool) {
+    public record Subject(String endpointId, String queryId, String errorId, String pool, String job) {
     }
 
     /**
@@ -96,6 +97,7 @@ public final class Findings {
         found.addAll(nPlusOne(window, service));
         found.addAll(slowQueries(window, service));
         found.addAll(slowEndpoints(window, service));
+        found.addAll(slowJobs(window, service));
         found.addAll(poolExhausted(window, service));
         found.sort(Ranked.ORDER);
 
@@ -113,7 +115,7 @@ public final class Findings {
     private record Ranked(Finding finding, double impact) {
 
         private static final List<String> KINDS =
-                List.of(ERROR, N_PLUS_ONE, SLOW_QUERY, SLOW_ENDPOINT, POOL_EXHAUSTED);
+                List.of(ERROR, N_PLUS_ONE, SLOW_QUERY, SLOW_ENDPOINT, SLOW_JOB, POOL_EXHAUSTED);
 
         static final Comparator<Ranked> ORDER = Comparator
                 .comparingInt((Ranked r) -> severityRank(r.finding().severity()))
@@ -153,7 +155,7 @@ public final class Findings {
                     ERROR, HIGH, group.service(),
                     simpleName(group.type()) + " in " + where,
                     Numbers.plural(group.count(), "occurrence") + " in " + where + "; " + group.message(),
-                    new Subject(null, null, group.errorId(), null),
+                    new Subject(null, null, group.errorId(), null, null),
                     numbers, null,
                     frames.ofStacktrace(stacktrace),
                     traceIds(queries.tracesContaining(window, "error_id = ?", group.errorId(),
@@ -304,7 +306,7 @@ public final class Findings {
                     affected.size() + " of " + Numbers.plural(requests, "request") + " repeated it; "
                             + counts(repeats) + " times; " + Numbers.millis(msPerRequest)
                             + " per request in that statement",
-                    new Subject(first.endpointId(), first.queryId(), null, null),
+                    new Subject(first.endpointId(), first.queryId(), null, null, null),
                     numbers, first.statement(),
                     code,
                     List.copyOf(traces));
@@ -375,7 +377,7 @@ public final class Findings {
                             + Numbers.plural(query.calls(), "call") + ", "
                             + query.slowCalls() + " of them over " + tingles.slowQueryMs() + " ms; "
                             + Numbers.millis(query.totalMs()) + " in total",
-                    new Subject(null, query.queryId(), null, null),
+                    new Subject(null, query.queryId(), null, null, null),
                     numbers, query.statement(),
                     frames.ofAttributes(samples.get(query.queryId())),
                     traceIds(queries.tracesContaining(window, "query_id = ?", query.queryId(),
@@ -428,13 +430,126 @@ public final class Findings {
                             + Numbers.number(perRequest) + " database calls and "
                             + Numbers.millis(msPerRequest) + " per request, "
                             + Numbers.percent(share) + " of the time",
-                    new Subject(endpoint.endpointId(), null, null, null),
+                    new Subject(endpoint.endpointId(), null, null, null, null),
                     numbers, null, List.of(),
                     traceIds(queries.tracesContaining(window, "endpoint_id = ?", endpoint.endpointId(),
                             EVIDENCE_TRACES, true)));
             found.add(new Ranked(finding, endpoint.totalMs()));
         }
         return found;
+    }
+
+    // --- slow job ------------------------------------------------------------
+
+    /** One job group over the window: the runs of one span name of one service. */
+    private record Job(String service, String name, long runs, double p50Ms, double p95Ms,
+            double maxMs, double totalMs) {
+    }
+
+    /**
+     * A job is a root {@code INTERNAL} span (design.md): a scheduled method, an
+     * {@code @Async} call, a batch step.
+     *
+     * <p>A job is never an entry span, so it is in no request count, in no Apdex and
+     * in no {@code check} verdict; this rule is the one place a slow scheduler tick
+     * or batch step is reported, and it measures over the runs of a job exactly what
+     * {@code slow-endpoint} measures over the requests of an endpoint.
+     */
+    private List<Ranked> slowJobs(Window window, String service) {
+        List<Job> slow = new ArrayList<>();
+        for (Job job : jobs(window, service)) {
+            if (job.p95Ms() > tingles.slowRequestMs()) {
+                slow.add(job);
+            }
+        }
+        if (slow.isEmpty()) {
+            return List.of();
+        }
+        Map<String, Queries.DbWork> databaseWork = queries.jobDatabaseWork(window, service);
+        Map<String, Map<String, Object>> samples = jobSampleAttributes(window, service);
+
+        List<Ranked> found = new ArrayList<>();
+        for (Job job : slow) {
+            String key = job.service() + "\0" + job.name();
+            Queries.DbWork work = databaseWork.getOrDefault(key, Queries.DbWork.NONE);
+            double perRun = job.runs() == 0 ? 0 : (double) work.calls() / job.runs();
+            double msPerRun = job.runs() == 0 ? 0 : work.totalMs() / job.runs();
+            double share = job.totalMs() <= 0 ? 0 : Math.min(1, work.totalMs() / job.totalMs());
+
+            Map<String, Object> numbers = new LinkedHashMap<>();
+            numbers.put("runs", job.runs());
+            numbers.put("p50Ms", job.p50Ms());
+            numbers.put("p95Ms", job.p95Ms());
+            numbers.put("maxMs", job.maxMs());
+            numbers.put("totalMs", job.totalMs());
+            numbers.put("dbCallsPerRun", perRun);
+            numbers.put("dbMsPerRun", msPerRun);
+            numbers.put("dbShare", share);
+
+            String severity = job.p95Ms() > 4 * tingles.slowRequestMs() ? HIGH : MEDIUM;
+            Finding finding = new Finding(
+                    id(SLOW_JOB, job.service(), job.name()),
+                    SLOW_JOB, severity, job.service(),
+                    job.name() + " is slow",
+                    "p95 " + Numbers.millis(job.p95Ms()) + " over "
+                            + Numbers.plural(job.runs(), "run") + "; "
+                            + Numbers.number(perRun) + " database calls and "
+                            + Numbers.millis(msPerRun) + " per run, "
+                            + Numbers.percent(share) + " of the time",
+                    new Subject(null, null, null, null, job.name()),
+                    numbers, null,
+                    frames.ofAttributes(samples.get(key)),
+                    traceIds(queries.tracesContaining(window,
+                            "parent_span_id IS NULL AND s.kind = 'INTERNAL' AND s.service = ?"
+                                    + " AND s.name = ?",
+                            List.of(job.service(), job.name()), EVIDENCE_TRACES, true)));
+            found.add(new Ranked(finding, job.totalMs()));
+        }
+        return found;
+    }
+
+    /** The job groups of the window, the heaviest first (storage.md). */
+    private List<Job> jobs(Window window, String service) {
+        List<Object> params = new ArrayList<>(List.of(window.from(), window.to()));
+        String where = jobWhere(service, params);
+        return sql.query("SELECT service, name, COUNT(*) AS runs,"
+                        + " PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY duration_ns) AS p50_ns,"
+                        + " PERCENTILE_DISC(0.95) WITHIN GROUP (ORDER BY duration_ns) AS p95_ns,"
+                        + " MAX(duration_ns) AS max_ns, SUM(duration_ns) AS total_ns FROM span WHERE "
+                        + where + " GROUP BY service, name ORDER BY total_ns DESC LIMIT " + GROUPS,
+                params, rs -> new Job(rs.getString("service"), rs.getString("name"),
+                        rs.getLong("runs"), Rows.ms(rs, "p50_ns"), Rows.ms(rs, "p95_ns"),
+                        Rows.ms(rs, "max_ns"), Rows.ms(rs, "total_ns")));
+    }
+
+    /**
+     * The newest run of each job group, for the {@code code.*} frames.
+     *
+     * <p>One statement for every group, as {@link #sampleAttributes} does for a
+     * single column; a job is keyed by two, so it partitions by both.
+     */
+    private Map<String, Map<String, Object>> jobSampleAttributes(Window window, String service) {
+        List<Object> params = new ArrayList<>(List.of(window.from(), window.to()));
+        String where = jobWhere(service, params);
+        Map<String, Map<String, Object>> samples = new HashMap<>();
+        sql.query("SELECT * FROM (SELECT service, name, attributes,"
+                + " ROW_NUMBER() OVER (PARTITION BY service, name ORDER BY start_ms DESC, id DESC) AS rn"
+                + " FROM span WHERE " + where + ") WHERE rn = 1", params, rs -> {
+                    samples.put(rs.getString("service") + "\0" + rs.getString("name"),
+                            AttrJson.decode(rs.getString("attributes")));
+                    return null;
+                });
+        return samples;
+    }
+
+    /** A run of a job: a root {@code INTERNAL} span of the window (design.md). */
+    private static String jobWhere(String service, List<Object> params) {
+        String where = "start_ms BETWEEN ? AND ? AND parent_span_id IS NULL AND kind = 'INTERNAL'";
+        if (service != null) {
+            params.add(service);
+            return where + " AND service = ?";
+        }
+        return where;
     }
 
     // --- pool exhausted ------------------------------------------------------
@@ -502,7 +617,7 @@ public final class Findings {
                 pool.name() + " ran out of connections",
                 Numbers.number(worstUsed) + " of " + limit + " connections in use and "
                         + Numbers.number(worstPending) + " requests waiting at the worst point",
-                new Subject(null, null, null, pool.name()),
+                new Subject(null, null, null, pool.name(), null),
                 numbers, null, List.of(), List.of());
         return new Ranked(finding, worstPending * 1_000_000 + worstUsed);
     }

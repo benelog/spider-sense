@@ -93,6 +93,7 @@ The table is the ranked answer and the numbered blocks under it are that evidenc
 | `slow-query` | a query group whose p95 is over `slow.query.ms` | an index, a rewrite, or not selecting what is not needed |
 | `slow-endpoint`, high `dbShare` | most of the endpoint's time is in database spans | look at its queries; the fix is one of the two above |
 | `slow-endpoint`, low `dbShare` | the time is elsewhere | look at the external call in its trace, or at the code itself |
+| `slow-job` | a job (a root `INTERNAL` span: a scheduled method, an `@Async` call, a batch step) whose p95 is over `slow.request.ms`; never counted as a request | its own code when `dbShare` is low, its queries when high |
 | `error` | an error group with an occurrence in the window | the top application frame in `code` is where to start |
 | `pool-exhausted` | pending requests above zero, or used equal to max | connections not being returned, or a pool too small for the concurrency |
 

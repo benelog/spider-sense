@@ -15,7 +15,7 @@ import net.benelog.spidersense.TestStore;
 import net.benelog.spidersense.ingest.OtlpDecoder;
 import net.benelog.spidersense.store.Store;
 
-/** The five rules of agent.md, each over the data that makes it fire. */
+/** The six rules of agent.md, each over the data that makes it fire. */
 class FindingsTest {
 
     private static final long NOW = 1_700_000_000_000L;
@@ -81,6 +81,14 @@ class FindingsTest {
                 Otlp.attr("db.name", "orders"),
                 Otlp.attr("db.operation", "SELECT"),
                 Otlp.attr("db.sql.table", table));
+    }
+
+    /** A job: a root {@code INTERNAL} span, named the way a scheduler names one. */
+    private Span.Builder job(int n, String name, long durationMs) {
+        return Otlp.span(traceId(n), spanId(n), name, Span.SpanKind.SPAN_KIND_INTERNAL,
+                NOW, durationMs,
+                Otlp.attr("code.namespace", "orders." + name.substring(0, name.indexOf('.'))),
+                Otlp.attr("code.function", name.substring(name.indexOf('.') + 1)));
     }
 
     @Test
@@ -215,6 +223,82 @@ class FindingsTest {
         assertThat((Double) finding.numbers().get("dbCallsPerRequest")).isEqualTo(1.0);
         assertThat((Double) finding.numbers().get("dbMsPerRequest")).isEqualTo(400.0);
         assertThat((Double) finding.numbers().get("dbShare")).isEqualTo(0.4);
+    }
+
+    @Test
+    void aRootInternalSpanOverTheThresholdIsASlowJobWithItsDatabaseShare() {
+        Span.Builder slow = job(11, "ReportJob.run", 900);
+        Span.Builder alsoSlow = job(12, "ReportJob.run", 800);
+        Span.Builder quick = job(13, "ReportJob.run", 100);
+        decoder.accept(Otlp.traces(Otlp.service("orders"), slow,
+                query(slow, 101, "select * from orders", "orders", NOW, 360),
+                alsoSlow, quick));
+        flush();
+
+        List<Findings.Finding> slowJobs = of(Findings.SLOW_JOB);
+
+        assertThat(slowJobs).hasSize(1);
+        Findings.Finding finding = slowJobs.get(0);
+        assertThat(finding.severity()).isEqualTo(Findings.MEDIUM);
+        assertThat(finding.title()).isEqualTo("ReportJob.run is slow");
+        assertThat(finding.service()).isEqualTo("orders");
+        assertThat(finding.subject().job()).isEqualTo("ReportJob.run");
+        assertThat(finding.subject().endpointId()).isNull();
+        assertThat(finding.numbers().get("runs")).isEqualTo(3L);
+        assertThat((Double) finding.numbers().get("p50Ms")).isEqualTo(800.0);
+        assertThat((Double) finding.numbers().get("p95Ms")).isEqualTo(900.0);
+        assertThat((Double) finding.numbers().get("maxMs")).isEqualTo(900.0);
+        assertThat((Double) finding.numbers().get("totalMs")).isEqualTo(1800.0);
+        assertThat((Double) finding.numbers().get("dbMsPerRun")).isEqualTo(120.0);
+        assertThat((Double) finding.numbers().get("dbShare")).isEqualTo(0.2);
+        assertThat(finding.why()).contains("p95 900.0 ms over 3 runs");
+        assertThat(finding.code()).containsExactly("orders.ReportJob.run");
+        assertThat(finding.traces()).hasSizeLessThanOrEqualTo(3);
+        assertThat(finding.traces()).containsExactly(traceId(11), traceId(12), traceId(13));
+    }
+
+    @Test
+    void aJobUnderTheThresholdIsNoFinding() {
+        decoder.accept(Otlp.traces(Otlp.service("orders"),
+                job(11, "ReportJob.run", 100), job(12, "ReportJob.run", 120)));
+        flush();
+
+        assertThat(of(Findings.SLOW_JOB)).isEmpty();
+    }
+
+    @Test
+    void onlyARootInternalSpanIsAJob() {
+        Span.Builder request = entry(1, "/orders/report", 900);
+        Span.Builder inside = Otlp.child(request, spanId(21), "ReportJob.run",
+                Span.SpanKind.SPAN_KIND_INTERNAL, NOW, 800);
+        Span.Builder seed = Otlp.span(traceId(22), spanId(22), "INSERT orders",
+                Span.SpanKind.SPAN_KIND_CLIENT, NOW, 900,
+                Otlp.attr("db.system", "h2"),
+                Otlp.attr("db.statement", "insert into orders values (?)"),
+                Otlp.attr("db.operation", "INSERT"),
+                Otlp.attr("db.sql.table", "orders"));
+        decoder.accept(Otlp.traces(Otlp.service("orders"), request, inside, seed));
+        flush();
+
+        assertThat(of(Findings.SLOW_JOB)).isEmpty();
+        assertThat(of(Findings.SLOW_ENDPOINT)).extracting(Findings.Finding::title)
+                .containsExactly("GET /orders/report is slow");
+    }
+
+    @Test
+    void aSlowJobIsRankedAfterASlowEndpointOfTheSameSeverity() {
+        decoder.accept(Otlp.traces(Otlp.service("orders"),
+                entry(1, "/orders/report", 700), job(11, "ReportJob.run", 700)));
+        flush();
+
+        List<Findings.Finding> found = findings.findings(window, null, 20);
+
+        List<String> kinds = new ArrayList<>();
+        for (Findings.Finding finding : found) {
+            assertThat(finding.severity()).isEqualTo(Findings.MEDIUM);
+            kinds.add(finding.kind());
+        }
+        assertThat(kinds).containsSubsequence(Findings.SLOW_ENDPOINT, Findings.SLOW_JOB);
     }
 
     @Test
