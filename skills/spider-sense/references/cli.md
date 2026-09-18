@@ -148,9 +148,11 @@ $ java -jar spider-sense.jar status
 | started | 2026-09-17T08:19:14.060+09:00 |
 | embedded service | spring-orders |
 | thresholds | slow request 500 ms, slow query 100 ms |
-| retention | 24 hours |
+| ignore | /actuator/**, /health, /healthz, /livez, /readyz |
+| retention | 24 hours, 1000000 spans |
 | database | /home/me/db/spider-sense/sense.mv.db |
 | database size | 110395392 bytes |
+| dropped spans | 0 |
 | spans | 51785 |
 | traces | 51257 |
 | logs | 66 |
