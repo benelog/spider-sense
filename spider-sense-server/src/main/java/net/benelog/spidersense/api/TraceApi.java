@@ -47,7 +47,8 @@ public final class TraceApi {
         app.get("/api/endpoints", "Endpoint statistics across services", this::endpoints);
         app.get("/api/endpoints/{endpointId}", "One endpoint in detail", this::endpoint);
         app.get("/api/traces", "Trace list", this::traces);
-        app.get("/api/traces/{traceId}", "One trace with its spans and logs", this::trace);
+        app.get("/api/traces/{traceId}", "One trace with its spans and logs,"
+                + " or two aligned with diff=", this::trace);
         app.get("/api/scatter", "One point per entry span", this::scatter);
         app.get("/api/map", "Services, their callers and what they call", this::map);
         app.get("/api/queries", "Database statements grouped", this::queries);
@@ -157,6 +158,14 @@ public final class TraceApi {
 
     public WebResponse trace(WebRequest req) {
         String traceId = req.pathParam("traceId");
+        String diff = req.queryParamOrNull("diff");
+        if (diff != null) {
+            try {
+                return Params.answer(req, reports.traceDiff(traceId, diff, Params.full(req)));
+            } catch (Reports.NoSuchTrace e) {
+                throw new HttpException(HttpStatus.NOT_FOUND, e.getMessage());
+            }
+        }
         Reports.Report report = reports.trace(traceId, Params.full(req));
         if (report == null) {
             throw new HttpException(HttpStatus.NOT_FOUND, "No such trace: " + traceId);

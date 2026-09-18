@@ -361,7 +361,7 @@ The server speaks the Model Context Protocol in two transports, and both are the
 | Tool | Arguments | Answers |
 |---|---|---|
 | `findings` | `since`, `until`, `service`, `limit` (1–100), `full`, `hideAcked` | the findings text |
-| `trace` | `traceId` (required), `full` | the trace tree |
+| `trace` | `traceId` (required), `full`, `diff` | the trace tree, or the two traces aligned when `diff` names a second one ([Trace diff](#trace-diff)) |
 | `mark` | `name` (required, `[A-Za-z0-9._-]{1,64}`), `note`, `service` | the mark, as the CLI prints it |
 | `compare` | `before`, `after` (both required), `until`, `service` | the compare text |
 | `check` | `since`, `until`, `service`, `endpoint`, `maxP95Ms`, `maxErrors`, `maxErrorRate`, `maxQueriesPerRequest`, `maxSlowQueries`, `maxNPlusOne`, `maxLogErrors`, `minApdex` | the check text; `structuredContent` carries `{ "pass": true \| false \| null, "requests": n }` so a host need not read the heading for the verdict |

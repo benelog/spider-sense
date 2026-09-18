@@ -381,7 +381,10 @@ public final class McpServer {
                         List.of(Arg.string("traceId",
                                         "The 32 hex characters a finding or a trace list named."),
                                 Arg.bool("full", "Expand the repeated spans a tree collapses into "
-                                        + "one row, and keep statements whole.")),
+                                        + "one row, and keep statements whole."),
+                                Arg.string("diff", "A second trace id: the two trees are aligned "
+                                        + "and answered as one text, which is how the same request "
+                                        + "before and after a change is read.")),
                         List.of("traceId")),
                 new Tool("mark",
                         "Use this to name the moment before you exercise the application, so a later "

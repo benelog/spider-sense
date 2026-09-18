@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 import net.benelog.spidersense.query.Check;
 import net.benelog.spidersense.query.CodeFrames;
@@ -49,6 +50,9 @@ final class Text {
 
     /** A run of identical siblings longer than this collapses into one line. */
     private static final int COLLAPSE_AFTER = 3;
+
+    /** Every digit of a summary is masked before two traces are aligned. */
+    private static final Pattern DIGITS = Pattern.compile("\\d");
 
     private static final int OFFSET_WIDTH = 11;
     private static final int DURATION_WIDTH = 10;
@@ -532,6 +536,36 @@ final class Text {
     // --- one trace ------------------------------------------------------------
 
     /**
+     * One line of the trace rendering: a span, or a run of identical siblings
+     * collapsed into one.
+     *
+     * <p>The tree becomes this list before anything is printed, because the trace
+     * diff aligns two traces on exactly the lines the single rendering would have
+     * shown: a collapsed group is one line there and one line here, so the two
+     * renderings can never disagree about what a line is (agent.md).
+     *
+     * @param text  the span as it reads without its columns: the kind or
+     *              {@code db}, the service where it changes from the parent, and
+     *              the summary
+     * @param count how many siblings the line stands for; 1 for a span of its own
+     * @param under the continuations below it — the statement, the exception and
+     *              the application frames
+     */
+    record TraceLine(int depth, SpanRecord span, String text, double offsetMs, double durationMs,
+            int count, List<String> under) {
+
+        /**
+         * What the diff aligns on: where the line sits and what it says, with its
+         * timing, its count and its digits left out, so {@code /api/books/155} and
+         * {@code /api/books/87} are the same line of the same tree.
+         */
+        String key() {
+            return depth + " " + span.category() + " "
+                    + DIGITS.matcher(span.summary()).replaceAll("?");
+        }
+    }
+
+    /**
      * The trace as an indented tree.
      *
      * <p>A waterfall is a picture; this is the same information as lines, which is
@@ -540,24 +574,9 @@ final class Text {
      * a statement, an exception, the application frames — is a continuation of it.
      */
     static String trace(Queries.TraceDetail trace, Tingles tingles, CodeFrames frames, boolean full) {
-        Map<String, List<SpanRecord>> children = new LinkedHashMap<>();
-        List<SpanRecord> roots = new ArrayList<>();
-        java.util.Set<String> ids = new java.util.HashSet<>();
-        for (SpanRecord span : trace.spans()) {
-            ids.add(span.spanId());
-        }
-        for (SpanRecord span : trace.spans()) {
-            if (span.parentSpanId() == null || !ids.contains(span.parentSpanId())) {
-                roots.add(span);
-            } else {
-                children.computeIfAbsent(span.parentSpanId(), id -> new ArrayList<>()).add(span);
-            }
-        }
-        long startNs = Long.MAX_VALUE;
         int dbCount = 0;
         int errorCount = 0;
         for (SpanRecord span : trace.spans()) {
-            startNs = Math.min(startNs, span.startNanos());
             if (span.dbStatement() != null) {
                 dbCount++;
             }
@@ -575,7 +594,27 @@ final class Text {
         text.append(pad("offset", OFFSET_WIDTH)).append(pad("duration", DURATION_WIDTH))
                 .append("span\n");
 
-        renderSiblings(text, roots, children, 0, null, startNs, tingles, frames, full);
+        for (TraceLine line : lines(trace, tingles, frames, full)) {
+            text.append(pad(Numbers.millis(line.offsetMs()), OFFSET_WIDTH))
+                    .append(pad(Numbers.millis(line.durationMs()), DURATION_WIDTH))
+                    .append("  ".repeat(line.depth()))
+                    .append(line.text());
+            if (line.count() > 1) {
+                text.append("  × ").append(line.count()).append(", ")
+                        .append(Numbers.millis(line.durationMs() / line.count())).append(" avg, ")
+                        .append(Numbers.millis(line.durationMs())).append(" total");
+            }
+            if (tingles.isSlow(line.span())) {
+                text.append("  [slow]");
+            }
+            if (line.span().isError()) {
+                text.append(tingles.isSlow(line.span()) ? " [error]" : "  [error]");
+            }
+            text.append('\n');
+            for (String content : line.under()) {
+                continuation(text, OFFSET_WIDTH + DURATION_WIDTH, line.depth(), content);
+            }
+        }
 
         if (!trace.logs().isEmpty()) {
             text.append("\nlogs (").append(trace.logs().size()).append(")\n");
@@ -588,7 +627,32 @@ final class Text {
         return text.toString();
     }
 
-    private static void renderSiblings(StringBuilder text, List<SpanRecord> siblings,
+    /** The lines of one trace, in the order the tree prints them. */
+    static List<TraceLine> lines(Queries.TraceDetail trace, Tingles tingles, CodeFrames frames,
+            boolean full) {
+        Map<String, List<SpanRecord>> children = new LinkedHashMap<>();
+        List<SpanRecord> roots = new ArrayList<>();
+        java.util.Set<String> ids = new java.util.HashSet<>();
+        for (SpanRecord span : trace.spans()) {
+            ids.add(span.spanId());
+        }
+        for (SpanRecord span : trace.spans()) {
+            if (span.parentSpanId() == null || !ids.contains(span.parentSpanId())) {
+                roots.add(span);
+            } else {
+                children.computeIfAbsent(span.parentSpanId(), id -> new ArrayList<>()).add(span);
+            }
+        }
+        long startNs = Long.MAX_VALUE;
+        for (SpanRecord span : trace.spans()) {
+            startNs = Math.min(startNs, span.startNanos());
+        }
+        List<TraceLine> lines = new ArrayList<>();
+        collect(lines, roots, children, 0, null, startNs, tingles, frames, full);
+        return lines;
+    }
+
+    private static void collect(List<TraceLine> lines, List<SpanRecord> siblings,
             Map<String, List<SpanRecord>> children, int depth, String parentService, long startNs,
             Tingles tingles, CodeFrames frames, boolean full) {
         siblings.sort((a, b) -> Long.compare(a.startNanos(), b.startNanos()));
@@ -607,59 +671,43 @@ final class Text {
                 for (int j = i; j < i + run; j++) {
                     total += siblings.get(j).durationMillis();
                 }
-                line(text, first, depth, parentService, startNs, tingles, total,
-                        "  × " + run + ", " + Numbers.millis(total / run) + " avg, "
-                                + Numbers.millis(total) + " total");
-                if (first.dbStatement() != null) {
-                    continuation(text, depth, statement(first.dbStatement(), full));
-                }
+                lines.add(new TraceLine(depth, first, spanText(first, parentService),
+                        offset(first, startNs), total, run,
+                        first.dbStatement() == null ? List.of()
+                                : List.of(statement(first.dbStatement(), full))));
                 i += run;
                 continue;
             }
-            renderSpan(text, first, children, depth, parentService, startNs, tingles, frames, full);
+            List<String> under = new ArrayList<>();
+            if (first.dbStatement() != null && (full || tingles.isSlow(first))) {
+                under.add(statement(first.dbStatement(), full));
+            }
+            if (first.isError()) {
+                String message = first.errorMessage();
+                under.add("exception " + Findings.simpleName(first.errorType())
+                        + (message == null || message.isBlank() ? "" : ": " + oneLine(message)));
+                under.addAll(frames.of(first.stacktrace(), first.attributes()));
+            }
+            lines.add(new TraceLine(depth, first, spanText(first, parentService),
+                    offset(first, startNs), first.durationMillis(), 1, List.copyOf(under)));
+            List<SpanRecord> kids = children.get(first.spanId());
+            if (kids != null) {
+                collect(lines, kids, children, depth + 1, first.service(), startNs, tingles, frames,
+                        full);
+            }
             i++;
         }
     }
 
-    private static void renderSpan(StringBuilder text, SpanRecord span,
-            Map<String, List<SpanRecord>> children, int depth, String parentService, long startNs,
-            Tingles tingles, CodeFrames frames, boolean full) {
-        line(text, span, depth, parentService, startNs, tingles, span.durationMillis(), "");
-        if (span.dbStatement() != null && (full || tingles.isSlow(span))) {
-            continuation(text, depth, statement(span.dbStatement(), full));
-        }
-        if (span.isError()) {
-            String message = span.errorMessage();
-            continuation(text, depth, "exception " + Findings.simpleName(span.errorType())
-                    + (message == null || message.isBlank() ? "" : ": " + oneLine(message)));
-            for (String frame : frames.of(span.stacktrace(), span.attributes())) {
-                continuation(text, depth, frame);
-            }
-        }
-        List<SpanRecord> kids = children.get(span.spanId());
-        if (kids != null) {
-            renderSiblings(text, kids, children, depth + 1, span.service(), startNs, tingles, frames,
-                    full);
-        }
+    private static double offset(SpanRecord span, long startNs) {
+        return (span.startNanos() - startNs) / 1_000_000.0;
     }
 
-    private static void line(StringBuilder text, SpanRecord span, int depth, String parentService,
-            long startNs, Tingles tingles, double durationMs, String suffix) {
-        double offsetMs = (span.startNanos() - startNs) / 1_000_000.0;
-        text.append(pad(Numbers.millis(offsetMs), OFFSET_WIDTH))
-                .append(pad(Numbers.millis(durationMs), DURATION_WIDTH))
-                .append("  ".repeat(depth))
-                .append(prefix(span))
-                .append(span.service().equals(parentService) ? "" : span.service() + " ")
-                .append(span.summary())
-                .append(suffix);
-        if (tingles.isSlow(span)) {
-            text.append("  [slow]");
-        }
-        if (span.isError()) {
-            text.append(tingles.isSlow(span) ? " [error]" : "  [error]");
-        }
-        text.append('\n');
+    /** The span as the tree says it; the service is named only where it changes. */
+    private static String spanText(SpanRecord span, String parentService) {
+        return prefix(span)
+                + (span.service().equals(parentService) ? "" : span.service() + " ")
+                + span.summary();
     }
 
     /** A database span reads as {@code db}; everything else as its span kind. */
@@ -667,15 +715,184 @@ final class Text {
         return "db".equals(span.category()) ? "db " : span.kind() + " ";
     }
 
-    private static void continuation(StringBuilder text, int depth, String content) {
-        text.append(" ".repeat(OFFSET_WIDTH + DURATION_WIDTH))
-                .append("  ".repeat(depth + 1)).append(content).append('\n');
+    private static void continuation(StringBuilder text, int columns, int depth, String content) {
+        text.append(" ".repeat(columns)).append("  ".repeat(depth + 1)).append(content).append('\n');
     }
 
     private static boolean sameLine(SpanRecord one, SpanRecord two) {
         return one.category().equals(two.category())
                 && one.service().equals(two.service())
                 && one.summary().equals(two.summary());
+    }
+
+    // --- two traces aligned ---------------------------------------------------
+
+    /** How many lines of either side the alignment considers (agent.md). */
+    private static final int DIFF_LINES = 2_000;
+
+    /** Each of the two duration columns is as wide as the trace's offset column. */
+    private static final int DIFF_WIDTH = OFFSET_WIDTH;
+
+    /** The gutter and both columns: where a span line begins, and a continuation under it. */
+    private static final int DIFF_COLUMNS = 3 + DIFF_WIDTH + DIFF_WIDTH;
+
+    /** A delta's minus is U+2212, which is as wide as the digits it stands before. */
+    private static final String MINUS = "−";
+
+    /**
+     * One line of the aligned rendering: the same line on both sides, or on one.
+     *
+     * @param counted whether the line says how many spans it stands for, which a
+     *                collapsed group does even where the other side collapsed
+     *                nothing — a count that changed is the whole finding
+     */
+    record DiffLine(char op, TraceLine a, TraceLine b, boolean counted) {
+
+        /** The side the line is rendered from: {@code a} where there is one. */
+        TraceLine either() {
+            return a == null ? b : a;
+        }
+
+        /**
+         * The statement or the exception under the line. Timing is diffed and prose
+         * is not, so a matched line shows {@code a}'s continuations, or {@code b}'s
+         * when only {@code b} has any (agent.md).
+         */
+        List<String> under() {
+            if (a != null && !a.under().isEmpty()) {
+                return a.under();
+            }
+            return b == null ? List.of() : b.under();
+        }
+    }
+
+    /**
+     * The two line sequences aligned by their longest common subsequence.
+     *
+     * <p>The key is the line's shape ({@link TraceLine#key()}), never its timing:
+     * the question the diff answers is which span went away and which one got
+     * slower, and a span that took 38 ms before and 2 ms after is the same span.
+     * Each side is cut at {@value #DIFF_LINES} lines because the alignment is
+     * quadratic and a trace that long is a different problem.
+     */
+    static List<DiffLine> align(List<TraceLine> first, List<TraceLine> second) {
+        List<TraceLine> left = first.size() <= DIFF_LINES ? first : first.subList(0, DIFF_LINES);
+        List<TraceLine> right = second.size() <= DIFF_LINES ? second : second.subList(0, DIFF_LINES);
+        int n = left.size();
+        int m = right.size();
+        String[] keysLeft = new String[n];
+        String[] keysRight = new String[m];
+        for (int i = 0; i < n; i++) {
+            keysLeft[i] = left.get(i).key();
+        }
+        for (int j = 0; j < m; j++) {
+            keysRight[j] = right.get(j).key();
+        }
+        int[][] common = new int[n + 1][m + 1];
+        for (int i = n - 1; i >= 0; i--) {
+            for (int j = m - 1; j >= 0; j--) {
+                common[i][j] = keysLeft[i].equals(keysRight[j])
+                        ? common[i + 1][j + 1] + 1
+                        : Math.max(common[i + 1][j], common[i][j + 1]);
+            }
+        }
+
+        List<DiffLine> lines = new ArrayList<>();
+        int i = 0;
+        int j = 0;
+        while (i < n && j < m) {
+            if (keysLeft[i].equals(keysRight[j])) {
+                matched(lines, left.get(i), right.get(j));
+                i++;
+                j++;
+            } else if (common[i + 1][j] >= common[i][j + 1]) {
+                lines.add(new DiffLine('-', left.get(i), null, left.get(i).count() > 1));
+                i++;
+            } else {
+                lines.add(new DiffLine('+', null, right.get(j), right.get(j).count() > 1));
+                j++;
+            }
+        }
+        while (i < n) {
+            lines.add(new DiffLine('-', left.get(i), null, left.get(i).count() > 1));
+            i++;
+        }
+        while (j < m) {
+            lines.add(new DiffLine('+', null, right.get(j), right.get(j).count() > 1));
+            j++;
+        }
+        return lines;
+    }
+
+    /**
+     * A line both sides have. Where the two collapsed a different number of
+     * siblings it is written as two lines, {@code -} with {@code a}'s count and
+     * {@code +} with {@code b}'s: the counts are what changed, and one row showing
+     * both would hide it (agent.md).
+     */
+    private static void matched(List<DiffLine> lines, TraceLine a, TraceLine b) {
+        if (a.count() == b.count()) {
+            lines.add(new DiffLine('=', a, b, a.count() > 1));
+            return;
+        }
+        lines.add(new DiffLine('-', a, null, true));
+        lines.add(new DiffLine('+', null, b, true));
+    }
+
+    /**
+     * Two traces as one text: the gutter, {@code a}'s duration, {@code b}'s, and
+     * the span line indented by depth.
+     *
+     * <p>No logs, and no slow or error marker: what is on both sides would not say
+     * whose marker it is, and an error is already said by the exception under the
+     * line.
+     */
+    static String traceDiff(Queries.TraceDetail a, Queries.TraceDetail b, List<DiffLine> lines) {
+        double delta = b.durationMs() - a.durationMs();
+        StringBuilder text = new StringBuilder("# trace diff ").append(a.traceId())
+                .append(" → ").append(b.traceId()).append("  ")
+                .append(Numbers.millis(a.durationMs())).append(" → ")
+                .append(Numbers.millis(b.durationMs()))
+                .append("  (").append(signed(delta)).append(", ")
+                .append(signedPercent(delta, a.durationMs())).append(")  ")
+                .append(a.spans().size()).append(" → ").append(b.spans().size())
+                .append(" spans\n\n");
+        text.append("   ").append(pad("a", DIFF_WIDTH)).append(pad("b", DIFF_WIDTH)).append("span\n");
+
+        for (DiffLine line : lines) {
+            TraceLine shown = line.either();
+            text.append(line.op()).append("  ")
+                    .append(pad(side(line.a()), DIFF_WIDTH))
+                    .append(pad(side(line.b()), DIFF_WIDTH))
+                    .append("  ".repeat(shown.depth()))
+                    .append(shown.text());
+            if (line.counted()) {
+                text.append("  × ").append(shown.count());
+            }
+            text.append('\n');
+            for (String content : line.under()) {
+                continuation(text, DIFF_COLUMNS, shown.depth(), content);
+            }
+        }
+        return text.toString();
+    }
+
+    /** One side's duration, or a dash where that side has no such span. */
+    private static String side(TraceLine line) {
+        return line == null ? "—" : Numbers.millis(line.durationMs());
+    }
+
+    /** {@code −271.2 ms}: a delta always carries its sign, even when it is zero. */
+    private static String signed(double delta) {
+        return (delta < 0 ? MINUS : "+") + Numbers.millis(Math.abs(delta));
+    }
+
+    /** The same delta as a share of where it started, or a dash over nothing. */
+    private static String signedPercent(double delta, double base) {
+        if (base <= 0) {
+            return "—";
+        }
+        return (delta < 0 ? MINUS : "+") + Numbers.percent(Math.abs(delta) / base);
     }
 
     // --- small pieces ---------------------------------------------------------

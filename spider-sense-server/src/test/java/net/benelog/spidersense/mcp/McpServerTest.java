@@ -111,6 +111,8 @@ class McpServerTest {
         assertThat(limit.getDouble("maximum")).isEqualTo(100.0);
         assertThat(properties(byName.get("sql")).getObject("limit").getDouble("maximum"))
                 .isEqualTo(5000.0);
+        assertThat(properties(byName.get("trace")).getObject("diff").getString("type"))
+                .isEqualTo("string");
         assertThat(properties(byName.get("mark")).getObject("name").getString("pattern"))
                 .isEqualTo("^[A-Za-z0-9._-]{1,64}$");
         assertThat(properties(byName.get("check")).getObject("maxP95Ms").getString("type"))

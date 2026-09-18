@@ -45,6 +45,28 @@ public final class Reports implements AutoCloseable {
     public record Report(Json.JsonValue json, String text) {
     }
 
+    /**
+     * One of the two ids a diff was asked for is not stored.
+     *
+     * <p>A single trace that is missing is a {@code null} report, because there is
+     * only one id it could have been; a diff has two, and an answer that did not
+     * name which one it could not find would leave the caller to guess. It is a
+     * {@code 404} over HTTP and exit code {@code 4} in the CLI (agent.md).
+     */
+    public static final class NoSuchTrace extends RuntimeException {
+
+        private final String traceId;
+
+        public NoSuchTrace(String traceId) {
+            super("No such trace: " + traceId);
+            this.traceId = traceId;
+        }
+
+        public String traceId() {
+            return traceId;
+        }
+    }
+
     private final Config config;
     private final Database database;
     private final boolean ownsDatabase;
@@ -304,6 +326,34 @@ public final class Reports implements AutoCloseable {
             return null;
         }
         return new Report(Codecs.trace(trace, tingles), Text.trace(trace, tingles, frames, full));
+    }
+
+    /**
+     * Two traces aligned: which span went away, and which one got slower
+     * (agent.md, "Trace diff").
+     *
+     * <p>Both sides are reduced to the lines the single rendering would have
+     * printed and aligned by their longest common subsequence, so the diff and the
+     * tree can never disagree about what a line is. {@code full} expands the
+     * collapsed groups on both sides before the alignment, which is the only thing
+     * it changes here.
+     *
+     * @throws NoSuchTrace when either id is not stored
+     */
+    public Report traceDiff(String a, String b, boolean full) {
+        Queries.TraceDetail one = stored(a);
+        Queries.TraceDetail two = stored(b);
+        List<Text.DiffLine> lines = Text.align(Text.lines(one, tingles, frames, full),
+                Text.lines(two, tingles, frames, full));
+        return new Report(Codecs.traceDiff(one, two, lines), Text.traceDiff(one, two, lines));
+    }
+
+    private Queries.TraceDetail stored(String traceId) {
+        Queries.TraceDetail trace = queries.trace(traceId);
+        if (trace == null) {
+            throw new NoSuchTrace(traceId);
+        }
+        return trace;
     }
 
     public Report endpoints(Window window, String service) {
