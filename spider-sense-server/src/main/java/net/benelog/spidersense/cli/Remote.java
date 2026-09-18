@@ -69,6 +69,43 @@ final class Remote {
     }
 
     /**
+     * One {@code POST} of a body that is not a command, for a transport that
+     * speaks its own protocol: the {@code mcp} command forwarding a JSON-RPC
+     * message to a running Spider Sense (agent.md, "MCP").
+     *
+     * <p>The client, the timeouts and the {@link Unreachable} rule are the CLI's
+     * own, so "is there a Spider Sense there" is answered the same way for every
+     * command. A status of 400 or more is unreachable too: this server answers a
+     * JSON-RPC error with 200, so a status means the thing at that URL is not a
+     * Spider Sense of this version, and the file is the better answer.
+     *
+     * @return the response body, or null when the server answered with none
+     */
+    static String post(String base, String path, String body) {
+        HttpRequest request = HttpRequest.newBuilder(URI.create(trimSlash(base) + path))
+                .timeout(READ)
+                .header("Content-Type", "application/json")
+                .header("Accept", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
+                .build();
+        HttpResponse<String> response;
+        try (HttpClient client = HttpClient.newBuilder().connectTimeout(CONNECT).build()) {
+            response = client.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        } catch (IOException e) {
+            throw new Unreachable(e.getClass().getSimpleName()
+                    + (e.getMessage() == null ? "" : ": " + e.getMessage()));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new Unreachable("interrupted");
+        }
+        if (response.statusCode() >= 400) {
+            throw new Unreachable("HTTP " + response.statusCode());
+        }
+        String answer = response.body();
+        return answer == null || answer.isBlank() ? null : answer;
+    }
+
+    /**
      * The URL of one command, with every parameter the command takes.
      *
      * <p>The limits are the CLI's own, not the server's defaults, so that a

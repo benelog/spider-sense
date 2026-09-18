@@ -13,6 +13,8 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 
+import net.benelog.spidersilk.json.Json;
+
 /**
  * {@code java -jar spider-sense.jar init}: the few lines a project's {@code CLAUDE.md}
  * needs about Spider Sense, and a copy of the skill beside them (agent.md, "init").
@@ -96,16 +98,120 @@ final class Init {
         boolean withSkill = !options.flag("no-skill");
         try {
             out.println(writeBlock(dir, block(jar, withSkill)) + " CLAUDE.md block (jar: " + jar + ")");
-            if (!withSkill) {
+            if (withSkill) {
+                Path target = dir.resolve(Paths.get(SKILL_TARGET));
+                out.println("installed skill to " + target + " (" + installSkill(target) + " files)");
+            } else {
                 out.println("skipped skill (--no-skill)");
-                return Cli.OK;
             }
-            Path target = dir.resolve(Paths.get(SKILL_TARGET));
-            out.println("installed skill to " + target + " (" + installSkill(target) + " files)");
-            return Cli.OK;
+            // Without --mcp nothing is written and nothing is said: a host with a shell
+            // is meant to use the CLI, and init should not hand it a second tool for
+            // the same answers (agent.md, "Choosing an interface").
+            return options.flag("mcp") ? writeMcpServer(dir, jar, out, err) : Cli.OK;
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+    }
+
+    /**
+     * {@code mcpServers.spider-sense} in the project's {@code .mcp.json}, for a host
+     * that launches its tools as a process (agent.md, "MCP").
+     *
+     * <p>Every other entry survives, at both levels, because the file is the
+     * project's and Spider Sense is one server in it. It is rewritten in this
+     * server's own JSON rather than in whatever formatting it had, which is the one
+     * thing that is not preserved and the one thing a JSON parser does not carry.
+     *
+     * <p>A file that is not a JSON object is left exactly as it is: it is not ours
+     * to guess at, and overwriting a host's configuration would be worse than
+     * refusing.
+     */
+    private static int writeMcpServer(Path dir, String jar, PrintStream out, PrintStream err)
+            throws IOException {
+        Path file = dir.resolve(".mcp.json");
+        boolean existed = Files.exists(file);
+        Json.JsonObject root = Json.obj();
+        if (existed) {
+            Json.JsonValue parsed = null;
+            try {
+                parsed = Json.parse(Files.readString(file, UTF_8));
+            } catch (RuntimeException e) {
+                // Not JSON at all; the message below says the same thing either way.
+            }
+            if (!(parsed instanceof Json.JsonObject object)) {
+                err.println("spider-sense: " + file + " is not a JSON object; "
+                        + "--mcp left it as it was");
+                return Cli.USAGE;
+            }
+            root = object;
+        }
+        Json.JsonObject servers = root.has("mcpServers")
+                && root.get("mcpServers") instanceof Json.JsonObject existing ? existing : Json.obj();
+        servers.put(net.benelog.spidersense.mcp.McpServer.NAME, Json.obj()
+                .put("command", "java")
+                .put("args", Json.arr().add("-jar").add(jar).add(Options.MCP)));
+        root.put("mcpServers", servers);
+        Files.writeString(file, pretty(root) + "\n", UTF_8);
+        out.println((existed ? "updated" : "wrote") + " .mcp.json (spider-sense over stdio)");
+        return Cli.OK;
+    }
+
+    /**
+     * The same JSON, laid out two spaces at a time.
+     *
+     * <p>Every value is still written by {@code Json} itself — the escaping of a
+     * Windows path in a string is not something to write twice — and this only
+     * decides where the newlines go, because {@code .mcp.json} is a file people
+     * open and edit.
+     */
+    private static String pretty(Json.JsonValue value) {
+        StringBuilder out = new StringBuilder();
+        write(out, value, 0);
+        return out.toString();
+    }
+
+    private static void write(StringBuilder out, Json.JsonValue value, int depth) {
+        if (value instanceof Json.JsonObject object) {
+            if (object.size() == 0) {
+                out.append("{}");
+                return;
+            }
+            out.append("{\n");
+            List<String> keys = object.keys();
+            for (int i = 0; i < keys.size(); i++) {
+                indent(out, depth + 1);
+                writeKey(out, keys.get(i));
+                out.append(": ");
+                write(out, object.get(keys.get(i)), depth + 1);
+                out.append(i < keys.size() - 1 ? ",\n" : "\n");
+            }
+            indent(out, depth);
+            out.append('}');
+        } else if (value instanceof Json.JsonArray array) {
+            if (array.size() == 0) {
+                out.append("[]");
+                return;
+            }
+            out.append("[\n");
+            for (int i = 0; i < array.size(); i++) {
+                indent(out, depth + 1);
+                write(out, array.get(i), depth + 1);
+                out.append(i < array.size() - 1 ? ",\n" : "\n");
+            }
+            indent(out, depth);
+            out.append(']');
+        } else {
+            value.write(out);
+        }
+    }
+
+    /** A key is a JSON string, so one is made and asked to write itself. */
+    private static void writeKey(StringBuilder out, String key) {
+        Json.arr().add(key).get(0).write(out);
+    }
+
+    private static void indent(StringBuilder out, int depth) {
+        out.append("  ".repeat(depth));
     }
 
     /**

@@ -22,7 +22,8 @@ The launcher treats a first argument that does not start with `-` as a command a
 | `compare --before=<selector> --after=<selector> [--until=<selector>]` | the two windows side by side |
 | `check [--max-p95-ms=] [--max-errors=] [--max-error-rate=] [--max-queries-per-request=] [--max-slow-queries=] [--max-n-plus-one=] [--min-apdex=] [--endpoint=]` | pass or fail, in the exit code |
 | `sql "<statement>" [--limit=200]` | one read-only statement over the store, for a question no other command answers ([sql.md](sql.md)) |
-| `init [--dir=<project dir>] [--jar=<path>] [--no-skill]` | writes the Spider Sense block into the project's `CLAUDE.md` and installs this skill into its `.claude/skills/` |
+| `init [--dir=<project dir>] [--jar=<path>] [--no-skill] [--mcp]` | writes the Spider Sense block into the project's `CLAUDE.md` and installs this skill into its `.claude/skills/`; `--mcp` also writes the stdio MCP server into its `.mcp.json` |
+| `mcp` | the MCP server over stdio, for a host that has no shell; it takes `--url` and `--db` and nothing else ([MCP over stdio](#mcp-over-stdio)) |
 | `help` | this table |
 
 ## Common options
@@ -39,7 +40,8 @@ The launcher treats a first argument that does not start with `-` as a command a
 | `--full` | off | keep statements whole and expand collapsed spans |
 
 `compare` takes no `--since`: its windows are the two selectors, and `--until` closes the second one.
-`init` takes none of these: it reads nothing, and its own options are `--dir=<project dir>` (the working directory by default), `--jar=<path>` (the jar it was started from by default) and `--no-skill`.
+`init` takes none of these: it reads nothing, and its own options are `--dir=<project dir>` (the working directory by default), `--jar=<path>` (the jar it was started from by default), `--no-skill` and `--mcp`.
+`mcp` takes only `--url` and `--db`, because a window, a format and a service belong to each message of the session rather than to the command.
 It is idempotent — the block it writes is delimited by `<!-- spider-sense:start -->` and `<!-- spider-sense:end -->`, and a second run replaces what is between them and leaves the rest of `CLAUDE.md` untouched.
 `--slow.request.ms=`, `--slow.query.ms=` and `--app.packages=` set the thresholds and the application packages in the direct-file path, where no server is there to ask.
 An option a command does not take is a usage error rather than a silently ignored word, so a mistyped `--sinse` is told rather than answered for the last 15 minutes.
@@ -92,6 +94,22 @@ spider-sense: no Spider Sense database at /home/me/db/spider-sense/sense.mv.db; 
 ```
 
 A file of another schema version is refused the same way, with exit `2` and a message naming both versions.
+
+## MCP over stdio
+
+`mcp` is the same six answers spoken as the Model Context Protocol, for a host that cannot run a command at all.
+You have a shell, so this is not your interface: use the commands above, and reach for `mcp` only when the user asks how to wire Spider Sense into Claude Desktop, an IDE chat panel or another host without one.
+
+```
+java -jar spider-sense.jar mcp [--url=<base url>] [--db=<path or jdbc url>]
+```
+
+It reads newline-delimited JSON-RPC on stdin and writes it on stdout, nothing else on stdout, and ends at end of input.
+`initialize`, `ping` and `tools/list` are answered in the process; a tool call goes to the Spider Sense at `--url` when one answers and to the H2 file when none does, exactly as every command here decides it, so MCP still answers after the application has crashed.
+The tools are `findings`, `trace`, `mark`, `compare`, `check` and `sql`, their arguments are the options of the same name, and each answers the same Markdown the matching command prints over the same window.
+
+`java -jar spider-sense.jar init --mcp` writes that server into the project's `.mcp.json` as `mcpServers.spider-sense`, keeping every other entry, and prints a third line saying so; a host that reaches a running Spider Sense over HTTP instead is configured by hand with `{"type": "http", "url": "http://127.0.0.1:4000/mcp"}`.
+Do not enable both the CLI and MCP in one host: two tools that give the same answer make the model choose between them and cost the schema twice.
 
 ## Text rendering conventions
 
@@ -458,13 +476,22 @@ Commands:
         [--max-queries-per-request=] [--max-slow-queries=]
         [--max-n-plus-one=] [--min-apdex=] [--endpoint=]
                                pass or fail, in the exit code
+  sql "<statement>" [--limit=200]
+                               read-only SQL over the store (SELECT only)
+  init [--dir=<project dir>] [--jar=<path>] [--no-skill] [--mcp]
+                               writes the Spider Sense block into the project's
+                               CLAUDE.md and installs the skill into .claude/skills/;
+                               --mcp also writes the stdio MCP server into .mcp.json
+  mcp                          the MCP server over stdio, for a host with no shell;
+                               takes --url and --db and nothing else
   help                         this table
 
 Common options:
   --since=<selector>   default 15m
   --until=<selector>   default now
   --service=<name>     one service
-  --limit=<n>          the lists: findings, traces, queries, errors, logs, marks
+  --limit=<n>          the lists: findings, traces, queries, errors, logs, marks,
+                       and the rows of sql (default 200, at most 5000)
   --url=<base url>     default http://127.0.0.1:4000, or SPIDERSENSE_URL
   --db=<path or jdbc url>   read the database directly, without asking any server
   --json               the JSON of api.md instead of the text

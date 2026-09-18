@@ -11,25 +11,25 @@ import net.benelog.spidersense.store.ReadOnlyQuery;
  * are the handlers' own (api.md), except {@code traces}, where agent.md's CLI
  * table says 20 — a terminal is not a scrolling list.
  */
-final class Limits {
+public final class Limits {
 
     /** What {@code since} means when nobody said (agent.md). */
-    static final String SINCE = "15m";
+    public static final String SINCE = "15m";
 
-    static final int FINDINGS = 20;
-    static final int FINDINGS_MAX = 100;
-    static final int TRACES = 20;
-    static final int TRACES_MAX = 1000;
-    static final int QUERIES = 100;
-    static final int QUERIES_MAX = 1000;
-    static final int ERRORS = 100;
-    static final int ERRORS_MAX = 1000;
-    static final int LOGS = 200;
-    static final int LOGS_MAX = 5000;
-    static final int MARKS = 50;
-    static final int MARKS_MAX = 500;
-    static final int SQL = ReadOnlyQuery.LIMIT;
-    static final int SQL_MAX = ReadOnlyQuery.LIMIT_MAX;
+    public static final int FINDINGS = 20;
+    public static final int FINDINGS_MAX = 100;
+    public static final int TRACES = 20;
+    public static final int TRACES_MAX = 1000;
+    public static final int QUERIES = 100;
+    public static final int QUERIES_MAX = 1000;
+    public static final int ERRORS = 100;
+    public static final int ERRORS_MAX = 1000;
+    public static final int LOGS = 200;
+    public static final int LOGS_MAX = 5000;
+    public static final int MARKS = 50;
+    public static final int MARKS_MAX = 500;
+    public static final int SQL = ReadOnlyQuery.LIMIT;
+    public static final int SQL_MAX = ReadOnlyQuery.LIMIT_MAX;
 
     private Limits() {
     }
