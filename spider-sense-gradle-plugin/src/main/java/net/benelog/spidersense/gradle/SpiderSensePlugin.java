@@ -76,6 +76,11 @@ public class SpiderSensePlugin implements Plugin<Project> {
         extension.getVersion().convention(pluginVersion());
         extension.getAttachTo().convention(DEFAULT_ATTACH_TO);
         extension.getService().convention(project.getName());
+        // A list property is present and empty until something sets it, which would
+        // make "ignore nothing" indistinguishable from "say nothing". A convention of
+        // null is Gradle's way of saying "no value at all", so here emptiness can mean
+        // what `ignoreEndpoints = []` says it means.
+        extension.getIgnoreEndpoints().convention((Iterable<String>) null);
 
         Configuration configuration = createConfiguration(project, extension);
 
@@ -225,6 +230,12 @@ public class SpiderSensePlugin implements Plugin<Project> {
         arguments.addAll(extension.getAppPackages().map(packages -> packages.isEmpty()
                 ? List.<String>of()
                 : List.of("-Dspidersense.app.packages=" + String.join(",", packages))));
+        // Here emptiness cannot mean "unset": `ignoreEndpoints = []` is how a build
+        // says "ignore nothing", and that has to reach the jar as an empty value. So
+        // the convention is removed in apply() and presence is what "set" means.
+        arguments.addAll(extension.getIgnoreEndpoints()
+                .map(endpoints -> List.of("-Dspidersense.ignore.endpoints=" + String.join(",", endpoints)))
+                .orElse(List.of()));
         return arguments;
     }
 

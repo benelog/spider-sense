@@ -72,4 +72,13 @@ public abstract class SpiderSenseExtension {
 
     /** {@code -Dspidersense.app.packages}, joined with commas: the application's own packages. */
     public abstract ListProperty<String> getAppPackages();
+
+    /**
+     * {@code -Dspidersense.ignore.endpoints}, joined with commas: the endpoints
+     * that are not requests. Unset leaves the jar's own list
+     * ({@code /actuator/**}, {@code /health}, {@code /healthz}, {@code /livez},
+     * {@code /readyz}); an empty list set explicitly passes an empty value,
+     * which ignores nothing.
+     */
+    public abstract ListProperty<String> getIgnoreEndpoints();
 }

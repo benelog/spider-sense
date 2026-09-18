@@ -76,6 +76,7 @@ Useful properties, all after `-javaagent:` on the same command line:
 - `-Dotel.service.name=spring-orders` so the service has a name instead of `unknown_service:java`; `-Dspidersense.service=` does the same.
 - `-Dspidersense.collector=http://127.0.0.1:4000` to forward to a Spider Sense running elsewhere instead of hosting one, which is how two applications share a UI and how a trace that crosses them shows up in one place.
 - `-Dspidersense.app.packages=com.acme` when a finding's `code` frames come out empty or full of framework classes.
+- `-Dspidersense.ignore.endpoints=` takes endpoints out of the request count; health checks are ignored already (`/actuator/**,/health,/healthz,/livez,/readyz`), so set it only to add a pattern of your own, and set it to the empty value to ignore nothing.
 
 Confirm with `java -jar "$SENSE" status`: it names the mode, the port, the database and how much it holds.
 The UI is at <http://127.0.0.1:4000> for the user, not for you.

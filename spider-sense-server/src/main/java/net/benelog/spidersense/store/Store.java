@@ -22,11 +22,18 @@ public final class Store implements AutoCloseable {
     private final Writer writer;
     private final Sweeper sweeper;
 
+    /** The store with the ignore list at its documented default. */
     public Store(String jdbcUrl, Path databaseFile, int retentionHours,
             long slowRequestMs, long slowQueryMs, String embeddedService) {
+        this(jdbcUrl, databaseFile, retentionHours, slowRequestMs, slowQueryMs, embeddedService,
+                IgnoredEndpoints.DEFAULT);
+    }
+
+    public Store(String jdbcUrl, Path databaseFile, int retentionHours,
+            long slowRequestMs, long slowQueryMs, String embeddedService, String ignoreEndpoints) {
         this.database = Database.open(jdbcUrl, databaseFile);
         this.sql = database.sql();
-        this.tingles = new Tingles(slowRequestMs, slowQueryMs);
+        this.tingles = new Tingles(slowRequestMs, slowQueryMs, IgnoredEndpoints.of(ignoreEndpoints));
         this.services = new ServiceRegistry(sql, embeddedService);
         this.marks = new Marks(sql);
         this.writer = new Writer(sql, events, tingles).start();

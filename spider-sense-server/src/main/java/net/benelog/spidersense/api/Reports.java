@@ -16,6 +16,7 @@ import net.benelog.spidersense.query.Stats;
 import net.benelog.spidersense.query.Window;
 import net.benelog.spidersense.server.Config;
 import net.benelog.spidersense.store.Database;
+import net.benelog.spidersense.store.IgnoredEndpoints;
 import net.benelog.spidersense.store.Marks;
 import net.benelog.spidersense.store.ReadOnlyQuery;
 import net.benelog.spidersense.store.ServiceRegistry;
@@ -79,7 +80,8 @@ public final class Reports implements AutoCloseable {
         Database database = Database.openExisting(config.jdbcUrl(), config.databaseFile());
         Sql sql = database.sql();
         return new Reports(config, database, null, config::port,
-                new Tingles(config.slowRequestMs(), config.slowQueryMs()),
+                new Tingles(config.slowRequestMs(), config.slowQueryMs(),
+                        IgnoredEndpoints.of(config.ignoreEndpoints())),
                 new ServiceRegistry(sql, config.embeddedService()), new Marks(sql), true);
     }
 
@@ -157,6 +159,8 @@ public final class Reports implements AutoCloseable {
                         .put("slowRequestMs", tingles.slowRequestMs())
                         .put("slowQueryMs", tingles.slowQueryMs())
                         .put("responseBucketsMs", Codecs.longs(queries.responseBuckets().bounds())))
+                .put("ignore", Json.obj()
+                        .put("endpoints", Codecs.strings(tingles.ignored().patterns())))
                 .put("retention", Json.obj().put("hours", config.retentionHours()))
                 .put("storage", Json.obj()
                         .put("url", storage.url())
@@ -184,6 +188,8 @@ public final class Reports implements AutoCloseable {
         fields.put("embedded service", services.embeddedService());
         fields.put("thresholds", "slow request " + tingles.slowRequestMs() + " ms, slow query "
                 + tingles.slowQueryMs() + " ms");
+        fields.put("ignore", tingles.ignored().isEmpty() ? "none"
+                : String.join(", ", tingles.ignored().patterns()));
         fields.put("retention", config.retentionHours() + " hours");
         fields.put("database", storage.path() == null ? storage.url() : storage.path());
         fields.put("database size", storage.sizeBytes() + " bytes");

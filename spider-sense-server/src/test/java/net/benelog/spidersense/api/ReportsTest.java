@@ -45,6 +45,8 @@ class ReportsTest {
                 assertThat(status.get("endpoint").isNull()).isTrue();
                 assertThat(status.getObject("counts").getLong("spans")).isEqualTo(1);
                 assertThat(reports.status("file", null, 0).text()).startsWith("# status");
+                assertThat(reports.status("file", null, 0).text())
+                        .contains("| ignore | /actuator/**, /health, /healthz, /livez, /readyz |");
 
                 Window window = Window.of(NOW - 60_000, NOW + 60_000);
                 Json.JsonObject findings = reports.findings(window, null, 20, false).json().asObject();
