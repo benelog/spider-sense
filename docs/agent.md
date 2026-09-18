@@ -149,6 +149,90 @@ Those frames are the truest of the three, because they are the span's own thread
 An `n-plus-one` finding takes its `code` from the span of the repeated group that carries `code.stacktrace`, which is the fifth repeat, and falls back to the group's newest span when none does (an application run without the extension).
 A `slow-job` finding takes its `code` from the `code.function` and `code.namespace` attributes the scheduling instrumentations set on the job's span.
 
+## Acknowledgements
+
+A finding that is known and accepted — a report endpoint that is slow by design, a query that will stay slow until the schema changes — sits at the top of every `findings` answer and hides the new problem under it.
+An acknowledgement takes it out of the way without hiding it: finding ids are stable across windows ([Findings](#findings)), so it is one row, `(finding_id, at, note)` in the `ack` table (storage.md), kept until it is withdrawn or the data is cleared.
+
+- `POST /api/findings/{id}/ack` with `{ "note": "…" | null }` → `201` `{ "findingId": "…", "at": …, "note": … }`; acknowledging again replaces the row.
+- `DELETE /api/findings/{id}/ack` → `204`, or `404` when there is no such acknowledgement.
+- `GET /api/acks` → `{ "acks": [ … ] }`, newest first.
+
+Every finding carries `"ack": { "at": …, "note": "…" | null } | null`.
+Acknowledged findings are ranked after every other finding, in the same order among themselves; `hideAcked=true` on `/api/findings` (and on the MCP `findings` tool) leaves them out.
+In the text rendering the severity column reads `acked` for an acknowledged finding, and the heading counts them: `(… 12 requests, 2 acked)`.
+`check` does not look at acknowledgements: its rules are explicit thresholds, and an acknowledged `n-plus-one` is still an N+1 to `maxNPlusOne`.
+
+The CLI commands are `ack <finding id> [--note=…]`, `unack <finding id>`, and `findings --hide-acked`; the id is what `findings` printed.
+Both write in the direct-file path as `mark` does.
+
+## Trace diff
+
+`GET /api/traces/{a}?diff={b}` and `trace <a> --diff=<b> [--full]`: the two span trees aligned by structure and rendered as one text with a gutter, so the question after a fix — which span went away, which one got slower — is answered without reading two trees.
+
+The alignment works on the lines of the single-trace rendering above, minus their timing: each span becomes the key `(depth, category, summary with digits replaced by ?)`, a collapsed group keeps its summary and drops its count, and the two key sequences are aligned by their longest common subsequence (each side is cut at 2,000 lines).
+A matched line is `=`, a line only in `b` is `+`, a line only in `a` is `-`.
+Statement, exception and log lines are not diffed: a matched span shows its statement or exception when either side has one, as the single rendering would.
+
+```
+# trace diff 4bf92f3577b34da6a3ce929d0e0e4736 → 09e96c4c6db157e690716c2615ffd146  312.4 ms → 41.2 ms  (−271.2 ms, −86.8%)  48 → 12 spans
+
+   a          b          span
+=  312.4 ms   41.2 ms    SERVER spring-orders GET /api/orders/{id}/enriched → 200
+=  0.5 ms     0.4 ms       INTERNAL OrderRepository.findById
+-  38.2 ms    —            db SELECT product  × 42
++  —          2.1 ms       db SELECT product  × 1
+=  9.1 ms     8.7 ms       CLIENT GET http://localhost:8081/api/books/155 → 200
+```
+
+- The heading carries both ids, both durations, the delta in ms and in percent of `a`, and both span counts.
+- Columns are the gutter, `a`'s duration, `b`'s duration (`—` where the side has no such span), then the span line indented by depth as in the single rendering; a collapsed group prints `× n` per side on its own line as above, so a count that changed is two lines, `-` and `+`.
+- `--full` expands collapsed groups on both sides before aligning.
+- JSON: `{ "a": "<id>", "b": "<id>", "durationMs": { "a": …, "b": … }, "spans": { "a": 48, "b": 12 }, "lines": [ { "op": "=" | "+" | "-", "depth": 1, "summary": "…", "category": "…", "aMs": … | null, "bMs": … | null, "count": { "a": 42, "b": null } | null } ] }`.
+- Either id unknown is a `404` naming it, exit code `4` in the CLI.
+
+## Tail
+
+`tail [--kind=slow-request|slow-query|error] [--service=<name>] [--until-traces=<n>] [--timeout=<duration>] [--json]`
+
+The CLI's window on `GET /api/events`: one line per `tingle` event as it arrives, so an agent that has just sent a request can watch it land instead of sleeping and asking `findings` again.
+
+```
+12:37:28.565  slow-query    spring-orders   SELECT orders  1,532 ms  2519b548daad800090e8f56de6a5a62a
+12:37:29.077  error         silk-bookstore  GET /api/books/stats  ArithmeticException: / by zero  09e96c4c6db157e690716c2615ffd146
+```
+
+- Columns: local time with milliseconds, kind, service, title, detail, trace id; the tingle's own fields, in that order.
+- `--kind` and `--service` filter, one value each; no filter means everything.
+- `--until-traces=<n>` ends with exit `0` once the `stats` events have shown `n` new traces since the command started (`traces` on the `stats` event is the store's count); `--timeout=<duration>` (a selector duration, `30s`, `5m`) ends with exit `0` when it elapses; without either it runs until interrupted.
+- `--json` prints the event's JSON object per line, with `"event": "tingle"` (or `"stats"`) added.
+- It needs a running Spider Sense: there is no file to tail. Nothing at `--url` is a message on stderr and exit `2`.
+
+## Export and import
+
+`GET /api/export?since&until&service` (and `from`/`to`) without `traceId` exports the window: every service, span, log record, metric, metric series, metric point, tingle and mark, as one JSON document, streamed as it is read, with `Content-Disposition: attachment; filename="spider-sense-<from>-<to>.json"`.
+With `traceId` the answer is the single-trace export of api.md as before.
+
+```json
+{ "spiderSense": { "version": "0.1.0", "schema": 4, "exportedAt": …, "window": { "from": …, "to": … }, "service": "…" | null },
+  "services": [ { "name": "…", "language": "…", "pid": …, "firstSeen": …, "lastSeen": …, "resource": { … } } ],
+  "spans": [ { …every column of the span table except id, attributes and events as the objects they are… } ],
+  "logs": [ { …every column of log except id… } ],
+  "metrics": [ { "name", "type", "unit", "description", "monotonic", "temporality" } ],
+  "metricSeries": [ { "id": 7, "service", "name", "attributes": { … } } ],
+  "metricPoints": [ { "seriesId": 7, "at", "value", "count", "sum", "min", "max", "buckets": { … } | null } ],
+  "tingles": [ { …every column except id… } ],
+  "marks": [ { "at", "name", "service", "note" } ] }
+```
+
+`POST /api/import` takes that document (`Content-Encoding: gzip` accepted) and answers `200` `{ "spans": n, "logs": n, "metricPoints": n, "tingles": n, "marks": n, "skippedTraces": n, "window": { "from": …, "to": … } }`.
+Import keeps every timestamp as exported, so the reader sets the time range to the answer's `window` (or `all`).
+It is idempotent enough for a file imported twice: a trace whose id already has rows in the store is skipped whole (its spans, logs and tingles; `skippedTraces` counts it), a metric point is merged on its `(series, at)` key with the series looked up or created by `(service, name, attributes)`, a service row is merged, and a mark is skipped when one with the same name and instant exists.
+A document whose `schema` is not this version's is a `400` naming both versions.
+Acknowledgements are not exported: they are the reader's, not the session's.
+
+The CLI commands are `export [--since=… --until=… --service=…] [--out=<file>]` and `import <file> [--url=… | --db=…]`: `export` writes to stdout or to `--out`, gzipped when the name ends in `.gz`; `import` posts to the running Spider Sense, or, when none answers or `--db` names a file, writes into the file in process through the same code as the server, and prints one line, `imported 12,345 spans, 456 logs, 7,890 metric points, 12 tingles, 3 marks (2 traces already present) from 2026-09-18T12:37:06+09:00 → 12:41:08`.
+
 ## Compare
 
 `GET /api/compare?before=<selector>&after=<selector>&until=<selector>&service=&format=`
@@ -276,7 +360,7 @@ The server speaks the Model Context Protocol in two transports, and both are the
 
 | Tool | Arguments | Answers |
 |---|---|---|
-| `findings` | `since`, `until`, `service`, `limit` (1–100), `full` | the findings text |
+| `findings` | `since`, `until`, `service`, `limit` (1–100), `full`, `hideAcked` | the findings text |
 | `trace` | `traceId` (required), `full` | the trace tree |
 | `mark` | `name` (required, `[A-Za-z0-9._-]{1,64}`), `note`, `service` | the mark, as the CLI prints it |
 | `compare` | `before`, `after` (both required), `until`, `service` | the compare text |
@@ -367,8 +451,11 @@ The launcher stays dependency-free.
 | Command | Does |
 |---|---|
 | `status` | what is running, where the database is, how much it holds |
-| `findings` | the findings of the window |
-| `trace <traceId> [--full]` | one trace as a tree |
+| `findings [--hide-acked]` | the findings of the window |
+| `ack <finding id> [--note=…]`, `unack <finding id>` | acknowledges a finding, or withdraws that ([Acknowledgements](#acknowledgements)) |
+| `trace <traceId> [--full] [--diff=<traceId>]` | one trace as a tree, or two aligned ([Trace diff](#trace-diff)) |
+| `tail [--kind=] [--until-traces=] [--timeout=]` | tingles as they arrive ([Tail](#tail)) |
+| `export [--out=<file>]`, `import <file>` | the window as one JSON document, and back ([Export and import](#export-and-import)) |
 | `traces [--status=error\|ok] [--min-ms=] [--q=] [--limit=20]` | the newest traces |
 | `endpoints`, `queries`, `errors` | the tables of the window |
 | `logs [--severity=WARN] [--q=] [--trace=<traceId>]` | log lines |
@@ -397,7 +484,7 @@ In that path the thresholds are the defaults or `--slow.request.ms`/`--slow.quer
 The file must exist and carry this version's schema: the CLI never creates a database and never upgrades one, because `AUTO_SERVER=TRUE` may have joined the database of an older Spider Sense that is still running, and the server's own open would drop its tables (storage.md).
 A missing file or another schema version is a message on stderr and exit code 2.
 
-Exit codes: `0` success (and `check` passed), `1` `check` failed, `2` usage or connection error, `3` `check` had no request to judge, `4` not found (a trace id, a mark name).
+Exit codes: `0` success (and `check` passed), `1` `check` failed, `2` usage or connection error, `3` `check` had no request to judge, `4` not found (a trace id, a mark name, a finding id to `unack`).
 
 ## Skill
 

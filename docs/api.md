@@ -49,9 +49,10 @@ Partial-success is never reported (everything decodable is stored).
 }
 ```
 
-`DELETE /api/data` → `204`. Deletes every span, trace, log, metric point, tingle and mark (services and metric metadata stay).
+`DELETE /api/data` → `204`. Deletes every span, trace, log, metric point, tingle, mark and acknowledgement (services and metric metadata stay).
 
-`GET /api/export?from&to&service&traceId` → `application/json` download (`Content-Disposition: attachment`) of `{ "traces": [<trace as in GET /api/traces/{id}>...] }`. `traceId` alone exports one trace.
+`GET /api/export?traceId` → `application/json` download (`Content-Disposition: attachment`) of `{ "traces": [<trace as in GET /api/traces/{id}>] }`, one trace.
+`GET /api/export?from&to&since&until&service` without `traceId` → the session document of [agent.md](agent.md#export-and-import), streamed; `POST /api/import` takes it back and answers the counts (`Content-Encoding: gzip` accepted).
 
 ## Live events
 
@@ -173,7 +174,7 @@ In a `series`, `histogram` is four aligned arrays, one per bucket; the errors of
   "slow": true, "error": false }
 ```
 
-`GET /api/traces/{traceId}`
+`GET /api/traces/{traceId}` (with `diff=<traceId>` the two traces aligned instead, as [agent.md](agent.md#trace-diff) specifies, in JSON or `format=text`)
 
 ```json
 {
@@ -377,7 +378,9 @@ A mark named `start` is inserted by the writer when a service reports a `process
 
 ### Findings
 
-`GET /api/findings?since&until&service&limit=20` → `{ "window": {...}, "requests": 120, "findings": [ <Finding> ] }`, ranked as agent.md says; `limit` is at most 100.
+`GET /api/findings?since&until&service&limit=20&hideAcked=false` → `{ "window": {...}, "requests": 120, "acked": 2, "findings": [ <Finding> ] }`, ranked as agent.md says, acknowledged findings last and left out with `hideAcked=true`; `limit` is at most 100.
+
+`POST /api/findings/{id}/ack` with `{ "note": "…" | null }` → `201` `{ "findingId": "…", "at": …, "note": … }`; `DELETE /api/findings/{id}/ack` → `204` or `404`; `GET /api/acks` → `{ "acks": [ { "findingId", "at", "note" } ] }` newest first (agent.md, Acknowledgements).
 
 `Finding`:
 
@@ -388,7 +391,8 @@ A mark named `start` is inserted by the writer when a service reports a `process
   "subject": { "endpointId": "…" | null, "queryId": "…" | null, "errorId": "…" | null, "pool": "…" | null, "job": "…" | null,
                "target": "…" | null, "logger": "…" | null, "jvm": "…" | null },
   "numbers": { ...kind-specific, see agent.md... },
-  "statement": "…" | null, "code": [ "orders.OrderService.load(OrderService.java:41)" ], "traces": [ "<traceId>" ] }
+  "statement": "…" | null, "code": [ "orders.OrderService.load(OrderService.java:41)" ], "traces": [ "<traceId>" ],
+  "ack": { "at": …, "note": "…" | null } | null }
 ```
 
 ### Compare

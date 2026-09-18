@@ -104,6 +104,8 @@ A table: `#`, severity (the dot and the word), kind chip, service chip, title, a
 A row click expands it in place into the evidence: the `why` sentence, the kind's `numbers` as a key/value grid (durations, counts and rates formatted as everywhere else; `callers` and `endpoints` as a short list), the `statement` pretty-printed when there is one, the `code` frames as a monospace list, and the `traces` as links to the trace page.
 The row also carries a **Go to** link to the subject's page, as the Overview panel's row click does.
 The expanded row survives a Live refresh when the finding is still in the list (keyed by `id`).
+An acknowledged finding (`ack` not null, agent.md) is listed after the others, dimmed, its severity cell reading `acked` with the note as its title; the expanded evidence of any finding ends with an **Acknowledge** button (a small dialog for the optional note, then `POST /api/findings/{id}/ack`) or, when acknowledged, the note and an **Unacknowledge** button (`DELETE`).
+The Overview's Findings panel asks with `hideAcked=true`, so the top five are always the unacknowledged ones.
 Empty state: `Nothing worth fixing in this window.` with the window named, or the snippet when there was no request at all.
 
 ### Compare `#/compare?before=<selector>&after=<selector>&until=<selector>`

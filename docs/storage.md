@@ -162,13 +162,20 @@ CREATE TABLE IF NOT EXISTS mark (
 );
 CREATE INDEX IF NOT EXISTS mark_at ON mark (at_ms);
 
+CREATE TABLE IF NOT EXISTS ack (
+    finding_id VARCHAR(64) PRIMARY KEY,     -- agent.md's finding id, kind + ':' + 12 hex
+    at_ms      BIGINT NOT NULL,
+    note       VARCHAR(1024)
+);
+
 CREATE TABLE IF NOT EXISTS meta (
     key   VARCHAR(64) PRIMARY KEY,
     value VARCHAR(4096) NOT NULL             -- schema_version, created_at
 );
 ```
 
-The schema is created with `IF NOT EXISTS` at startup; `meta.schema_version` is `3` (the `mark` table arrived with it), and a version that changes a table drops and recreates every table (the data is a cache of a development session, not a record).
+The schema is created with `IF NOT EXISTS` at startup; `meta.schema_version` is `4` (the `ack` table arrived with it, `mark` with 3), and a version that changes a table drops and recreates every table (the data is a cache of a development session, not a record).
+An `ack` row is an acknowledged finding ([agent.md](agent.md#acknowledgements)); it is not swept by time, since a known finding stays known, and `DELETE /api/data` removes it with everything else.
 `entry` is decided once, when the row is written, so rows written by an older Spider Sense keep the flag they were written with — a root `INTERNAL` or database span from before the rule narrowed still counts as a request until the retention sweeper removes it.
 
 ## The read-only user
@@ -214,12 +221,13 @@ Reads are plain JDBC through one small helper (`Sql.query(sql, params, rowMapper
 
 The CLI (agent.md) reads the same way when no server answers: it opens the same URL, so it joins a running auto-server or, when none is running, opens the file itself for the length of the command, and runs the same `Queries` without a writer or a sweeper.
 Its open refuses a missing file and refuses another `schema_version` instead of dropping the tables, since the database it joined may belong to an older server that is still writing to it.
+The three commands that write (`mark`, `ack` and `unack`, `import`) write through the same connection with plain statements; `import` is the one that inserts spans, and it does so through the `Writer`'s own insert and `trace` merge so an imported trace is stored exactly as a received one ([agent.md](agent.md#export-and-import)).
 
 ## Retention
 
 `spidersense.retention.hours` (default `24`).
 A daemon sweeper runs a minute after start and every five minutes after that: `DELETE FROM span|trace|log|metric_point|tingle|mark WHERE <time> < now - retention`, then `metric_series` rows with no points.
-`DELETE /api/data` runs the same deletes without the time bound.
+`DELETE /api/data` runs the same deletes without the time bound, and empties `ack`.
 At 24 hours of a few requests per second the file stays in the low hundreds of megabytes; H2 reclaims space on the next compaction when the database closes.
 
 Time is the retention, and one row cap guards it: `spidersense.retention.spans` (default 1,000,000; `0` for none).
