@@ -20,6 +20,7 @@ metadata:
 Spider Sense is an APM for the local development loop: one jar attached with `-javaagent`, the stock OpenTelemetry Java agent for instrumentation, and a collector, a UI and a CLI inside the same JVM.
 Everything it collects lands in an H2 file under `~/db/spider-sense/`, opened with `AUTO_SERVER=TRUE`, so the data is shared between processes and outlives the application that produced it.
 For an agent the CLI is the interface, not the dashboard: it prints deterministic Markdown, so two answers over the same window render to the same bytes and can be diffed.
+The same six answers are also an MCP server, for a host that has no shell at all; you have one, so the CLI is your interface, and [references/cli.md](references/cli.md) says how to wire MCP up for a host that does not.
 
 What it gives you that a dashboard does not:
 

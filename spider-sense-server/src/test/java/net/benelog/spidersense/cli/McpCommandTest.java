@@ -1,0 +1,214 @@
+package net.benelog.spidersense.cli;
+
+import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.PrintStream;
+import java.io.UncheckedIOException;
+import java.net.ServerSocket;
+import java.util.List;
+
+import org.junit.jupiter.api.Test;
+
+import net.benelog.spidersense.TestStore;
+import net.benelog.spidersense.server.SpiderSenseServer;
+import net.benelog.spidersilk.json.Json;
+
+/**
+ * {@code java -jar spider-sense.jar mcp}: the stdio transport of agent.md's MCP
+ * section.
+ *
+ * <p>The contract it has to keep is narrow and total — newline-delimited JSON on
+ * stdout and nothing else on it, one line per request, none for a notification —
+ * because a host parses this stream and a stray word breaks the session.
+ */
+class McpCommandTest {
+
+    private record Run(int exit, String out, String err) {
+    }
+
+    private static Run run(String stdin, String... args) {
+        return runAt(closedUrl(), stdin, args);
+    }
+
+    private static Run runAt(String defaultUrl, String stdin, String... args) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        int exit;
+        try (PrintStream toOut = new PrintStream(out, true, UTF_8);
+                PrintStream toErr = new PrintStream(err, true, UTF_8)) {
+            exit = Cli.run(args, defaultUrl, new ByteArrayInputStream(stdin.getBytes(UTF_8)),
+                    toOut, toErr);
+        }
+        return new Run(exit, out.toString(UTF_8), err.toString(UTF_8));
+    }
+
+    private static String closedUrl() {
+        try (ServerSocket socket = new ServerSocket(0)) {
+            return "http://127.0.0.1:" + socket.getLocalPort();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    private static final String INITIALIZE =
+            "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":"
+                    + "{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},"
+                    + "\"clientInfo\":{\"name\":\"t\",\"version\":\"0\"}}}";
+    private static final String INITIALIZED =
+            "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}";
+    private static final String TOOLS_LIST = "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}";
+
+    @Test
+    void aSessionOverStdinAnswersOneJsonLinePerRequestAndNothingElse() {
+        String db = "--db=" + TestStore.memoryUrl();
+        String findings = "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":"
+                + "{\"name\":\"findings\",\"arguments\":{\"since\":\"1h\"}}}";
+
+        Run run = run(String.join("\n", INITIALIZE, INITIALIZED, "", TOOLS_LIST, findings) + "\n",
+                "mcp", db);
+
+        assertThat(run.exit()).as("stderr: %s", run.err()).isZero();
+        assertThat(run.err()).as("--db asks no server, so nothing is said about one").isEmpty();
+
+        List<String> lines = run.out().lines().toList();
+        assertThat(lines).as("initialize, tools/list, findings — the notification is silent")
+                .hasSize(3);
+        assertThat(run.out()).endsWith("\n");
+
+        Json.JsonObject initialized = Json.parse(lines.get(0)).asObject();
+        assertThat(initialized.getLong("id")).isEqualTo(1);
+        assertThat(initialized.getObject("result").getString("protocolVersion"))
+                .isEqualTo("2025-06-18");
+
+        Json.JsonObject tools = Json.parse(lines.get(1)).asObject();
+        assertThat(tools.getLong("id")).isEqualTo(2);
+        assertThat(tools.getObject("result").getArray("tools").size()).isEqualTo(6);
+
+        Json.JsonObject answered = Json.parse(lines.get(2)).asObject();
+        assertThat(answered.getLong("id")).isEqualTo(3);
+        Json.JsonObject result = answered.getObject("result");
+        assertThat(result.getBoolean("isError")).isFalse();
+        assertThat(result.getArray("content").get(0).asObject().getString("text"))
+                .startsWith("# findings  ");
+    }
+
+    /**
+     * A mark is a row and not a message to a server, so it is recorded here too;
+     * the second call proves it by resolving the mark as a selector.
+     */
+    @Test
+    void aMarkIsRecordedInTheFileJustAsTheCliRecordsItThere() {
+        String db = "--db=" + TestStore.memoryUrl();
+        String mark = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":"
+                + "{\"name\":\"mark\",\"arguments\":{\"name\":\"before\",\"note\":\"the slow one\"}}}";
+        String since = "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":"
+                + "{\"name\":\"findings\",\"arguments\":{\"since\":\"before\"}}}";
+
+        Run run = run(mark + "\n" + since + "\n", "mcp", db);
+
+        List<String> lines = run.out().lines().toList();
+        assertThat(lines).hasSize(2);
+        assertThat(text(lines.get(0))).startsWith("mark before at ").contains("the slow one");
+        assertThat(Json.parse(lines.get(1)).asObject().getObject("result").getBoolean("isError"))
+                .as("the mark resolved, so it is in the file").isFalse();
+        assertThat(text(lines.get(1))).startsWith("# findings  ");
+    }
+
+    /**
+     * A named {@code --url} is a statement that there is a server there, so the file
+     * is never quietly answered instead — the same rule the other commands follow.
+     */
+    @Test
+    void aNamedUrlThatAnswersNothingFailsTheCallRatherThanReadingTheFile() {
+        String closed = closedUrl();
+        String findings = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":"
+                + "{\"name\":\"findings\",\"arguments\":{}}}";
+
+        Run run = run(TOOLS_LIST + "\n" + findings + "\n", "mcp", "--url=" + closed);
+
+        assertThat(run.exit()).isZero();
+        List<String> lines = run.out().lines().toList();
+        assertThat(lines).hasSize(2);
+        assertThat(Json.parse(lines.get(0)).asObject().getObject("result").getArray("tools").size())
+                .as("tools/list is answered in process either way").isEqualTo(6);
+        Json.JsonObject failed = Json.parse(lines.get(1)).asObject().getObject("result");
+        assertThat(failed.getBoolean("isError")).isTrue();
+        assertThat(failed.getArray("content").get(0).asObject().getString("text"))
+                .startsWith("no Spider Sense at " + closed + " (");
+    }
+
+    /**
+     * Nothing listening and no {@code --url}: the file answers, and stderr says so
+     * in the one line the CLI prints, once for the whole session.
+     */
+    @Test
+    void nothingListeningFallsBackToTheFileAndSaysSoOnStderrOnce() {
+        String memory = TestStore.memoryUrl();
+        System.setProperty("spidersense.db", memory);
+        try {
+            String closed = closedUrl();
+            String findings = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":"
+                    + "{\"name\":\"findings\",\"arguments\":{}}}";
+            String again = findings.replace("\"id\":1", "\"id\":2");
+
+            Run run = runAt(closed, findings + "\n" + again + "\n", "mcp");
+
+            assertThat(run.exit()).isZero();
+            List<String> lines = run.out().lines().toList();
+            assertThat(lines).hasSize(2);
+            assertThat(text(lines.get(1))).startsWith("# findings  ");
+            assertThat(run.err()).as("said once, not once per call")
+                    .isEqualTo("(no Spider Sense at " + closed + "; reading " + memory
+                            + " directly)\n");
+        } finally {
+            System.clearProperty("spidersense.db");
+        }
+    }
+
+    /**
+     * A running Spider Sense answers the call, and its bytes are forwarded as they
+     * came: the same dispatcher runs on both sides, so there is nothing to render
+     * twice.
+     */
+    @Test
+    void aRunningSpiderSenseAnswersTheCallAndItsResponseIsForwardedVerbatim() {
+        SpiderSenseServer server = SpiderSenseServer.start(TestStore.config());
+        try {
+            String base = "http://127.0.0.1:" + server.port();
+            String mark = "{\"jsonrpc\":\"2.0\",\"id\":9,\"method\":\"tools/call\",\"params\":"
+                    + "{\"name\":\"mark\",\"arguments\":{\"name\":\"over-http\"}}}";
+
+            Run run = run(mark + "\n", "mcp", "--url=" + base);
+
+            assertThat(run.exit()).isZero();
+            assertThat(run.err()).isEmpty();
+            List<String> lines = run.out().lines().toList();
+            assertThat(lines).hasSize(1);
+            assertThat(Json.parse(lines.get(0)).asObject().getLong("id")).isEqualTo(9);
+            assertThat(text(lines.get(0))).startsWith("mark over-http at ");
+            assertThat(server.store().marks().newest("over-http", null))
+                    .as("recorded by the server, not by this process").isNotNull();
+        } finally {
+            server.stop();
+        }
+    }
+
+    @Test
+    void mcpTakesOnlyTheTwoOptionsThatSayWhereToRead() {
+        assertThat(run("", "mcp", "--since=5m").exit()).isEqualTo(2);
+        assertThat(run("", "mcp", "--since=5m").err())
+                .startsWith("spider-sense: unknown option for mcp: --since");
+        assertThat(run("", "mcp", "--json").exit()).isEqualTo(2);
+        assertThat(run("", "mcp", "--db=" + TestStore.memoryUrl()).exit())
+                .as("end of input is the end of the session").isZero();
+    }
+
+    private static String text(String line) {
+        return Json.parse(line).asObject().getObject("result").getArray("content").get(0)
+                .asObject().getString("text");
+    }
+}

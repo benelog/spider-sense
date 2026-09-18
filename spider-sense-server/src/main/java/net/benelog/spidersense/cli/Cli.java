@@ -1,5 +1,6 @@
 package net.benelog.spidersense.cli;
 
+import java.io.InputStream;
 import java.io.PrintStream;
 
 import net.benelog.spidersense.query.Selectors;
@@ -36,7 +37,7 @@ public final class Cli {
 
     /** The entry point the launcher invokes. */
     public static int run(String[] args) {
-        return run(args, defaultUrl(), System.out, System.err);
+        return run(args, defaultUrl(), System.in, System.out, System.err);
     }
 
     /**
@@ -45,6 +46,12 @@ public final class Cli {
      * environment variable.
      */
     static int run(String[] args, String defaultUrl, PrintStream out, PrintStream err) {
+        return run(args, defaultUrl, InputStream.nullInputStream(), out, err);
+    }
+
+    /** With stdin too, which only {@code mcp} reads. */
+    static int run(String[] args, String defaultUrl, InputStream in, PrintStream out,
+            PrintStream err) {
         quietLoggingUnlessTold();
         Options options;
         try {
@@ -57,7 +64,7 @@ public final class Cli {
             return OK;
         }
         try {
-            return dispatch(options, defaultUrl, out, err);
+            return dispatch(options, defaultUrl, in, out, err);
         } catch (Options.Usage e) {
             return usage(e, err);
         } catch (Selectors.UnknownMark e) {
@@ -81,11 +88,17 @@ public final class Cli {
      * falling back then would answer a different question from the one asked.
      *
      * <p>{@code init} comes before all of it: it asks nothing and nobody, it only
-     * writes (agent.md).
+     * writes (agent.md). {@code mcp} comes before it too, because it is a session
+     * of messages rather than one question, and it makes the same choice again for
+     * each tool call it is asked to answer.
      */
-    private static int dispatch(Options options, String defaultUrl, PrintStream out, PrintStream err) {
+    private static int dispatch(Options options, String defaultUrl, InputStream in, PrintStream out,
+            PrintStream err) {
         if (Options.INIT.equals(options.command())) {
             return Init.run(options, out, err);
+        }
+        if (Options.MCP.equals(options.command())) {
+            return Mcp.run(options, defaultUrl, in, out, err);
         }
         if (options.has("db")) {
             return Local.run(options, out, err);

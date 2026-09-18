@@ -30,6 +30,7 @@ final class Options {
 
     static final String HELP = "help";
     static final String INIT = "init";
+    static final String MCP = "mcp";
     static final String CHECK = "check";
     static final String COMPARE = "compare";
     static final String MARK = "mark";
@@ -59,7 +60,11 @@ final class Options {
             Map.entry(SQL, with("limit", "full")),
             // init reads nothing, so none of the common options mean anything to it:
             // --url, --db and the thresholds are all about a window it never opens.
-            Map.entry(INIT, Set.of("dir", "jar", "no-skill")),
+            Map.entry(INIT, Set.of("dir", "jar", "no-skill", "mcp")),
+            // mcp is not one question but a session of them, so a window, a format and
+            // a service belong to each message rather than to the command: only where
+            // to read is decided here (agent.md).
+            Map.entry(MCP, Set.of("url", "db")),
             Map.entry(HELP, with()));
 
     /** The commands that take one word of their own, and what that word is called. */
