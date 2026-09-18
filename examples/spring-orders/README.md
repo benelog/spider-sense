@@ -37,6 +37,13 @@ The default Logback configuration writes one INFO line per created, paid and shi
 Under the Spider Sense agent those records are shipped as OTLP logs carrying the trace id, so the log stream lines up with the traces.
 Hibernate's own SQL logging is off, because the SQL belongs in the trace and not in the console.
 
+## Actuator metrics
+
+`spring-boot-starter-actuator` is on the class path, `management.endpoints.web.exposure.include=health,metrics` exposes the two endpoints over HTTP, and every Micrometer meter Spring Boot registers goes into the global registry: `http.server.requests`, `hikaricp.*` and `jdbc.*`, `spring.data.repository.invocations`, `tomcat.sessions.*`, `logback.events`, `executor.*`, `process.*`, `system.*`, `disk.*`, and Micrometer's own `jvm.*`.
+The OpenTelemetry agent bridges that registry to OTLP only when told to, so the application is started with `-Dotel.instrumentation.micrometer.enabled=true`; `bootRun` carries the option in `build.gradle`, and the demo scripts pass it on the command line.
+In Spider Sense they land on the Metrics page as about ninety metrics for `spring-orders`, beside the agent's own; the JVM page keeps reading the agent's `jvm.*` metrics, and Micrometer's `jvm.threads.live` and `jvm.memory.used` by `area` sit next to them in the explorer.
+`GET /actuator/health` and `GET /actuator/metrics` answer as usual, and Spider Sense does not count them as requests, because `/actuator/**` is in `spidersense.ignore.endpoints` by default.
+
 ## Build and run
 
 ```bash

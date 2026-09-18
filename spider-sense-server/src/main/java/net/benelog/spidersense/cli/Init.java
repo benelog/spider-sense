@@ -12,12 +12,14 @@ import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 
 import net.benelog.spidersilk.json.Json;
 
 /**
  * {@code java -jar spider-sense.jar init}: the few lines a project's {@code CLAUDE.md}
- * needs about Spider Sense, and a copy of the skill beside them (agent.md, "init").
+ * needs about Spider Sense, and a copy of the agent skills beside them (agent.md, "init").
  *
  * <p>The one command that reads nothing: no HTTP, no database, no running Spider
  * Sense, so {@link Cli} answers it before it ever decides between {@link Remote} and
@@ -41,12 +43,12 @@ final class Init {
      */
     static final String JAR_PROPERTY = "spidersense.jar";
 
-    /** The skill inside the jar, and the index the build writes because a class loader cannot list. */
-    static final String SKILL_PREFIX = "spider-sense/skill/";
+    /** The skills inside the jar, and the index the build writes because a class loader cannot list. */
+    static final String SKILL_PREFIX = "spider-sense/skills/";
     static final String SKILL_INDEX = SKILL_PREFIX + "index.txt";
 
-    /** Where the skill is installed inside the project, as Claude Code looks for it. */
-    static final String SKILL_TARGET = ".claude/skills/spider-sense";
+    /** Where the skills are installed inside the project, as Claude Code looks for them. */
+    static final String SKILL_TARGET = ".claude/skills";
 
     /** The placeholder the jar path replaces; the block is written once, here. */
     private static final String JAR = "${jar}";
@@ -72,11 +74,15 @@ final class Init {
             """;
 
     private static final String SKILL_HERE = "The loop — start, mark, exercise, findings, fix, compare, "
-            + "check — is in the skill at `.claude/skills/spider-sense/SKILL.md`.\n";
+            + "check — is in the skill at `.claude/skills/spider-sense/SKILL.md`.\n"
+            + "Query tuning — an index to add, a rewrite, a fetch join, a batch — is in the skill at "
+            + "`.claude/skills/spider-sense-sql-tuning/SKILL.md`.\n";
 
     private static final String SKILL_ELSEWHERE = "The loop — start, mark, exercise, findings, fix, compare, "
             + "check — is in the skill under `skills/spider-sense/` of the Spider Sense repository, "
-            + "<https://github.com/benelog/spider-sense>.\n";
+            + "<https://github.com/benelog/spider-sense>.\n"
+            + "Query tuning — an index to add, a rewrite, a fetch join, a batch — is in the skill under "
+            + "`skills/spider-sense-sql-tuning/` of the same repository.\n";
 
     private Init() {
     }
@@ -100,9 +106,10 @@ final class Init {
             out.println(writeBlock(dir, block(jar, withSkill)) + " CLAUDE.md block (jar: " + jar + ")");
             if (withSkill) {
                 Path target = dir.resolve(Paths.get(SKILL_TARGET));
-                out.println("installed skill to " + target + " (" + installSkill(target) + " files)");
+                installSkills(target).forEach((skill, files) ->
+                        out.println("installed skill to " + target.resolve(skill) + " (" + files + " files)"));
             } else {
-                out.println("skipped skill (--no-skill)");
+                out.println("skipped skills (--no-skill)");
             }
             // Without --mcp nothing is written and nothing is said: a host with a shell
             // is meant to use the CLI, and init should not hand it a second tool for
@@ -242,14 +249,22 @@ final class Init {
     }
 
     /**
-     * Copies the packaged skill into the project, overwriting the files it owns and
-     * leaving anything else in that directory alone.
+     * Copies every packaged skill into the project, one directory each, overwriting the
+     * files it owns and leaving anything else in those directories alone.
      *
-     * @return how many files were written
+     * <p>A skill is a top-level directory of the index, so a new one in the repository's
+     * {@code skills/} is installed by this without a line of code changing here.
+     *
+     * @return how many files were written, per skill, in the skills' name order
      */
-    private static int installSkill(Path target) throws IOException {
-        int written = 0;
+    private static Map<String, Integer> installSkills(Path target) throws IOException {
+        Map<String, Integer> written = new TreeMap<>();
         for (String name : index()) {
+            int slash = name.indexOf('/');
+            if (slash <= 0) {
+                // A file directly under skills/ belongs to no skill; there is nowhere to put it.
+                continue;
+            }
             Path file = target.resolve(name).normalize();
             if (!file.startsWith(target)) {
                 continue;
@@ -260,13 +275,13 @@ final class Init {
                 }
                 Files.createDirectories(file.getParent());
                 Files.copy(in, file, StandardCopyOption.REPLACE_EXISTING);
-                written++;
+                written.merge(name.substring(0, slash), 1, Integer::sum);
             }
         }
         return written;
     }
 
-    /** The relative paths of the packaged skill, as the build's {@code skillIndex} task listed them. */
+    /** The packaged paths relative to {@code skills/}, as the build's {@code skillIndex} task listed them. */
     private static List<String> index() throws IOException {
         try (InputStream in = Init.class.getClassLoader().getResourceAsStream(SKILL_INDEX)) {
             if (in == null) {

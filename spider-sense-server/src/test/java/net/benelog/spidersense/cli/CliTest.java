@@ -12,6 +12,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.function.BiConsumer;
 
@@ -441,23 +442,43 @@ class CliTest {
     }
 
     /**
+     * The files of each packaged skill, keyed by the skill's directory: what the build's
+     * {@code skillIndex} task wrote beside them, read here rather than pinned, so that a
+     * new reference page — or a whole new skill under {@code skills/} — does not break
+     * this test. The order is the order {@code init} prints, which is by skill name
+     * (agent.md, "init").
+     */
+    private static Map<String, Long> packagedSkills() throws IOException {
+        String index = new String(Objects.requireNonNull(
+                CliTest.class.getResourceAsStream("/spider-sense/skills/index.txt"), "skill index")
+                .readAllBytes(), UTF_8);
+        return index.lines()
+                .map(String::trim)
+                .filter(line -> line.contains("/"))
+                .collect(java.util.stream.Collectors.groupingBy(
+                        line -> line.substring(0, line.indexOf('/')),
+                        java.util.TreeMap::new,
+                        java.util.stream.Collectors.counting()));
+    }
+
+    /**
      * {@code init} is the one command that asks nothing and only writes: the block into
-     * the project's CLAUDE.md, and the skill beside it (agent.md, "init").
+     * the project's CLAUDE.md, and the skills beside it (agent.md, "init").
      */
     @Test
-    void initWritesTheBlockAndInstallsTheSkill(@TempDir Path project) throws IOException {
+    void initWritesTheBlockAndInstallsEverySkill(@TempDir Path project) throws IOException {
         Run init = run("init", "--dir=" + project, "--jar=/x/spider-sense.jar");
         assertThat(init.exit()).as("stderr: %s", init.err()).isZero();
-        // The count is whatever the packaged skill holds, read from its index rather than
-        // pinned here, so adding a reference page to skills/spider-sense does not break this.
-        String index = new String(Objects.requireNonNull(
-                CliTest.class.getResourceAsStream("/spider-sense/skill/index.txt"), "skill index")
-                .readAllBytes(), UTF_8);
-        long skillFiles = index.lines().filter(line -> !line.isBlank()).count();
-        assertThat(skillFiles).isGreaterThanOrEqualTo(4);
-        assertThat(init.out()).isEqualTo("wrote CLAUDE.md block (jar: /x/spider-sense.jar)\n"
-                + "installed skill to " + project.resolve(".claude/skills/spider-sense")
-                + " (" + skillFiles + " files)\n");
+
+        Map<String, Long> skills = packagedSkills();
+        assertThat(skills.keySet())
+                .as("every directory under skills/ travels in the jar")
+                .contains("spider-sense", "spider-sense-sql-tuning");
+        StringBuilder expected = new StringBuilder("wrote CLAUDE.md block (jar: /x/spider-sense.jar)\n");
+        skills.forEach((skill, files) -> expected
+                .append("installed skill to ").append(project.resolve(".claude/skills").resolve(skill))
+                .append(" (").append(files).append(" files)\n"));
+        assertThat(init.out()).isEqualTo(expected.toString());
 
         String claude = Files.readString(project.resolve("CLAUDE.md"), UTF_8);
         assertThat(claude).startsWith("<!-- spider-sense:start -->\n## Spider Sense\n");
@@ -467,12 +488,43 @@ class CliTest {
                 .contains("JAVA_TOOL_OPTIONS=\"-javaagent:/x/spider-sense.jar\" ./gradlew bootRun")
                 .contains("java -jar /x/spider-sense.jar findings --since=start")
                 .contains("<http://127.0.0.1:4000>")
-                .contains("`.claude/skills/spider-sense/SKILL.md`");
+                .contains("The loop — start, mark, exercise, findings, fix, compare, check — is in the "
+                        + "skill at `.claude/skills/spider-sense/SKILL.md`.")
+                .contains("Query tuning — an index to add, a rewrite, a fetch join, a batch — is in the "
+                        + "skill at `.claude/skills/spider-sense-sql-tuning/SKILL.md`.");
 
         assertThat(project.resolve(".claude/skills/spider-sense/SKILL.md")).isRegularFile();
         assertThat(project.resolve(".claude/skills/spider-sense/references/cli.md")).isRegularFile();
+        assertThat(project.resolve(".claude/skills/spider-sense-sql-tuning/SKILL.md")).isRegularFile();
         assertThat(Files.readString(project.resolve(".claude/skills/spider-sense/SKILL.md"), UTF_8))
                 .as("the repository's skill, copied verbatim").contains("name: spider-sense");
+    }
+
+    /**
+     * A second {@code init} overwrites the files it wrote before and leaves anything else
+     * in those directories alone: an agent may run it whenever it is unsure.
+     */
+    @Test
+    void aSecondInitRewritesTheSkillsAndKeepsWhatIsNotOurs(@TempDir Path project) throws IOException {
+        run("init", "--dir=" + project, "--jar=/x/spider-sense.jar");
+        Path skill = project.resolve(".claude/skills/spider-sense/SKILL.md");
+        Path mine = project.resolve(".claude/skills/spider-sense/references/notes.md");
+        Files.writeString(skill, "clobbered\n", UTF_8);
+        Files.writeString(mine, "my own\n", UTF_8);
+
+        Run again = run("init", "--dir=" + project, "--jar=/x/spider-sense.jar");
+
+        assertThat(again.exit()).as("stderr: %s", again.err()).isZero();
+        assertThat(again.out().lines())
+                .as("one line for the block and one for each skill")
+                .hasSize(1 + packagedSkills().size());
+        assertThat(again.out()).startsWith("updated CLAUDE.md block (jar: /x/spider-sense.jar)\n");
+        assertThat(again.out()).contains("installed skill to "
+                + project.resolve(".claude/skills/spider-sense-sql-tuning"));
+        assertThat(Files.readString(skill, UTF_8))
+                .as("the file init owns is written again").contains("name: spider-sense");
+        assertThat(Files.readString(mine, UTF_8)).as("not ours to remove").isEqualTo("my own\n");
+        assertThat(project.resolve(".claude/skills/spider-sense-sql-tuning/SKILL.md")).isRegularFile();
     }
 
     /**
@@ -502,15 +554,17 @@ class CliTest {
     }
 
     @Test
-    void initWithoutTheSkillWritesNoClaudeDirectory(@TempDir Path project) throws IOException {
+    void initWithoutTheSkillsWritesNoClaudeDirectory(@TempDir Path project) throws IOException {
         Run init = run("init", "--dir=" + project, "--jar=/x/spider-sense.jar", "--no-skill");
         assertThat(init.exit()).isZero();
-        assertThat(init.out()).endsWith("skipped skill (--no-skill)\n");
+        assertThat(init.out()).endsWith("skipped skills (--no-skill)\n");
         assertThat(project.resolve(".claude")).doesNotExist();
         assertThat(Files.readString(project.resolve("CLAUDE.md"), UTF_8))
                 .as("the block points at the repository instead")
                 .contains("<https://github.com/benelog/spider-sense>")
-                .doesNotContain("`.claude/skills/spider-sense/SKILL.md`");
+                .contains("`skills/spider-sense-sql-tuning/` of the same repository")
+                .doesNotContain("`.claude/skills/spider-sense/SKILL.md`")
+                .doesNotContain("`.claude/skills/spider-sense-sql-tuning/SKILL.md`");
     }
 
     /** Exploded classes and no {@code --jar}: nobody knows the path, and inventing one would be worse. */

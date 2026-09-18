@@ -19,8 +19,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Sends a steady, jittered trickle of requests to silk-bookstore and spring-orders
- * so the Spider Sense dashboards have something to show without anyone clicking.
+ * Sends a steady, jittered trickle of requests to silk-bookstore, spring-orders and
+ * servlet-warehouse so the Spider Sense dashboards have something to show without anyone clicking.
  * Requests go through java.net.http.HttpClient, which the OpenTelemetry agent instruments,
  * so running this under the agent makes some traces start here rather than in the servers.
  */
@@ -56,8 +56,8 @@ public final class LoadGen {
     }
 
     private void run() throws Exception {
-        System.out.printf("load-gen: bookstore=%s orders=%s rps=%.1f duration=%s seed=%d concurrency=%d%n",
-                options.bookstore(), options.orders(), options.rps(),
+        System.out.printf("load-gen: bookstore=%s orders=%s warehouse=%s rps=%.1f duration=%s seed=%d concurrency=%d%n",
+                options.bookstore(), options.orders(), options.warehouse(), options.rps(),
                 options.durationSeconds() == 0 ? "until Ctrl-C" : options.durationSeconds() + "s",
                 options.seed(), options.concurrency());
 
@@ -71,6 +71,7 @@ public final class LoadGen {
 
         waitForHealth("silk-bookstore", options.bookstore() + "/api/health");
         waitForHealth("spring-orders", options.orders() + "/api/health");
+        waitForHealth("servlet-warehouse", options.warehouse() + "/api/health");
 
         Random random = new Random(options.seed());
         Semaphore inFlight = new Semaphore(options.concurrency());
@@ -140,10 +141,10 @@ public final class LoadGen {
 
     /** Returns the response body, or null when the request failed outright. */
     private String send(Step step) {
-        URI uri = step.uri(options.bookstore(), options.orders());
+        URI uri = step.uri(options);
         HttpRequest.Builder builder = HttpRequest.newBuilder(uri).timeout(REQUEST_TIMEOUT);
         if (step.method().equals("POST")) {
-            builder.header("Content-Type", "application/json")
+            builder.header("Content-Type", step.contentType() == null ? Step.JSON : step.contentType())
                     .POST(HttpRequest.BodyPublishers.ofString(step.body() == null ? "" : step.body()));
         } else {
             builder.GET();

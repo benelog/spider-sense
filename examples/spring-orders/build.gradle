@@ -35,6 +35,7 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-restclient'
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
 
     runtimeOnly "com.h2database:h2:${rootProject.ext.h2Version}"
 
@@ -46,6 +47,13 @@ dependencies {
 // The port scripts/demo.sh gives this application; silk-bookstore has 4000.
 spiderSense {
     port = 4001
+}
+
+// Actuator's metrics are Micrometer meters; the OpenTelemetry agent bridges the
+// global registry to OTLP only when asked, so the demo asks. The scripts under
+// scripts/ pass the same property on the command line (docs/build-tools.md).
+tasks.named('bootRun') {
+    jvmArgs '-Dotel.instrumentation.micrometer.enabled=true'
 }
 
 tasks.named('bootJar') {

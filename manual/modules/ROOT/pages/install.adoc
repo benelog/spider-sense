@@ -101,4 +101,4 @@ An application on an older JVM can still be measured: run Spider Sense standalon
 
 xref:modes.adoc[The Three Modes] covers starting an application that is not a plain `java -jar`, and what to check when nothing arrives.
 xref:configuration.adoc[Configuration] lists every property, including the port, the database path and the slow thresholds.
-xref:examples.adoc[The Examples] starts two misbehaving applications and a load generator, so there is data to look at immediately.
+xref:examples.adoc[The Examples] starts four misbehaving applications and a load generator, so there is data to look at immediately.

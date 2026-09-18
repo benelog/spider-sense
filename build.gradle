@@ -16,6 +16,9 @@ ext {
     h2Version = '2.5.250'
     springJdbcVersion = '7.0.9'
     springBootVersion = '4.1.1'
+    tomcatVersion = '11.0.26'            // org.apache.tomcat.embed:tomcat-embed-core, org.apache.tomcat:tomcat-jdbc
+    hikariVersion = '7.1.0'
+    logbackVersion = '1.5.38'
 }
 
 subprojects {

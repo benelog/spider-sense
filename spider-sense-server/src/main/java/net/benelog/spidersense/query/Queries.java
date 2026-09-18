@@ -323,7 +323,7 @@ public final class Queries {
             where = where.and("query_id = ?", queryId);
         }
         String order = switch (sort == null ? "total" : sort) {
-            case "avg" -> "total_ns / calls DESC";
+            case "avg" -> "SUM(duration_ns) / COUNT(*) DESC";   // an alias cannot sit inside an ORDER BY expression in H2
             case "p95" -> "p95_ns DESC";
             case "max" -> "max_ns DESC";
             case "calls" -> "calls DESC";
@@ -833,6 +833,13 @@ public final class Queries {
         edges.addAll(userEdges(window));
         List<Stats.Node> targets = new ArrayList<>();
         edges.addAll(targetEdges(window, targets));
+        // A service with no request of its own, a worker whose jobs still call a
+        // database, is on the map through the edges it starts: one node per service.
+        for (Stats.Edge edge : edges) {
+            if (edge.from().startsWith("svc:")) {
+                named.add(edge.from().substring("svc:".length()));
+            }
+        }
 
         Map<String, Stats.Node> nodes = new LinkedHashMap<>();
         nodes.put("user", Stats.Node.user());

@@ -89,7 +89,7 @@ The default without either is `http://127.0.0.1:4000`.
 | that document back into the store
 
 | `init [--dir=] [--jar=] [--no-skill] [--mcp]`
-| writes the Spider Sense block into the project's `CLAUDE.md` and installs the skill
+| writes the Spider Sense block into the project's `CLAUDE.md` and installs the skills
 
 | `mcp`
 | the MCP server over stdio
@@ -390,7 +390,7 @@ See <<sql,SQL>>.
 
 === init
 
-`init` writes the Spider Sense block into the project's `CLAUDE.md` and installs the skill into its `.claude/skills/`.
+`init` writes the Spider Sense block into the project's `CLAUDE.md` and installs the skills into its `.claude/skills/`.
 It is the one command that reads nothing: no HTTP, no database, no running Spider Sense.
 It takes none of the common options, and its own are `--dir`, `--jar`, `--no-skill` and `--mcp`.
 See xref:agent-skill.adoc#init[init].

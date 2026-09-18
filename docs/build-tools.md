@@ -101,7 +101,7 @@ The block's `spidersense.*` properties are passed to it as they are to the appli
 It also sets the environment variable `SPIDERSENSE_URL` to the base URL the block implies — `collector` when set, else `http://<host>:<port>` with the defaults filled in — so a CLI command asks the Spider Sense the application is sending to rather than the default port.
 The exit code is the CLI's exit code, which is what `check` is for.
 
-`spiderSenseInit` runs `init --dir=<the project directory> --jar=<the jar>` ([agent.md](agent.md#init)): it writes the Spider Sense block into the project's `CLAUDE.md` and installs the skill into `.claude/skills/`.
+`spiderSenseInit` runs `init --dir=<the project directory> --jar=<the jar>` ([agent.md](agent.md#init)): it writes the Spider Sense block into the project's `CLAUDE.md` and installs the skills into `.claude/skills/`.
 The jar path it writes is wherever Gradle resolved the jar to, a file under `~/.gradle/caches/` for a Maven Central jar, which stays valid until the version changes; run it again after a `version` bump.
 
 ### Check as a build step
@@ -294,7 +294,7 @@ The CLI is the same jar, so once it is in `target/`:
 
 ```bash
 java -jar target/spider-sense.jar findings --since=start
-java -jar target/spider-sense.jar init            # CLAUDE.md block and the skill, docs/agent.md
+java -jar target/spider-sense.jar init            # CLAUDE.md block and the skills, docs/agent.md
 ```
 
 ### Tests under Surefire

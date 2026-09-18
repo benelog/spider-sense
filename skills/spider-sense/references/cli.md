@@ -26,7 +26,7 @@ The launcher treats a first argument that does not start with `-` as a command a
 | `sql "<statement>" [--limit=200]` | one read-only statement over the store, for a question no other command answers ([sql.md](sql.md)) |
 | `export [--out=<file>]` | the window as one JSON document, to the file or to stdout; a name ending in `.gz` is gzipped |
 | `import <file>` | that document back into the store, and one line saying what arrived |
-| `init [--dir=<project dir>] [--jar=<path>] [--no-skill] [--mcp]` | writes the Spider Sense block into the project's `CLAUDE.md` and installs this skill into its `.claude/skills/`; `--mcp` also writes the stdio MCP server into its `.mcp.json` |
+| `init [--dir=<project dir>] [--jar=<path>] [--no-skill] [--mcp]` | writes the Spider Sense block into the project's `CLAUDE.md` and installs the skills into its `.claude/skills/`; `--mcp` also writes the stdio MCP server into its `.mcp.json` |
 | `mcp` | the MCP server over stdio, for a host that has no shell; it takes `--url` and `--db` and nothing else ([MCP over stdio](#mcp-over-stdio)) |
 | `help` | this table |
 
@@ -499,7 +499,7 @@ Commands:
                                saying what arrived
   init [--dir=<project dir>] [--jar=<path>] [--no-skill] [--mcp]
                                writes the Spider Sense block into the project's
-                               CLAUDE.md and installs the skill into .claude/skills/;
+                               CLAUDE.md and installs the skills into .claude/skills/;
                                --mcp also writes the stdio MCP server into .mcp.json
   mcp                          the MCP server over stdio, for a host with no shell;
                                takes --url and --db and nothing else

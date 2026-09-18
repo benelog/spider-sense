@@ -18,7 +18,7 @@ Run `init` in the project:
 java -jar spider-sense.jar init
 ----
 
-It writes a Spider Sense block into the project's `CLAUDE.md`, with the jar's absolute path and the commands, and copies the skill into `.claude/skills/spider-sense/`.
+It writes a Spider Sense block into the project's `CLAUDE.md`, with the jar's absolute path and the commands, and copies the skills into `.claude/skills/spider-sense/` and `.claude/skills/spider-sense-sql-tuning/`.
 The next Claude Code session finds both without being told.
 A project on the Gradle plugin runs `./gradlew spiderSenseInit` instead, which does the same with the jar the build resolved (xref:agent-skill.adoc#init[init]).
 
@@ -27,18 +27,18 @@ A project on the Gradle plugin runs `./gradlew spiderSenseInit` instead, which d
 === Codex
 
 Codex reads skills from `~/.codex/skills` for every project, and from a project's own `.codex/skills`.
-Run `init` as above, then copy the skill into either one:
+Run `init` as above, then copy the skills into either one:
 
 [source,bash]
 ----
 java -jar spider-sense.jar init
 mkdir -p .codex/skills
-cp -r .claude/skills/spider-sense .codex/skills/
+cp -r .claude/skills/spider-sense .claude/skills/spider-sense-sql-tuning .codex/skills/
 ----
 
 Codex reads `AGENTS.md` rather than `CLAUDE.md`, so paste the block between `<!-- spider-sense:start -->` and `<!-- spider-sense:end -->` into `AGENTS.md` to have it found the same way.
 
-Cursor and GitHub Copilot read the project's `.claude/skills/`, so the `init` step alone serves them (xref:agent-skill.adoc[Installing the skill by hand]).
+Cursor and GitHub Copilot read the project's `.claude/skills/`, so the `init` step alone serves them (xref:agent-skill.adoc[Installing the skills by hand]).
 
 [#cli-or-mcp]
 == CLI or MCP

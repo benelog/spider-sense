@@ -76,6 +76,17 @@ class InitTest {
         assertThat(project.resolve(".mcp.json")).doesNotExist();
     }
 
+    /** {@code --no-skill} skips every skill, not only the first one (agent.md, "init"). */
+    @Test
+    void noSkillInstallsNeitherSkill(@TempDir Path project) {
+        Run run = init("--dir=" + project, "--jar=" + JAR, "--no-skill");
+
+        assertThat(run.exit()).as("stderr: %s", run.err()).isZero();
+        assertThat(run.out()).endsWith("skipped skills (--no-skill)\n");
+        assertThat(project.resolve(".claude/skills/spider-sense")).doesNotExist();
+        assertThat(project.resolve(".claude/skills/spider-sense-sql-tuning")).doesNotExist();
+    }
+
     @Test
     void aSecondRunUpdatesTheEntryAndKeepsEveryOtherOne(@TempDir Path project) throws IOException {
         Path file = project.resolve(".mcp.json");

@@ -55,7 +55,7 @@ java -jar "$SENSE" check --since=after --max-p95-ms=300 --max-n-plus-one=0
 ```
 
 After a restart there is a fresh `start` mark, so `--since=start` covers the new run without marking anything.
-`java -jar "$SENSE" init` writes the Spider Sense block into the project's `CLAUDE.md` — where the jar is, how to start the application under it, what the CLI answers — and installs this skill into `.claude/skills/spider-sense/`, so the next session finds both without being told.
+`java -jar "$SENSE" init` writes the Spider Sense block into the project's `CLAUDE.md` — where the jar is, how to start the application under it, what the CLI answers — and installs the skills into `.claude/skills/`, so the next session finds both without being told.
 `--url=<base url>` (or `SPIDERSENSE_URL`) points the CLI at a Spider Sense on another port; `--db=<path>` reads a database directly.
 
 ## Starting the application under the agent

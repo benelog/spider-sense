@@ -80,6 +80,17 @@ export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 ----
 
 There is no gRPC receiver, which is why the protocol has to be `http/protobuf`.
+
+The same two variables make a Java application send to Spider Sense from any OpenTelemetry-compatible agent, not only the Spider Sense jar: the stock `opentelemetry-javaagent.jar` at a version of your own choosing, a vendor's distribution of it, or an agent already on the command line for another reason.
+
+[source,bash]
+----
+java -jar "$SENSE" &
+OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4000 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
+    java -javaagent:opentelemetry-javaagent.jar -jar app.jar
+----
+
+What the Spider Sense jar adds in agent mode, and this setup lacks, is the defaults and the extension: the endpoint and protocol set for you, a one-second export delay, the runtime metrics on, and `code.stacktrace` on slow queries (xref:design.adoc[Design]); everything else, the pages, the findings and the CLI, is the same, because it is the same data.
 The receiver also accepts OTLP/JSON, so a shell can post a span with `curl`:
 
 [source,bash]
@@ -190,4 +201,4 @@ xref:marks-and-compare.adoc#marks[Marks] describes them.
 
 An application that runs while Spider Sense collects nothing is a configuration question, and `status` plus the application's stdout answer it.
 
-xref:examples.adoc[The Examples] has `scripts/demo.sh` and `scripts/demo-shared.sh`, which are these modes in working form: two applications each with their own embedded Spider Sense, and the same two forwarding to one standalone.
+xref:examples.adoc[The Examples] has `scripts/demo.sh` and `scripts/demo-shared.sh`, which are these modes in working form: four applications each with their own embedded Spider Sense, and the same four forwarding to one standalone.

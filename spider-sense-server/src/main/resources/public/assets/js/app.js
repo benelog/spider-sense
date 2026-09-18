@@ -322,6 +322,8 @@ function setNav(open) {
 async function boot() {
   if (new URLSearchParams(location.search).get('mock') === '1') {
     await import('./dev/mock.js');
+  } else if (document.documentElement.dataset.snapshot || new URLSearchParams(location.search).get('snapshot')) {
+    await import('./dev/replay.js');
   }
 
   Object.assign(el, {

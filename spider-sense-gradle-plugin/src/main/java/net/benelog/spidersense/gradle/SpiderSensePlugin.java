@@ -189,12 +189,12 @@ public class SpiderSensePlugin implements Plugin<Project> {
             run(task, jar, systemProperties, always, configuration.getName(), url);
         });
 
-        // init writes the CLAUDE.md block and installs the skill, and both the
+        // init writes the CLAUDE.md block and installs the skills, and both the
         // directory it writes into and the jar path it writes down are what this
         // build knows and the CLI does not.
         project.getTasks().register(NAME + "Init", JavaExec.class, task -> {
             task.setGroup(GROUP);
-            task.setDescription("Writes the Spider Sense block into CLAUDE.md and installs the agent skill");
+            task.setDescription("Writes the Spider Sense block into CLAUDE.md and installs the agent skills");
             SpiderSenseArguments options = run(task, jar, systemProperties, always, configuration.getName(), url);
             Provider<List<String>> initArguments = always.map(ignored -> List.of(
                     "init",

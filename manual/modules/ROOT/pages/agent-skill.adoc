@@ -1,15 +1,19 @@
 = The Agent Skill
 :navtitle: The Agent Skill
 
-The repository carries an agent skill at `skills/spider-sense/`: a `SKILL.md` an agent loads once a task touches Spider Sense, and reference files it reads only as the task needs them.
+The repository carries two agent skills under `skills/`, each a `SKILL.md` an agent loads once a task touches it, with reference files it reads only as the task needs them.
 
-The skill teaches the loop itself rather than the commands alone: start the application under the agent, mark a moment, exercise it, read the findings, fix, compare, check (xref:agent-loop.adoc#the-loop[The Loop]).
+`skills/spider-sense/` teaches the loop itself rather than the commands alone: start the application under the agent, mark a moment, exercise it, read the findings, fix, compare, check (xref:agent-loop.adoc#the-loop[The Loop]).
 An agent that has only the CLI's `help` knows every option and none of the method.
-The skill is distilled from this manual, and the manual stays the source of truth.
+
+`skills/spider-sense-sql-tuning/` teaches query tuning: the index to add, the rewrite, the fetch join, the batch, each verified with `compare` and `check`.
+It is read when a finding names a statement rather than a request.
+
+Both are distilled from this manual, and the manual stays the source of truth.
 
 == What is in it
 
-`SKILL.md` carries what every task needs: what Spider Sense gives an agent that a dashboard does not, the loop as a script of commands, how to start each kind of application under the agent, how to read a finding, and the rules that keep an answer honest.
+`skills/spider-sense/SKILL.md` carries what every task needs: what Spider Sense gives an agent that a dashboard does not, the loop as a script of commands, how to start each kind of application under the agent, how to read a finding, and the rules that keep an answer honest.
 Four reference files carry the rest, and an agent reads only the one its task touches.
 
 [cols="1,3",options="header"]
@@ -47,7 +51,7 @@ java -jar spider-sense.jar init [--dir=<project dir>] [--jar=<path>] [--no-skill
 
 `init` prepares a project to be worked on under Spider Sense.
 It is the one command that reads nothing: no HTTP, no database, no running Spider Sense.
-It writes a short block into the project's `CLAUDE.md` and copies the skill into the project's `.claude/skills/`.
+It writes a short block into the project's `CLAUDE.md` and copies the skills into the project's `.claude/skills/`.
 
 `--dir` is the project directory, and it defaults to the working directory.
 
@@ -81,12 +85,13 @@ java -jar /home/me/tools/spider-sense.jar help  # every command and every option
 ```
 
 The loop — start, mark, exercise, findings, fix, compare, check — is in the skill at `.claude/skills/spider-sense/SKILL.md`.
+Query tuning — an index to add, a rewrite, a fetch join, a batch — is in the skill at `.claude/skills/spider-sense-sql-tuning/SKILL.md`.
 <!-- spider-sense:end -->
 ----
 
 The jar path above is the one `init` resolved, and everything else is written as it stands.
 No port of the project is written: the block names the Spider Sense UI's own default, `http://127.0.0.1:4000`, and nothing else.
-The last line names `skills/spider-sense/` of the https://github.com/{project-repo}[Spider Sense repository] instead of the project's own copy when `--no-skill` kept the skill from being installed.
+The last two lines name `skills/spider-sense/` and `skills/spider-sense-sql-tuning/` of the https://github.com/{project-repo}[Spider Sense repository] instead of the project's own copies when `--no-skill` kept the skills from being installed.
 
 `init` is idempotent.
 A second run replaces everything between the markers, including the jar path when it has changed, and leaves the rest of the file byte for byte as it was.
@@ -95,8 +100,8 @@ When `CLAUDE.md` does not exist it is created with the block alone, and when it 
 
 === The skill copy
 
-`init` copies `SKILL.md` and `references/*.md` into `<dir>/.claude/skills/spider-sense/`, unless `--no-skill` is given.
-It overwrites the files it owns and leaves anything else in that directory alone.
+`init` copies every directory under `skills/` — each one's `SKILL.md` and `references/*.md` — into `<dir>/.claude/skills/` under the same name, unless `--no-skill` is given, which skips all of them.
+It overwrites the files it owns and leaves anything else in those directories alone.
 
 It is a copy rather than a pointer, because the jar is the distributable and the repository it was built from may not be on the machine at all.
 The files travel inside the jar, so no checkout is needed.
@@ -106,11 +111,13 @@ The files travel inside the jar, so no checkout is needed.
 [source]
 ----
 wrote CLAUDE.md block (jar: /home/me/tools/spider-sense.jar)
-installed skill to /home/me/project/.claude/skills/spider-sense (4 files)
+installed skill to /home/me/project/.claude/skills/spider-sense (5 files)
+installed skill to /home/me/project/.claude/skills/spider-sense-sql-tuning (4 files)
 ----
 
+One line per skill, each with the number of files it wrote.
 The first line is `updated CLAUDE.md block (…)` when the markers were already in the file.
-The second is `skipped skill (--no-skill)` when the skill was not installed.
+The skill lines become the single line `skipped skills (--no-skill)` when the skills were not installed.
 `--mcp` adds a third line, `wrote .mcp.json (spider-sense over stdio)` or `updated .mcp.json (…)`, and writes the stdio MCP server into the project's `.mcp.json` (xref:mcp.adoc[MCP]).
 Without `--mcp` nothing is written and nothing is printed about it, because a host with a shell is meant to use the CLI.
 
@@ -129,21 +136,22 @@ The jar path it writes is wherever Gradle resolved the jar to, which for a Maven
 That path stays valid until the version changes, so run the task again after a version bump.
 Re-running `init` by hand after a bump does the same, because it replaces the block including the jar path.
 
-== Installing the skill by hand
+== Installing the skills by hand
 
 `init` is the normal way, and it installs for Claude Code.
-Copy the directory yourself when the jar is not at hand, or when the target is another tool.
+Copy the directories yourself when the jar is not at hand, or when the target is another tool.
 
 === Claude Code
 
-Claude Code reads a project's `.claude/skills/`, which is where `init` puts the skill.
-Copy the directory there instead to get the same result, so that collaborators get the skill by cloning and install nothing of their own:
+Claude Code reads a project's `.claude/skills/`, which is where `init` puts the skills.
+Copy the directories there instead to get the same result, so that collaborators get them by cloning and install nothing of their own:
 
 [source,bash,subs="attributes+"]
 ----
 git clone --depth 1 https://github.com/{project-repo} /tmp/spider-sense
 mkdir -p .claude/skills
 cp -r /tmp/spider-sense/skills/spider-sense .claude/skills/
+cp -r /tmp/spider-sense/skills/spider-sense-sql-tuning .claude/skills/
 ----
 
 A project-level copy is also what Cursor and GitHub Copilot read, so one directory serves three tools.
@@ -151,7 +159,7 @@ A project-level copy is also what Cursor and GitHub Copilot read, so one directo
 === Codex
 
 Codex reads skills from `~/.codex/skills` for every project, and from a project's own `.codex/skills`.
-Copy `skills/spider-sense` into either one.
+Copy `skills/spider-sense` and `skills/spider-sense-sql-tuning` into either one.
 
 === Cursor
 
@@ -165,8 +173,8 @@ It too reads the project's `.claude/skills/`.
 
 == The manual is the source of truth
 
-Nothing in the skill is new information.
-Every statement in it is this manual, compressed for an agent's context window instead of a reader's screen.
-A question the skill cannot settle is answered here, and a release that changes a command or a finding changes the skill alongside it.
+Nothing in the skills is new information.
+Every statement in them is this manual, compressed for an agent's context window instead of a reader's screen.
+A question a skill cannot settle is answered here, and a release that changes a command or a finding changes the skills alongside it.
 
 A host without a shell is taught the same loop through the MCP server's `instructions` field rather than through the skill, so neither host is taught something the other is not (xref:mcp.adoc[MCP]).

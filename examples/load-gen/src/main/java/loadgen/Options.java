@@ -1,14 +1,15 @@
 package loadgen;
 
 /** Command line options, all of the form {@code --name=value}. */
-public record Options(String bookstore, String orders, double rps, int durationSeconds,
+public record Options(String bookstore, String orders, String warehouse, double rps, int durationSeconds,
                       long seed, int concurrency, int waitSeconds) {
 
     public static final String USAGE = """
-            load-gen - sends traffic to silk-bookstore and spring-orders
+            load-gen - sends traffic to silk-bookstore, spring-orders and servlet-warehouse
 
               --bookstore=http://localhost:8081   base URL of silk-bookstore
               --orders=http://localhost:8082      base URL of spring-orders
+              --warehouse=http://localhost:8083   base URL of servlet-warehouse
               --rps=4                             target requests per second, jittered
               --duration=0                        seconds to run; 0 means until Ctrl-C
               --seed=<long>                       random seed; default is the current time
@@ -19,6 +20,7 @@ public record Options(String bookstore, String orders, double rps, int durationS
     public static Options parse(String[] args) {
         String bookstore = "http://localhost:8081";
         String orders = "http://localhost:8082";
+        String warehouse = "http://localhost:8083";
         double rps = 4;
         int duration = 0;
         long seed = System.nanoTime();
@@ -39,6 +41,7 @@ public record Options(String bookstore, String orders, double rps, int durationS
             switch (name) {
                 case "bookstore" -> bookstore = trimSlash(value);
                 case "orders" -> orders = trimSlash(value);
+                case "warehouse" -> warehouse = trimSlash(value);
                 case "rps" -> rps = Double.parseDouble(value);
                 case "duration" -> duration = Integer.parseInt(value);
                 case "seed" -> seed = Long.parseLong(value);
@@ -50,12 +53,21 @@ public record Options(String bookstore, String orders, double rps, int durationS
         if (rps <= 0) {
             throw new IllegalArgumentException("--rps must be greater than 0");
         }
-        return new Options(bookstore, orders, rps, Math.max(duration, 0), seed,
+        return new Options(bookstore, orders, warehouse, rps, Math.max(duration, 0), seed,
                 Math.clamp(concurrency, 1, 64), Math.max(wait, 0));
     }
 
     private static String trimSlash(String value) {
         return value.endsWith("/") ? value.substring(0, value.length() - 1) : value;
+    }
+
+    /** The base URL a step aimed at this application goes to. */
+    public String baseUrl(Target target) {
+        return switch (target) {
+            case BOOKSTORE -> bookstore;
+            case ORDERS -> orders;
+            case WAREHOUSE -> warehouse;
+        };
     }
 
     public long intervalMillis() {

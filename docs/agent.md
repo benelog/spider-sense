@@ -23,7 +23,7 @@ Everything is served by the same `Queries` the UI uses, so the numbers an agent 
 |---|---|---|
 | HTTP API, `format=text` | this version | anything that can run `curl` |
 | CLI, `java -jar spider-sense.jar <command>` | this version | Claude Code and every agent with a shell; also works when no Spider Sense is running, straight from the H2 file |
-| Skill, `skills/spider-sense/` | this version | teaches an agent the loop itself: how to start the app under the agent, mark, exercise, read findings, fix, compare, check |
+| Skills, `skills/spider-sense/` and `skills/spider-sense-sql-tuning/` | this version | the first teaches an agent the loop itself: how to start the app under the agent, mark, exercise, read findings, fix, compare, check; the second teaches query tuning: indexes, rewrites, fetch joins, batching, verified with `compare` and `check` |
 | Read-only SQL, `POST /api/sql` and `sql` | this version | the question nobody anticipated; the schema in storage.md is already the documentation |
 | MCP, `POST /mcp` and `mcp` | this version | hosts without a shell; six tools over the same handlers, answering the same text ([MCP](#mcp)) |
 
@@ -33,7 +33,7 @@ The CLI and MCP call the same handlers and print the same bytes, so the choice c
 
 | Host | Use | Why |
 |---|---|---|
-| An agent with a shell (Claude Code, Codex CLI, Gemini CLI, Aider, a script) | the CLI and the skill | no setup beyond `init`; works with the application down; `check` is an exit code; output can be piped; the tool costs no context |
+| An agent with a shell (Claude Code, Codex CLI, Gemini CLI, Aider, a script) | the CLI and the skills | no setup beyond `init`; works with the application down; `check` is an exit code; output can be piped; the tool costs no context |
 | A host without a shell (Claude Desktop, a browser-based agent, an IDE chat panel) | MCP | the only case the CLI cannot serve; `init --mcp` writes the host's server entry |
 | CI, a build gate | the CLI's `check`, or the Gradle plugin's task | an exit code is what a build understands |
 | The application has crashed | the CLI, or MCP over stdio | both open the H2 file in process; MCP over HTTP needs the server up |
@@ -384,7 +384,7 @@ JSON stays the default.
 
 Endpoints with a text rendering: `/api/status`, `/api/findings`, `/api/marks`, `/api/compare`, `/api/check`, `/api/sql`, `/api/traces`, `/api/traces/{id}`, `/api/endpoints`, `/api/queries`, `/api/errors`, `/api/logs`, `/api/services`.
 
-Every example below is output captured from `scripts/demo-shared.sh`, the two example applications running under the agent and forwarding to one standalone Spider Sense, with the home directory anonymised.
+Every example below is output captured from `scripts/demo-shared.sh` with `silk-bookstore` and `spring-orders` running under the agent and forwarding to one standalone Spider Sense, with the home directory anonymised.
 
 Conventions, so that the text is small and stable:
 
@@ -467,7 +467,7 @@ The launcher stays dependency-free.
 | `compare --before=<selector> --after=<selector> [--until=<selector>]` | the two windows side by side |
 | `check [--max-p95-ms=] [--max-errors=] [--max-error-rate=] [--max-queries-per-request=] [--max-slow-queries=] [--max-n-plus-one=] [--max-log-errors=] [--min-apdex=] [--endpoint=]` | pass or fail, in the exit code |
 | `sql "<statement>" [--limit=200]` | one read-only statement over the schema of storage.md |
-| `init [--dir=<project dir>] [--jar=<path>] [--no-skill] [--mcp]` | writes the Spider Sense block into the project's `CLAUDE.md` and installs the skill into its `.claude/skills/`; `--mcp` also writes the stdio MCP server into its `.mcp.json` |
+| `init [--dir=<project dir>] [--jar=<path>] [--no-skill] [--mcp]` | writes the Spider Sense block into the project's `CLAUDE.md` and installs the skills into its `.claude/skills/`; `--mcp` also writes the stdio MCP server into its `.mcp.json` |
 | `mcp` | the MCP server over stdio ([MCP](#mcp)); takes `--url` and `--db` and nothing else |
 | `help` | this table |
 
@@ -489,11 +489,13 @@ A missing file or another schema version is a message on stderr and exit code 2.
 
 Exit codes: `0` success (and `check` passed), `1` `check` failed, `2` usage or connection error, `3` `check` had no request to judge, `4` not found (a trace id, a mark name, a finding id to `unack`).
 
-## Skill
+## Skills
 
-`skills/spider-sense/SKILL.md`, with references beside it, in the same form as Spider Silk's skill.
-`init` installs a copy of it into a project's `.claude/skills/spider-sense/` ([init](#init)).
-It is what an agent reads to run the loop without being told how:
+Two, each a directory under `skills/`, in the same form as Spider Silk's skill: a `SKILL.md` with references beside it.
+`init` installs a copy of every one of them into a project's `.claude/skills/` ([init](#init)).
+
+`skills/spider-sense/SKILL.md` is the loop.
+It is what an agent reads to run it without being told how:
 
 1. Start the application under the agent (`-javaagent`, or `JAVA_TOOL_OPTIONS` when the start command is not the agent's to change), and confirm with `status`.
 2. `mark before`, exercise the endpoints in question (or run the tests, or the load generator).
@@ -503,6 +505,9 @@ It is what an agent reads to run the loop without being told how:
 
 The references list the finding kinds with the fix each usually wants (a fetch join or a batch for `n-plus-one`, an index or a rewrite for `slow-query`, and so on), the CLI table above, and how to start each kind of application under the agent (Gradle `run`, Spring Boot `bootRun`, a plain `java -jar`, a test task).
 
+`skills/spider-sense-sql-tuning/SKILL.md` is query tuning: the index to add, the rewrite, the fetch join, the batch, each verified with `compare` and `check`.
+It is read when a finding names a statement rather than a request.
+
 ## init
 
 ```
@@ -510,7 +515,7 @@ java -jar spider-sense.jar init [--dir=<project dir>] [--jar=<path>] [--no-skill
 ```
 
 `init` prepares a project to be worked on under Spider Sense, and it is the one command that reads nothing: no HTTP, no database, no running Spider Sense.
-It writes a short block into the project's `CLAUDE.md` and copies the skill into the project's `.claude/skills/`.
+It writes a short block into the project's `CLAUDE.md` and copies the skills into the project's `.claude/skills/`.
 `--dir` is the project directory and defaults to the working directory.
 
 **The jar path.** `--jar` when it is given, otherwise the distributable jar the command was started from: the launcher sets the system property `spidersense.jar` to its own absolute path before it invokes the CLI, because the CLI itself runs out of the nested server jar extracted to a temporary directory and could never find the distributable on its own.
@@ -539,28 +544,32 @@ java -jar /home/me/tools/spider-sense.jar help  # every command and every option
 ```
 
 The loop — start, mark, exercise, findings, fix, compare, check — is in the skill at `.claude/skills/spider-sense/SKILL.md`.
+Query tuning — an index to add, a rewrite, a fetch join, a batch — is in the skill at `.claude/skills/spider-sense-sql-tuning/SKILL.md`.
 <!-- spider-sense:end -->
 ````
 
 `/home/me/tools/spider-sense.jar` above is the jar path; everything else is written as it stands, and the block is generated from one place in the code.
 A second `init` replaces everything between the markers, including when the jar path has changed, and leaves the rest of the file byte for byte as it was; nothing else in the file is parsed or reformatted.
 When `CLAUDE.md` does not exist it is created with the block alone; when it exists without the markers the block is appended after one blank line.
-The last line names `skills/spider-sense/` of the Spider Sense repository (<https://github.com/benelog/spider-sense>) instead of `.claude/skills/spider-sense/SKILL.md` when `--no-skill` kept the skill from being installed.
+The last two lines name `skills/spider-sense/` and `skills/spider-sense-sql-tuning/` of the Spider Sense repository (<https://github.com/benelog/spider-sense>) instead of the project's own copies when `--no-skill` kept the skills from being installed.
 No port of the project is written: the block names the Spider Sense UI's own default, `http://127.0.0.1:4000`, and nothing else.
 
-**The skill.** `init` copies `skills/spider-sense/**` — `SKILL.md` and `references/*.md` — into `<dir>/.claude/skills/spider-sense/`, overwriting the files it owns and leaving anything else in that directory alone, unless `--no-skill` is given.
+**The skills.** `init` copies every directory under `skills/` — each one's `SKILL.md` and `references/*.md` — into `<dir>/.claude/skills/<the same name>/`, overwriting the files it owns and leaving anything else in those directories alone, unless `--no-skill` is given, which skips all of them.
 A copy rather than a pointer, because the jar is the distributable and the repository it was built from may not be on the machine at all.
-The files travel inside the jar: the server module's build packages the repository's `skills/spider-sense/` directory into the resources under `spider-sense/skill/`, together with a generated `spider-sense/skill/index.txt` listing the relative paths, since a class loader cannot list a directory.
-The repository's `skills/spider-sense/` stays the single source; nothing is duplicated under `src/main/resources`.
+The files travel inside the jar: the server module's build packages the repository's whole `skills/` directory into the resources under `spider-sense/skills/`, together with a generated `spider-sense/skills/index.txt` listing the paths relative to `skills/` (`spider-sense/SKILL.md`, `spider-sense/references/cli.md`, `spider-sense-sql-tuning/SKILL.md`, and so on), since a class loader cannot list a directory.
+A new skill is therefore a new directory under `skills/` and nothing else.
+The repository's `skills/` stays the single source; nothing is duplicated under `src/main/resources`.
 
 **What it prints**, one line each, on stdout, and then exit `0`:
 
 ```
 wrote CLAUDE.md block (jar: /home/me/tools/spider-sense.jar)
-installed skill to /home/me/project/.claude/skills/spider-sense (4 files)
+installed skill to /home/me/project/.claude/skills/spider-sense (5 files)
+installed skill to /home/me/project/.claude/skills/spider-sense-sql-tuning (4 files)
 ```
 
-The first line is `updated CLAUDE.md block (…)` when the markers were already in the file, and the second is `skipped skill (--no-skill)` when the skill was not installed.
+One line per skill, in the index's order, each with the number of files it wrote.
+The first line is `updated CLAUDE.md block (…)` when the markers were already in the file, and the skill lines are replaced by the single line `skipped skills (--no-skill)` when the skills were not installed.
 
 **`--mcp`.** A third line, `wrote .mcp.json (spider-sense over stdio)` or `updated .mcp.json (…)`, when the option is given: `<dir>/.mcp.json` gets `mcpServers.spider-sense` set to `{ "command": "java", "args": ["-jar", "<jar path>", "mcp"] }`, the same absolute jar path as the block.
 An existing file is parsed as JSON and every other entry is kept, though the file is rewritten in the server's own JSON formatting; a file that is not a JSON object is left alone with a message on stderr and exit code `2`.

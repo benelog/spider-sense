@@ -10,6 +10,9 @@ on:
     paths:
       - 'manual/**'
       - 'supplemental-ui/**'
+      - 'demo/**'
+      - 'scripts/demo-site.mjs'
+      - 'spider-sense-server/src/main/resources/public/**'
       - 'antora-playbook.yml'
       - 'package.json'
       - 'package-lock.json'

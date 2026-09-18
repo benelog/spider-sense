@@ -185,6 +185,60 @@ class QueriesTest {
     }
 
     @Test
+    void everyDocumentedSortRunsAndAverageIsTotalOverCalls() {
+        // Ten fast calls of one statement (the largest total) and one slow call of
+        // another (the largest average): the two orders disagree on purpose.
+        Span.Builder root = Otlp.span(traceId(1), spanId(1), "GET /orders/report",
+                Span.SpanKind.SPAN_KIND_SERVER, NOW, 900,
+                Otlp.attr("http.request.method", "GET"), Otlp.attr("http.route", "/orders/report"));
+        Span.Builder[] children = new Span.Builder[11];
+        for (int i = 0; i < 10; i++) {
+            children[i] = Otlp.child(root, spanId(100 + i), "SELECT orders",
+                    Span.SpanKind.SPAN_KIND_CLIENT, NOW + i, 50,
+                    Otlp.attr("db.system", "h2"), Otlp.attr("db.statement", "select * from orders where id = ?"));
+        }
+        children[10] = Otlp.child(root, spanId(200), "SELECT customers",
+                Span.SpanKind.SPAN_KIND_CLIENT, NOW + 20, 300,
+                Otlp.attr("db.system", "h2"), Otlp.attr("db.statement", "select * from customers"));
+        Span.Builder[] all = new Span.Builder[12];
+        all[0] = root;
+        System.arraycopy(children, 0, all, 1, 11);
+        decoder.accept(Otlp.traces(Otlp.service("orders"), all));
+        flush();
+
+        for (String sort : List.of("total", "avg", "p95", "max", "calls")) {
+            assertThat(queries.queries(window, null, sort, 100, null)).as(sort).hasSize(2);
+        }
+        assertThat(queries.queries(window, null, "total", 100, null).get(0).statement())
+                .isEqualTo("select * from orders where id = ?");
+        assertThat(queries.queries(window, null, "avg", 100, null).get(0).statement())
+                .isEqualTo("select * from customers");
+    }
+
+    @Test
+    void aServiceWithOnlyJobsIsStillANodeOnTheMap() {
+        // A worker: a root INTERNAL span, never a request, with a database span under it.
+        Span.Builder job = Otlp.span(traceId(1), spanId(1), "archive-events",
+                Span.SpanKind.SPAN_KIND_INTERNAL, NOW, 900);
+        Span.Builder query = Otlp.child(job, spanId(2), "SELECT events",
+                Span.SpanKind.SPAN_KIND_CLIENT, NOW + 1, 200,
+                Otlp.attr("db.system", "h2"), Otlp.attr("db.statement", "select count(*) from events"),
+                Otlp.attr("db.name", "worker"));
+        decoder.accept(Otlp.traces(Otlp.service("batch-worker"), job, query));
+        flush();
+
+        Stats.ServiceMap map = queries.map(window);
+
+        List<String> ids = map.nodes().stream().map(Stats.Node::id).toList();
+        assertThat(ids).contains("svc:batch-worker");
+        assertThat(map.edges()).anySatisfy(edge -> {
+            assertThat(edge.from()).isEqualTo("svc:batch-worker");
+            assertThat(ids).contains(edge.to());
+        });
+        assertThat(map.edges()).allSatisfy(edge -> assertThat(ids).contains(edge.from(), edge.to()));
+    }
+
+    @Test
     void errorsGroupOnTheNormalisedMessage() {
         for (int i = 1; i <= 2; i++) {
             decoder.accept(Otlp.traces(Otlp.service("orders"), Otlp.failing(

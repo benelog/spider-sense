@@ -11,10 +11,13 @@ Read `docs/design.md` (architecture and decisions), `docs/storage.md` (the H2 sc
 | `spider-sense-agent` | The launcher (`premain`/`main`, no dependencies) and the packaging task that assembles the single distributable jar: OpenTelemetry Java agent + launcher + nested server jar + nested extension jar. |
 | `spider-sense-gradle-plugin` | An included build (`pluginManagement.includeBuild`), not a subproject: the Gradle plugin `net.benelog.spidersense` that puts `-javaagent` on `bootRun`/`run`, the `spiderSense` block, and the `spiderSense`/`spiderSenseInit`/`spiderSenseCheck` tasks (`docs/build-tools.md`). Published to Maven Central with the jar. |
 | `spider-sense-extension` | The OpenTelemetry agent extension: one `SpanProcessor` that records `code.stacktrace` on a database span slower than `slow.query.ms`. Compiled `compileOnly` against the SDK, nested as `spider-sense/extension.jar`. |
-| `examples/silk-bookstore` | Spider Silk + spring-jdbc + H2 example app with deliberately slow queries and endpoints (port 8081). |
 | `examples/spring-orders` | Spring Boot + Spring Data JPA + H2 example app, calls silk-bookstore over HTTP (port 8082). |
-| `examples/load-gen` | Traffic generator for both apps. |
+| `examples/servlet-warehouse` | Jakarta Servlet on embedded Tomcat + Tomcat JDBC pool + H2 example app: servlet-mapping endpoints, a filter, an async servlet, Tomcat's error page (port 8083). |
+| `examples/batch-worker` | A worker with no HTTP server: `@WithSpan` scheduled jobs over HikariCP + Logback + H2, for `slow-job`, `log-error`, `pool-exhausted`, `thread-growth`. |
+| `examples/silk-bookstore` | Spider Silk + spring-jdbc + H2 example app with deliberately slow queries and endpoints (port 8081). |
+| `examples/load-gen` | Traffic generator for the three web apps. |
 | `skills/spider-sense` | The agent skill: how to run the loop (start under the agent, mark, exercise, findings, fix, compare, check) with references beside it. |
+| `skills/spider-sense-sql-tuning` | The query-tuning agent skill: an index, a rewrite, a fetch join, a batch, each verified with `compare` and `check`. |
 
 ## Rules
 
@@ -47,9 +50,9 @@ java -jar spider-sense-agent/build/libs/spider-sense-<version>.jar findings --si
 ./gradlew :examples:spring-orders:bootRun          # the example under the Gradle plugin (docs/build-tools.md)
 ./gradlew publishToMavenLocal                     # the jar and the plugin into ~/.m2, for a project outside this repository
 npm install && npm run docs                       # the manual as a site, into build/site
-scripts/demo.sh                                   # both example apps, each with its own embedded Spider Sense (:4000, :4001), plus the load generator
-scripts/demo-shared.sh                            # one standalone Spider Sense both apps forward to
+scripts/demo-shared.sh                            # one standalone Spider Sense (:4000) all four example apps forward to, plus the load generator
+scripts/demo.sh                                   # each example app with its own embedded Spider Sense (:4000 to :4003)
 ```
 
-Ports: silk-bookstore 8081 (embedded Spider Sense 4000), spring-orders 8082 (embedded Spider Sense 4001); the shared standalone Spider Sense also uses 4000.
+Ports: silk-bookstore 8081 (embedded Spider Sense 4000), spring-orders 8082 (4001), servlet-warehouse 8083 (4002), batch-worker no HTTP port (4003); the shared standalone Spider Sense also uses 4000.
 H2 files for the examples live under `~/db/spider-sense/`.
