@@ -161,7 +161,10 @@ public final class Reports implements AutoCloseable {
                         .put("responseBucketsMs", Codecs.longs(queries.responseBuckets().bounds())))
                 .put("ignore", Json.obj()
                         .put("endpoints", Codecs.strings(tingles.ignored().patterns())))
-                .put("retention", Json.obj().put("hours", config.retentionHours()))
+                .put("retention", Json.obj()
+                        .put("hours", config.retentionHours())
+                        .put("spans", config.retentionSpans()))
+                .put("ingest", ingest())
                 .put("storage", Json.obj()
                         .put("url", storage.url())
                         .put("path", storage.path())
@@ -169,6 +172,7 @@ public final class Reports implements AutoCloseable {
                         .put("fallback", storage.fallback())
                         .put("fallbackReason", storage.fallbackReason())
                         .put("droppedBatches", store == null ? 0 : store.writer().droppedBatches())
+                        .put("droppedSpans", droppedSpans())
                         .put("queued", store == null ? 0 : store.writer().queued()))
                 .put("counts", Json.obj()
                         .put("spans", queries.spanCount())
@@ -190,12 +194,16 @@ public final class Reports implements AutoCloseable {
                 + tingles.slowQueryMs() + " ms");
         fields.put("ignore", tingles.ignored().isEmpty() ? "none"
                 : String.join(", ", tingles.ignored().patterns()));
-        fields.put("retention", config.retentionHours() + " hours");
+        fields.put("retention", config.retentionHours() + " hours, " + config.retentionSpans() + " spans");
+        if (config.maxSpansPerSecond() != null) {
+            fields.put("ingest cap", config.maxSpansPerSecond() + " spans/s");
+        }
         fields.put("database", storage.path() == null ? storage.url() : storage.path());
         fields.put("database size", storage.sizeBytes() + " bytes");
         if (storage.fallback()) {
             fields.put("fallback", storage.fallbackReason());
         }
+        fields.put("dropped spans", String.valueOf(droppedSpans()));
         fields.put("spans", String.valueOf(queries.spanCount()));
         fields.put("traces", String.valueOf(queries.traceCount()));
         fields.put("logs", String.valueOf(queries.logCount()));
@@ -204,6 +212,24 @@ public final class Reports implements AutoCloseable {
         long oldest = queries.oldestSpan();
         fields.put("oldest span", oldest <= 0 ? null : Text.instantMillis(oldest));
         return new Report(json, Text.status(fields));
+    }
+
+    /**
+     * {@code ingest.maxSpansPerSecond}: the configured cap, or JSON null when there is
+     * none. The key is always present so the UI can tell "no cap" from "old server".
+     */
+    private Json.JsonObject ingest() {
+        Json.JsonObject json = Json.obj();
+        Long cap = config.maxSpansPerSecond();
+        if (cap == null) {
+            return json.putNull("maxSpansPerSecond");
+        }
+        return json.put("maxSpansPerSecond", cap.longValue());
+    }
+
+    /** Zero without a store: the CLI reads the file, it never received anything itself. */
+    private long droppedSpans() {
+        return store == null ? 0 : store.droppedSpans();
     }
 
     // --- findings, marks, compare, check --------------------------------------

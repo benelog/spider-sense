@@ -21,6 +21,7 @@ public final class Store implements AutoCloseable {
     private final Marks marks;
     private final Writer writer;
     private final Sweeper sweeper;
+    private final IngestCap ingestCap;
 
     /** The store with the ignore list at its documented default. */
     public Store(String jdbcUrl, Path databaseFile, int retentionHours,
@@ -29,15 +30,29 @@ public final class Store implements AutoCloseable {
                 IgnoredEndpoints.DEFAULT);
     }
 
+    /** The store with the span cap at its default and no ingest cap. */
     public Store(String jdbcUrl, Path databaseFile, int retentionHours,
             long slowRequestMs, long slowQueryMs, String embeddedService, String ignoreEndpoints) {
+        this(jdbcUrl, databaseFile, retentionHours, slowRequestMs, slowQueryMs, embeddedService,
+                ignoreEndpoints, Sweeper.DEFAULT_RETENTION_SPANS, IngestCap.none());
+    }
+
+    /**
+     * @param retentionSpans the most {@code span} rows the sweeper keeps, {@code 0} for no cap
+     * @param ingestCap      what decides whether a span is written at all (storage.md,
+     *                       "The ingest cap"); {@link IngestCap#none()} accepts everything
+     */
+    public Store(String jdbcUrl, Path databaseFile, int retentionHours,
+            long slowRequestMs, long slowQueryMs, String embeddedService, String ignoreEndpoints,
+            long retentionSpans, IngestCap ingestCap) {
         this.database = Database.open(jdbcUrl, databaseFile);
         this.sql = database.sql();
         this.tingles = new Tingles(slowRequestMs, slowQueryMs, IgnoredEndpoints.of(ignoreEndpoints));
         this.services = new ServiceRegistry(sql, embeddedService);
         this.marks = new Marks(sql);
+        this.ingestCap = ingestCap;
         this.writer = new Writer(sql, events, tingles).start();
-        this.sweeper = new Sweeper(sql, retentionHours).start();
+        this.sweeper = new Sweeper(sql, retentionHours, retentionSpans).start();
     }
 
     public Sql sql() {
@@ -71,6 +86,16 @@ public final class Store implements AutoCloseable {
 
     public Sweeper sweeper() {
         return sweeper;
+    }
+
+    /** The per-second span cap the trace decoder asks before it adds a span to a batch. */
+    public IngestCap ingestCap() {
+        return ingestCap;
+    }
+
+    /** {@code /api/status.storage.droppedSpans}: what the ingest cap has turned away. */
+    public long droppedSpans() {
+        return ingestCap.droppedSpans();
     }
 
     /** Records the sighting in {@code batch} and pushes a {@code service} event the first time. */

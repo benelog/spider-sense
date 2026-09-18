@@ -73,4 +73,54 @@ class ReportsTest {
             }
         }
     }
+
+    @Test
+    void statusReportsTheRetentionCapTheIngestCapAndWhatTheCapDropped() {
+        Config config = TestStore.config("--retention.spans=250000",
+                "--ingest.max-spans-per-second=5000");
+        try (Store store = new Store(config.jdbcUrl(), config.databaseFile(), config.retentionHours(),
+                config.slowRequestMs(), config.slowQueryMs(), null,
+                net.benelog.spidersense.store.IgnoredEndpoints.DEFAULT, config.retentionSpans(),
+                net.benelog.spidersense.store.IngestCap.of(config.maxSpansPerSecond()))) {
+            Reports reports = new Reports(config, store, config::port);
+
+            Reports.Report status = reports.status("standalone", "http://127.0.0.1:4000", NOW);
+            Json.JsonObject json = status.json().asObject();
+
+            assertThat(json.getObject("retention").getLong("hours")).isEqualTo(24);
+            assertThat(json.getObject("retention").getLong("spans")).isEqualTo(250_000);
+            assertThat(json.getObject("ingest").getLong("maxSpansPerSecond")).isEqualTo(5_000);
+            assertThat(json.getObject("storage").getLong("droppedSpans")).isZero();
+
+            assertThat(status.text()).contains("| retention | 24 hours, 250000 spans |");
+            assertThat(status.text()).contains("| ingest cap | 5000 spans/s |");
+            assertThat(status.text()).contains("| dropped spans | 0 |");
+
+            // One span a second is over a cap of 5000 only after 5000 of them, so drive the
+            // cap itself: what matters here is that the number reaches the two renderings.
+            for (int n = 0; n < 5_010; n++) {
+                store.ingestCap().accept("%032x".formatted(n));
+            }
+            assertThat(store.droppedSpans()).isPositive();
+            assertThat(reports.status("standalone", null, NOW).json().asObject()
+                    .getObject("storage").getLong("droppedSpans")).isEqualTo(store.droppedSpans());
+            assertThat(reports.status("standalone", null, NOW).text())
+                    .contains("| dropped spans | " + store.droppedSpans() + " |");
+        }
+    }
+
+    @Test
+    void statusWithoutAnIngestCapSaysSoAndLeavesTheRowOut() {
+        Config config = TestStore.config();
+        try (Store store = new Store(config.jdbcUrl(), config.databaseFile(), config.retentionHours(),
+                config.slowRequestMs(), config.slowQueryMs(), null)) {
+            Reports.Report status = new Reports(config, store, config::port)
+                    .status("standalone", null, NOW);
+
+            assertThat(status.json().asObject().getObject("ingest").get("maxSpansPerSecond").isNull())
+                    .isTrue();
+            assertThat(status.text()).contains("| retention | 24 hours, 1000000 spans |");
+            assertThat(status.text()).doesNotContain("ingest cap");
+        }
+    }
 }

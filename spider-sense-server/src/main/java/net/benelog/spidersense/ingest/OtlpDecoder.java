@@ -71,6 +71,10 @@ public final class OtlpDecoder {
                     if (isOurOwnTraffic(record)) {
                         continue;
                     }
+                    // The ingest cap decides before the writer sees anything (storage.md).
+                    if (!store.ingestCap().accept(record.traceId())) {
+                        continue;
+                    }
                     batch.add(record);
                     batch.addTingles(store.tingles().of(record));
                 }

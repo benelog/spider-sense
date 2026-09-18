@@ -1,0 +1,109 @@
+package net.benelog.spidersense.store;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.util.List;
+
+import io.opentelemetry.proto.trace.v1.Span;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
+
+import net.benelog.spidersense.Otlp;
+import net.benelog.spidersense.TestStore;
+import net.benelog.spidersense.ingest.OtlpDecoder;
+
+/**
+ * The span cap of storage.md, "Retention": while there are more spans than the cap,
+ * the oldest hour of everything goes.
+ */
+class SweeperTest {
+
+    private static final long HOUR = 3_600_000L;
+    private static final int HOURS = 5;
+    private static final int PER_HOUR = 50;
+
+    /** Now, rounded down to the hour, so every row sits at a predictable distance from it. */
+    private static final long NOW = System.currentTimeMillis() / HOUR * HOUR;
+
+    private final Store store = new Store(TestStore.memoryUrl(), null, 24, 500, 100, null);
+    private final OtlpDecoder decoder = new OtlpDecoder(store, () -> 4000);
+
+    @AfterEach
+    void close() {
+        store.close();
+    }
+
+    /** The start of hour {@code n}, counting back from five hours ago. */
+    private static long hour(int n) {
+        return NOW - (HOURS - n) * HOUR;
+    }
+
+    private void fill() {
+        for (int h = 0; h < HOURS; h++) {
+            for (int i = 0; i < PER_HOUR; i++) {
+                int n = h * PER_HOUR + i + 1;
+                long at = hour(h) + i * 1000L;
+                Span.Builder root = Otlp.span("%032x".formatted(n), "%016x".formatted(n),
+                        "GET /orders", Span.SpanKind.SPAN_KIND_SERVER, at, 900,
+                        Otlp.attr("http.request.method", "GET"),
+                        Otlp.attr("http.route", "/orders"),
+                        Otlp.attr("http.response.status_code", 200));
+                decoder.accept(Otlp.traces(Otlp.service("orders"), root));
+                decoder.accept(Otlp.logs(Otlp.service("orders"), "orders.Web",
+                        Otlp.log(at, 9, "served", "%032x".formatted(n), "%016x".formatted(n))));
+            }
+            decoder.accept(Otlp.gauge(Otlp.service("orders"), "jvm.memory.used", "By",
+                    hour(h), 1024 * h));
+        }
+        store.writer().awaitIdle(10_000);
+    }
+
+    private long count(String table, String column, long before) {
+        return store.sql().count("SELECT COUNT(*) FROM " + table + " WHERE " + column + " < ?",
+                List.of(before));
+    }
+
+    private long total(String table) {
+        return store.sql().count("SELECT COUNT(*) FROM " + table, List.of());
+    }
+
+    @Test
+    void theSpanCapDeletesTheOldestHoursUntilTheCountIsUnderIt() {
+        fill();
+        Marks.Mark old = store.marks().create("before", null, "an old moment", hour(0) + 1);
+        assertThat(total("span")).isEqualTo(HOURS * PER_HOUR);
+        assertThat(total("tingle")).isPositive();
+        assertThat(total("metric_point")).isEqualTo(HOURS);
+
+        new Sweeper(store.sql(), 24, 100).sweep();
+
+        // 250 spans, 50 an hour: hours 0, 1 and 2 go and 100 spans are left.
+        assertThat(total("span")).isEqualTo(100);
+        assertThat(total("trace")).isEqualTo(100);
+
+        long cut = hour(3);
+        assertThat(count("span", "start_ms", cut)).as("the oldest hours went first").isZero();
+        assertThat(count("trace", "start_ms", cut)).isZero();
+        assertThat(count("log", "at_ms", cut)).isZero();
+        assertThat(count("tingle", "at_ms", cut)).isZero();
+        assertThat(count("metric_point", "at_ms", cut)).isZero();
+        assertThat(total("log")).isEqualTo(100);
+        assertThat(total("tingle")).isEqualTo(100);
+        assertThat(total("metric_point")).isEqualTo(2);
+
+        assertThat(store.marks().list(50)).as("marks go by the time retention alone")
+                .extracting(Marks.Mark::id).contains(old.id());
+    }
+
+    @Test
+    void aCapOfZeroIsNoCapAtAll() {
+        fill();
+
+        new Sweeper(store.sql(), 24, 0).sweep();
+
+        assertThat(total("span")).isEqualTo(HOURS * PER_HOUR);
+        assertThat(total("log")).isEqualTo(HOURS * PER_HOUR);
+        assertThat(total("metric_point")).isEqualTo(HOURS);
+    }
+}

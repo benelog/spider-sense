@@ -178,12 +178,17 @@ class ConfigTest {
     void serverOwnedArgumentsBecomeSystemProperties() {
         touched.add("spidersense.app.packages");
         touched.add("spidersense.ignore.endpoints");
+        touched.add("spidersense.retention.spans");
+        touched.add("spidersense.ingest.max-spans-per-second");
 
-        Config.fromArgs(new String[] {"--app.packages=com.acme,org.acme", "--ignore.endpoints="});
+        Config.fromArgs(new String[] {"--app.packages=com.acme,org.acme", "--ignore.endpoints=",
+                "--retention.spans=250000", "--ingest.max-spans-per-second=5000"});
 
         assertThat(System.getProperty("spidersense.app.packages")).isEqualTo("com.acme,org.acme");
         // Kept empty, not dropped: an empty list means "ignore nothing" (design.md).
         assertThat(System.getProperty("spidersense.ignore.endpoints")).isEmpty();
+        assertThat(System.getProperty("spidersense.retention.spans")).isEqualTo("250000");
+        assertThat(System.getProperty("spidersense.ingest.max-spans-per-second")).isEqualTo("5000");
     }
 
     @Test

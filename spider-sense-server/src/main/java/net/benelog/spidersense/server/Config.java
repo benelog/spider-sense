@@ -4,6 +4,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import net.benelog.spidersense.store.IgnoredEndpoints;
+import net.benelog.spidersense.store.Sweeper;
 
 /**
  * Everything the server is told at startup.
@@ -17,6 +18,12 @@ import net.benelog.spidersense.store.IgnoredEndpoints;
  * @param mode             {@code agent} or {@code standalone}
  * @param db               an H2 path or a full {@code jdbc:h2:} URL; see {@link #jdbcUrl()}
  * @param retentionHours   rows older than this are swept
+ * @param retentionSpans   the most {@code span} rows kept; the sweeper deletes the oldest hour of
+ *                         everything until the count is under it, {@code 0} for no cap
+ *                         (storage.md, "Retention")
+ * @param maxSpansPerSecond above this many spans accepted in one wall-clock second the receiver
+ *                         drops the spans of traces it has not seen yet; null when unset, which is
+ *                         no cap at all (storage.md, "The ingest cap")
  * @param embeddedService  the {@code service.name} of the JVM the server runs inside, or null
  *                         when nobody knows it yet — see {@code ServiceRegistry}
  * @param appPackages      comma-separated package prefixes that count as application code in a
@@ -33,6 +40,8 @@ public record Config(
         String mode,
         String db,
         int retentionHours,
+        long retentionSpans,
+        Long maxSpansPerSecond,
         long slowRequestMs,
         long slowQueryMs,
         String embeddedService,
@@ -63,6 +72,8 @@ public record Config(
                 AGENT.equalsIgnoreCase(mode) ? AGENT : STANDALONE,
                 string(values, "db", DEFAULT_DB),
                 number(values, "retention.hours", 24L).intValue(),
+                number(values, "retention.spans", Sweeper.DEFAULT_RETENTION_SPANS),
+                optionalNumber(values, "ingest.max-spans-per-second"),
                 number(values, "slow.request.ms", 500L),
                 number(values, "slow.query.ms", 100L),
                 embeddedService(values),
@@ -149,11 +160,21 @@ public record Config(
         return value == null ? fallback : value;
     }
 
+    /** The same, but {@code null} when nobody said anything: an unset cap is not a cap of zero. */
+    private static Long optionalNumber(Map<String, String> values, String key) {
+        String value = string(values, key, null);
+        return value == null || value.isBlank() ? null : parse(key, value);
+    }
+
     private static Long number(Map<String, String> values, String key, long fallback) {
         String value = string(values, key, null);
         if (value == null) {
             return fallback;
         }
+        return parse(key, value);
+    }
+
+    private static Long parse(String key, String value) {
         try {
             return Long.parseLong(value.trim());
         } catch (NumberFormatException e) {

@@ -14,9 +14,30 @@ class ConfigTest {
         assertThat(config.port()).isEqualTo(4000);
         assertThat(config.mode()).isEqualTo(Config.STANDALONE);
         assertThat(config.retentionHours()).isEqualTo(24);
+        assertThat(config.retentionSpans()).isEqualTo(1_000_000);
+        assertThat(config.maxSpansPerSecond()).as("no ingest cap unless asked for").isNull();
         assertThat(config.slowRequestMs()).isEqualTo(500);
         assertThat(config.slowQueryMs()).isEqualTo(100);
         assertThat(config.db()).isEqualTo(Config.DEFAULT_DB);
+    }
+
+    @Test
+    void theRetentionAndIngestCapsComeFromArgumentsOrProperties() {
+        Config config = Config.parse(new String[]{
+                "--retention.spans=0", "--ingest.max-spans-per-second=5000"});
+
+        assertThat(config.retentionSpans()).as("0 is the documented \"no cap\"").isZero();
+        assertThat(config.maxSpansPerSecond()).isEqualTo(5_000L);
+
+        System.setProperty("spidersense.retention.spans", "250000");
+        System.setProperty("spidersense.ingest.max-spans-per-second", "1500");
+        try {
+            assertThat(Config.parse(new String[0]).retentionSpans()).isEqualTo(250_000);
+            assertThat(Config.parse(new String[0]).maxSpansPerSecond()).isEqualTo(1_500L);
+        } finally {
+            System.clearProperty("spidersense.retention.spans");
+            System.clearProperty("spidersense.ingest.max-spans-per-second");
+        }
     }
 
     @Test
