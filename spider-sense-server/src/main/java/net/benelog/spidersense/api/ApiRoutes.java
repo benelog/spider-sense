@@ -1,11 +1,18 @@
 package net.benelog.spidersense.api;
 
-import java.util.List;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 import java.util.function.IntSupplier;
+import java.util.zip.GZIPInputStream;
 
 import net.benelog.spidersense.query.Queries;
 import net.benelog.spidersense.query.Window;
 import net.benelog.spidersense.server.Config;
+import net.benelog.spidersense.store.Importer;
 import net.benelog.spidersense.store.Store;
 import net.benelog.spidersilk.App;
 import net.benelog.spidersilk.HttpStatus;
@@ -45,7 +52,8 @@ public final class ApiRoutes {
     public void register(App app) {
         app.get("/api/status", "What this server is and how much it holds", this::status);
         app.delete("/api/data", "Empty every window", this::clear);
-        app.get("/api/export", "Traces as a JSON download", this::export);
+        app.get("/api/export", "The window as a JSON download", this::export);
+        app.post("/api/import", "An exported document, written back", this::importDocument);
 
         // Every API answer is live data; a browser that cached it would show a frozen dashboard.
         app.responseFilter((req, res) ->
@@ -75,28 +83,65 @@ public final class ApiRoutes {
     }
 
     /**
-     * The escape hatch from "in memory is fine": one trace, or a window of them,
-     * as a file that can be attached to a bug report.
+     * The escape hatch from "in memory is fine": one trace as a file that can be
+     * attached to a bug report, or — with no {@code traceId} — the whole window as
+     * the session document an import reads back (agent.md).
+     *
+     * <p>The window form is streamed rather than built: a session is as large as
+     * the retention allows, and holding every row of it as objects in order to
+     * serialise them once would cost the monitored application's heap for nothing.
      */
     public WebResponse export(WebRequest req) {
         String traceId = req.queryParamOrNull("traceId");
-        List<String> traceIds;
-        if (traceId != null) {
-            traceIds = List.of(traceId);
-        } else {
+        if (traceId == null) {
             Window window = params.window(req);
-            Queries.TraceFilter filter = new Queries.TraceFilter(window, Params.service(req), null,
-                    null, null, null, null, null, Params.limit(req, 1000, 10_000));
-            traceIds = queries.traces(filter).stream().map(t -> t.traceId()).toList();
+            String service = Params.service(req);
+            return WebResponse
+                    .stream("application/json", out -> reports.export(window, service, out))
+                    .attachment(Reports.exportFilename(window));
         }
         Json.JsonArray traces = Json.arr();
-        for (String id : traceIds) {
-            Queries.TraceDetail trace = queries.trace(id);
-            if (trace != null) {
-                traces.add(Codecs.trace(trace, store.tingles()));
-            }
+        Queries.TraceDetail trace = queries.trace(traceId);
+        if (trace != null) {
+            traces.add(Codecs.trace(trace, store.tingles()));
         }
         return WebResponse.json(Json.obj().put("traces", traces))
                 .attachment("spider-sense-traces.json");
+    }
+
+    /**
+     * That document back into the store.
+     *
+     * <p>The body is parsed whole rather than streamed: a session file is tens of
+     * megabytes at most, the import is one transaction anyway, and half a document
+     * would leave nothing to answer with. A document of another schema version is
+     * a {@code 400} naming both, because there is no honest way to write rows of a
+     * shape this version does not have.
+     */
+    public WebResponse importDocument(WebRequest req) {
+        Json.JsonObject document;
+        try {
+            document = Json.parse(body(req)).asObject();
+        } catch (RuntimeException e) {
+            return Params.problem(req, "Undecodable import document: " + e.getMessage());
+        }
+        try {
+            return Params.answer(req, reports.imported(reports.importDocument(document)));
+        } catch (Importer.WrongSchema e) {
+            return Params.problem(req, e.getMessage());
+        }
+    }
+
+    /** The body, gunzipped when {@code Content-Encoding} says so (api.md). */
+    private static String body(WebRequest req) {
+        String encoding = req.header("Content-Encoding");
+        boolean gzipped = encoding != null && encoding.toLowerCase(Locale.ROOT).contains("gzip");
+        try (InputStream in = gzipped ? new GZIPInputStream(req.bodyStream()) : req.bodyStream()) {
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+            in.transferTo(bytes);
+            return bytes.toString(StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new UncheckedIOException("could not read the import body", e);
+        }
     }
 }

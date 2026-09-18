@@ -16,6 +16,7 @@ import net.benelog.spidersense.query.Numbers;
 import net.benelog.spidersense.query.Queries;
 import net.benelog.spidersense.query.Stats;
 import net.benelog.spidersense.query.Window;
+import net.benelog.spidersense.store.Importer;
 import net.benelog.spidersense.store.LogRecord;
 import net.benelog.spidersense.store.Marks;
 import net.benelog.spidersense.store.ReadOnlyQuery;
@@ -248,6 +249,30 @@ final class Text {
             row(text, List.of(instantMillis(mark.at()), mark.name(), or(mark.service()), or(mark.note())));
         }
         return text.toString();
+    }
+
+    /**
+     * {@code imported 12,345 spans, 456 logs, 7,890 metric points, 12 tingles,
+     * 3 marks (2 traces already present) from 2026-09-18T12:37:06+09:00 → 12:41:08}.
+     *
+     * <p>One line, because an import is one fact. The window is on it because the
+     * rows keep the instants they were exported with, so the next question is
+     * always which window to read (agent.md).
+     */
+    static String imported(Importer.Result result) {
+        StringBuilder line = new StringBuilder("imported ")
+                .append(Numbers.count(result.spans())).append(" spans, ")
+                .append(Numbers.count(result.logs())).append(" logs, ")
+                .append(Numbers.count(result.metricPoints())).append(" metric points, ")
+                .append(Numbers.count(result.tingles())).append(" tingles, ")
+                .append(Numbers.count(result.marks())).append(" marks");
+        if (result.skippedTraces() > 0) {
+            line.append(" (").append(Numbers.count(result.skippedTraces()))
+                    .append(result.skippedTraces() == 1 ? " trace" : " traces")
+                    .append(" already present)");
+        }
+        return line.append(" from ").append(instant(result.from()))
+                .append(" → ").append(clock(result.to())).append('\n').toString();
     }
 
     static String mark(Marks.Mark mark) {

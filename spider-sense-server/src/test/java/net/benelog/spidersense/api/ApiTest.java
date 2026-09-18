@@ -587,8 +587,9 @@ class ApiTest {
             assertThat(exported.getArray("traces")).hasSize(1);
             assertThat(exported.getArray("traces").get(0).asObject().getString("traceId"))
                     .isEqualTo(TRACE);
+            // Without traceId the answer is the session document, not a list of traces.
             assertThat(Json.parse(client.get("/api/export" + windowQuery()).body()).asObject()
-                    .getArray("traces")).hasSize(2);
+                    .getArray("spans")).hasSize(3);
 
             assertThat(client.delete("/api/data").statusCode()).isEqualTo(204);
 
