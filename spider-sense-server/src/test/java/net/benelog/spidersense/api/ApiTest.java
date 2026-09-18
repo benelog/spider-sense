@@ -625,10 +625,15 @@ class ApiTest {
             HttpResponse<String> asset = client.get("/assets/missing.js");
             assertThat(asset.statusCode()).isEqualTo(404);
 
-            HttpResponse<String> page = client.get("/traces");
-            // The UI may not be built yet in this module; either the page or a JSON 404 is correct,
-            // but it must never be an error.
-            assertThat(page.statusCode()).isIn(200, 404);
+            // index.html is a resource of this module, so the page is always there, and it is
+            // the page: a 200, not the 404 the error handler was entered with.
+            for (String path : List.of("/", "/traces", "/findings")) {
+                HttpResponse<String> page = client.get(path);
+                assertThat(page.statusCode()).as(path).isEqualTo(200);
+                assertThat(page.headers().firstValue("content-type"))
+                        .hasValueSatisfying(type -> assertThat(type).startsWith("text/html"));
+                assertThat(page.body()).contains("<title>Spider Sense</title>");
+            }
         });
     }
 }

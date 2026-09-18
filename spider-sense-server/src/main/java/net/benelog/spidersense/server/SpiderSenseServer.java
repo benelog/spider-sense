@@ -159,7 +159,8 @@ public final class SpiderSenseServer implements AutoCloseable {
         if (page) {
             String index = index();
             if (index != null) {
-                return WebResponse.html(index);
+                // The error handler keeps the status it was called with unless told otherwise.
+                return WebResponse.html(index).status(HttpStatus.OK);
             }
         }
         // A handler that threw a 404 said why ("No such trace: …"); keep its words. The

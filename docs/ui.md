@@ -214,4 +214,4 @@ Explorer: left a searchable catalog list (name, type chip, unit, series count); 
 - The page works at 360 px wide: tables scroll horizontally inside their panel, charts shrink, the drawer becomes a full-screen sheet.
 - Accessibility: every icon-only control has an `aria-label`; colour is never the only carrier of meaning (errors also get a bolt, slow also gets a ring or a turtle).
 - No external requests at all: fonts are system fonts, uPlot is vendored, the logo is inline.
-- The whole UI is under 300 KB uncompressed excluding uPlot.
+- The whole UI is under 400 KB uncompressed excluding uPlot (the mock under `dev/` included, since it is served too).
