@@ -11,7 +11,7 @@ package net.benelog.spidersense.store;
  */
 public final class Schema {
 
-    public static final int VERSION = 3;
+    public static final int VERSION = 4;
 
     /**
      * The H2 user {@code POST /api/sql} runs on: {@code SELECT} on {@code PUBLIC}
@@ -178,14 +178,27 @@ public final class Schema {
             )""",
             "CREATE INDEX IF NOT EXISTS mark_at ON mark (at_ms)",
             """
+            CREATE TABLE IF NOT EXISTS ack (
+                finding_id VARCHAR(64) PRIMARY KEY,
+                at_ms      BIGINT NOT NULL,
+                note       VARCHAR(1024)
+            )""",
+            """
             CREATE TABLE IF NOT EXISTS meta (
                 key   VARCHAR(64) PRIMARY KEY,
                 value VARCHAR(4096) NOT NULL
             )""",
     };
 
-    /** The tables the data lives in, in the order they must be emptied. */
-    static final String[] DATA_TABLES = {"span", "trace", "log", "metric_point", "tingle", "mark"};
+    /**
+     * The tables the data lives in, in the order they must be emptied.
+     *
+     * <p>{@code ack} is in this list and in none of the sweeper's: an
+     * acknowledgement is not swept by time, since a known finding stays known, but
+     * {@code DELETE /api/data} empties it with everything else (storage.md).
+     */
+    static final String[] DATA_TABLES =
+            {"span", "trace", "log", "metric_point", "tingle", "mark", "ack"};
 
     static void create(Sql sql) {
         create(sql, true);
@@ -213,7 +226,7 @@ public final class Schema {
                     java.util.List.of("created_at", String.valueOf(System.currentTimeMillis())));
         } else if (stored != VERSION) {
             for (String table : new String[]{"span", "trace", "log", "metric_point", "metric_series",
-                    "metric", "tingle", "mark", "service"}) {
+                    "metric", "tingle", "mark", "ack", "service"}) {
                 sql.execute("DROP TABLE IF EXISTS " + table);
             }
             sql.execute(TABLES);

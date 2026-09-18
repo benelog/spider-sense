@@ -624,4 +624,58 @@ class FindingsTest {
 
         assertThat(findings.findings(window, null, 2)).hasSize(2);
     }
+
+    // --- acknowledgements (agent.md) -----------------------------------------
+
+    /** Three slow endpoints, so the acknowledged one has somewhere to fall to. */
+    private void threeSlowEndpoints() {
+        decoder.accept(Otlp.traces(Otlp.service("orders"),
+                entry(1, "/a", 2000), entry(2, "/b", 1500), entry(3, "/c", 900)));
+        flush();
+    }
+
+    @Test
+    void anAcknowledgedFindingIsRankedLastAndCarriesItsAck() {
+        threeSlowEndpoints();
+        String first = findings.findings(window, null, 20).get(0).id();
+        store.acks().ack(first, "slow by design");
+
+        List<Findings.Finding> ranked = findings.findings(window, null, 20);
+
+        assertThat(ranked).hasSize(3);
+        assertThat(ranked.get(2).id()).isEqualTo(first);
+        assertThat(ranked.get(2).ack()).isNotNull();
+        assertThat(ranked.get(2).ack().note()).isEqualTo("slow by design");
+        assertThat(ranked.get(2).ack().at()).isPositive();
+        assertThat(ranked.get(0).ack()).as("the others are untouched").isNull();
+    }
+
+    @Test
+    void hideAckedLeavesItOutAndTheCountStandsEitherWay() {
+        threeSlowEndpoints();
+        String first = findings.findings(window, null, 20).get(0).id();
+        store.acks().ack(first, null);
+
+        Findings.Answer shown = findings.answer(window, null, 20, false);
+        assertThat(shown.findings()).hasSize(3);
+        assertThat(shown.acked()).isEqualTo(1);
+
+        Findings.Answer hidden = findings.answer(window, null, 20, true);
+        assertThat(hidden.findings()).hasSize(2);
+        assertThat(hidden.findings()).noneMatch(f -> f.id().equals(first));
+        assertThat(hidden.acked()).as("counted before the limit and before hiding").isEqualTo(1);
+    }
+
+    @Test
+    void theAckedCountIsTakenBeforeTheLimit() {
+        threeSlowEndpoints();
+        for (Findings.Finding finding : findings.findings(window, null, 20)) {
+            store.acks().ack(finding.id(), null);
+        }
+
+        Findings.Answer answer = findings.answer(window, null, 1, false);
+
+        assertThat(answer.findings()).hasSize(1);
+        assertThat(answer.acked()).isEqualTo(3);
+    }
 }

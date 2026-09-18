@@ -724,6 +724,16 @@ details.collapsible > summary:hover { color: var(--text); }
 .f-links { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .f-links .btn { margin-left: auto; }
 
+/* An acknowledged finding is still listed, last and dimmed, never hidden. */
+tr.is-acked > td { opacity: 0.55; }
+tr.is-acked:hover > td { opacity: 1; }
+.f-ack {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding-top: 8px; border-top: 1px solid var(--line); font-size: 11.5px;
+}
+.f-ack-note { color: var(--text); }
+.f-ack .btn { margin-left: auto; }
+
 /* ---------- compare ---------- */
 
 .cmp-bar { border-bottom: 0; }

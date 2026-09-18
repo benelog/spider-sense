@@ -11,6 +11,7 @@ import net.benelog.spidersense.query.MetricQueries;
 import net.benelog.spidersense.query.Queries;
 import net.benelog.spidersense.query.Stats;
 import net.benelog.spidersense.query.Window;
+import net.benelog.spidersense.store.Acks;
 import net.benelog.spidersense.store.LogRecord;
 import net.benelog.spidersense.store.Marks;
 import net.benelog.spidersense.store.MetricPoint;
@@ -684,12 +685,27 @@ public final class Codecs {
                 .put("numbers", numbers)
                 .put("statement", finding.statement())
                 .put("code", strings(finding.code()))
-                .put("traces", strings(finding.traces()));
+                .put("traces", strings(finding.traces()))
+                .put("ack", finding.ack() == null ? null
+                        : Json.obj().put("at", finding.ack().at()).put("note", finding.ack().note()));
     }
 
     static Json.JsonArray findings(List<Findings.Finding> findings) {
         Json.JsonArray array = Json.arr();
         findings.forEach(finding -> array.add(finding(finding)));
+        return array;
+    }
+
+    static Json.JsonObject ack(Acks.Ack ack) {
+        return Json.obj()
+                .put("findingId", ack.findingId())
+                .put("at", ack.at())
+                .put("note", ack.note());
+    }
+
+    static Json.JsonArray acks(List<Acks.Ack> acks) {
+        Json.JsonArray array = Json.arr();
+        acks.forEach(ack -> array.add(ack(ack)));
         return array;
     }
 

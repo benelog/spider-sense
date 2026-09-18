@@ -19,6 +19,7 @@ public final class Store implements AutoCloseable {
     private final Tingles tingles;
     private final ServiceRegistry services;
     private final Marks marks;
+    private final Acks acks;
     private final Writer writer;
     private final Sweeper sweeper;
     private final IngestCap ingestCap;
@@ -50,6 +51,7 @@ public final class Store implements AutoCloseable {
         this.tingles = new Tingles(slowRequestMs, slowQueryMs, IgnoredEndpoints.of(ignoreEndpoints));
         this.services = new ServiceRegistry(sql, embeddedService);
         this.marks = new Marks(sql);
+        this.acks = new Acks(sql);
         this.ingestCap = ingestCap;
         this.writer = new Writer(sql, events, tingles).start();
         this.sweeper = new Sweeper(sql, retentionHours, retentionSpans).start();
@@ -78,6 +80,11 @@ public final class Store implements AutoCloseable {
     /** Named moments, see agent.md. */
     public Marks marks() {
         return marks;
+    }
+
+    /** Findings a reader has accepted, see agent.md. */
+    public Acks acks() {
+        return acks;
     }
 
     public Writer writer() {
@@ -115,7 +122,10 @@ public final class Store implements AutoCloseable {
         writer.submit(batch);
     }
 
-    /** {@code DELETE /api/data}: every span, trace, log, metric point, tingle and mark. */
+    /**
+     * {@code DELETE /api/data}: every span, trace, log, metric point, tingle,
+     * mark and acknowledgement.
+     */
     public void clear() {
         writer.flushNow();
         database.deleteAll();

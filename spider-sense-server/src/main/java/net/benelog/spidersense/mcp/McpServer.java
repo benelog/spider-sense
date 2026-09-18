@@ -371,7 +371,9 @@ public final class McpServer {
                                 Arg.integer("limit", "How many findings to return; 20 by default.",
                                         1, 100),
                                 Arg.bool("full", "Keep statements whole instead of cutting them at "
-                                        + "200 characters.")),
+                                        + "200 characters."),
+                                Arg.bool("hideAcked", "Leave out the findings that have been "
+                                        + "acknowledged; they are ranked last otherwise.")),
                         List.of()),
                 new Tool("trace",
                         "Use this to open the evidence behind a finding: one request as an indented "

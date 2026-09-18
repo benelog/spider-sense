@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import net.benelog.spidersense.store.Acks;
 import net.benelog.spidersense.store.AttrJson;
 import net.benelog.spidersense.store.Ids;
 import net.benelog.spidersense.store.MetricPoint;
@@ -87,18 +88,49 @@ public final class Findings {
             String target, String logger, String jvm) {
     }
 
+    /** When a finding was acknowledged, and why (agent.md, "Acknowledgements"). */
+    public record Ack(long at, String note) {
+    }
+
     /**
      * One thing worth fixing.
      *
      * @param numbers the kind-specific numbers agent.md lists, in the order it
      *        lists them; values are numbers, strings, or lists of small maps
+     * @param ack     null unless a reader has accepted this finding, in which case
+     *        it is ranked after every other one
      */
     public record Finding(String id, String kind, String severity, String service, String title,
             String why, Subject subject, Map<String, Object> numbers, String statement,
-            List<String> code, List<String> traces) {
+            List<String> code, List<String> traces, Ack ack) {
+
+        /** A finding as a rule makes one: nothing has acknowledged it yet. */
+        public Finding(String id, String kind, String severity, String service, String title,
+                String why, Subject subject, Map<String, Object> numbers, String statement,
+                List<String> code, List<String> traces) {
+            this(id, kind, severity, service, title, why, subject, numbers, statement, code,
+                    traces, null);
+        }
+
+        /** The same finding, with the acknowledgement the store had for its id. */
+        public Finding withAck(Ack acknowledged) {
+            return new Finding(id, kind, severity, service, title, why, subject, numbers,
+                    statement, code, traces, acknowledged);
+        }
+    }
+
+    /**
+     * The findings of one window and how many of them were acknowledged.
+     *
+     * <p>The count is taken before the limit, because it answers "how much is
+     * being kept out of the way" rather than "how much of this page is dimmed"
+     * (api.md).
+     */
+    public record Answer(List<Finding> findings, int acked) {
     }
 
     private final Sql sql;
+    private final Acks acks;
     private final Queries queries;
     private final MetricQueries metrics;
     private final ServiceRegistry services;
@@ -108,6 +140,7 @@ public final class Findings {
     public Findings(Sql sql, Queries queries, MetricQueries metrics, ServiceRegistry services,
             Tingles tingles, CodeFrames frames) {
         this.sql = sql;
+        this.acks = new Acks(sql);
         this.queries = queries;
         this.metrics = metrics;
         this.services = services;
@@ -124,6 +157,22 @@ public final class Findings {
      * the kinds keep the order agent.md's table has.
      */
     public List<Finding> findings(Window window, String service, int limit) {
+        return findings(window, service, limit, false);
+    }
+
+    /** @param hideAcked whether acknowledged findings are left out rather than ranked last */
+    public List<Finding> findings(Window window, String service, int limit, boolean hideAcked) {
+        return answer(window, service, limit, hideAcked).findings();
+    }
+
+    /**
+     * The same ranking, with the acknowledgements attached and counted.
+     *
+     * <p>An acknowledged finding keeps its place among the acknowledged ones: the
+     * partition is stable, so the list a reader saw yesterday has not been
+     * reshuffled, only pushed down (agent.md, "Acknowledgements").
+     */
+    public Answer answer(Window window, String service, int limit, boolean hideAcked) {
         Ancestors ancestors = new Ancestors(sql, window);
         List<Ranked> found = new ArrayList<>();
         found.addAll(errors(window, service));
@@ -137,14 +186,29 @@ public final class Findings {
         found.addAll(jvm(window, service));
         found.sort(Ranked.ORDER);
 
-        List<Finding> ranked = new ArrayList<>(Math.min(found.size(), Math.max(1, limit)));
+        Set<String> ids = new LinkedHashSet<>();
         for (Ranked each : found) {
-            if (ranked.size() >= limit) {
-                break;
-            }
-            ranked.add(each.finding());
+            ids.add(each.finding().id());
         }
-        return ranked;
+        Map<String, Acks.Ack> acknowledged = acks.byId(ids);
+
+        List<Finding> open = new ArrayList<>();
+        List<Finding> accepted = new ArrayList<>();
+        for (Ranked each : found) {
+            Acks.Ack ack = acknowledged.get(each.finding().id());
+            if (ack == null) {
+                open.add(each.finding());
+            } else if (!hideAcked) {
+                accepted.add(each.finding().withAck(new Ack(ack.at(), ack.note())));
+            }
+        }
+
+        List<Finding> ranked = new ArrayList<>(open);
+        ranked.addAll(accepted);
+        if (ranked.size() > limit) {
+            ranked = new ArrayList<>(ranked.subList(0, Math.max(0, limit)));
+        }
+        return new Answer(ranked, acknowledged.size());
     }
 
     /** A finding with the impact it is ranked by inside its kind. */

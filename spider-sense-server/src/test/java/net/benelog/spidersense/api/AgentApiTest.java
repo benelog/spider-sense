@@ -214,6 +214,83 @@ class AgentApiTest {
         });
     }
 
+    /**
+     * The three endpoints of agent.md's "Acknowledgements", and what a finding and
+     * its heading read like once one of them has been called.
+     */
+    @Test
+    void aFindingIsAcknowledgedRankedLastAndWithdrawnAgain() {
+        serve((client, assembly) -> {
+            postProtobuf(client, "/v1/traces", sample());
+
+            Json.JsonObject before = json(client.get("/api/findings?since=5m"));
+            assertThat(before.getLong("acked")).isZero();
+            Json.JsonArray all = before.getArray("findings");
+            String first = all.get(0).asObject().getString("id");
+            String last = all.get(all.size() - 1).asObject().getString("id");
+            assertThat(all.get(0).asObject().get("ack").isNull()).isTrue();
+
+            HttpResponse<String> created = postJson(client,
+                    "/api/findings/" + first + "/ack", "{\"note\":\"known, and accepted\"}");
+            assertThat(created.statusCode()).isEqualTo(201);
+            Json.JsonObject ack = Json.parse(created.body()).asObject();
+            assertThat(ack.getString("findingId")).isEqualTo(first);
+            assertThat(ack.getString("note")).isEqualTo("known, and accepted");
+            assertThat(ack.getLong("at")).isPositive();
+
+            Json.JsonObject after = json(client.get("/api/findings?since=5m"));
+            assertThat(after.getLong("acked")).isEqualTo(1);
+            Json.JsonArray ranked = after.getArray("findings");
+            assertThat(ranked.get(ranked.size() - 1).asObject().getString("id")).isEqualTo(first);
+            assertThat(ranked.get(ranked.size() - 1).asObject().getObject("ack").getString("note"))
+                    .isEqualTo("known, and accepted");
+            assertThat(ranked.get(0).asObject().getString("id"))
+                    .as("the rest keep their order").isNotEqualTo(first);
+            assertThat(ranked.get(ranked.size() - 2).asObject().getString("id")).isEqualTo(last);
+
+            String text = client.get("/api/findings?since=5m&format=text").body();
+            assertThat(text).contains(", 1 request, 1 acked)");
+            assertThat(text).contains("| acked | ");
+
+            Json.JsonArray acks = json(client.get("/api/acks")).getArray("acks");
+            assertThat(acks.size()).isEqualTo(1);
+            assertThat(acks.get(0).asObject().getString("findingId")).isEqualTo(first);
+
+            Json.JsonObject hidden = json(client.get("/api/findings?since=5m&hideAcked=true"));
+            assertThat(hidden.getLong("acked")).isEqualTo(1);
+            assertThat(hidden.getArray("findings").size()).isEqualTo(all.size() - 1);
+            for (Json.JsonValue value : hidden.getArray("findings")) {
+                assertThat(value.asObject().getString("id")).isNotEqualTo(first);
+            }
+
+            assertThat(client.delete("/api/findings/" + first + "/ack").statusCode()).isEqualTo(204);
+            HttpResponse<String> again = client.delete("/api/findings/" + first + "/ack");
+            assertThat(again.statusCode()).isEqualTo(404);
+            assertThat(Json.parse(again.body()).asObject().getString("error"))
+                    .isEqualTo("No such acknowledgement: " + first);
+            assertThat(json(client.get("/api/findings?since=5m")).getLong("acked")).isZero();
+        });
+    }
+
+    @Test
+    void anAcknowledgementTakesNoBodyAndAnEmptyDatabaseTakesItBack() {
+        serve((client, assembly) -> {
+            postProtobuf(client, "/v1/traces", sample());
+            String id = json(client.get("/api/findings?since=5m"))
+                    .getArray("findings").get(0).asObject().getString("id");
+
+            HttpResponse<String> created = client.post("/api/findings/" + id + "/ack");
+            assertThat(created.statusCode()).isEqualTo(201);
+            assertThat(Json.parse(created.body()).asObject().get("note").isNull()).isTrue();
+
+            String text = postJson(client, "/api/findings/" + id + "/ack?format=text", "{}").body();
+            assertThat(text).isEqualTo("acked " + id + "\n");
+
+            assertThat(client.delete("/api/data").statusCode()).isEqualTo(204);
+            assertThat(json(client.get("/api/acks")).getArray("acks").size()).isZero();
+        });
+    }
+
     @Test
     void theFormatIsJsonUnlessTextIsAskedForByParameterOrByAccept() {
         serve((client, assembly) -> {

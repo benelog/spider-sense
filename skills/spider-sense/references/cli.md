@@ -12,7 +12,9 @@ The launcher treats a first argument that does not start with `-` as a command a
 | Command | Does |
 |---|---|
 | `status` | what is running, where the database is, how much it holds |
-| `findings` | the findings of the window |
+| `findings [--hide-acked]` | the findings of the window |
+| `ack <finding id> [--note=…]` | accepts a known finding, which is then ranked after every other one, its severity reading `acked` |
+| `unack <finding id>` | withdraws that acknowledgement; exit code `4` when there was none |
 | `trace <traceId> [--full]` | one trace as a tree |
 | `traces [--status=error\|ok] [--min-ms=] [--q=] [--limit=20]` | the newest traces |
 | `endpoints`, `queries`, `errors` | the tables of the window |
@@ -40,6 +42,7 @@ The launcher treats a first argument that does not start with `-` as a command a
 | `--db=<path or jdbc url>` | `~/db/spider-sense/sense` | read that database directly, without asking any server |
 | `--json` | off | print the JSON of api.md instead of the text |
 | `--full` | off | keep statements whole and expand collapsed spans |
+| `--hide-acked` | off | `findings` only: leave the acknowledged findings out instead of ranking them last |
 
 `compare` takes no `--since`: its windows are the two selectors, and `--until` closes the second one.
 `init` takes none of these: it reads nothing, and its own options are `--dir=<project dir>` (the working directory by default), `--jar=<path>` (the jar it was started from by default), `--no-skill` and `--mcp`.
@@ -70,9 +73,9 @@ A `since` that resolves to a moment after `until` is an error, and a mark name t
 | `1` | `check` failed |
 | `2` | usage or connection error |
 | `3` | `check` had no request to judge |
-| `4` | not found: a trace id, a mark name |
+| `4` | not found: a trace id, a mark name, a finding id to `unack` |
 
-A trace id that matches nothing prints `spider-sense: No such trace: <id>` on stderr and exits `4`, whether the answer came over HTTP or from the file; a mark name that matches no mark does the same, naming the mark.
+A trace id that matches nothing prints `spider-sense: No such trace: <id>` on stderr and exits `4`, whether the answer came over HTTP or from the file; a mark name that matches no mark does the same, naming the mark, and so does `unack` with `spider-sense: No such acknowledgement: <id>`.
 
 ## The direct-file fallback
 
@@ -462,7 +465,10 @@ Spider Sense: ask a running Spider Sense, or the database file, from the termina
 
 Commands:
   status                       what is running, where the database is, how much it holds
-  findings                     the findings of the window
+  findings [--hide-acked]      the findings of the window
+  ack <finding id> [--note=<text>]
+                               accepts a known finding, so it is ranked last
+  unack <finding id>           withdraws that acknowledgement
   trace <traceId> [--full]     one trace as a tree
   traces [--status=error|ok] [--min-ms=<n>] [--q=<text>] [--limit=20]
                                the newest traces
@@ -499,6 +505,7 @@ Common options:
   --db=<path or jdbc url>   read the database directly, without asking any server
   --json               the JSON of api.md instead of the text
   --full               whole statements, every repeated span
+  --hide-acked         findings only: leave acknowledged findings out
 
 A selector is a duration (30s, 5m, 2h, 1d), epoch milliseconds, a mark name,
 start (the newest automatic start mark) or now.
@@ -508,5 +515,6 @@ thresholds are then --slow.request.ms, --slow.query.ms and --app.packages, since
 no server is there to ask.
 
 Exit codes: 0 success, 1 check failed, 2 usage or connection error,
-3 check had no request to judge, 4 not found (a trace id, a mark name).
+3 check had no request to judge, 4 not found (a trace id, a mark name,
+a finding id to unack).
 ```

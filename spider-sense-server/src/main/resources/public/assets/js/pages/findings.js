@@ -3,7 +3,7 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, panel, table, chip, serviceChip, renderList, copyBlock, spinner, errorBox, emptyState, snippetBlocks } from '../ui.js';
+import { h, fill, panel, table, chip, serviceChip, renderList, copyBlock, spinner, errorBox, emptyState, snippetBlocks, dialog, toast } from '../ui.js';
 import { formatSql } from '../sql.js';
 import { fmtApdex } from '../buckets.js';
 import { count, dur, rate, pct, bytes, time, bothTimes, truncate, shortId } from '../format.js';
@@ -26,6 +26,16 @@ const KIND_LABEL = {
 export function severityMark(severity) {
   const s = severity || 'low';
   return h('span.sev-mark', severityDot(s), h('span.sev-word', s));
+}
+
+/**
+ * The severity cell of a row: `acked` in place of the word for an acknowledged
+ * finding, with the note as its title (docs/ui.md).
+ */
+function severityCell(finding) {
+  if (!finding.ack) return severityMark(finding.severity);
+  return h('span.sev-mark', { title: finding.ack.note || finding.severity + ' severity, acknowledged' },
+    severityDot(finding.severity), h('span.sev-word', 'acked'));
 }
 
 export function severityDot(severity) {
@@ -131,8 +141,86 @@ function hotSpanLine(hot) {
     h('span.muted', ' · ' + dur(hot.selfMs) + ' self · ' + pct(hot.share)));
 }
 
-/** The expanded row: why, the numbers, the statement, the code and the evidence. */
-export function evidence(finding) {
+/**
+ * The Acknowledge dialog (docs/ui.md): one optional note, then the POST.
+ *
+ * <p>Small on purpose — an acknowledgement is a sentence about why a finding is
+ * accepted, and the finding itself is on the screen behind it.
+ */
+function ackDialog(finding, onDone) {
+  const noteInput = h('input', {
+    type: 'text', placeholder: 'optional', autocomplete: 'off',
+    'aria-label': 'Note', style: { width: '100%' },
+  });
+  const problem = h('div.form-error', { role: 'alert' });
+  problem.hidden = true;
+
+  const ok = h('button.btn.btn-primary', { type: 'button' }, 'Acknowledge');
+  const dlg = dialog({
+    title: 'Acknowledge this finding',
+    body: h('div.mark-form',
+      h('p.muted', finding.title || finding.id),
+      h('label', h('span', 'Note'), noteInput),
+      h('p.muted', 'It stays in the list, ranked after everything else, until it is withdrawn.'),
+      problem),
+    actions: [h('button.btn', { type: 'button', onclick: () => dlg.close() }, 'Cancel'), ok],
+  });
+
+  async function submit() {
+    ok.disabled = true;
+    try {
+      await api.ackFinding(finding.id, noteInput.value.trim());
+      dlg.close();
+      toast('Acknowledged ' + finding.id);
+      if (onDone) onDone();
+    } catch (e) {
+      ok.disabled = false;
+      problem.hidden = false;
+      problem.textContent = String(e && e.message ? e.message : e);
+    }
+  }
+
+  ok.addEventListener('click', submit);
+  noteInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } });
+  requestAnimationFrame(() => noteInput.focus());
+  return dlg;
+}
+
+/** The last line of the evidence: acknowledge it, or the note and a way back. */
+function ackLine(finding, onChange) {
+  if (finding.ack) {
+    const button = h('button.btn.btn-ghost', {
+      type: 'button',
+      onclick: async () => {
+        button.disabled = true;
+        try {
+          await api.unackFinding(finding.id);
+          toast('Unacknowledged ' + finding.id);
+          if (onChange) onChange();
+        } catch (e) {
+          button.disabled = false;
+          toast(String(e && e.message ? e.message : e));
+        }
+      },
+    }, 'Unacknowledge');
+    return h('div.f-ack',
+      h('span.muted', 'Acknowledged ' + time(finding.ack.at)),
+      finding.ack.note ? h('span.f-ack-note', finding.ack.note) : null,
+      button);
+  }
+  return h('div.f-ack',
+    h('button.btn.btn-ghost', {
+      type: 'button', onclick: () => ackDialog(finding, onChange),
+    }, 'Acknowledge'));
+}
+
+/**
+ * The expanded row: why, the numbers, the statement, the code and the evidence.
+ *
+ * @param onChange called after an acknowledgement changed, so the page reloads;
+ *        with none, the evidence carries no buttons
+ */
+export function evidence(finding, onChange) {
   // A hot span the finding has no trace for is left out, as the text rendering leaves it out.
   const numbers = Object.entries(finding.numbers || {})
     .filter(([key, value]) => key !== 'hotSpan' || value);
@@ -160,7 +248,8 @@ export function evidence(finding) {
         : null,
       target
         ? h('a.btn.btn-ghost', { href: router.href(target.path, target.query) }, 'Go to')
-        : null));
+        : null),
+    onChange ? ackLine(finding, onChange) : null);
 }
 
 /** "in the last 15 min", so an empty state says which window it is empty in. */
@@ -181,7 +270,7 @@ export function render(root, ctx) {
 
   const columns = [
     { key: 'n', label: '#', sortable: false, width: '36px', render: (f, i) => h('span.muted', String(i + 1)) },
-    { key: 'severity', label: 'Severity', sortable: false, width: '96px', render: (f) => severityMark(f.severity) },
+    { key: 'severity', label: 'Severity', sortable: false, width: '96px', render: (f) => severityCell(f) },
     { key: 'kind', label: 'Kind', sortable: false, width: '112px', render: (f) => kindChip(f.kind) },
     { key: 'service', label: 'Service', sortable: false, width: '150px', render: (f) => serviceChip(f.service) },
     { key: 'title', label: 'Title', sortable: false, cls: 'wide', render: (f) => h('span.cell-ellipsis', { title: f.title }, f.title) },
@@ -204,9 +293,15 @@ export function render(root, ctx) {
     return out;
   }
 
+  /** What has to change before an open evidence row is rebuilt. */
+  function ackSignature(finding) {
+    return finding.ack ? finding.ack.at + '|' + (finding.ack.note || '') : '';
+  }
+
   function buildRow(finding, index) {
     const tr = h('tr.clickable', {
       tabindex: 0,
+      class: finding.ack ? 'clickable is-acked' : 'clickable',
       'aria-expanded': String(expanded.has(finding.id)),
       onclick: (e) => { if (!e.target.closest('a, button')) toggle(finding); },
       onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(finding); } },
@@ -230,11 +325,22 @@ export function render(root, ctx) {
     renderList(node.tbody, list, {
       key: (item) => item.key,
       create: (item) => (item.evidence
-        ? h('tr.f-detail', h('td', { colspan: columns.length }, evidence(item.finding)))
+        ? h('tr.f-detail', { dataset: { ack: ackSignature(item.finding) } },
+          h('td', { colspan: columns.length }, evidence(item.finding, load)))
         : buildRow(item.finding, item.index)),
       update: (n, item) => {
-        if (item.evidence) return;
+        // An open evidence row is left alone by a Live refresh, unless its
+        // acknowledgement changed: that is what the button in it just did.
+        if (item.evidence) {
+          const signature = ackSignature(item.finding);
+          if (n.dataset.ack !== signature) {
+            n.dataset.ack = signature;
+            n.replaceChildren(h('td', { colspan: columns.length }, evidence(item.finding, load)));
+          }
+          return;
+        }
         const fresh = buildRow(item.finding, item.index);
+        n.className = fresh.className;
         n.setAttribute('aria-expanded', fresh.getAttribute('aria-expanded'));
         n.replaceChildren(...fresh.childNodes);
       },

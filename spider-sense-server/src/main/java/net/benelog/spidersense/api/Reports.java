@@ -16,6 +16,7 @@ import net.benelog.spidersense.query.Selectors;
 import net.benelog.spidersense.query.Stats;
 import net.benelog.spidersense.query.Window;
 import net.benelog.spidersense.server.Config;
+import net.benelog.spidersense.store.Acks;
 import net.benelog.spidersense.store.Database;
 import net.benelog.spidersense.store.EventBus;
 import net.benelog.spidersense.store.IgnoredEndpoints;
@@ -80,6 +81,7 @@ public final class Reports implements AutoCloseable {
     private final Queries queries;
     private final MetricQueries metrics;
     private final Marks marks;
+    private final Acks acks;
     private final Tingles tingles;
     private final ServiceRegistry services;
     private final CodeFrames frames;
@@ -125,6 +127,7 @@ public final class Reports implements AutoCloseable {
         this.services = services;
         this.marks = marks;
         Sql sql = database.sql();
+        this.acks = new Acks(sql);
         this.queries = new Queries(sql, tingles, services);
         this.metrics = new MetricQueries(sql);
         this.frames = new CodeFrames(config.appPackages());
@@ -151,6 +154,11 @@ public final class Reports implements AutoCloseable {
 
     public Marks markStore() {
         return marks;
+    }
+
+    /** Acknowledged findings, which the CLI must be able to write with no server running. */
+    public Acks ackStore() {
+        return acks;
     }
 
     /** The base URL an empty answer tells the caller to send telemetry to. */
@@ -264,13 +272,22 @@ public final class Reports implements AutoCloseable {
     // --- findings, marks, compare, check --------------------------------------
 
     public Report findings(Window window, String service, int limit, boolean full) {
-        List<Findings.Finding> found = findings.findings(window, service, limit);
+        return findings(window, service, limit, full, false);
+    }
+
+    /** @param hideAcked whether acknowledged findings are left out rather than ranked last */
+    public Report findings(Window window, String service, int limit, boolean full,
+            boolean hideAcked) {
+        Findings.Answer answer = findings.answer(window, service, limit, hideAcked);
+        List<Findings.Finding> found = answer.findings();
         long requests = queries.totals(window, service).requests();
         Json.JsonObject json = Json.obj()
                 .put("window", Codecs.window(window))
                 .put("requests", requests)
+                .put("acked", answer.acked())
                 .put("findings", Codecs.findings(found));
-        return new Report(json, Text.findings(window, service, requests, found, full, endpoint()));
+        return new Report(json, Text.findings(window, service, requests, answer.acked(), found,
+                full, endpoint()));
     }
 
     public Report marks(int limit) {
@@ -285,6 +302,32 @@ public final class Reports implements AutoCloseable {
 
     public Report mark(Marks.Mark mark) {
         return new Report(Codecs.mark(mark), Text.mark(mark));
+    }
+
+    /** Acknowledges a finding, which the CLI must be able to do with no server running. */
+    public Acks.Ack ack(String findingId, String note) {
+        return acks.ack(findingId, note);
+    }
+
+    public Report ack(Acks.Ack ack) {
+        return new Report(Codecs.ack(ack), Text.ack(ack));
+    }
+
+    /**
+     * What a withdrawn acknowledgement reads as.
+     *
+     * <p>Static, and the only report here that is: {@code DELETE} answers
+     * {@code 204} with no body (api.md), so the CLI has nothing to print unless it
+     * renders the line itself — and it must render it through this file rather
+     * than write one of its own, or the two paths would drift.
+     */
+    public static Report unack(String findingId) {
+        return new Report(Json.obj().put("findingId", findingId), Text.unack(findingId));
+    }
+
+    public Report acks(int limit) {
+        List<Acks.Ack> list = acks.all(limit);
+        return new Report(Json.obj().put("acks", Codecs.acks(list)), Text.acks(list));
     }
 
     /**

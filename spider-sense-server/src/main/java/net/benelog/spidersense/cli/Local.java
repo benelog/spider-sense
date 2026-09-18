@@ -72,10 +72,22 @@ final class Local {
         if (Options.EXPORT.equals(options.command())) {
             return export(options, reports, service, out, err);
         }
+        if (Options.UNACK.equals(options.command())) {
+            if (!reports.ackStore().unack(options.argument())) {
+                err.println("spider-sense: No such acknowledgement: " + options.argument());
+                return Cli.NOT_FOUND;
+            }
+            Reports.Report withdrawn = Reports.unack(options.argument());
+            print(out, options.flag("json") ? withdrawn.json().toJson() : withdrawn.text());
+            return Cli.OK;
+        }
         Reports.Report report = switch (options.command()) {
             case "status" -> reports.status("file", null, 0);
             case "findings" -> reports.findings(window(options, reports, service), service,
-                    options.limit(Limits.FINDINGS, Limits.FINDINGS_MAX), options.flag("full"));
+                    options.limit(Limits.FINDINGS, Limits.FINDINGS_MAX), options.flag("full"),
+                    options.flag("hide-acked"));
+            case Options.ACK -> reports.ack(
+                    reports.ack(options.argument(), options.value("note", null)));
             case Options.TRACE -> options.has("diff")
                     ? reports.traceDiff(options.argument(), options.value("diff", null),
                             options.flag("full"))

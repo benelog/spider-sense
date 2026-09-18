@@ -175,6 +175,22 @@ export function jvm(extra, opts) { return getJSON('/api/jvm', params(extra, opts
 
 export function findings(extra, opts) { return getJSON('/api/findings', params({ limit: 100, ...extra }, opts)); }
 
+/** Accepts a known finding, so the list stays about what is new (docs/agent.md). */
+export function ackFinding(id, note) {
+  return postJSON('/api/findings/' + encodeURIComponent(id) + '/ack', { note: note || null });
+}
+
+/** Withdraws that; 404 means there was nothing to withdraw. */
+export function unackFinding(id) {
+  return fetch('/api/findings/' + encodeURIComponent(id) + '/ack', { method: 'DELETE' })
+    .then((res) => {
+      if (!res.ok) throw new ApiError(res.status + ' ' + res.statusText, res.status);
+      return null;
+    });
+}
+
+export function acks(limit = 200) { return getJSON('/api/acks', { limit }); }
+
 export function marks(limit = 50) { return getJSON('/api/marks', { limit }); }
 
 export function createMark({ name, note, service } = {}) {
