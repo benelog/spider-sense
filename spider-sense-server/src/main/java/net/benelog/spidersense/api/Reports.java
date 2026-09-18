@@ -1,5 +1,6 @@
 package net.benelog.spidersense.api;
 
+import java.io.OutputStream;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -16,13 +17,16 @@ import net.benelog.spidersense.query.Stats;
 import net.benelog.spidersense.query.Window;
 import net.benelog.spidersense.server.Config;
 import net.benelog.spidersense.store.Database;
+import net.benelog.spidersense.store.EventBus;
 import net.benelog.spidersense.store.IgnoredEndpoints;
+import net.benelog.spidersense.store.Importer;
 import net.benelog.spidersense.store.Marks;
 import net.benelog.spidersense.store.ReadOnlyQuery;
 import net.benelog.spidersense.store.ServiceRegistry;
 import net.benelog.spidersense.store.Sql;
 import net.benelog.spidersense.store.Store;
 import net.benelog.spidersense.store.Tingles;
+import net.benelog.spidersense.store.Writer;
 import net.benelog.spidersilk.json.Json;
 
 /**
@@ -84,6 +88,9 @@ public final class Reports implements AutoCloseable {
     private final Check check;
     private final Selectors selectors;
     private final ReadOnlyQuery readOnly;
+
+    /** Created on the first import of a read-only open; the server's is the store's. */
+    private Writer importWriter;
 
     /** The server's way: everything is already open, and the writer's counters exist. */
     public Reports(Config config, Store store, IntSupplier port) {
@@ -403,6 +410,64 @@ public final class Reports implements AutoCloseable {
         return new Report(Codecs.sqlResult(result), Text.sql(result, limit, full));
     }
 
+    // --- export and import -----------------------------------------------------
+
+    /**
+     * The window as one JSON document, written to {@code out} as it is read
+     * (agent.md, "Export and import").
+     *
+     * <p>Both callers come through here for the same reason every other answer
+     * does: the file the CLI writes and the download the browser gets must be the
+     * same bytes.
+     */
+    public void export(Window window, String service, OutputStream out) {
+        SessionExport.write(database.sql(), window, service, out);
+    }
+
+    /** {@code spider-sense-<from>-<to>.json}: what the download is called. */
+    public static String exportFilename(Window window) {
+        return SessionExport.filename(window);
+    }
+
+    /**
+     * An exported document, written back.
+     *
+     * @throws Importer.WrongSchema when the document is of another schema version
+     */
+    public Importer.Result importDocument(Json.JsonObject document) {
+        return importer().importDocument(document);
+    }
+
+    /**
+     * The writer the import goes through.
+     *
+     * <p>With a store it is the store's, queue and all. Without one — the CLI
+     * writing into the file it opened — it is a writer of its own that is never
+     * started: an import is one transaction on this thread, so the write-behind
+     * loop would have nothing to do (storage.md).
+     */
+    private Importer importer() {
+        if (store != null) {
+            return store.importer();
+        }
+        if (importWriter == null) {
+            importWriter = new Writer(database.sql(), new EventBus(), tingles);
+        }
+        return importWriter.importer();
+    }
+
+    public Report imported(Importer.Result result) {
+        Json.JsonObject json = Json.obj()
+                .put("spans", result.spans())
+                .put("logs", result.logs())
+                .put("metricPoints", result.metricPoints())
+                .put("tingles", result.tingles())
+                .put("marks", result.marks())
+                .put("skippedTraces", result.skippedTraces())
+                .put("window", Json.obj().put("from", result.from()).put("to", result.to()));
+        return new Report(json, Text.imported(result));
+    }
+
     public Report services(Window window) {
         List<Stats.ServiceSummary> summaries = queries.services(window);
         long requests = queries.totals(window, null).requests();
@@ -412,6 +477,9 @@ public final class Reports implements AutoCloseable {
 
     @Override
     public void close() {
+        if (importWriter != null) {
+            importWriter.close();
+        }
         if (ownsDatabase) {
             database.close();
         }

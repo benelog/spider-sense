@@ -84,6 +84,11 @@ public final class Store implements AutoCloseable {
         return writer;
     }
 
+    /** {@code POST /api/import}: an exported session document, written back (agent.md). */
+    public Importer importer() {
+        return writer.importer();
+    }
+
     public Sweeper sweeper() {
         return sweeper;
     }

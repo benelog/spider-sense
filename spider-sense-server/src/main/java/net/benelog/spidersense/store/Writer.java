@@ -184,7 +184,7 @@ public final class Writer implements AutoCloseable {
 
     // --- spans ---
 
-    private static final String INSERT_SPAN = """
+    static final String INSERT_SPAN = """
             INSERT INTO span (trace_id, span_id, parent_span_id, service, name, kind, start_ms, start_ns,
                 duration_ns, status, status_message, entry, error, slow, category, endpoint, endpoint_id,
                 http_method, http_route, http_status, db_system, db_statement, db_namespace, db_operation,
@@ -269,7 +269,7 @@ public final class Writer implements AutoCloseable {
             boolean error, boolean isDb, Long httpStatus) {
     }
 
-    private void mergeTraces(Connection connection, Set<String> traceIds) throws SQLException {
+    void mergeTraces(Connection connection, Set<String> traceIds) throws SQLException {
         if (traceIds.isEmpty()) {
             return;
         }
@@ -363,7 +363,7 @@ public final class Writer implements AutoCloseable {
 
     // --- logs, tingles, services, metrics ---
 
-    private static final String INSERT_LOG = """
+    static final String INSERT_LOG = """
             INSERT INTO log (at_ms, service, severity_number, severity, body, logger, trace_id, span_id,
                 attributes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""";
 
@@ -392,7 +392,7 @@ public final class Writer implements AutoCloseable {
         }
     }
 
-    private static final String INSERT_TINGLE = """
+    static final String INSERT_TINGLE = """
             INSERT INTO tingle (at_ms, kind, service, title, detail, trace_id, span_id, duration_ms)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)""";
 
@@ -504,7 +504,7 @@ public final class Writer implements AutoCloseable {
         }
     }
 
-    private static final String MERGE_POINT = """
+    static final String MERGE_POINT = """
             MERGE INTO metric_point (series_id, at_ms, value, count, sum, min, max, buckets)
             KEY(series_id, at_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""";
 
@@ -612,12 +612,24 @@ public final class Writer implements AutoCloseable {
         throw new SQLException("No id for metric series " + sample.name());
     }
 
+    /**
+     * The other way rows reach these tables: an exported session document, read
+     * back through this writer's own insert and {@code trace} merge (agent.md).
+     *
+     * <p>It is a separate object rather than a method here because an import is
+     * not write-behind: it is one transaction on the calling thread, and it must
+     * be able to say what it wrote.
+     */
+    public Importer importer() {
+        return new Importer(sql, this);
+    }
+
     /** {@code DELETE /api/data} invalidates the series cache along with the rows. */
     public void forgetSeriesIds() {
         seriesIds.clear();
     }
 
-    private static void setLong(PreparedStatement statement, int index, Long value) throws SQLException {
+    static void setLong(PreparedStatement statement, int index, Long value) throws SQLException {
         if (value == null) {
             statement.setNull(index, java.sql.Types.BIGINT);
         } else {
@@ -625,7 +637,7 @@ public final class Writer implements AutoCloseable {
         }
     }
 
-    private static String cut(String value, int max) {
+    static String cut(String value, int max) {
         if (value == null) {
             return null;
         }

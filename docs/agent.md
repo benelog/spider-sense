@@ -220,10 +220,13 @@ With `traceId` the answer is the single-trace export of api.md as before.
   "logs": [ { …every column of log except id… } ],
   "metrics": [ { "name", "type", "unit", "description", "monotonic", "temporality" } ],
   "metricSeries": [ { "id": 7, "service", "name", "attributes": { … } } ],
-  "metricPoints": [ { "seriesId": 7, "at", "value", "count", "sum", "min", "max", "buckets": { … } | null } ],
+  "metricPoints": [ { "seriesId": 7, "atMs", "value", "count", "sum", "min", "max", "buckets": { … } | null } ],
   "tingles": [ { …every column except id… } ],
-  "marks": [ { "at", "name", "service", "note" } ] }
+  "marks": [ { "atMs", "name", "service", "note" } ] }
 ```
+
+Every key is its column's name in camelCase, so a section is the table it came from and an import binds it straight back: `at_ms` is `atMs`, `start_ms` is `startMs`, `parent_span_id` is `parentSpanId`.
+Nothing is derived on the way out or recomputed on the way in — `entry`, `slow`, `queryId` and the rest travel as they were stored, because a document exported from one session must not change meaning under another machine's thresholds.
 
 `POST /api/import` takes that document (`Content-Encoding: gzip` accepted) and answers `200` `{ "spans": n, "logs": n, "metricPoints": n, "tingles": n, "marks": n, "skippedTraces": n, "window": { "from": …, "to": … } }`.
 Import keeps every timestamp as exported, so the reader sets the time range to the answer's `window` (or `all`).

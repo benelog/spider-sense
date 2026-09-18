@@ -1,7 +1,10 @@
 package net.benelog.spidersense.cli;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.io.PrintStream;
+import java.io.UncheckedIOException;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
@@ -39,6 +42,12 @@ final class Remote {
     }
 
     static int run(Options options, String base, PrintStream out, PrintStream err) {
+        if (Options.EXPORT.equals(options.command())) {
+            return export(options, base, out, err);
+        }
+        if (Options.IMPORT.equals(options.command())) {
+            return importFile(options, base, out, err);
+        }
         URI uri = URI.create(trimSlash(base) + path(options));
         HttpRequest.Builder request = HttpRequest.newBuilder(uri).timeout(READ);
         String body = body(options);
@@ -66,6 +75,86 @@ final class Remote {
         }
         print(out, response.body());
         return Options.CHECK.equals(options.command()) ? verdict(response) : Cli.OK;
+    }
+
+    /**
+     * {@code export}: the window as a file rather than as a printed answer.
+     *
+     * <p>The body is copied stream to stream, so a session larger than the heap
+     * still lands on disk; {@code --out} decides where and whether it is gzipped,
+     * and with no {@code --out} it goes to standard output as it arrives.
+     */
+    private static int export(Options options, String base, PrintStream out, PrintStream err) {
+        String name = options.value("out", null);
+        URI uri = URI.create(trimSlash(base) + window(options, new Query("/api/export")));
+        HttpRequest request = HttpRequest.newBuilder(uri).timeout(READ).GET().build();
+        HttpClient client = HttpClient.newBuilder().connectTimeout(CONNECT).build();
+        try {
+            HttpResponse<InputStream> response;
+            try {
+                response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
+            } catch (IOException e) {
+                throw new Unreachable(e.getClass().getSimpleName()
+                        + (e.getMessage() == null ? "" : ": " + e.getMessage()));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new Unreachable("interrupted");
+            }
+            if (response.statusCode() >= 400) {
+                err.println("spider-sense: HTTP " + response.statusCode());
+                return Cli.USAGE;
+            }
+            try (InputStream body = response.body(); OutputStream file = Sessions.out(name, out)) {
+                body.transferTo(file);
+            } catch (IOException e) {
+                throw new UncheckedIOException(
+                        "could not write " + (name == null ? "the export" : name), e);
+            }
+        } finally {
+            client.close();
+        }
+        if (name != null) {
+            err.println("wrote " + name);
+        }
+        return Cli.OK;
+    }
+
+    /**
+     * {@code import}: the file posted to the running Spider Sense, which answers
+     * the one line the CLI prints.
+     *
+     * <p>A {@code .gz} is sent as it lies with {@code Content-Encoding: gzip}
+     * (api.md), so the bytes on the wire are the bytes on disk.
+     */
+    private static int importFile(Options options, String base, PrintStream out, PrintStream err) {
+        String name = options.argument();
+        byte[] body = Sessions.bytes(name);
+        String format = options.flag("json") ? "json" : "text";
+        HttpRequest.Builder request = HttpRequest
+                .newBuilder(URI.create(trimSlash(base) + "/api/import?format=" + format))
+                .timeout(READ)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofByteArray(body));
+        if (Sessions.gzipped(name)) {
+            request.header("Content-Encoding", "gzip");
+        }
+        HttpResponse<String> response;
+        try (HttpClient client = HttpClient.newBuilder().connectTimeout(CONNECT).build()) {
+            response = client.send(request.build(),
+                    HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        } catch (IOException e) {
+            throw new Unreachable(e.getClass().getSimpleName()
+                    + (e.getMessage() == null ? "" : ": " + e.getMessage()));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new Unreachable("interrupted");
+        }
+        if (response.statusCode() >= 400) {
+            err.println("spider-sense: " + message(response));
+            return Cli.USAGE;
+        }
+        print(out, response.body());
+        return Cli.OK;
     }
 
     /**

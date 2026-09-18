@@ -37,6 +37,8 @@ final class Options {
     static final String TRACE = "trace";
     static final String SQL = "sql";
     static final String TAIL = "tail";
+    static final String EXPORT = "export";
+    static final String IMPORT = "import";
 
     /** Options every command takes: where to read from, and how to print it. */
     private static final Set<String> COMMON = Set.of("url", "db", "json", "service",
@@ -59,6 +61,10 @@ final class Options {
             Map.entry(COMPARE, with("before", "after", "until", "full")),
             Map.entry(CHECK, with(checkFlags())),
             Map.entry(SQL, with("limit", "full")),
+            Map.entry(EXPORT, with("since", "until", "out")),
+            // import names a file and a store to write it into; a window and a
+            // service belong to the export that made it, not to reading it back.
+            Map.entry(IMPORT, Set.of("url", "db", "json")),
             // init reads nothing, so none of the common options mean anything to it:
             // --url, --db and the thresholds are all about a window it never opens.
             Map.entry(INIT, Set.of("dir", "jar", "no-skill", "mcp")),
@@ -74,7 +80,8 @@ final class Options {
     private static final Map<String, String> ARGUMENT = Map.of(
             TRACE, "a trace id",
             MARK, "a mark name",
-            SQL, "a statement");
+            SQL, "a statement",
+            IMPORT, "a file to read");
 
     private final String command;
     private final String argument;

@@ -40,6 +40,10 @@ final class Help {
                                            pass or fail, in the exit code
               sql "<statement>" [--limit=200]
                                            read-only SQL over the store (SELECT only)
+              export [--out=<file>]        the window as one JSON document, to the file or to
+                                           stdout; a name ending in .gz is gzipped
+              import <file>                that document back into the store, and one line
+                                           saying what arrived
               init [--dir=<project dir>] [--jar=<path>] [--no-skill] [--mcp]
                                            writes the Spider Sense block into the project's
                                            CLAUDE.md and installs the skill into .claude/skills/;
