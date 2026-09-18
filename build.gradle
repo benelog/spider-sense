@@ -41,3 +41,41 @@ subprojects {
         }
     }
 }
+
+// spider-sense-gradle-plugin is an included build (see settings.gradle), not a
+// subproject, so the root's lifecycle tasks would pass it by; these delegates
+// keep `gradlew build`, `publishToMavenLocal`, and the staging publish the
+// release workflow runs covering it too.
+tasks.named('build') {
+    dependsOn gradle.includedBuild('spider-sense-gradle-plugin').task(':build')
+}
+tasks.register('publishToMavenLocal') {
+    dependsOn gradle.includedBuild('spider-sense-gradle-plugin').task(':publishToMavenLocal')
+}
+tasks.register('publishAllPublicationsToStagingRepository') {
+    dependsOn gradle.includedBuild('spider-sense-gradle-plugin').task(':publishAllPublicationsToStagingRepository')
+}
+
+// A release reaches Maven Central as one bundle: the jar and the plugin publish
+// signed into this directory, and the zip of it is uploaded to the Central
+// Portal as a single deployment (see RELEASING.md).
+def stagingRepository = layout.buildDirectory.dir('staging-deploy')
+
+// Run on its own, before centralBundle: nothing orders a task in this build
+// against the included plugin build's publish, so one invocation could delete
+// what the other has just written.
+tasks.register('cleanStagingRepository', Delete) {
+    delete stagingRepository
+}
+
+tasks.register('centralBundle', Zip) {
+    // Resolved when the task graph is built, after the subprojects have applied maven-publish.
+    dependsOn { subprojects.collectMany { it.tasks.matching { t -> t.name == 'publishAllPublicationsToStagingRepository' } } }
+    dependsOn tasks.named('publishAllPublicationsToStagingRepository')
+    from stagingRepository
+    // Gradle writes maven-metadata.xml into a file repository, and Central
+    // builds its own. A signature needs no checksums of its own either.
+    exclude '**/maven-metadata.xml*', '**/*.asc.md5', '**/*.asc.sha*'
+    archiveFileName = "central-bundle-${version}.zip"
+    destinationDirectory = layout.buildDirectory
+}

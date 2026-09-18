@@ -53,6 +53,27 @@ Every `otel.*` system property and `OTEL_*` environment variable of the OpenTele
 
 ## Per build tool
 
+### The Gradle plugin
+
+For a Gradle project, Spring Boot or the `application` plugin, this is the shortest route and the only one that needs no absolute path in the build file:
+
+```groovy
+plugins {
+    id 'net.benelog.spidersense' version '0.1.0'
+}
+```
+
+`./gradlew bootRun` (or `run`) then starts the application under Spider Sense with the service named after the project, and the jar comes from Maven Central.
+`-PspiderSense.jar=$SENSE` uses a jar that is not published, `-PspiderSense.enabled=false` runs without it, and `spiderSense { port = 4001 }` is where the `spidersense.*` properties go; the block is specified in `docs/build-tools.md` of the Spider Sense repository.
+The plugin also makes the CLI a task, pointed at the port the block names, so `$SENSE` is not needed at all:
+
+```bash
+./gradlew -q spiderSense --args="findings --since=start"
+./gradlew -q spiderSense --args="check --max-n-plus-one=0"
+```
+
+Prefer this over editing `jvmArgs` when the build file is the user's to change; the sections below are for everything else.
+
 ### A jar, or a main class
 
 ```bash
@@ -93,7 +114,7 @@ The simplest path is to build the jar and run it, which is also what `scripts/de
 java -javaagent:"$SENSE" -Dotel.service.name=spring-orders -jar build/libs/spring-orders-0.1.0.jar
 ```
 
-To stay on `bootRun`:
+To stay on `bootRun` without the plugin:
 
 ```groovy
 tasks.named('bootRun') {
@@ -103,9 +124,13 @@ tasks.named('bootRun') {
 
 ### Spring Boot, Maven
 
+The Spring Boot Maven plugin's `agents` parameter puts a jar on the forked JVM as `-javaagent:`, and `jvmArguments` carries the properties:
+
 ```bash
-mvn spring-boot:run -Dspring-boot.run.jvmArguments="-javaagent:/absolute/path/to/spider-sense-0.1.0.jar -Dotel.service.name=my-app"
+mvn spring-boot:run -Dspring-boot.run.agents="$SENSE" -Dspring-boot.run.jvmArguments="-Dspidersense.service=my-app"
 ```
+
+The same two parameters go into the POM as `<agents><agent>…</agent></agents>` and `<systemPropertyVariables>` under the plugin's `<configuration>`, best inside a profile; `docs/build-tools.md` of the Spider Sense repository has the profile that also fetches the jar from Maven Central.
 
 Or against the packaged jar, which needs no plugin configuration at all:
 

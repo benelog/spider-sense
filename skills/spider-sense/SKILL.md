@@ -8,7 +8,7 @@ description: >-
   whenever they mention Spider Sense, spider-sense.jar, `spidersense.*` properties or `~/db/spider-sense`;
   and whenever they want to know what a code change did to request latency, query count or errors
   (mark, exercise, compare, check). It also covers starting an application under the agent
-  (plain `java -jar`, Gradle `run`, `installDist`, Spring Boot `bootRun`, a test task, Maven) and reading a trace as a tree.
+  (plain `java -jar`, the Gradle plugin, Gradle `run`, `installDist`, Spring Boot `bootRun`, a test task, Maven) and reading a trace as a tree.
 license: Apache-2.0
 metadata:
   version: "0.1.0"
@@ -66,8 +66,9 @@ The application has to be restarted with the agent on its command line; Spider S
 | A jar, or a main class you launch | `java -javaagent:"$SENSE" -jar app.jar` |
 | A start script from `installDist`, or anything honouring `JAVA_OPTS` | `JAVA_OPTS="-javaagent:$SENSE" build/install/app/bin/app` |
 | A start command that is not yours to edit | `JAVA_TOOL_OPTIONS="-javaagent:$SENSE" <command>` |
-| Spring Boot under Gradle | build the jar and run it, or add `jvmArgs` to `bootRun` |
-| Maven Spring Boot | `mvn spring-boot:run -Dspring-boot.run.jvmArguments="-javaagent:$SENSE"` |
+| Spring Boot or `application` under Gradle | `id 'net.benelog.spidersense' version '0.1.0'` in `plugins {}`, then `./gradlew bootRun` (or `run`); `-PspiderSense.jar=$SENSE` for an unpublished jar; `./gradlew -q spiderSense --args="findings --since=start"` is the CLI |
+| Spring Boot under Gradle, plugin not applied | build the jar and run it, or add `jvmArgs '-javaagent:...'` to `bootRun` |
+| Maven Spring Boot | `mvn spring-boot:run -Dspring-boot.run.agents=$SENSE` (`-Dspring-boot.run.jvmArguments="-Dspidersense.port=4001"` for the properties) |
 
 Useful properties, all after `-javaagent:` on the same command line:
 

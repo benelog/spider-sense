@@ -49,6 +49,36 @@ Open <http://localhost:4000>.
 Every `otel.*` system property and `OTEL_*` environment variable of the OpenTelemetry agent still applies; Spider Sense only fills in defaults.
 `-Dspidersense.port=4001` moves the UI; the full table is in [docs/design.md](docs/design.md#configuration).
 
+## Spring Boot, from the build
+
+`bootRun` and `spring-boot:run` fork the JVM themselves, so the agent has to be handed to the build tool.
+With Gradle it is one plugin, which puts `-javaagent` on `bootRun` (and `bootTestRun`, and the `application` plugin's `run`) and names the service after the project:
+
+```groovy
+plugins {
+    id 'org.springframework.boot' version '4.1.1'
+    id 'net.benelog.spidersense' version '0.1.0'
+}
+
+spiderSense {          // optional; every property of the jar has a line here
+    port = 4001
+}
+```
+
+```bash
+./gradlew bootRun                                          # under Spider Sense, UI at :4001
+./gradlew bootRun -PspiderSense.enabled=false              # without it
+./gradlew -q spiderSense --args="findings --since=start"   # the CLI, pointed at the right port
+```
+
+With Maven the Spring Boot plugin's own `agents` parameter does it:
+
+```bash
+mvn spring-boot:run -Dspring-boot.run.agents=/path/to/spider-sense.jar
+```
+
+[docs/build-tools.md](docs/build-tools.md) has the plugin's block and tasks, the POM profile that fetches the jar from Maven Central, and the test-task setup for both.
+
 ## What you see
 
 <p align="center"><img src="docs/images/overview.jpg" alt="Overview: request rate, error rate, percentiles, the throughput chart, the services, and the tingle feed" width="900"></p>
@@ -117,6 +147,7 @@ scripts/demo-shared.sh      # one standalone Spider Sense both apps forward to, 
 [docs/design.md](docs/design.md) explains the single jar (the OpenTelemetry agent verbatim, a dependency-free launcher, and the collector + UI as a nested jar in an isolated class loader), the in-memory store, and what was rejected and why.
 [docs/api.md](docs/api.md) is the JSON contract between the server and the UI.
 [docs/ui.md](docs/ui.md) is the UI specification.
+[docs/build-tools.md](docs/build-tools.md) is the Gradle plugin and the Maven setup.
 
 ## License
 

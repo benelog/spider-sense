@@ -88,6 +88,12 @@ All via system properties (agent mode has no other channel before `main`); the s
 
 Every `otel.*` property still works as documented by the OpenTelemetry agent; Spider Sense only fills in defaults.
 
+### From a build tool
+
+A build tool that forks the application's JVM (`bootRun`, `run`, `spring-boot:run`) needs the option handed to it.
+The Gradle plugin `net.benelog.spidersense` (an included build, `spider-sense-gradle-plugin`) does that with a `jvmArgumentProvider` and a `spiderSense { }` block whose properties are the table above, and the Spring Boot Maven plugin's `agents` parameter does it for Maven; both are specified in [build-tools.md](build-tools.md).
+The jar and the plugin are published together to Maven Central as `net.benelog.spidersense:spider-sense` and `net.benelog.spidersense:spider-sense-gradle-plugin`, one version for both.
+
 ## The server
 
 Gradle module `spider-sense-server`. A Spider Silk `App` with three concerns:

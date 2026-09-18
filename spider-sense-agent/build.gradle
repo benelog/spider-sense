@@ -1,5 +1,7 @@
 plugins {
     id 'java'
+    id 'maven-publish'
+    id 'signing'
 }
 
 description = 'Spider Sense: the launcher (premain/main) and the single distributable jar'
@@ -24,6 +26,14 @@ configurations {
     sampleApp {
         canBeConsumed = false
     }
+    // The single distributable jar, for another project in this build to consume:
+    //   spiderSense project(path: ':spider-sense-agent', configuration: 'senseJar')
+    // is how the examples attach the jar this build just made instead of one from
+    // Maven Central (docs/build-tools.md).
+    senseJar {
+        canBeConsumed = true
+        canBeResolved = false
+    }
 }
 
 dependencies {
@@ -42,10 +52,15 @@ dependencies {
 // The launcher must stay dependency-free: everything it needs is in java.base, and the
 // whole top level of the distributable jar ends up on the bootstrap class path.
 tasks.named('compileJava') {
+    // The class path is read into a provider here, while the build file is
+    // read: a closure that asked `configurations` when the task runs would
+    // reach back into this script, which the configuration cache cannot store.
+    def compileClasspath = configurations.compileClasspath.elements
     doFirst {
-        if (!configurations.compileClasspath.isEmpty()) {
+        def dependencies = compileClasspath.get()
+        if (!dependencies.isEmpty()) {
             throw new GradleException('The launcher must have no compile dependencies: ' +
-                    configurations.compileClasspath.files)
+                    dependencies.collect { it.asFile })
         }
     }
 }
@@ -78,7 +93,12 @@ def senseJar = tasks.register('senseJar', Jar) {
     // The OpenTelemetry agent, verbatim: bootstrap classes at the top level, inst/**
     // (.classdata for the agent's own loader), META-INF/licenses/**, META-INF/native-image/**.
     // Only its manifest is dropped, because we write our own.
-    from(configurations.otelAgent.elements.map { it.collect { f -> zipTree(f) } }) {
+    // zipTree is called here, while the build file is read, and given a lazy
+    // path: calling it inside the closure instead would reach back into this
+    // script at execution time, which the configuration cache cannot store —
+    // and an application attaching the jar through the plugin has senseJar in
+    // its bootRun graph.
+    from(zipTree(configurations.otelAgent.elements.map { it.first().asFile })) {
         exclude 'META-INF/MANIFEST.MF'
         // Signature files of a jar we repack are meaningless and break verification.
         exclude 'META-INF/*.SF'
@@ -132,6 +152,13 @@ def senseJar = tasks.register('senseJar', Jar) {
 
 tasks.named('assemble') { dependsOn senseJar }
 
+// add(configuration, notation) rather than `senseJar senseJar`: in this script
+// the name is a local variable holding the task, so the shorthand would read as
+// a call on it.
+artifacts {
+    add('senseJar', senseJar)
+}
+
 // The plain `jar` task stays enabled and stays the launcher-only jar: it is what the test
 // source set and any downstream module compile against, and it is cheap. The distributable
 // is `senseJar`; only that one carries the agent manifest attributes.
@@ -170,3 +197,61 @@ tasks.register('integrationTest', Test) {
 }
 
 tasks.named('check') { dependsOn tasks.named('integrationTest') }
+
+// Published to Maven Central as net.benelog.spidersense:spider-sense, the
+// coordinates docs/build-tools.md names: the single distributable jar, not the
+// launcher-only `jar`, and a POM with no dependencies, because everything the
+// jar needs is already inside it. `from components.java` would publish the
+// wrong artifact and the launcher's (empty) dependency graph with it, so the
+// artifact is named on its own.
+publishing {
+    publications {
+        maven(MavenPublication) {
+            artifactId = 'spider-sense'
+            artifact(senseJar)
+
+            pom {
+                name = 'spider-sense'
+                description = 'Spider Sense: a local-development APM in one jar, attached with -javaagent, built on the OpenTelemetry Java agent.'
+                url = 'https://github.com/benelog/spider-sense'
+                licenses {
+                    license {
+                        name = 'The Apache License, Version 2.0'
+                        url = 'https://www.apache.org/licenses/LICENSE-2.0.txt'
+                    }
+                }
+                developers {
+                    developer {
+                        id = 'benelog'
+                        name = 'Sanghyuk Jung'
+                        url = 'https://github.com/benelog'
+                    }
+                }
+                scm {
+                    url = 'https://github.com/benelog/spider-sense'
+                    connection = 'scm:git:https://github.com/benelog/spider-sense.git'
+                    developerConnection = 'scm:git:git@github.com:benelog/spider-sense.git'
+                }
+            }
+        }
+    }
+
+    repositories {
+        maven {
+            name = 'Staging'
+            url = rootProject.layout.buildDirectory.dir('staging-deploy')
+        }
+    }
+}
+
+// Central rejects an unsigned artifact. The key arrives ASCII-armored in the
+// environment, so nothing touches a keyring; without it (a local build,
+// publishToMavenLocal) the signing tasks are skipped rather than failed.
+signing {
+    def signingKey = System.getenv('SIGNING_KEY')
+    required = { signingKey != null }
+    if (signingKey != null) {
+        useInMemoryPgpKeys(signingKey, System.getenv('SIGNING_PASSWORD'))
+    }
+    sign publishing.publications.maven
+}

@@ -10,12 +10,23 @@ buildscript {
     }
 }
 
+// The Spider Sense plugin comes from the included build in settings.gradle, so
+// it needs no version here. A plugins {} block may follow buildscript {} and
+// must come before the apply plugin: lines.
+plugins {
+    id 'net.benelog.spidersense'
+}
+
 apply plugin: 'java'
 apply plugin: 'org.springframework.boot'
 
 // Boot 4's Gradle plugin does not apply dependency management by itself.
 // Gradle's own platform() support is used instead of io.spring.dependency-management (faster, one less plugin).
 dependencies {
+    // The jar this build just made, not one from Maven Central: bootRun waits
+    // for :spider-sense-agent:senseJar and attaches its output.
+    spiderSense project(path: ':spider-sense-agent', configuration: 'senseJar')
+
     implementation platform(org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES)
 
     // Boot 4 renamed spring-boot-starter-web to spring-boot-starter-webmvc and split the blocking
@@ -30,6 +41,11 @@ dependencies {
     testImplementation platform(org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES)
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+// The port scripts/demo.sh gives this application; silk-bookstore has 4000.
+spiderSense {
+    port = 4001
 }
 
 tasks.named('bootJar') {

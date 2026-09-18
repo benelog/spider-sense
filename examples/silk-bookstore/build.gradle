@@ -8,10 +8,17 @@
 plugins {
     id 'net.benelog.spidersilk' version '1.1.0'
     id 'application'
+    // From the included build in settings.gradle, so no version here.
+    id 'net.benelog.spidersense'
 }
 
 spiderSilk {
     jte()
+}
+
+// The port scripts/demo.sh gives this application; spring-orders has 4001.
+spiderSense {
+    port = 4000
 }
 
 // Only this example needs it, so it is not in the root ext block: the API the
@@ -19,6 +26,10 @@ spiderSilk {
 ext.otelApiVersion = '1.66.0'
 
 dependencies {
+    // The jar this build just made, not one from Maven Central: run waits for
+    // :spider-sense-agent:senseJar and attaches its output.
+    spiderSense project(path: ':spider-sense-agent', configuration: 'senseJar')
+
     implementation "net.benelog.spidersilk:spider-silk-core:${spiderSilkVersion}"
     implementation "org.springframework:spring-jdbc:${springJdbcVersion}"
     implementation "com.h2database:h2:${h2Version}"

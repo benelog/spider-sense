@@ -1,4 +1,9 @@
 pluginManagement {
+    // The Gradle plugin is an included build rather than a subproject: a plugin
+    // has to be built and on the class path before the projects that apply it
+    // are configured, and the examples do apply it.
+    includeBuild 'spider-sense-gradle-plugin'
+
     repositories {
         gradlePluginPortal()
         mavenCentral()
