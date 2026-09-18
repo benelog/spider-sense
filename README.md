@@ -97,7 +97,7 @@ java -jar spider-sense.jar check --max-queries-per-request=10       # exit code 
 ```
 
 Every command prints Markdown (`--json` for the JSON), asks the running Spider Sense over HTTP, and reads the H2 file directly when none is running, so it still answers after the application has crashed.
-`skills/spider-sense/` is a skill that teaches an agent the whole loop; [docs/agent.md](docs/agent.md) is the specification.
+`skills/spider-sense/` is a skill that teaches an agent the whole loop, and `java -jar spider-sense.jar init` installs it into a project's `.claude/skills/` together with a few lines in the project's `CLAUDE.md` saying where the jar is; [docs/agent.md](docs/agent.md) is the specification.
 
 ## The examples
 

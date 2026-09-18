@@ -29,6 +29,41 @@ application {
     mainClass = 'net.benelog.spidersense.server.SpiderSenseServer'
 }
 
+// The agent skill rides inside the jar so that `init` can copy it into a project's
+// .claude/skills/ on a machine that has no checkout of this repository (docs/agent.md).
+// The repository's skills/spider-sense/ stays the single source: nothing is duplicated
+// under src/main/resources. A class loader cannot list a directory, so the build writes
+// an index of the relative paths beside the files.
+def skillSource = rootProject.layout.projectDirectory.dir('skills/spider-sense')
+
+def skillIndex = tasks.register('skillIndex') {
+    group = 'build'
+    description = 'Writes the index of the skill files packaged into the jar'
+    def from = skillSource.asFile
+    def into = layout.buildDirectory.file('generated/skill/index.txt')
+    inputs.dir(from).withPathSensitivity(PathSensitivity.RELATIVE)
+    outputs.file(into)
+    doLast {
+        def root = from.toPath()
+        def names = []
+        from.eachFileRecurse(groovy.io.FileType.FILES) {
+            names << root.relativize(it.toPath()).toString().replace('\\', '/')
+        }
+        def file = into.get().asFile
+        file.parentFile.mkdirs()
+        file.text = names.sort().join('\n') + '\n'
+    }
+}
+
+processResources {
+    from(skillSource) {
+        into 'spider-sense/skill'
+    }
+    from(skillIndex) {
+        into 'spider-sense/skill'
+    }
+}
+
 jar {
     manifest {
         attributes 'Main-Class': application.mainClass.get()

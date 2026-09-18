@@ -8,6 +8,8 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.io.UncheckedIOException;
 import java.net.ServerSocket;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.BiConsumer;
@@ -15,6 +17,7 @@ import java.util.function.BiConsumer;
 import io.opentelemetry.proto.trace.v1.Span;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import net.benelog.spidersense.Otlp;
 import net.benelog.spidersense.TestStore;
@@ -303,6 +306,89 @@ class CliTest {
             assertThat(run.out()).startsWith("# status");
         } finally {
             System.clearProperty("spidersense.db");
+        }
+    }
+
+    /**
+     * {@code init} is the one command that asks nothing and only writes: the block into
+     * the project's CLAUDE.md, and the skill beside it (agent.md, "init").
+     */
+    @Test
+    void initWritesTheBlockAndInstallsTheSkill(@TempDir Path project) throws IOException {
+        Run init = run("init", "--dir=" + project, "--jar=/x/spider-sense.jar");
+        assertThat(init.exit()).as("stderr: %s", init.err()).isZero();
+        assertThat(init.out()).isEqualTo("wrote CLAUDE.md block (jar: /x/spider-sense.jar)\n"
+                + "installed skill to " + project.resolve(".claude/skills/spider-sense") + " (4 files)\n");
+
+        String claude = Files.readString(project.resolve("CLAUDE.md"), UTF_8);
+        assertThat(claude).startsWith("<!-- spider-sense:start -->\n## Spider Sense\n");
+        assertThat(claude).endsWith("<!-- spider-sense:end -->\n");
+        assertThat(claude)
+                .contains("java -javaagent:/x/spider-sense.jar -jar <app jar>")
+                .contains("JAVA_TOOL_OPTIONS=\"-javaagent:/x/spider-sense.jar\" ./gradlew bootRun")
+                .contains("java -jar /x/spider-sense.jar findings --since=start")
+                .contains("<http://127.0.0.1:4000>")
+                .contains("`.claude/skills/spider-sense/SKILL.md`");
+
+        assertThat(project.resolve(".claude/skills/spider-sense/SKILL.md")).isRegularFile();
+        assertThat(project.resolve(".claude/skills/spider-sense/references/cli.md")).isRegularFile();
+        assertThat(Files.readString(project.resolve(".claude/skills/spider-sense/SKILL.md"), UTF_8))
+                .as("the repository's skill, copied verbatim").contains("name: spider-sense");
+    }
+
+    /**
+     * A second {@code init} is a replacement, not a second copy: everything outside the
+     * two markers comes through byte for byte, because the file belongs to the project.
+     */
+    @Test
+    void aSecondInitReplacesTheBlockAndLeavesTheRestOfTheFileAlone(@TempDir Path project) throws IOException {
+        Path claude = project.resolve("CLAUDE.md");
+        Files.writeString(claude, "# My project\n\nOne rule: no reflection.\n", UTF_8);
+
+        assertThat(run("init", "--dir=" + project, "--jar=/x/spider-sense.jar").out())
+                .startsWith("wrote CLAUDE.md block");
+        Files.writeString(claude,
+                Files.readString(claude, UTF_8) + "\n## Afterwards\n\nKeep me exactly as I am.\n", UTF_8);
+
+        Run again = run("init", "--dir=" + project, "--jar=/y/other/spider-sense.jar");
+        assertThat(again.exit()).isZero();
+        assertThat(again.out()).startsWith("updated CLAUDE.md block (jar: /y/other/spider-sense.jar)");
+
+        String text = Files.readString(claude, UTF_8);
+        assertThat(text).startsWith("# My project\n\nOne rule: no reflection.\n\n<!-- spider-sense:start -->");
+        assertThat(text).endsWith("<!-- spider-sense:end -->\n\n## Afterwards\n\nKeep me exactly as I am.\n");
+        assertThat(text).contains("/y/other/spider-sense.jar").doesNotContain("/x/spider-sense.jar");
+        assertThat(text.split(java.util.regex.Pattern.quote(Init.START), -1))
+                .as("one block, not two").hasSize(2);
+    }
+
+    @Test
+    void initWithoutTheSkillWritesNoClaudeDirectory(@TempDir Path project) throws IOException {
+        Run init = run("init", "--dir=" + project, "--jar=/x/spider-sense.jar", "--no-skill");
+        assertThat(init.exit()).isZero();
+        assertThat(init.out()).endsWith("skipped skill (--no-skill)\n");
+        assertThat(project.resolve(".claude")).doesNotExist();
+        assertThat(Files.readString(project.resolve("CLAUDE.md"), UTF_8))
+                .as("the block points at the repository instead")
+                .contains("<https://github.com/benelog/spider-sense>")
+                .doesNotContain("`.claude/skills/spider-sense/SKILL.md`");
+    }
+
+    /** Exploded classes and no {@code --jar}: nobody knows the path, and inventing one would be worse. */
+    @Test
+    void initWithNoJarToNameIsAUsageError(@TempDir Path project) {
+        String remembered = System.getProperty(Init.JAR_PROPERTY);
+        System.clearProperty(Init.JAR_PROPERTY);
+        try {
+            Run init = run("init", "--dir=" + project);
+            assertThat(init.exit()).isEqualTo(2);
+            assertThat(init.err()).contains("--jar=<path>");
+            assertThat(init.out()).isEmpty();
+            assertThat(project.resolve("CLAUDE.md")).doesNotExist();
+        } finally {
+            if (remembered != null) {
+                System.setProperty(Init.JAR_PROPERTY, remembered);
+            }
         }
     }
 }

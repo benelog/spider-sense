@@ -2,6 +2,7 @@ package net.benelog.spidersense.launcher;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.nio.file.Path;
 
 /**
  * The {@code Main-Class} of the distributable jar: {@code java -jar spider-sense.jar}.
@@ -17,6 +18,14 @@ public final class SpiderSenseMain {
 
     /** The CLI entry point inside the nested server jar; see {@code docs/agent.md}. */
     static final String CLI_CLASS = "net.benelog.spidersense.cli.Cli";
+
+    /**
+     * Where the CLI reads this jar's own path. It runs out of the nested server jar,
+     * extracted to a temporary directory, so only the launcher can tell it where the
+     * distributable it was started from actually is; {@code init} writes that path into
+     * a project's {@code CLAUDE.md} ({@code docs/agent.md}).
+     */
+    static final String JAR_PROPERTY = "spidersense.jar";
 
     public static void main(String[] args) throws Exception {
         if (isCommand(args)) {
@@ -51,9 +60,16 @@ public final class SpiderSenseMain {
      * Runs {@code Cli.run(String[])} from the nested server jar in its own {@link SenseClassLoader}
      * and returns its exit code, so the launcher itself stays free of every dependency. Errors of
      * the command are the CLI's to print; only the failure to load it at all is reported here.
+     *
+     * <p>It also leaves this jar's own path in {@value #JAR_PROPERTY}, the one thing the CLI cannot
+     * find out for itself.
      */
     static int runCommand(String[] args) {
         try {
+            Path own = NestedJar.ownJar();
+            if (own != null) {
+                System.setProperty(JAR_PROPERTY, own.toAbsolutePath().toString());
+            }
             SenseClassLoader loader = new SenseClassLoader(NestedJar.serverJar());
             Thread current = Thread.currentThread();
             ClassLoader previous = current.getContextClassLoader();
@@ -106,7 +122,8 @@ public final class SpiderSenseMain {
                                                                         database file, from the terminal:
                                                                         status, findings, trace <id>, traces,
                                                                         endpoints, queries, errors, logs,
-                                                                        mark <name>, marks, compare, check, help
+                                                                        mark <name>, marks, compare, check, init,
+                                                                        help
 
                 Options (as --key=value here, as -Dspidersense.key=value under -javaagent):
 

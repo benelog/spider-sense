@@ -21,6 +21,7 @@ The launcher treats a first argument that does not start with `-` as a command a
 | `marks` | lists marks |
 | `compare --before=<selector> --after=<selector> [--until=<selector>]` | the two windows side by side |
 | `check [--max-p95-ms=] [--max-errors=] [--max-error-rate=] [--max-queries-per-request=] [--max-slow-queries=] [--max-n-plus-one=] [--min-apdex=] [--endpoint=]` | pass or fail, in the exit code |
+| `init [--dir=<project dir>] [--jar=<path>] [--no-skill]` | writes the Spider Sense block into the project's `CLAUDE.md` and installs this skill into its `.claude/skills/` |
 | `help` | this table |
 
 ## Common options
@@ -37,6 +38,8 @@ The launcher treats a first argument that does not start with `-` as a command a
 | `--full` | off | keep statements whole and expand collapsed spans |
 
 `compare` takes no `--since`: its windows are the two selectors, and `--until` closes the second one.
+`init` takes none of these: it reads nothing, and its own options are `--dir=<project dir>` (the working directory by default), `--jar=<path>` (the jar it was started from by default) and `--no-skill`.
+It is idempotent — the block it writes is delimited by `<!-- spider-sense:start -->` and `<!-- spider-sense:end -->`, and a second run replaces what is between them and leaves the rest of `CLAUDE.md` untouched.
 `--slow.request.ms=`, `--slow.query.ms=` and `--app.packages=` set the thresholds and the application packages in the direct-file path, where no server is there to ask.
 An option a command does not take is a usage error rather than a silently ignored word, so a mistyped `--sinse` is told rather than answered for the last 15 minutes.
 

@@ -244,6 +244,33 @@ class SingleJarIT {
         assertThat(findings.out()).startsWith("# findings  ");
     }
 
+    /**
+     * {@code init} from the packaged jar, which is the only way to see the part that cannot be
+     * unit-tested: the launcher leaving its own path in {@code spidersense.jar}, so the block
+     * names the jar the user actually typed rather than the nested one in the temporary directory.
+     */
+    @Test
+    void initWritesTheBlockNamingThePackagedJarAndInstallsTheSkill() throws Exception {
+        Path project = work.resolve("init-project");
+        Files.createDirectories(project);
+
+        Command init = cli("init", "--dir=" + project);
+        assertThat(init.exit()).as("init: %s", init.err()).isZero();
+        assertThat(init.out()).startsWith("wrote CLAUDE.md block (jar: ");
+        assertThat(init.out()).contains("installed skill to " + project.resolve(".claude/skills/spider-sense"));
+
+        String claude = Files.readString(project.resolve("CLAUDE.md"), UTF_8);
+        assertThat(claude).startsWith("<!-- spider-sense:start -->\n## Spider Sense\n");
+        assertThat(claude).endsWith("<!-- spider-sense:end -->\n");
+        assertThat(claude)
+                .as("the block names the jar this JVM was started from, not the nested server jar")
+                .contains("-javaagent:" + senseJar.toAbsolutePath())
+                .contains("java -jar " + senseJar.toAbsolutePath() + " findings --since=start");
+
+        assertThat(project.resolve(".claude/skills/spider-sense/SKILL.md")).isRegularFile();
+        assertThat(project.resolve(".claude/skills/spider-sense/references/cli.md")).isRegularFile();
+    }
+
     /** One run of {@code java -jar spider-sense.jar <command>}, with its streams kept apart. */
     private record Command(int exit, String out, String err) {
     }
