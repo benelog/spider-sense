@@ -70,7 +70,7 @@ publishing {
     publications.withType(MavenPublication).configureEach {
         pom {
             name = 'spider-sense-gradle-plugin'
-            description = 'Runs an application under Spider Sense: -javaagent on bootRun and run, the spiderSense block, and the spiderSense/spiderSenseInit tasks.'
+            description = 'Runs an application under Spider Sense: -javaagent on bootRun and run, the spiderSense block, and the spiderSense/spiderSenseInit/spiderSenseCheck tasks.'
             url = 'https://github.com/benelog/spider-sense'
             licenses {
                 license {

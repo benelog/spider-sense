@@ -1,9 +1,11 @@
 package net.benelog.spidersense.gradle;
 
+import org.gradle.api.Action;
 import org.gradle.api.file.RegularFileProperty;
 import org.gradle.api.provider.ListProperty;
 import org.gradle.api.provider.Property;
 import org.gradle.api.provider.SetProperty;
+import org.gradle.api.tasks.Nested;
 
 /**
  * The {@code spiderSense} block: what the application is run under and how the
@@ -81,4 +83,24 @@ public abstract class SpiderSenseExtension {
      * which ignores nothing.
      */
     public abstract ListProperty<String> getIgnoreEndpoints();
+
+    /** {@code -Dspidersense.retention.spans}: how many spans the database keeps. */
+    public abstract Property<Long> getRetentionSpans();
+
+    /** {@code -Dspidersense.ingest.max-spans-per-second}: the ceiling on spans accepted per second. */
+    public abstract Property<Long> getMaxSpansPerSecond();
+
+    /**
+     * The {@code check { }} block: the rules of the {@code spiderSenseCheck}
+     * task. It is a nested block rather than properties of this one because
+     * they are not {@code -Dspidersense.*} options of the application, they are
+     * the arguments of one task.
+     */
+    @Nested
+    public abstract SpiderSenseCheckExtension getCheck();
+
+    /** {@code check { }} in the build file, in both the Groovy and the Kotlin DSL. */
+    public void check(Action<? super SpiderSenseCheckExtension> action) {
+        action.execute(getCheck());
+    }
 }
