@@ -34,6 +34,9 @@ final class Help {
                     [--max-queries-per-request=] [--max-slow-queries=]
                     [--max-n-plus-one=] [--min-apdex=] [--endpoint=]
                                            pass or fail, in the exit code
+              init [--dir=<project dir>] [--jar=<path>] [--no-skill]
+                                           writes the Spider Sense block into the project's
+                                           CLAUDE.md and installs the skill into .claude/skills/
               help                         this table
 
             Common options:

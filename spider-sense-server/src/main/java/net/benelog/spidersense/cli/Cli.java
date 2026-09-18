@@ -79,8 +79,14 @@ public final class Cli {
      * statement about where to read and leaves no question to ask a server, or
      * unless {@code --url} named a server, which is a statement that there is one:
      * falling back then would answer a different question from the one asked.
+     *
+     * <p>{@code init} comes before all of it: it asks nothing and nobody, it only
+     * writes (agent.md).
      */
     private static int dispatch(Options options, String defaultUrl, PrintStream out, PrintStream err) {
+        if (Options.INIT.equals(options.command())) {
+            return Init.run(options, out, err);
+        }
         if (options.has("db")) {
             return Local.run(options, out, err);
         }

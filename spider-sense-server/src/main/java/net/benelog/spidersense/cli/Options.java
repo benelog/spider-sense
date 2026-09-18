@@ -29,6 +29,7 @@ final class Options {
     }
 
     static final String HELP = "help";
+    static final String INIT = "init";
     static final String CHECK = "check";
     static final String COMPARE = "compare";
     static final String MARK = "mark";
@@ -54,6 +55,9 @@ final class Options {
             Map.entry("marks", with("limit")),
             Map.entry(COMPARE, with("before", "after", "until", "full")),
             Map.entry(CHECK, with(checkFlags())),
+            // init reads nothing, so none of the common options mean anything to it:
+            // --url, --db and the thresholds are all about a window it never opens.
+            Map.entry(INIT, Set.of("dir", "jar", "no-skill")),
             Map.entry(HELP, with()));
 
     /** The commands that take one word of their own, and what that word is called. */

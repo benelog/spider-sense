@@ -60,6 +60,7 @@ The server never sees the application's classes, and the application never sees 
 
 `SpiderSenseMain.main` (standalone) does step 2 with `--mode=standalone` and then blocks (`join`).
 When its first argument does not start with `-` it is a CLI command instead: the launcher loads the nested jar the same way and invokes `net.benelog.spidersense.cli.Cli.run(String[])`, exiting with what it returns ([agent.md](agent.md)).
+It also sets the system property `spidersense.jar` to its own jar's absolute path first, because `init` has to write that path into a project's `CLAUDE.md` and the CLI, running out of the nested jar in a temporary directory, could not find it otherwise.
 
 Even with the class-loader exclusion in place, the collector drops any `SERVER` span whose `server.port` attribute equals its own port and whose service is the one it is embedded in; belt and braces, so a misconfiguration never shows the UI monitoring itself. `CLIENT` spans are kept: an application that calls Spider Sense's port is doing something real, and that call belongs in its trace.
 

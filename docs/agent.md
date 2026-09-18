@@ -255,10 +255,12 @@ The launcher stays dependency-free.
 | `marks` | lists marks |
 | `compare --before=<selector> --after=<selector> [--until=<selector>]` | the two windows side by side |
 | `check [--max-p95-ms=] [--max-errors=] [--max-error-rate=] [--max-queries-per-request=] [--max-slow-queries=] [--max-n-plus-one=] [--min-apdex=] [--endpoint=]` | pass or fail, in the exit code |
+| `init [--dir=<project dir>] [--jar=<path>] [--no-skill]` | writes the Spider Sense block into the project's `CLAUDE.md` and installs the skill into its `.claude/skills/` |
 | `help` | this table |
 
 Common options: `--since=<selector>` (default `15m`), `--until=<selector>`, `--service=<name>`, `--limit=<n>` (the lists: findings, traces, queries, errors, logs, marks; `endpoints` always lists every endpoint of the window), `--url=<base url>` (default `http://127.0.0.1:4000`, or `SPIDERSENSE_URL`), `--db=<path or jdbc url>`, `--json`, `--full`.
 `compare` takes no `--since`: its windows are the two selectors.
+`init` takes none of them at all: it asks nothing and nobody, and its own options are `--dir`, `--jar` and `--no-skill` ([init](#init)).
 
 Output is the text rendering above; `--json` prints the JSON instead.
 The CLI does not render anything itself: when a Spider Sense is running it fetches `format=text` and prints the body, and when none answers at `--url` it opens the database in process, runs the same queries and the same renderer, and says so on stderr:
@@ -277,6 +279,7 @@ Exit codes: `0` success (and `check` passed), `1` `check` failed, `2` usage or c
 ## Skill
 
 `skills/spider-sense/SKILL.md`, with references beside it, in the same form as Spider Silk's skill.
+`init` installs a copy of it into a project's `.claude/skills/spider-sense/` ([init](#init)).
 It is what an agent reads to run the loop without being told how:
 
 1. Start the application under the agent (`-javaagent`, or `JAVA_TOOL_OPTIONS` when the start command is not the agent's to change), and confirm with `status`.
@@ -287,9 +290,67 @@ It is what an agent reads to run the loop without being told how:
 
 The references list the finding kinds with the fix each usually wants (a fetch join or a batch for `n-plus-one`, an index or a rewrite for `slow-query`, and so on), the CLI table above, and how to start each kind of application under the agent (Gradle `run`, Spring Boot `bootRun`, a plain `java -jar`, a test task).
 
+## init
+
+```
+java -jar spider-sense.jar init [--dir=<project dir>] [--jar=<path>] [--no-skill]
+```
+
+`init` prepares a project to be worked on under Spider Sense, and it is the one command that reads nothing: no HTTP, no database, no running Spider Sense.
+It writes a short block into the project's `CLAUDE.md` and copies the skill into the project's `.claude/skills/`.
+`--dir` is the project directory and defaults to the working directory.
+
+**The jar path.** `--jar` when it is given, otherwise the distributable jar the command was started from: the launcher sets the system property `spidersense.jar` to its own absolute path before it invokes the CLI, because the CLI itself runs out of the nested server jar extracted to a temporary directory and could never find the distributable on its own.
+The path is written absolute, as given or as discovered, and never made relative to the project.
+When neither is known — exploded classes in an IDE, and no `--jar` — `init` says which option it needs and exits `2`.
+
+**The block.** It is delimited by `<!-- spider-sense:start -->` and `<!-- spider-sense:end -->`, each on a line of its own, and this is it:
+
+````markdown
+<!-- spider-sense:start -->
+## Spider Sense
+
+Spider Sense is a local-development APM for this project, and the jar is at `/home/me/tools/spider-sense.jar`.
+Start the application under it with `java -javaagent:/home/me/tools/spider-sense.jar -jar <app jar>`, or, when the start command is not yours to change, with `JAVA_TOOL_OPTIONS="-javaagent:/home/me/tools/spider-sense.jar" ./gradlew bootRun` (or `./gradlew run`).
+The UI is then at <http://127.0.0.1:4000> unless the port was changed.
+
+Ask it from the terminal; every answer is Markdown made for an agent:
+
+```bash
+java -jar /home/me/tools/spider-sense.jar findings --since=start  # ranked: N+1, slow queries, slow endpoints, errors, exhausted pools
+java -jar /home/me/tools/spider-sense.jar trace <id>  # one request as a tree
+java -jar /home/me/tools/spider-sense.jar mark before  # name a moment, exercise, then compare
+java -jar /home/me/tools/spider-sense.jar compare --before=before --after=after
+java -jar /home/me/tools/spider-sense.jar check --max-p95-ms=300 --max-n-plus-one=0
+java -jar /home/me/tools/spider-sense.jar help  # every command and every option
+```
+
+The loop — start, mark, exercise, findings, fix, compare, check — is in the skill at `.claude/skills/spider-sense/SKILL.md`.
+<!-- spider-sense:end -->
+````
+
+`/home/me/tools/spider-sense.jar` above is the jar path; everything else is written as it stands, and the block is generated from one place in the code.
+A second `init` replaces everything between the markers, including when the jar path has changed, and leaves the rest of the file byte for byte as it was; nothing else in the file is parsed or reformatted.
+When `CLAUDE.md` does not exist it is created with the block alone; when it exists without the markers the block is appended after one blank line.
+The last line names `skills/spider-sense/` of the Spider Sense repository (<https://github.com/benelog/spider-sense>) instead of `.claude/skills/spider-sense/SKILL.md` when `--no-skill` kept the skill from being installed.
+No port of the project is written: the block names the Spider Sense UI's own default, `http://127.0.0.1:4000`, and nothing else.
+
+**The skill.** `init` copies `skills/spider-sense/**` — `SKILL.md` and `references/*.md` — into `<dir>/.claude/skills/spider-sense/`, overwriting the files it owns and leaving anything else in that directory alone, unless `--no-skill` is given.
+A copy rather than a pointer, because the jar is the distributable and the repository it was built from may not be on the machine at all.
+The files travel inside the jar: the server module's build packages the repository's `skills/spider-sense/` directory into the resources under `spider-sense/skill/`, together with a generated `spider-sense/skill/index.txt` listing the relative paths, since a class loader cannot list a directory.
+The repository's `skills/spider-sense/` stays the single source; nothing is duplicated under `src/main/resources`.
+
+**What it prints**, one line each, on stdout, and then exit `0`:
+
+```
+wrote CLAUDE.md block (jar: /home/me/tools/spider-sense.jar)
+installed skill to /home/me/project/.claude/skills/spider-sense (4 files)
+```
+
+The first line is `updated CLAUDE.md block (…)` when the markers were already in the file, and the second is `skipped skill (--no-skill)` when the skill was not installed.
+
 ## Considered and deferred
 
 - **MCP.** The Skill and the CLI cover Claude Code and every agent with a shell, and the text API covers every agent with `curl`. MCP adds a typed tool list for hosts that have neither, at the price of a second protocol to keep in step with the API. When one is wanted it is an adapter over the same handlers, served on the existing port as `POST /mcp` (Streamable HTTP), with six tools at most: `findings`, `trace`, `mark`, `compare`, `check`, `sql`. Nothing in this document needs to change for it.
 - **Read-only SQL** (`POST /api/sql`, and `sql` in the CLI and MCP). A read-only connection with a row limit over the schema in storage.md. Deferred until a question comes up that findings and the tables cannot answer.
 - **Stack traces for slow spans.** The stock agent records none. A small OpenTelemetry extension (a `SpanProcessor` that captures the stack of a database span at its end when it ran longer than `slow.query.ms`, into `code.stacktrace`) would give `code` to `slow-query` and `n-plus-one` findings. Deferred: it is the first piece that is not the stock agent.
-- **`init`.** A command that writes a few lines about Spider Sense into a project's `CLAUDE.md`. Cheap; deferred until the skill has settled.
