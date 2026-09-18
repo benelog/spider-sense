@@ -269,6 +269,7 @@ function connectEvents() {
     const perSecond = data.perSecond || {};
     el.rateReadout.textContent = fmtRate(perSecond.spans || 0) + ' spans/s';
     el.rateReadout.title = 'Spans per second, and ' + fmtRate(perSecond.logs || 0) + ' logs/s';
+    noteDroppedSpans(data.droppedSpans);
   });
   events.addEventListener('service', () => {
     api.services().then((res) => {
@@ -400,6 +401,8 @@ function paintFoot() {
     row.hidden = true;
   }
 
+  noteDroppedSpans(store.droppedSpans);
+
   const warn = document.getElementById('foot-storage-warn');
   if (store.fallback) {
     warn.hidden = false;
@@ -412,6 +415,32 @@ function paintFoot() {
   } else {
     warn.hidden = true;
   }
+}
+
+/**
+ * The `dropping spans` line (docs/ui.md): shown while the ingest cap is biting, so a
+ * load test that crossed it reads as partial data rather than as a quiet application.
+ * It stays for a minute after the last increase and then goes.
+ */
+const DROPPING_HOLD_MS = 60_000;
+let droppedSpans = null;
+let droppingTimer = null;
+
+function noteDroppedSpans(count) {
+  if (typeof count !== 'number' || !isFinite(count)) return;
+  const first = droppedSpans === null;
+  const grew = !first && count > droppedSpans;
+  const wasAlreadyDropping = first && count > 0;
+  droppedSpans = count;
+  if (!grew && !wasAlreadyDropping) return;
+
+  const line = document.getElementById('foot-dropping');
+  if (!line) return;
+  line.hidden = false;
+  line.textContent = 'dropping spans';
+  line.title = fmtCount(count) + ' spans dropped by the ingest cap (spidersense.ingest.max-spans-per-second).';
+  clearTimeout(droppingTimer);
+  droppingTimer = setTimeout(() => { line.hidden = true; }, DROPPING_HOLD_MS);
 }
 
 function portOf(endpoint) {

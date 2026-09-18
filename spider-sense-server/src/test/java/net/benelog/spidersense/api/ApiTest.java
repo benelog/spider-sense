@@ -550,12 +550,16 @@ class ApiTest {
             assertThat(strings(status.getObject("ignore").getArray("endpoints")))
                     .containsExactly("/actuator/**", "/health", "/healthz", "/livez", "/readyz");
             assertThat(status.getObject("retention").getLong("hours")).isEqualTo(24);
+            assertThat(status.getObject("retention").getLong("spans")).isEqualTo(1_000_000);
+            assertThat(status.getObject("ingest").get("maxSpansPerSecond").isNull())
+                    .as("unset by default").isTrue();
             Json.JsonObject storage = status.getObject("storage");
             assertThat(storage.getString("url")).startsWith("jdbc:h2:mem:");
             assertThat(storage.get("path").isNull()).isTrue();
             assertThat(storage.getLong("sizeBytes")).isZero();
             assertThat(storage.getBoolean("fallback")).isFalse();
             assertThat(storage.getLong("droppedBatches")).isZero();
+            assertThat(storage.getLong("droppedSpans")).isZero();
             Json.JsonObject counts = status.getObject("counts");
             assertThat(counts.getLong("spans")).isEqualTo(3);
             assertThat(counts.getLong("traces")).isEqualTo(2);

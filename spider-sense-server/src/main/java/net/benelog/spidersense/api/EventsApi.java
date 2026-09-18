@@ -88,11 +88,12 @@ public final class EventsApi {
         }
     }
 
-    private record Counts(long spans, long traces, long logs) {
+    private record Counts(long spans, long traces, long logs, long droppedSpans) {
     }
 
     private Counts counts() {
-        return new Counts(queries.spanCount(), queries.traceCount(), queries.logCount());
+        return new Counts(queries.spanCount(), queries.traceCount(), queries.logCount(),
+                store.droppedSpans());
     }
 
     private Json.JsonObject stats(Counts current, Counts previous, double seconds) {
@@ -101,6 +102,7 @@ public final class EventsApi {
                 .put("spans", current.spans())
                 .put("traces", current.traces())
                 .put("logs", current.logs())
+                .put("droppedSpans", current.droppedSpans())
                 .put("perSecond", Json.obj()
                         .put("spans", Codecs.round(Math.max(0, current.spans() - previous.spans()) / seconds))
                         .put("logs", Codecs.round(Math.max(0, current.logs() - previous.logs()) / seconds)));

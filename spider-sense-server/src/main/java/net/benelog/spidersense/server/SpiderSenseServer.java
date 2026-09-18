@@ -20,6 +20,7 @@ import net.benelog.spidersense.ingest.OtlpDecoder;
 import net.benelog.spidersense.ingest.OtlpReceiver;
 import net.benelog.spidersense.query.MetricQueries;
 import net.benelog.spidersense.query.Queries;
+import net.benelog.spidersense.store.IngestCap;
 import net.benelog.spidersense.store.Store;
 import net.benelog.spidersilk.App;
 import net.benelog.spidersilk.HttpStatus;
@@ -78,7 +79,8 @@ public final class SpiderSenseServer implements AutoCloseable {
     public static Assembly assemble(Config config) {
         Store store = new Store(config.jdbcUrl(), config.databaseFile(), config.retentionHours(),
                 config.slowRequestMs(), config.slowQueryMs(), config.embeddedService(),
-                config.ignoreEndpoints());
+                config.ignoreEndpoints(), config.retentionSpans(),
+                IngestCap.of(config.maxSpansPerSecond()));
         AtomicInteger boundPort = new AtomicInteger(config.port());
 
         Queries queries = new Queries(store.sql(), store.tingles(), store.services());

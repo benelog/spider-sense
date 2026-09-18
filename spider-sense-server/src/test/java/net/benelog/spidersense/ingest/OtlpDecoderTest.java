@@ -3,6 +3,7 @@ package net.benelog.spidersense.ingest;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 
 import io.opentelemetry.proto.collector.trace.v1.ExportTraceServiceRequest;
 import io.opentelemetry.proto.trace.v1.Span;
@@ -13,6 +14,8 @@ import org.junit.jupiter.api.Test;
 import net.benelog.spidersense.Otlp;
 import net.benelog.spidersense.TestStore;
 import net.benelog.spidersense.store.Batch;
+import net.benelog.spidersense.store.IgnoredEndpoints;
+import net.benelog.spidersense.store.IngestCap;
 import net.benelog.spidersense.store.SpanRecord;
 import net.benelog.spidersense.store.Store;
 
@@ -197,5 +200,66 @@ class OtlpDecoderTest {
             assertThat(batch.spans().get(0).kind()).isEqualTo("SERVER");
         }
         assertThat(request.getResourceSpansCount()).isEqualTo(1);
+    }
+
+    // --- the ingest cap (docs/storage.md) -------------------------------------
+
+    private static Span.Builder capSpan(int n, long at) {
+        return Otlp.span("%032x".formatted(n), "%016x".formatted(n), "GET /orders",
+                Span.SpanKind.SPAN_KIND_SERVER, at, 5, Otlp.attr("http.route", "/orders"));
+    }
+
+    /** A store whose cap runs on a clock the test holds still, so one export is one second. */
+    private static Store capped(Long maxSpansPerSecond, AtomicLong clock) {
+        return new Store(TestStore.memoryUrl(), null, 24, 500, 100, null,
+                IgnoredEndpoints.DEFAULT, 0, new IngestCap(maxSpansPerSecond, clock::get));
+    }
+
+    @Test
+    void aBurstAboveTheCapKeepsWholeTracesAndCountsTheRest() {
+        AtomicLong clock = new AtomicLong(1_700_000_000_000L);
+        try (Store capped = capped(10L, clock)) {
+            OtlpDecoder capping = new OtlpDecoder(capped, () -> 4000);
+            Span.Builder[] burst = new Span.Builder[30];
+            for (int n = 0; n < burst.length; n++) {
+                burst[n] = capSpan(n + 1, clock.get());
+            }
+
+            Batch first = capping.accept(Otlp.traces(Otlp.service("orders"), burst));
+
+            assertThat(first.spans()).as("the tenth span of the second is the last one kept")
+                    .hasSize(10);
+            assertThat(capped.droppedSpans()).isEqualTo(20);
+            assertThat(first.spans()).extracting(SpanRecord::traceId)
+                    .containsExactlyElementsOf(List.of(1, 2, 3, 4, 5, 6, 7, 8, 9, 10).stream()
+                            .map("%032x"::formatted).toList());
+
+            Span.Builder[] more = new Span.Builder[10];
+            for (int n = 0; n < more.length; n++) {
+                more[n] = Otlp.child(capSpan(n + 1, clock.get()), "%016x".formatted(100 + n),
+                        "SELECT orders", Span.SpanKind.SPAN_KIND_CLIENT, clock.get(), 3,
+                        Otlp.attr("db.system", "h2"), Otlp.attr("db.statement", "select 1"));
+            }
+
+            Batch second = capping.accept(Otlp.traces(Otlp.service("orders"), more));
+
+            assertThat(second.spans()).as("a trace already being stored stays complete").hasSize(10);
+            assertThat(capped.droppedSpans()).isEqualTo(20);
+        }
+    }
+
+    @Test
+    void withNoCapNothingIsDropped() {
+        AtomicLong clock = new AtomicLong(1_700_000_000_000L);
+        try (Store uncapped = capped(null, clock)) {
+            OtlpDecoder plain = new OtlpDecoder(uncapped, () -> 4000);
+            Span.Builder[] burst = new Span.Builder[30];
+            for (int n = 0; n < burst.length; n++) {
+                burst[n] = capSpan(n + 1, clock.get());
+            }
+
+            assertThat(plain.accept(Otlp.traces(Otlp.service("orders"), burst)).spans()).hasSize(30);
+            assertThat(uncapped.droppedSpans()).isZero();
+        }
     }
 }

@@ -417,6 +417,7 @@ setInterval(() => {
     spans: spanTotal,
     traces: traces.length,
     logs: logs.length,
+    droppedSpans: 0,
     perSecond: { spans: Math.round(n * 8 * 10) / 10, logs: Math.round(n * 1.5 * 10) / 10 },
   });
 }, 3000);
@@ -868,7 +869,8 @@ function statusBody() {
     },
     embeddedService: null,
     thresholds: { slowRequestMs: SLOW_REQUEST_MS, slowQueryMs: SLOW_QUERY_MS, responseBucketsMs: RESPONSE_BUCKETS },
-    retention: { hours: 24 },
+    retention: { hours: 24, spans: 1_000_000 },
+    ingest: { maxSpansPerSecond: null },
     storage: {
       url: 'jdbc:h2:file:~/db/spider-sense/store;AUTO_SERVER=TRUE',
       path: '/home/benelog/db/spider-sense/store.mv.db',
@@ -876,6 +878,7 @@ function statusBody() {
       fallback: false,
       fallbackReason: null,
       droppedBatches: 0,
+      droppedSpans: 0,
       queued: 0,
     },
     counts: {
