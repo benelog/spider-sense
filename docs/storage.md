@@ -187,6 +187,11 @@ After each flush the writer recomputes the `trace` rows of the trace ids the flu
 The `service` row is merged on every flush that carries the service; when the sighting carries a `process.pid` that differs from the stored one (or the row is new), the writer also inserts a `mark` named `start` for that service with the note `pid <pid>`, which is what `since=start` resolves to.
 A JVM shutdown hook flushes what is queued.
 
+**The ingest cap.** `spidersense.ingest.max-spans-per-second` (unset by default) protects the file from a load test.
+The receiver counts the spans it has accepted in the current wall-clock second; once the count is over the cap, a span whose trace id is not among the traces accepted in the last 10,000 (a bounded, insertion-ordered set of trace ids) is dropped, and a span of a trace already accepted is kept, so every stored trace stays complete and the dropped ones are whole traces.
+Logs and metric points are never dropped.
+The dropped spans are counted in `/api/status.storage.droppedSpans` and carried on the SSE `stats` event as `droppedSpans`, and the UI shows it in the sidebar foot while it grows (ui.md).
+
 Metric points are written on the same path; a series row is looked up by `(service, name, attr_hash)` through a small in-memory cache of ids.
 
 ## How it is read
@@ -216,7 +221,11 @@ Its open refuses a missing file and refuses another `schema_version` instead of 
 A daemon sweeper runs a minute after start and every five minutes after that: `DELETE FROM span|trace|log|metric_point|tingle|mark WHERE <time> < now - retention`, then `metric_series` rows with no points.
 `DELETE /api/data` runs the same deletes without the time bound.
 At 24 hours of a few requests per second the file stays in the low hundreds of megabytes; H2 reclaims space on the next compaction when the database closes.
-`spidersense.retention.spans` and the other count caps from the earlier in-memory design are gone; time is the only retention.
+
+Time is the retention, and one row cap guards it: `spidersense.retention.spans` (default 1,000,000; `0` for none).
+After the time sweep, while `SELECT COUNT(*) FROM span` is above the cap, the sweeper takes the oldest hour of data (`MIN(start_ms)` of `span`, plus one hour) and deletes every row of `span`, `trace`, `log`, `metric_point` and `tingle` before that instant, marks included only when they are older than the retention as before; one hour at a time, so a cap crossed by a little costs a little.
+The cap is by rows rather than by file size because an H2 file does not shrink when rows go: a size read after a delete would say the same number and ask for the next hour, until nothing was left.
+`/api/status.retention` reports both, `{ "hours": 24, "spans": 1000000 }`.
 
 ## Failure
 

@@ -59,6 +59,9 @@ Every property is a lazy Gradle `Property`; unset means "leave the jar's own def
 | `open` | `Boolean` | unset (`false`) | `-Dspidersense.open=`: open the browser at startup |
 | `appPackages` | `List<String>` | unset | `-Dspidersense.app.packages=`, the list joined with commas |
 | `ignoreEndpoints` | `List<String>` | unset (the jar's default list) | `-Dspidersense.ignore.endpoints=`, the list joined with commas; an empty list set explicitly (`ignoreEndpoints = []`) passes an empty value, which ignores nothing |
+| `retentionSpans` | `Long` | unset (`1000000`) | `-Dspidersense.retention.spans=` |
+| `maxSpansPerSecond` | `Long` | unset | `-Dspidersense.ingest.max-spans-per-second=` |
+| `check { }` | a nested block | see [Check as a build step](#check-as-a-build-step) | the rules of the `spiderSenseCheck` task |
 
 Where the jar comes from, in order: the project property `spiderSense.jar`, then the block's `jar`, then the single file of the `spiderSense` configuration.
 More than one file in the configuration, or none, is an error naming the configuration when a task that needs the jar runs.
@@ -100,6 +103,47 @@ The exit code is the CLI's exit code, which is what `check` is for.
 
 `spiderSenseInit` runs `init --dir=<the project directory> --jar=<the jar>` ([agent.md](agent.md#init)): it writes the Spider Sense block into the project's `CLAUDE.md` and installs the skill into `.claude/skills/`.
 The jar path it writes is wherever Gradle resolved the jar to, a file under `~/.gradle/caches/` for a Maven Central jar, which stays valid until the version changes; run it again after a `version` bump.
+
+### Check as a build step
+
+`spiderSenseCheck` runs the CLI's `check` ([agent.md](agent.md#check)) with the rules of the `check { }` block and fails the build when the verdict is `fail`:
+
+```groovy
+spiderSense {
+    check {
+        since = 'start'          // the default: since the application was last started
+        maxP95Ms = 300
+        maxNPlusOne = 0
+        maxErrors = 0
+    }
+}
+```
+
+```bash
+./gradlew bootRun &                  # or the test task forwarding to a standalone, as below
+./gradlew test spiderSenseCheck
+```
+
+| Property | Type | Becomes |
+|---|---|---|
+| `since` | `String` | `--since=`; default `start` |
+| `until` | `String` | `--until=` |
+| `service` | `String` | `--service=`; default the block's `service` |
+| `endpoint` | `String` | `--endpoint=` |
+| `maxP95Ms` | `Long` | `--max-p95-ms=` |
+| `maxErrors` | `Long` | `--max-errors=` |
+| `maxErrorRate` | `Double` | `--max-error-rate=` |
+| `maxQueriesPerRequest` | `Double` | `--max-queries-per-request=` |
+| `maxSlowQueries` | `Long` | `--max-slow-queries=` |
+| `maxNPlusOne` | `Long` | `--max-n-plus-one=` |
+| `maxLogErrors` | `Long` | `--max-log-errors=` |
+| `minApdex` | `Double` | `--min-apdex=` |
+| `failOnNoRequests` | `Boolean` | default `true`: exit code `3` (no request in the window) fails the build too, because a check that judged nothing is not a pass |
+
+The task is the `spiderSense` task with `check` and those arguments, so it asks the Spider Sense the block implies (`SPIDERSENSE_URL` as above) and prints the check's text rendering; exit code `1` fails the build with `Spider Sense check failed`, `3` with `Spider Sense check had no request to judge` unless `failOnNoRequests` is `false`, and `2` or `4` with the CLI's own message.
+With no rule set the CLI's defaults apply (`maxErrors=0`, `maxNPlusOne=0`, `maxP95Ms=<slow.request.ms>`).
+`-PspiderSense.check.since=before` overrides `since` for one run.
+The task depends on nothing: producing the traffic it judges is the build's job, as in the test setup below.
 
 ### Tests
 

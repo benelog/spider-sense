@@ -41,8 +41,9 @@ Partial-success is never reported (everything decodable is stored).
   "embeddedService": "silk-bookstore" | null,
   "thresholds": { "slowRequestMs": 500, "slowQueryMs": 100, "responseBucketsMs": [125, 500, 2000] },
   "ignore": { "endpoints": ["/actuator/**", "/health", "/healthz", "/livez", "/readyz"] },   // design.md's spidersense.ignore.endpoints, as configured
-  "retention": { "hours": 24 },
-  "storage": { "url": "jdbc:h2:~/db/spider-sense/sense;AUTO_SERVER=TRUE", "path": "/home/me/db/spider-sense/sense.mv.db", "sizeBytes": 12345678, "fallback": false, "fallbackReason": null, "droppedBatches": 0, "queued": 0 },
+  "retention": { "hours": 24, "spans": 1000000 },
+  "ingest": { "maxSpansPerSecond": null | 5000 },
+  "storage": { "url": "jdbc:h2:~/db/spider-sense/sense;AUTO_SERVER=TRUE", "path": "/home/me/db/spider-sense/sense.mv.db", "sizeBytes": 12345678, "fallback": false, "fallbackReason": null, "droppedBatches": 0, "droppedSpans": 0, "queued": 0 },
   "counts": { "spans": 12345, "traces": 2345, "logs": 456, "metricSeries": 78, "services": 2 },
   "oldest": { "span": 1758000000000, "log": 1758000000000 }
 }
@@ -61,7 +62,7 @@ event: tingle
 data: {"kind":"slow-request"|"slow-query"|"error","at":1758000000000,"service":"spring-orders","title":"GET /orders/report","detail":"1,532 ms","traceId":"...","spanId":"...","durationMs":1532.4}
 
 event: stats
-data: {"at":1758000000000,"spans":12345,"traces":2345,"logs":456,"perSecond":{"spans":12.5,"logs":3.0}}
+data: {"at":1758000000000,"spans":12345,"traces":2345,"logs":456,"droppedSpans":0,"perSecond":{"spans":12.5,"logs":3.0}}
 
 event: service
 data: {"name":"spring-orders","firstSeen":1758000000000}
@@ -381,9 +382,11 @@ A mark named `start` is inserted by the writer when a service reports a `process
 `Finding`:
 
 ```json
-{ "id": "n-plus-one:1a2b3c4d5e6f", "kind": "error" | "n-plus-one" | "slow-query" | "slow-endpoint" | "slow-job" | "pool-exhausted",
+{ "id": "n-plus-one:1a2b3c4d5e6f",
+  "kind": "error" | "log-error" | "n-plus-one" | "slow-query" | "slow-endpoint" | "slow-job" | "slow-external" | "pool-exhausted" | "gc-pause" | "heap-pressure" | "thread-growth",
   "severity": "high" | "medium" | "low", "service": "…", "title": "…", "why": "…",
-  "subject": { "endpointId": "…" | null, "queryId": "…" | null, "errorId": "…" | null, "pool": "…" | null, "job": "…" | null },
+  "subject": { "endpointId": "…" | null, "queryId": "…" | null, "errorId": "…" | null, "pool": "…" | null, "job": "…" | null,
+               "target": "…" | null, "logger": "…" | null, "jvm": "…" | null },
   "numbers": { ...kind-specific, see agent.md... },
   "statement": "…" | null, "code": [ "orders.OrderService.load(OrderService.java:41)" ], "traces": [ "<traceId>" ] }
 ```
@@ -405,7 +408,7 @@ A mark named `start` is inserted by the writer when a service reports a `process
 
 ### Check
 
-`GET /api/check?since&until&service&endpoint&maxP95Ms&maxErrors&maxErrorRate&maxQueriesPerRequest&maxSlowQueries&maxNPlusOne&minApdex`
+`GET /api/check?since&until&service&endpoint&maxP95Ms&maxErrors&maxErrorRate&maxQueriesPerRequest&maxSlowQueries&maxNPlusOne&maxLogErrors&minApdex`
 
 ```json
 { "pass": true | false | null, "requests": 12, "reason": "no requests in the window" | null,

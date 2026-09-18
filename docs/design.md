@@ -81,6 +81,8 @@ All via system properties (agent mode has no other channel before `main`); the s
 | `spidersense.service` | unset | agent mode: sets `otel.service.name` |
 | `spidersense.db` | `~/db/spider-sense/sense` | H2 database path or `jdbc:h2:` URL (`AUTO_SERVER=TRUE` is appended to a path); see [storage.md](storage.md) |
 | `spidersense.retention.hours` | `24` | rows older than this are deleted by the sweeper |
+| `spidersense.retention.spans` | `1000000` | the most `span` rows kept; the sweeper deletes the oldest hour of everything until under it ([storage.md](storage.md#retention)); `0` means no cap |
+| `spidersense.ingest.max-spans-per-second` | unset | above this many spans in one second the receiver drops the spans of traces it has not seen yet and counts them on `/api/status` ([storage.md](storage.md#how-it-is-written)) |
 | `spidersense.slow.request.ms` | `500` | a server span slower than this is a "tingle" |
 | `spidersense.slow.query.ms` | `100` | a DB span slower than this is a "tingle" |
 | `spidersense.open` | `false` | agent mode: open the browser at startup (`java.awt.Desktop`), best effort |
@@ -144,6 +146,9 @@ The processor counts, per thread, how many database spans of the current trace h
 When a statement reaches its fifth repeat — the same number that makes a query group an N+1 on the server (agent.md) — the stack is captured on that one span and on no later repeat, so the cost is one capture per repeated statement per trace, and the server's `n-plus-one` rule prefers the span of the group that carries `code.stacktrace` for the finding's `code`.
 A trace whose repeats end on several threads is counted per thread and may fall short of five on each; that is a known limit of keeping the counter thread-local, chosen because the alternative is a shared map with the life of every trace to manage.
 At most 256 distinct statements are counted per trace; beyond that the counter stops and nothing else changes.
+
+The third case is a slow outbound call: a `CLIENT` span that is not a database span (no `db.system`/`db.system.name`) and has taken at least `spidersense.slow.request.ms` (`SPIDERSENSE_SLOW_REQUEST_MS`; default 500, read once like the other threshold) gets the same `code.stacktrace`, so a `slow-external` finding (agent.md) names the line that made the call.
+The same frames are dropped, the same cap applies, and a span that already carries the attribute is left alone.
 The lines are formatted like `Throwable.printStackTrace` writes them (`\tat package.Class.method(File.java:41)`, one per line, no header), so the server reduces them to application frames with exactly the code it already uses for `exception.stacktrace` ([agent.md](agent.md)).
 The leading frames of `Thread.getStackTrace`, of the processor itself and of `io.opentelemetry.` (the SDK's own `end()` path) are dropped, and the trace is cut at 64 frames.
 `isStartRequired()` and `isEndRequired()` are false, `isOnEndingRequired()` is true, and anything thrown inside `onEnding` is swallowed: a missing code location is never worth a broken span.

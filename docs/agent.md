@@ -76,7 +76,7 @@ So `since=start` means "since the application was last restarted", which is what
 `GET /api/findings?since&until&service&limit=20&format=text|json`
 
 A finding is one thing worth fixing, found by rules over the window.
-Findings are ranked by severity (`high` before `medium` before `low`; no rule produces `low` today, the value is reserved for gentler kinds), then by impact within a kind, then by id, so the list is stable between two calls over the same data.
+Findings are ranked by severity (`high` before `medium` before `low`; no rule produces `low` today, the value is reserved for gentler kinds), then by kind in the order of the table below, then by impact within a kind, then by id, so the list is stable between two calls over the same data.
 `limit` defaults to 20 and is at most 100.
 
 | Kind | Rule | Severity | Impact |
@@ -86,7 +86,16 @@ Findings are ranked by severity (`high` before `medium` before `low`; no rule pr
 | `slow-query` | a query group whose p95 exceeds `slow.query.ms` | `high` when p95 exceeds ten times the threshold, else `medium` | total time |
 | `slow-endpoint` | an endpoint whose p95 exceeds `slow.request.ms` | `high` when p95 exceeds four times the threshold (the "frustrated" bound of the Apdex), else `medium` | total time |
 | `slow-job` | a job (a root `INTERNAL` span, design.md: a scheduled method, an `@Async` call, a batch step), grouped by `(service, span name)`, whose p95 exceeds `slow.request.ms` | as `slow-endpoint` | total time |
+| `slow-external` | an outbound HTTP call: `CLIENT` spans of category `http`, grouped by `(service, target, span name)` where `target` is the dependency target of api.md (`localhost:8081`), whose p95 exceeds `slow.request.ms` | as `slow-endpoint` | total time |
+| `log-error` | log records of severity `ERROR` or above, grouped by `(service, logger, message normalised as an error message is)`, counting only the records that are **uncovered**: without a trace id, or with a trace id whose trace has no error span; a group with at least one uncovered record in the window | `high` | uncovered count |
 | `pool-exhausted` | a JDBC pool with a point in the window where pending requests are above zero, or used equals max | `high` | pending, then used |
+| `gc-pause` | one collector (`jvm.gc.duration` per `jvm.gc.name` and `jvm.gc.action`) with a point in the window whose longest single collection (`max`) is at least `slow.request.ms`, or whose collections summed over the export interval take at least 10% of that interval | `high` for a single collection over the threshold, else `medium` | the longest collection |
+| `heap-pressure` | heap `jvm.memory.used` (summed over the heap pools) at 90% or more of the heap `jvm.memory.limit` at any point in the window | `high` | the highest ratio |
+| `thread-growth` | `jvm.thread.count` at the last point of the window is at least 50 above the first point, or at least twice it when the first point is 20 or more | `medium` | last minus first |
+
+A `log-error` is what `catch (Exception e) { log.error(…, e); return fallback; }` leaves behind: no span error, no exception event, one line in the log.
+A record whose trace has an error span is already reported by an `error` finding and is not counted twice.
+The three JVM kinds read the same `metric_point` series the JVM page draws, so a run that is slow because it is collecting or swapping is named for what it is instead of producing `slow-endpoint` findings that point at the wrong thing.
 
 Each finding carries:
 
@@ -98,7 +107,8 @@ Each finding carries:
   "service": "spring-orders",
   "title": "GET /orders/{id} runs SELECT order_line 42 times per request",   // one line, no numbers a person would not say aloud
   "why": "3 of 3 requests repeated it; 42, 42 and 41 times; 38.2 ms per request in that statement",
-  "subject": { "endpointId": "…" | null, "queryId": "…" | null, "errorId": "…" | null, "pool": "…" | null, "job": "…" | null },
+  "subject": { "endpointId": "…" | null, "queryId": "…" | null, "errorId": "…" | null, "pool": "…" | null, "job": "…" | null,
+               "target": "…" | null, "logger": "…" | null, "jvm": "gc:G1 Young Generation" | "heap" | "threads" | null },
   "numbers": { … },                         // kind-specific, listed below
   "statement": "SELECT … FROM order_line WHERE order_id = ?" | null,
   "code": [ "orders.OrderService.load(OrderService.java:41)" ],   // application frames, most specific first, at most 5; empty when none is known
@@ -111,11 +121,19 @@ Each finding carries:
 - `error`: `count`, `firstSeen`, `lastSeen`, `type`, `message` (normalised), `endpoints` (name and count, as api.md's `ErrorGroup.endpoints`).
 - `n-plus-one`: `requests` (entry spans of the endpoint in the window, as design.md defines an entry span), `affected` (of them, how many repeated), `medianRepeats`, `maxRepeats`, `msPerRequest` (summed time of the repeated statement, per affected request).
 - `slow-query`: `calls`, `slowCalls`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `callers` (as api.md's `QueryStats.callers`).
-- `slow-endpoint`: `calls`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `apdex`, `dbCallsPerRequest`, `dbMsPerRequest`, `dbShare` (0..1: the part of the endpoint's total time spent in database spans of the same trace and service).
-- `slow-job`: `runs`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `dbCallsPerRun`, `dbMsPerRun`, `dbShare`, the same measures as `slow-endpoint` over the job's runs; `subject.job` is the span name and the title is `<job> is slow`.
+- `slow-endpoint`: `calls`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `apdex`, `dbCallsPerRequest`, `dbMsPerRequest`, `dbShare` (0..1: the part of the endpoint's total time spent in database spans of the same trace and service), `hotSpan`.
+- `slow-job`: `runs`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `dbCallsPerRun`, `dbMsPerRun`, `dbShare`, the same measures as `slow-endpoint` over the job's runs, `hotSpan`; `subject.job` is the span name and the title is `<job> is slow`.
+- `slow-external`: `calls`, `errors`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `callers` (as `slow-query`'s: the entry spans up the chain); `subject.target` is the target and the title is `GET localhost:8081 is slow` (the span name, then the target).
+- `log-error`: `count` (uncovered records), `firstSeen`, `lastSeen`, `logger`, `message` (normalised), `endpoints` (the entry span of each record's trace, as `error`'s `endpoints`; `(no endpoint)` for a record without one); `subject.logger` is the logger and the title is `ERROR in <logger short name>: <message cut at 80>`.
 - `pool-exhausted`: `pool`, `max`, `usedMax`, `pendingMax`, `at` (the worst point).
+- `gc-pause`: `gc`, `action`, `worstMs` (the longest single collection), `shareMax` (0..1, the worst interval's collection time over its length), `collections` (over the window), `at`; `subject.jvm` is `gc:<name>` and the title is `<gc> paused for <worstMs>`.
+- `heap-pressure`: `usedMax`, `limit`, `ratioMax` (0..1), `at`; `subject.jvm` is `heap` and the title is `heap at <ratio>% of its limit`.
+- `thread-growth`: `first`, `last`, `max`, `at` (the last point); `subject.jvm` is `threads` and the title is `threads grew from <first> to <last>`.
 
-`traces` are the three slowest traces for `slow-*`, the three newest for `error`, the three most recent affected for `n-plus-one`, none for `pool-exhausted`.
+`hotSpan` is where the time went in the finding's first evidence trace: `{ "name": "<summary>", "category": "db" | "http" | "internal" | …, "selfMs": 312.4, "share": 0.62 }`, the span with the largest self time (its duration minus the durations of its direct children, never below zero, as the Profile view computes it) and that self time's share of the trace's duration; `null` when the finding has no trace.
+It is the first clue when `dbShare` is low, and in the text rendering it is one line, `hot span: <name> · <selfMs> self · <share>`.
+
+`traces` are the three slowest traces for `slow-*`, the three newest for `error` and `log-error` (records with a trace id), the three most recent affected for `n-plus-one`, none for `pool-exhausted` and the JVM kinds.
 A job is never a request: it is not in `requests`, not in the Apdex and not in `check`; `slow-job` is the one place a slow scheduler tick or batch step is reported.
 An endpoint that `spidersense.ignore.endpoints` excludes (design.md) is not an entry span and produces no finding of any kind.
 
@@ -125,7 +143,8 @@ A stack trace is reduced to its application frames: frames whose package is not 
 
 Framework prefixes dropped by default: `java.`, `javax.`, `jdk.`, `sun.`, `com.sun.`, `jakarta.`, `org.springframework.`, `org.hibernate.`, `org.eclipse.jetty.`, `org.apache.`, `io.opentelemetry.`, `com.zaxxer.`, `org.h2.`, `net.benelog.spidersilk.`, `kotlin.`, `scala.`, `reactor.`, `io.netty.`, `ch.qos.logback.`, `org.slf4j.`, `org.junit.`, `gg.jte.`.
 
-Slow queries and repeated queries have a code location too, and it is the one thing Spider Sense collects itself: its OpenTelemetry extension ([design.md](design.md#the-extension)) sets `code.stacktrace` on every database span that ran at least `slow.query.ms`, and on the fifth repeat of a statement within one trace, so `slow-query` and `n-plus-one` findings carry `code` just as an error does.
+Slow queries, repeated queries and slow outbound calls have a code location too, and it is the one thing Spider Sense collects itself: its OpenTelemetry extension ([design.md](design.md#the-extension)) sets `code.stacktrace` on every database span that ran at least `slow.query.ms`, on the fifth repeat of a statement within one trace, and on every non-database `CLIENT` span that ran at least `slow.request.ms`, so `slow-query`, `n-plus-one` and `slow-external` findings carry `code` just as an error does.
+A `log-error` finding takes its `code` from the `exception.stacktrace` attribute of the group's newest record, when the logging bridge exported one.
 Those frames are the truest of the three, because they are the span's own thread at the moment the statement finished, not a guess from an attribute; they are reduced by the same rules as `exception.stacktrace` above.
 An `n-plus-one` finding takes its `code` from the span of the repeated group that carries `code.stacktrace`, which is the fifth repeat, and falls back to the group's newest span when none does (an application run without the extension).
 A `slow-job` finding takes its `code` from the `code.function` and `code.namespace` attributes the scheduling instrumentations set on the job's span.
@@ -175,6 +194,7 @@ Rules are query parameters; every rule given is evaluated, and when none is give
 | `maxQueriesPerRequest` | database spans per entry span, the highest of any endpoint |
 | `maxSlowQueries` | query calls over `slow.query.ms` |
 | `maxNPlusOne` | `n-plus-one` findings |
+| `maxLogErrors` | `log-error` findings' uncovered records summed |
 | `minApdex` | the Apdex over the scope |
 
 `endpoint` narrows the scope to one endpoint, by `endpointId` or by name (`GET /orders/{id}`).
@@ -260,7 +280,7 @@ The server speaks the Model Context Protocol in two transports, and both are the
 | `trace` | `traceId` (required), `full` | the trace tree |
 | `mark` | `name` (required, `[A-Za-z0-9._-]{1,64}`), `note`, `service` | the mark, as the CLI prints it |
 | `compare` | `before`, `after` (both required), `until`, `service` | the compare text |
-| `check` | `since`, `until`, `service`, `endpoint`, `maxP95Ms`, `maxErrors`, `maxErrorRate`, `maxQueriesPerRequest`, `maxSlowQueries`, `maxNPlusOne`, `minApdex` | the check text; `structuredContent` carries `{ "pass": true \| false \| null, "requests": n }` so a host need not read the heading for the verdict |
+| `check` | `since`, `until`, `service`, `endpoint`, `maxP95Ms`, `maxErrors`, `maxErrorRate`, `maxQueriesPerRequest`, `maxSlowQueries`, `maxNPlusOne`, `maxLogErrors`, `minApdex` | the check text; `structuredContent` carries `{ "pass": true \| false \| null, "requests": n }` so a host need not read the heading for the verdict |
 | `sql` | `sql` (required), `limit` (1–5000) | the sql text |
 
 A result is `{ "content": [ { "type": "text", "text": "<the Markdown>" } ] }`.
@@ -355,7 +375,7 @@ The launcher stays dependency-free.
 | `mark <name> [--note=…]` | records a mark now |
 | `marks` | lists marks |
 | `compare --before=<selector> --after=<selector> [--until=<selector>]` | the two windows side by side |
-| `check [--max-p95-ms=] [--max-errors=] [--max-error-rate=] [--max-queries-per-request=] [--max-slow-queries=] [--max-n-plus-one=] [--min-apdex=] [--endpoint=]` | pass or fail, in the exit code |
+| `check [--max-p95-ms=] [--max-errors=] [--max-error-rate=] [--max-queries-per-request=] [--max-slow-queries=] [--max-n-plus-one=] [--max-log-errors=] [--min-apdex=] [--endpoint=]` | pass or fail, in the exit code |
 | `sql "<statement>" [--limit=200]` | one read-only statement over the schema of storage.md |
 | `init [--dir=<project dir>] [--jar=<path>] [--no-skill] [--mcp]` | writes the Spider Sense block into the project's `CLAUDE.md` and installs the skill into its `.claude/skills/`; `--mcp` also writes the stdio MCP server into its `.mcp.json` |
 | `mcp` | the MCP server over stdio ([MCP](#mcp)); takes `--url` and `--db` and nothing else |
