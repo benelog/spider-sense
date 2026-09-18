@@ -17,7 +17,12 @@ The list is bounded: 20 by default, 100 at most.
 | `slow-query` | a query group whose p95 exceeds `slow.query.ms` | `high` when p95 exceeds ten times the threshold, else `medium` | total time |
 | `slow-endpoint` | an endpoint whose p95 exceeds `slow.request.ms` | `high` when p95 exceeds four times the threshold, else `medium` | total time |
 | `slow-job` | a job (a root `INTERNAL` span: a scheduled method, an `@Async` call, a batch step), grouped by (service, span name), whose p95 exceeds `slow.request.ms` | `high` when p95 exceeds four times the threshold, else `medium` | total time |
+| `slow-external` | an outbound HTTP call: `CLIENT` spans of category `http`, grouped by (service, target, span name), whose p95 exceeds `slow.request.ms` | `high` when p95 exceeds four times the threshold, else `medium` | total time |
+| `log-error` | log records of severity `ERROR` or above, grouped by (service, logger, normalised message), counting only the **uncovered** ones: without a trace id, or with a trace id whose trace has no error span | `high` | uncovered count |
 | `pool-exhausted` | a JDBC pool with a point in the window where pending requests are above zero, or used equals max | `high` | pending, then used |
+| `gc-pause` | one collector (`jvm.gc.duration` per name and action) with a point whose longest single collection is at least `slow.request.ms`, or whose collections take at least 10% of the export interval | `high` for a single collection over the threshold, else `medium` | the longest collection |
+| `heap-pressure` | heap `jvm.memory.used` at 90% or more of the heap `jvm.memory.limit` at any point in the window | `high` | the highest ratio |
+| `thread-growth` | `jvm.thread.count` at the last point at least 50 above the first, or at least twice it when the first is 20 or more | `medium` | last minus first |
 
 The thresholds are the server's: `slow.request.ms` is 500 by default and `slow.query.ms` is 100.
 `status` prints the ones in force.
@@ -29,20 +34,20 @@ The thresholds are the server's: `slow.request.ms` is 500 by default and `slow.q
 | `id` | kind plus 12 hex characters over (kind, service, subject); stable across windows, so the same problem keeps its id between runs |
 | `title` | one line, the claim |
 | `why` | the numbers that justify it, in a sentence: quote this rather than restating it |
-| `subject` | the `endpointId`, `queryId`, `errorId`, `pool` or `job` to pass to `endpoints`, `queries`, `errors` or the API |
+| `subject` | the `endpointId`, `queryId`, `errorId`, `pool`, `job`, `target`, `logger` or `jvm` to pass to `endpoints`, `queries`, `errors`, `logs` or the API |
 | `numbers` | kind-specific, listed below |
 | `statement` | the statement as the OpenTelemetry agent sanitised it, literals already `?`; cut at 200 characters unless `--full` |
 | `code` | application frames, most specific first, at most 5; empty when none is known |
 | `traces` | at most 3 trace ids: the evidence, and what `trace <id>` opens |
 
-`traces` are the three slowest traces for `slow-*`, the three newest for `error`, the three most recent affected for `n-plus-one`, and none for `pool-exhausted`.
+`traces` are the three slowest traces for `slow-*`, the three newest for `error` and `log-error`, the three most recent affected for `n-plus-one`, and none for `pool-exhausted` and the three JVM kinds.
 
 In the text output the ranked table comes first and these fields follow as one numbered block per row, in that order and mostly without labels:
-`<n>. <id> — <why>`, then the `numbers` on one line as `name value, name value`, then the `statement` when there is one, then the `code` frames one per line, then `traces: <id> <id>`.
+`<n>. <id> — <why>`, then the `numbers` on one line as `name value, name value`, then `hot span: <name> · <selfMs> self · <share>` when the kind has one, then the `statement` when there is one, then the `code` frames one per line, then `traces: <id> <id>`.
 
-**About `code`.** The OpenTelemetry Java agent does not record where a span was started from, so `code` comes from the `exception.stacktrace` of an error, the `code.function` / `code.namespace` attributes that a few instrumentations set, and the `code.stacktrace` that Spider Sense's own agent extension captures on a database span.
-The extension captures that stack on every database span slower than `slow.query.ms` and on the fifth repeat of a statement within one trace, which is what gives `slow-query` and `n-plus-one` findings a line.
-It is therefore reliable for `error`, `slow-query` and `n-plus-one` findings, and often empty for the others; when it is empty, open a trace from `traces` and read the tree, which names the endpoint and the statement even when it cannot name the line.
+**About `code`.** The OpenTelemetry Java agent does not record where a span was started from, so `code` comes from the `exception.stacktrace` of an error, the `code.function` / `code.namespace` attributes that a few instrumentations set, and the `code.stacktrace` that Spider Sense's own agent extension captures.
+The extension captures that stack on every database span slower than `slow.query.ms`, on the fifth repeat of a statement within one trace, and on every non-database `CLIENT` span slower than `slow.request.ms`, which is what gives `slow-query`, `n-plus-one` and `slow-external` findings a line.
+It is therefore reliable for `error`, `slow-query`, `n-plus-one` and `slow-external` findings, often present for `log-error`, and often empty for the others; when it is empty, open a trace from `traces` and read the tree, which names the endpoint and the statement even when it cannot name the line.
 A stack trace is reduced to its application frames by dropping known framework prefixes (`java.`, `jakarta.`, `org.springframework.`, `org.hibernate.`, `org.apache.`, `com.zaxxer.`, `org.h2.`, `io.opentelemetry.` and others).
 When that heuristic guesses wrong, `-Dspidersense.app.packages=com.acme,org.acme` replaces it with an allowlist.
 
@@ -152,7 +157,11 @@ Re-run the same exercise and check the query's `p95` and `total` columns in `com
 
 ## `slow-endpoint`
 
-`numbers`: `calls`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `apdex`, `dbCallsPerRequest`, `dbMsPerRequest`, `dbShare` (0..1 in the JSON, the part of the endpoint's total time spent in database spans of the same trace and service; the text prints it as a percentage, `93.0%`).
+`numbers`: `calls`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `apdex`, `dbCallsPerRequest`, `dbMsPerRequest`, `dbShare` (0..1 in the JSON, the part of the endpoint's total time spent in database spans of the same trace and service; the text prints it as a percentage, `93.0%`), `hotSpan`.
+
+`hotSpan` is where the time went in the first evidence trace: the span with the largest self time (its duration minus the durations of its direct children), that time, and its share of the trace.
+It reads as one line, `hot span: SELECT order_line · 312.4 ms self · 62.0%`, and it is the first clue when `dbShare` is low, because it names the span instead of leaving the trace to be read.
+It is `null` only when the finding has no trace.
 
 `dbShare` is the fork in the road.
 
@@ -181,7 +190,7 @@ An endpoint that fans out to several independent calls can run them together rat
 
 ## `slow-job`
 
-`numbers`: `runs`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `dbCallsPerRun`, `dbMsPerRun`, `dbShare` (0..1 in the JSON, the part of the job's total time spent in database spans of the same trace and service; the text prints it as a percentage).
+`numbers`: `runs`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `dbCallsPerRun`, `dbMsPerRun`, `dbShare` (0..1 in the JSON, the part of the job's total time spent in database spans of the same trace and service; the text prints it as a percentage), `hotSpan` (the same line `slow-endpoint` carries, over the job's first evidence trace).
 
 A job is a root `INTERNAL` span: a scheduled method, an `@Async` call, a batch step.
 It is work the application did to itself, so it is never an entry span: it is in no request count, in no Apdex and in no `check` verdict, and this finding is the one place a slow scheduler tick or batch step is reported.
@@ -218,6 +227,42 @@ A job that has grown slower than its own interval overlaps with itself; `runs` a
 
 ---
 
+## `slow-external`
+
+`numbers`: `calls`, `errors`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `callers` (endpoint, service and calls, the nearest entry span up the parent chain).
+
+The group is `(service, target, span name)`, where the target is what the service map calls the dependency (`localhost:8081`, a queue, an RPC service), so one row is one thing this service calls rather than every outbound call it makes.
+`callers` says which endpoints pay for it; `code` is the line that made the call, captured by the agent extension on the thread that ended the span, so it is reliable here.
+
+**First, decide whose problem it is.** Open the slowest trace from `traces`.
+When the callee is traced too, its `SERVER` span is in the same tree: a `SERVER` span nearly as long as the `CLIENT` span moves the question to that service, and the same loop applies there with `--service=` set to it.
+A `CLIENT` span much longer than the `SERVER` span it wraps is connection setup, queueing or serialisation on this side, not the callee.
+
+### What to do
+
+**Stop making the call per request** when the answer barely changes: cache it, or fetch it once at startup.
+
+**Make one call instead of N.** A call inside a loop is the N+1 of the network, and it is worse than the database's because the latency is a round trip.
+
+```java
+// Before: one request per id
+for (long id : ids) {
+    books.add(client.get().uri("/api/books/{id}", id).retrieve().body(Book.class));
+}
+
+// After: one request for the whole set
+List<Book> books = client.get().uri("/api/books?ids={ids}", join(ids)).retrieve().body(BOOK_LIST);
+```
+
+**Run independent calls together** rather than end to end; the trace tree shows sequential `CLIENT` spans laid in a line when they are not.
+
+**Set timeouts and reuse the client.** A `RestClient` or `HttpClient` built per request builds a connection pool per request, which is the `CLIENT` span that is much longer than its `SERVER` span; build it once.
+A call with no timeout turns the callee's bad minute into this service's bad minute.
+
+`compare` over the same exercise should show the endpoint's p95 fall with the call's; `check --max-p95-ms=` locks the endpoint in.
+
+---
+
 ## `error`
 
 `numbers`: `count`, `firstSeen`, `lastSeen`, `type`, `message` (normalised, digits replaced by `?`), `endpoints` (name and count).
@@ -245,6 +290,46 @@ ResponseEntity<Problem> handle(OrderAlreadyShippedException e) {
 
 A message that carries the identifier (`Order 42 is already shipped`) groups correctly, because Spider Sense normalises the digits away, and it is what makes the log line useful.
 `check --max-errors=0` after the fix, over a window that starts at the restart (`--since=start`).
+
+---
+
+## `log-error`
+
+`numbers`: `count` (the uncovered records), `firstSeen`, `lastSeen`, `logger`, `message` (normalised, digits replaced by `?`), `endpoints` (the entry span of each record's trace, `(no endpoint)` for a record without one).
+
+This is what `catch (Exception e) { log.error(…, e); return fallback; }` leaves behind: no span error, no exception event, one line in the log, and a request that answered 200 with the wrong answer.
+A record whose trace has an error span is already reported by an `error` finding and is not counted here, so a `log-error` is by construction the failure nothing else tells you about.
+`code` comes from the record's `exception.stacktrace` when the logging bridge exported a throwable, and is empty when the log line carried only a message.
+`logs --severity=ERROR --q=<logger>` lists the records themselves, and `logs --trace=<traceId>` gives the whole log of one of them.
+
+### What to do
+
+Read the top application frame, then decide which of the three it is.
+
+- **A real failure being swallowed.** The fallback hides it from the client and from the error rate. Let it fail, or answer the client properly, so the failure is visible where it is decided rather than only in a log.
+- **An expected condition logged as an error.** A validation failure, a cache miss, a retry that then succeeded. Log it at `WARN` or `INFO`; `ERROR` should mean "somebody has to look".
+- **A dependency failing.** The trace, when there is one, shows the `CLIENT` span that failed first; the fix belongs there.
+
+```java
+// Before: the caller cannot tell a price of zero from a gateway that is down
+try {
+    return gateway.charge(order);
+} catch (GatewayException e) {
+    log.error("Payment gateway timed out for order {}", order.id(), e);
+    return Receipt.EMPTY;
+}
+
+// After: the failure reaches the client, and the error rate, as a failure
+try {
+    return gateway.charge(order);
+} catch (GatewayException e) {
+    throw new PaymentUnavailableException(order.id(), e);   // 503, one error group, one trace
+}
+```
+
+When the fallback is the right behaviour, keep it and make it visible: record it as a counter or set the span's status, so the endpoint's numbers say how often the degraded path was taken.
+
+`check --max-log-errors=0` over a window that starts at the restart (`--since=start`) locks the fix in.
 
 ---
 
@@ -283,3 +368,99 @@ spring.datasource.hikari.leak-detection-threshold=20000
 
 `leak-detection-threshold` is what proves which of the two it is: it logs the stack that took a connection and did not give it back, and those log lines are in `logs`.
 A pool at its limit also shows as endpoints whose p95 rises while their `dbMsPerRequest` does not: the wait happens before any database span starts, so it lands in the endpoint's time and not in its `dbShare`.
+
+---
+
+## `gc-pause`
+
+`numbers`: `gc`, `action`, `worstMs` (the longest single collection), `shareMax` (0..1, the worst export interval's collection time over its length), `collections` (over the window), `at`.
+There are no `traces` and no `code`: this comes from `jvm.gc.duration`, not from a span.
+
+A collection over `slow.request.ms` stops every application thread for that long, so a request unlucky enough to be running looks slow for no reason of its own.
+`shareMax` is the other half of the question: many short collections that add up to a tenth of the wall clock are a throughput problem even when no single one is long.
+Read this finding before `slow-endpoint` findings of the same window, because a run that is collecting will produce slow endpoints that have nothing wrong with them.
+
+### What to do
+
+**Allocate less per request** before touching any flag; the collector is doing what it was asked to do.
+The usual sources are a whole result set loaded to return a page of it, a string built by concatenation in a loop, and a response serialised into memory rather than streamed.
+
+```java
+// Before: every row, every column, to answer one page
+List<Order> all = orders.findAll();
+return all.subList(from, to);
+
+// After: the database does the paging
+return orders.findAll(PageRequest.of(page, size));
+```
+
+**Then the heap.** A young generation too small for the allocation rate collects constantly; `-Xmx` and `-Xms` set to the same value avoid the resizing pauses of a growing heap.
+On a development machine the honest fix is often that the JVM was given 256 MiB and the workload wants more.
+
+```bash
+JAVA_OPTS="-Xms1g -Xmx1g"
+```
+
+`findings --since=start` after the change says whether the pauses are gone; a `heap-pressure` finding beside this one says the heap is the cause rather than the allocation rate.
+
+---
+
+## `heap-pressure`
+
+`numbers`: `usedMax`, `limit` (both bytes), `ratioMax` (0..1), `at` (the worst point).
+There are no `traces`: this comes from `jvm.memory.used` and `jvm.memory.limit`, summed over the heap pools, as the JVM page draws them.
+
+A heap at 90% of its limit is a run that is about to spend its time collecting, and it usually arrives with a `gc-pause` finding.
+The question is what is being held.
+
+### What to do
+
+**Something unbounded.** A cache with no maximum, a list of everything read in a loop, a `ThreadLocal` never cleared, a collection on a long-lived object that only grows.
+
+```java
+// Before: every key ever seen, for the life of the process
+private final Map<String, Rates> cache = new HashMap<>();
+
+// After: a bound and an expiry
+private final Cache<String, Rates> cache = Caffeine.newBuilder()
+        .maximumSize(10_000)
+        .expireAfterWrite(Duration.ofMinutes(10))
+        .build();
+```
+
+**A whole result set in memory.** Streaming, paging or a projection turns the peak into a plateau; the `slow-query` section has the shapes.
+
+**A heap genuinely too small** for the workload, which is real, and is the last thing to conclude rather than the first.
+
+The JVM page's memory chart over the same window says which it is: a sawtooth that returns to the same floor is allocation, a floor that climbs is something being retained.
+
+---
+
+## `thread-growth`
+
+`numbers`: `first`, `last`, `max`, `at` (the last point).
+There are no `traces`: this comes from `jvm.thread.count`.
+
+Threads that only go up are threads nobody is stopping, and each one costs a stack.
+The count settling at a new plateau after a burst is a pool that grew to its maximum, which is fine; a count that climbs for as long as the window does is a leak.
+
+### What to do
+
+**Something created per request that should be created once.** An executor, an HTTP client, a scheduler, a connection pool.
+
+```java
+// Before: a pool per call, never shut down
+public List<Book> fetchAll(List<Long> ids) {
+    ExecutorService pool = Executors.newFixedThreadPool(8);
+    ...
+}
+
+// After: one pool, built once and closed with the application
+private final ExecutorService pool;   // a bean, or a field with a @PreDestroy
+```
+
+**A pool with no bound**, which grows until the machine says no: give it a maximum and a queue.
+
+**Threads that are parked rather than finished**, waiting on a call with no timeout; the `slow-external` section covers the timeout.
+
+The JVM page's thread chart over the same window shows whether the count plateaus or climbs, and `findings --since=start` after the fix says whether it still climbs.

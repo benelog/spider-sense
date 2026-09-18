@@ -1,9 +1,11 @@
 package net.benelog.spidersense.query;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import io.opentelemetry.proto.trace.v1.Span;
 
@@ -15,7 +17,7 @@ import net.benelog.spidersense.TestStore;
 import net.benelog.spidersense.ingest.OtlpDecoder;
 import net.benelog.spidersense.store.Store;
 
-/** The six rules of agent.md, each over the data that makes it fire. */
+/** The rules of agent.md, each over the data that makes it fire and data that does not. */
 class FindingsTest {
 
     private static final long NOW = 1_700_000_000_000L;
@@ -81,6 +83,18 @@ class FindingsTest {
                 Otlp.attr("db.name", "orders"),
                 Otlp.attr("db.operation", "SELECT"),
                 Otlp.attr("db.sql.table", table));
+    }
+
+    /** An outbound HTTP call, as the agent's http-client instrumentation records one. */
+    private static Span.Builder outbound(Span.Builder parent, int id, String host, long port,
+            long startMs, long durationMs) {
+        return Otlp.child(parent, spanId(id), "GET", Span.SpanKind.SPAN_KIND_CLIENT,
+                startMs, durationMs,
+                Otlp.attr("http.request.method", "GET"),
+                Otlp.attr("url.full", "http://" + host + ":" + port + "/api/books/1"),
+                Otlp.attr("server.address", host),
+                Otlp.attr("server.port", port),
+                Otlp.attr("http.response.status_code", 200));
     }
 
     /** A job: a root {@code INTERNAL} span, named the way a scheduler names one. */
@@ -361,6 +375,245 @@ class FindingsTest {
         assertThat(wider.get(1).id()).isEqualTo(found.get(1).id());
         assertThat(found.get(0).id()).startsWith("error:");
         assertThat(found.get(0).id()).hasSize("error:".length() + 12);
+    }
+
+    @Test
+    void aSlowOutboundCallIsASlowExternalWithItsCallersAndItsLine() {
+        Span.Builder root = entry(1, "/orders/{id}", 900);
+        decoder.accept(Otlp.traces(Otlp.service("orders"), root,
+                outbound(root, 100, "localhost", 8081, NOW, 800)
+                        .addAttributes(Otlp.attr("code.stacktrace", QUERY_STACKTRACE))));
+        flush();
+
+        List<Findings.Finding> slow = of(Findings.SLOW_EXTERNAL);
+
+        assertThat(slow).hasSize(1);
+        Findings.Finding finding = slow.get(0);
+        assertThat(finding.severity()).isEqualTo(Findings.MEDIUM);
+        assertThat(finding.title()).isEqualTo("GET localhost:8081 is slow");
+        assertThat(finding.service()).isEqualTo("orders");
+        assertThat(finding.subject().target()).isEqualTo("localhost:8081");
+        assertThat(finding.numbers().get("calls")).isEqualTo(1L);
+        assertThat(finding.numbers().get("errors")).isEqualTo(0L);
+        assertThat((Double) finding.numbers().get("p50Ms")).isEqualTo(800.0);
+        assertThat((Double) finding.numbers().get("p95Ms")).isEqualTo(800.0);
+        assertThat((Double) finding.numbers().get("totalMs")).isEqualTo(800.0);
+        assertThat(finding.why()).contains("p95 800.0 ms over 1 call, 0 errors");
+        assertThat(finding.code()).containsExactly(
+                "orders.OrderLineRepository.findByOrderId(OrderLineRepository.java:29)",
+                "orders.OrderService.lines(OrderService.java:54)");
+        assertThat(finding.traces()).containsExactly(traceId(1));
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> callers = (List<Map<String, Object>>) finding.numbers().get("callers");
+        assertThat(callers).hasSize(1);
+        assertThat(callers.get(0).get("endpoint")).isEqualTo("GET /orders/{id}");
+        assertThat(callers.get(0).get("calls")).isEqualTo(1L);
+    }
+
+    @Test
+    void aFastOutboundCallIsNoFinding() {
+        Span.Builder root = entry(1, "/orders/{id}", 100);
+        decoder.accept(Otlp.traces(Otlp.service("orders"), root,
+                outbound(root, 100, "localhost", 8081, NOW, 40)));
+        flush();
+
+        assertThat(of(Findings.SLOW_EXTERNAL)).isEmpty();
+    }
+
+    @Test
+    void aSlowEndpointNamesTheSpanItsTimeWentInto() {
+        Span.Builder root = entry(1, "/orders/report", 1000);
+        decoder.accept(Otlp.traces(Otlp.service("orders"), root,
+                query(root, 100, "select * from orders", "orders", NOW, 800)));
+        flush();
+
+        Findings.Finding finding = of(Findings.SLOW_ENDPOINT).get(0);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> hot = (Map<String, Object>) finding.numbers().get("hotSpan");
+        assertThat(hot).isNotNull();
+        assertThat(hot.get("name")).isEqualTo("SELECT orders");
+        assertThat(hot.get("category")).isEqualTo("db");
+        assertThat((Double) hot.get("selfMs")).isEqualTo(800.0);
+        assertThat((Double) hot.get("share")).isCloseTo(0.8, within(1e-9));
+    }
+
+    @Test
+    void anErrorLogNoTraceReportsIsALogError() {
+        decoder.accept(Otlp.traces(Otlp.service("orders"), entry(1, "/orders/{id}", 10)));
+        decoder.accept(Otlp.logs(Otlp.service("orders"), "orders.web.OrderController",
+                Otlp.log(NOW, 17, "Payment gateway timeout for order 42", traceId(1), spanId(1)),
+                Otlp.log(NOW + 1, 17, "Payment gateway timeout for order 43", traceId(1), spanId(1),
+                        Otlp.attr("exception.stacktrace", STACKTRACE))));
+        flush();
+
+        List<Findings.Finding> found = of(Findings.LOG_ERROR);
+
+        assertThat(found).hasSize(1);
+        Findings.Finding finding = found.get(0);
+        assertThat(finding.severity()).isEqualTo(Findings.HIGH);
+        assertThat(finding.title())
+                .isEqualTo("ERROR in OrderController: Payment gateway timeout for order ?");
+        assertThat(finding.service()).isEqualTo("orders");
+        assertThat(finding.subject().logger()).isEqualTo("orders.web.OrderController");
+        assertThat(finding.numbers().get("count")).isEqualTo(2L);
+        assertThat(finding.numbers().get("firstSeen")).isEqualTo(NOW);
+        assertThat(finding.numbers().get("lastSeen")).isEqualTo(NOW + 1);
+        assertThat(finding.numbers().get("logger")).isEqualTo("orders.web.OrderController");
+        assertThat(finding.numbers().get("message")).isEqualTo("Payment gateway timeout for order ?");
+        assertThat(finding.why()).contains("2 records in GET /orders/{id}");
+        assertThat(finding.code()).containsExactly(
+                "orders.OrderService.load(OrderService.java:41)",
+                "orders.OrderController.show(OrderController.java:23)");
+        assertThat(finding.traces()).containsExactly(traceId(1));
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> endpoints =
+                (List<Map<String, Object>>) finding.numbers().get("endpoints");
+        assertThat(endpoints).hasSize(1);
+        assertThat(endpoints.get(0).get("name")).isEqualTo("GET /orders/{id}");
+        assertThat(endpoints.get(0).get("count")).isEqualTo(2L);
+    }
+
+    @Test
+    void anErrorLogOnAFailedTraceIsNotCountedTwice() {
+        Span.Builder failing = Otlp.failing(entry(1, "/orders/{id}", 10),
+                "java.lang.IllegalStateException", "no such order 42", STACKTRACE);
+        decoder.accept(Otlp.traces(Otlp.service("orders"), failing));
+        decoder.accept(Otlp.logs(Otlp.service("orders"), "orders.web.OrderController",
+                Otlp.log(NOW, 17, "no such order 42", traceId(1), spanId(1))));
+        flush();
+
+        assertThat(of(Findings.LOG_ERROR))
+                .as("the trace has an error span, so an error finding already reports it")
+                .isEmpty();
+        assertThat(of(Findings.ERROR)).hasSize(1);
+    }
+
+    @Test
+    void aWarningIsNotALogError() {
+        decoder.accept(Otlp.traces(Otlp.service("orders"), entry(1, "/orders/{id}", 10)));
+        decoder.accept(Otlp.logs(Otlp.service("orders"), "orders.web.OrderController",
+                Otlp.log(NOW, 13, "Retrying the payment gateway", traceId(1), spanId(1))));
+        flush();
+
+        assertThat(of(Findings.LOG_ERROR)).isEmpty();
+    }
+
+    @Test
+    void aLongCollectionIsAGcPause() {
+        decoder.accept(Otlp.traces(Otlp.service("orders"), entry(1, "/orders", 10)));
+        gc(NOW - 1000, 1, 0.01, 0.01);
+        gc(NOW, 2, 0.62, 0.61);
+        flush();
+
+        List<Findings.Finding> paused = of(Findings.GC_PAUSE);
+
+        assertThat(paused).hasSize(1);
+        Findings.Finding finding = paused.get(0);
+        assertThat(finding.severity()).isEqualTo(Findings.HIGH);
+        assertThat(finding.title()).isEqualTo("G1 Young Generation paused for 610.0 ms");
+        assertThat(finding.subject().jvm()).isEqualTo("gc:G1 Young Generation");
+        assertThat(finding.numbers().get("gc")).isEqualTo("G1 Young Generation");
+        assertThat(finding.numbers().get("action")).isEqualTo("end of minor GC");
+        assertThat((Double) finding.numbers().get("worstMs")).isCloseTo(610.0, within(1e-6));
+        assertThat((Double) finding.numbers().get("shareMax")).isCloseTo(0.61, within(1e-6));
+        assertThat(finding.numbers().get("collections")).isEqualTo(1L);
+        assertThat(finding.numbers().get("at")).isEqualTo(NOW);
+        assertThat(finding.code()).isEmpty();
+        assertThat(finding.traces()).isEmpty();
+    }
+
+    @Test
+    void shortCollectionsAreNoFinding() {
+        decoder.accept(Otlp.traces(Otlp.service("orders"), entry(1, "/orders", 10)));
+        gc(NOW - 1000, 10, 0.02, 0.004);
+        gc(NOW, 20, 0.04, 0.004);
+        flush();
+
+        assertThat(of(Findings.GC_PAUSE)).isEmpty();
+    }
+
+    private void gc(long at, long count, double sum, double max) {
+        decoder.accept(Otlp.histogram(Otlp.service("orders"), "jvm.gc.duration", "s",
+                at, count, sum, max,
+                Otlp.attr("jvm.gc.name", "G1 Young Generation"),
+                Otlp.attr("jvm.gc.action", "end of minor GC")));
+    }
+
+    @Test
+    void aHeapNearItsLimitIsHeapPressure() {
+        decoder.accept(Otlp.traces(Otlp.service("orders"), entry(1, "/orders", 10)));
+        heap(NOW - 1000, 400_000_000, 1_000_000_000);
+        heap(NOW, 950_000_000, 1_000_000_000);
+        flush();
+
+        List<Findings.Finding> pressure = of(Findings.HEAP_PRESSURE);
+
+        assertThat(pressure).hasSize(1);
+        Findings.Finding finding = pressure.get(0);
+        assertThat(finding.severity()).isEqualTo(Findings.HIGH);
+        assertThat(finding.title()).isEqualTo("heap at 95.0% of its limit");
+        assertThat(finding.subject().jvm()).isEqualTo("heap");
+        assertThat((Double) finding.numbers().get("usedMax")).isEqualTo(950_000_000.0);
+        assertThat((Double) finding.numbers().get("limit")).isEqualTo(1_000_000_000.0);
+        assertThat((Double) finding.numbers().get("ratioMax")).isCloseTo(0.95, within(1e-9));
+        assertThat(finding.numbers().get("at")).isEqualTo(NOW);
+        assertThat(finding.traces()).isEmpty();
+    }
+
+    @Test
+    void aHeapWithRoomIsNoFinding() {
+        decoder.accept(Otlp.traces(Otlp.service("orders"), entry(1, "/orders", 10)));
+        heap(NOW, 400_000_000, 1_000_000_000);
+        flush();
+
+        assertThat(of(Findings.HEAP_PRESSURE)).isEmpty();
+    }
+
+    private void heap(long at, double used, double limit) {
+        decoder.accept(Otlp.gauge(Otlp.service("orders"), "jvm.memory.used", "By", at, used,
+                Otlp.attr("jvm.memory.type", "heap"),
+                Otlp.attr("jvm.memory.pool.name", "G1 Old Gen")));
+        decoder.accept(Otlp.gauge(Otlp.service("orders"), "jvm.memory.limit", "By", at, limit,
+                Otlp.attr("jvm.memory.type", "heap"),
+                Otlp.attr("jvm.memory.pool.name", "G1 Old Gen")));
+    }
+
+    @Test
+    void threadsThatKeepGrowingAreAFinding() {
+        decoder.accept(Otlp.traces(Otlp.service("orders"), entry(1, "/orders", 10)));
+        threads(NOW - 1000, 40);
+        threads(NOW, 140);
+        flush();
+
+        List<Findings.Finding> growth = of(Findings.THREAD_GROWTH);
+
+        assertThat(growth).hasSize(1);
+        Findings.Finding finding = growth.get(0);
+        assertThat(finding.severity()).isEqualTo(Findings.MEDIUM);
+        assertThat(finding.title()).isEqualTo("threads grew from 40 to 140");
+        assertThat(finding.subject().jvm()).isEqualTo("threads");
+        assertThat(finding.numbers().get("first")).isEqualTo(40L);
+        assertThat(finding.numbers().get("last")).isEqualTo(140L);
+        assertThat(finding.numbers().get("max")).isEqualTo(140L);
+        assertThat(finding.numbers().get("at")).isEqualTo(NOW);
+        assertThat(finding.traces()).isEmpty();
+    }
+
+    @Test
+    void aSteadyThreadCountIsNoFinding() {
+        decoder.accept(Otlp.traces(Otlp.service("orders"), entry(1, "/orders", 10)));
+        threads(NOW - 1000, 40);
+        threads(NOW, 50);
+        flush();
+
+        assertThat(of(Findings.THREAD_GROWTH)).isEmpty();
+    }
+
+    private void threads(long at, double count) {
+        decoder.accept(Otlp.gauge(Otlp.service("orders"), "jvm.thread.count", "{thread}", at, count));
     }
 
     @Test

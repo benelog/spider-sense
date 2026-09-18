@@ -633,7 +633,10 @@ public final class Codecs {
                         .put("queryId", finding.subject().queryId())
                         .put("errorId", finding.subject().errorId())
                         .put("pool", finding.subject().pool())
-                        .put("job", finding.subject().job()))
+                        .put("job", finding.subject().job())
+                        .put("target", finding.subject().target())
+                        .put("logger", finding.subject().logger())
+                        .put("jvm", finding.subject().jvm()))
                 .put("numbers", numbers)
                 .put("statement", finding.statement())
                 .put("code", strings(finding.code()))
@@ -662,6 +665,12 @@ public final class Codecs {
             case Float number -> put(object, key, number.doubleValue());
             case Number number -> object.put(key, number.longValue());
             case Boolean flag -> object.put(key, flag.booleanValue());
+            case Map<?, ?> map -> {
+                // A nested object, as a slow-endpoint's hotSpan is.
+                Json.JsonObject inner = Json.obj();
+                map.forEach((name, each) -> any(inner, String.valueOf(name), each));
+                object.put(key, inner);
+            }
             case List<?> list -> {
                 Json.JsonArray array = Json.arr();
                 for (Object element : list) {

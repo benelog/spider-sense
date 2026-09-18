@@ -99,6 +99,25 @@ public record JvmView(String service, Runtime runtime, Memory heap, Memory nonHe
                 limitByTime.isEmpty() ? NO_VALUES : align(limitByTime, t));
     }
 
+    /**
+     * The heap of one service, summed over its pools.
+     *
+     * <p>Public for the same reason {@link #connectionPools} is: a
+     * {@code heap-pressure} finding asks the JVM page's question of the JVM page's
+     * series (agent.md), and two readings of "how full is the heap" would be two
+     * answers.
+     */
+    public static Memory heap(MetricQueries metrics, String service, Window window) {
+        return memory(metrics.series(MetricSeriesNames.MEMORY_USED, service, Map.of(), window),
+                metrics.series(MetricSeriesNames.MEMORY_COMMITTED, service, Map.of(), window),
+                metrics.series(MetricSeriesNames.MEMORY_LIMIT, service, Map.of(), window), "heap");
+    }
+
+    /** The thread counts of one service; a {@code thread-growth} finding reads these. */
+    public static Threads threads(MetricQueries metrics, String service, Window window) {
+        return threads(metrics.series(MetricSeriesNames.THREAD_COUNT, service, Map.of(), window));
+    }
+
     private static List<Pool> pools(List<SeriesData> used) {
         List<Pool> pools = new ArrayList<>();
         for (SeriesData series : used) {

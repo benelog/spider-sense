@@ -745,7 +745,15 @@ public final class Queries {
         return dependencies;
     }
 
-    private static String target(SpanRecord span) {
+    /**
+     * What an outbound span called, as the dependency list and the service map name
+     * it: a host and port, a database, a queue, an RPC service.
+     *
+     * <p>Public because a {@code slow-external} finding groups by the same value
+     * (agent.md), and two readings of "what did this call go to" would be two
+     * different names for one dependency.
+     */
+    public static String target(SpanRecord span) {
         return switch (span.category()) {
             case "db" -> {
                 String system = span.dbSystem() == null ? "db" : span.dbSystem();
@@ -771,6 +779,20 @@ public final class Queries {
         }
         Long port = span.serverPort();
         return port == null ? host : host + ":" + port;
+    }
+
+    /**
+     * The outbound HTTP calls of the window, row by row.
+     *
+     * <p>Read rather than aggregated because the group a {@code slow-external}
+     * finding is about is {@code (service, target, span name)} and the target lives
+     * in the attributes rather than in a column ({@link #target}); the same cap as
+     * the dependency scan applies, for the same reason.
+     */
+    public List<SpanRecord> outboundHttp(Window window, String service) {
+        Clause where = window(window, service).and("kind = 'CLIENT'").and("category = 'http'");
+        return sql.query("SELECT " + Rows.SPAN_COLUMNS + " FROM span WHERE " + where.sql()
+                + " LIMIT " + MAX_DEPENDENCY_ROWS, where.params(), Rows::span);
     }
 
     /** Nearest-rank, the same definition {@code PERCENTILE_DISC} uses. */

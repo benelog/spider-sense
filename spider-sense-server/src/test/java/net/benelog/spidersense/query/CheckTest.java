@@ -188,6 +188,40 @@ class CheckTest {
     }
 
     @Test
+    void uncoveredErrorLogsAreCountedByTheLogErrorRuleAndAreNotADefault() {
+        assertThat(check.defaults()).doesNotContainKey(Check.MAX_LOG_ERRORS);
+
+        decoder.accept(Otlp.traces(Otlp.service("orders"), entry("/orders", 10)));
+        decoder.accept(Otlp.logs(Otlp.service("orders"), "orders.web.OrderController",
+                Otlp.log(NOW, 17, "Payment gateway timeout for order 42", null, null),
+                Otlp.log(NOW + 1, 17, "Payment gateway timeout for order 43", null, null)));
+        flush();
+
+        Check.CheckResult result = check.check(window, null, null, Map.of(Check.MAX_LOG_ERRORS, 0.0));
+
+        assertThat(result.checks()).extracting(Check.RuleCheck::rule)
+                .containsExactly(Check.MAX_LOG_ERRORS);
+        assertThat(rule(result, Check.MAX_LOG_ERRORS).actual()).isEqualTo(2.0);
+        assertThat(rule(result, Check.MAX_LOG_ERRORS).pass()).isFalse();
+        assertThat(rule(result, Check.MAX_LOG_ERRORS).detail())
+                .isEqualTo("2 records: ERROR in OrderController: Payment gateway timeout for order ?");
+        assertThat(result.pass()).isFalse();
+    }
+
+    @Test
+    void theLogErrorRulePassesWhenNothingLoggedAnErrorOutsideAFailedTrace() {
+        decoder.accept(Otlp.traces(Otlp.service("orders"), entry("/orders", 10)));
+        flush();
+
+        Check.CheckResult result = check.check(window, null, null, Map.of(Check.MAX_LOG_ERRORS, 0.0));
+
+        assertThat(rule(result, Check.MAX_LOG_ERRORS).actual()).isZero();
+        assertThat(rule(result, Check.MAX_LOG_ERRORS).pass()).isTrue();
+        assertThat(rule(result, Check.MAX_LOG_ERRORS).detail())
+                .isEqualTo("no ERROR log outside a failed trace");
+    }
+
+    @Test
     void repeatedStatementsAreCountedByTheNPlusOneRule() {
         Span.Builder root = entry("/orders/{id}", 60);
         List<Span.Builder> spans = new java.util.ArrayList<>();

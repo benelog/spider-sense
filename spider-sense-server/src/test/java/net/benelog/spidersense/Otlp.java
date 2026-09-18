@@ -167,6 +167,24 @@ public final class Otlp {
         return metrics(resource, metric);
     }
 
+    /** A histogram point with a max of its own, as {@code jvm.gc.duration} reports one. */
+    public static ExportMetricsServiceRequest histogram(Resource resource, String name, String unit,
+            long at, long count, double sum, double max, KeyValue... attributes) {
+        HistogramDataPoint.Builder point = HistogramDataPoint.newBuilder()
+                .setTimeUnixNano(at * 1_000_000L)
+                .setCount(count)
+                .setSum(sum)
+                .setMin(0)
+                .setMax(max)
+                .addAllAttributes(List.of(attributes));
+        Metric metric = Metric.newBuilder().setName(name).setUnit(unit)
+                .setHistogram(Histogram.newBuilder()
+                        .setAggregationTemporality(AggregationTemporality.AGGREGATION_TEMPORALITY_CUMULATIVE)
+                        .addDataPoints(point))
+                .build();
+        return metrics(resource, metric);
+    }
+
     public static ExportMetricsServiceRequest metrics(Resource resource, Metric... metrics) {
         ScopeMetrics.Builder scope = ScopeMetrics.newBuilder()
                 .setScope(InstrumentationScope.newBuilder().setName(SCOPE));
@@ -192,12 +210,13 @@ public final class Otlp {
     }
 
     public static io.opentelemetry.proto.logs.v1.LogRecord log(long at, int severity, String body,
-            String traceId, String spanId) {
+            String traceId, String spanId, KeyValue... attributes) {
         var record = io.opentelemetry.proto.logs.v1.LogRecord.newBuilder()
                 .setTimeUnixNano(at * 1_000_000L)
                 .setSeverityNumberValue(severity)
                 .setBody(AnyValue.newBuilder().setStringValue(body))
-                .addAttributes(attr("thread.name", "main"));
+                .addAttributes(attr("thread.name", "main"))
+                .addAllAttributes(List.of(attributes));
         if (traceId != null) {
             record.setTraceId(id(traceId)).setSpanId(id(spanId));
         }

@@ -95,8 +95,13 @@ The table is the ranked answer and the numbered blocks under it are that evidenc
 | `slow-endpoint`, high `dbShare` | most of the endpoint's time is in database spans | look at its queries; the fix is one of the two above |
 | `slow-endpoint`, low `dbShare` | the time is elsewhere | look at the external call in its trace, or at the code itself |
 | `slow-job` | a job (a root `INTERNAL` span: a scheduled method, an `@Async` call, a batch step) whose p95 is over `slow.request.ms`; never counted as a request | its own code when `dbShare` is low, its queries when high |
+| `slow-external` | an outbound HTTP call, by `(service, target, span name)`, whose p95 is over `slow.request.ms` | the callee when its own findings say so, else the call: batch it, cache it, or stop making it per request |
 | `error` | an error group with an occurrence in the window | the top application frame in `code` is where to start |
+| `log-error` | `ERROR` log lines whose trace has no error span: a failure that was swallowed | answer the client properly, or stop logging an expected condition as an error |
 | `pool-exhausted` | pending requests above zero, or used equal to max | connections not being returned, or a pool too small for the concurrency |
+| `gc-pause` | one collection over `slow.request.ms`, or collections taking a tenth of the export interval | allocation per request, or a heap too small; the latency is not the code's |
+| `heap-pressure` | the heap at 90% of its limit or more | what is being held: a cache without a bound, a whole result set in memory |
+| `thread-growth` | threads 50 higher than at the start of the window, or twice as many | an executor or a client created per request instead of once |
 
 `trace <id>` opens the evidence as an indented tree: one span per line with its offset and duration, the service named where it changes, repeated siblings collapsed after the third into `× n` with the average and the total, the statement under a slow or collapsed database span, the exception and its application frames under an error span, and the trace's log lines at the end.
 `--full` expands the collapsed spans and keeps statements whole.

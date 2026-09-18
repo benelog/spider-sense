@@ -931,6 +931,12 @@ function appFrames(stack) {
 
 const SEVERITY_RANK = { high: 0, medium: 1, low: 2 };
 
+/** Every field of a finding's subject (docs/api.md); a mock names only the one that applies. */
+const NO_SUBJECT = {
+  endpointId: null, queryId: null, errorId: null, pool: null, job: null,
+  target: null, logger: null, jvm: null,
+};
+
 function findingId(kind, service, subject) {
   return kind + ':' + (hash(kind + '|' + service + '|' + subject) + hash(subject)).slice(0, 12);
 }
@@ -953,7 +959,7 @@ function findingsFor(w, service, limit) {
       kind: 'error', severity: 'high', service: group.service,
       title: shortType(group.type) + ' on ' + (group.endpoints[0] ? group.endpoints[0].name : group.service),
       why: group.count + ' occurrences, the last one ' + Math.round((Date.now() - group.lastSeen) / 1000) + ' s ago',
-      subject: { endpointId: null, queryId: null, errorId: group.errorId, pool: null, job: null },
+      subject: { ...NO_SUBJECT, errorId: group.errorId },
       numbers: {
         count: group.count, firstSeen: group.firstSeen, lastSeen: group.lastSeen,
         type: group.type, message: group.message, endpoints: group.endpoints,
@@ -974,7 +980,7 @@ function findingsFor(w, service, limit) {
       kind: 'n-plus-one', severity: 'high', service: nPlusOne.service,
       title: nPlusOne.name + ' runs SELECT reviews 6 times per request',
       why: affected + ' of ' + affected + ' requests repeated it; 6, 6 and 5 times; 7.4 ms per request in that statement',
-      subject: { endpointId: nPlusOne.endpointId, queryId: repeated.queryId, errorId: null, pool: null, job: null },
+      subject: { ...NO_SUBJECT, endpointId: nPlusOne.endpointId, queryId: repeated.queryId },
       numbers: { requests: affected, affected, medianRepeats: 6, maxRepeats: 6, msPerRequest: 7.4 },
       statement: repeated.statement,
       code: ['net.benelog.bookstore.ReviewRepository.findByBook(ReviewRepository.java:41)',
@@ -992,7 +998,7 @@ function findingsFor(w, service, limit) {
       kind: 'slow-query', severity: q.p95Ms > SLOW_QUERY_MS * 10 ? 'high' : 'medium', service: q.service,
       title: (def ? def.operation + ' ' + def.table : 'a query') + ' is slow',
       why: 'p95 ' + fmtMs(q.p95Ms) + ' over ' + q.calls + ' calls, ' + fmtMs(q.totalMs) + ' in all',
-      subject: { endpointId: null, queryId: q.queryId, errorId: null, pool: null, job: null },
+      subject: { ...NO_SUBJECT, queryId: q.queryId },
       numbers: {
         calls: q.calls, slowCalls: q.slowCalls, p50Ms: q.p50Ms, p95Ms: q.p95Ms, maxMs: q.maxMs,
         totalMs: q.totalMs, callers: q.callers,
@@ -1011,10 +1017,11 @@ function findingsFor(w, service, limit) {
       kind: 'slow-endpoint', severity: e.p95Ms > SLOW_REQUEST_MS * 4 ? 'high' : 'medium', service: e.service,
       title: e.name + ' is slow',
       why: 'p95 ' + fmtMs(e.p95Ms) + ' over ' + e.calls + ' calls; ' + fmtMs(e.totalMs) + ' in all',
-      subject: { endpointId: e.endpointId, queryId: null, errorId: null, pool: null, job: null },
+      subject: { ...NO_SUBJECT, endpointId: e.endpointId },
       numbers: {
         calls: e.calls, p50Ms: e.p50Ms, p95Ms: e.p95Ms, maxMs: e.maxMs, totalMs: e.totalMs,
         apdex: e.apdex, dbCallsPerRequest: 2.4, dbMsPerRequest: 310.2, dbShare: 0.62,
+        hotSpan: { name: 'SELECT reviews', category: 'db', selfMs: 312.4, share: 0.62 },
       },
       statement: null,
       code: [],
@@ -1031,10 +1038,11 @@ function findingsFor(w, service, limit) {
       kind: 'slow-job', severity: 'medium', service: 'spring-orders',
       title: job + ' is slow',
       why: 'p95 2.1 s over 14 runs; 24.8 s in all, 71% of it in the database',
-      subject: { endpointId: null, queryId: null, errorId: null, pool: null, job },
+      subject: { ...NO_SUBJECT, job },
       numbers: {
         runs: 14, p50Ms: 1480, p95Ms: 2130, maxMs: 2890, totalMs: 24800,
         dbCallsPerRun: 38.5, dbMsPerRun: 1260.4, dbShare: 0.71,
+        hotSpan: { name: 'SELECT order_line', category: 'db', selfMs: 1260.4, share: 0.59 },
       },
       statement: null,
       code: ['com.example.orders.OrderReportJob.run(OrderReportJob.java:36)'],
@@ -1047,12 +1055,86 @@ function findingsFor(w, service, limit) {
       kind: 'pool-exhausted', severity: 'high', service: 'spring-orders',
       title: 'HikariPool-1 ran out of connections',
       why: '10 of 10 connections in use and 4 requests waiting',
-      subject: { endpointId: null, queryId: null, errorId: null, pool: 'HikariPool-1', job: null },
+      subject: { ...NO_SUBJECT, pool: 'HikariPool-1' },
       numbers: { pool: 'HikariPool-1', max: 10, usedMax: 10, pendingMax: 4, at: w.to - 60000 },
       statement: null,
       code: [],
       traces: [],
       impact: 4,
+    });
+  }
+
+  if (!service || service === 'spring-orders') {
+    found.push({
+      id: findingId('slow-external', 'spring-orders', 'localhost:8081|GET'),
+      kind: 'slow-external', severity: 'medium', service: 'spring-orders',
+      title: 'GET localhost:8081 is slow',
+      why: 'p95 820.0 ms over 96 calls, 2 errors; 51.4 s in total',
+      subject: { ...NO_SUBJECT, target: 'localhost:8081' },
+      numbers: {
+        calls: 96, errors: 2, p50Ms: 310.4, p95Ms: 820.0, maxMs: 1240.8, totalMs: 51400,
+        callers: [{ endpoint: 'GET /api/orders/{id}/enriched', service: 'spring-orders', calls: 96 }],
+      },
+      statement: null,
+      code: ['com.example.orders.BookClient.fetch(BookClient.java:29)'],
+      traces: inWindow(w, 'spring-orders').slice(-1).map((t) => t.traceId),
+      impact: 51400,
+    });
+
+    found.push({
+      id: findingId('log-error', 'spring-orders', 'com.example.orders.PaymentService|payment gateway timeout'),
+      kind: 'log-error', severity: 'high', service: 'spring-orders',
+      title: 'ERROR in PaymentService: Payment gateway timed out for order ?',
+      why: '18 records in POST /api/orders, none of them on a failed trace; Payment gateway timed out for order ?',
+      subject: { ...NO_SUBJECT, logger: 'com.example.orders.PaymentService' },
+      numbers: {
+        count: 18, firstSeen: w.to - 540000, lastSeen: w.to - 20000,
+        logger: 'com.example.orders.PaymentService',
+        message: 'Payment gateway timed out for order ?',
+        endpoints: [{ name: 'POST /api/orders', count: 18 }],
+      },
+      statement: null,
+      code: ['com.example.orders.PaymentService.charge(PaymentService.java:61)'],
+      traces: inWindow(w, 'spring-orders').slice(-3).map((t) => t.traceId),
+      impact: 18,
+    });
+
+    found.push({
+      id: findingId('gc-pause', 'spring-orders', 'gc:G1 Young Generation|end of minor GC'),
+      kind: 'gc-pause', severity: 'high', service: 'spring-orders',
+      title: 'G1 Young Generation paused for 612.0 ms',
+      why: 'the longest single collection took 612.0 ms over 214 collections; 14.2% of an export interval at worst',
+      subject: { ...NO_SUBJECT, jvm: 'gc:G1 Young Generation' },
+      numbers: {
+        gc: 'G1 Young Generation', action: 'end of minor GC', worstMs: 612, shareMax: 0.142,
+        collections: 214, at: w.to - 120000,
+      },
+      statement: null, code: [], traces: [],
+      impact: 612,
+    });
+
+    found.push({
+      id: findingId('heap-pressure', 'spring-orders', 'heap'),
+      kind: 'heap-pressure', severity: 'high', service: 'spring-orders',
+      title: 'heap at 94.0% of its limit',
+      why: '962.6 MiB of 1,024.0 MiB in use at the worst point',
+      subject: { ...NO_SUBJECT, jvm: 'heap' },
+      numbers: {
+        usedMax: 1009438720, limit: 1073741824, ratioMax: 0.94, at: w.to - 90000,
+      },
+      statement: null, code: [], traces: [],
+      impact: 0.94,
+    });
+
+    found.push({
+      id: findingId('thread-growth', 'spring-orders', 'threads'),
+      kind: 'thread-growth', severity: 'medium', service: 'spring-orders',
+      title: 'threads grew from 42 to 187',
+      why: '145 threads more than at the start of the window, peaking at 187',
+      subject: { ...NO_SUBJECT, jvm: 'threads' },
+      numbers: { first: 42, last: 187, max: 187, at: w.to - 5000 },
+      statement: null, code: [], traces: [],
+      impact: 145,
     });
   }
 

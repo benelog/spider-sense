@@ -20,7 +20,7 @@ The launcher treats a first argument that does not start with `-` as a command a
 | `mark <name> [--note=…]` | records a mark now |
 | `marks` | lists marks |
 | `compare --before=<selector> --after=<selector> [--until=<selector>]` | the two windows side by side |
-| `check [--max-p95-ms=] [--max-errors=] [--max-error-rate=] [--max-queries-per-request=] [--max-slow-queries=] [--max-n-plus-one=] [--min-apdex=] [--endpoint=]` | pass or fail, in the exit code |
+| `check [--max-p95-ms=] [--max-errors=] [--max-error-rate=] [--max-queries-per-request=] [--max-slow-queries=] [--max-n-plus-one=] [--max-log-errors=] [--min-apdex=] [--endpoint=]` | pass or fail, in the exit code |
 | `sql "<statement>" [--limit=200]` | one read-only statement over the store, for a question no other command answers ([sql.md](sql.md)) |
 | `init [--dir=<project dir>] [--jar=<path>] [--no-skill]` | writes the Spider Sense block into the project's `CLAUDE.md` and installs this skill into its `.claude/skills/` |
 | `help` | this table |
@@ -427,6 +427,7 @@ Rules and the value each one measures:
 | `--max-queries-per-request` | database spans per entry span, the highest of any endpoint |
 | `--max-slow-queries` | query calls over `slow.query.ms` |
 | `--max-n-plus-one` | `n-plus-one` findings |
+| `--max-log-errors` | `log-error` findings' uncovered records summed |
 | `--min-apdex` | the Apdex over the scope |
 
 `--endpoint=` narrows the scope to one endpoint, by `endpointId` or by name (`GET /api/orders/{id}`), and the heading names it.
@@ -456,7 +457,7 @@ Commands:
                                the two windows side by side
   check [--max-p95-ms=] [--max-errors=] [--max-error-rate=]
         [--max-queries-per-request=] [--max-slow-queries=]
-        [--max-n-plus-one=] [--min-apdex=] [--endpoint=]
+        [--max-n-plus-one=] [--max-log-errors=] [--min-apdex=] [--endpoint=]
                                pass or fail, in the exit code
   help                         this table
 
