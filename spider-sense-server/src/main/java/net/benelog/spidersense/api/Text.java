@@ -52,8 +52,8 @@ final class Text {
     /** A run of identical siblings longer than this collapses into one line. */
     private static final int COLLAPSE_AFTER = 3;
 
-    /** Every digit of a summary is masked before two traces are aligned. */
-    private static final Pattern DIGITS = Pattern.compile("\\d");
+    /** Every run of digits in a summary is one {@code ?} before two traces are aligned. */
+    private static final Pattern DIGITS = Pattern.compile("\\d+");
 
     private static final int OFFSET_WIDTH = 11;
     private static final int DURATION_WIDTH = 10;

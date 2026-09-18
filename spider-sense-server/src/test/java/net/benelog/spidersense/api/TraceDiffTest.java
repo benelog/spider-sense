@@ -225,14 +225,14 @@ class TraceDiffTest {
         assertThat(lines.get(6).asObject().getString("summary")).isEqualTo("CacheLookup");
     }
 
-    /** The key masks digits, so the same request to two ids is the same line. */
+    /** The key masks each run of digits, so the same request to two ids of different length is the same line. */
     @Test
     void aSummaryThatDiffersOnlyInItsDigitsIsTheSameLine() {
         Queries.TraceDetail a = before();
         List<SpanRecord> spans = new ArrayList<>(a.spans());
         spans.set(spans.size() - 1, span(B, "0000000000000004", "0000000000000001", "GET",
                 "CLIENT", 260, 4,
-                Map.of("url.full", "http://localhost:8081/api/books/187",
+                Map.of("url.full", "http://localhost:8081/api/books/87",
                         "http.request.method", "GET", "http.response.status_code", 200L)));
         Queries.TraceDetail b = new Queries.TraceDetail(B, a.start(), a.end(), a.durationMs(),
                 a.services(), spans, List.of());

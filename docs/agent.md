@@ -170,7 +170,7 @@ Both write in the direct-file path as `mark` does.
 
 `GET /api/traces/{a}?diff={b}` and `trace <a> --diff=<b> [--full]`: the two span trees aligned by structure and rendered as one text with a gutter, so the question after a fix — which span went away, which one got slower — is answered without reading two trees.
 
-The alignment works on the lines of the single-trace rendering above, minus their timing: each span becomes the key `(depth, category, summary with digits replaced by ?)`, a collapsed group keeps its summary and drops its count, and the two key sequences are aligned by their longest common subsequence (each side is cut at 2,000 lines).
+The alignment works on the lines of the single-trace rendering above, minus their timing: each span becomes the key `(depth, category, summary with every run of digits replaced by one ?)`, so `/api/books/155` and `/api/books/87` are the same line, a collapsed group keeps its summary and drops its count, and the two key sequences are aligned by their longest common subsequence (each side is cut at 2,000 lines).
 A matched line is `=`, a line only in `b` is `+`, a line only in `a` is `-`.
 Statement, exception and log lines are not diffed: a matched span shows its statement or exception when either side has one, as the single rendering would.
 
