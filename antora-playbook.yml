@@ -1,0 +1,36 @@
+site:
+  title: Spider Sense
+  url: https://spider-sense.benelog.net
+  start_page: ROOT::index.adoc
+  keys:
+    repository: https://github.com/benelog/spider-sense
+
+content:
+  sources:
+    # HEAD is the worktree, which the main branch's antora.yml versions as
+    # main (unreleased). Every docs/x.y.z branch is a released manual, cut by
+    # scripts/docs-branch.sh (RELEASING.md).
+    - url: ./
+      branches: [HEAD, docs/*]
+      start_path: manual
+
+ui:
+  bundle:
+    url: https://gitlab.com/antora/antora-ui-default/-/jobs/artifacts/master/raw/build/ui-bundle.zip?job=bundle-stable
+    snapshot: true
+  # The header with the repository link, over the default UI.
+  supplemental_files: ./supplemental-ui
+
+urls:
+  # The latest release answers at the root, so a link into it never carries a
+  # version; older releases and main do.
+  latest_version_segment: ''
+  latest_version_segment_strategy: redirect:to
+
+output:
+  dir: ./build/site
+
+runtime:
+  fetch: true
+  log:
+    failure_level: warn

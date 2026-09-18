@@ -1,0 +1,123 @@
+= Maven
+:navtitle: Maven
+
+There is no Spider Sense Maven plugin, because the Spring Boot Maven plugin already has the two parameters this needs.
+`agents` (user property `spring-boot.run.agents`) takes agent jars and puts each on the forked JVM as `-javaagent:`.
+`jvmArguments` (`spring-boot.run.jvmArguments`) or `systemPropertyVariables` carry the `spidersense.*` properties.
+Both parameters belong to `spring-boot:run` and to `spring-boot:start`, the goal that runs the application around integration tests.
+
+== Once, from the command line
+
+[source,bash]
+----
+mvn spring-boot:run -Dspring-boot.run.agents=/home/me/tools/spider-sense.jar
+mvn spring-boot:run -Dspring-boot.run.agents=/home/me/tools/spider-sense.jar \
+    -Dspring-boot.run.jvmArguments="-Dspidersense.port=4001 -Dspidersense.service=orders"
+----
+
+Without `spidersense.service` the service is `unknown_service:java`, because Maven has no equivalent of the Gradle plugin's project-name default.
+Every property the jar takes is listed in xref:configuration.adoc#properties[Configuration].
+
+[#pom]
+== In the POM
+
+The `maven-dependency-plugin` copies the jar from Maven Central into `target/` before the application starts, and the run goal names it as an agent.
+`spring-boot:run` runs the `test-compile` phase first, so a copy bound to `initialize` is done by then.
+Put both in a profile, so `mvn spring-boot:run -Psense` is the run under Spider Sense and `mvn spring-boot:run` is the plain one:
+
+[source,xml,subs="attributes+"]
+----
+<profiles>
+  <profile>
+    <id>sense</id>
+    <properties>
+      <spider-sense.version>{project-version}</spider-sense.version>
+      <spider-sense.jar>${project.build.directory}/spider-sense.jar</spider-sense.jar>
+    </properties>
+    <build>
+      <plugins>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-dependency-plugin</artifactId>
+          <executions>
+            <execution>
+              <id>spider-sense</id>
+              <phase>initialize</phase>
+              <goals>
+                <goal>copy</goal>
+              </goals>
+              <configuration>
+                <artifactItems>
+                  <artifactItem>
+                    <groupId>{project-group}</groupId>
+                    <artifactId>spider-sense</artifactId>
+                    <version>${spider-sense.version}</version>
+                    <outputDirectory>${project.build.directory}</outputDirectory>
+                    <destFileName>spider-sense.jar</destFileName>
+                  </artifactItem>
+                </artifactItems>
+              </configuration>
+            </execution>
+          </executions>
+        </plugin>
+        <plugin>
+          <groupId>org.springframework.boot</groupId>
+          <artifactId>spring-boot-maven-plugin</artifactId>
+          <configuration>
+            <agents>
+              <agent>${spider-sense.jar}</agent>
+            </agents>
+            <systemPropertyVariables>
+              <spidersense.service>${project.artifactId}</spidersense.service>
+              <spidersense.port>4000</spidersense.port>
+            </systemPropertyVariables>
+          </configuration>
+        </plugin>
+      </plugins>
+    </build>
+  </profile>
+</profiles>
+----
+
+A jar that is not on Maven Central goes in as a path.
+Drop the `maven-dependency-plugin` execution and set `spider-sense.jar` to the file, in the profile or on the command line with `-Dspider-sense.jar=/home/me/tools/spider-sense.jar`.
+
+== Tests under Surefire
+
+Surefire forks its own JVM and takes its options from `argLine`.
+Forward to a standalone Spider Sense rather than embedding one, because a test JVM is short-lived and may be forked more than once, and several embedded servers would fight over one port.
+
+[source,xml]
+----
+<plugin>
+  <groupId>org.apache.maven.plugins</groupId>
+  <artifactId>maven-surefire-plugin</artifactId>
+  <configuration>
+    <argLine>-javaagent:${spider-sense.jar} -Dspidersense.collector=http://127.0.0.1:4000 -Dspidersense.service=${project.artifactId}-test</argLine>
+  </configuration>
+</plugin>
+----
+
+Start the standalone once before the tests run, as xref:modes.adoc#forwarding[forwarding] describes.
+
+== The packaged jar
+
+Running the packaged jar under the agent needs nothing in the POM at all:
+
+[source,bash]
+----
+mvn -q package -DskipTests
+java -javaagent:/home/me/tools/spider-sense.jar -Dspidersense.service=orders -jar target/orders-0.0.1.jar
+----
+
+== The CLI from `target/`
+
+The CLI is the same jar, so once the profile above has copied it into `target/` it is one command away:
+
+[source,bash]
+----
+java -jar target/spider-sense.jar findings --since=start
+java -jar target/spider-sense.jar init            # the CLAUDE.md block and the skill
+----
+
+xref:cli.adoc[The CLI] documents every command, and xref:agent-skill.adoc#init[The Agent Skill] documents what `init` writes.

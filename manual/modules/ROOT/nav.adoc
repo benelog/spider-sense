@@ -1,0 +1,27 @@
+* xref:index.adoc[Introduction]
+* xref:install.adoc[Installation]
+
+* Running
+** xref:modes.adoc[The Three Modes]
+** xref:configuration.adoc[Configuration]
+** xref:gradle-plugin.adoc[The Gradle Plugin]
+** xref:maven.adoc[Maven]
+** xref:examples.adoc[The Examples]
+
+* The UI
+** xref:ui.adoc[Layout and Controls]
+** xref:pages.adoc[The Pages]
+
+* For AI Agents
+** xref:agent-loop.adoc[The Loop]
+** xref:findings.adoc[Findings]
+** xref:marks-and-compare.adoc[Marks and Compare]
+** xref:check.adoc[Check]
+** xref:cli.adoc[The CLI]
+** xref:mcp.adoc[MCP]
+** xref:agent-skill.adoc[The Agent Skill]
+
+* Reference
+** xref:api.adoc[The HTTP API]
+** xref:storage.adoc[Storage]
+** xref:design.adoc[Design]

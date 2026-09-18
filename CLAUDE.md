@@ -26,7 +26,15 @@ Read `docs/design.md` (architecture and decisions), `docs/storage.md` (the H2 sc
 - **No frontend build.** Plain HTML/CSS/ES modules; the only vendored library is uPlot.
 - Versions shared across modules are declared once in the root `build.gradle` `ext` block; the release version is `version` in `gradle.properties`, which the jar, the plugin, and the plugin's default jar version all read.
 - **The plugin adds arguments, it never edits a task's own `jvmArgs`**, and every value in it is a lazy provider (configuration-cache safe); the examples apply it against the jar the build just made, never against Maven Central.
-- Markdown is one sentence per line (as in Spider Silk).
+- Markdown is one sentence per line (as in Spider Silk), and so is the AsciiDoc under `manual/`.
+- **The manual lives in `manual/`, as an Antora component, and is published at <https://spider-sense.benelog.net> by `.github/workflows/docs.yml`.**
+  Pages are AsciiDoc under `manual/modules/ROOT/pages/`, one chapter per file, listed in `manual/modules/ROOT/nav.adoc`; a new chapter is a new page plus a `nav.adoc` entry under one of the existing groups.
+  `docs/*.md` stay the specification and the manual is what a user reads: a change to behaviour lands in the spec first and in the page that covers it in the same commit, and the manual never says more than the spec does.
+  `manual/antora.yml` carries the version attributes (`project-version`, `otel-agent-version`, `spider-silk-version`) that every page reads; the release procedure updates them.
+  `npm install && npm run docs` builds the site into `build/site`, and fails on a broken xref (`failure_level: warn`).
+  The site lists versions: `main` is the unreleased manual, and every `docs/x.y.z` branch, cut by `scripts/docs-branch.sh` at release time, is a released one; the latest release answers at the site root with no version in its URL.
+  The screenshots the README shows live in `manual/modules/ROOT/images/`, so the README and the manual share one copy.
+  The prose rules are Spider Silk's `.claude/skills/doc-tone/SKILL.md`: lead with the conclusion, one idea per sentence, the register of a technical reference manual.
 - Commit messages say what the change does, without conventional-commit prefixes and without issue references, in the subject or the body.
 - When a commit resolves or advances a GitHub issue, the link goes the other way: after pushing, comment on the issue with the commit URL (`gh issue comment <n> --body "…"`), and close the issue from that comment when the work is complete.
 
@@ -38,6 +46,7 @@ Read `docs/design.md` (architecture and decisions), `docs/storage.md` (the H2 sc
 java -jar spider-sense-agent/build/libs/spider-sense-<version>.jar findings --since=start   # the CLI (docs/agent.md)
 ./gradlew :examples:spring-orders:bootRun          # the example under the Gradle plugin (docs/build-tools.md)
 ./gradlew publishToMavenLocal                     # the jar and the plugin into ~/.m2, for a project outside this repository
+npm install && npm run docs                       # the manual as a site, into build/site
 scripts/demo.sh                                   # both example apps, each with its own embedded Spider Sense (:4000, :4001), plus the load generator
 scripts/demo-shared.sh                            # one standalone Spider Sense both apps forward to
 ```

@@ -1,0 +1,21 @@
+name: ROOT
+title: Spider Sense
+# main is the manual as it is being written, ahead of any release. A released
+# manual is a docs/x.y.z branch, which scripts/docs-branch.sh cuts from the
+# tag (RELEASING.md), and the site lists every one of them beside this one.
+version: main
+display_version: main (unreleased)
+prerelease: true
+start_page: index.adoc
+asciidoc:
+  attributes:
+    page-lang: en
+    project-group: net.benelog.spidersense
+    project-version: 0.1.0
+    project-repo: benelog/spider-sense
+    # What the jar bundles; kept in step with the root build.gradle.
+    otel-agent-version: 2.31.1
+    spider-silk-version: 1.1.0
+    source-highlighter: highlight.js
+nav:
+  - modules/ROOT/nav.adoc

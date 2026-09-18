@@ -1,0 +1,152 @@
+= Check
+:navtitle: Check
+
+`check` turns thresholds into a pass or a fail, and puts the verdict in the exit code, so Spider Sense can be used the way a test is used.
+
+[source,bash]
+----
+java -jar spider-sense.jar check [--since=] [--until=] [--service=] [--endpoint=] [--max-p95-ms=] [--max-errors=] \
+    [--max-error-rate=] [--max-queries-per-request=] [--max-slow-queries=] [--max-n-plus-one=] [--max-log-errors=] [--min-apdex=]
+----
+
+Over HTTP it is `GET /api/check?since&until&service&endpoint&…rules…&format=`, and the rules are query parameters in camel case (`maxP95Ms`, `maxErrors`).
+The response also carries the verdict as the header `X-Spider-Sense-Pass: true|false|none`, so the CLI asks once for the text rendering and still exits with a code.
+
+[#rules]
+== The rules
+
+Every rule given is evaluated, and each one is a limit compared against a value measured over the window.
+
+[cols="2,1,3",options="header"]
+|===
+| Rule
+| Default
+| The value it judges
+
+| `--max-p95-ms`
+| `slow.request.ms`, which is 500 milliseconds unless it was changed
+| The highest p95 of any endpoint in scope.
+
+| `--max-errors`
+| `0`
+| Error groups' occurrences, summed.
+
+| `--max-error-rate`
+| none
+| Failed entry spans over entry spans.
+
+| `--max-queries-per-request`
+| none
+| Database spans per entry span, the highest of any endpoint.
+
+| `--max-slow-queries`
+| none
+| Query calls over `slow.query.ms`.
+
+| `--max-n-plus-one`
+| `0`
+| The number of `n-plus-one` findings.
+
+| `--max-log-errors`
+| none
+| `log-error` findings' uncovered records, summed.
+
+| `--min-apdex`
+| none
+| The Apdex over the scope.
+|===
+
+When no rule is given the default set is `--max-errors=0`, `--max-n-plus-one=0` and `--max-p95-ms=<slow.request.ms>`.
+Naming a rule replaces that set, and only the rules named are then evaluated.
+
+`--endpoint=` narrows the scope to one endpoint, by `endpointId` or by name (`GET /api/orders/\{id}`), and the heading names it.
+`--service=` narrows it to one service.
+`requests` counts the entry spans in scope, so a seeder's or a scheduler's root spans never make a verdict of their own.
+A job is never a request, so `check` says nothing about one.
+xref:findings.adoc#slow-job[`slow-job`] is the one place a slow scheduler tick or batch step is reported.
+
+`check` does not look at acknowledgements.
+Its rules are explicit thresholds, so an acknowledged `n-plus-one` is still an N+1 to `--max-n-plus-one`.
+
+== The window
+
+`check` takes the same window as every other command: `--since` defaults to `15m` and `--until` to `now`.
+xref:marks-and-compare.adoc#time-selectors[Time selectors] lists every accepted form.
+After a change, `--since=after` judges only the traffic that followed the mark, and `--since=start` judges only the run that followed the restart.
+A window that reaches back before the change drags the old numbers into the verdict.
+
+[#exit-codes]
+== Exit codes
+
+[cols="1,3",options="header"]
+|===
+| Code
+| Meaning
+
+| `0`
+| `check` passed. Every rule named, or every default rule, was within its limit.
+
+| `1`
+| `check` failed. At least one rule was over its limit.
+
+| `2`
+| A usage or connection error. The command was wrong, or nothing answered at `--url`.
+
+| `3`
+| There was no request to judge, so the verdict is `pass: null` and `reason` says so. The exercise step did not reach the application, which is not the same as the fix having worked.
+
+| `4`
+| Something named was not found, such as a mark name used as a selector.
+|===
+
+== The text rendering
+
+The heading carries the verdict, then the window.
+One row follows per rule, with its limit, its actual value, its own verdict and a detail naming what decided it.
+
+[source]
+----
+$ java -jar spider-sense.jar check --since=before
+# check  fail  2026-09-17T08:19:28+09:00 → 08:19:45  (17s, all services, 33 requests)
+
+| rule | limit | actual | verdict | detail |
+| --- | --- | --- | --- | --- |
+| maxP95Ms | 500 | 1,202.5 | fail | GET /api/slow p95 1,202.5 ms over 3 calls |
+| maxErrors | 0 | 2 | fail | 2 occurrences over the window |
+| maxNPlusOne | 0 | 2 | fail | 2 findings: GET /api/orders/{id} runs SELECT product 5 times per request |
+
+$ echo $?
+1
+----
+
+Naming rules replaces the default set, and every rule named is evaluated:
+
+[source]
+----
+$ java -jar spider-sense.jar check --since=after --max-queries-per-request=3 --min-apdex=0.9
+# check  fail  2026-09-17T08:19:35+09:00 → 08:19:45  (10s, all services, 12 requests)
+
+| rule | limit | actual | verdict | detail |
+| --- | --- | --- | --- | --- |
+| maxQueriesPerRequest | 3 | 6.7 | fail | GET /api/orders/{id} runs 6.7 database calls per request |
+| minApdex | 0.900 | 0.792 | fail | Apdex 0.792 over 12 requests |
+
+$ echo $?
+1
+----
+
+`--json` prints the JSON instead: `pass` (`true`, `false`, or `null` when there was no request in scope), `requests`, `reason`, and one object per rule under `checks` with its `rule`, `limit`, `actual`, `pass` and `detail`.
+
+== In a build
+
+An exit code is what a build understands, so `check` is the step that fails a build when a change made the application slower.
+xref:gradle-plugin.adoc#check-task[The `spiderSenseCheck` task] runs it from Gradle with the thresholds declared in the `spiderSense` block, and fails the build on exit code `1`.
+
+In CI, run the application under the agent, exercise it, and then run `check` over a window that starts at the restart:
+
+[source,bash]
+----
+java -jar spider-sense.jar check --since=start --max-p95-ms=300 --max-n-plus-one=0 --max-errors=0
+----
+
+Exit code `3` means the exercise step sent no request, so treat it as a failure of the pipeline rather than as a pass.

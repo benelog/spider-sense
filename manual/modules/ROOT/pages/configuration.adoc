@@ -1,0 +1,207 @@
+= Configuration
+:navtitle: Configuration
+
+Every option of Spider Sense is a system property named `spidersense.*`, given on the command line of the JVM that runs the application.
+Agent mode has no other channel, because the configuration is read before the application's `main`.
+The standalone jar takes the same options as `--key=value` arguments as well.
+
+[#properties]
+== Properties
+
+[cols="2,1,3",options="header"]
+|===
+| Property | Default | Meaning
+
+| `spidersense.port`
+| `4000`
+| The UI and OTLP/HTTP port.
+
+| `spidersense.host`
+| `127.0.0.1`
+| The bind address. Use `0.0.0.0` to reach it from another machine.
+
+| `spidersense.collector`
+| unset
+| Agent mode: forward to this base URL instead of starting the embedded UI. See xref:modes.adoc#forwarding[forwarding].
+
+| `spidersense.service`
+| unset
+| Agent mode: sets `otel.service.name`.
+
+| `spidersense.db`
+| `~/db/spider-sense/sense`
+| The H2 database path, or a `jdbc:h2:` URL. `AUTO_SERVER=TRUE` is appended to a path. See xref:storage.adoc[Storage].
+
+| `spidersense.retention.hours`
+| `24`
+| Rows older than this are deleted by the sweeper.
+
+| `spidersense.retention.spans`
+| `1000000`
+| The most `span` rows kept. The sweeper deletes the oldest hour of everything until the count is under it, and `0` means no cap. See xref:storage.adoc#retention[Retention].
+
+| `spidersense.ingest.max-spans-per-second`
+| unset
+| Above this many spans in one second the receiver drops the spans of traces it has not seen yet, and counts them on `/api/status`. See xref:storage.adoc#ingest-cap[the ingest cap].
+
+| `spidersense.slow.request.ms`
+| `500`
+| A server span slower than this is a tingle. It is also the Apdex scale.
+
+| `spidersense.slow.query.ms`
+| `100`
+| A database span slower than this is a tingle, and the one the extension captures a stack trace for.
+
+| `spidersense.open`
+| `false`
+| Agent mode: open the browser at startup, best effort.
+
+| `spidersense.app.packages`
+| unset
+| Comma-separated package prefixes that count as application code in a finding's `code` frames. Unset means everything that is not a known framework. See xref:findings.adoc#code[the code frames].
+
+| `spidersense.ignore.endpoints`
+| `/actuator/**,/health,/healthz,/livez,/readyz`
+| Comma-separated glob patterns. An entry span whose endpoint matches one of them is not a request. See <<ignored-endpoints,Ignored endpoints>>.
+|===
+
+=== On the command line
+
+In agent mode the properties go on the same command line as `-javaagent:`, before `-jar`:
+
+[source,bash]
+----
+java -javaagent:"$SENSE" -Dspidersense.port=4001 -Dspidersense.slow.query.ms=50 -jar app.jar
+----
+
+The standalone jar accepts both forms, and `--key=value` is the shorter one:
+
+[source,bash]
+----
+java -jar "$SENSE" --port=4001 --host=0.0.0.0
+----
+
+From a build tool, the `spiderSense { }` block of xref:gradle-plugin.adoc#block[the Gradle plugin] has a line for every property in the table, and xref:maven.adoc[Maven] passes them as JVM arguments.
+
+=== Environment variables
+
+Two thresholds are also read from the environment, because the OpenTelemetry agent extension that captures stack traces is configured before the server is:
+
+[cols="1,2",options="header"]
+|===
+| Variable | Equivalent property
+
+| `SPIDERSENSE_SLOW_QUERY_MS`
+| `spidersense.slow.query.ms`
+
+| `SPIDERSENSE_SLOW_REQUEST_MS`
+| `spidersense.slow.request.ms`
+|===
+
+Both are read once, when the extension is built.
+
+== OpenTelemetry properties
+
+Every `otel.*` system property and `OTEL_*` environment variable of the OpenTelemetry Java agent still works as that agent documents it.
+Spider Sense only fills in defaults, and only where you have set neither the property nor its environment variable.
+
+.What Spider Sense sets for the OpenTelemetry agent, unless you set it
+[cols="2,2,3",options="header"]
+|===
+| Property | Value | Why
+
+| `otel.exporter.otlp.protocol`
+| `http/protobuf`
+| There is no gRPC receiver.
+
+| `otel.exporter.otlp.endpoint`
+| `http://127.0.0.1:<port>`, or `spidersense.collector` when that is set
+| The literal address rather than `localhost`, which may resolve to `::1` while the UI binds `127.0.0.1`.
+
+| `otel.service.name`
+| `spidersense.service` when given, otherwise the agent's own default `unknown_service:java`
+| The UI shows the jar or main class hint from the resource attributes when the name is the default.
+
+| `otel.bsp.schedule.delay`, `otel.blrp.schedule.delay`
+| `1000`
+| A local tool should show a request within a second or two.
+
+| `otel.metric.export.interval`
+| `5000`
+| The same reason, for metrics.
+
+| `otel.metrics.exporter`, `otel.logs.exporter`, `otel.traces.exporter`
+| `otlp`
+| All three signals go to the collector.
+
+| `otel.javaagent.exclude-class-loaders`
+| Spider Sense's own server class loader, appended to a list you set
+| The agent skips every class the UI server defines, so the UI's own requests never become spans.
+
+| `otel.instrumentation.runtime-telemetry.enabled`
+| `true`
+| The JVM metrics behind the xref:pages.adoc#jvm[JVM page]. This is already the agent's default.
+
+| `otel.javaagent.extensions`
+| The extension jar Spider Sense extracted, appended to a list you set
+| The extension records `code.stacktrace` on a slow query, on the fifth repeat of an N+1, and on a slow outbound call.
+|===
+
+`-Dotel.service.name=` is worth setting always, because the alternative is `unknown_service:java`, and the service filter then has nothing to select.
+`-Dspidersense.service=` does the same thing in agent mode.
+
+[#ignored-endpoints]
+== Ignored endpoints
+
+A health check polled every few seconds is the most frequent request of a typical Spring Boot application and the least interesting one.
+It is fast, it never fails, and it dilutes the request count, the Apdex, `check` and every `slow-endpoint` judgement.
+
+`spidersense.ignore.endpoints` is a comma-separated list of glob patterns.
+An entry span whose endpoint matches one of them is stored, is in its trace and is in the trace list, but it is not an endpoint, not a request, not in the Apdex, never a slow-request tingle, never a finding and never a `check` verdict.
+The default is `/actuator/**,/health,/healthz,/livez,/readyz`, and an empty value ignores nothing:
+
+[source,bash]
+----
+java -javaagent:"$SENSE" -Dspidersense.ignore.endpoints= -jar app.jar
+----
+
+A pattern is matched against the endpoint name, which is `GET /actuator/health` when the framework reports a route, and the span name when it does not.
+
+* A pattern that starts with `/` is matched against the name with its leading `METHOD ` removed, so `/actuator/**` covers every method.
+* A pattern with a method, such as `GET /actuator/**`, is matched against the whole name.
+* When neither matches and the span carries `url.path`, the same patterns are tried against `METHOD url.path` and against `url.path`, so a framework that reports no route is still covered.
+
+`**` matches anything including `/`, `*` matches anything but `/`, and `?` matches one character that is not `/`.
+The match is case-sensitive and covers the whole name.
+The list in force is shown by `/api/status` as `ignore.endpoints`, and by the `status` command.
+
+== How to send data
+
+Three ways reach the same collector, and the UI's "How to send data" dialog prints all three with the port actually in use.
+
+A JVM under the OpenTelemetry Java agent that Spider Sense carries:
+
+[source,bash]
+----
+java -javaagent:"$SENSE" -Dotel.service.name=my-app -jar app.jar
+----
+
+Any OpenTelemetry SDK, pointed at a standalone Spider Sense:
+
+[source,bash]
+----
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4000
+export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+----
+
+Anything that can post JSON, over OTLP/JSON:
+
+[source,bash]
+----
+curl -X POST http://127.0.0.1:4000/v1/traces \
+     -H 'Content-Type: application/json' \
+     -d @spans.json
+----
+
+`/v1/traces`, `/v1/metrics` and `/v1/logs` accept `application/x-protobuf` and `application/json`, with `Content-Encoding: gzip`.
+xref:api.adoc#ingest[The HTTP API] gives what they answer.

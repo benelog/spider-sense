@@ -1,0 +1,232 @@
+= Design
+:navtitle: Design
+
+Spider Sense is an APM for the local development loop, in the spirit of https://glowroot.org/[Glowroot]: one jar, attached to a JVM with one option, a UI in the browser a second later.
+
+What sets it apart from Glowroot is that everything it collects arrives as OpenTelemetry data over OTLP.
+The instrumentation is the stock OpenTelemetry Java agent, not a bytecode engine of our own, and the collector accepts OTLP/HTTP from any SDK in any language.
+
+The UI is a Spider Silk application (`net.benelog.spidersilk`), and the product is a sibling of Spider Silk: same author, same logo family, same "thin by design" attitude.
+
+xref:modes.adoc[The Three Modes] describes the three ways one jar runs, and the CLI beside them.
+
+== Influences
+
+[cols="1,3",options="header"]
+|===
+| Product
+| What Spider Sense takes from it
+
+| https://glowroot.org/[Glowroot]
+| The deployment model: one jar, `-javaagent`, the UI served from the monitored JVM. The transaction/slow-trace/error/JVM page structure.
+
+| https://github.com/scouter-project/scouter[Scouter]
+| The scatter, which Scouter calls the XLog: every request is a dot on a time × response-time scatter, errors in red, and a drag over a cluster of dots lists those traces. The profile view of one transaction as a step list with elapsed and gap times. The habit of keeping the last N minutes always visible.
+
+| https://github.com/pinpoint-apm/pinpoint[Pinpoint]
+| The server map: services, databases and external hosts as nodes, calls as edges, a node click opening that node's numbers. The response summary (requests bucketed by response time, errors apart) and the load chart stacked by the same buckets, with Apdex as the one-number health score. The success/failed filter and the heatmap alternative on the scatter. The call tree's self time and percentage per step. The inspector's data-source panel (connection pool used/idle/max/pending).
+
+| https://github.com/signoz/signoz[SigNoz]
+| The OpenTelemetry-native data model: services derived from `service.name`, endpoints from `http.route`, RED metrics per service, trace waterfall with a span detail drawer, logs correlated by trace id.
+
+| https://github.com/openobserve/openobserve[OpenObserve]
+| Single binary, no external dependencies, everything on one port, a query bar above every list, a one-line "how to send data here" snippet in the UI.
+|===
+
+[#jar]
+== How the jar is put together
+
+[source]
+----
+spider-sense.jar
+├── META-INF/MANIFEST.MF          Premain-Class/Agent-Class: net.benelog.spidersense.launcher.SpiderSenseAgent
+│                                 Main-Class: net.benelog.spidersense.launcher.SpiderSenseMain
+│                                 Can-Redefine-Classes/Can-Retransform-Classes: true (copied from the OTel agent)
+├── net/benelog/spidersense/launcher/**   a handful of classes, no dependencies (Java 21)
+├── io/opentelemetry/javaagent/**         the OpenTelemetry Java agent, verbatim (bootstrap classes)
+├── inst/**                               the OpenTelemetry Java agent, verbatim (.classdata, loaded by the agent's own class loader)
+├── spider-sense/server.jar               the collector + UI as a nested fat jar (Spider Silk, Jetty, protobuf, our code)
+└── spider-sense/extension.jar            the OpenTelemetry agent extension: a stack trace for a slow database span (below)
+----
+
+The bundled agent is OpenTelemetry Java agent {otel-agent-version}, and the nested server jar carries Spider Silk {spider-silk-version}.
+
+The launcher is deliberately tiny and dependency-free because the OpenTelemetry agent appends the whole jar to the bootstrap class path (`Instrumentation.appendToBootstrapClassLoaderSearch`), so everything at the top level becomes bootstrap-visible.
+The server and its dependencies therefore live in a nested jar that the launcher extracts to `${java.io.tmpdir}/spider-sense-<version>/server.jar`, skipping the extraction when the file is already present with the same size.
+It loads that jar through a dedicated `SenseClassLoader extends URLClassLoader` whose parent is the platform class loader.
+The server never sees the application's classes, and the application never sees Jetty or protobuf from the server.
+The extension is extracted the same way, to `extension.jar` beside it, and is loaded by the OpenTelemetry agent's own `ExtensionClassLoader` rather than by ours.
+
+[#premain]
+== What premain does
+
+`SpiderSenseAgent.premain` does four things, in order.
+
+. Read configuration from the system properties `spidersense.*`, listed in xref:configuration.adoc#properties[Configuration].
+. Unless `spidersense.collector` is set: extract the nested jar, create the `SenseClassLoader`, and invoke `net.benelog.spidersense.server.SpiderSenseServer.main(String[])` with `--port=<port> --mode=agent ...`, on the current thread with the context class loader set to the `SenseClassLoader`.
+`main` returns once the port is bound, because Spider Silk's `start` returns after binding.
+A failure here is logged to stderr and swallowed: Spider Sense must never prevent the application from starting.
+. Set defaults for the OpenTelemetry agent, only where the user has not set the property or its environment variable already.
+. Call `io.opentelemetry.javaagent.OpenTelemetryAgent.premain(agentArgs, inst)`.
+Its jar-location check only requires a `Premain-Class` attribute in the manifest of the jar that class came from, verified against {otel-agent-version}'s `verifyJarManifestMainClassIsThis`, so our manifest satisfies it.
+
+The defaults of step 3 are:
+
+`otel.exporter.otlp.protocol=http/protobuf`::
+The protocol the embedded receiver speaks.
+`otel.exporter.otlp.endpoint=http://127.0.0.1:<port>`::
+Or `spidersense.collector` when it is set.
+The literal address is used rather than `localhost`, which may resolve to `::1` while the UI binds `127.0.0.1`.
+`otel.service.name`::
+`spidersense.service` if given, else the OpenTelemetry agent's own default (`unknown_service:java`).
+The UI shows the jar or main class hint from the resource attributes when the name is the default.
+`otel.bsp.schedule.delay=1000`, `otel.blrp.schedule.delay=1000`, `otel.metric.export.interval=5000`::
+A local tool should show a request within a second or two.
+`otel.metrics.exporter=otlp`, `otel.logs.exporter=otlp`, `otel.traces.exporter=otlp`::
+Every signal goes to the collector.
+`otel.javaagent.exclude-class-loaders=net.benelog.spidersense.launcher.SenseClassLoader`::
+Appended to the user's own list when one is set.
+The agent skips every class the UI server's loader defines, so the UI's own Jetty requests never become spans.
+The agent source confirms the mechanism: `GlobalIgnoredTypesConfigurer` already ignores `ExtensionClassLoader` this way, and `otel.javaagent.exclude-class-loaders` feeds `IgnoredTypesBuilder.ignoreClassLoader`.
+`otel.instrumentation.runtime-telemetry.enabled=true`::
+JVM metrics.
+This is already the default, and is stated for clarity.
+`otel.javaagent.extensions=${java.io.tmpdir}/spider-sense-<version>/extension.jar`::
+Appended to the user's own comma-separated list when one is set.
+It points at <<extension,the extension>>.
+Failing to extract it or to point at it is a warning on stderr and nothing else, because a missing code location is not a reason to hold up the application.
+
+`SpiderSenseMain.main`, the standalone entry point, does step 2 with `--mode=standalone` and then blocks on `join`.
+When its first argument does not start with `-` it is a CLI command instead.
+The launcher then loads the nested jar the same way and invokes `net.benelog.spidersense.cli.Cli.run(String[])`, exiting with what it returns (xref:cli.adoc[The CLI]).
+It also sets the system property `spidersense.jar` to its own jar's absolute path first, because `init` has to write that path into a project's `CLAUDE.md`, and the CLI, running out of the nested jar in a temporary directory, could not find it otherwise.
+
+Even with the class-loader exclusion in place, the collector drops any `SERVER` span whose `server.port` attribute equals its own port and whose service is the one it is embedded in.
+That is belt and braces, so a misconfiguration never shows the UI monitoring itself.
+`CLIENT` spans are kept: an application that calls Spider Sense's port is doing something real, and that call belongs in its trace.
+
+The UI server's Jetty thread pool is marked daemon in agent mode (`JettyServer.threadPool(...)` with `QueuedThreadPool.setDaemon(true)`) and with `shutdownHook(false)`, so a short-lived command-line application still exits when its `main` returns.
+
+A build tool that forks the application's JVM needs the `-javaagent` option handed to it.
+xref:gradle-plugin.adoc[The Gradle Plugin] does that for `bootRun` and `run`, and xref:maven.adoc[Maven] does it for `spring-boot:run`.
+The jar and the plugin are published together to Maven Central as `net.benelog.spidersense:spider-sense` and `net.benelog.spidersense:spider-sense-gradle-plugin`, one version for both.
+
+== The server
+
+The Gradle module `spider-sense-server` is a Spider Silk `App` with four concerns.
+
+. *OTLP/HTTP receiver*: `POST /v1/traces`, `/v1/metrics` and `/v1/logs`.
+It accepts `Content-Type: application/x-protobuf`, which is the agent's format, and `application/json` for browser SDKs and `curl`, and `Content-Encoding: gzip`.
+It decodes with the `io.opentelemetry.proto:opentelemetry-proto` bindings, the same classes the OpenTelemetry Java SDK is generated from.
+The answer is an empty `Export*ServiceResponse` in the request's content type.
+There is no gRPC receiver, because gRPC needs Netty or Armeria in the jar for a benefit no local setup has.
+Senders set `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf`.
+. *Store*: an H2 file database under the user's home, `~/db/spider-sense/sense` with `AUTO_SERVER=TRUE`, shared by every Spider Sense process on the machine and kept after the monitored application stops, so the analysis screen is still there after a restart or a crash.
+Ingest goes through a write-behind queue and one writer thread, and every API answer is SQL over indexed columns.
+The schema, the writer, the queries and the retention sweeper are specified in xref:storage.adoc[Storage].
+One small in-memory piece remains, the `EventBus`: ingest notifications to SSE subscribers, coalesced to at most 4 messages per second.
+. *JSON API and static UI*: the contract in xref:api.adoc[The HTTP API], and the UI in `src/main/resources/public` as xref:pages.adoc[The Pages] describes it.
+. *The agent interface*: findings, marks, compare, check and a Markdown rendering of every list, over the same `Queries` as the UI.
+The xref:cli.adoc[CLI] fronts them, and an MCP adapter (`POST /mcp`, and `mcp` over stdio) serves hosts without a shell.
+xref:agent-loop.adoc#interfaces[The Loop] states which of the two a host should use.
+
+Semantic conventions: the OpenTelemetry Java agent still emits the older database attributes by default (`db.system`, `db.statement`, `db.name`, `db.operation`, `db.sql.table`) and the stable HTTP ones (`http.request.method`, `http.route`, `url.path`, `http.response.status_code`, `server.port`).
+With `otel.semconv-stability.opt-in=database` it emits `db.system.name`, `db.query.text`, `db.namespace`, `db.operation.name` and `db.collection.name`.
+The decoder normalises both generations into `SpanRecord`'s accessors, and also the pre-stable HTTP names (`http.method`, `http.target`, `http.status_code`) for other SDKs.
+
+Errors come from three places and are merged: the span status `ERROR`, the `exception` span event (`exception.type`, `exception.message`, `exception.stacktrace`), and the `error.type` attribute.
+An error group is the service, the exception type or `error.type`, and the message with digits and quoted strings replaced by `?`.
+
+[#endpoint-identity]
+== Endpoint identity
+
+Endpoint identity is the HTTP method plus `http.route` when a route exists, else the span name, and the aggregation keys on entry spans.
+An entry span is a span of kind `SERVER` or `CONSUMER`, or a root span (no parent) of kind `CLIENT` or `PRODUCER` that is not a database span, meaning it carries no `db.system` or `db.system.name`.
+
+A client root span is a request someone made, which is how the load generator's `java.net.http` traffic shows up.
+A root `INTERNAL` span and a root database span are work the application did to itself.
+A seeder's tens of thousands of `INSERT` statements, or a scheduler's tick, are not requests, and counting them would drown the endpoint list, the request totals, Apdex and `check`.
+Such spans are still stored, still have a `trace` row and still render in the trace tree.
+They are simply not endpoints, not requests and never `slow request` tingles.
+
+A root `INTERNAL` span is a *job*: a scheduled method, an `@Async` call, a batch step.
+Jobs have their own finding, xref:findings.adoc#slow-job[`slow-job`], so a slow one is reported without ever being counted as a request.
+
+A health check polled every few seconds is the most frequent request of a typical Spring Boot application and the least interesting one.
+It is fast, it never fails, and it dilutes the request count, the Apdex, `check` and every `slow-endpoint` judgement.
+`spidersense.ignore.endpoints` takes an entry span out of all of that while still storing it, and xref:configuration.adoc#ignored-endpoints[Ignored endpoints] specifies the patterns and the matching.
+
+Query identity is the service, the database system, and the statement as the agent sanitised it.
+The agent replaces literals with `?` by default, which is exactly the grouping wanted.
+A statement is shown at most 2000 characters.
+
+[#extension]
+== The extension
+
+The Gradle module `spider-sense-extension` is packaged as `spider-sense/extension.jar`, and is the only piece of Spider Sense that is not the stock OpenTelemetry agent.
+It exists for one thing the agent cannot do: say where a slow query was issued from.
+
+It registers, through `META-INF/services/io.opentelemetry.sdk.autoconfigure.spi.AutoConfigurationCustomizerProvider`, a span processor that implements `io.opentelemetry.sdk.trace.internal.ExtendedSpanProcessor` and does its work in `onEnding(ReadWriteSpan)`.
+That callback runs on the thread that is ending the span, before the span becomes immutable: the duration is already known and an attribute can still be set, which no ordinary `SpanProcessor` callback allows.
+
+The first case is a slow query.
+When the span carries a `db.system` or `db.system.name` attribute and has taken at least `spidersense.slow.query.ms`, the processor writes `Thread.currentThread().getStackTrace()` into the span attribute `code.stacktrace`.
+The environment variable `SPIDERSENSE_SLOW_QUERY_MS` also works, the default is 100, which is the same threshold the server calls a tingle, and the value is read once when the processor is built.
+
+The second case is the N+1.
+The individual queries of an N+1 are fast, so the threshold above would never fire on them, and an `n-plus-one` finding would name a statement and no line.
+The processor counts, per thread, how many database spans of the current trace have ended with the same statement (`db.query.text` or `db.statement`, else the span name).
+The count is keyed by trace id and reset when a span of another trace ends on that thread.
+When a statement reaches its fifth repeat, the same number that makes a query group an N+1 on the server (xref:findings.adoc#n-plus-one[N+1]), the stack is captured on that one span and on no later repeat.
+The cost is therefore one capture per repeated statement per trace, and the server's `n-plus-one` rule prefers the span of the group that carries `code.stacktrace` for the finding's `code`.
+A trace whose repeats end on several threads is counted per thread and may fall short of five on each.
+That is a known limit of keeping the counter thread-local, chosen because the alternative is a shared map with the life of every trace to manage.
+At most 256 distinct statements are counted per trace, and beyond that the counter stops and nothing else changes.
+
+The third case is a slow outbound call.
+A `CLIENT` span that is not a database span (no `db.system` or `db.system.name`) and has taken at least `spidersense.slow.request.ms` (`SPIDERSENSE_SLOW_REQUEST_MS`, default 500, read once like the other threshold) gets the same `code.stacktrace`, so a xref:findings.adoc#slow-external[`slow-external`] finding names the line that made the call.
+The same frames are dropped, the same cap applies, and a span that already carries the attribute is left alone.
+
+The lines are formatted as `Throwable.printStackTrace` writes them: `\tat package.Class.method(File.java:41)`, one per line, no header.
+The server therefore reduces them to application frames with exactly the code it already uses for `exception.stacktrace` (xref:findings.adoc#code[Code frames]).
+The leading frames of `Thread.getStackTrace`, of the processor itself and of `io.opentelemetry.`, which is the SDK's own `end()` path, are dropped, and the trace is cut at 64 frames.
+`isStartRequired()` and `isEndRequired()` are false, `isOnEndingRequired()` is true, and anything thrown inside `onEnding` is swallowed: a missing code location is never worth a broken span.
+
+The module is compiled against `io.opentelemetry:opentelemetry-sdk-trace` and `io.opentelemetry:opentelemetry-sdk-extension-autoconfigure-spi` at the SDK version the packaged agent bundles (`otelSdkVersion` in the root `build.gradle`), `compileOnly` and nothing else.
+The agent's `ExtensionClassLoader` rewrites the unshaded `io.opentelemetry` references to the agent's own shaded classes as it loads them, so the extension must not ship a copy of the SDK.
+
+[#rejected]
+== What was considered and rejected
+
+*An OpenTelemetry agent extension instead of our own premain.*
+The extension mechanism (`extensions/` inside the agent jar, `AgentListener`) would also work, and `ExtensionClassLoader` is already exclusion-listed.
+It was rejected because the UI would then depend on the agent's SPI and lifecycle, and the standalone mode would still need a launcher of its own.
+A premain that wraps the agent's premain keeps the server a plain program that the agent happens to be pointed at over a standard protocol.
+
+*One small extension beside the premain is worth it, though.*
+The stock agent records where an exception was thrown and nothing at all about where a query was issued from, so `slow-query` and `n-plus-one` findings named a statement and left the reader to grep for it.
+A stack capture on the thread that is ending the span, taken only for database spans already over `slow.query.ms` and for the fifth repeat of a statement within a trace, costs nothing measurable.
+The slow spans are by definition slow, a few microseconds against a hundred milliseconds, and the repeat capture happens once per repeated statement per trace.
+It turns those findings into a line to open.
+That is <<extension,the extension>>: it sets one attribute and does nothing else, and the server and the standalone mode stay unaware of it.
+
+*In-process export, with a custom `SpanExporter` handing spans straight to the store.*
+It is faster, but it ties the store to the agent's shaded SDK classes and makes the standalone and embedded paths diverge.
+Loopback OTLP costs nothing measurable and exercises the same code path the standalone mode uses.
+
+*In-memory only storage.*
+The first design kept everything in bounded ring buffers and aggregated on demand, which is the simplest option and free of any database inside the application's JVM.
+It was rejected because the analysis screen has to survive the monitored application going down, and because two embedded instances on one machine should show one picture.
+H2 with `AUTO_SERVER` gives both, and the class-loader exclusion keeps the OpenTelemetry agent away from its JDBC.
+
+*A frontend build (React, Vue, TypeScript).*
+SigNoz and OpenObserve are built that way.
+Spider Sense is a single jar whose build must stay `./gradlew build` with no Node.
+The UI is plain ES modules, one CSS file, and uPlot for charts, served by Spider Silk's static files.
+A template engine was not used either: the UI is one page whose data all comes from the JSON API, and Spider Silk's JSON and SSE support is the part of the framework this application exercises.
+
+*A gRPC receiver.*
+gRPC needs Netty or Armeria in the jar for a benefit no local setup has.
+
+*Profiling, Glowroot-style stack sampling.*
+It is not part of OpenTelemetry's stable signals in Java, and it is deferred until the profiling signal lands in the agent.

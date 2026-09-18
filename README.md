@@ -17,6 +17,7 @@ Spider Sense is an APM for the local development loop.
 One jar, one JVM option, and a browser tab that shows every request, every SQL statement, every error and the JVM's vital signs of the application you are working on, a second after they happen.
 
 It is a sibling of [Spider Silk](https://github.com/benelog/spider-silk), the web framework its UI is built with, and it follows the same idea: thin by design.
+The manual is at <https://spider-sense.benelog.net>.
 
 - **A Glowroot-style deployment, OpenTelemetry data.**
   `-javaagent:spider-sense.jar` is all it takes, like Glowroot.
@@ -81,7 +82,7 @@ mvn spring-boot:run -Dspring-boot.run.agents=/path/to/spider-sense.jar
 
 ## What you see
 
-<p align="center"><img src="docs/images/overview.jpg" alt="Overview: request rate, error rate, percentiles, the throughput chart, the services, and the tingle feed" width="900"></p>
+<p align="center"><img src="manual/modules/ROOT/images/overview.jpg" alt="Overview: request rate, error rate, percentiles, the throughput chart, the services, and the tingle feed" width="900"></p>
 
 | Page | What it answers |
 |---|---|
@@ -96,21 +97,21 @@ mvn spring-boot:run -Dspring-boot.run.agents=/path/to/spider-sense.jar
 | JVM, Metrics | Heap, GC, threads, CPU, classes and connection pools from the agent's metrics, and an explorer for every other metric. |
 
 <p align="center">
-  <img src="docs/images/scatter.jpg" alt="Scatter: every request as a dot on time by response time" width="440">
-  <img src="docs/images/trace-waterfall.jpg" alt="A trace across spring-orders and silk-bookstore as a waterfall" width="440">
+  <img src="manual/modules/ROOT/images/scatter.jpg" alt="Scatter: every request as a dot on time by response time" width="440">
+  <img src="manual/modules/ROOT/images/trace-waterfall.jpg" alt="A trace across spring-orders and silk-bookstore as a waterfall" width="440">
 </p>
 <p align="center">
-  <img src="docs/images/trace-profile.jpg" alt="The same trace as a step-by-step profile with gap and elapsed times" width="440">
-  <img src="docs/images/span-drawer.jpg" alt="The span drawer with the SQL statement and every attribute" width="440">
+  <img src="manual/modules/ROOT/images/trace-profile.jpg" alt="The same trace as a step-by-step profile with gap and elapsed times" width="440">
+  <img src="manual/modules/ROOT/images/span-drawer.jpg" alt="The span drawer with the SQL statement and every attribute" width="440">
 </p>
 <p align="center">
-  <img src="docs/images/queries.jpg" alt="Queries grouped by statement with calls, average, p95, max and total time" width="440">
-  <img src="docs/images/jvm.jpg" alt="JVM heap, non-heap, memory pools and garbage collection" width="440">
+  <img src="manual/modules/ROOT/images/queries.jpg" alt="Queries grouped by statement with calls, average, p95, max and total time" width="440">
+  <img src="manual/modules/ROOT/images/jvm.jpg" alt="JVM heap, non-heap, memory pools and garbage collection" width="440">
 </p>
 
 The data is in an H2 file under `~/db/spider-sense/`, so the screens are still there after the application has stopped: `java -jar spider-sense.jar` opens the same database.
 
-<p align="center"><img src="docs/images/services-standalone.jpg" alt="The standalone UI showing both services after the applications were stopped" width="900"></p>
+<p align="center"><img src="manual/modules/ROOT/images/services-standalone.jpg" alt="The standalone UI showing both services after the applications were stopped" width="900"></p>
 
 ## For AI agents
 

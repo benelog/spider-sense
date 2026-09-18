@@ -1,0 +1,106 @@
+= Layout and Controls
+:navtitle: Layout and Controls
+
+The Spider Sense UI is one page in the browser, a sidebar of pages beside a top bar of controls that every page obeys.
+
+.The Overview, with the request rate, the error rate, the percentiles, the throughput chart, the services, and the tingle feed
+image::overview.jpg[Overview: request rate, error rate, percentiles, the throughput chart, the services, and the tingle feed,900]
+
+== The name and the look
+
+"Spider Sense" is the sibling of "Spider Silk".
+Silk is the web a spider builds, and Sense is what the spider feels through it: the tingle when something on the web moves.
+The UI is dark by default, follows `prefers-color-scheme: light`, and carries a toggle in the top bar that remembers your choice.
+The accent colour is the tingle, and it marks the primary actions, the active page in the sidebar, and what is slow.
+Each service keeps one colour from a fixed list of eight, assigned in the order the services are first seen, so a service looks the same in every chart.
+Colour is never the only carrier of meaning: an error also gets a bolt, and something slow also gets a ring or a turtle.
+The copy is short and factual, and an empty state explains how to send data rather than saying "No data".
+
+== Layout
+
+The sidebar lists the pages: Overview, Findings, Compare, Map, Services, Scatter, Traces, Queries, Errors, Logs, JVM, and Metrics.
+It is 220 px wide, collapses to icons below 1100 px, and becomes a hamburger drawer below 720 px.
+The rest of the window is the page, under the top bar.
+
+The sidebar foot shows the mode Spider Sense runs in, its port, its version, and a "how to send data" link that opens the snippet dialog.
+When spans have been dropped, the foot adds a `dropping spans` line in amber, with the number dropped as its title.
+That happens when the traffic crossed xref:configuration.adoc#properties[`spidersense.ingest.max-spans-per-second`], and the line stays for a minute after the last increase, so a load test reads as partial data rather than as a quiet application.
+
+[#top-bar]
+== The top bar
+
+The top bar carries the page title on the left, and on the right the Mark button, the service filter, the time range, and the Live toggle.
+
+Mark::
+Opens a small dialog with a name, an optional note, and OK.
+The name takes letters, digits, dots, underscores and hyphens, up to 64 characters (`+[A-Za-z0-9._-]{1,64}+`).
+It is prefilled with `before` when no mark in the window is named `before`, and with `after` otherwise.
+When the service filter names one service, the mark records that service.
+OK creates the mark and shows a toast naming it.
+Marking is your half of the loop an agent runs: mark, exercise, compare.
+xref:marks-and-compare.adoc#marks[Marks] covers what a mark is and how the agent's side reads it.
+
+Service filter::
+All services, or one.
+It applies to every page that takes a service.
+
+Time range::
+`5m`, `15m`, `1h`, `6h`, or `all`.
+`all` starts at the oldest span in storage.
+
+Live::
+The page re-fetches every 5 seconds, and the end of the window moves with the clock.
+A "spans/s" readout sits beside the toggle.
+Every tingle increments the badge on the sidebar and prepends to the Overview feed without a refetch.
+
+== Marks on charts
+
+Every time-series chart draws the marks that fall inside its window as a vertical dashed line the full height of the plot, with the name as a small label at the top.
+The automatic `start` marks are grey, and every other mark is in the accent colour.
+A mark that names a service is drawn only when the service filter is off or is that service.
+The shell fetches the 50 most recent marks on every page change and on every Live refresh, so every chart has them without the page asking.
+
+== The tingle badge
+
+The sensing arcs of the logo in the sidebar pulse once, for 600 ms, when a tingle arrives.
+Once, not continuously: the tingle is a signal, not a decoration.
+The same event increments the badge on the sidebar's `tingles` entry.
+The pulse respects a reduced-motion preference.
+
+== Dialogs
+
+How to send data::
+Three tabs, `-javaagent`, environment variables, and `curl`.
+Each is a copyable block carrying the endpoint this Spider Sense actually listens on.
+
+Clear data::
+Asks for confirmation, then deletes the stored data.
+
+[#keyboard]
+== Keyboard
+
+[cols="1,3",options="header"]
+|===
+| Key | What it does
+
+| `/`
+| Focuses the query bar
+
+| `Esc`
+| Closes a drawer, or clears the scatter selection
+
+| `L`
+| Toggles Live
+
+| `[` and `]`
+| Step the time range
+
+| `M`
+| Opens the Mark dialog
+|===
+
+== URLs
+
+Routing is hash-based: `#/`, `+#/services/spring-orders+`, `+#/traces/<id>+`.
+The service filter and the time range live in the hash query, as in `+#/traces?service=x&range=1h+`.
+A URL therefore carries what you are looking at, and can be shared as it is.

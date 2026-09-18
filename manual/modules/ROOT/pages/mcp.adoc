@@ -1,0 +1,141 @@
+= MCP
+:navtitle: MCP
+
+Spider Sense speaks the Model Context Protocol, so a host that cannot run a command still gets the answers the CLI gives.
+
+Six tools cover the loop: `findings`, `trace`, `mark`, `compare`, `check` and `sql`.
+Each one is the thinnest possible adapter over the agent-facing endpoints (xref:api.adoc#agent-endpoints[Agent-facing endpoints]).
+A tool call is one call into the same handlers the CLI and the UI use, and its result is the same text rendering the matching command prints, so an MCP answer and a CLI answer over the same window are the same bytes.
+
+== When to use it
+
+MCP is for the host that has no shell.
+The choice between it and the CLI costs nothing in what is answered, so it is decided by what the host can reach.
+
+[cols="2,3",options="header"]
+|===
+| Host
+| Use
+
+| An agent with a shell (Claude Code, Codex CLI, Gemini CLI, Aider, a script)
+| the CLI and the skill: `init`, then the commands of xref:cli.adoc[The CLI]
+
+| A host without a shell (Claude Desktop, a browser-based agent, an IDE chat panel)
+| MCP: `init --mcp`, or `http://127.0.0.1:4000/mcp`
+
+| CI or a build gate
+| `check`, whose exit code is the verdict, or the Gradle plugin's task (xref:gradle-plugin.adoc#check-task[Check as a build step])
+
+| The application has crashed
+| the CLI, or MCP over stdio, because both open the H2 file in process
+|===
+
+WARNING: Do not enable both the CLI and MCP in one host.
+Two tools that give the same answer make the model choose between them and cost the schema twice.
+
+The skill teaches the loop for the CLI (xref:agent-skill.adoc[The Agent Skill]), and the MCP server's `instructions` field carries the same loop in one paragraph, so neither host is taught something the other is not.
+
+== The transports
+
+=== Streamable HTTP
+
+`POST /mcp` on the server's own port, which is the port the UI answers on.
+One JSON-RPC 2.0 message travels per request, as `application/json` both ways.
+A request is answered with `200` and the JSON-RPC response, and a notification with `202` and no body.
+
+The server is stateless.
+No session id is issued or required, `GET /mcp` is `405`, and a JSON array is refused with `-32600`.
+
+This transport needs the server to be up, so it is the one that stops answering when the application does.
+
+=== stdio
+
+[source,bash]
+----
+java -jar spider-sense.jar mcp [--url=<base url>] [--db=<path or jdbc url>]
+----
+
+The `mcp` command reads newline-delimited JSON-RPC on stdin and writes it on stdout.
+Nothing else goes to stdout, diagnostics go to stderr, and the command ends at end of input.
+
+`initialize`, `ping` and `tools/list` are answered in the process.
+A `tools/call` goes to the Spider Sense at `--url` when one answers, and the CLI's default and `SPIDERSENSE_URL` apply.
+When none answers, the H2 file is opened in process exactly as the CLI does it, with the same line on stderr saying so, and `--db` reads a file without asking any server (xref:cli.adoc#fallback[The direct-file fallback]).
+
+This is the transport for a host on the same machine, and the one that still answers after the application has crashed.
+
+== The tools
+
+Every argument is the CLI option of the same meaning, and a selector is a string as in xref:marks-and-compare.adoc#time-selectors[Time selectors].
+
+[cols="1,3,3",options="header"]
+|===
+| Tool
+| Arguments
+| Answers
+
+| `findings`
+| `since`, `until`, `service`, `limit` (1 to 100), `full`, `hideAcked`
+| the findings text (xref:findings.adoc[Findings])
+
+| `trace`
+| `traceId` (required), `full`, `diff`
+| the trace tree, or the two traces aligned when `diff` names a second one (xref:cli.adoc#trace-diff[Trace diff])
+
+| `mark`
+| `name` (required), `note`, `service`
+| the mark, as the CLI prints it
+
+| `compare`
+| `before`, `after` (both required), `until`, `service`
+| the compare text (xref:marks-and-compare.adoc#compare[Compare])
+
+| `check`
+| `since`, `until`, `service`, `endpoint`, `maxP95Ms`, `maxErrors`, `maxErrorRate`, `maxQueriesPerRequest`, `maxSlowQueries`, `maxNPlusOne`, `maxLogErrors`, `minApdex`
+| the check text (xref:check.adoc[Check])
+
+| `sql`
+| `sql` (required), `limit` (1 to 5000)
+| the sql text (xref:cli.adoc#sql[SQL])
+|===
+
+A mark name matches `[A-Za-z0-9._-]{1,64}`.
+
+A result is `{ "content": [ { "type": "text", "text": "<the Markdown>" } ] }`.
+`check` also carries `structuredContent` with `pass` and `requests`, so a host need not read the heading for the verdict.
+
+What the CLI reports on stderr with exit code `4`, such as no such trace or no such mark, is a tool result with `isError: true` whose text is that message on one line.
+So is a refused statement or a bad selector.
+A missing required argument or an unknown tool is a JSON-RPC `-32602`.
+
+Tool descriptions are one sentence each and say when to use the tool, not how the output looks, because the output is the text rendering and needs no description.
+
+== Methods
+
+`initialize` answers the client's `protocolVersion` when it is one the server knows (`2025-06-18`, `2025-03-26`, `2024-11-05`), and `2025-06-18` otherwise.
+It also answers `capabilities` with `tools`, a `serverInfo` naming `spider-sense` and its version, and `instructions`, which is the loop in one paragraph: start the application under the agent, `mark`, exercise, `findings`, fix, `mark`, `compare`, `check`.
+
+`notifications/initialized` is accepted and ignored, `ping` answers an empty object, `tools/list` is the six tools, and `tools/call` runs one.
+Anything else is `-32601`.
+
+== Configuring a host
+
+`init --mcp` writes the stdio server into the project's `.mcp.json`:
+
+[source,bash]
+----
+java -jar spider-sense.jar init --mcp
+----
+
+It sets `mcpServers.spider-sense` to `{ "command": "java", "args": ["-jar", "<jar path>", "mcp"] }`, with the same absolute jar path the `CLAUDE.md` block names (xref:agent-skill.adoc#init[init]).
+An existing file is parsed as JSON and every other entry is kept, though the file is rewritten in Spider Sense's own JSON formatting.
+A file that is not a JSON object is left alone, with a message on stderr and exit code `2`.
+
+Without `--mcp` nothing is written and nothing is printed about it, because a host with a shell is meant to use the CLI.
+
+A host that reaches a running Spider Sense over HTTP is configured by hand instead:
+
+[source,json]
+----
+{ "type": "http", "url": "http://127.0.0.1:4000/mcp" }
+----

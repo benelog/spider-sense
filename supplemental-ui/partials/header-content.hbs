@@ -1,0 +1,20 @@
+<header class="header">
+  <nav class="navbar">
+    <div class="navbar-brand">
+      <a class="navbar-item" href="{{{or site.url siteRootPath}}}">{{site.title}}</a>
+      <button class="navbar-burger" aria-controls="topbar-nav" aria-expanded="false" aria-label="Toggle main menu">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+    </div>
+    <div id="topbar-nav" class="navbar-menu">
+      <div class="navbar-end">
+        <a class="navbar-item" href="https://spider-silk.benelog.net">Spider Silk</a>
+        {{#with site.keys.repository}}
+        <a class="navbar-item" href="{{{this}}}">GitHub</a>
+        {{/with}}
+      </div>
+    </div>
+  </nav>
+</header>

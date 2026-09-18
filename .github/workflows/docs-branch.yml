@@ -1,0 +1,25 @@
+name: Docs branch
+
+# A released manual is a docs/x.y.z branch, and the site that lists it is built
+# from main. A push here therefore runs the Docs workflow on main, which reads
+# every docs/* branch out of its clone; a run on this branch could build the
+# site but not deploy it, since the github-pages environment deploys from main
+# only. The dispatch is what GITHUB_TOKEN may start: a push event it caused
+# would start nothing, a workflow_dispatch does.
+
+on:
+  push:
+    branches: [ 'docs/**' ]
+  workflow_dispatch:
+
+permissions:
+  actions: write
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    steps:
+      - run: gh workflow run docs.yml --ref main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}

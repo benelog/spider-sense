@@ -1,0 +1,85 @@
+= The Examples
+:navtitle: The Examples
+
+The repository carries two deliberately misbehaving applications and a load generator, so there is something to look at before there is anything of your own.
+All three send to whichever Spider Sense they are pointed at, and each one does something wrong on purpose.
+
+== The applications
+
+silk-bookstore::
+A Spider Silk application with jte pages and a JSON API, over spring-jdbc and an H2 file database, on port 8081.
+About 200,000 rows are seeded, so an unindexed `LIKE '%…%'` search is a real slow query.
+An `SLEEP` alias makes one query slow by decree, one page runs N+1 queries, one endpoint throws, and one endpoint sleeps without running any SQL.
+
+spring-orders::
+A Spring Boot 4.1 application with Spring Data JPA and H2 over an orders and customers domain, on port 8082.
+It has a slow report endpoint whose JPQL runs over a large table, a lazy-loading N+1 page, a checkout that fails with a business exception, and a flaky endpoint that fails 20% of the time.
+One endpoint calls `silk-bookstore` over HTTP, so a trace spans two services.
+
+load-gen::
+A plain Java program that hits both applications at a randomised rate, so the dashboards fill without manual clicking.
+It is instrumented too, through `java.net.http`, so some traces start at the client.
+
+Each of the three lives under `examples/` in https://github.com/{project-repo}[the repository].
+
+== The two scripts
+
+Both scripts build what they need, start everything, print where each thing is, and stop it all on Ctrl-C.
+Pass `--no-build` to skip the Gradle build when nothing has changed.
+Every process writes its log to `build/demo-logs/`, and `RPS` sets the load generator's rate, which defaults to 4 requests per second.
+
+[source,bash]
+----
+scripts/demo.sh             # each application with its own embedded Spider Sense
+scripts/demo-shared.sh      # one standalone Spider Sense that both applications forward to
+----
+
+=== demo.sh
+
+`scripts/demo.sh` is xref:modes.adoc#agent[agent mode] twice over, with no extra process.
+`silk-bookstore` starts from its `installDist` script with `JAVA_OPTS` carrying the agent, and `spring-orders` from its boot jar with the agent on the command line.
+Each hosts its own Spider Sense, so there are two UIs and two pictures.
+The load generator runs without the agent here.
+
+[cols="1,1,1",options="header"]
+|===
+| Application | Application port | Spider Sense
+
+| silk-bookstore
+| 8081
+| http://127.0.0.1:4000[]
+
+| spring-orders
+| 8082
+| http://127.0.0.1:4001[]
+|===
+
+=== demo-shared.sh
+
+`scripts/demo-shared.sh` is the other layout: one xref:modes.adoc#standalone[standalone] Spider Sense on port 4000, which both applications and the load generator forward to with `-Dspidersense.collector=`.
+`SENSE_PORT` moves it.
+This is where a trace crossing both services shows up in one place, and where the xref:pages.adoc#map[map] has more than one service on it.
+The applications keep their own ports, 8081 and 8082.
+
+The load generator runs under the agent here as well, named `load-gen`, so its calls are the root of the traces they start.
+
+== After the applications stop
+
+The data is in an H2 file under `~/db/spider-sense/`, which outlives every process that wrote to it.
+`java -jar spider-sense.jar` opens the same screens on the same rows once the demo has been stopped.
+
+.The standalone UI showing both services after the applications were stopped
+image::services-standalone.jpg[The Services page listing silk-bookstore and spring-orders after both applications were stopped,900]
+
+== What to do with them
+
+The examples are the shortest way to see each page with real data on it, and they are also the fixture the agent loop is described against.
+Start `scripts/demo-shared.sh`, let the load generator run for a minute, and then read the findings:
+
+[source,bash]
+----
+java -jar "$SENSE" findings --since=15m
+----
+
+Each finding points back at one of the faults above, so xref:findings.adoc[Findings] can be read against code that is known to be wrong.
+xref:agent-loop.adoc#the-loop[The Loop] walks the whole cycle on them.

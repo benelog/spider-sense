@@ -1,0 +1,403 @@
+= The Gradle Plugin
+:navtitle: The Gradle Plugin
+
+The `net.benelog.spidersense` plugin puts `-javaagent:` on the JVM that Gradle forks for `bootRun` or `run`, so an application starts under Spider Sense with no path and no JVM argument in the build file.
+
+[source,groovy,subs="attributes+"]
+----
+plugins {
+    id 'org.springframework.boot' version '4.1.1'
+    id 'net.benelog.spidersense' version '{project-version}'
+}
+----
+
+[source,bash]
+----
+./gradlew bootRun
+----
+
+That is the whole setup.
+The application starts under Spider Sense, named after the project, and the UI is at http://127.0.0.1:4000.
+
+The jar is resolved from Maven Central as `{project-group}:spider-sense:{project-version}`, the plugin's own version, through the project's repositories.
+`mavenCentral()` therefore has to be among them, as it is in every Spring Boot project.
+The plugin itself is a plain Gradle plugin published to Maven Central with its marker, which the Gradle Plugin Portal proxies, so the default `pluginManagement` finds it.
+
+The plugin applies nothing else and configures nothing it was not asked to.
+It works the same with the `application` plugin's `run` task.
+A project with neither Spring Boot nor `application` gets the `spiderSense` block and the three tasks, and nothing attached.
+
+A build that cannot take a new plugin puts the argument on the task itself, with an absolute path to the jar:
+
+[source,groovy,subs="attributes+"]
+----
+tasks.named('bootRun') {
+    jvmArgs '-javaagent:/absolute/path/to/spider-sense-{project-version}.jar', '-Dotel.service.name=spring-orders'
+}
+----
+
+== What applying it does
+
+. Creates the `spiderSense` extension, the block below.
+. Creates the `spiderSense` configuration, resolvable and not consumable, non-transitive, with one default dependency: `{project-group}:spider-sense:<version>`, where `version` is the block's property and defaults to the plugin's own version.
+A dependency added to the configuration by the build replaces the default.
+That is how a project on a checkout of this repository uses the jar it just built: `dependencies { spiderSense project(path: ':spider-sense-agent', configuration: 'senseJar') }`.
+. Attaches to every `JavaExec` task whose name is in `attachTo` (default `bootRun`, `bootTestRun`, `run`) by adding a `CommandLineArgumentProvider` to the task's `jvmArgumentProviders`.
+The provider contributes `-javaagent:<jar>` first, then one `-Dspidersense.<key>=<value>` per property of the block that has a value.
+The jar is a declared input of the task, so a project dependency on it is built first.
+A task that is not in `attachTo`, or a run with `spiderSense.enabled` false, gets nothing: no argument, no jar resolution.
+Adding a provider rather than editing `jvmArgs` leaves the task's own `jvmArgs` alone.
+The arguments are computed when the task runs, so a `spiderSense { }` block anywhere in the build file, before or after `tasks.named('bootRun')`, is seen.
+. Registers the tasks `spiderSense`, `spiderSenseInit` and `spiderSenseCheck` in the group `spider sense`.
+
+Nothing here touches the Gradle daemon.
+A `jvmArgumentProvider` reaches only the forked JVM, which is the reason the plugin exists instead of `JAVA_TOOL_OPTIONS`.
+`JAVA_TOOL_OPTIONS` reaches every JVM the command starts, including the daemon, which then tries to host a Spider Sense of its own on port 4000.
+
+[#block]
+== The block
+
+Every property is a lazy Gradle `Property`.
+Unset means "leave the jar's own default", and the jar's defaults are in xref:configuration.adoc#properties[Configuration].
+
+[cols="1,1,1,3",options="header"]
+|===
+| Property
+| Type
+| Default
+| Becomes
+
+| `enabled`
+| `Boolean`
+| `true`
+| nothing is attached when `false`; the project property `spiderSense.enabled` (`-PspiderSense.enabled=false`, or `=true`) wins over the block
+
+| `version`
+| `String`
+| the plugin's version
+| the version of `{project-group}:spider-sense` the default dependency names
+
+| `jar`
+| `RegularFile`
+| unset
+| the jar to attach instead of resolving one; the project property `spiderSense.jar` (`-PspiderSense.jar=/path/to/spider-sense.jar`) wins over the block
+
+| `attachTo`
+| `Set<String>`
+| `bootRun`, `bootTestRun`, `run`
+| the names of the `JavaExec` tasks that get the agent
+
+| `service`
+| `String`
+| `project.name`
+| `-Dspidersense.service=`, which is `otel.service.name` unless that is set already
+
+| `port`
+| `Integer`
+| unset (`4000`)
+| `-Dspidersense.port=`
+
+| `host`
+| `String`
+| unset (`127.0.0.1`)
+| `-Dspidersense.host=`
+
+| `collector`
+| `String`
+| unset
+| `-Dspidersense.collector=`: forward to that Spider Sense instead of embedding one
+
+| `db`
+| `String`
+| unset (`~/db/spider-sense/sense`)
+| `-Dspidersense.db=`
+
+| `retentionHours`
+| `Integer`
+| unset (`24`)
+| `-Dspidersense.retention.hours=`
+
+| `slowRequestMs`
+| `Long`
+| unset (`500`)
+| `-Dspidersense.slow.request.ms=`
+
+| `slowQueryMs`
+| `Long`
+| unset (`100`)
+| `-Dspidersense.slow.query.ms=`
+
+| `open`
+| `Boolean`
+| unset (`false`)
+| `-Dspidersense.open=`: open the browser at startup
+
+| `appPackages`
+| `List<String>`
+| unset
+| `-Dspidersense.app.packages=`, the list joined with commas
+
+| `ignoreEndpoints`
+| `List<String>`
+| unset (the jar's default list)
+| `-Dspidersense.ignore.endpoints=`, the list joined with commas; an empty list set explicitly (`ignoreEndpoints = []`) passes an empty value, which ignores nothing
+
+| `retentionSpans`
+| `Long`
+| unset (`1000000`)
+| `-Dspidersense.retention.spans=`
+
+| `maxSpansPerSecond`
+| `Long`
+| unset
+| `-Dspidersense.ingest.max-spans-per-second=`
+
+| `check { }`
+| a nested block
+| see <<check-task,Check as a build step>>
+| the rules of the `spiderSenseCheck` task
+|===
+
+Where the jar comes from, in order: the project property `spiderSense.jar`, then the block's `jar`, then the single file of the `spiderSense` configuration.
+More than one file in the configuration, or none, is an error naming the configuration when a task that needs the jar runs.
+
+The block sets only `spidersense.*` properties.
+Everything the OpenTelemetry agent takes as `otel.*` goes on the task as usual, and the two combine:
+
+[source,groovy]
+----
+spiderSense {
+    port = 4001
+    slowQueryMs = 50
+    appPackages = ['com.acme.orders']
+}
+
+tasks.named('bootRun') {
+    jvmArgs '-Dotel.instrumentation.jdbc-datasource.enabled=true'
+}
+----
+
+== Switching it off and on
+
+`./gradlew bootRun -PspiderSense.enabled=false` runs the application bare.
+`spiderSense { enabled = false }` with `-PspiderSense.enabled=true` is the other way round: kept in the build, attached on request.
+An `enabled` of `false` is the same as not applying the plugin, except that the block and the tasks are still there.
+
+[#tasks]
+== The tasks
+
+`spiderSense` runs the jar exactly as `java -jar spider-sense.jar` would, so both the standalone server and the xref:cli.adoc[CLI] are one Gradle task away in a project that never checked out this repository:
+
+[source,bash]
+----
+./gradlew spiderSense                                   # the standalone collector + UI; Ctrl-C stops it
+./gradlew -q spiderSense --args="findings --since=start" # the CLI; -q keeps Gradle's own lines out
+./gradlew -q spiderSense --args="check --max-n-plus-one=0"
+----
+
+It is a `JavaExec` with the jar as its only class path and no dependency on compiling the project.
+The block's `spidersense.*` properties are passed to it as they are to the application, so a standalone started this way listens where the block says.
+It also sets the environment variable `SPIDERSENSE_URL` to the base URL the block implies, which is `collector` when set and otherwise `http://<host>:<port>` with the defaults filled in.
+A CLI command therefore asks the Spider Sense the application is sending to rather than the default port.
+The exit code is the CLI's exit code, which is what `check` is for.
+
+`spiderSenseInit` runs `init --dir=<the project directory> --jar=<the jar>`.
+It writes the Spider Sense block into the project's `CLAUDE.md` and installs the skill into `.claude/skills/`, as xref:agent-skill.adoc#init[The Agent Skill] describes.
+The jar path it writes is wherever Gradle resolved the jar to, a file under `~/.gradle/caches/` for a Maven Central jar, which stays valid until the version changes.
+Run it again after a `version` bump.
+
+[#check-task]
+== Check as a build step
+
+`spiderSenseCheck` runs the CLI's xref:check.adoc[check] with the rules of the `check { }` block and fails the build when the verdict is `fail`:
+
+[source,groovy]
+----
+spiderSense {
+    check {
+        since = 'start'          // the default: since the application was last started
+        maxP95Ms = 300
+        maxNPlusOne = 0
+        maxErrors = 0
+    }
+}
+----
+
+[source,bash]
+----
+./gradlew bootRun &                  # or the test task forwarding to a standalone, as below
+./gradlew test spiderSenseCheck
+----
+
+[cols="1,1,3",options="header"]
+|===
+| Property
+| Type
+| Becomes
+
+| `since`
+| `String`
+| `--since=`; default `start`
+
+| `until`
+| `String`
+| `--until=`
+
+| `service`
+| `String`
+| `--service=`; default the block's `service`
+
+| `endpoint`
+| `String`
+| `--endpoint=`
+
+| `maxP95Ms`
+| `Long`
+| `--max-p95-ms=`
+
+| `maxErrors`
+| `Long`
+| `--max-errors=`
+
+| `maxErrorRate`
+| `Double`
+| `--max-error-rate=`
+
+| `maxQueriesPerRequest`
+| `Double`
+| `--max-queries-per-request=`
+
+| `maxSlowQueries`
+| `Long`
+| `--max-slow-queries=`
+
+| `maxNPlusOne`
+| `Long`
+| `--max-n-plus-one=`
+
+| `maxLogErrors`
+| `Long`
+| `--max-log-errors=`
+
+| `minApdex`
+| `Double`
+| `--min-apdex=`
+
+| `failOnNoRequests`
+| `Boolean`
+| default `true`: exit code `3` (no request in the window) fails the build too, because a check that judged nothing is not a pass
+|===
+
+The task is the `spiderSense` task with `check` and those arguments.
+It asks the Spider Sense the block implies, through `SPIDERSENSE_URL` as above, and prints the check's text rendering.
+Exit code `1` fails the build with `Spider Sense check failed`.
+Exit code `3` fails it with `Spider Sense check had no request to judge`, unless `failOnNoRequests` is `false`.
+Exit code `2` or `4` fails it with `Spider Sense check could not run (exit <n>)`.
+The CLI's own message reaches the build log first in every case.
+
+With no rule set the CLI's defaults apply: `maxErrors=0`, `maxNPlusOne=0`, `maxP95Ms=<slow.request.ms>`.
+`-PspiderSense.check.since=before` overrides `since` for one run.
+The task depends on nothing, because producing the traffic it judges is the build's job, as in the test setup below.
+
+[#tests]
+== Tests
+
+The test task is not attached by default.
+A test JVM is short-lived and may be forked several times, and several embedded servers would fight over one port.
+The way to measure tests is to forward to a standalone Spider Sense, which is one line each:
+
+[source,groovy]
+----
+spiderSense {
+    attachTo.add('test')
+    collector = 'http://127.0.0.1:4000'
+}
+----
+
+[source,bash]
+----
+./gradlew spiderSense &                           # once
+./gradlew -q spiderSense --args="mark before"
+./gradlew test --tests '*OrderServiceTest'
+./gradlew -q spiderSense --args="findings --since=before"
+----
+
+With `collector` set, `bootRun` forwards too.
+That is what is wanted when the tests and the running application should land in one place.
+
+== Two applications, several modules
+
+Each module that applies the plugin gets its own block, so in a multi-project build the applications are configured where they are:
+
+[source,groovy]
+----
+// orders/build.gradle
+spiderSense { port = 4001 }
+// bookstore/build.gradle
+spiderSense { port = 4000 }
+----
+
+When one calls the other and the trace should be one trace, run a standalone and xref:modes.adoc#forwarding[forward] both:
+
+[source,groovy]
+----
+spiderSense { collector = 'http://127.0.0.1:4000' }
+----
+
+== Spring Boot devtools
+
+A devtools restart replaces the application's classes inside the same JVM.
+The agent stays attached, the embedded UI keeps running, and the restarted classes are instrumented like the first ones.
+There is nothing to configure.
+
+== A jar that is not on Maven Central
+
+Three ways, for a version that is not published yet or a jar built from a checkout:
+
+[source,bash,subs="attributes+"]
+----
+./gradlew bootRun -PspiderSense.jar=/home/me/spider-sense/spider-sense-agent/build/libs/spider-sense-{project-version}.jar
+----
+
+[source,groovy]
+----
+spiderSense {
+    jar = file('/home/me/tools/spider-sense.jar')
+}
+----
+
+[source,groovy]
+----
+// In this repository: the jar the build just made, built before bootRun runs.
+dependencies {
+    spiderSense project(path: ':spider-sense-agent', configuration: 'senseJar')
+}
+----
+
+`./gradlew publishToMavenLocal` in this repository publishes both the jar and the plugin to `~/.m2`.
+`mavenLocal()` in `repositories` and in `pluginManagement.repositories` then makes an unreleased version resolvable like a released one.
+
+== Configuration cache
+
+The plugin is compatible with Gradle's configuration cache.
+Every value is a provider, the argument provider holds no `Project`, and the jar is a `FileCollection` input.
+
+== Coordinates
+
+[cols="1,2,3",options="header"]
+|===
+| Artifact
+| Coordinates
+| What it is
+
+| The jar
+| `{project-group}:spider-sense:<version>`
+| the single distributable jar; its POM declares no dependencies
+
+| The Gradle plugin
+| `{project-group}:spider-sense-gradle-plugin:<version>`, marker `{project-group}:net.benelog.spidersense.gradle.plugin`
+| the plugin above, id `net.benelog.spidersense`
+|===
+
+Both are published from the Spider Sense repository by `./gradlew publishToMavenLocal` into `~/.m2`, and, signed, by `./gradlew centralBundle` into one bundle for the Central Portal.
+The version of both is `version` in the root `gradle.properties`, and the plugin's default `version` for the jar is that same value, so a plugin and the jar it resolves are always the same release.

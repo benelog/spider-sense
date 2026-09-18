@@ -1,0 +1,214 @@
+= The Loop
+:navtitle: The Loop
+
+The loop is what an AI coding agent runs against Spider Sense: start the application under the agent, mark a moment, exercise it, read the findings, fix, mark again, compare, check.
+
+== What an agent needs
+
+A person reads a scatter and sees the cluster.
+An agent reads text, pays for every token, and needs a verdict it can act on.
+Four things follow, and every interface below is built on them.
+
+Findings, not charts::
+The primary answer is a ranked, bounded list of things worth fixing.
+Each finding carries the numbers that justify it, the trace ids that prove it, and the code location when one is known.
+The UI's series and buckets stay for people.
+
+Text first::
+Every agent-facing answer has a Markdown rendering beside the JSON one.
+A trace is an indented tree, a list is a table, and repeated siblings are collapsed.
+The text is deterministic, so the same data renders to the same bytes and two answers can be diffed.
+
+Before and after::
+The agent's question after a change is "did it help".
+Marks name a moment.
+`compare` puts the window before a mark beside the window after it, endpoint by endpoint and query by query.
+
+A verdict with an exit code::
+`check` turns thresholds into pass or fail, so the agent can use Spider Sense the way it uses a test.
+
+Every answer is served by the same queries the UI uses, so the numbers an agent quotes are the numbers a person sees on screen.
+
+[#interfaces]
+== Interfaces
+
+[cols="1,2",options="header"]
+|===
+| Interface
+| When it is the right one
+
+| HTTP API with `format=text`
+| Anything that can run `curl`.
+
+| The CLI, `java -jar spider-sense.jar <command>`
+| Claude Code and every agent with a shell. It also works when no Spider Sense is running, straight from the H2 file.
+
+| The skill, `skills/spider-sense/`
+| Teaching an agent the loop itself: how to start the application under the agent, mark, exercise, read findings, fix, compare and check.
+
+| Read-only SQL, `POST /api/sql` and the `sql` command
+| The question nobody anticipated. The schema is already the documentation.
+
+| MCP, `POST /mcp` and the `mcp` command
+| Hosts without a shell. Six tools over the same handlers, answering the same text.
+|===
+
+xref:cli.adoc[The CLI] documents every command, xref:mcp.adoc[MCP] the two transports and the six tools, xref:agent-skill.adoc[The Agent Skill] the skill and its installation, and xref:api.adoc#agent-endpoints[The HTTP API] the wire shapes.
+
+=== Choosing an interface
+
+The CLI and MCP call the same handlers and print the same bytes, so the choice costs nothing in what is answered.
+It is decided by what the host can reach.
+
+[cols="1,1,2",options="header"]
+|===
+| Host
+| Use
+| Why
+
+| An agent with a shell (Claude Code, Codex CLI, Gemini CLI, Aider, a script)
+| The CLI and the skill
+| No setup beyond `init`. It works with the application down, `check` is an exit code, output can be piped, and the tool costs no context.
+
+| A host without a shell (Claude Desktop, a browser-based agent, an IDE chat panel)
+| MCP
+| The only case the CLI cannot serve. `init --mcp` writes the host's server entry.
+
+| CI, a build gate
+| The CLI's `check`, or the Gradle plugin's task
+| An exit code is what a build understands.
+
+| The application has crashed
+| The CLI, or MCP over stdio
+| Both open the H2 file in process. MCP over HTTP needs the server up.
+|===
+
+WARNING: Do not enable both the CLI and MCP in one host.
+Two tools that give the same answer make the model choose between them and cost the schema twice.
+
+The skill teaches the loop for the CLI.
+The MCP server's `instructions` field carries the same loop in one paragraph, so neither host is taught something the other is not.
+
+[#the-loop]
+== The loop
+
+The jar is the one the build produced, and it may already be on the machine.
+`./gradlew :spider-sense-agent:senseJar` writes it under `spider-sense-agent/build/libs/`.
+
+[source,bash]
+----
+SENSE="$(ls spider-sense-agent/build/libs/spider-sense-*.jar 2>/dev/null | grep -v -- '-launcher' | head -1)"
+[ -n "$SENSE" ] || { ./gradlew :spider-sense-agent:senseJar; SENSE="$(ls spider-sense-agent/build/libs/spider-sense-*.jar | grep -v -- '-launcher' | head -1)"; }
+----
+
+Then, in order:
+
+[source,bash]
+----
+java -javaagent:"$SENSE" -jar build/libs/app.jar &   # 1. start the application under the agent
+java -jar "$SENSE" status                            # confirm it is collecting
+java -jar "$SENSE" mark before                       # 2. name the moment
+curl -s http://localhost:8080/orders/42 >/dev/null   #    exercise: the endpoints in question, the tests, or the load generator
+java -jar "$SENSE" findings --since=before           # 3. read the top finding
+java -jar "$SENSE" trace 4bf92f3577b34da6a3ce929d0e0e4736   #    open its evidence, locate the code
+#                                                    # 4. fix, rebuild, restart
+java -jar "$SENSE" mark after                        # 5. exercise the same way
+java -jar "$SENSE" compare --before=before --after=after
+java -jar "$SENSE" check --since=after --max-p95-ms=300 --max-n-plus-one=0
+----
+
+. *Start the application under the agent*, and confirm with `status`, which names the mode, the port, the database and how much it holds.
+. *Mark the moment* with `mark before`, then exercise the endpoints in question, run the tests, or run the load generator.
+. *Read the findings* with `findings --since=before`, take the top one, and open a trace from its `traces` to locate the code.
+. *Fix the code*, and rebuild and restart when the fix needs it.
+. *Verify* with `mark after`, the same exercise, then `compare --before=before --after=after` and `check`.
+
+After a restart there is a fresh `start` mark, so `--since=start` covers the new run without marking anything.
+`--url=<base url>`, or the `SPIDERSENSE_URL` environment variable, points the CLI at a Spider Sense on another port, and `--db=<path>` reads a database directly.
+xref:agent-skill.adoc#init[`init`] writes the Spider Sense block into the project's `CLAUDE.md` and installs the skill into `.claude/skills/spider-sense/`, so the next session finds both without being told.
+
+== Starting the application under the agent
+
+The application has to be restarted with the agent on its command line.
+Spider Sense does not attach to a JVM that is already running.
+
+[cols="1,2",options="header"]
+|===
+| Situation
+| How
+
+| A jar, or a main class you launch
+| `java -javaagent:"$SENSE" -jar app.jar`
+
+| A start script from `installDist`, or anything honouring `JAVA_OPTS`
+| `JAVA_OPTS="-javaagent:$SENSE" build/install/app/bin/app`
+
+| A start command that is not yours to edit
+| `JAVA_TOOL_OPTIONS="-javaagent:$SENSE" <command>`
+
+| Spring Boot or `application` under Gradle
+| The `net.benelog.spidersense` plugin, then `./gradlew bootRun` or `./gradlew run`
+
+| Maven Spring Boot
+| `mvn spring-boot:run -Dspring-boot.run.agents=$SENSE`
+|===
+
+xref:modes.adoc#agent[The Three Modes] covers the agent mode, forwarding to a shared Spider Sense, and the standalone server.
+xref:gradle-plugin.adoc[The Gradle Plugin] and xref:maven.adoc[Maven] cover each build tool in full, including test tasks.
+xref:configuration.adoc#properties[Configuration] lists every property, including `spidersense.port` when 4000 is taken, `otel.service.name` so the service has a name, and `spidersense.collector` to forward to a Spider Sense running elsewhere.
+
+== Reading findings
+
+`findings` ranks by severity, then by kind, then by impact, then by id, so the list is stable between two calls over the same data.
+The table is the ranked answer, and the numbered blocks under it are the evidence, one per row and in the same order.
+Each finding carries `why` (the numbers in a sentence), `numbers` (kind-specific), `statement` (when the finding is about one), `code` (application frames, innermost first) and `traces` (at most three).
+xref:findings.adoc[Findings] documents every kind, its numbers and the fix it usually wants.
+
+`trace <id>` opens the evidence as an indented tree: one span per line with its offset and duration, the service named where it changes, repeated siblings collapsed after the third into `× n`, the statement under a slow or collapsed database span, the exception and its application frames under an error span, and the trace's log lines at the end.
+`--full` expands the collapsed spans and keeps statements whole.
+
+When a finding is known and accepted, `ack <finding id> --note=<why>` moves it to the bottom of every later list, so the top of the list stays about what is new.
+xref:findings.adoc#acknowledgements[Acknowledgements] covers `ack`, `unack` and `--hide-acked`.
+
+== Verifying a change
+
+[source,bash]
+----
+java -jar "$SENSE" mark after
+# exercise exactly as before: the same endpoints, the same number of times
+java -jar "$SENSE" compare --before=before --after=after
+java -jar "$SENSE" check --since=after --max-p95-ms=300 --max-queries-per-request=5 --max-errors=0
+----
+
+`compare` gives each endpoint, query and error a verdict.
+The verdict is the first column and the worst rows come first, so the top of each table is the answer.
+Every other cell holds both windows as `before → after`, with `—` where a side has nothing.
+xref:marks-and-compare.adoc#compare[Compare] documents the windows, the rows and the exact verdict thresholds.
+
+`check` prints the verdict in its heading and then one row per rule, with its limit, its actual value, its own verdict and a detail naming what decided it.
+Exit code `3` means the exercise step did not reach the application, not that the fix worked.
+xref:check.adoc[Check] documents every rule and every exit code.
+
+== Rules
+
+* *Prefer the CLI's text output.*
+  It is smaller than JSON and it is the same data.
+  Reach for `--json` only when a value has to be parsed.
+* *Keep the window small.*
+  The default `--since=15m` drags in whatever ran before.
+  `--since=before` or `--since=start` answers about the run you care about.
+* *Never quote a number the tool did not print.*
+  Percentages, p95s and call counts come from the output, not from an estimate.
+* *Quote the trace id as evidence.*
+  A claim about an endpoint that names no trace cannot be checked by the user.
+* *Acknowledge a finding the user has accepted*, with the reason as its note, so the list stays about what is new.
+  Never acknowledge one to make `check` pass, because `check` does not look at acknowledgements.
+* *Run `check` before calling a fix done*, and say which rules it passed with which limits.
+* *`sql` is the last resort, not the first.*
+  `findings` and the tables come with the thresholds, the ranking and the evidence already applied.
+  Reach for xref:cli.adoc#sql[`sql`] when the question is genuinely one none of them has a column for, and say that a capped answer was capped.
+* *Do not change the monitored application's Spider Sense configuration unless asked.*
+  Adding `-javaagent` to start it is the loop.
+  Editing the project's ports, thresholds or `spidersense.*` properties is a change to the project.
+* Nothing in Spider Sense may keep the application from starting.
+  If the agent fails it logs and gets out of the way, so an application that starts but sends nothing is a configuration question, answered by `status`.

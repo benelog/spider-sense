@@ -1,0 +1,55 @@
+name: Docs
+
+on:
+  push:
+    # The site is built from main and lists every docs/x.y.z branch beside it.
+    # A push to a docs branch cannot deploy on its own, since the github-pages
+    # environment deploys from main only, so docs-branch.yml dispatches this
+    # workflow on main instead.
+    branches: [ main ]
+    paths:
+      - 'manual/**'
+      - 'supplemental-ui/**'
+      - 'antora-playbook.yml'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The playbook reads the docs/* branches out of this clone.
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run docs
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: build/site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

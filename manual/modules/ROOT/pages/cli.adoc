@@ -1,0 +1,843 @@
+= The CLI
+:navtitle: The CLI
+
+The Spider Sense jar is also a command line: `java -jar spider-sense.jar <command>` answers about a window of the stored data in Markdown made for an agent to read.
+
+The CLI renders nothing itself.
+When a Spider Sense answers at `--url` it fetches `format=text` and prints the body, so the numbers are the numbers the UI shows.
+When none answers it opens the H2 file in process and runs the same queries through the same renderer (<<fallback,the direct-file fallback>>).
+
+== Invocation
+
+[source,bash]
+----
+java -jar spider-sense.jar <command> [arguments] [options]
+----
+
+The launcher treats a first argument that does not start with `-` as a command, and hands the whole line to the CLI inside the nested server jar.
+`--port=` and the other standalone flags still start a server, so `java -jar spider-sense.jar` with no command is the standalone UI rather than a command (xref:modes.adoc#standalone[Standalone]).
+
+Under the Gradle plugin the same jar is one task away, in a project that never checked out the Spider Sense repository:
+
+[source,bash]
+----
+./gradlew -q spiderSense --args="findings --since=start"
+./gradlew -q spiderSense --args="check --max-n-plus-one=0"
+----
+
+`-q` keeps Gradle's own lines out of the output.
+The task's exit code is the CLI's exit code.
+The task also sets `SPIDERSENSE_URL` to the base URL the `spiderSense` block implies, so the command asks the Spider Sense the application is sending to rather than the default port (xref:gradle-plugin.adoc#tasks[Tasks]).
+
+`SPIDERSENSE_URL` names the Spider Sense to ask whenever `--url` is not given.
+The default without either is `http://127.0.0.1:4000`.
+
+[#commands]
+== Commands
+
+[cols="2,3",options="header"]
+|===
+| Command
+| Does
+
+| `status`
+| what is running, where the database is, how much it holds
+
+| `findings [--hide-acked]`
+| the findings of the window
+
+| `ack <finding id> [--note=]`
+| accepts a known finding, which is then ranked after every other one
+
+| `unack <finding id>`
+| withdraws that acknowledgement
+
+| `trace <traceId> [--full] [--diff=<traceId>]`
+| one trace as a tree, or two aligned
+
+| `traces [--status=error\|ok] [--min-ms=] [--q=] [--limit=20]`
+| the newest traces
+
+| `endpoints`, `queries`, `errors`
+| the tables of the window
+
+| `logs [--severity=WARN] [--q=] [--trace=<traceId>]`
+| log lines
+
+| `mark <name> [--note=]`
+| records a mark now
+
+| `marks`
+| lists marks
+
+| `compare --before=<selector> --after=<selector> [--until=<selector>]`
+| the two windows side by side
+
+| `check [--max-p95-ms=] [--max-errors=] [--max-error-rate=] [--max-queries-per-request=] [--max-slow-queries=] [--max-n-plus-one=] [--max-log-errors=] [--min-apdex=] [--endpoint=]`
+| pass or fail, in the exit code
+
+| `tail [--kind=] [--service=] [--until-traces=] [--timeout=]`
+| tingles as they arrive, one line each
+
+| `sql "<statement>" [--limit=200]`
+| one read-only statement over the store
+
+| `export [--out=<file>]`
+| the window as one JSON document, to the file or to stdout
+
+| `import <file>`
+| that document back into the store
+
+| `init [--dir=] [--jar=] [--no-skill] [--mcp]`
+| writes the Spider Sense block into the project's `CLAUDE.md` and installs the skill
+
+| `mcp`
+| the MCP server over stdio
+
+| `help`
+| this table
+|===
+
+Every example below is the real output of one session against the `spring-orders` example application.
+That Spider Sense was on another port, so each command also carried `--url=http://127.0.0.1:4100`, which is left out here.
+
+=== status
+
+`status` names the mode, the port, the thresholds, the database and how much it holds.
+It is how you confirm that an application really is collecting.
+
+[source]
+----
+$ java -jar spider-sense.jar status
+# status
+
+| field | value |
+| --- | --- |
+| name | Spider Sense 0.1.0 |
+| mode | agent |
+| endpoint | http://127.0.0.1:4100 |
+| started | 2026-09-17T08:19:14.060+09:00 |
+| embedded service | spring-orders |
+| thresholds | slow request 500 ms, slow query 100 ms |
+| ignore | /actuator/**, /health, /healthz, /livez, /readyz |
+| retention | 24 hours, 1000000 spans |
+| database | /home/me/db/spider-sense/sense.mv.db |
+| database size | 110395392 bytes |
+| dropped spans | 0 |
+| spans | 51785 |
+| traces | 51257 |
+| logs | 66 |
+| metric series | 67 |
+| services | 1 |
+| oldest span | 2026-09-17T08:14:07.250+09:00 |
+----
+
+=== findings, ack and unack
+
+`findings` is the primary answer: a ranked, bounded list of things worth fixing over the window.
+The table is the answer, and the numbered blocks under it are the evidence, one per row in the same order.
+xref:findings.adoc[Findings] has every kind with its rule and its numbers.
+
+[source]
+----
+$ java -jar spider-sense.jar findings --since=before
+# findings  2026-09-17T08:19:28+09:00 → 08:19:34  (6s, all services, 21 requests)
+
+| # | severity | kind | id | service | title |
+| --- | --- | --- | --- | --- | --- |
+| 1 | high | error | error:eecf9878a68f | spring-orders | IllegalStateException in GET /api/flaky |
+| 2 | medium | n-plus-one | n-plus-one:4c5f46be8bc5 | spring-orders | GET /api/orders/{id}/enriched runs SELECT product 5 times per request |
+| 3 | medium | slow-query | slow-query:6b3aae6f9bef | spring-orders | SELECT p.id AS product_id, p.sku AS sku, p.name AS name, SUM… is slow |
+
+1. error:eecf9878a68f — 1 occurrence in GET /api/flaky; Payment gateway timeout
+   count 1, firstSeen 2026-09-17T08:19:28.962+09:00, lastSeen 2026-09-17T08:19:28.962+09:00, type java.lang.IllegalStateException, message Payment gateway timeout, endpoints [name GET /api/flaky count 1]
+   orders.web.MiscController.flaky(MiscController.java:24)
+   traces: 5e6769395a77c8f192949af91cbdedf2
+
+2. n-plus-one:4c5f46be8bc5 — 1 of 3 requests repeated it; 5 times; 0.4 ms per request in that statement
+   requests 3, affected 1, medianRepeats 5, maxRepeats 5, msPerRequest 0.4
+   select p1_0.id,p1_0.name,p1_0.price,p1_0.sku from product p1_0 where p1_0.id=?
+   traces: e7cfa77cb4c9135b623a04e470ef58d0
+----
+
+`ack <finding id> [--note=<text>]` accepts a finding that is known and will not be fixed now.
+It is then ranked after every other finding, and its severity column reads `acked`.
+`unack <finding id>` withdraws the acknowledgement, and exits `4` when there was none.
+`findings --hide-acked` leaves the acknowledged findings out altogether.
+The id is what `findings` printed, and it is stable across windows (xref:findings.adoc#acknowledgements[Acknowledgements]).
+
+=== trace and traces
+
+`trace <traceId>` prints one trace as an indented tree, one span per line with its offset and duration.
+`--full` expands collapsed groups and keeps statements whole.
+`--diff=<traceId>` aligns two traces instead (<<trace-diff,Trace diff>>).
+
+[source]
+----
+$ java -jar spider-sense.jar trace e7cfa77cb4c9135b623a04e470ef58d0
+# trace e7cfa77cb4c9135b623a04e470ef58d0  2026-09-17T08:19:28.782+09:00  174.5 ms  spring-orders  15 spans, 8 db, 0 errors
+
+offset     duration  span
+0.0 ms     174.5 ms  SERVER spring-orders GET /api/orders/{id}/enriched → 200
+3.6 ms     2.0 ms      INTERNAL OrderRepository.findById
+3.9 ms     1.5 ms        INTERNAL Session.find orders.domain.Order
+4.5 ms     0.2 ms          db SELECT orders
+6.0 ms     0.2 ms      db SELECT order_line
+7.3 ms     0.4 ms      db SELECT product  × 5, 0.1 ms avg, 0.4 ms total
+                         select p1_0.id,p1_0.name,p1_0.price,p1_0.sku from product p1_0 where p1_0.id=?
+9.0 ms     0.0 ms      db SELECT customer
+9.3 ms     0.1 ms      INTERNAL Transaction.commit
+42.4 ms    89.6 ms     CLIENT GET http://localhost:8081/api/books/106 → 200
+162.5 ms   2.5 ms      CLIENT GET http://localhost:8081/api/books/49 → 200
+----
+
+A failed span carries its exception and the application frames underneath, and the trace's log lines follow, oldest first:
+
+[source]
+----
+$ java -jar spider-sense.jar trace 5e6769395a77c8f192949af91cbdedf2
+# trace 5e6769395a77c8f192949af91cbdedf2  2026-09-17T08:19:28.962+09:00  22.0 ms  spring-orders  1 spans, 0 db, 1 error
+
+offset     duration  span
+0.0 ms     22.0 ms   SERVER spring-orders GET /api/flaky → 500  [error]
+                       exception IllegalStateException: Payment gateway timeout
+                       orders.web.MiscController.flaky(MiscController.java:24)
+
+logs (2)
+08:19:28.963  WARN   orders.web.MiscController  Flaky endpoint failing this time: payment gateway timeout
+----
+
+`traces` lists the newest traces of the window.
+`--status=error` or `--status=ok` filters by outcome, `--min-ms=<n>` by duration, `--q=<text>` by free text, and `--limit=<n>` sets the page size.
+
+[source]
+----
+$ java -jar spider-sense.jar traces --since=before --limit=5
+# traces  2026-09-17T08:19:28+09:00 → 08:19:35  (8s, all services, 21 requests)
+
+5 of 21 traces, newest first
+
+| start | duration | trace | root | service | spans | db | errors | status |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 08:19:29.969 | 3.5 ms | b02e7baec05adb0651ad0671066bb4e0 | POST /api/orders/{id}/pay | spring-orders | 4 | 1 | 0 | 404 |
+| 08:19:29.960 | 3.0 ms | 3fde475ce08a20f45944dd769739de28 | GET /api/customers/search | spring-orders | 5 | 1 | 0 | 200 |
+| 08:19:29.939 | 12.6 ms | 739be08737bae7de506fdb0a8da510f8 | GET /api/orders/{id}/enriched | spring-orders | 13 | 6 | 0 | 200 |
+----
+
+=== endpoints, queries, errors and logs
+
+These four are the tables of the window, the same data the matching UI pages draw.
+`endpoints` always lists every endpoint of the window and takes no `--limit`.
+
+[source]
+----
+$ java -jar spider-sense.jar endpoints --since=before
+# endpoints  2026-09-17T08:19:28+09:00 → 08:19:34  (7s, all services, 21 requests)
+
+| endpoint | id | service | calls | errors | p50 | p95 | max | total | apdex |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| GET /api/reports/revenue | 7342d163d1ee | spring-orders | 3 | 0 | 411.5 ms | 549.8 ms | 549.8 ms | 1,354.9 ms | 0.833 |
+| GET /api/orders/{id}/enriched | 8c62f8d5090d | spring-orders | 3 | 0 | 12.6 ms | 174.5 ms | 174.5 ms | 195.7 ms | 1.000 |
+| GET /api/flaky | 40e6cdb7cd69 | spring-orders | 3 | 1 | 2.8 ms | 22.0 ms | 22.0 ms | 25.5 ms | 0.667 |
+----
+
+`queries` lists the database statements of the window, grouped by statement, with the endpoints that called each one:
+
+[source]
+----
+$ java -jar spider-sense.jar queries --since=before --limit=5
+# queries  2026-09-17T08:19:28+09:00 → 08:19:35  (7s, all services, 21 requests)
+
+| id | service | calls | slow | p50 | p95 | max | total | callers | statement |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| e0e233d8ad75 | spring-orders | 3 | 3 | 266.6 ms | 269.7 ms | 269.7 ms | 782.8 ms | GET /api/reports/revenue ×3 | SELECT p.id AS product_id, p.sku AS sku, p.name AS name, SUM(l.quantity) AS quantity… |
+| 14eb3eff12dc | spring-orders | 22 | 0 | 0.1 ms | 0.2 ms | 0.2 ms | 2.0 ms | GET /api/orders/{id} ×11; GET /api/orders/{id}/enriched ×11 | select p1_0.id,p1_0.name,p1_0.price,p1_0.sku from product p1_0 where p1_0.id=? |
+----
+
+`errors` lists the error groups of the window.
+Each group whose sample stack trace has application frames gets a block naming one trace and those frames:
+
+[source]
+----
+$ java -jar spider-sense.jar errors --since=before
+# errors  2026-09-17T08:19:28+09:00 → 08:19:35  (7s, all services, 21 requests)
+
+| id | service | type | message | count | first | last | endpoints |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 458522ccda9f | spring-orders | java.lang.IllegalStateException | Payment gateway timeout | 1 | 08:19:28.962 | 08:19:28.962 | GET /api/flaky ×1 |
+
+458522ccda9f — trace 5e6769395a77c8f192949af91cbdedf2
+   orders.web.MiscController.flaky(MiscController.java:24)
+----
+
+`logs` prints log lines, newest first.
+`--severity=WARN` sets the floor, `--q=<text>` searches the body, and `--trace=<traceId>` narrows to one trace.
+The count line says how many were printed of how many matched the window:
+
+[source]
+----
+$ java -jar spider-sense.jar logs --since=before --limit=3
+# logs  2026-09-17T08:19:28+09:00 → 08:19:35  (8s, all services)
+
+3 of 5 lines, newest first
+
+08:19:29.922  INFO   orders.service.OrderService  Revenue report over 90 days: 244 groups, 10 top products, 391 ms  trace cbc8be4f6ec5a1c033e57cbb7f269bd5
+08:19:28.965  ERROR  org.apache.catalina.core.ContainerBase.[Tomcat].[localhost].[/].[dispatcherServlet]  Servlet.service() for servlet [dispatcherServlet] in context with path [] threw exception [Request processing failed: java.lang.IllegalStateException: Payment gateway timeout] with root cause  trace 5e6769395a77c8f192949af91cbdedf2
+----
+
+=== mark and marks
+
+`mark <name>` records a named moment now, and `--note=<text>` keeps a sentence with it.
+`marks` lists the newest 50, newest first.
+xref:marks-and-compare.adoc#marks[Marks] has the rules, including the automatic `start` mark.
+
+[source]
+----
+$ java -jar spider-sense.jar mark before
+mark before at 2026-09-17T08:19:28.122+09:00
+
+$ java -jar spider-sense.jar mark after --note="after the fix"
+mark after at 2026-09-17T08:19:35.837+09:00 — after the fix
+
+$ java -jar spider-sense.jar marks
+# marks
+
+| at | name | service | note |
+| --- | --- | --- | --- |
+| 2026-09-17T08:19:35.837+09:00 | after | — | after the fix |
+| 2026-09-17T08:19:28.122+09:00 | before | — | — |
+| 2026-09-17T08:19:16.727+09:00 | start | spring-orders | pid 178056 |
+----
+
+=== compare
+
+`compare --before=<selector> --after=<selector>` puts the window before a mark beside the window after it, endpoint by endpoint and query by query.
+It takes no `--since`, because its windows are the two selectors, and `--until` closes the second one.
+Each row's verdict comes first and the worst rows come first, so the top of each table is the answer.
+xref:marks-and-compare.adoc#compare[Compare] has the verdicts and their thresholds.
+
+[source]
+----
+$ java -jar spider-sense.jar compare --before=before --after=after
+# compare  2026-09-17T08:19:28+09:00 → 08:19:35  vs  2026-09-17T08:19:35+09:00 → 08:19:45  (all services)
+
+| totals | before | after |
+| --- | --- | --- |
+| requests | 21 | 12 |
+| errors | 1 | 1 |
+| p95 | 411.5 ms | 1,201.7 ms |
+| apdex | 0.929 | 0.792 |
+
+## endpoints
+
+| verdict | endpoint | id | calls | errors | p95 | db/req | db ms/req |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| new | GET /api/slow | 7c7ff534a0ec | — → 3 | — → 0 | — → 1,202.5 ms | — → 0.0 | — → 0.0 ms |
+| better | GET /api/reports/revenue | 7342d163d1ee | 3 → 3 | 0 → 0 | 549.8 ms → 417.1 ms | 2.0 → 2.0 | 419.8 ms → 383.6 ms |
+| gone | GET /api/customers/search | cf03d98e70da | 3 → — | 0 → — | 29.6 ms → — | 1.0 → — | 0.9 ms → — |
+
+## queries
+
+| verdict | id | calls | calls/req | p95 | total | statement |
+| --- | --- | --- | --- | --- | --- | --- |
+| same | e0e233d8ad75 | 3 → 3 | 0.1 → 0.3 | 269.7 ms → 247.1 ms | 782.8 ms → 698.9 ms | SELECT p.id AS product_id, p.sku AS sku… |
+
+## errors
+
+| verdict | id | type | message | before | after |
+| --- | --- | --- | --- | --- | --- |
+| same | 458522ccda9f | java.lang.IllegalStateException | Payment gateway timeout | 1 | 1 |
+----
+
+=== check
+
+`check` turns thresholds into pass or fail, and puts the verdict in the exit code.
+Every rule named on the command line is evaluated, and naming one replaces the default set.
+xref:check.adoc#rules[Check] has every rule, the value it measures and its default.
+
+[source]
+----
+$ java -jar spider-sense.jar check --since=before
+# check  fail  2026-09-17T08:19:28+09:00 → 08:19:45  (17s, all services, 33 requests)
+
+| rule | limit | actual | verdict | detail |
+| --- | --- | --- | --- | --- |
+| maxP95Ms | 500 | 1,202.5 | fail | GET /api/slow p95 1,202.5 ms over 3 calls |
+| maxErrors | 0 | 2 | fail | 2 occurrences over the window |
+| maxNPlusOne | 0 | 2 | fail | 2 findings: GET /api/orders/{id} runs SELECT product 5 times per request |
+
+$ echo $?
+1
+----
+
+`--endpoint=` narrows the scope to one endpoint, by its id or by its name, and the heading names it.
+
+=== tail
+
+`tail` prints one line per live event as it arrives, so a request that was just sent can be watched instead of polled for.
+It needs a running Spider Sense.
+See <<tail,Tail>>.
+
+=== export and import
+
+`export` writes the window as one JSON document, and `import` reads one back into a store.
+See <<export-import,Export and import>>.
+
+=== sql
+
+`sql "<statement>"` runs one read-only statement over the schema, for a question no other command answers.
+See <<sql,SQL>>.
+
+=== init
+
+`init` writes the Spider Sense block into the project's `CLAUDE.md` and installs the skill into its `.claude/skills/`.
+It is the one command that reads nothing: no HTTP, no database, no running Spider Sense.
+It takes none of the common options, and its own are `--dir`, `--jar`, `--no-skill` and `--mcp`.
+See xref:agent-skill.adoc#init[init].
+
+=== mcp
+
+`mcp` runs the MCP server over stdio, for a host that has no shell.
+It takes `--url` and `--db` and nothing else, because a window, a format and a service belong to each message of the session rather than to the command.
+See xref:mcp.adoc[MCP].
+
+=== help
+
+`help` prints every command, every common option, the selector forms and the exit codes.
+
+[source]
+----
+$ java -jar spider-sense.jar help
+Spider Sense: ask a running Spider Sense, or the database file, from the terminal.
+
+  java -jar spider-sense.jar <command> [arguments] [options]
+
+Commands:
+  status                       what is running, where the database is, how much it holds
+  findings [--hide-acked]      the findings of the window
+  ...
+
+Common options:
+  --since=<selector>   default 15m
+  --until=<selector>   default now
+  --service=<name>     one service
+  --limit=<n>          the lists: findings, traces, queries, errors, logs, marks,
+                       and the rows of sql (default 200, at most 5000)
+  --url=<base url>     default http://127.0.0.1:4000, or SPIDERSENSE_URL
+  --db=<path or jdbc url>   read the database directly, without asking any server
+  --json               the JSON of api.md instead of the text
+  --full               whole statements, every repeated span
+  --hide-acked         findings only: leave acknowledged findings out
+
+A selector is a duration (30s, 5m, 2h, 1d), epoch milliseconds, a mark name,
+start (the newest automatic start mark) or now.
+
+Exit codes: 0 success, 1 check failed, 2 usage or connection error,
+3 check had no request to judge, 4 not found (a trace id, a mark name,
+a finding id to unack).
+----
+
+[#options]
+== Common options
+
+[cols="2,2,3",options="header"]
+|===
+| Option
+| Default
+| Meaning
+
+| `--since=<selector>`
+| `15m`
+| start of the window
+
+| `--until=<selector>`
+| `now`
+| end of the window
+
+| `--service=<name>`
+| every service
+| narrow to one service
+
+| `--limit=<n>`
+| per list
+| how many rows: findings 20, traces 20, queries 100, errors 100, logs 200, marks 50, sql 200 (at most 5000)
+
+| `--url=<base url>`
+| `http://127.0.0.1:4000`, or `SPIDERSENSE_URL`
+| which Spider Sense to ask
+
+| `--db=<path or jdbc url>`
+| `~/db/spider-sense/sense`
+| read that database directly, without asking any server
+
+| `--json`
+| off
+| print the JSON of xref:api.adoc[the HTTP API] instead of the text
+
+| `--full`
+| off
+| keep statements whole and expand collapsed spans
+
+| `--hide-acked`
+| off
+| `findings` only: leave the acknowledged findings out instead of ranking them last
+|===
+
+`--since` and `--until` take a time selector rather than epoch milliseconds: a duration, epoch milliseconds, a mark name, `start` or `now`.
+xref:marks-and-compare.adoc#time-selectors[Time selectors] states every form.
+
+Three commands depart from the table.
+`compare` takes no `--since`, because its windows are the two selectors, and `--until` closes the second one.
+`init` takes none of these options at all, and its own are `--dir`, `--jar`, `--no-skill` and `--mcp`.
+`mcp` takes only `--url` and `--db`.
+
+`--slow.request.ms=`, `--slow.query.ms=` and `--app.packages=` set the thresholds and the application packages in the direct-file path, where no server is there to ask.
+
+An option a command does not take is a usage error rather than a silently ignored word, so a mistyped `--sinse` is reported rather than answered for the last 15 minutes.
+
+== Exit codes
+
+[cols="1,4",options="header"]
+|===
+| Code
+| Meaning
+
+| `0`
+| success, and `check` passed
+
+| `1`
+| `check` failed
+
+| `2`
+| usage or connection error
+
+| `3`
+| `check` had no request to judge
+
+| `4`
+| not found: a trace id, a mark name, a finding id to `unack`
+|===
+
+A trace id that matches nothing prints `spider-sense: No such trace: <id>` on stderr and exits `4`, whether the answer came over HTTP or from the file.
+A mark name that matches no mark does the same, naming the mark, and so does `unack` with `spider-sense: No such acknowledgement: <id>`.
+
+Exit code `3` means the exercise step did not reach the application, not that a fix worked.
+
+[#fallback]
+== The direct-file fallback
+
+When nothing answers at the default URL, the CLI opens the H2 database in process, runs the same queries through the same renderer, and says so on stderr:
+
+[source]
+----
+(no Spider Sense at http://127.0.0.1:4000; reading /home/me/db/spider-sense/sense.mv.db directly)
+----
+
+That is what `AUTO_SERVER=TRUE` buys (xref:storage.adoc[Storage]).
+The application has crashed, the UI went with it, and `findings --since=start` still answers.
+
+A `--url` that was named is a statement that there is a server there.
+Nothing answering it is `spider-sense: no Spider Sense at <url> (…)` and exit `2`, rather than a silent fall back to a file that may hold a different application.
+`--db=<path or jdbc url>` is the opposite statement, about where to read, and goes straight to the file without asking any server.
+
+In that path the thresholds are the defaults, or whatever `--slow.request.ms`, `--slow.query.ms` and `--app.packages` say, since no server is there to ask.
+
+The file must exist and carry this version's schema.
+The CLI never creates a database and never upgrades one, because `AUTO_SERVER=TRUE` may have joined the database of an older Spider Sense that is still running, and recreating the tables would empty it under that server.
+A missing file is exit `2` and, on stderr:
+
+[source]
+----
+spider-sense: no Spider Sense database at /home/me/db/spider-sense/sense.mv.db; start an application with -javaagent:spider-sense.jar first
+----
+
+A file of another schema version is refused the same way, with exit `2` and a message naming both versions.
+
+Four commands write rather than read, and they write in this path too: `mark`, `ack`, `unack` and `import`.
+`tail` is the one command that has no direct-file path, because there is no file to tail.
+
+[#text-rendering]
+== Text rendering
+
+Every answer follows the same rules, so the output is small, stable and diffable.
+The same data renders to the same bytes, which is what lets two answers be diffed.
+
+* The first line is a heading naming what it is and the window, in ISO-8601 with the local offset: `# findings  2026-09-18T12:37:06+09:00 → 12:41:08  (4m 1s, all services, 2456 requests)`.
+The range is rounded to the second and written in its largest units (`6s`, `2m 30s`, `15m`, `2h`), never in milliseconds.
+* Lists are Markdown tables, and ids are complete: a trace id is 32 hex characters, an endpoint, query or error id 12, because they are passed back.
+* A trace and `logs` are lines rather than a table, and `status` and `mark` answer in their own shape.
+* Durations are milliseconds with one decimal and a thousands separator (`1,532.4 ms`), counts are integers, rates are percentages with one decimal, and an Apdex is a score with three decimals.
+* A cell with nothing in it is `—`, and in `compare` the two sides of a row share one cell, `before → after`.
+* A statement is cut at 200 characters with `…`, and `--full` keeps it whole.
+* Nothing in the body depends on when it was rendered, only on the window.
+`now` appears only in the heading.
+* An empty result says what was looked for and where, and, when there was no request at all, how to send some.
+
+A trace is an indented tree, one span per line.
+Two spaces of indentation mark each level of depth, and the service is named only where it changes from the parent.
+Consecutive sibling spans with the same summary and category collapse after the third into one line with `× n`, the average and the total.
+A database span that is slow, or the first of a collapsed group, shows its statement on the next line.
+An error span shows its exception and the application frames under it, and the trace's log lines follow, oldest first.
+`--full` lists every repeated span and keeps the statements whole.
+
+The same renderings are served over HTTP with `format=text` (xref:api.adoc#agent-endpoints[Agent-facing endpoints]).
+
+[#trace-diff]
+== Trace diff
+
+`trace <a> --diff=<b>` aligns two span trees and renders them as one text with a gutter, so the question after a fix is answered without reading two trees.
+
+[source]
+----
+# trace diff 4bf92f3577b34da6a3ce929d0e0e4736 → 09e96c4c6db157e690716c2615ffd146  312.4 ms → 41.2 ms  (−271.2 ms, −86.8%)  48 → 12 spans
+
+   a          b          span
+=  312.4 ms   41.2 ms    SERVER spring-orders GET /api/orders/{id}/enriched → 200
+=  0.5 ms     0.4 ms       INTERNAL OrderRepository.findById
+-  38.2 ms    —            db SELECT product  × 42
++  —          2.1 ms       db SELECT product  × 1
+=  9.1 ms     8.7 ms       CLIENT GET http://localhost:8081/api/books/155 → 200
+----
+
+The alignment works on the lines of the single-trace rendering, minus their timing.
+Each span becomes the key `(depth, category, summary with every run of digits replaced by one ?)`, so `/api/books/155` and `/api/books/87` are the same line, and a collapsed group keeps its summary and drops its count.
+The two key sequences are then aligned by their longest common subsequence, each side cut at 2,000 lines.
+A matched line is `=`, a line only in `b` is `+`, and a line only in `a` is `-`.
+
+The heading carries both ids, both durations, the delta in milliseconds and in percent of `a`, and both span counts.
+The columns are the gutter, `a`'s duration, `b`'s duration, then the span line indented by depth as in the single rendering.
+A side with no such span prints `—`.
+A collapsed group prints `× n` per side on its own line, so a count that changed is two lines, one `-` and one `+`.
+
+Statement, exception and log lines are not diffed.
+A matched span shows its statement or its exception when either side has one, as the single rendering would.
+
+`--full` expands collapsed groups on both sides before aligning.
+Either id unknown is exit code `4`, naming it.
+
+[#tail]
+== Tail
+
+[source,bash]
+----
+java -jar spider-sense.jar tail [--kind=slow-request|slow-query|error] [--service=<name>] [--until-traces=<n>] [--timeout=<duration>] [--json]
+----
+
+`tail` is the CLI's window on the live event stream: one line per event as it arrives, so an agent that has just sent a request can watch it land instead of sleeping and asking `findings` again.
+
+[source]
+----
+12:37:28.565  slow-query    spring-orders   SELECT orders  1,532 ms  2519b548daad800090e8f56de6a5a62a
+12:37:29.077  error         silk-bookstore  GET /api/books/stats  ArithmeticException: / by zero  09e96c4c6db157e690716c2615ffd146
+----
+
+The columns are local time with milliseconds, kind, service, title, detail and trace id, which are the event's own fields in that order.
+`--kind` and `--service` filter, one value each, and no filter means everything.
+
+`--until-traces=<n>` ends with exit `0` once the stream has shown `n` new traces since the command started.
+`--timeout=<duration>` takes a selector duration such as `30s` or `5m`, and ends with exit `0` when it elapses.
+Without either, `tail` runs until it is interrupted.
+`--json` prints the event's JSON object per line instead.
+
+`tail` needs a running Spider Sense, because there is no file to tail.
+Nothing at `--url` is a message on stderr and exit `2`.
+
+[#export-import]
+== Export and import
+
+`export` writes the window as one JSON document, and `import` reads that document back into a store.
+Together they move a session to another machine, attach it to a bug report, or keep it past the retention.
+
+[source,bash]
+----
+java -jar spider-sense.jar export --since=start --out=session.json.gz
+java -jar spider-sense.jar import session.json.gz
+----
+
+`export` writes to stdout, or to the file `--out` names, gzipped when that name ends in `.gz`.
+It takes `--since`, `--until` and `--service` like every other command.
+The document carries every service, span, log record, metric, metric series, metric point, live event and mark of the window.
+Every key is its column's name in camelCase, so a section is the table it came from.
+Nothing is derived on the way out or recomputed on the way in, because a document exported from one session must not change meaning under another machine's thresholds.
+
+`import` posts the document to the running Spider Sense, or, when none answers or `--db` names a file, writes into the file in process through the same code the server uses.
+It prints one line:
+
+[source]
+----
+imported 12,345 spans, 456 logs, 7,890 metric points, 12 tingles, 3 marks (2 traces already present) from 2026-09-18T12:37:06+09:00 → 12:41:08
+----
+
+Import keeps every timestamp as exported, so set the time range to that window, or to `all`, to see the data.
+A file imported twice adds nothing: a trace whose id already has rows is skipped whole, a metric point is merged on its series and instant, a service row is merged, and a mark is skipped when one with the same name and instant exists.
+A document whose schema is not this version's is refused, naming both versions.
+Acknowledgements are not exported, because they are the reader's rather than the session's.
+
+[#sql]
+== SQL
+
+[source,bash]
+----
+java -jar spider-sense.jar sql "SELECT endpoint, COUNT(*) FROM span WHERE entry GROUP BY endpoint"
+----
+
+`sql` runs one read-only statement over the schema, for the question nobody anticipated.
+It is the escape hatch, not the front door: `findings`, `endpoints`, `queries`, `errors`, `compare` and `check` are the same data with the thresholds, the ranking and the rendering already applied, and they stay right when the schema moves.
+
+The answer is a heading and a table:
+
+[source]
+----
+# sql  2 rows
+
+| ENDPOINT | STATEMENTS |
+| --- | --- |
+| GET /orders/{id} | 42 |
+| GET /orders | 7 |
+----
+
+The column headers are H2's own labels, which upper-case an unquoted name, so alias a column when the heading matters.
+At most 200 rows come back unless `--limit=<n>` says otherwise, and the cap is 5000.
+The heading carries `(truncated at 200)` when the cap cut the answer off, and a truncated answer is a sample rather than a total.
+`--json` prints `columns`, `rows`, `rowCount`, `truncated` and `elapsedMs` instead of the table, and `--full` keeps long cells whole instead of cutting them at 200 characters.
+Numbers are printed as the store holds them, without a thousands separator, so a value passed back into the next statement survives the round trip.
+A SQL `NULL` is `—`.
+
+=== The read-only user
+
+The statement runs as the H2 user `spider_sense_reader`, which has `SELECT` on the schema and nothing else.
+H2 itself therefore refuses `INSERT`, `UPDATE`, `DELETE`, `DROP` and `ALTER`, and the administrator-only functions `FILE_WRITE`, `CSVWRITE`, `FILE_READ`, `LINK_SCHEMA` and `RUNSCRIPT`.
+Ahead of that, only a single `SELECT`, `WITH`, `TABLE`, `VALUES`, `EXPLAIN` or `SHOW` is accepted, and a second statement after a `;` is refused.
+The connection itself is read-only, with autocommit off, a row cap of the limit plus one and a query timeout of 10 seconds.
+
+Only a server's open creates that user (xref:storage.adoc#reader[Storage]).
+A database an older Spider Sense created has no reader user in it yet, and `sql` then reports `the database has no read-only user yet; start an application or the standalone server with this version first` on stderr and exits `2`.
+
+A statement that is not allowed, and a statement H2 refuses or cannot parse, are both an error message on one line.
+
+=== Bounding the window
+
+There is no `--since` here, because the window is a predicate you write.
+Every instant in the schema is epoch milliseconds in a `BIGINT`, and every duration is nanoseconds, so arithmetic on times is plain integer arithmetic.
+Two idioms cover almost everything:
+
+[source,sql]
+----
+-- the last 15 minutes of data, whenever the data ends
+WHERE s.start_ms >= (SELECT MAX(start_ms) FROM span) - 15 * 60 * 1000
+
+-- since the mark you set before the change
+WHERE s.start_ms >= (SELECT MAX(at_ms) FROM mark WHERE name = 'before')
+----
+
+`(SELECT MAX(at_ms) FROM mark WHERE name = 'start')` is the last restart.
+Without a predicate on `start_ms` or `at_ms` the query reads the whole retention, which is up to 24 hours of everything.
+
+The three flags on `span` are the shortcuts worth remembering: `entry` counts requests, `category = 'db'` counts statements, and `error` counts failures.
+xref:storage.adoc#schema[The schema] has every table and column.
+
+=== Worked queries
+
+Which endpoint issues the most distinct statements, which is the one thing findings cannot rank.
+An endpoint may run few statements often or many statements once, and the second is a design question rather than an N+1.
+
+[source,sql]
+----
+SELECT e.endpoint,
+       COUNT(DISTINCT d.query_id) AS statements,
+       COUNT(d.id)                AS db_calls,
+       COUNT(DISTINCT e.id)       AS requests
+FROM span e
+JOIN span d ON d.trace_id = e.trace_id AND d.service = e.service AND d.category = 'db'
+WHERE e.entry
+  AND e.start_ms >= (SELECT MAX(start_ms) FROM span) - 15 * 60 * 1000
+GROUP BY e.endpoint
+ORDER BY statements DESC, db_calls DESC
+----
+
+The p95 per minute for one route.
+Findings give one p95 over the window, and this says whether it was the whole window or one bad minute.
+
+[source,sql]
+----
+SELECT s.start_ms / 60000 * 60000 AS minute_ms,
+       COUNT(*) AS requests,
+       ROUND(PERCENTILE_DISC(0.95) WITHIN GROUP (ORDER BY s.duration_ns) / 1000000.0, 1) AS p95_ms,
+       ROUND(MAX(s.duration_ns) / 1000000.0, 1) AS max_ms
+FROM span s
+WHERE s.entry AND s.endpoint = 'GET /orders/{id}'
+GROUP BY s.start_ms / 60000 * 60000
+ORDER BY minute_ms
+----
+
+The statements of one trace, in order.
+`trace <id>` collapses repeated siblings, and this lists every one of them with its offset, which is what to read when the repeats are not identical.
+
+[source,sql]
+----
+SELECT s.start_ns - (SELECT MIN(start_ns) FROM span WHERE trace_id = s.trace_id) AS offset_ns,
+       ROUND(s.duration_ns / 1000000.0, 1) AS ms,
+       s.service, s.db_operation, s.db_table, s.db_statement
+FROM span s
+WHERE s.trace_id = '4bf92f3577b34da6a3ce929d0e0e4736' AND s.category = 'db'
+ORDER BY s.start_ns
+----
+
+Errors per endpoint per hour.
+Findings rank error groups over one window, and this says whether a group is growing.
+
+[source,sql]
+----
+SELECT s.start_ms / 3600000 * 3600000 AS hour_ms,
+       s.service, s.endpoint,
+       COUNT(*) AS requests,
+       SUM(CASE WHEN s.error THEN 1 ELSE 0 END) AS errors
+FROM span s
+WHERE s.entry
+GROUP BY s.start_ms / 3600000 * 3600000, s.service, s.endpoint
+HAVING SUM(CASE WHEN s.error THEN 1 ELSE 0 END) > 0
+ORDER BY hour_ms DESC, errors DESC
+----
+
+The pools' worst pending value per five minutes.
+The `pool-exhausted` finding names the single worst point, and this is the shape of the pressure over time.
+
+[source,sql]
+----
+SELECT p.at_ms / 300000 * 300000 AS five_minutes_ms,
+       ms.service, ms.attributes AS pool,
+       MAX(p.value) AS pending_max
+FROM metric_point p
+JOIN metric_series ms ON ms.id = p.series_id
+WHERE ms.name IN ('db.client.connections.pending_requests', 'db.client.connection.pending_requests')
+GROUP BY p.at_ms / 300000 * 300000, ms.service, ms.attributes
+ORDER BY five_minutes_ms DESC
+----
+
+The requests that ran the most statements.
+The N+1 rule fires at 5 repeats of one statement, and this finds a request that ran 40 different ones, which is not an N+1 and is still worth seeing.
+
+[source,sql]
+----
+SELECT e.endpoint, e.trace_id, COUNT(*) AS db_calls,
+       ROUND(SUM(d.duration_ns) / 1000000.0, 1) AS db_ms
+FROM span e
+JOIN span d ON d.trace_id = e.trace_id AND d.category = 'db'
+WHERE e.entry
+GROUP BY e.endpoint, e.trace_id
+HAVING COUNT(*) >= 10
+ORDER BY db_calls DESC
+----
+
+What was logged inside the failed traces.
+
+[source,sql]
+----
+SELECT l.at_ms, l.severity, l.service, l.logger, l.body, l.trace_id
+FROM log l
+JOIN trace t ON t.trace_id = l.trace_id
+WHERE t.error AND l.severity_number >= 13
+ORDER BY l.at_ms DESC
+----
+
+Add the id or the name as the last `ORDER BY` key, so two runs over the same data print the same rows in the same order.

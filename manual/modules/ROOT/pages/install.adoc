@@ -1,0 +1,104 @@
+= Installation
+:navtitle: Installation
+
+Spider Sense requires Java 21 or later.
+It is one jar, and that jar carries the OpenTelemetry Java agent, the collector, the UI and the command line.
+Nothing else has to be installed: no Docker, no account, and no server to run.
+
+[#coordinates]
+== Coordinates
+
+Releases are published to https://central.sonatype.com/namespace/net.benelog.spidersense[Maven Central], so a build needs no repository beyond the default one.
+The current version is `{project-version}`.
+
+[cols="1,2,2",options="header"]
+|===
+| Artifact | Coordinates | What it is
+
+| The jar
+| `{project-group}:spider-sense:{project-version}`
+| The single distributable jar. Its POM declares no dependencies.
+
+| The Gradle plugin
+| `{project-group}:spider-sense-gradle-plugin:{project-version}`
+| The plugin id `net.benelog.spidersense`, which puts `-javaagent` on `bootRun` and `run`. See xref:gradle-plugin.adoc[The Gradle Plugin].
+|===
+
+The jar and the plugin are released together at one version, and the plugin's default version for the jar it resolves is its own, so a plugin and the jar it fetches are always the same release.
+The Gradle Plugin Portal proxies Maven Central, so the default `pluginManagement` finds the plugin.
+
+NOTE: This manual describes `main`, which is ahead of the latest release, so a feature it documents may not be in `{project-version}` yet.
+Build the jar from a checkout to have everything it describes.
+
+[#from-source]
+== From a checkout
+
+[source,bash,subs="attributes+"]
+----
+git clone https://github.com/{project-repo}.git
+cd spider-sense
+./gradlew :spider-sense-agent:senseJar
+----
+
+The jar is then `spider-sense-agent/build/libs/spider-sense-{project-version}.jar`.
+A `-launcher` jar beside it is a build artifact, not the one to use.
+Keep the absolute path in a variable, because every command wants it:
+
+[source,bash,subs="attributes+"]
+----
+SENSE="$PWD/spider-sense-agent/build/libs/spider-sense-{project-version}.jar"
+----
+
+`./gradlew publishToMavenLocal` puts the jar and the plugin, unsigned, into `~/.m2` at the same version.
+A project with `mavenLocal()` in `repositories` and in `pluginManagement.repositories` then resolves them as it would a release, which is how a build outside this repository uses an unreleased version.
+
+== Quick start
+
+[source,bash]
+----
+java -javaagent:"$SENSE" -Dotel.service.name=my-app -jar your-app.jar
+----
+
+Open http://localhost:4000[].
+The collector and the UI run inside the application's JVM, and the first request appears a second or two after it is served.
+`-Dotel.service.name=` is worth setting always, because the alternative is the OpenTelemetry agent's own default, `unknown_service:java`.
+
+`java -jar "$SENSE" status` confirms it from a terminal: it names the mode, the port, the database file, the thresholds in force, the services seen and how many spans are stored.
+
+== The four ways to run it
+
+[cols="1,2,2",options="header"]
+|===
+| Way | Command | Where it is described
+
+| The jar on the command line
+| `java -javaagent:spider-sense.jar -jar app.jar`
+| xref:modes.adoc#agent[Agent mode], and xref:modes.adoc#forwarding[forwarding] when several applications share one UI
+
+| The Gradle plugin
+| `id 'net.benelog.spidersense' version '{project-version}'`, then `./gradlew bootRun`
+| xref:gradle-plugin.adoc[The Gradle Plugin]
+
+| Maven
+| `mvn spring-boot:run -Dspring-boot.run.agents=/path/to/spider-sense.jar`
+| xref:maven.adoc[Maven]
+
+| Standalone
+| `java -jar spider-sense.jar`
+| xref:modes.adoc#standalone[Standalone mode], for anything that already speaks OTLP/HTTP
+|===
+
+`bootRun` and `spring-boot:run` fork the JVM themselves, so the agent has to be handed to the build tool rather than typed on your own command line.
+That is what the Gradle plugin and the Maven parameters exist for.
+
+== Java versions
+
+The jar itself needs Java 21 or later, which is Spider Silk's floor.
+The monitored application can run on any JVM the OpenTelemetry Java agent supports, but the embedded UI needs 21 or later, so agent mode requires 21 or later.
+An application on an older JVM can still be measured: run Spider Sense standalone on a modern JVM and point the application at it, as xref:modes.adoc#forwarding[forwarding] describes.
+
+== What to read next
+
+xref:modes.adoc[The Three Modes] covers starting an application that is not a plain `java -jar`, and what to check when nothing arrives.
+xref:configuration.adoc[Configuration] lists every property, including the port, the database path and the slow thresholds.
+xref:examples.adoc[The Examples] starts two misbehaving applications and a load generator, so there is data to look at immediately.
