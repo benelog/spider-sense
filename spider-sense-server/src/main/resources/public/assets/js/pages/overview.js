@@ -6,6 +6,7 @@ import { h, fill, icon, panel, stat, chip, serviceChip, serviceColor, renderList
 import { timeSeries, sparkline, legend } from '../charts.js';
 import { histogramBars, apdexClass, fmtApdex } from '../buckets.js';
 import { chartMode, loadToggle, throughputSpec, throughputLegend } from '../loadchart.js';
+import { severityDot, kindChip, goToFinding } from './findings.js';
 import { dur, count, rate, pct, rel, bothTimes } from '../format.js';
 
 const KIND_ICON = { 'slow-request': 'turtle', 'slow-query': 'database', error: 'bolt' };
@@ -33,6 +34,7 @@ export function render(root, ctx) {
 
   let mode = chartMode(ctx.query, 'requests');
   let lastSeries = {};
+  let findings = [];
 
   const statsRow = h('div.stat-row', h('div.stat', h('div.stat-caption', 'Loading')));
   const chartBody = h('div.chart');
@@ -52,6 +54,11 @@ export function render(root, ctx) {
     }));
   }
   paintModeToggle();
+  const findingsBody = h('div.findings');
+  const findingsPanel = panel({
+    title: 'Findings',
+    actions: h('a.link-btn', { href: router.href('/findings', api.sharedQuery()) }, 'All findings'),
+  }, findingsBody);
   const servicesBody = h('div.service-cards');
   const servicesPanel = panel({
     title: 'Services',
@@ -68,7 +75,7 @@ export function render(root, ctx) {
   function build() {
     if (built) return;
     built = true;
-    fill(page, statsRow, chartRow, servicesPanel, tinglePanel);
+    fill(page, statsRow, findingsPanel, chartRow, servicesPanel, tinglePanel);
   }
 
   function paintStats(totals, thresholds) {
@@ -81,6 +88,36 @@ export function render(root, ctx) {
     fill(chartLegend, legend(throughputLegend(mode, { p95: true })));
     if (chart) chart.update(spec);
     else chart = timeSeries(chartBody, spec);
+  }
+
+  /** The top five findings, each a row that goes where the finding points (docs/ui.md). */
+  function paintFindings(list) {
+    renderList(findingsBody, list, {
+      key: (f) => f.id,
+      create: (f) => findingRow(f),
+      update: (node, f) => node.replaceChildren(...findingRow(f).childNodes),
+    });
+    if (!list.length) {
+      fill(findingsBody, h('div', { style: { padding: '18px', textAlign: 'center' } },
+        h('span.muted', 'Nothing worth fixing in this window.')));
+    }
+  }
+
+  function findingRow(f) {
+    const frame = (f.code || [])[0];
+    const open = () => goToFinding(f);
+    return h('div.finding', {
+      'data-severity': f.severity || 'low',
+      tabindex: 0,
+      role: 'link',
+      onclick: open,
+      onkeydown: (e) => { if (e.key === 'Enter') open(); },
+    },
+      severityDot(f.severity),
+      h('div.f-main',
+        h('div.f-head', kindChip(f.kind), serviceChip(f.service), h('b.f-title', f.title)),
+        f.why ? h('div.f-why.muted', f.why) : null,
+        frame ? h('div.mono.f-frame', frame) : null));
   }
 
   function paintServices(list) {
@@ -151,8 +188,12 @@ export function render(root, ctx) {
 
   async function load() {
     try {
-      const data = await api.overview();
+      const [data, found] = await Promise.all([
+        api.overview(),
+        api.findings({ limit: 5 }).catch(() => ({ findings: [] })),
+      ]);
       if (destroyed) return;
+      findings = found.findings || [];
       const services = data.services || [];
       const requests = (data.totals || {}).requests || 0;
       if (!requests) {
@@ -173,6 +214,7 @@ export function render(root, ctx) {
       const wanted = chartMode(router.currentRoute().query, 'requests');
       if (wanted !== mode) { mode = wanted; paintModeToggle(); }
       paintStats(data.totals || {}, (api.state.status || {}).thresholds);
+      paintFindings(findings);
       paintChart(data.series || {});
       fill(summaryBody, histogramBars((data.totals || {}).histogram));
       paintServices(services);

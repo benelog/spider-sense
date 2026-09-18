@@ -1,6 +1,8 @@
 // Small DOM helpers: h(), keyed list rendering, chips, sortable tables, the drawer,
 // dialogs, copy-to-clipboard and empty states.
 
+import * as api from './api.js';
+
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 /**
@@ -432,6 +434,71 @@ export function dialog({ title, body, actions, onClose }) {
   dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
   document.body.appendChild(dlg);
   dlg.showModal();
+  return dlg;
+}
+
+/**
+ * The Mark dialog (docs/ui.md): a named moment, the person's half of the agent's
+ * loop. The name is prefilled `before` until the window already has one, so the
+ * usual pair costs two clicks; the top bar's service filter becomes the mark's
+ * service, because a mark of one service is what `since=start` of that service means.
+ */
+export function markDialog(opts = {}) {
+  const window_ = api.windowFor();
+  const named = (api.state.marks || []).some(
+    (m) => m.name === 'before' && m.at >= window_.from && m.at <= window_.to);
+  const service = api.state.service || '';
+  const nameInput = h('input', {
+    type: 'text', value: named ? 'after' : 'before', required: true,
+    pattern: '[A-Za-z0-9._-]{1,64}', maxlength: '64', autocomplete: 'off',
+    spellcheck: 'false', 'aria-label': 'Mark name', style: { width: '100%' },
+  });
+  const noteInput = h('input', {
+    type: 'text', placeholder: 'optional', autocomplete: 'off',
+    'aria-label': 'Note', style: { width: '100%' },
+  });
+  const problem = h('div.form-error', { role: 'alert' });
+  problem.hidden = true;
+
+  const ok = h('button.btn.btn-primary', { type: 'button' }, 'Mark');
+  const dlg = dialog({
+    title: 'Mark this moment',
+    body: h('div.mark-form',
+      h('label', h('span', 'Name'), nameInput),
+      h('label', h('span', 'Note'), noteInput),
+      h('p.muted', service
+        ? 'The mark is recorded for ' + service + ', the service the top bar filters by.'
+        : 'The mark is recorded for every service. Filter by a service to mark only that one.'),
+      problem),
+    actions: [h('button.btn', { type: 'button', onclick: () => dlg.close() }, 'Cancel'), ok],
+  });
+
+  async function submit() {
+    const name = nameInput.value.trim();
+    if (!/^[A-Za-z0-9._-]{1,64}$/.test(name)) {
+      problem.hidden = false;
+      problem.textContent = 'A name is 1 to 64 of the characters A-Z, a-z, 0-9, dot, underscore and dash.';
+      nameInput.focus();
+      return;
+    }
+    ok.disabled = true;
+    try {
+      const mark = await api.createMark({ name, note: noteInput.value.trim(), service });
+      dlg.close();
+      toast('Marked ' + name);
+      if (opts.onDone) opts.onDone(mark);
+    } catch (e) {
+      ok.disabled = false;
+      problem.hidden = false;
+      problem.textContent = String(e && e.message ? e.message : e);
+    }
+  }
+
+  ok.addEventListener('click', submit);
+  for (const input of [nameInput, noteInput]) {
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } });
+  }
+  requestAnimationFrame(() => { nameInput.focus(); nameInput.select(); });
   return dlg;
 }
 

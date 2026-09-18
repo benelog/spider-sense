@@ -889,6 +889,293 @@ function statusBody() {
   };
 }
 
+// --- marks, findings and compare (docs/agent.md) -------------------------
+
+/** Two automatic start marks and the pair a person made around a change. */
+const marks = [
+  { id: 1, at: START, name: 'start', service: 'silk-bookstore', note: 'pid 48211' },
+  { id: 2, at: START + 20 * 1000, name: 'start', service: 'spring-orders', note: 'pid 48377' },
+  { id: 3, at: START + 4 * 60 * 1000, name: 'before', service: null, note: 'before the fix' },
+  { id: 4, at: START + 9 * 60 * 1000, name: 'after', service: 'spring-orders', note: 'after the fix' },
+];
+let markId = marks.length;
+
+/** The selectors of docs/agent.md: a duration, epoch millis, a mark name, start or now. */
+function resolveSelector(selector, fallback, service) {
+  if (!selector) return fallback;
+  if (selector === 'now') return Date.now();
+  if (/^\d{13,}$/.test(selector)) return +selector;
+  const duration = /^(\d+)(s|m|h|d)$/.exec(selector);
+  if (duration) {
+    const unit = { s: 1000, m: 60000, h: 3600000, d: 86400000 }[duration[2]];
+    return fallback - +duration[1] * unit;
+  }
+  const named = marks
+    .filter((mk) => mk.name === selector && (!service || !mk.service || mk.service === service))
+    .sort((a, b) => b.at - a.at)[0];
+  return named ? named.at : fallback;
+}
+
+const FRAMEWORK = ['java.', 'javax.', 'jdk.', 'sun.', 'com.sun.', 'jakarta.', 'org.springframework.',
+  'org.hibernate.', 'org.eclipse.jetty.', 'org.apache.', 'io.opentelemetry.', 'com.zaxxer.', 'org.h2.',
+  'net.benelog.spidersilk.'];
+
+/** The application frames of a stack trace, as docs/agent.md reduces them. */
+function appFrames(stack) {
+  return (stack || '').split('\n')
+    .filter((line) => line.startsWith('\tat '))
+    .map((line) => line.slice(4).trim())
+    .filter((frame) => !FRAMEWORK.some((prefix) => frame.startsWith(prefix)))
+    .slice(0, 5);
+}
+
+const SEVERITY_RANK = { high: 0, medium: 1, low: 2 };
+
+function findingId(kind, service, subject) {
+  return kind + ':' + (hash(kind + '|' + service + '|' + subject) + hash(subject)).slice(0, 12);
+}
+
+function shortType(type) {
+  const i = (type || '').lastIndexOf('.');
+  return i < 0 ? type : type.slice(i + 1);
+}
+
+/** Every kind of docs/agent.md, over the generated window. */
+function findingsFor(w, service, limit) {
+  const found = [];
+  const entries = entrySpans(inWindow(w, service), service);
+  const requests = entries.length;
+
+  for (const group of errorGroups(w, service)) {
+    const def = ERRORS.find((e) => e.errorId === group.errorId);
+    found.push({
+      id: findingId('error', group.service, group.errorId),
+      kind: 'error', severity: 'high', service: group.service,
+      title: shortType(group.type) + ' on ' + (group.endpoints[0] ? group.endpoints[0].name : group.service),
+      why: group.count + ' occurrences, the last one ' + Math.round((Date.now() - group.lastSeen) / 1000) + ' s ago',
+      subject: { endpointId: null, queryId: null, errorId: group.errorId, pool: null, job: null },
+      numbers: {
+        count: group.count, firstSeen: group.firstSeen, lastSeen: group.lastSeen,
+        type: group.type, message: group.message, endpoints: group.endpoints,
+      },
+      statement: null,
+      code: appFrames(def && def.stack),
+      traces: group._traces.slice(-3).reverse().map((t) => t.traceId),
+      impact: group.count,
+    });
+  }
+
+  const nPlusOne = ENDPOINTS.find((e) => e.route === '/books/{id}/reviews');
+  const repeated = QUERIES[2];
+  if ((!service || service === nPlusOne.service) && requests) {
+    const affected = Math.max(1, Math.round(requests * 0.06));
+    found.push({
+      id: findingId('n-plus-one', nPlusOne.service, nPlusOne.endpointId + '|' + repeated.queryId),
+      kind: 'n-plus-one', severity: 'high', service: nPlusOne.service,
+      title: nPlusOne.name + ' runs SELECT reviews 6 times per request',
+      why: affected + ' of ' + affected + ' requests repeated it; 6, 6 and 5 times; 7.4 ms per request in that statement',
+      subject: { endpointId: nPlusOne.endpointId, queryId: repeated.queryId, errorId: null, pool: null, job: null },
+      numbers: { requests: affected, affected, medianRepeats: 6, maxRepeats: 6, msPerRequest: 7.4 },
+      statement: repeated.statement,
+      code: ['net.benelog.bookstore.ReviewRepository.findByBook(ReviewRepository.java:41)',
+        'net.benelog.bookstore.BookHandler.reviews(BookHandler.java:74)'],
+      traces: inWindow(w, nPlusOne.service).filter((t) => t.endpointId === nPlusOne.endpointId).slice(-3).map((t) => t.traceId),
+      impact: 6 * affected,
+    });
+  }
+
+  for (const q of queryStats(w, service)) {
+    if (q.p95Ms <= SLOW_QUERY_MS) continue;
+    const def = QUERIES.find((x) => x.queryId === q.queryId);
+    found.push({
+      id: findingId('slow-query', q.service, q.queryId),
+      kind: 'slow-query', severity: q.p95Ms > SLOW_QUERY_MS * 10 ? 'high' : 'medium', service: q.service,
+      title: (def ? def.operation + ' ' + def.table : 'a query') + ' is slow',
+      why: 'p95 ' + fmtMs(q.p95Ms) + ' over ' + q.calls + ' calls, ' + fmtMs(q.totalMs) + ' in all',
+      subject: { endpointId: null, queryId: q.queryId, errorId: null, pool: null, job: null },
+      numbers: {
+        calls: q.calls, slowCalls: q.slowCalls, p50Ms: q.p50Ms, p95Ms: q.p95Ms, maxMs: q.maxMs,
+        totalMs: q.totalMs, callers: q.callers,
+      },
+      statement: q.statement,
+      code: ['net.benelog.bookstore.BookRepository.search(BookRepository.java:58)'],
+      traces: inWindow(w, q.service).slice(-3).map((t) => t.traceId),
+      impact: q.totalMs,
+    });
+  }
+
+  for (const e of endpointStats(w, service)) {
+    if (e.p95Ms <= SLOW_REQUEST_MS) continue;
+    found.push({
+      id: findingId('slow-endpoint', e.service, e.endpointId),
+      kind: 'slow-endpoint', severity: e.p95Ms > SLOW_REQUEST_MS * 4 ? 'high' : 'medium', service: e.service,
+      title: e.name + ' is slow',
+      why: 'p95 ' + fmtMs(e.p95Ms) + ' over ' + e.calls + ' calls; ' + fmtMs(e.totalMs) + ' in all',
+      subject: { endpointId: e.endpointId, queryId: null, errorId: null, pool: null, job: null },
+      numbers: {
+        calls: e.calls, p50Ms: e.p50Ms, p95Ms: e.p95Ms, maxMs: e.maxMs, totalMs: e.totalMs,
+        apdex: e.apdex, dbCallsPerRequest: 2.4, dbMsPerRequest: 310.2, dbShare: 0.62,
+      },
+      statement: null,
+      code: [],
+      traces: inWindow(w, e.service).filter((t) => t.endpointId === e.endpointId)
+        .slice().sort((a, b) => b.durationMs - a.durationMs).slice(0, 3).map((t) => t.traceId),
+      impact: e.totalMs,
+    });
+  }
+
+  if (!service || service === 'spring-orders') {
+    const job = 'OrderReportJob.run';
+    found.push({
+      id: findingId('slow-job', 'spring-orders', job),
+      kind: 'slow-job', severity: 'medium', service: 'spring-orders',
+      title: job + ' is slow',
+      why: 'p95 2.1 s over 14 runs; 24.8 s in all, 71% of it in the database',
+      subject: { endpointId: null, queryId: null, errorId: null, pool: null, job },
+      numbers: {
+        runs: 14, p50Ms: 1480, p95Ms: 2130, maxMs: 2890, totalMs: 24800,
+        dbCallsPerRun: 38.5, dbMsPerRun: 1260.4, dbShare: 0.71,
+      },
+      statement: null,
+      code: ['com.example.orders.OrderReportJob.run(OrderReportJob.java:36)'],
+      traces: inWindow(w, 'spring-orders').slice(-2).map((t) => t.traceId),
+      impact: 24800,
+    });
+
+    found.push({
+      id: findingId('pool-exhausted', 'spring-orders', 'HikariPool-1'),
+      kind: 'pool-exhausted', severity: 'high', service: 'spring-orders',
+      title: 'HikariPool-1 ran out of connections',
+      why: '10 of 10 connections in use and 4 requests waiting',
+      subject: { endpointId: null, queryId: null, errorId: null, pool: 'HikariPool-1', job: null },
+      numbers: { pool: 'HikariPool-1', max: 10, usedMax: 10, pendingMax: 4, at: w.to - 60000 },
+      statement: null,
+      code: [],
+      traces: [],
+      impact: 4,
+    });
+  }
+
+  found.sort((a, b) => (SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity])
+    || (b.impact - a.impact) || a.id.localeCompare(b.id));
+  return { requests, findings: found.slice(0, limit).map(({ impact, ...rest }) => rest) };
+}
+
+/** api.md's Totals over one window. */
+function totalsOf(w, service) {
+  const entries = entrySpans(inWindow(w, service), service);
+  const durations = entries.map((e) => e.span.durationMs).sort((a, b) => a - b);
+  const errors = entries.filter((e) => e.span.error).length;
+  const histogram = histogramOf(entries.map((e) => e.span));
+  const secs = Math.max(1, (w.to - w.from) / 1000);
+  return {
+    requests: entries.length, errors,
+    errorRate: entries.length ? errors / entries.length : 0,
+    rps: Math.round((entries.length / secs) * 100) / 100,
+    p50Ms: percentile(durations, 50), p95Ms: percentile(durations, 95), p99Ms: percentile(durations, 99),
+    maxMs: durations.length ? durations[durations.length - 1] : 0,
+    apdex: apdexOf(histogram),
+    histogram,
+  };
+}
+
+const VERDICT_ORDER = { worse: 0, new: 1, same: 2, better: 3, gone: 4 };
+
+function verdictOf(before, after, key, step) {
+  if (!before && !after) return 'same';
+  if (!before) return 'new';
+  if (!after) return 'gone';
+  if ((after.errors || 0) > (before.errors || 0)) return 'worse';
+  if ((after.errors || 0) < (before.errors || 0)) return 'better';
+  const b = before[key] || 0, a = after[key] || 0;
+  if (a > b * 1.2 && a - b > step) return 'worse';
+  if (b > a * 1.2 && b - a > step) return 'better';
+  return 'same';
+}
+
+/** The two windows side by side, with every verdict represented. */
+function compareOf(before, after, until, service) {
+  const first = { from: before, to: Math.max(before, after - 1), bucketMs: 15000 };
+  const second = { from: after, to: Math.max(after, until), bucketMs: 15000 };
+
+  const beforeEndpoints = new Map(endpointStats(first, service).map((e) => [e.endpointId, e]));
+  const afterEndpoints = new Map(endpointStats(second, service).map((e) => [e.endpointId, e]));
+  const sideOf = (e) => (e ? {
+    calls: e.calls, errors: e.errors, p50Ms: e.p50Ms, p95Ms: e.p95Ms, maxMs: e.maxMs,
+    dbCallsPerRequest: Math.round((2 + rnd()) * 100) / 100,
+    dbMsPerRequest: Math.round(e.p50Ms * 40) / 100,
+  } : null);
+
+  const ids = [...new Set([...beforeEndpoints.keys(), ...afterEndpoints.keys()])];
+  const endpoints = ids.map((id, i) => {
+    const ep = ENDPOINTS.find((e) => e.endpointId === id);
+    let b = sideOf(beforeEndpoints.get(id));
+    let a = sideOf(afterEndpoints.get(id));
+    // the mock exercises every verdict, so the first rows are forced apart
+    if (i === 0 && a) a = { ...a, p95Ms: Math.round(a.p95Ms * 24) / 10, errors: (a.errors || 0) + 3 };
+    if (i === 1 && a && b) a = { ...a, p95Ms: Math.round((b.p95Ms / 2.5) * 10) / 10, errors: 0 };
+    if (i === 2) b = null;
+    if (i === 3) a = null;
+    return {
+      endpointId: id, service: ep ? ep.service : '', name: ep ? ep.name : id,
+      before: b, after: a, verdict: verdictOf(b, a, 'p95Ms', 10),
+      _total: (a ? a.calls * a.p95Ms : 0) + (b ? b.calls * b.p95Ms : 0),
+    };
+  });
+
+  const beforeRequests = totalsOf(first, service).requests;
+  const afterRequests = totalsOf(second, service).requests;
+  const beforeQueries = new Map(queryStats(first, service).map((q) => [q.queryId, q]));
+  const afterQueries = new Map(queryStats(second, service).map((q) => [q.queryId, q]));
+  const queryIds = [...new Set([...beforeQueries.keys(), ...afterQueries.keys()])];
+  const querySide = (q, requests) => (q ? {
+    calls: q.calls,
+    callsPerRequest: Math.round((q.calls / Math.max(1, requests)) * 100) / 100,
+    p95Ms: q.p95Ms, totalMs: q.totalMs,
+  } : null);
+  const queries = queryIds.map((id, i) => {
+    const def = QUERIES.find((q) => q.queryId === id);
+    let b = querySide(beforeQueries.get(id), beforeRequests);
+    let a = querySide(afterQueries.get(id), afterRequests);
+    if (i === 0 && a && b) a = { ...a, callsPerRequest: Math.round(b.callsPerRequest * 300) / 100, p95Ms: Math.round(a.p95Ms * 22) / 10 };
+    if (i === 1 && a && b) a = { ...a, callsPerRequest: Math.round((b.callsPerRequest / 4) * 100) / 100, p95Ms: Math.round((a.p95Ms / 3) * 10) / 10 };
+    if (i === 2) b = null;
+    return {
+      queryId: id, service: def ? def.service : '', statement: def ? def.statement : id,
+      before: b, after: a, verdict: verdictOf(b, a, 'p95Ms', 10),
+      _total: (a ? a.totalMs : 0) + (b ? b.totalMs : 0),
+    };
+  });
+
+  const beforeErrors = new Map(errorGroups(first, service).map((e) => [e.errorId, e]));
+  const afterErrors = new Map(errorGroups(second, service).map((e) => [e.errorId, e]));
+  const errorIds = [...new Set([...beforeErrors.keys(), ...afterErrors.keys()])];
+  const errors = errorIds.map((id, i) => {
+    const def = ERRORS.find((e) => e.errorId === id);
+    const b = beforeErrors.has(id) ? beforeErrors.get(id).count : (i === 1 ? 0 : null);
+    const a = afterErrors.has(id) ? afterErrors.get(id).count : (i === 2 ? 0 : null);
+    return {
+      errorId: id, service: def ? def.service : '', type: def ? def.type : id, message: def ? def.message : '',
+      before: b, after: a,
+      verdict: b == null ? 'new' : a == null ? 'gone' : a > b ? 'worse' : a < b ? 'better' : 'same',
+      _total: (a || 0) + (b || 0),
+    };
+  });
+
+  const order = (list) => list
+    .sort((x, y) => (VERDICT_ORDER[x.verdict] - VERDICT_ORDER[y.verdict]) || (y._total - x._total))
+    .map(({ _total, ...rest }) => rest);
+
+  return {
+    before: { from: first.from, to: first.to },
+    after: { from: second.from, to: second.to },
+    totals: { before: totalsOf(first, service), after: totalsOf(second, service) },
+    endpoints: order(endpoints),
+    queries: order(queries),
+    errors: order(errors),
+  };
+}
+
 const ROUTES = [
   [/^\/api\/status$/, () => statusBody()],
 
@@ -1066,6 +1353,27 @@ const ROUTES = [
     };
   }],
 
+  [/^\/api\/marks$/, (m, q) => ({
+    marks: marks.slice().sort((a, b) => b.at - a.at).slice(0, +(q.limit || 50)),
+  })],
+
+  [/^\/api\/findings$/, (m, q) => {
+    const w = windowOf(q);
+    const limit = Math.min(100, +(q.limit || 20));
+    const { requests, findings } = findingsFor(w, q.service, limit);
+    return { window: w, requests, findings };
+  }],
+
+  [/^\/api\/compare$/, (m, q) => {
+    if (!q.before || !q.after) {
+      return { status: 400, body: { error: 'compare needs both before and after, as marks or time selectors' } };
+    }
+    const until = resolveSelector(q.until, Date.now(), q.service);
+    const after = resolveSelector(q.after, until - 5 * 60000, q.service);
+    const before = resolveSelector(q.before, after - 5 * 60000, q.service);
+    return compareOf(before, after, until, q.service);
+  }],
+
   [/^\/api\/logs$/, (m, q) => {
     const w = windowOf(q);
     const min = { TRACE: 1, DEBUG: 5, INFO: 9, WARN: 13, ERROR: 17 }[q.severity] || 0;
@@ -1119,6 +1427,24 @@ globalThis.fetch = async function mockFetch(input, init) {
     tingles.length = 0;
     spanTotal = 0;
     return new Response(null, { status: 204 });
+  }
+
+  if (url.pathname === '/api/marks' && method === 'POST') {
+    let body = {};
+    try { body = JSON.parse((init && init.body) || '{}') || {}; } catch (e) { body = {}; }
+    const name = String(body.name || '');
+    if (!/^[A-Za-z0-9._-]{1,64}$/.test(name)) {
+      return new Response(JSON.stringify({ error: 'a mark name matches [A-Za-z0-9._-]{1,64}' }),
+        { status: 400, headers: { 'content-type': 'application/json; charset=utf-8' } });
+    }
+    const mark = {
+      id: ++markId, at: body.at ? +body.at : Date.now(), name,
+      service: body.service || null, note: body.note || null,
+    };
+    marks.push(mark);
+    return new Response(JSON.stringify(mark), {
+      status: 201, headers: { 'content-type': 'application/json; charset=utf-8' },
+    });
   }
 
   const query = Object.fromEntries(url.searchParams.entries());

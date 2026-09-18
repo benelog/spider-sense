@@ -14,6 +14,8 @@ export const state = {
   range: '15m',
   live: false,
   status: null,
+  /** The marks the shell keeps fresh, so every chart can draw them for free. */
+  marks: [],
 };
 
 /** The part of the hash query every internal link carries. */
@@ -99,6 +101,20 @@ export function getJSON(path, query) {
 
 // --- status and control -------------------------------------------------
 
+/** POST with a JSON body; the agent-facing endpoints are the only writers. */
+export function postJSON(path, body) {
+  return fetch(path, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify(body || {}),
+  }).then(async (res) => {
+    let parsed = null;
+    try { parsed = await res.json(); } catch (e) { parsed = null; }
+    if (!res.ok) throw new ApiError((parsed && parsed.error) || res.status + ' ' + res.statusText, res.status);
+    return parsed;
+  });
+}
+
 export function status() { return getJSON('/api/status'); }
 
 export async function refreshStatus() {
@@ -154,3 +170,21 @@ export function metricCatalog(extra) {
 export function metricSeries(extra, opts) { return getJSON('/api/metrics/series', params(extra, opts)); }
 
 export function jvm(extra, opts) { return getJSON('/api/jvm', params(extra, opts)); }
+
+// --- the agent-facing endpoints the UI also shows (docs/agent.md) ----------
+
+export function findings(extra, opts) { return getJSON('/api/findings', params({ limit: 100, ...extra }, opts)); }
+
+export function marks(limit = 50) { return getJSON('/api/marks', { limit }); }
+
+export function createMark({ name, note, service } = {}) {
+  return postJSON('/api/marks', { name, note: note || null, service: service || null });
+}
+
+/** The two windows are named by selectors, not by from/to, so the window is not sent. */
+export function compare({ before, after, until } = {}, opts = {}) {
+  const query = { before, after, until };
+  const service = opts.service !== undefined ? opts.service : state.service;
+  if (service) query.service = service;
+  return getJSON('/api/compare', query);
+}
