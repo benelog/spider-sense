@@ -9,7 +9,7 @@ Read `docs/design.md` (architecture and decisions), `docs/storage.md` (the H2 sc
 |---|---|
 | `spider-sense-server` | Spider Silk app: OTLP/HTTP receiver, in-memory store, JSON API, static UI under `src/main/resources/public`. Builds a fat jar (`shadowJar`). |
 | `spider-sense-agent` | The launcher (`premain`/`main`, no dependencies) and the packaging task that assembles the single distributable jar: OpenTelemetry Java agent + launcher + nested server jar + nested extension jar. |
-| `spider-sense-gradle-plugin` | An included build (`pluginManagement.includeBuild`), not a subproject: the Gradle plugin `net.benelog.spidersense` that puts `-javaagent` on `bootRun`/`run`, the `spiderSense` block, and the `spiderSense`/`spiderSenseInit` tasks (`docs/build-tools.md`). Published to Maven Central with the jar. |
+| `spider-sense-gradle-plugin` | An included build (`pluginManagement.includeBuild`), not a subproject: the Gradle plugin `net.benelog.spidersense` that puts `-javaagent` on `bootRun`/`run`, the `spiderSense` block, and the `spiderSense`/`spiderSenseInit`/`spiderSenseCheck` tasks (`docs/build-tools.md`). Published to Maven Central with the jar. |
 | `spider-sense-extension` | The OpenTelemetry agent extension: one `SpanProcessor` that records `code.stacktrace` on a database span slower than `slow.query.ms`. Compiled `compileOnly` against the SDK, nested as `spider-sense/extension.jar`. |
 | `examples/silk-bookstore` | Spider Silk + spring-jdbc + H2 example app with deliberately slow queries and endpoints (port 8081). |
 | `examples/spring-orders` | Spring Boot + Spring Data JPA + H2 example app, calls silk-bookstore over HTTP (port 8082). |
