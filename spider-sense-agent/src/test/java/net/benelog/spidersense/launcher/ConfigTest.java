@@ -175,6 +175,18 @@ class ConfigTest {
     }
 
     @Test
+    void serverOwnedArgumentsBecomeSystemProperties() {
+        touched.add("spidersense.app.packages");
+        touched.add("spidersense.ignore.endpoints");
+
+        Config.fromArgs(new String[] {"--app.packages=com.acme,org.acme", "--ignore.endpoints="});
+
+        assertThat(System.getProperty("spidersense.app.packages")).isEqualTo("com.acme,org.acme");
+        // Kept empty, not dropped: an empty list means "ignore nothing" (design.md).
+        assertThat(System.getProperty("spidersense.ignore.endpoints")).isEmpty();
+    }
+
+    @Test
     void theSystemPropertyWinsOverTheEnvironmentVariable() {
         set("otel.exporter.otlp.protocol", "grpc");
         assertThat(Config.propertyOrEnv("otel.exporter.otlp.protocol")).isEqualTo("grpc");

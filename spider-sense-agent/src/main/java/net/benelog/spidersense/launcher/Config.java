@@ -66,7 +66,9 @@ public record Config(
      * The system properties overridden by {@code --key=value} arguments; the keys are those of the
      * table without the {@code spidersense.} prefix, e.g. {@code --port=4001}.
      * Unknown keys and bare flags are ignored so {@code --help} and {@code --version} can be
-     * handled by the caller.
+     * handled by the caller. {@code --app.packages} and {@code --ignore.endpoints} belong to the
+     * server alone and are forwarded as the {@code spidersense.*} system property of the same
+     * name, which the server reads from this JVM.
      */
     public static Config fromArgs(String[] args) {
         Config c = fromSystemProperties();
@@ -105,6 +107,11 @@ public record Config(
                 case "slow.query.ms" -> slowQuery = Long.parseLong(value);
                 case "open" -> open = Boolean.parseBoolean(value);
                 case "mode" -> mode = value;
+                // Server-owned keys the launcher never interprets: the server runs in this JVM
+                // and reads them as spidersense.* properties, so the argument becomes the
+                // property. The value is kept as written, because an empty
+                // spidersense.ignore.endpoints means "ignore nothing" (design.md).
+                case "app.packages", "ignore.endpoints" -> System.setProperty("spidersense." + key, value);
                 default -> { /* unknown keys are ignored */ }
             }
         }
