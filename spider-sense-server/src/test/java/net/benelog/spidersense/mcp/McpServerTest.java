@@ -117,6 +117,10 @@ class McpServerTest {
                 .isEqualTo("number");
         assertThat(properties(byName.get("findings")).getObject("full").getString("type"))
                 .isEqualTo("boolean");
+        Json.JsonObject hideAcked = properties(byName.get("findings")).getObject("hideAcked");
+        assertThat(hideAcked).as("agent.md's findings tool takes hideAcked").isNotNull();
+        assertThat(hideAcked.getString("type")).isEqualTo("boolean");
+        assertThat(hideAcked.getString("description")).contains("acknowledged");
     }
 
     private static Json.JsonObject properties(Json.JsonObject tool) {

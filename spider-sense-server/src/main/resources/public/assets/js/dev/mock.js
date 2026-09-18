@@ -949,8 +949,24 @@ function shortType(type) {
   return i < 0 ? type : type.slice(i + 1);
 }
 
+/**
+ * Acknowledged findings (docs/agent.md), by finding id.
+ *
+ * <p>One is here from the start — the report endpoint everybody knows is slow —
+ * so the dimmed row and its Unacknowledge button are on the screen without
+ * anybody having to click anything first.
+ */
+const acks = new Map();
+{
+  const report = ENDPOINTS.find((e) => e.route === '/orders/report');
+  if (report) {
+    acks.set(findingId('slow-endpoint', report.service, report.endpointId),
+      { at: START + 3 * 60 * 1000, note: 'slow by design until the report is precomputed' });
+  }
+}
+
 /** Every kind of docs/agent.md, over the generated window. */
-function findingsFor(w, service, limit) {
+function findingsFor(w, service, limit, hideAcked) {
   const found = [];
   const entries = entrySpans(inWindow(w, service), service);
   const requests = entries.length;
@@ -1143,7 +1159,22 @@ function findingsFor(w, service, limit) {
 
   found.sort((a, b) => (SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity])
     || (b.impact - a.impact) || a.id.localeCompare(b.id));
-  return { requests, findings: found.slice(0, limit).map(({ impact, ...rest }) => rest) };
+
+  // Acknowledged findings last, in the same order among themselves (docs/agent.md).
+  const open = [];
+  const accepted = [];
+  let acked = 0;
+  for (const finding of found) {
+    const row = acks.get(finding.id);
+    if (!row) {
+      open.push({ ...finding, ack: null });
+      continue;
+    }
+    acked++;
+    if (!hideAcked) accepted.push({ ...finding, ack: { at: row.at, note: row.note } });
+  }
+  const ranked = open.concat(accepted);
+  return { requests, acked, findings: ranked.slice(0, limit).map(({ impact, ...rest }) => rest) };
 }
 
 /** api.md's Totals over one window. */
@@ -1445,9 +1476,15 @@ const ROUTES = [
   [/^\/api\/findings$/, (m, q) => {
     const w = windowOf(q);
     const limit = Math.min(100, +(q.limit || 20));
-    const { requests, findings } = findingsFor(w, q.service, limit);
-    return { window: w, requests, findings };
+    const { requests, acked, findings } = findingsFor(w, q.service, limit, q.hideAcked === 'true');
+    return { window: w, requests, acked, findings };
   }],
+
+  [/^\/api\/acks$/, (m, q) => ({
+    acks: Array.from(acks, ([findingId, ack]) => ({ findingId, at: ack.at, note: ack.note }))
+      .sort((a, b) => b.at - a.at)
+      .slice(0, +(q.limit || 200)),
+  })],
 
   [/^\/api\/compare$/, (m, q) => {
     if (!q.before || !q.after) {
@@ -1510,7 +1547,28 @@ globalThis.fetch = async function mockFetch(input, init) {
     traces.length = 0;
     logs.length = 0;
     tingles.length = 0;
+    acks.clear();
     spanTotal = 0;
+    return new Response(null, { status: 204 });
+  }
+
+  const ackPath = /^\/api\/findings\/([^/]+)\/ack$/.exec(url.pathname);
+  if (ackPath && method === 'POST') {
+    let body = {};
+    try { body = JSON.parse((init && init.body) || '{}') || {}; } catch (e) { body = {}; }
+    const findingId = decodeURIComponent(ackPath[1]);
+    const ack = { at: Date.now(), note: body.note ? String(body.note) : null };
+    acks.set(findingId, ack);
+    return new Response(JSON.stringify({ findingId, at: ack.at, note: ack.note }), {
+      status: 201, headers: { 'content-type': 'application/json; charset=utf-8' },
+    });
+  }
+  if (ackPath && method === 'DELETE') {
+    const findingId = decodeURIComponent(ackPath[1]);
+    if (!acks.delete(findingId)) {
+      return new Response(JSON.stringify({ error: 'No such acknowledgement: ' + findingId }),
+        { status: 404, headers: { 'content-type': 'application/json; charset=utf-8' } });
+    }
     return new Response(null, { status: 204 });
   }
 

@@ -34,6 +34,8 @@ final class Options {
     static final String CHECK = "check";
     static final String COMPARE = "compare";
     static final String MARK = "mark";
+    static final String ACK = "ack";
+    static final String UNACK = "unack";
     static final String TRACE = "trace";
     static final String SQL = "sql";
 
@@ -46,7 +48,9 @@ final class Options {
 
     private static final Map<String, Set<String>> COMMANDS = Map.ofEntries(
             Map.entry("status", with()),
-            Map.entry("findings", with("since", "until", "limit", "full")),
+            Map.entry("findings", with("since", "until", "limit", "full", "hide-acked")),
+            Map.entry(ACK, with("note")),
+            Map.entry(UNACK, with()),
             Map.entry(TRACE, with("full")),
             Map.entry("traces", with("since", "until", "limit", "full", "status", "min-ms", "q")),
             Map.entry("endpoints", with("since", "until")),
@@ -71,6 +75,8 @@ final class Options {
     private static final Map<String, String> ARGUMENT = Map.of(
             TRACE, "a trace id",
             MARK, "a mark name",
+            ACK, "a finding id",
+            UNACK, "a finding id",
             SQL, "a statement");
 
     private final String command;

@@ -190,7 +190,8 @@ export function render(root, ctx) {
     try {
       const [data, found] = await Promise.all([
         api.overview(),
-        api.findings({ limit: 5 }).catch(() => ({ findings: [] })),
+        // hideAcked: the top five are the unacknowledged ones (docs/ui.md).
+        api.findings({ limit: 5, hideAcked: true }).catch(() => ({ findings: [] })),
       ]);
       if (destroyed) return;
       findings = found.findings || [];

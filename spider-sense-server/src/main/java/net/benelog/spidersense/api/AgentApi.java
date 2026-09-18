@@ -6,6 +6,7 @@ import java.util.Map;
 import net.benelog.spidersense.query.Check;
 import net.benelog.spidersense.query.Selectors;
 import net.benelog.spidersense.query.Window;
+import net.benelog.spidersense.store.Acks;
 import net.benelog.spidersense.store.Marks;
 import net.benelog.spidersense.store.ReadOnlyQuery;
 import net.benelog.spidersilk.App;
@@ -16,8 +17,8 @@ import net.benelog.spidersilk.WebResponse;
 import net.benelog.spidersilk.json.Json;
 
 /**
- * The endpoints that exist for an agent rather than for the UI: findings, marks,
- * compare and check.
+ * The endpoints that exist for an agent rather than for the UI: findings and
+ * their acknowledgements, marks, compare and check.
  *
  * <p>The handlers are thin on purpose. Everything they answer comes from
  * {@link Reports}, because the CLI answers the same questions from the same
@@ -40,6 +41,8 @@ public final class AgentApi {
     private static final int FINDINGS_MAX = 100;
     private static final int MARKS = 50;
     private static final int MARKS_MAX = 500;
+    private static final int ACKS = 200;
+    private static final int ACKS_MAX = 1000;
 
     private final Reports reports;
     private final Params params;
@@ -51,6 +54,9 @@ public final class AgentApi {
 
     public void register(App app) {
         app.get("/api/findings", "What is worth fixing in this window", this::findings);
+        app.post("/api/findings/{id}/ack", "Accept a known finding", this::ack);
+        app.delete("/api/findings/{id}/ack", "Withdraw an acknowledgement", this::unack);
+        app.get("/api/acks", "Acknowledged findings", this::acks);
         app.get("/api/marks", "Named moments", this::marks);
         app.post("/api/marks", "Record a named moment", this::mark);
         app.get("/api/compare", "Two windows side by side", this::compare);
@@ -68,7 +74,50 @@ public final class AgentApi {
     public WebResponse findings(WebRequest req) {
         Window window = params.window(req);
         return Params.answer(req, reports.findings(window, Params.service(req),
-                Params.limit(req, FINDINGS, FINDINGS_MAX), Params.full(req)));
+                Params.limit(req, FINDINGS, FINDINGS_MAX), Params.full(req),
+                req.queryParam("hideAcked", Boolean::parseBoolean, false)));
+    }
+
+    /**
+     * Accepts a known finding, so the list stays about what is new.
+     *
+     * <p>The body is optional: an acknowledgement with no note is the common case,
+     * and a caller that sends nothing at all must not be told its empty body is
+     * not valid JSON (agent.md, "Acknowledgements").
+     */
+    public WebResponse ack(WebRequest req) {
+        String body = req.body();
+        String note = null;
+        if (body != null && !body.isBlank()) {
+            Json.JsonObject object = req.bodyJson().asObject();
+            note = object.optString("note", null);
+        }
+        Acks.Ack ack;
+        try {
+            ack = reports.ackStore().ack(req.pathParam("id"), note);
+        } catch (IllegalArgumentException e) {
+            throw new HttpException(HttpStatus.BAD_REQUEST, e.getMessage());
+        }
+        return Params.answer(req, reports.ack(ack)).status(HttpStatus.CREATED);
+    }
+
+    /** {@code 204} when there was one to withdraw, {@code 404} when there was not. */
+    public WebResponse unack(WebRequest req) {
+        String id = req.pathParam("id");
+        boolean removed;
+        try {
+            removed = reports.ackStore().unack(id);
+        } catch (IllegalArgumentException e) {
+            throw new HttpException(HttpStatus.BAD_REQUEST, e.getMessage());
+        }
+        if (!removed) {
+            throw new HttpException(HttpStatus.NOT_FOUND, "No such acknowledgement: " + id);
+        }
+        return WebResponse.noContent();
+    }
+
+    public WebResponse acks(WebRequest req) {
+        return Params.answer(req, reports.acks(Params.limit(req, ACKS, ACKS_MAX)));
     }
 
     public WebResponse marks(WebRequest req) {

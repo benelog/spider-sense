@@ -218,7 +218,10 @@ public final class Database implements AutoCloseable {
                 fallbackReason != null, fallbackReason);
     }
 
-    /** {@code DELETE /api/data} and the sweeper's unbounded form: everything but the metadata. */
+    /**
+     * {@code DELETE /api/data}: everything but the metadata, acknowledgements
+     * included — they are the one table the sweeper never touches and this does.
+     */
     public void deleteAll() {
         for (String table : Schema.DATA_TABLES) {
             sql.update("DELETE FROM " + table, List.of());

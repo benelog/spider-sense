@@ -17,7 +17,10 @@ final class Help {
 
             Commands:
               status                       what is running, where the database is, how much it holds
-              findings                     the findings of the window
+              findings [--hide-acked]      the findings of the window
+              ack <finding id> [--note=<text>]
+                                           accepts a known finding, so it is ranked last
+              unack <finding id>           withdraws that acknowledgement
               trace <traceId> [--full]     one trace as a tree
               traces [--status=error|ok] [--min-ms=<n>] [--q=<text>] [--limit=20]
                                            the newest traces
@@ -54,6 +57,7 @@ final class Help {
               --db=<path or jdbc url>   read the database directly, without asking any server
               --json               the JSON of api.md instead of the text
               --full               whole statements, every repeated span
+              --hide-acked         findings only: leave acknowledged findings out
 
             A selector is a duration (30s, 5m, 2h, 1d), epoch milliseconds, a mark name,
             start (the newest automatic start mark) or now.
@@ -63,7 +67,8 @@ final class Help {
             no server is there to ask.
 
             Exit codes: 0 success, 1 check failed, 2 usage or connection error,
-            3 check had no request to judge, 4 not found (a trace id, a mark name).""";
+            3 check had no request to judge, 4 not found (a trace id, a mark name,
+            a finding id to unack).""";
 
     private Help() {
     }

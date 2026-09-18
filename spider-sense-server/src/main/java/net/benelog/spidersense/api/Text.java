@@ -16,6 +16,7 @@ import net.benelog.spidersense.query.Numbers;
 import net.benelog.spidersense.query.Queries;
 import net.benelog.spidersense.query.Stats;
 import net.benelog.spidersense.query.Window;
+import net.benelog.spidersense.store.Acks;
 import net.benelog.spidersense.store.LogRecord;
 import net.benelog.spidersense.store.Marks;
 import net.benelog.spidersense.store.ReadOnlyQuery;
@@ -67,12 +68,26 @@ final class Text {
 
     /** {@code # findings  2026-09-17T10:00:00+09:00 → 10:15:00  (15m, all services, 120 requests)}. */
     static String heading(String what, Window window, String service, Long requests) {
+        return heading(what, window, service, requests, 0);
+    }
+
+    /**
+     * The same line with {@code , 2 acked} after the request count.
+     *
+     * <p>Only {@code findings} has acknowledgements, and only when there are any:
+     * a heading that always said {@code 0 acked} would spend a phrase on nothing
+     * (agent.md, "Acknowledgements").
+     */
+    static String heading(String what, Window window, String service, Long requests, int acked) {
         StringBuilder line = new StringBuilder("# ").append(what).append("  ")
                 .append(instant(window.from())).append(" → ").append(clock(window.to()))
                 .append("  (").append(range(window)).append(", ")
                 .append(service == null ? "all services" : service);
         if (requests != null) {
             line.append(", ").append(requests).append(requests == 1 ? " request" : " requests");
+        }
+        if (acked > 0) {
+            line.append(", ").append(acked).append(" acked");
         }
         return line.append(")\n").toString();
     }
@@ -154,17 +169,32 @@ final class Text {
 
     static String findings(Window window, String service, long requests,
             List<Findings.Finding> findings, boolean full, String otlpEndpoint) {
+        return findings(window, service, requests, 0, findings, full, otlpEndpoint);
+    }
+
+    /**
+     * The ranked table and its evidence, with the acknowledged rows named as such.
+     *
+     * <p>The severity column reads {@code acked} rather than {@code high} for an
+     * acknowledged finding: it is still last in the table, and the one word says
+     * why without a column of its own (agent.md, "Acknowledgements").
+     */
+    static String findings(Window window, String service, long requests, int acked,
+            List<Findings.Finding> findings, boolean full, String otlpEndpoint) {
         if (findings.isEmpty()) {
-            return heading("findings", window, service, requests) + "\n"
+            return heading("findings", window, service, requests, acked) + "\n"
                     + empty("findings", window, requests, otlpEndpoint);
         }
-        StringBuilder text = new StringBuilder(heading("findings", window, service, requests));
+        StringBuilder text =
+                new StringBuilder(heading("findings", window, service, requests, acked));
         text.append('\n');
         table(text, List.of("#", "severity", "kind", "id", "service", "title"));
         int n = 0;
         for (Findings.Finding finding : findings) {
             n++;
-            row(text, List.of(String.valueOf(n), finding.severity(), finding.kind(), finding.id(),
+            row(text, List.of(String.valueOf(n),
+                    finding.ack() == null ? finding.severity() : "acked",
+                    finding.kind(), finding.id(),
                     finding.service(), oneLine(finding.title())));
         }
         n = 0;
@@ -289,6 +319,31 @@ final class Text {
         return "mark " + mark.name() + " at " + instantMillis(mark.at())
                 + (mark.service() == null ? "" : " (" + mark.service() + ")")
                 + (mark.note() == null ? "" : " — " + mark.note()) + "\n";
+    }
+
+    // --- acknowledgements -----------------------------------------------------
+
+    /** One line, as a mark's is: what happened, to which finding, and why. */
+    static String ack(Acks.Ack ack) {
+        return "acked " + ack.findingId()
+                + (ack.note() == null ? "" : " — " + oneLine(ack.note())) + "\n";
+    }
+
+    static String unack(String findingId) {
+        return "unacked " + findingId + "\n";
+    }
+
+    static String acks(List<Acks.Ack> acks) {
+        if (acks.isEmpty()) {
+            return "# acks\n\nno acknowledged findings;"
+                    + " POST /api/findings/{id}/ack or `ack <finding id>` records one\n";
+        }
+        StringBuilder text = new StringBuilder("# acks\n\n");
+        table(text, List.of("at", "finding", "note"));
+        for (Acks.Ack ack : acks) {
+            row(text, List.of(instantMillis(ack.at()), ack.findingId(), or(ack.note())));
+        }
+        return text.toString();
     }
 
     // --- compare --------------------------------------------------------------

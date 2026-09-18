@@ -26,6 +26,7 @@ import net.benelog.spidersense.ingest.OtlpDecoder;
 import net.benelog.spidersense.server.Config;
 import net.benelog.spidersense.server.SpiderSenseServer;
 import net.benelog.spidersense.store.Database;
+import net.benelog.spidersense.store.Store;
 import net.benelog.spidersilk.json.Json;
 
 /**
@@ -147,6 +148,12 @@ class CliTest {
         assertThat(path("findings", "--since=before", "--service=orders", "--limit=5"))
                 .isEqualTo("/api/findings?since=before&service=orders&limit=5&format=text");
         assertThat(path("findings", "--json")).isEqualTo("/api/findings?since=15m&limit=20&format=json");
+        assertThat(path("findings", "--hide-acked"))
+                .isEqualTo("/api/findings?since=15m&limit=20&hideAcked=true&format=text");
+        assertThat(path("ack", "slow-endpoint:1a2b3c4d5e6f", "--note=known"))
+                .isEqualTo("/api/findings/slow-endpoint%3A1a2b3c4d5e6f/ack?format=text");
+        assertThat(path("unack", "slow-endpoint:1a2b3c4d5e6f"))
+                .isEqualTo("/api/findings/slow-endpoint%3A1a2b3c4d5e6f/ack?format=text");
         assertThat(path("trace", TRACE, "--full"))
                 .isEqualTo("/api/traces/" + TRACE + "?full=true&format=text");
         assertThat(path("traces", "--status=error", "--min-ms=100", "--q=orders"))
@@ -245,6 +252,29 @@ class CliTest {
         });
     }
 
+    /** The same pair over HTTP, where the id travels in the path and has a colon in it. */
+    @Test
+    void aFindingIsAcknowledgedOverHttpAndWithdrawnAgain() {
+        serve(true, (server, base) -> {
+            String id = Json.parse(runAt(base, "findings", "--json", "--url=" + base).out())
+                    .asObject().getArray("findings").get(0).asObject().getString("id");
+
+            Run acked = runAt(base, "ack", id, "--note=known", "--url=" + base);
+            assertThat(acked.exit()).isZero();
+            assertThat(acked.out()).isEqualTo("acked " + id + " — known\n");
+
+            assertThat(runAt(base, "findings", "--url=" + base).out()).contains("1 acked)");
+
+            Run withdrawn = runAt(base, "unack", id, "--url=" + base);
+            assertThat(withdrawn.exit()).isZero();
+            assertThat(withdrawn.out()).isEqualTo("unacked " + id + "\n");
+
+            Run twice = runAt(base, "unack", id, "--url=" + base);
+            assertThat(twice.exit()).isEqualTo(4);
+            assertThat(twice.err()).contains("No such acknowledgement: " + id);
+        });
+    }
+
     @Test
     void anExplicitUrlThatAnswersNothingIsAConnectionErrorAndNeverTheFile() {
         String closed = closedUrl();
@@ -293,6 +323,44 @@ class CliTest {
 
         assertThat(run("findings", "--since=nowhere", db).exit()).isEqualTo(4);
         assertThat(run("mark", "two words", db).exit()).isEqualTo(2);
+    }
+
+    /**
+     * Acknowledging from the file, which is where an agent does it: the loop runs
+     * against a crashed application as readily as against a live one (agent.md).
+     */
+    @Test
+    void ackAndUnackAreWrittenToTheFileAndShowUpInFindings() {
+        String url = TestStore.memoryUrl();
+        String db = "--db=" + url;
+        try (Store store = new Store(url, null, 24, 500, 100, null)) {
+            new OtlpDecoder(store, () -> 4000).accept(sample());
+            store.writer().awaitIdle(5_000);
+        }
+
+        String id = Json.parse(run("findings", "--json", db).out()).asObject()
+                .getArray("findings").get(0).asObject().getString("id");
+
+        Run acked = run("ack", id, "--note=slow by design", db);
+        assertThat(acked.exit()).isZero();
+        assertThat(acked.out()).isEqualTo("acked " + id + " — slow by design\n");
+
+        Run listed = run("findings", db);
+        assertThat(listed.exit()).isZero();
+        assertThat(listed.out()).contains("1 acked)");
+        assertThat(listed.out()).contains("| acked | ");
+        assertThat(run("findings", "--hide-acked", db).out()).doesNotContain(id);
+
+        Run withdrawn = run("unack", id, db);
+        assertThat(withdrawn.exit()).isZero();
+        assertThat(withdrawn.out()).isEqualTo("unacked " + id + "\n");
+
+        Run twice = run("unack", id, db);
+        assertThat(twice.exit()).isEqualTo(4);
+        assertThat(twice.err()).contains("No such acknowledgement: " + id);
+        assertThat(twice.out()).isEmpty();
+
+        assertThat(run("unack", db).exit()).as("the id is the argument").isEqualTo(2);
     }
 
     @Test

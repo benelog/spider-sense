@@ -12,6 +12,7 @@ import java.time.Duration;
 import java.util.Map;
 
 import net.benelog.spidersense.api.AgentApi;
+import net.benelog.spidersense.api.Reports;
 import net.benelog.spidersilk.json.Json;
 
 /**
@@ -42,7 +43,9 @@ final class Remote {
         URI uri = URI.create(trimSlash(base) + path(options));
         HttpRequest.Builder request = HttpRequest.newBuilder(uri).timeout(READ);
         String body = body(options);
-        if (body == null) {
+        if (Options.UNACK.equals(options.command())) {
+            request.DELETE();
+        } else if (body == null) {
             request.GET();
         } else {
             request.header("Content-Type", "application/json")
@@ -63,6 +66,11 @@ final class Remote {
         if (response.statusCode() >= 400) {
             err.println("spider-sense: " + message(response));
             return response.statusCode() == 404 ? Cli.NOT_FOUND : Cli.USAGE;
+        }
+        if (Options.UNACK.equals(options.command())) {
+            Reports.Report report = Reports.unack(options.argument());
+            print(out, options.flag("json") ? report.json().toJson() : report.text());
+            return Cli.OK;
         }
         print(out, response.body());
         return Options.CHECK.equals(options.command()) ? verdict(response) : Cli.OK;
@@ -117,7 +125,10 @@ final class Remote {
         Query query = switch (options.command()) {
             case "status" -> new Query("/api/status");
             case "findings" -> window(options, new Query("/api/findings"))
-                    .add("limit", options.limit(Limits.FINDINGS, Limits.FINDINGS_MAX));
+                    .add("limit", options.limit(Limits.FINDINGS, Limits.FINDINGS_MAX))
+                    .add("hideAcked", options.flag("hide-acked") ? "true" : null);
+            case Options.ACK, Options.UNACK ->
+                    new Query("/api/findings/" + encode(options.argument()) + "/ack");
             case Options.TRACE -> new Query("/api/traces/" + encode(options.argument()));
             case "traces" -> window(options, new Query("/api/traces"))
                     .add("status", options.value("status", null))
@@ -180,6 +191,9 @@ final class Remote {
                     .put("name", options.argument())
                     .put("note", options.value("note", null))
                     .put("service", options.value("service", null))
+                    .toJson();
+            case Options.ACK -> Json.obj()
+                    .put("note", options.value("note", null))
                     .toJson();
             case Options.SQL -> Json.obj()
                     .put("sql", options.argument())

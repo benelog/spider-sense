@@ -88,6 +88,8 @@ The UI is at <http://127.0.0.1:4000> for the user, not for you.
 `findings` ranks by severity, then by impact, then by id, so the list is stable between two calls over the same data.
 Each finding carries `why` (the numbers in a sentence), `numbers` (kind-specific), `statement` (when the finding is about one), `code` (application frames, innermost first, empty when none is known), and `traces` (at most three, the evidence).
 The table is the ranked answer and the numbered blocks under it are that evidence, one per row, in the same order.
+When a finding is known and accepted — the user says it is slow by design, or the fix waits on something else — `ack <finding id> --note=<why>` moves it to the bottom of every later list, its severity reading `acked`, so the top of the list stays about what is new; `unack <finding id>` puts it back, and `findings --hide-acked` leaves the acknowledged ones out altogether.
+`check` ignores acknowledgements: its rules are explicit thresholds, so an acknowledged `n-plus-one` still counts against `--max-n-plus-one`.
 
 | Kind | What it means | What it usually wants |
 |---|---|---|
@@ -131,6 +133,7 @@ With no rule given the defaults are `--max-errors=0`, `--max-n-plus-one=0` and `
 - **Keep the window small.** The default `--since=15m` drags in whatever ran before; `--since=before` or `--since=start` answers about the run you care about.
 - **Never quote a number the tool did not print.** Percentages, p95s and call counts come from the output, not from an estimate.
 - **Quote the trace id as evidence.** A claim about an endpoint that names no trace cannot be checked by the user.
+- **Acknowledge a finding the user has accepted**, with the reason as its note, so the list stays about what is new; never acknowledge one to make `check` pass, because `check` does not look at acknowledgements.
 - **Run `check` before calling a fix done**, and say which rules it passed with which limits.
 - **`sql` is the last resort, not the first.** `findings` and the tables come with the thresholds, the ranking and the evidence already applied; reach for [references/sql.md](references/sql.md) when the question is genuinely one none of them has a column for, and say that a capped answer was capped.
 - **Do not change the monitored application's Spider Sense configuration unless asked.** Adding `-javaagent` to start it is the loop; editing the project's ports, thresholds or `spidersense.*` properties is a change to the project.

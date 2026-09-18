@@ -48,6 +48,7 @@ The three flags are the shortcuts worth remembering: **`entry` counts requests, 
 | `log` | log record | `at_ms`, `service`, `severity`, `severity_number` (9 INFO, 13 WARN, 17 ERROR), `body`, `logger`, `trace_id`, `span_id` |
 | `service` | service | `name`, `language`, `pid`, `first_seen`, `last_seen`, `resource` (JSON) |
 | `mark` | named moment | `at_ms`, `name`, `service`, `note`; `start` marks are written on every restart |
+| `ack` | acknowledged finding | `finding_id`, `at_ms`, `note`; never swept by the retention |
 | `metric_series` | series | `id`, `service`, `name`, `attributes` (JSON, keys sorted) |
 | `metric_point` | point | `series_id`, `at_ms`, `value`, `count`, `sum`, `min`, `max`, `buckets` |
 | `tingle` | live event | `at_ms`, `kind`, `service`, `title`, `detail`, `trace_id`, `duration_ms` |

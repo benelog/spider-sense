@@ -45,7 +45,8 @@ public final class McpTools implements McpServer.ToolRunner {
         String service = string(arguments, "service");
         return switch (name) {
             case "findings" -> text(reports.findings(window(arguments, service), service,
-                    limit(arguments, Limits.FINDINGS, Limits.FINDINGS_MAX), flag(arguments, "full")));
+                    limit(arguments, Limits.FINDINGS, Limits.FINDINGS_MAX), flag(arguments, "full"),
+                    flag(arguments, "hideAcked")));
             case "trace" -> trace(arguments);
             case "mark" -> mark(arguments, service);
             case "compare" -> compare(arguments, service);
