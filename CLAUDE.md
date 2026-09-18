@@ -27,7 +27,8 @@ Read `docs/design.md` (architecture and decisions), `docs/storage.md` (the H2 sc
 - Versions shared across modules are declared once in the root `build.gradle` `ext` block; the release version is `version` in `gradle.properties`, which the jar, the plugin, and the plugin's default jar version all read.
 - **The plugin adds arguments, it never edits a task's own `jvmArgs`**, and every value in it is a lazy provider (configuration-cache safe); the examples apply it against the jar the build just made, never against Maven Central.
 - Markdown is one sentence per line (as in Spider Silk).
-- Commit messages say what the change does, without conventional-commit prefixes and without issue references.
+- Commit messages say what the change does, without conventional-commit prefixes and without issue references, in the subject or the body.
+- When a commit resolves or advances a GitHub issue, the link goes the other way: after pushing, comment on the issue with the commit URL (`gh issue comment <n> --body "…"`), and close the issue from that comment when the work is complete.
 
 ## Build / run
 
