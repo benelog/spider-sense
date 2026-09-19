@@ -110,9 +110,17 @@ globalThis.EventSource = SnapshotEventSource;
 const note = document.createElement('div');
 note.className = 'snapshot-note';
 note.setAttribute('role', 'note');
-const when = new Date(frozenNow);
-note.textContent = 'A recording of the demo, captured ' + when.toISOString().slice(0, 16).replace('T', ' ')
-  + ' UTC: the four example applications under one Spider Sense. Nothing here is live, and nothing can be changed.';
+const when = new Date(manifest.recordedAt || frozenNow);
+note.append('A recording of the demo, captured ' + when.toISOString().slice(0, 16).replace('T', ' ')
+  + ' UTC: the four example applications under one Spider Sense. Nothing here is live, and nothing can be changed.');
+if (manifest.source && manifest.source.url) {
+  const link = document.createElement('a');
+  link.href = manifest.source.url;
+  link.target = '_blank';
+  link.rel = 'noopener';
+  link.textContent = 'this DoltHub database';
+  note.append(' The rows behind it are in ', link, '.');
+}
 const content = document.getElementById('content');
 if (content) content.insertBefore(note, content.firstChild);
 document.title = 'Spider Sense demo';

@@ -37,10 +37,13 @@ public record MetricPoint(
 
     /**
      * The value at a percentile, interpolated inside the bucket that crosses it.
-     * Returns {@link Double#NaN} when the point carries no buckets to look in.
+     * Returns {@link Double#NaN} when the point carries no buckets to look in,
+     * which includes a histogram whose one bucket has no bound: Micrometer's
+     * bridged timers arrive that way, with every value in one bucket over
+     * everything, and there is no width to interpolate inside.
      */
     public double percentile(double fraction) {
-        if (!hasBuckets() || count == 0) {
+        if (!hasBuckets() || count == 0 || bounds.length == 0) {
             return Double.NaN;
         }
         double target = fraction * count;

@@ -46,8 +46,9 @@ https://spider-sense.benelog.net/demo[spider-sense.benelog.net/demo] is the same
 Everything that reads works, from the map to a single trace's profile, and the range, the marks and the compare page cover the recorded window.
 Anything that writes, such as a mark or an acknowledgement, answers that the page is a recording.
 
-`scripts/demo-site.sh` makes it: it runs `scripts/demo-shared.sh` for `MINUTES` (five by default), marks `before` and `after` along the way, captures every answer the UI asks for into `demo/data/`, stops the demo, and assembles `build/demo-site/`, which any static file server can serve.
-The captured files are committed, so the manual's build assembles the page from them without running Java.
+The recording is the rows themselves: a https://www.dolthub.com/repositories/benelog/spider-sense-demo[DoltHub database] with the tables of xref:storage.adoc[Storage] as a running Spider Sense keeps them, so a trace of the demo can be queried there as SQL, and every recording is a commit of that database.
+`scripts/demo-site.sh record` makes one: it runs `scripts/demo-shared.sh` for `MINUTES` (five by default), marks `before` and `after` along the way, exports the rows since the launch out of the H2 file, and pushes them to DoltHub.
+`scripts/demo-site.sh assemble` builds the page from them, which is what the manual's build does: it pulls the tables, loads them into a fresh Spider Sense, captures every answer the UI asks for, and writes `build/demo-site/`, which any static file server can serve.
 
 == The two scripts
 

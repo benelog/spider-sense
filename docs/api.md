@@ -471,7 +471,7 @@ A span whose chain leaves the window is reported as `(no endpoint)`.
 
 ### Nulls in series
 
-Every duration that has no value is `null`, never `0`: a percentile in a bucket with no requests, the first point of a `rate=true` series, an estimated `p95` for a histogram point that carries no buckets.
+Every duration that has no value is `null`, never `0`: a percentile in a bucket with no requests, the first point of a `rate=true` series, an estimated `p95` for a histogram point that carries no buckets, or whose one bucket has no bound (a Micrometer timer bridged by the agent).
 `jvm.nonHeap` has no `limit` array and `cpu.systemLoad1m` is an empty array on a platform that reports no load average.
 
 ### Ordering and sorting

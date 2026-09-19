@@ -79,7 +79,8 @@ Overview, a server map, services and endpoints, a scatter of every request, trac
 ## The demo
 
 **See it first: <https://spider-sense.benelog.net/demo>** is the UI over a five-minute recording of the demo below, with nothing to install and no server behind it.
-It is a recording: every page reads from files captured once, so the requests and responses are not exactly what a running Spider Sense answers, nothing updates, and a filter that was not recorded shows the nearest recorded list instead.
+It is a recording: every page reads from answers captured once, so nothing updates, and a filter that was not recorded shows the nearest recorded list instead.
+The rows behind it are a DoltHub database, <https://www.dolthub.com/repositories/benelog/spider-sense-demo>, with the same tables a running Spider Sense keeps, so the demo's traces can be queried there as SQL.
 To look deeper, run the demo locally as below; it is the same UI over a live server, with the CLI beside it.
 
 Four deliberately misbehaving applications and a load generator come with the repository, so there is something to look at before there is anything of your own.
@@ -111,7 +112,7 @@ java -jar spider-sense-agent/build/libs/spider-sense-0.1.0.jar findings --since=
 ```
 
 After Ctrl-C the H2 file under `~/db/spider-sense/` still has everything, and `java -jar spider-sense-agent/build/libs/spider-sense-0.1.0.jar` opens the same screens on it.
-`scripts/demo-site.sh` runs the demo for five minutes, records every answer the UI asks for, and assembles the static page above into `build/demo-site/`.
+`scripts/demo-site.sh record` runs the demo for five minutes and pushes its rows to the DoltHub database behind the page above; `scripts/demo-site.sh assemble` builds the page from them into `build/demo-site/`.
 
 ### Hand it to an agent
 
