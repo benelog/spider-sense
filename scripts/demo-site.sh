@@ -86,7 +86,7 @@ export_demo() {
     sleep "$third"
     java -jar "$SENSE_JAR" mark after --url="$URL" >/dev/null
     sleep $((total - third * 2))
-    sleep 2   # the writer's last flush
+    sleep 10   # the traces still running at the end of the window, and the writer's last flush
 
     TO_MS="$(now_ms)"
     FROM_MS=$((TO_MS - MINUTES * 60 * 1000))

@@ -32,8 +32,9 @@ const DOLTHUB = { owner: 'benelog', database: 'spider-sense-demo', branch: 'main
 // `columns` is the H2 column order; `bool` names the BOOLEAN columns, written as 1
 // and 0 so that both sides read them; `required` names the NOT NULL text columns,
 // which load reads as '' when a cell is empty; `window` says which column the
-// recording's window cuts on (`series`: the series that have a point in it; `meta`:
-// every row, plus the recording's own rows). `ddl` is the same schema in MySQL
+// recording's window cuts on (`trace`: the spans of the traces that started in it;
+// `series`: the series that have a point in it; `meta`: every row, plus the
+// recording's own rows). `ddl` is the same schema in MySQL
 // types: VARCHAR(65535) and the 4096-wide columns are TEXT, which is what Dolt's
 // row size allows, and the JSON columns stay text so a row reads back byte for byte.
 
@@ -42,7 +43,7 @@ const TABLES = [
     columns: 'name language pid first_seen last_seen resource', required: 'name resource',
     ddl: `name VARCHAR(255) NOT NULL, language VARCHAR(64), pid BIGINT, first_seen BIGINT NOT NULL,
           last_seen BIGINT NOT NULL, resource TEXT NOT NULL` },
-  { name: 'span', key: ['id'], window: 'start_ms',
+  { name: 'span', key: ['id'], window: 'trace',
     columns: `id trace_id span_id parent_span_id service name kind start_ms start_ns duration_ns status status_message
               entry error slow category endpoint endpoint_id http_method http_route http_status db_system db_statement
               db_namespace db_operation db_table query_id error_type error_message error_id scope attributes events`,
@@ -189,6 +190,10 @@ function exportTables(opts) {
       query = 'SELECT ' + select + ' FROM meta'
         + ` UNION ALL SELECT 'recording.from', '${from}' UNION ALL SELECT 'recording.to', '${to}'`
         + ` UNION ALL SELECT 'recording.at', '${Date.now()}' UNION ALL SELECT 'recording.version', ${sqlString(version)}`;
+    } else if (table.window === 'trace') {
+      // By the trace, not by the clock: a trace that started inside the window is
+      // taken whole, so one that straddles its end has its root and its last spans.
+      query = 'SELECT ' + select + ' FROM span WHERE trace_id IN (SELECT trace_id FROM trace WHERE start_ms BETWEEN ' + since + ' AND ' + until + ') ORDER BY start_ms, id';
     } else if (table.window === 'series') {
       query = 'SELECT ' + select + ' FROM metric_series WHERE id IN (SELECT DISTINCT series_id FROM metric_point WHERE at_ms BETWEEN ' + since + ' AND ' + until + ') ORDER BY id';
     } else if (table.window) {
