@@ -35,6 +35,7 @@ The request `Content-Type` is `application/x-protobuf` or `application/json`, an
 The answer is `200` with an empty `Export{Trace,Metrics,Logs}ServiceResponse` in the request's content type.
 An undecodable body is `400`, and another content type is `415`.
 Partial success is never reported, so everything decodable is stored.
+A log record carrying the attribute `spidersense.schema.table` is the index catalog of one table, read by xref:design.adoc#extension[the extension], and is stored as a `db_table` row rather than as a log (xref:storage.adoc#schema[Storage]).
 
 [#status]
 == Status and control
@@ -314,8 +315,11 @@ The points are arrays rather than objects because 5,000 points must stay small o
   "calls": 240, "errors": 0, "avgMs": 45.0, "p50Ms": 40.0, "p95Ms": 120.0, "maxMs": 900.0, "totalMs": 10800.0,
   "slowCalls": 12,                       // calls over slowQueryMs
   "callers": [ { "endpoint": "GET /orders/report", "service": "spring-orders", "calls": 240 } ],
-  "lastSeen": 1758000900000 }
+  "lastSeen": 1758000900000,
+  "schema": { "tables": [...], "predicates": [...], "unindexed": [...] } | null }
 ----
+
+`schema` is the index catalog of the statement's tables and the columns it filters on that no index serves, as xref:findings.adoc#schema[the schema block] defines it, and it is `null` when there is no catalog to read.
 
 *`+GET /api/queries/{queryId}?from&to+`* answers `{ "query": <QueryStats>, "series": { "t": [...], "calls": [...], "p95Ms": [...] }, "traces": [<TraceSummary> x 20 slowest containing it] }`.
 
@@ -463,10 +467,14 @@ xref:findings.adoc#acknowledgements[Acknowledgements] describes what they mean.
                "target": "…" | null, "logger": "…" | null, "jvm": "…" | null },
   "numbers": { ...kind-specific... },
   "statement": "…" | null, "code": [ "orders.OrderService.load(OrderService.java:41)" ], "traces": [ "<traceId>" ],
+  "schema": { "tables": [ { "table": "ITEMS", "schema": "PUBLIC" | null,
+                            "indexes": [ { "name": "PRIMARY_KEY_8", "unique": true, "columns": [ "ID" ] } ] } ],
+              "predicates": [ "items.name" ], "unindexed": [ "items.name" ] } | null,   // slow-query and n-plus-one
   "ack": { "at": …, "note": "…" | null } | null }
 ----
 
 `numbers` carries the fields of the finding's kind, listed with each kind in xref:findings.adoc#kinds[Findings].
+`schema` is the xref:findings.adoc#schema[schema block], on a `slow-query` or `n-plus-one` finding and `null` everywhere else.
 
 === Compare
 

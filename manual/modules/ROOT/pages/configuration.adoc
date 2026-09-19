@@ -50,7 +50,7 @@ The standalone jar takes the same options as `--key=value` arguments as well.
 
 | `spidersense.slow.query.ms`
 | `100`
-| A database span slower than this is a tingle, and the one the extension captures a stack trace for.
+| A database span slower than this is a tingle, and the one the extension captures a stack trace for and reads the index catalog for.
 
 | `spidersense.open`
 | `false`
@@ -144,7 +144,7 @@ Spider Sense only fills in defaults, and only where you have set neither the pro
 
 | `otel.javaagent.extensions`
 | The extension jar Spider Sense extracted, appended to a list you set
-| The extension records `code.stacktrace` on a slow query, on the fifth repeat of an N+1, and on a slow outbound call.
+| The extension records `code.stacktrace` on a slow query, on the fifth repeat of an N+1, and on a slow outbound call. It also reads the index catalog of the tables a slow statement touches, which is a finding's xref:findings.adoc#schema[schema block].
 |===
 
 `-Dotel.service.name=` is worth setting always, because the alternative is `unknown_service:java`, and the service filter then has nothing to select.

@@ -25,8 +25,10 @@ import java.util.concurrent.Executors;
  * and braces"), so such a call would be invisible and prove nothing.
  *
  * <p>With {@code -Dsample.db.sleep.ms=<n>} it also runs one deliberately slow H2 statement, so the
- * packaged extension has a database span to hang a {@code code.stacktrace} on. It is off by default
- * because the other cases assert that the sample touches no database at all.
+ * packaged extension has a database span to hang a {@code code.stacktrace} on, over a table with one
+ * indexed and one unindexed predicate column, so the same extension has an index catalog to read
+ * (design.md, "The extension"). It is off by default because the other cases assert that the sample
+ * touches no database at all.
  *
  * <p>It is compiled by the test source set but never run by JUnit: SingleJarIT spawns it in a JVM
  * of its own with {@code -javaagent}.
@@ -42,15 +44,26 @@ public final class SampleApp {
      * <p>H2 has no {@code SLEEP} of its own, so it gets one: the alias is the trick
      * {@code examples/silk-bookstore} uses, with the parameter type spelled out because
      * {@code sleep(long)} and {@code sleep(Duration)} are both there.
+     *
+     * <p>The statement filters {@code items} on {@code supplier_id}, which leads an index, and on
+     * {@code name}, which no index leads with, so the finding's schema block has one column in each
+     * list (agent.md, "The schema block").
      */
     static void slowQuery(long millis) throws Exception {
         String url = "jdbc:h2:mem:sample-" + UUID.randomUUID() + ";DB_CLOSE_DELAY=-1";
         try (Connection connection = DriverManager.getConnection(url)) {
             try (Statement statement = connection.createStatement()) {
                 statement.execute("create alias if not exists sleep for 'java.lang.Thread.sleep(long)'");
+                statement.execute("create table items (id bigint primary key, name varchar(100),"
+                        + " supplier_id bigint)");
+                statement.execute("create index idx_items_supplier on items (supplier_id, name)");
+                statement.execute("insert into items values (1, 'hinge', 7)");
             }
-            try (PreparedStatement statement = connection.prepareStatement("select sleep(?)")) {
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "select sleep(?), count(*) from items where name = ? and supplier_id = ?")) {
                 statement.setLong(1, millis);
+                statement.setString(2, "hinge");
+                statement.setLong(3, 7);
                 try (ResultSet rs = statement.executeQuery()) {
                     while (rs.next()) {
                         // Drain it; the value is nothing, the time it took is the point.

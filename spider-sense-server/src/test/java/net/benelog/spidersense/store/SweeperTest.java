@@ -106,4 +106,31 @@ class SweeperTest {
         assertThat(total("log")).isEqualTo(HOURS * PER_HOUR);
         assertThat(total("metric_point")).isEqualTo(HOURS);
     }
+
+    /**
+     * A catalog row goes by the time retention, because a catalog older than the
+     * retention describes a schema no window can show any more (storage.md).
+     */
+    @Test
+    void aCatalogRowOlderThanTheRetentionGoesAndAFreshOneStays() {
+        catalog("ITEMS", System.currentTimeMillis() - 48 * HOUR);
+        catalog("MOVEMENTS", System.currentTimeMillis());
+        assertThat(total("db_table")).isEqualTo(2);
+
+        new Sweeper(store.sql(), 24, 0).sweep();
+
+        assertThat(store.sql().query("SELECT table_name FROM db_table", List.of(),
+                rs -> rs.getString(1))).containsExactly("MOVEMENTS");
+
+        store.clear();
+        assertThat(total("db_table")).as("DELETE /api/data empties it too").isZero();
+    }
+
+    private void catalog(String table, long seen) {
+        Batch batch = new Batch();
+        batch.add(new Batch.Catalog("orders", "PUBLIC", table, "H2",
+                "[{\"name\":\"PRIMARY_KEY_8\",\"unique\":true,\"columns\":[\"ID\"]}]", seen));
+        store.submit(batch);
+        store.writer().awaitIdle(5_000);
+    }
 }

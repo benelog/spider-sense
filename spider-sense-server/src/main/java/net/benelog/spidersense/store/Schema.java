@@ -11,7 +11,7 @@ package net.benelog.spidersense.store;
  */
 public final class Schema {
 
-    public static final int VERSION = 4;
+    public static final int VERSION = 5;
 
     /**
      * The H2 user {@code POST /api/sql} runs on: {@code SELECT} on {@code PUBLIC}
@@ -184,6 +184,16 @@ public final class Schema {
                 note       VARCHAR(1024)
             )""",
             """
+            CREATE TABLE IF NOT EXISTS db_table (
+                service     VARCHAR(255) NOT NULL,
+                schema_name VARCHAR(255) NOT NULL,
+                table_name  VARCHAR(255) NOT NULL,
+                product     VARCHAR(64),
+                indexes     VARCHAR(65535) NOT NULL,
+                seen_ms     BIGINT NOT NULL,
+                PRIMARY KEY (service, schema_name, table_name)
+            )""",
+            """
             CREATE TABLE IF NOT EXISTS meta (
                 key   VARCHAR(64) PRIMARY KEY,
                 value VARCHAR(4096) NOT NULL
@@ -198,7 +208,7 @@ public final class Schema {
      * {@code DELETE /api/data} empties it with everything else (storage.md).
      */
     static final String[] DATA_TABLES =
-            {"span", "trace", "log", "metric_point", "tingle", "mark", "ack"};
+            {"span", "trace", "log", "metric_point", "tingle", "mark", "ack", "db_table"};
 
     static void create(Sql sql) {
         create(sql, true);
@@ -226,7 +236,7 @@ public final class Schema {
                     java.util.List.of("created_at", String.valueOf(System.currentTimeMillis())));
         } else if (stored != VERSION) {
             for (String table : new String[]{"span", "trace", "log", "metric_point", "metric_series",
-                    "metric", "tingle", "mark", "ack", "service"}) {
+                    "metric", "tingle", "mark", "ack", "db_table", "service"}) {
                 sql.execute("DROP TABLE IF EXISTS " + table);
             }
             sql.execute(TABLES);

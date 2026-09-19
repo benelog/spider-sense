@@ -49,12 +49,19 @@ public final class Queries {
     private final Tingles tingles;
     private final ServiceRegistry services;
     private final ResponseBuckets responseBuckets;
+    private final Catalog catalog;
 
     public Queries(Sql sql, Tingles tingles, ServiceRegistry services) {
         this.sql = sql;
         this.tingles = tingles;
         this.services = services;
         this.responseBuckets = new ResponseBuckets(tingles.slowRequestMs());
+        this.catalog = new Catalog(sql);
+    }
+
+    /** The index catalog, for the rules that answer over the same tables (agent.md). */
+    public Catalog catalog() {
+        return catalog;
     }
 
     /** The scale the histograms are counted on, which {@code /api/status} also reports. */
@@ -346,9 +353,31 @@ public final class Queries {
                     rs.getString("db_tbl"), rs.getString("stmt"), calls, rs.getLong("errors"),
                     calls == 0 ? 0 : totalMs / calls, Rows.ms(rs, "p50_ns"), Rows.ms(rs, "p95_ns"),
                     Rows.ms(rs, "max_ns"), totalMs, rs.getLong("slow_calls"), List.of(),
-                    rs.getLong("last_seen"));
+                    rs.getLong("last_seen"), null);
         });
-        return withCallers(stats, window);
+        return withSchema(withCallers(stats, window));
+    }
+
+    /**
+     * The schema block of every group, read from the catalog once per service.
+     *
+     * <p>A window has a handful of services and a hundred query groups, so the
+     * catalog is read per service rather than per statement; the matching itself is
+     * Java over what came back (storage.md, "How it is read").
+     */
+    private List<Stats.QueryStats> withSchema(List<Stats.QueryStats> stats) {
+        Map<String, Map<String, List<Catalog.Table>>> byService = new HashMap<>();
+        List<Stats.QueryStats> withSchema = new ArrayList<>(stats.size());
+        for (Stats.QueryStats query : stats) {
+            SchemaBlock block = SchemaBlock.of(query.statement(),
+                    byService.computeIfAbsent(query.service(), catalog::forService));
+            withSchema.add(new Stats.QueryStats(query.queryId(), query.service(), query.system(),
+                    query.namespace(), query.operation(), query.table(), query.statement(),
+                    query.calls(), query.errors(), query.avgMs(), query.p50Ms(), query.p95Ms(),
+                    query.maxMs(), query.totalMs(), query.slowCalls(), query.callers(),
+                    query.lastSeen(), block));
+        }
+        return withSchema;
     }
 
     /**
@@ -391,7 +420,7 @@ public final class Queries {
             withCallers.add(new Stats.QueryStats(query.queryId(), query.service(), query.system(),
                     query.namespace(), query.operation(), query.table(), query.statement(), query.calls(),
                     query.errors(), query.avgMs(), query.p50Ms(), query.p95Ms(), query.maxMs(),
-                    query.totalMs(), query.slowCalls(), list, query.lastSeen()));
+                    query.totalMs(), query.slowCalls(), list, query.lastSeen(), query.schema()));
         }
         return withCallers;
     }

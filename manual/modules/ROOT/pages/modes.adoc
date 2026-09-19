@@ -91,6 +91,7 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4000 OTEL_EXPORTER_OTLP_PROTOCOL=ht
 ----
 
 What the Spider Sense jar adds in agent mode, and this setup lacks, is the defaults and the extension: the endpoint and protocol set for you, a one-second export delay, the runtime metrics on, and `code.stacktrace` on slow queries (xref:design.adoc[Design]); everything else, the pages, the findings and the CLI, is the same, because it is the same data.
+The extension is also what reads the index catalog of the tables a slow statement touches, so a finding's xref:findings.adoc#schema[schema block] exists only for a service that ran under the Spider Sense jar.
 The receiver also accepts OTLP/JSON, so a shell can post a span with `curl`:
 
 [source,bash]

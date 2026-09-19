@@ -262,7 +262,13 @@ public final class OtlpDecoder {
             for (ScopeLogs scopeLogs : resourceLogs.getScopeLogsList()) {
                 String logger = scopeLogs.getScope().getName();
                 for (io.opentelemetry.proto.logs.v1.LogRecord record : scopeLogs.getLogRecordsList()) {
-                    batch.add(toRecord(record, service, logger, now));
+                    Map<String, Object> attributes = Attrs.toMap(record.getAttributesList());
+                    Batch.Catalog catalog = toCatalog(attributes, service, at(record, now));
+                    if (catalog != null) {
+                        batch.add(catalog);
+                    } else {
+                        batch.add(toRecord(record, service, logger, now, attributes));
+                    }
                 }
             }
         }
@@ -270,16 +276,53 @@ public final class OtlpDecoder {
         return batch;
     }
 
-    /** The id is 0 here: the {@code log} table assigns it, and the reads report what it assigned. */
-    private static LogRecord toRecord(io.opentelemetry.proto.logs.v1.LogRecord record, String service,
-            String logger, long now) {
-        long at = record.getTimeUnixNano() != 0
+    /** The attribute that makes a log record the index catalog of a table (design.md). */
+    private static final String SCHEMA_TABLE = "spidersense.schema.table";
+    private static final String SCHEMA_SCHEMA = "spidersense.schema.schema";
+    private static final String SCHEMA_PRODUCT = "spidersense.schema.product";
+    private static final String SCHEMA_INDEXES = "spidersense.schema.indexes";
+
+    /**
+     * The catalog row a schema record is, or null for an ordinary log record.
+     *
+     * <p>The extension has no channel of its own to the server, so it says what it
+     * read through the one every OpenTelemetry agent already has: a log record. It
+     * is not a log line, though — nothing happened at that moment — so it never
+     * reaches the {@code log} table (storage.md, api.md).
+     *
+     * <p>The {@code indexes} text is kept exactly as it arrived: the store is not
+     * the place to reformat JSON it will hand back unchanged.
+     */
+    private static Batch.Catalog toCatalog(Map<String, Object> attributes, String service, long at) {
+        Object table = attributes.get(SCHEMA_TABLE);
+        if (table == null) {
+            return null;
+        }
+        Object schema = attributes.get(SCHEMA_SCHEMA);
+        Object product = attributes.get(SCHEMA_PRODUCT);
+        Object indexes = attributes.get(SCHEMA_INDEXES);
+        return new Batch.Catalog(service,
+                schema == null ? "" : String.valueOf(schema),
+                String.valueOf(table),
+                product == null ? null : String.valueOf(product),
+                indexes == null ? "[]" : String.valueOf(indexes),
+                at);
+    }
+
+    /** When the record says it happened, falling back to when it was observed. */
+    private static long at(io.opentelemetry.proto.logs.v1.LogRecord record, long now) {
+        return record.getTimeUnixNano() != 0
                 ? millis(record.getTimeUnixNano())
                 : record.getObservedTimeUnixNano() != 0 ? millis(record.getObservedTimeUnixNano()) : now;
+    }
+
+    /** The id is 0 here: the {@code log} table assigns it, and the reads report what it assigned. */
+    private static LogRecord toRecord(io.opentelemetry.proto.logs.v1.LogRecord record, String service,
+            String logger, long now, Map<String, Object> attributes) {
         int severityNumber = record.getSeverityNumberValue();
         return new LogRecord(
                 0,
-                at,
+                at(record, now),
                 service,
                 LogRecord.severityText(severityNumber),
                 severityNumber,
@@ -287,7 +330,7 @@ public final class OtlpDecoder {
                 logger,
                 Attrs.hex(record.getTraceId()),
                 Attrs.hex(record.getSpanId()),
-                Attrs.toMap(record.getAttributesList()));
+                attributes);
     }
 
     // --- shared ---

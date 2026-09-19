@@ -214,6 +214,75 @@ class AgentApiTest {
         });
     }
 
+    /** The index catalog of one table, as the extension exports it: a log record. */
+    private static byte[] catalog(String table, String indexes) {
+        return Otlp.logs(Otlp.service("orders"), "spider-sense",
+                Otlp.log(NOW, 9, "index catalog of " + table, null, null,
+                        Otlp.attr("spidersense.schema.table", table),
+                        Otlp.attr("spidersense.schema.schema", "PUBLIC"),
+                        Otlp.attr("spidersense.schema.product", "H2"),
+                        Otlp.attr("spidersense.schema.indexes", indexes)))
+                .toByteArray();
+    }
+
+    /**
+     * The schema block of agent.md: three lines under a finding, a column in the
+     * queries table, and the same block in both JSON answers.
+     */
+    @Test
+    void theSchemaBlockNamesTheIndexesAndTheColumnsNoneLeadsWith() {
+        serve((client, assembly) -> {
+            postProtobuf(client, "/v1/traces", sample());
+            postProtobuf(client, "/v1/logs", catalog("ORDER_LINE",
+                    "[{\"name\":\"PRIMARY_KEY_3\",\"unique\":true,\"columns\":[\"ID\"]},"
+                            + "{\"name\":\"IDX_LINE_PRODUCT\",\"unique\":false,"
+                            + "\"columns\":[\"PRODUCT_ID\",\"ORDER_ID\"]}]"));
+            postProtobuf(client, "/v1/logs", catalog("BOOK", "[]"));
+
+            String text = client.get("/api/findings?since=5m&format=text").body();
+
+            assertThat(text).contains(
+                    "   indexes ORDER_LINE: PRIMARY_KEY_3 (ID) unique,"
+                            + " IDX_LINE_PRODUCT (PRODUCT_ID, ORDER_ID)\n"
+                            + "   predicates: order_line.order_id;"
+                            + " unindexed: order_line.order_id\n");
+            assertThat(text).as("a table without an index says so")
+                    .contains("   indexes BOOK: none\n   predicates: book.title;"
+                            + " unindexed: book.title\n");
+
+            String queries = client.get("/api/queries?since=5m&format=text").body();
+            assertThat(queries).contains("| callers | unindexed | statement |");
+            assertThat(queries).contains("| order_line.order_id | select * from order_line");
+
+            Json.JsonObject slowQuery = null;
+            Json.JsonObject slowEndpoint = null;
+            for (Json.JsonValue value : json(client.get("/api/findings?since=5m"))
+                    .getArray("findings")) {
+                Json.JsonObject finding = value.asObject();
+                if ("slow-query".equals(finding.getString("kind"))) {
+                    slowQuery = finding;
+                } else if ("slow-endpoint".equals(finding.getString("kind"))) {
+                    slowEndpoint = finding;
+                }
+            }
+            assertThat(slowQuery).isNotNull();
+            Json.JsonObject schema = slowQuery.getObject("schema");
+            assertThat(schema.getArray("predicates").get(0).asString()).isEqualTo("book.title");
+            assertThat(schema.getArray("unindexed").get(0).asString()).isEqualTo("book.title");
+            Json.JsonObject table = schema.getArray("tables").get(0).asObject();
+            assertThat(table.getString("table")).isEqualTo("BOOK");
+            assertThat(table.getString("schema")).isEqualTo("PUBLIC");
+            assertThat(table.getArray("indexes")).isEmpty();
+            assertThat(slowEndpoint).isNotNull();
+            assertThat(slowEndpoint.get("schema").isNull())
+                    .as("only a statement has a schema block").isTrue();
+
+            Json.JsonObject group = json(client.get("/api/queries?since=5m"))
+                    .getArray("queries").get(0).asObject();
+            assertThat(group.getObject("schema").getArray("unindexed")).isNotEmpty();
+        });
+    }
+
     /**
      * The three endpoints of agent.md's "Acknowledgements", and what a finding and
      * its heading read like once one of them has been called.

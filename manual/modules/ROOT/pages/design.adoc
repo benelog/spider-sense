@@ -46,7 +46,7 @@ spider-sense.jar
 ├── io/opentelemetry/javaagent/**         the OpenTelemetry Java agent, verbatim (bootstrap classes)
 ├── inst/**                               the OpenTelemetry Java agent, verbatim (.classdata, loaded by the agent's own class loader)
 ├── spider-sense/server.jar               the collector + UI as a nested fat jar (Spider Silk, Jetty, protobuf, our code)
-└── spider-sense/extension.jar            the OpenTelemetry agent extension: a stack trace for a slow database span (below)
+└── spider-sense/extension.jar            the OpenTelemetry agent extension: a stack trace for a slow database span, and the index catalog of the tables it touches (below)
 ----
 
 The bundled agent is OpenTelemetry Java agent {otel-agent-version}, and the nested server jar carries Spider Silk {spider-silk-version}.
@@ -164,7 +164,7 @@ A statement is shown at most 2000 characters.
 == The extension
 
 The Gradle module `spider-sense-extension` is packaged as `spider-sense/extension.jar`, and is the only piece of Spider Sense that is not the stock OpenTelemetry agent.
-It exists for one thing the agent cannot do: say where a slow query was issued from.
+It exists for two things the agent cannot do: say where a slow query was issued from, and say which indexes the table it read carries.
 
 It registers, through `META-INF/services/io.opentelemetry.sdk.autoconfigure.spi.AutoConfigurationCustomizerProvider`, a span processor that implements `io.opentelemetry.sdk.trace.internal.ExtendedSpanProcessor` and does its work in `onEnding(ReadWriteSpan)`.
 That callback runs on the thread that is ending the span, before the span becomes immutable: the duration is already known and an attribute can still be set, which no ordinary `SpanProcessor` callback allows.
@@ -192,6 +192,40 @@ The server therefore reduces them to application frames with exactly the code it
 The leading frames of `Thread.getStackTrace`, of the processor itself and of `io.opentelemetry.`, which is the SDK's own `end()` path, are dropped, and the trace is cut at 64 frames.
 `isStartRequired()` and `isEndRequired()` are false, `isOnEndingRequired()` is true, and anything thrown inside `onEnding` is swallowed: a missing code location is never worth a broken span.
 
+The fourth case is the one that needs a `Connection`, which no span processor has.
+The extension reads the index catalog of the tables a slow statement touches, so a xref:findings.adoc#slow-query[`slow-query`] or xref:findings.adoc#n-plus-one[`n-plus-one`] finding can say which of the columns the statement filters on no index serves (xref:findings.adoc#schema[The schema block]).
+
+For that it carries one `InstrumentationModule` of its own, `spider-sense-schema`, registered through `META-INF/services/io.opentelemetry.javaagent.extension.instrumentation.InstrumentationModule`.
+Its advice sits on the `execute`, `executeQuery`, `executeUpdate` and `executeLargeUpdate` methods of every `java.sql.Statement` implementation.
+The advice measures the call and, when it threw nothing and either took at least `spidersense.slow.query.ms` (the same threshold, read the same way) or is the fifth execution of the same SQL text within the current trace, hands the statement to `IndexCatalog`.
+The repeat is counted as the span processor counts it: per thread, keyed by the trace id of the current span and reset when another trace's statement runs on that thread, 256 distinct statements at most.
+That is what gives an `n-plus-one` finding its block, since the individual queries of an N+1 are never slow.
+`IndexCatalog` is a helper class the agent injects beside the driver (`getAdditionalHelperClassNames`), because advice runs in the application's class loader and the extension's own classes are not visible there.
+
+`IndexCatalog` takes the statement's SQL from the `execute(String …)` argument, or, for a `PreparedStatement`, from the `VirtualField<PreparedStatement, String>` the agent's JDBC instrumentation fills at prepare time.
+A statement with neither is left alone.
+It scans that SQL for the table names after `from`, `join`, `update`, `into` and `delete from`, reads a comma-separated list after `from`, keeps a `schema.table` qualifier, and unquotes a quoted name.
+
+The lookup runs once per table per process, keyed by the connection's JDBC URL and the table name, and stops after 200 tables.
+It asks the standard `DatabaseMetaData` whether the table exists (`getTables`, so a name the scanner misread is silently nothing) and for its indexes (`getIndexInfo(catalog, schema, table, false, true)`, the statistic rows dropped, the columns in ordinal order).
+It then emits one log record through the agent's own logger provider (`GlobalOpenTelemetry.get().getLogsBridge()`, scope `spider-sense`) with the body `index catalog of <table>`.
+The record's attributes are `spidersense.schema.table` (the name as the database reports it), `spidersense.schema.schema` (`TABLE_SCHEM`, absent when the database reports none), `spidersense.schema.product` (`DatabaseMetaData.getDatabaseProductName()`) and `spidersense.schema.indexes`, a JSON array of `{ "name", "unique", "columns" }` that is empty for a table without an index.
+The server stores that record as a catalog row and never as a log line (xref:storage.adoc#schema[the `db_table` table]).
+An unquoted table name is folded the way the database stores identifiers (`storesUpperCaseIdentifiers`, `storesLowerCaseIdentifiers`) before it is looked up, and a quoted one is kept as written.
+
+The lookup stays on the request thread and on the borrowed connection by design.
+A second connection borrowed from the pool for it would be the pool exhaustion the finding is meant to diagnose, and the one the statement used cannot be handed to another thread, because the application returns it to the pool the moment the statement is done.
+What that costs is the driver's catalog query, once per table, on a request that has already spent `slow.query.ms` in the database.
+
+On PostgreSQL and MySQL that catalog query is a statement of its own and would become a database span in the application's trace.
+The extension therefore marks the thread with the baggage entry `spidersense.schema.lookup` for the length of the lookup, and a sampler it wraps around the configured one (`addSamplerCustomizer`) drops every span started under that entry and delegates everything else, so the trace shows the application's statements and nothing of ours.
+A thread already inside a lookup does nothing, because a driver's catalog queries pass through the same advice.
+Every exception is swallowed: a missing catalog is never worth a slow or a broken statement.
+
+The module is compiled `compileOnly` against `io.opentelemetry.javaagent:opentelemetry-javaagent-extension-api` and `io.opentelemetry.instrumentation:opentelemetry-instrumentation-api` at the packaged agent's version (`otelAgentVersion`), beside the SDK artifacts below, and still ships nothing.
+The agent's ByteBuddy and its shaded API are what the advice and the helper run on.
+Standalone mode has none of this: it has no connection to the application's database, and the spans carry no credentials, so the catalog exists only for a service that ran under the agent.
+
 The module is compiled against `io.opentelemetry:opentelemetry-sdk-trace` and `io.opentelemetry:opentelemetry-sdk-extension-autoconfigure-spi` at the SDK version the packaged agent bundles (`otelSdkVersion` in the root `build.gradle`), `compileOnly` and nothing else.
 The agent's `ExtensionClassLoader` rewrites the unshaded `io.opentelemetry` references to the agent's own shaded classes as it loads them, so the extension must not ship a copy of the SDK.
 
@@ -208,7 +242,10 @@ The stock agent records where an exception was thrown and nothing at all about w
 A stack capture on the thread that is ending the span, taken only for database spans already over `slow.query.ms` and for the fifth repeat of a statement within a trace, costs nothing measurable.
 The slow spans are by definition slow, a few microseconds against a hundred milliseconds, and the repeat capture happens once per repeated statement per trace.
 It turns those findings into a line to open.
-That is <<extension,the extension>>: it sets one attribute and does nothing else, and the server and the standalone mode stay unaware of it.
+That is <<extension,the extension>>: it sets one attribute, and the server and the standalone mode stay unaware of it.
+
+The index catalog is the second thing it does, and the first that needs bytecode advice rather than a span processor, because only the application's own `Connection` can answer which indexes a table has.
+It is still confined to the extension, arrives as ordinary OTLP, and the server stays a consumer of what the agent exports.
 
 *In-process export, with a custom `SpanExporter` handing spans straight to the store.*
 It is faster, but it ties the store to the agent's shaded SDK classes and makes the standalone and embedded paths diverge.

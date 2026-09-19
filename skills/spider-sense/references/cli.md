@@ -323,14 +323,16 @@ $ java -jar spider-sense.jar endpoints --since=before
 $ java -jar spider-sense.jar queries --since=before --limit=5
 # queries  2026-09-17T08:19:28+09:00 → 08:19:35  (7s, all services, 21 requests)
 
-| id | service | calls | slow | p50 | p95 | max | total | callers | statement |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| e0e233d8ad75 | spring-orders | 3 | 3 | 266.6 ms | 269.7 ms | 269.7 ms | 782.8 ms | GET /api/reports/revenue ×3 | SELECT p.id AS product_id, p.sku AS sku, p.name AS name, SUM(l.quantity) AS quantity, SUM(l.quantity * l.unit_price) AS revenue FROM order_line l JOIN product p ON p.id = l.product_id JOIN orders o ON… |
-| 4080653c9caa | spring-orders | 3 | 3 | 141.3 ms | 200.2 ms | 200.2 ms | 476.6 ms | GET /api/reports/revenue ×3 | SELECT o.status AS status, CAST(o.created_at AS DATE) AS order_day, SUM(o.total) AS revenue, COUNT(DISTINCT o.id) AS order_count, SUM(l.quantity) AS item_count FROM orders o JOIN order_line l ON l.ord… |
-| a2ef3cae1e22 | spring-orders | 3 | 0 | 1.0 ms | 1.4 ms | 1.4 ms | 2.8 ms | GET /api/customers/search ×3 | select c1_0.id,c1_0.email,c1_0.name from customer c1_0 where lower(c1_0.name) like (?\|\|?\|\|?) escape ? order by c1_0.id fetch first ? rows only |
-| 14eb3eff12dc | spring-orders | 22 | 0 | 0.1 ms | 0.2 ms | 0.2 ms | 2.0 ms | GET /api/orders/{id} ×11; GET /api/orders/{id}/enriched ×11 | select p1_0.id,p1_0.name,p1_0.price,p1_0.sku from product p1_0 where p1_0.id=? |
-| 62fb3169834e | spring-orders | 9 | 0 | 0.2 ms | 0.3 ms | 0.3 ms | 1.7 ms | GET /api/orders/{id} ×3; GET /api/orders/{id}/enriched ×3; POST /api/orders/{id}/pay ×3 | select o1_0.id,o1_0.created_at,o1_0.customer_id,o1_0.status,o1_0.total from orders o1_0 where o1_0.id=? |
+| id | service | calls | slow | p50 | p95 | max | total | callers | unindexed | statement |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| e0e233d8ad75 | spring-orders | 3 | 3 | 266.6 ms | 269.7 ms | 269.7 ms | 782.8 ms | GET /api/reports/revenue ×3 | — | SELECT p.id AS product_id, p.sku AS sku, p.name AS name, SUM(l.quantity) AS quantity, SUM(l.quantity * l.unit_price) AS revenue FROM order_line l JOIN product p ON p.id = l.product_id JOIN orders o ON… |
+| 4080653c9caa | spring-orders | 3 | 3 | 141.3 ms | 200.2 ms | 200.2 ms | 476.6 ms | GET /api/reports/revenue ×3 | — | SELECT o.status AS status, CAST(o.created_at AS DATE) AS order_day, SUM(o.total) AS revenue, COUNT(DISTINCT o.id) AS order_count, SUM(l.quantity) AS item_count FROM orders o JOIN order_line l ON l.ord… |
+| a2ef3cae1e22 | spring-orders | 3 | 0 | 1.0 ms | 1.4 ms | 1.4 ms | 2.8 ms | GET /api/customers/search ×3 | — | select c1_0.id,c1_0.email,c1_0.name from customer c1_0 where lower(c1_0.name) like (?\|\|?\|\|?) escape ? order by c1_0.id fetch first ? rows only |
+| 14eb3eff12dc | spring-orders | 22 | 0 | 0.1 ms | 0.2 ms | 0.2 ms | 2.0 ms | GET /api/orders/{id} ×11; GET /api/orders/{id}/enriched ×11 | — | select p1_0.id,p1_0.name,p1_0.price,p1_0.sku from product p1_0 where p1_0.id=? |
+| 62fb3169834e | spring-orders | 9 | 0 | 0.2 ms | 0.3 ms | 0.3 ms | 1.7 ms | GET /api/orders/{id} ×3; GET /api/orders/{id}/enriched ×3; POST /api/orders/{id}/pay ×3 | — | select o1_0.id,o1_0.created_at,o1_0.customer_id,o1_0.status,o1_0.total from orders o1_0 where o1_0.id=? |
 ```
+
+`unindexed` is the statement's predicate columns that no index of their table serves, from the schema block ([findings.md](findings.md)): `none` when every predicate is served, and `—` when there is no block, as in the run above.
 
 ### `errors`
 

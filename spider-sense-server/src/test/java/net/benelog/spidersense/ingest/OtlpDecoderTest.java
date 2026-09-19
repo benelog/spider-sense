@@ -167,6 +167,64 @@ class OtlpDecoderTest {
         assertThat(batch.logs().get(1).traceId()).isNull();
     }
 
+    /**
+     * The extension's index catalog rides in on a log record and is not one
+     * (storage.md, api.md): it describes the schema, not a moment.
+     */
+    @Test
+    void aSchemaRecordBecomesACatalogRowAndNeverALogLine() {
+        String indexes = "[{\"name\":\"PRIMARY_KEY_8\",\"unique\":true,\"columns\":[\"ID\"]}]";
+
+        Batch batch = decoder.accept(Otlp.logs(Otlp.service("spring-orders"), "spider-sense",
+                Otlp.log(1_700_000_000_000L, 9, "index catalog of ITEMS", null, null,
+                        Otlp.attr("spidersense.schema.table", "ITEMS"),
+                        Otlp.attr("spidersense.schema.schema", "PUBLIC"),
+                        Otlp.attr("spidersense.schema.product", "H2"),
+                        Otlp.attr("spidersense.schema.indexes", indexes))));
+
+        assertThat(batch.logs()).isEmpty();
+        assertThat(batch.catalogs()).hasSize(1);
+        Batch.Catalog row = batch.catalogs().get(0);
+        assertThat(row.service()).isEqualTo("spring-orders");
+        assertThat(row.schemaName()).isEqualTo("PUBLIC");
+        assertThat(row.table()).isEqualTo("ITEMS");
+        assertThat(row.product()).isEqualTo("H2");
+        assertThat(row.indexes()).isEqualTo(indexes);
+        assertThat(row.at()).isEqualTo(1_700_000_000_000L);
+        assertThat(batch.records()).as("it is a record like any other for the flush counters")
+                .isEqualTo(1);
+
+        store.writer().awaitIdle(5_000);
+        assertThat(store.sql().count("SELECT COUNT(*) FROM log", List.of())).isZero();
+        assertThat(store.sql().count("SELECT COUNT(*) FROM db_table", List.of())).isEqualTo(1);
+
+        // The same table again, looked up after a restart: one row, the newer one.
+        decoder.accept(Otlp.logs(Otlp.service("spring-orders"), "spider-sense",
+                Otlp.log(1_700_000_100_000L, 9, "index catalog of ITEMS", null, null,
+                        Otlp.attr("spidersense.schema.table", "ITEMS"),
+                        Otlp.attr("spidersense.schema.schema", "PUBLIC"),
+                        Otlp.attr("spidersense.schema.indexes", "[]"))));
+        store.writer().awaitIdle(5_000);
+
+        assertThat(store.sql().query("SELECT indexes, seen_ms FROM db_table", List.of(),
+                rs -> rs.getString(1) + " @ " + rs.getLong(2)))
+                .containsExactly("[] @ 1700000100000");
+    }
+
+    /** A schema record without the optional attributes still says what it knows. */
+    @Test
+    void aCatalogRowWithoutASchemaOrIndexesIsStillARow() {
+        Batch batch = decoder.accept(Otlp.logs(Otlp.service("spring-orders"), "spider-sense",
+                Otlp.log(1_700_000_000_000L, 9, "index catalog of items", null, null,
+                        Otlp.attr("spidersense.schema.table", "items"))));
+
+        assertThat(batch.catalogs()).singleElement().satisfies(row -> {
+            assertThat(row.schemaName()).isEmpty();
+            assertThat(row.product()).isNull();
+            assertThat(row.indexes()).isEqualTo("[]");
+        });
+    }
+
     @Test
     void protobufAndTheTwoJsonIdEncodingsAllDecodeToTheSameSpan() throws Exception {
         ExportTraceServiceRequest request = Otlp.traces(Otlp.service("spring-orders"),

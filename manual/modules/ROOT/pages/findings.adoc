@@ -65,6 +65,9 @@ An endpoint that `spidersense.ignore.endpoints` excludes is not an entry span an
 | `traces`
 | At most 3 trace ids: the evidence, and what `trace <id>` opens.
 
+| `schema`
+| The tables the statement names with their indexes, the columns it filters on, and the ones no index serves. `slow-query` and `n-plus-one` only, and `null` when there is no catalog to read.
+
 | `ack`
 | The acknowledgement, `{ "at": …, "note": … }`, or `null` when the finding is not acknowledged.
 |===
@@ -90,10 +93,54 @@ When it is empty, open a trace from `traces` and read the tree, which names the 
 A stack trace is reduced to its application frames by dropping known framework prefixes: `java.`, `javax.`, `jdk.`, `sun.`, `com.sun.`, `jakarta.`, `org.springframework.`, `org.hibernate.`, `org.eclipse.jetty.`, `org.apache.`, `io.opentelemetry.`, `com.zaxxer.`, `org.h2.`, `net.benelog.spidersilk.`, `kotlin.`, `scala.`, `reactor.`, `io.netty.`, `ch.qos.logback.`, `org.slf4j.`, `org.junit.` and `gg.jte.`.
 When that heuristic guesses wrong, `spidersense.app.packages=com.acme,org.acme` replaces it with an allowlist.
 
+[#schema]
+=== The schema block
+
+A `slow-query` or `n-plus-one` finding of a service that ran under the agent also says which of the columns the statement filters on carry no index.
+That is a fact read from the database rather than a guess from the statement.
+
+[source,json]
+----
+"schema": {
+  "tables": [ { "table": "ITEMS", "schema": "PUBLIC",
+                "indexes": [ { "name": "PRIMARY_KEY_8", "unique": true, "columns": [ "ID" ] },
+                             { "name": "IDX_ITEMS_SUPPLIER", "unique": false, "columns": [ "SUPPLIER_ID", "NAME" ] } ] } ],
+  "predicates": [ "items.name", "items.category" ],
+  "unindexed":  [ "items.name", "items.category" ]
+}
+----
+
+`tables` are the tables the statement names, each with its indexes as the extension read them through `DatabaseMetaData.getIndexInfo` on the application's own connection (xref:design.adoc#extension[The extension]), and the store keeps them per service and table (xref:storage.adoc#schema[the `db_table` table]).
+The names are the database's spelling, `ITEMS` on H2 and `items` on PostgreSQL, `schema` is `null` when the database reports none, and `indexes` is empty for a table that has none.
+
+`predicates` are read from the sanitised statement by a light parse of the common shapes: every column a `where` or `on` clause or an `order by` list refers to, bare (`where name = ?`), qualified (`where i1_0.name like ?`, the alias resolved to its table) or wrapped in a function (`where lower(name) like ?`).
+Each is written as `table.column` in the statement's own spelling, in order of first appearance and once each, and a column named without a qualifier belongs to the statement's only table.
+
+A function in an `order by` list is skipped whole (`order by sum(l.quantity) desc` names no column), because no index sorts an aggregate.
+`unindexed` is the subset of `predicates` that no index of their table has as its first column, the one an index can seek on.
+A column an index carries second is served no better by it than a column no index carries at all.
+A function-wrapped column is matched by its name, so an index on `name` takes `lower(name)` out of `unindexed`, and the statement says whether an expression index is what is really needed.
+
+The block is `null` rather than wrong whenever the parse cannot vouch for it: a table the catalog has no row for (the application ran in standalone mode or without the extension, or no statement on that table has yet been slow or repeated five times in one trace), a statement whose tables the scanner does not find, or a column it cannot attribute to one table, such as an unqualified column in a join or the alias of a subquery.
+It says nothing about selectivity, wildcards or the plan.
+That is what the `spider-sense-sql-tuning` skill and `EXPLAIN` are for, and the block is what lets the skill write the index without a round trip to the database.
+
+In the text rendering the block sits between the statement and the code frames, one line per table, then one line for the columns:
+
+[source]
+----
+   indexes ITEMS: PRIMARY_KEY_8 (ID) unique, IDX_ITEMS_SUPPLIER (SUPPLIER_ID, NAME)
+   indexes MOVEMENTS: none
+   predicates: items.name, items.category; unindexed: items.name, items.category
+----
+
+`predicates: none` stands alone when the statement has no predicate, `unindexed: none` when every predicate is served, and a finding without the block prints nothing for it.
+xref:api.adoc[`GET /api/queries`] carries the same block on every query group, and the xref:cli.adoc[CLI]'s `queries` table has an `unindexed` column for it.
+
 == The text rendering
 
 The ranked table comes first, and the fields follow as one numbered block per row, in the same order.
-A block is `<n>. <id> — <why>`, then the `numbers` on one line, then the hot span line when the kind has one, then the statement when there is one, then the `code` frames one per line, then the trace ids.
+A block is `<n>. <id> — <why>`, then the `numbers` on one line, then the hot span line when the kind has one, then the statement when there is one, then the <<schema,schema lines>> when the finding has that block, then the `code` frames one per line, then the trace ids.
 
 [source]
 ----
@@ -155,6 +202,7 @@ Read it as: this endpoint ran that statement `medianRepeats` times in one reques
 `affected` well below `requests` means only some inputs trigger it, which usually points at a branch or a lazily loaded collection that is only touched sometimes.
 `code` is the call site of the fifth repeat, so it names the line that issues the repeated statement.
 It is empty only when the application ran without the extension, and the trace tree then names the loop.
+The <<schema,schema block>> names the tables the repeated statement touches, the indexes they carry, and the columns it filters on that no index serves.
 
 What to do:
 
@@ -177,10 +225,11 @@ The impact it is ranked by is total time.
 
 A p95 far above p50 is a query that is fast for most inputs and slow for some, which usually means a plan that degrades with the data rather than a statement that is always wrong.
 `callers` says which endpoints pay for it, and the trace ids give the individual calls.
+The <<schema,schema block>> names the tables the statement touches, the indexes they carry, and the columns it filters on that no index serves.
 
 What to do:
 
-* *Add the index* the predicate needs, and remember that a leading wildcard (`like '%graph%'`) defeats one.
+* *Add the index* the predicate needs, which the schema block's `unindexed` lists by name, and remember that a leading wildcard (`like '%graph%'`) defeats one.
   Search that genuinely needs an infix match belongs in a search index.
 * *Rewrite the shape*: a correlated subquery per row becomes a join, an unbounded `select count(*)` becomes a bounded count, and an `order by` over an unindexed column becomes an indexed one.
 * *Stop selecting what is not needed*: a projection instead of an entity, or named columns instead of `select *`.

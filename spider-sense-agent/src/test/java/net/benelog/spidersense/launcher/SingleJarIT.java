@@ -143,10 +143,13 @@ class SingleJarIT {
      * The one thing Spider Sense instruments itself, from the packaged jar: the nested
      * {@code extension.jar} is extracted, the agent is pointed at it, and the slow H2 statement the
      * sample runs comes back as a {@code slow-query} finding that names the line it was issued from
-     * (design.md, "The extension"; agent.md, "Code locations").
+     * (design.md, "The extension"; agent.md, "Code locations") and carries the index catalog of the
+     * table it read, with the one predicate column no index leads with named as such (agent.md,
+     * "The schema block"). The catalog can only be proven here: it needs the agent's advice in the
+     * driver's class loader, the JDBC instrumentation's virtual field, and the log exporter.
      */
     @Test
-    void aSlowQueryFindingNamesTheCodeThatIssuedIt() throws Exception {
+    void aSlowQueryFindingNamesTheCodeThatIssuedItAndTheColumnsNoIndexServes() throws Exception {
         int port = freePort();
         Path log = work.resolve("extension.log");
         String base = "http://127.0.0.1:" + port;
@@ -169,9 +172,13 @@ class SingleJarIT {
                     () -> get(base + "/api/status"),
                     body -> compact(body).contains("\"mode\":\"agent\""));
 
-            findings = await("a slow-query finding for the sample's statement", log, app,
+            // The catalog travels as a log record and lands in a later flush than the span; wait for
+            // the finding to carry it rather than for the finding alone.
+            findings = await("a slow-query finding for the sample's statement, with its schema block",
+                    log, app,
                     () -> get(base + "/api/findings?since=15m&format=json"),
-                    body -> compact(body).contains("\"kind\":\"slow-query\""));
+                    body -> compact(body).contains("\"kind\":\"slow-query\"")
+                            && compact(body).contains("\"unindexed\":[\"items.name\"]"));
         } catch (AssertionError e) {
             app.destroyForcibly();
             throw new AssertionError(e.getMessage() + "\n--- application output ---\n" + read(log), e);
@@ -192,6 +199,17 @@ class SingleJarIT {
                 .as("code frames of %s\n--- application output ---\n%s", slowQuery, read(log))
                 .isNotEmpty()
                 .anyMatch(frame -> frame.contains("SampleApp"));
+
+        // The catalog as H2 reports it: the primary key and the two-column index, the table's name
+        // upper-cased by the database and the predicates in the statement's own spelling.
+        assertThat(slowQuery).as("the schema block of %s", slowQuery)
+                .contains("\"table\":\"ITEMS\"")
+                .contains("\"name\":\"IDX_ITEMS_SUPPLIER\",\"unique\":false,\"columns\":[\"SUPPLIER_ID\",\"NAME\"]")
+                .contains("\"predicates\":[\"items.name\",\"items.supplier_id\"]")
+                .contains("\"unindexed\":[\"items.name\"]");
+        assertThat(read(log)).as("the catalog lookup must not reach the application's output")
+                .doesNotContainIgnoringCase("IndexCatalog")
+                .doesNotContain("NoClassDefFoundError");
     }
 
     /** The {@code code} array of one compact finding object. */

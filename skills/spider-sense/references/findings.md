@@ -39,17 +39,48 @@ The thresholds are the server's: `slow.request.ms` is 500 by default and `slow.q
 | `statement` | the statement as the OpenTelemetry agent sanitised it, literals already `?`; cut at 200 characters unless `--full` |
 | `code` | application frames, most specific first, at most 5; empty when none is known |
 | `traces` | at most 3 trace ids: the evidence, and what `trace <id>` opens |
+| `schema` | `slow-query` and `n-plus-one` only: the statement's tables with the indexes they carry, the columns it filters on, and the ones no index serves; `null` when there is no catalog to read |
 
 `traces` are the three slowest traces for `slow-*`, the three newest for `error` and `log-error`, the three most recent affected for `n-plus-one`, and none for `pool-exhausted` and the three JVM kinds.
 
 In the text output the ranked table comes first and these fields follow as one numbered block per row, in that order and mostly without labels:
-`<n>. <id> — <why>`, then the `numbers` on one line as `name value, name value`, then `hot span: <name> · <selfMs> self · <share>` when the kind has one, then the `statement` when there is one, then the `code` frames one per line, then `traces: <id> <id>`.
+`<n>. <id> — <why>`, then the `numbers` on one line as `name value, name value`, then `hot span: <name> · <selfMs> self · <share>` when the kind has one, then the `statement` when there is one, then the schema lines when the finding has that block, then the `code` frames one per line, then `traces: <id> <id>`.
 
 **About `code`.** The OpenTelemetry Java agent does not record where a span was started from, so `code` comes from the `exception.stacktrace` of an error, the `code.function` / `code.namespace` attributes that a few instrumentations set, and the `code.stacktrace` that Spider Sense's own agent extension captures.
 The extension captures that stack on every database span slower than `slow.query.ms`, on the fifth repeat of a statement within one trace, and on every non-database `CLIENT` span slower than `slow.request.ms`, which is what gives `slow-query`, `n-plus-one` and `slow-external` findings a line.
 It is therefore reliable for `error`, `slow-query`, `n-plus-one` and `slow-external` findings, often present for `log-error`, and often empty for the others; when it is empty, open a trace from `traces` and read the tree, which names the endpoint and the statement even when it cannot name the line.
 A stack trace is reduced to its application frames by dropping known framework prefixes (`java.`, `jakarta.`, `org.springframework.`, `org.hibernate.`, `org.apache.`, `com.zaxxer.`, `org.h2.`, `io.opentelemetry.` and others).
 When that heuristic guesses wrong, `-Dspidersense.app.packages=com.acme,org.acme` replaces it with an allowlist.
+
+**About `schema`.** A `slow-query` or `n-plus-one` finding of a service that ran under the agent says which of the columns the statement filters on carry no index, read from the database rather than guessed from the statement.
+The extension reads the index catalog of the tables a slow statement touches through JDBC metadata on the application's own connection, and the store keeps it per service and table.
+
+```json
+"schema": {
+  "tables": [ { "table": "ITEMS", "schema": "PUBLIC",
+                "indexes": [ { "name": "PRIMARY_KEY_8", "unique": true, "columns": [ "ID" ] },
+                             { "name": "IDX_ITEMS_SUPPLIER", "unique": false, "columns": [ "SUPPLIER_ID", "NAME" ] } ] } ],
+  "predicates": [ "items.name", "items.category" ],
+  "unindexed":  [ "items.name", "items.category" ]
+}
+```
+
+`tables` are the tables the statement names, in the database's own spelling (`ITEMS` on H2, `items` on PostgreSQL), each with its indexes in key order; `indexes` is empty for a table that has none.
+`predicates` are the columns a `where` or `on` clause or an `order by` list refers to, as `table.column`.
+`unindexed` is the subset of them that no index of their table has as its first column, which is the one an index can seek on, so it is the list of columns to consider indexing.
+The block is `null` rather than wrong whenever the parse cannot vouch for it: the application ran in standalone mode or without the extension, no statement on that table has yet been slow or repeated five times in one trace, the scanner did not find the statement's tables, or a column cannot be attributed to one table.
+It says nothing about selectivity, wildcards or the plan; `EXPLAIN` and the `spider-sense-sql-tuning` skill answer those.
+
+In the text output it is one line per table, then one line for the columns:
+
+```
+   indexes ITEMS: PRIMARY_KEY_8 (ID) unique, IDX_ITEMS_SUPPLIER (SUPPLIER_ID, NAME)
+   indexes MOVEMENTS: none
+   predicates: items.name, items.category; unindexed: items.name, items.category
+```
+
+`predicates: none` stands alone when the statement has no predicate, `unindexed: none` when every predicate is served, and a finding without the block prints nothing for it.
+The `queries` table carries the same block as an `unindexed` column between `callers` and `statement`.
 
 ---
 
@@ -61,6 +92,7 @@ Read it as: this endpoint ran that statement `medianRepeats` times in one reques
 `affected` well below `requests` means only some inputs trigger it, which usually points at a branch or a lazily loaded collection that is only touched sometimes.
 Open a trace from `traces`: the repeated database spans collapse into one `× n` line under the entry span, and the span above them is the code path that loops.
 `code` is the call site of the fifth repeat, captured by the agent extension on the thread that ran it, so it names the line that issues the repeated statement; it is empty only when the application ran without the extension, and then the trace tree is what names the loop.
+`schema` names the repeated statement's tables, the indexes they carry and the predicate columns none of them serves, so a repeat that is also a scan is visible as both.
 
 ### What to do
 
@@ -117,10 +149,11 @@ After the fix, `compare --before=before --after=after` should show the query's `
 
 A p95 far above p50 is a query that is fast for most inputs and slow for some, which usually means a plan that degrades with the data rather than a statement that is always wrong.
 `callers` says which endpoints pay for it, and the `queries` table carries the same under its own `callers` column, as `GET /api/reports/revenue ×3`; the trace ids in `traces` give the individual calls.
+`schema` names the statement's tables with the indexes they already carry, and `schema.unindexed` is the list of predicate columns no index serves.
 
 ### What to do
 
-**A missing index** is the first thing to test, and a leading wildcard defeats one.
+**A missing index** is the first thing to test, and `schema.unindexed` says which columns want one; a leading wildcard defeats one.
 
 ```sql
 -- A full scan over 200,000 rows

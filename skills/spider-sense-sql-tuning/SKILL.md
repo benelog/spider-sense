@@ -36,8 +36,8 @@ Read from each what it alone carries:
 
 | Answer | What to take from it |
 |---|---|
-| `findings` `slow-query` | the sanitised statement, `calls`, `slowCalls`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `callers` (which endpoints pay), the `code` frame that issued it, three trace ids |
-| `findings` `n-plus-one` | the repeated statement, `affected` of `requests`, `medianRepeats`, `maxRepeats`, `msPerRequest`, the frame, three affected trace ids |
+| `findings` `slow-query` | the sanitised statement, `calls`, `slowCalls`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `callers` (which endpoints pay), the `code` frame that issued it, three trace ids, and the schema block: the indexes each table already has, the predicate columns, and `unindexed` |
+| `findings` `n-plus-one` | the repeated statement, `affected` of `requests`, `medianRepeats`, `maxRepeats`, `msPerRequest`, the frame, three affected trace ids, and the same schema block |
 | `queries` | the whole table: a statement that is not a finding yet but has the largest `total`, or `calls` far above the request count |
 | `trace <id> --full` | the order the statements ran in, the parameters' shape (the sanitised statement), which span holds the time, the gap between statements |
 | `sql` | anything the others have no column for: [references/store-queries.md](references/store-queries.md) has the statements that find candidates |
@@ -74,6 +74,10 @@ When the shape is not in the table, say what the plan says and propose the small
 
 ## 3. Design the index
 
+Start from the finding's schema block: the indexes the table already has are `schema.tables[].indexes`, and the columns to index are `schema.unindexed`, the predicate columns no index of their table leads with.
+Only when the finding has no block (`schema` is `null`: the application ran in standalone mode or without the extension, no statement on that table has yet been slow or repeated five times in one trace, or the parse could not vouch for it) does the design ask the database for its indexes.
+Ask Spider Sense first, for the tables it has seen — `java -jar "$SENSE" sql "SELECT table_name, indexes FROM db_table WHERE service = '<service>'"` — and the database's own catalog (`\d <table>`, `SHOW INDEX FROM <table>`, `INFORMATION_SCHEMA.INDEXES`) when that is empty too.
+
 An index is a sorted copy of some columns; the design is which columns, in which order, and what else to carry.
 
 1. **Equality columns first**, in any order among themselves: `where status = ? and customer_id = ?` wants `(status, customer_id)` or `(customer_id, status)`; put the more selective one first if the index will also serve queries with only that predicate.
@@ -81,7 +85,7 @@ An index is a sorted copy of some columns; the design is which columns, in which
 3. **Then the order-by columns**, in the query's direction, when the query has no range column or the range is on the order column itself; that is what lets `limit` stop early.
 4. **Covering columns** last, when the query selects a few columns and the table is wide: PostgreSQL `include (…)`, MySQL and H2 by appending them to the key. The plan then reads the index alone.
 5. **Do not** index a column alone when it has a handful of values (`status`, a boolean): the index selects too much to be worth it unless the query wants the rare value, in which case a partial index (PostgreSQL `where status = 'NEW'`) is the right shape.
-6. **Every index is a write cost**: one more structure to maintain per insert, update and delete of those columns. Count the indexes already on the table before adding one, and prefer widening an existing one to adding a second with the same leading column.
+6. **Every index is a write cost**: one more structure to maintain per insert, update and delete of those columns. Read the indexes already on the table from the finding's `schema.tables[].indexes` before adding one, and prefer widening an existing one to adding a second with the same leading column.
 7. **Foreign keys** on the child side almost always want an index; check that it exists before anything else.
 8. **Expression indexes** for a function in the predicate (`lower(email)`), and the query has to use the same expression, character for character.
 
@@ -141,7 +145,7 @@ Write it in this shape, so the reader can act on it and check every line:
    File: examples/servlet-warehouse/src/main/java/warehouse/web/ItemListServlet.java:58; migration V3__items_name_index.sql.
 **Plan**: before `TABLE SCAN`, after `/* PUBLIC.IDX_ITEMS_NAME_LOWER: LOWER(NAME) LIKE ? */` (EXPLAIN ANALYZE, H2).
 **Result**: compare before-index → after-index: p95 325.7 → 2.1 ms, total 1,283.6 → 9.8 ms; GET /items p95 331.3 → 6.0 ms; check passed.
-**Cost**: one more index on items (400,000 rows, 4 indexes now); inserts unaffected in the load generator's run.
+**Cost**: one more index on items (400,000 rows, 3 indexes in the finding's schema block, 4 now); inserts unaffected in the load generator's run.
 ```
 
 Leave out a line only when it is truly not applicable, and say why.

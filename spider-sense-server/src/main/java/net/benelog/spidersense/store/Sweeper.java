@@ -40,15 +40,23 @@ public final class Sweeper implements AutoCloseable {
      */
     private static final int MAX_PASSES = 48;
 
-    /** The time column each table is swept by. */
+    /**
+     * The time column each table is swept by.
+     *
+     * <p>{@code db_table} is in it because a catalog older than the retention
+     * describes a run no window can show any more (storage.md): its indexes are
+     * those of a schema that may since have changed.
+     */
     private static final String[][] TABLE_AND_COLUMN = {
             {"span", "start_ms"}, {"trace", "start_ms"}, {"log", "at_ms"},
-            {"metric_point", "at_ms"}, {"tingle", "at_ms"}, {"mark", "at_ms"}};
+            {"metric_point", "at_ms"}, {"tingle", "at_ms"}, {"mark", "at_ms"},
+            {"db_table", "seen_ms"}};
 
     /**
-     * What the span cap deletes: everything the window shows, marks excepted. A
-     * mark is a name a person gave a moment and is a row of nothing; it goes by the
-     * time retention alone.
+     * What the span cap deletes: everything the window shows, marks and catalog
+     * rows excepted. A mark is a name a person gave a moment and is a row of
+     * nothing, and a catalog row is one row per table; both go by the time
+     * retention alone.
      */
     private static final String[][] CAPPED_TABLE_AND_COLUMN = {
             {"span", "start_ms"}, {"trace", "start_ms"}, {"log", "at_ms"},

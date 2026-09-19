@@ -124,7 +124,7 @@ public final class Store implements AutoCloseable {
 
     /**
      * {@code DELETE /api/data}: every span, trace, log, metric point, tingle,
-     * mark and acknowledgement.
+     * mark, acknowledgement and catalog row.
      */
     public void clear() {
         writer.flushNow();

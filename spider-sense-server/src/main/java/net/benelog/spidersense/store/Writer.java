@@ -159,6 +159,7 @@ public final class Writer implements AutoCloseable {
                 Set<String> touched = insertSpans(connection, batches);
                 insertLogs(connection, batches);
                 insertTingles(connection, batches);
+                mergeCatalogs(connection, batches);
                 mergeServices(connection, batches);
                 insertMetrics(connection, batches);
                 mergeTraces(connection, touched);
@@ -361,7 +362,7 @@ public final class Writer implements AutoCloseable {
         statement.setBoolean(i, errorCount > 0);
     }
 
-    // --- logs, tingles, services, metrics ---
+    // --- logs, tingles, catalogs, services, metrics ---
 
     static final String INSERT_LOG = """
             INSERT INTO log (at_ms, service, severity_number, severity, body, logger, trace_id, span_id,
@@ -410,6 +411,40 @@ public final class Writer implements AutoCloseable {
                     statement.setString(i++, tingle.traceId());
                     statement.setString(i++, tingle.spanId());
                     statement.setDouble(i, tingle.durationMs());
+                    statement.addBatch();
+                    pending++;
+                }
+            }
+            if (pending > 0) {
+                statement.executeBatch();
+            }
+        }
+    }
+
+    static final String MERGE_CATALOG = """
+            MERGE INTO db_table (service, schema_name, table_name, product, indexes, seen_ms)
+            KEY (service, schema_name, table_name) VALUES (?, ?, ?, ?, ?, ?)""";
+
+    /**
+     * The catalog rows of a flush, merged in the flush's own transaction.
+     *
+     * <p>A merge rather than an insert because the extension reads a table's
+     * indexes once per process: the row of a table looked up again after a restart
+     * is the newer truth about the same table, and replaces the older one
+     * (storage.md).
+     */
+    private void mergeCatalogs(Connection connection, List<Batch> batches) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(MERGE_CATALOG)) {
+            int pending = 0;
+            for (Batch batch : batches) {
+                for (Batch.Catalog catalog : batch.catalogs()) {
+                    int i = 1;
+                    statement.setString(i++, cut(catalog.service(), 255));
+                    statement.setString(i++, cut(catalog.schemaName(), 255));
+                    statement.setString(i++, cut(catalog.table(), 255));
+                    statement.setString(i++, cut(catalog.product(), 64));
+                    statement.setString(i++, cut(catalog.indexes(), 65535));
+                    statement.setLong(i, catalog.at());
                     statement.addBatch();
                     pending++;
                 }

@@ -168,14 +168,26 @@ CREATE TABLE IF NOT EXISTS ack (
     note       VARCHAR(1024)
 );
 
+CREATE TABLE IF NOT EXISTS db_table (
+    service     VARCHAR(255) NOT NULL,
+    schema_name VARCHAR(255) NOT NULL,       -- '' when the database reports none
+    table_name  VARCHAR(255) NOT NULL,       -- as the database reports it: ITEMS on H2, items on PostgreSQL
+    product     VARCHAR(64),                 -- DatabaseMetaData.getDatabaseProductName()
+    indexes     VARCHAR(65535) NOT NULL,     -- JSON array [{"name":…,"unique":…,"columns":[…]}], columns in key order
+    seen_ms     BIGINT NOT NULL,
+    PRIMARY KEY (service, schema_name, table_name)
+);
+
 CREATE TABLE IF NOT EXISTS meta (
     key   VARCHAR(64) PRIMARY KEY,
     value VARCHAR(4096) NOT NULL             -- schema_version, created_at
 );
 ```
 
-The schema is created with `IF NOT EXISTS` at startup; `meta.schema_version` is `4` (the `ack` table arrived with it, `mark` with 3), and a version that changes a table drops and recreates every table (the data is a cache of a development session, not a record).
+The schema is created with `IF NOT EXISTS` at startup; `meta.schema_version` is `5` (the `db_table` table arrived with it, `ack` with 4, `mark` with 3), and a version that changes a table drops and recreates every table (the data is a cache of a development session, not a record).
 An `ack` row is an acknowledged finding ([agent.md](agent.md#acknowledgements)); it is not swept by time, since a known finding stays known, and `DELETE /api/data` removes it with everything else.
+A `db_table` row is the index catalog of one table of one service, as the extension read it through JDBC metadata ([design.md](design.md#the-extension)): it arrives as a log record whose attributes are `spidersense.schema.table`, `spidersense.schema.schema`, `spidersense.schema.product` and `spidersense.schema.indexes`, and the decoder turns that record into a catalog row instead of a log line, merged on its key (`MERGE INTO db_table … KEY (service, schema_name, table_name)`) so a table looked up again after a restart replaces its row.
+The `indexes` text is stored as received, and the findings read it back ([agent.md](agent.md#the-schema-block)).
 `entry` is decided once, when the row is written, so rows written by an older Spider Sense keep the flag they were written with — a root `INTERNAL` or database span from before the rule narrowed still counts as a request until the retention sweeper removes it.
 
 ## The read-only user
@@ -189,7 +201,7 @@ The reader's connection uses the same JDBC URL with the settings a non-administr
 ## How it is written
 
 Ingest never touches the database on the request thread.
-The OTLP handler decodes the request into records and hands them to a `Writer`: a bounded queue (10,000 batches; when full, the oldest batch is dropped and a counter shown on `/api/status` increments) drained by one daemon thread that flushes every 200 ms or as soon as 500 records are waiting, in one transaction per flush with JDBC batch inserts.
+The OTLP handler decodes the request into records and hands them to a `Writer`: a bounded queue (10,000 batches; when full, the oldest batch is dropped and a counter shown on `/api/status` increments) drained by one daemon thread that flushes every 200 ms or as soon as 500 records are waiting, in one transaction per flush with JDBC batch inserts; the catalog rows of a flush are merged in the same transaction.
 After each flush the writer recomputes the `trace` rows of the trace ids the flush touched (`MERGE INTO trace ... SELECT ... FROM span WHERE trace_id IN (...) GROUP BY trace_id`), because a trace's spans arrive in several exports and from several services, and publishes the flush's tingles and counts to the SSE stream.
 The `service` row is merged on every flush that carries the service; when the sighting carries a `process.pid` that differs from the stored one (or the row is new), the writer also inserts a `mark` named `start` for that service with the note `pid <pid>`, which is what `since=start` resolves to.
 A JVM shutdown hook flushes what is queued.
@@ -212,6 +224,7 @@ Every API answer is one or a few SQL statements over the window:
 - The service map: `service → service` edges are one self-join, `span c JOIN span p ON p.trace_id = c.trace_id AND p.span_id = c.parent_span_id WHERE c.entry AND p.service <> c.service`, grouped by the two services; the external targets reuse the dependency scan (outbound spans of the window, capped at 20,000 rows) minus the spans that self-join found.
 - A trace: `SELECT ... FROM span WHERE trace_id = ? ORDER BY start_ns`, plus its logs.
 - Findings (agent.md): `n-plus-one` is `GROUP BY trace_id, query_id HAVING COUNT(*) >= 5` over the database spans of the window, attributed to the entry span by the same parent-chain walk the query callers use; `dbCallsPerRequest` and `dbMsPerRequest` of an endpoint join the endpoint's entry spans with the database spans of the same trace and service; `slow-job` is the same aggregation over `span WHERE parent_span_id IS NULL AND kind = 'INTERNAL'` grouped by `(service, name)`, with the database work joined the same way; the other kinds are the endpoint, query and error aggregations above, filtered by the thresholds.
+- The schema block of a query group (agent.md): `SELECT schema_name, table_name, indexes FROM db_table WHERE service = ?`, read once per answer and matched against each statement's tables in Java, case-insensitively.
 - A time selector that names a mark: `SELECT at_ms FROM mark WHERE name = ? [AND service = ?] ORDER BY at_ms DESC LIMIT 1`.
 - Free-text search (`q`): `LOWER(name) LIKE ? OR LOWER(attributes) LIKE ?` within the window; a scan of the window is acceptable at local-development volumes.
 - JVM and metrics: `metric_point` joined with `metric_series`, resampled in Java where the API asks for it.
@@ -226,12 +239,12 @@ The three commands that write (`mark`, `ack` and `unack`, `import`) write throug
 ## Retention
 
 `spidersense.retention.hours` (default `24`).
-A daemon sweeper runs a minute after start and every five minutes after that: `DELETE FROM span|trace|log|metric_point|tingle|mark WHERE <time> < now - retention`, then `metric_series` rows with no points.
+A daemon sweeper runs a minute after start and every five minutes after that: `DELETE FROM span|trace|log|metric_point|tingle|mark|db_table WHERE <time> < now - retention`, then `metric_series` rows with no points; a catalog row goes by its `seen_ms`, because a catalog older than the retention describes a run no window can show any more.
 `DELETE /api/data` runs the same deletes without the time bound, and empties `ack`.
 At 24 hours of a few requests per second the file stays in the low hundreds of megabytes; H2 reclaims space on the next compaction when the database closes.
 
 Time is the retention, and one row cap guards it: `spidersense.retention.spans` (default 1,000,000; `0` for none).
-After the time sweep, while `SELECT COUNT(*) FROM span` is above the cap, the sweeper takes the oldest hour of data (`MIN(start_ms)` of `span`, plus one hour) and deletes every row of `span`, `trace`, `log`, `metric_point` and `tingle` before that instant, marks included only when they are older than the retention as before; one hour at a time, so a cap crossed by a little costs a little.
+After the time sweep, while `SELECT COUNT(*) FROM span` is above the cap, the sweeper takes the oldest hour of data (`MIN(start_ms)` of `span`, plus one hour) and deletes every row of `span`, `trace`, `log`, `metric_point` and `tingle` before that instant, marks and catalog rows included only when they are older than the retention as before; one hour at a time, so a cap crossed by a little costs a little.
 The cap is by rows rather than by file size because an H2 file does not shrink when rows go: a size read after a delete would say the same number and ask for the next hour, until nothing was left.
 `/api/status.retention` reports both, `{ "hours": 24, "spans": 1000000 }`.
 

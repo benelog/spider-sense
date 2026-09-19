@@ -112,7 +112,8 @@ Each finding carries:
   "numbers": { … },                         // kind-specific, listed below
   "statement": "SELECT … FROM order_line WHERE order_id = ?" | null,
   "code": [ "orders.OrderService.load(OrderService.java:41)" ],   // application frames, most specific first, at most 5; empty when none is known
-  "traces": [ "4bf92f3577b34da6a3ce929d0e0e4736", … ]              // at most 3, the evidence
+  "traces": [ "4bf92f3577b34da6a3ce929d0e0e4736", … ],             // at most 3, the evidence
+  "schema": { "tables": [ … ], "predicates": [ … ], "unindexed": [ … ] } | null   // slow-query and n-plus-one only; below
 }
 ```
 
@@ -148,6 +149,39 @@ A `log-error` finding takes its `code` from the `exception.stacktrace` attribute
 Those frames are the truest of the three, because they are the span's own thread at the moment the statement finished, not a guess from an attribute; they are reduced by the same rules as `exception.stacktrace` above.
 An `n-plus-one` finding takes its `code` from the span of the repeated group that carries `code.stacktrace`, which is the fifth repeat, and falls back to the group's newest span when none does (an application run without the extension).
 A `slow-job` finding takes its `code` from the `code.function` and `code.namespace` attributes the scheduling instrumentations set on the job's span.
+
+### The schema block
+
+A `slow-query` or `n-plus-one` finding of a service that ran under the agent also says, as a fact read from the database rather than a guess from the statement, which of the columns the statement filters on carry no index:
+
+```json
+"schema": {
+  "tables": [ { "table": "ITEMS", "schema": "PUBLIC",
+                "indexes": [ { "name": "PRIMARY_KEY_8", "unique": true, "columns": [ "ID" ] },
+                             { "name": "IDX_ITEMS_SUPPLIER", "unique": false, "columns": [ "SUPPLIER_ID", "NAME" ] } ] } ],
+  "predicates": [ "items.name", "items.category" ],
+  "unindexed":  [ "items.name", "items.category" ]
+}
+```
+
+`tables` are the tables the statement names, each with its indexes as the extension read them through `DatabaseMetaData.getIndexInfo` on the application's own connection ([design.md](design.md#the-extension)) and the store keeps them per service and table ([storage.md](storage.md), `db_table`); the names are the database's spelling (`ITEMS` on H2, `items` on PostgreSQL), `schema` is `null` when the database reports none, and `indexes` is empty for a table that has none.
+`predicates` are read from the sanitised statement by a light parse of the common shapes: every column a `where` or `on` clause or an `order by` list refers to, bare (`where name = ?`), qualified (`where i1_0.name like ?`, the alias resolved to its table) or wrapped in a function (`where lower(name) like ?`), written as `table.column` in the statement's own spelling, in order of first appearance and once each; a column named without a qualifier belongs to the statement's only table.
+A function in an `order by` list is skipped whole (`order by sum(l.quantity) desc` names no column), because no index sorts an aggregate.
+`unindexed` is the subset of `predicates` that no index of their table has as its first column, the one an index can seek on: a column an index carries second is served no better by it than a column no index carries at all.
+A function-wrapped column is matched by its name, so an index on `name` takes `lower(name)` out of `unindexed`; the statement says whether an expression index is what is really needed.
+The block is `null` rather than wrong whenever the parse cannot vouch for it: a table the catalog has no row for (the application ran in standalone mode or without the extension, or no statement on that table has yet been slow or repeated five times in one trace), a statement whose tables the scanner does not find, a column it cannot attribute to one table (an unqualified column in a join, the alias of a subquery).
+It says nothing about selectivity, wildcards or the plan; that is what the `spider-sense-sql-tuning` skill and `EXPLAIN` are for, and the block is what lets the skill write the index without a round trip to the database.
+
+In the text rendering the block sits between the statement and the code frames, one line per table, then one line for the columns:
+
+```
+   indexes ITEMS: PRIMARY_KEY_8 (ID) unique, IDX_ITEMS_SUPPLIER (SUPPLIER_ID, NAME)
+   indexes MOVEMENTS: none
+   predicates: items.name, items.category; unindexed: items.name, items.category
+```
+
+`predicates: none` stands alone when the statement has no predicate, `unindexed: none` when every predicate is served, and a finding without the block prints nothing for it.
+`GET /api/queries` ([api.md](api.md)) carries the same block on every query group, and its text rendering has an `unindexed` column between `callers` and `statement`: the unindexed columns joined by `, `, `none` when every predicate is served, `—` when there is no block.
 
 ## Acknowledgements
 
@@ -303,6 +337,7 @@ Rules are query parameters; every rule given is evaluated, and when none is give
 
 The escape hatch, for the question nobody anticipated.
 Findings, compare and check answer what Spider Sense knows to look for; everything else it holds is already documented by the schema in [storage.md](storage.md), and this runs one statement over it.
+The index catalog the extension reads is there too, as `db_table`: `SELECT table_name, indexes FROM db_table WHERE service = 'servlet-warehouse'` lists every table a slow statement of that service has touched, with its indexes as JSON.
 `format=text` as a query parameter, or an `Accept` whose first type is `text/markdown` or `text/plain`, selects the Markdown rendering, exactly as on the endpoints above.
 
 ```json
@@ -504,6 +539,7 @@ It is what an agent reads to run it without being told how:
 5. `mark after`, exercise the same way, `compare --before=before --after=after`, `check`.
 
 The references list the finding kinds with the fix each usually wants (a fetch join or a batch for `n-plus-one`, an index or a rewrite for `slow-query`, and so on), the CLI table above, and how to start each kind of application under the agent (Gradle `run`, Spring Boot `bootRun`, a plain `java -jar`, a test task).
+The query-tuning skill beside it, `skills/spider-sense-sql-tuning`, reads the finding's schema block for the indexes a table already has and the predicate columns none leads with, and designs the index from that rather than asking the database.
 
 `skills/spider-sense-sql-tuning/SKILL.md` is query tuning: the index to add, the rewrite, the fetch join, the batch, each verified with `compare` and `check`.
 It is read when a finding names a statement rather than a request.

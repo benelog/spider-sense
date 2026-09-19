@@ -15,6 +15,7 @@ import net.benelog.spidersense.query.Compare;
 import net.benelog.spidersense.query.Findings;
 import net.benelog.spidersense.query.Numbers;
 import net.benelog.spidersense.query.Queries;
+import net.benelog.spidersense.query.SchemaBlock;
 import net.benelog.spidersense.query.Stats;
 import net.benelog.spidersense.query.Window;
 import net.benelog.spidersense.store.Acks;
@@ -215,6 +216,7 @@ final class Text {
             if (finding.statement() != null) {
                 text.append("   ").append(statement(finding.statement(), full)).append('\n');
             }
+            schema(text, finding.schema());
             for (String frame : finding.code()) {
                 text.append("   ").append(frame).append('\n');
             }
@@ -223,6 +225,46 @@ final class Text {
             }
         }
         return text.toString();
+    }
+
+    /**
+     * The schema block, between the statement and the code frames (agent.md).
+     *
+     * <p>One line per table, then one line for the columns, because the question a
+     * reader arrives with is "which column should I index" and the answer is the
+     * second line; the first is what is already there, so that the answer can be
+     * checked rather than believed. A finding without a block prints nothing.
+     */
+    private static void schema(StringBuilder text, SchemaBlock block) {
+        if (block == null) {
+            return;
+        }
+        for (SchemaBlock.Table table : block.tables()) {
+            List<String> indexes = new ArrayList<>();
+            for (SchemaBlock.Index index : table.indexes()) {
+                indexes.add(index.name() + " (" + String.join(", ", index.columns()) + ")"
+                        + (index.unique() ? " unique" : ""));
+            }
+            text.append("   indexes ").append(table.table()).append(": ")
+                    .append(indexes.isEmpty() ? "none" : String.join(", ", indexes)).append('\n');
+        }
+        text.append("   predicates: ");
+        if (block.predicates().isEmpty()) {
+            text.append("none");
+        } else {
+            text.append(String.join(", ", block.predicates())).append("; unindexed: ")
+                    .append(block.unindexed().isEmpty() ? "none"
+                            : String.join(", ", block.unindexed()));
+        }
+        text.append('\n');
+    }
+
+    /** The unindexed columns of a query group, as the {@code queries} table shows them. */
+    private static String unindexed(SchemaBlock block) {
+        if (block == null) {
+            return "—";
+        }
+        return block.unindexed().isEmpty() ? "none" : String.join(", ", block.unindexed());
     }
 
     /**
@@ -552,7 +594,7 @@ final class Text {
         StringBuilder text = new StringBuilder(heading("queries", window, service, requests));
         text.append('\n');
         table(text, List.of("id", "service", "calls", "slow", "p50", "p95", "max", "total", "callers",
-                "statement"));
+                "unindexed", "statement"));
         for (Stats.QueryStats query : queries) {
             List<String> callers = new ArrayList<>();
             for (Stats.Caller caller : query.callers()) {
@@ -563,6 +605,7 @@ final class Text {
                     Numbers.millis(query.p95Ms()), Numbers.millis(query.maxMs()),
                     Numbers.millis(query.totalMs()),
                     callers.isEmpty() ? "—" : String.join("; ", callers),
+                    unindexed(query.schema()),
                     statement(query.statement(), full)));
         }
         return text.toString();

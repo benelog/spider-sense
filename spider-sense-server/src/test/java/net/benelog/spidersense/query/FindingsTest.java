@@ -219,6 +219,91 @@ class FindingsTest {
         assertThat(finding.traces()).containsExactly(traceId(1));
     }
 
+    /** The catalog of one table, as the extension sends it: a log record (design.md). */
+    private void catalog(String table, String indexes) {
+        decoder.accept(Otlp.logs(Otlp.service("orders"), "spider-sense",
+                Otlp.log(NOW, 9, "index catalog of " + table, null, null,
+                        Otlp.attr("spidersense.schema.table", table),
+                        Otlp.attr("spidersense.schema.schema", "PUBLIC"),
+                        Otlp.attr("spidersense.schema.product", "H2"),
+                        Otlp.attr("spidersense.schema.indexes", indexes))));
+    }
+
+    private static final String ITEMS_INDEXES = """
+            [{"name":"PRIMARY_KEY_8","unique":true,"columns":["ID"]},\
+            {"name":"IDX_ITEMS_SUPPLIER","unique":false,"columns":["SUPPLIER_ID","NAME"]}]""";
+
+    @Test
+    void aSlowQueryCarriesTheIndexesOfItsTablesAndTheColumnsNoneLeadsWith() {
+        Span.Builder root = entry(1, "/items", 400);
+        decoder.accept(Otlp.traces(Otlp.service("orders"), root,
+                query(root, 100, "select * from items where name = ? and supplier_id = ?", "items",
+                        NOW, 300)));
+        catalog("ITEMS", ITEMS_INDEXES);
+        flush();
+
+        SchemaBlock schema = of(Findings.SLOW_QUERY).get(0).schema();
+
+        assertThat(schema).isNotNull();
+        assertThat(schema.predicates()).containsExactly("items.name", "items.supplier_id");
+        assertThat(schema.unindexed()).as("an index that carries a column second cannot seek on it")
+                .containsExactly("items.name");
+        assertThat(schema.tables()).singleElement().satisfies(table -> {
+            assertThat(table.table()).isEqualTo("ITEMS");
+            assertThat(table.schema()).isEqualTo("PUBLIC");
+            assertThat(table.indexes()).extracting(SchemaBlock.Index::name)
+                    .containsExactly("PRIMARY_KEY_8", "IDX_ITEMS_SUPPLIER");
+            assertThat(table.indexes().get(0).unique()).isTrue();
+            assertThat(table.indexes().get(1).columns()).containsExactly("SUPPLIER_ID", "NAME");
+        });
+    }
+
+    @Test
+    void aStatementWhoseTableTheCatalogDoesNotKnowHasNoBlockAtAll() {
+        Span.Builder root = entry(1, "/items", 400);
+        decoder.accept(Otlp.traces(Otlp.service("orders"), root,
+                query(root, 100, "select * from items where name = ? and supplier_id = ?", "items",
+                        NOW, 300)));
+        flush();
+
+        assertThat(of(Findings.SLOW_QUERY).get(0).schema())
+                .as("an application that ran without the extension says nothing about its schema")
+                .isNull();
+    }
+
+    @Test
+    void anNPlusOneCarriesTheBlockToo() {
+        Span.Builder root = entry(1, "/orders/{id}", 60);
+        List<Span.Builder> spans = new ArrayList<>();
+        spans.add(root);
+        for (int i = 0; i < 6; i++) {
+            spans.add(query(root, 100 + i, "select * from order_line where order_id = ?",
+                    "order_line", NOW + i, 2));
+        }
+        decoder.accept(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
+        catalog("ORDER_LINE",
+                "[{\"name\":\"PRIMARY_KEY_3\",\"unique\":true,\"columns\":[\"ID\"]}]");
+        flush();
+
+        SchemaBlock schema = of(Findings.N_PLUS_ONE).get(0).schema();
+
+        assertThat(schema).isNotNull();
+        assertThat(schema.predicates()).containsExactly("order_line.order_id");
+        assertThat(schema.unindexed()).containsExactly("order_line.order_id");
+        assertThat(schema.tables()).extracting(SchemaBlock.Table::table).containsExactly("ORDER_LINE");
+    }
+
+    @Test
+    void aFindingOfAnotherKindHasNoSchemaBlock() {
+        Span.Builder root = entry(1, "/orders/report", 1000);
+        decoder.accept(Otlp.traces(Otlp.service("orders"), root,
+                query(root, 100, "select * from orders", "orders", NOW, 400)));
+        catalog("ORDERS", "[]");
+        flush();
+
+        assertThat(of(Findings.SLOW_ENDPOINT).get(0).schema()).isNull();
+    }
+
     @Test
     void anEndpointOverTheThresholdIsASlowEndpointWithItsDatabaseShare() {
         Span.Builder root = entry(1, "/orders/report", 1000);

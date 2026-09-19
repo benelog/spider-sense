@@ -56,10 +56,14 @@ public final class Stats {
     public record Caller(String endpoint, String service, long calls) {
     }
 
+    /**
+     * @param schema the index catalog of the tables the statement names, or null
+     *        when there is none to vouch for (agent.md, "The schema block")
+     */
     public record QueryStats(String queryId, String service, String system, String namespace,
             String operation, String table, String statement, long calls, long errors,
             double avgMs, double p50Ms, double p95Ms, double maxMs, double totalMs, long slowCalls,
-            List<Caller> callers, long lastSeen) {
+            List<Caller> callers, long lastSeen, SchemaBlock schema) {
     }
 
     public record EndpointCount(String name, long count) {

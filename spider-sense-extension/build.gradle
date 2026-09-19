@@ -11,8 +11,19 @@ dependencies {
     compileOnly "io.opentelemetry:opentelemetry-sdk-trace:${rootProject.ext.otelSdkVersion}"
     compileOnly "io.opentelemetry:opentelemetry-sdk-extension-autoconfigure-spi:${rootProject.ext.otelSdkVersion}"
 
+    // The same rule for the instrumentation module: the agent's own extension API (which brings
+    // the ByteBuddy the advice is written against with it) and its instrumentation API, where
+    // VirtualField is — the field the JDBC instrumentation fills with a prepared statement's SQL.
+    // Both live inside the agent jar, shaded, and are never ours to ship. The version is the
+    // packaged agent's, not the SDK's.
+    compileOnly "io.opentelemetry.javaagent:opentelemetry-javaagent-extension-api:${rootProject.ext.otelAgentVersion}-alpha"
+    compileOnly "io.opentelemetry.instrumentation:opentelemetry-instrumentation-api:${rootProject.ext.otelAgentVersion}"
+
     testImplementation "io.opentelemetry:opentelemetry-sdk-trace:${rootProject.ext.otelSdkVersion}"
+    testImplementation "io.opentelemetry:opentelemetry-sdk-logs:${rootProject.ext.otelSdkVersion}"
     testImplementation "io.opentelemetry:opentelemetry-sdk-testing:${rootProject.ext.otelSdkVersion}"
+    testImplementation "io.opentelemetry.instrumentation:opentelemetry-instrumentation-api:${rootProject.ext.otelAgentVersion}"
+    testImplementation "com.h2database:h2:${rootProject.ext.h2Version}"
     testImplementation "org.junit.jupiter:junit-jupiter:${rootProject.ext.junitVersion}"
     testImplementation "org.assertj:assertj-core:${rootProject.ext.assertjVersion}"
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'

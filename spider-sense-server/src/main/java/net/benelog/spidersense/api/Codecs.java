@@ -9,6 +9,7 @@ import net.benelog.spidersense.query.Findings;
 import net.benelog.spidersense.query.JvmView;
 import net.benelog.spidersense.query.MetricQueries;
 import net.benelog.spidersense.query.Queries;
+import net.benelog.spidersense.query.SchemaBlock;
 import net.benelog.spidersense.query.Stats;
 import net.benelog.spidersense.query.Window;
 import net.benelog.spidersense.store.Acks;
@@ -284,7 +285,38 @@ public final class Codecs {
         return object
                 .put("slowCalls", query.slowCalls())
                 .put("callers", callers)
-                .put("lastSeen", query.lastSeen());
+                .put("lastSeen", query.lastSeen())
+                .put("schema", schema(query.schema()));
+    }
+
+    /**
+     * The schema block of agent.md, or JSON null when the statement has none.
+     *
+     * <p>Null rather than an empty object, because "no index serves nothing" and
+     * "nobody could tell" are different answers and the UI shows them differently.
+     */
+    static Json.JsonObject schema(SchemaBlock block) {
+        if (block == null) {
+            return null;
+        }
+        Json.JsonArray tables = Json.arr();
+        for (SchemaBlock.Table table : block.tables()) {
+            Json.JsonArray indexes = Json.arr();
+            for (SchemaBlock.Index index : table.indexes()) {
+                indexes.add(Json.obj()
+                        .put("name", index.name())
+                        .put("unique", index.unique())
+                        .put("columns", strings(index.columns())));
+            }
+            tables.add(Json.obj()
+                    .put("table", table.table())
+                    .put("schema", table.schema())
+                    .put("indexes", indexes));
+        }
+        return Json.obj()
+                .put("tables", tables)
+                .put("predicates", strings(block.predicates()))
+                .put("unindexed", strings(block.unindexed()));
     }
 
     static Json.JsonArray queries(List<Stats.QueryStats> queries) {
@@ -686,6 +718,7 @@ public final class Codecs {
                 .put("statement", finding.statement())
                 .put("code", strings(finding.code()))
                 .put("traces", strings(finding.traces()))
+                .put("schema", schema(finding.schema()))
                 .put("ack", finding.ack() == null ? null
                         : Json.obj().put("at", finding.ack().at()).put("note", finding.ack().note()));
     }

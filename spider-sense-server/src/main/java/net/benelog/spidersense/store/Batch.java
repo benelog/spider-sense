@@ -23,11 +23,27 @@ public final class Batch {
     public record Sighting(String name, Map<String, Object> resource, long at) {
     }
 
+    /**
+     * The index catalog of one table, as the extension read it (design.md).
+     *
+     * <p>It arrives as a log record and is never one: it says nothing about a
+     * moment, it describes the schema, so the decoder turns it into this and the
+     * writer merges it on its key instead of appending a line (storage.md).
+     *
+     * @param schemaName the empty string when the database reports no schema, so
+     *        the key of the row can be a primary key rather than a nullable one
+     * @param indexes    the JSON array as received, stored and read back verbatim
+     */
+    public record Catalog(String service, String schemaName, String table, String product,
+            String indexes, long at) {
+    }
+
     private final List<SpanRecord> spans = new ArrayList<>();
     private final List<LogRecord> logs = new ArrayList<>();
     private final List<MetricSample> metrics = new ArrayList<>();
     private final Map<String, Sighting> services = new LinkedHashMap<>();
     private final List<Tingle> tingles = new ArrayList<>();
+    private final List<Catalog> catalogs = new ArrayList<>();
 
     public void add(SpanRecord span) {
         spans.add(span);
@@ -39,6 +55,10 @@ public final class Batch {
 
     public void add(MetricSample sample) {
         metrics.add(sample);
+    }
+
+    public void add(Catalog catalog) {
+        catalogs.add(catalog);
     }
 
     public void saw(Sighting sighting) {
@@ -69,8 +89,12 @@ public final class Batch {
         return tingles;
     }
 
+    public List<Catalog> catalogs() {
+        return catalogs;
+    }
+
     public int records() {
-        return spans.size() + logs.size() + metrics.size();
+        return spans.size() + logs.size() + metrics.size() + catalogs.size();
     }
 
     public boolean isEmpty() {

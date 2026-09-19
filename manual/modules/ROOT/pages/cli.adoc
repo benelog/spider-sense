@@ -248,11 +248,14 @@ $ java -jar spider-sense.jar endpoints --since=before
 $ java -jar spider-sense.jar queries --since=before --limit=5
 # queries  2026-09-17T08:19:28+09:00 → 08:19:35  (7s, all services, 21 requests)
 
-| id | service | calls | slow | p50 | p95 | max | total | callers | statement |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| e0e233d8ad75 | spring-orders | 3 | 3 | 266.6 ms | 269.7 ms | 269.7 ms | 782.8 ms | GET /api/reports/revenue ×3 | SELECT p.id AS product_id, p.sku AS sku, p.name AS name, SUM(l.quantity) AS quantity… |
-| 14eb3eff12dc | spring-orders | 22 | 0 | 0.1 ms | 0.2 ms | 0.2 ms | 2.0 ms | GET /api/orders/{id} ×11; GET /api/orders/{id}/enriched ×11 | select p1_0.id,p1_0.name,p1_0.price,p1_0.sku from product p1_0 where p1_0.id=? |
+| id | service | calls | slow | p50 | p95 | max | total | callers | unindexed | statement |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| e0e233d8ad75 | spring-orders | 3 | 3 | 266.6 ms | 269.7 ms | 269.7 ms | 782.8 ms | GET /api/reports/revenue ×3 | — | SELECT p.id AS product_id, p.sku AS sku, p.name AS name, SUM(l.quantity) AS quantity… |
+| 14eb3eff12dc | spring-orders | 22 | 0 | 0.1 ms | 0.2 ms | 0.2 ms | 2.0 ms | GET /api/orders/{id} ×11; GET /api/orders/{id}/enriched ×11 | — | select p1_0.id,p1_0.name,p1_0.price,p1_0.sku from product p1_0 where p1_0.id=? |
 ----
+
+`unindexed` lists the columns the statement filters on that no index of their table serves, from the xref:findings.adoc#schema[schema block]: `none` when every predicate is served, and `—` when there is no block.
+It is `—` in both rows above because that run collected no index catalog.
 
 `errors` lists the error groups of the window.
 Each group whose sample stack trace has application frames gets a block naming one trace and those frames:

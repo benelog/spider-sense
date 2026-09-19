@@ -49,6 +49,7 @@ The three flags are the shortcuts worth remembering: **`entry` counts requests, 
 | `service` | service | `name`, `language`, `pid`, `first_seen`, `last_seen`, `resource` (JSON) |
 | `mark` | named moment | `at_ms`, `name`, `service`, `note`; `start` marks are written on every restart |
 | `ack` | acknowledged finding | `finding_id`, `at_ms`, `note`; never swept by the retention |
+| `db_table` | table of a service the extension read the index catalog of | `service`, `schema_name`, `table_name`, `product`, `indexes` (JSON array of `{name, unique, columns}`), `seen_ms` |
 | `metric_series` | series | `id`, `service`, `name`, `attributes` (JSON, keys sorted) |
 | `metric_point` | point | `series_id`, `at_ms`, `value`, `count`, `sum`, `min`, `max`, `buckets` |
 | `tingle` | live event | `at_ms`, `kind`, `service`, `title`, `detail`, `trace_id`, `duration_ms` |
@@ -159,6 +160,17 @@ WHERE e.entry
 GROUP BY e.endpoint, e.trace_id
 HAVING COUNT(*) >= 10
 ORDER BY db_calls DESC
+```
+
+### The indexes a service's tables carry
+
+A finding's schema block answers this for one statement; this lists every table the extension has read the catalog of, which says what an index proposal is adding to.
+
+```sql
+SELECT table_name, indexes
+FROM db_table
+WHERE service = 'servlet-warehouse'
+ORDER BY table_name
 ```
 
 ### What was logged inside the failed traces

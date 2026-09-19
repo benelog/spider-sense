@@ -99,23 +99,32 @@ public final class Findings {
      *        lists them; values are numbers, strings, or lists of small maps
      * @param ack     null unless a reader has accepted this finding, in which case
      *        it is ranked after every other one
+     * @param schema  the indexes of the statement's tables and the predicates none
+     *        serves; only {@code slow-query} and {@code n-plus-one} have one, and
+     *        only when the catalog knows every table (agent.md)
      */
     public record Finding(String id, String kind, String severity, String service, String title,
             String why, Subject subject, Map<String, Object> numbers, String statement,
-            List<String> code, List<String> traces, Ack ack) {
+            List<String> code, List<String> traces, Ack ack, SchemaBlock schema) {
 
         /** A finding as a rule makes one: nothing has acknowledged it yet. */
         public Finding(String id, String kind, String severity, String service, String title,
                 String why, Subject subject, Map<String, Object> numbers, String statement,
                 List<String> code, List<String> traces) {
             this(id, kind, severity, service, title, why, subject, numbers, statement, code,
-                    traces, null);
+                    traces, null, null);
         }
 
         /** The same finding, with the acknowledgement the store had for its id. */
         public Finding withAck(Ack acknowledged) {
             return new Finding(id, kind, severity, service, title, why, subject, numbers,
-                    statement, code, traces, acknowledged);
+                    statement, code, traces, acknowledged, schema);
+        }
+
+        /** The same finding, with the block its statement and the catalog produced. */
+        public Finding withSchema(SchemaBlock block) {
+            return new Finding(id, kind, severity, service, title, why, subject, numbers,
+                    statement, code, traces, ack, block);
         }
     }
 
@@ -131,6 +140,7 @@ public final class Findings {
 
     private final Sql sql;
     private final Acks acks;
+    private final Catalog catalog;
     private final Queries queries;
     private final MetricQueries metrics;
     private final ServiceRegistry services;
@@ -141,6 +151,7 @@ public final class Findings {
             Tingles tingles, CodeFrames frames) {
         this.sql = sql;
         this.acks = new Acks(sql);
+        this.catalog = queries.catalog();
         this.queries = queries;
         this.metrics = metrics;
         this.services = services;
@@ -473,6 +484,8 @@ public final class Findings {
         });
 
         Map<String, Long> requestsByEndpoint = new HashMap<>();
+        // The catalog is one read per service, not one per repeated statement.
+        Map<String, Map<String, List<Catalog.Table>>> catalogs = new HashMap<>();
         List<Ranked> found = new ArrayList<>();
         byEndpointAndQuery.values().forEach(affected -> {
             Repeat first = affected.get(0);
@@ -522,7 +535,9 @@ public final class Findings {
                     new Subject(first.endpointId(), first.queryId(), null, null, null, null, null, null),
                     numbers, first.statement(),
                     code,
-                    List.copyOf(traces));
+                    List.copyOf(traces))
+                    .withSchema(SchemaBlock.of(first.statement(),
+                            catalogs.computeIfAbsent(first.service(), catalog::forService)));
             found.add(new Ranked(finding, affected.size() * (double) median));
         });
         return found;
@@ -594,7 +609,10 @@ public final class Findings {
                     numbers, query.statement(),
                     frames.ofAttributes(samples.get(query.queryId())),
                     traceIds(queries.tracesContaining(window, "query_id = ?", query.queryId(),
-                            EVIDENCE_TRACES, true)));
+                            EVIDENCE_TRACES, true)))
+                    // The group already carries the block /api/queries shows; a finding
+                    // and a query row never disagree about the same statement.
+                    .withSchema(query.schema());
             found.add(new Ranked(finding, query.totalMs()));
         }
         return found;

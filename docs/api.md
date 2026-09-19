@@ -24,6 +24,7 @@ POST /v1/logs
 Request `Content-Type`: `application/x-protobuf` or `application/json`; `Content-Encoding: gzip` accepted.
 Answer: `200` with an empty `Export{Trace,Metrics,Logs}ServiceResponse` in the request's content type; `400` on an undecodable body; `415` on another content type.
 Partial-success is never reported (everything decodable is stored).
+A log record carrying the attribute `spidersense.schema.table` is the index catalog of one table, read by the extension (design.md, "The extension"), and is stored as a `db_table` row rather than as a log (storage.md).
 
 ## Status and control
 
@@ -263,7 +264,9 @@ Arrays rather than objects: 5,000 points must stay small on the wire.
   "calls": 240, "errors": 0, "avgMs": 45.0, "p50Ms": 40.0, "p95Ms": 120.0, "maxMs": 900.0, "totalMs": 10800.0,
   "slowCalls": 12,                       // calls over slowQueryMs
   "callers": [ { "endpoint": "GET /orders/report", "service": "spring-orders", "calls": 240 } ],
-  "lastSeen": 1758000900000 }
+  "lastSeen": 1758000900000,
+  "schema": { "tables": [...], "predicates": [...], "unindexed": [...] } | null   // agent.md, "The schema block"
+}
 ```
 
 `GET /api/queries/{queryId}?from&to` → `{ "query": <QueryStats>, "series": { "t": [...], "calls": [...], "p95Ms": [...] }, "traces": [<TraceSummary> x 20 slowest containing it] }`.
@@ -392,6 +395,9 @@ A mark named `start` is inserted by the writer when a service reports a `process
                "target": "…" | null, "logger": "…" | null, "jvm": "…" | null },
   "numbers": { ...kind-specific, see agent.md... },
   "statement": "…" | null, "code": [ "orders.OrderService.load(OrderService.java:41)" ], "traces": [ "<traceId>" ],
+  "schema": { "tables": [ { "table": "ITEMS", "schema": "PUBLIC" | null,
+                            "indexes": [ { "name": "PRIMARY_KEY_8", "unique": true, "columns": [ "ID" ] } ] } ],
+              "predicates": [ "items.name" ], "unindexed": [ "items.name" ] } | null,   // slow-query and n-plus-one; agent.md, "The schema block"
   "ack": { "at": …, "note": "…" | null } | null }
 ```
 
