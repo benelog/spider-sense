@@ -42,7 +42,7 @@ public final class McpServer {
      * not; this is the one place it is written for MCP.
      */
     public static final String INSTRUCTIONS = """
-            Spider Sense is an APM for the local development loop: it watches a JVM application \
+            Spider Sense is an observability tool for the local development loop: it watches a JVM application \
             started under its agent and answers in Markdown made to be read by a model. \
             Run the loop: start the application under the agent and confirm it is collecting, \
             call mark to name the moment, exercise the endpoints in question, call findings to read \

@@ -19,8 +19,8 @@ import jakarta.servlet.http.HttpServletResponse;
  * each movement — fetched one at a time.
  *
  * <p>That last part is the N+1, and it is deliberate: a seeded SKU has forty
- * movements, so the page runs 1 + 1 + 40 queries, all of them fast, and only an
- * APM that counts queries per request will say so.
+ * movements, so the page runs 1 + 1 + 40 queries, all of them fast, and only an observability
+ * tool that counts queries per request will say so.
  *
  * <p>The mapping is {@code /items/*}, so every SKU is the same endpoint:
  * {@code GET /items/*} is what the agent puts in {@code http.route} and what

@@ -6,7 +6,7 @@ That is the point of it.
 The other two examples both name their own spans, one through a Spring Boot resource detector and one through a `beforeRoute` filter; this one names nothing, so what Spider Sense shows is what the agent makes of a Servlet application on its own.
 Service name `servlet-warehouse`, port 8083, its own Spider Sense on port 4002.
 
-Like the others it misbehaves deliberately, because an APM with nothing to show is not worth looking at.
+Like the others it misbehaves deliberately, because an observability tool with nothing to show is not worth looking at.
 
 ## The data
 

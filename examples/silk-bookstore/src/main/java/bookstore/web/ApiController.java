@@ -16,7 +16,7 @@ import net.benelog.spidersilk.json.Json;
 /**
  * The JSON API, which is what the load generator and spring-orders call.
  *
- * <p>Each handler is one shape of thing an APM should be able to tell apart:
+ * <p>Each handler is one shape of thing an observability tool should be able to tell apart:
  * fast, slow because of a query, slow with no query at all, failing, failing in
  * a way that is not a server error, and rejecting bad input.
  */
@@ -69,7 +69,7 @@ public class ApiController {
 
     /**
      * Always 404, and deliberately not an error: a 4xx a caller asked for is a
-     * normal answer, and an APM that counts it as a failure is reporting noise.
+     * normal answer, and an observability tool that counts it as a failure is reporting noise.
      */
     public WebResponse missing(WebRequest req) {
         throw new HttpException(HttpStatus.NOT_FOUND,

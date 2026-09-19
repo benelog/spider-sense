@@ -21,7 +21,7 @@ import net.benelog.spidersilk.HttpStatus;
  * <p>Nothing here is an accident: {@link #detail} runs one query per review
  * where a join would do, {@link #stats} scans the table and then sleeps, and
  * {@link #slow} takes its time without touching the database at all. Each is an
- * example of a different shape of problem for an APM to point at.
+ * example of a different shape of problem for an observability tool to point at.
  */
 public class BookService {
 

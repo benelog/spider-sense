@@ -69,7 +69,7 @@ The block is delimited by `<!-- spider-sense:start -->` and `<!-- spider-sense:e
 <!-- spider-sense:start -->
 ## Spider Sense
 
-Spider Sense is a local-development APM for this project, and the jar is at `/home/me/tools/spider-sense.jar`.
+Spider Sense is a local-development observability tool for this project, and the jar is at `/home/me/tools/spider-sense.jar`.
 Start the application under it with `java -javaagent:/home/me/tools/spider-sense.jar -jar <app jar>`, or, when the start command is not yours to change, with `JAVA_TOOL_OPTIONS="-javaagent:/home/me/tools/spider-sense.jar" ./gradlew bootRun` (or `./gradlew run`).
 The UI is then at <http://127.0.0.1:4000> unless the port was changed.
 

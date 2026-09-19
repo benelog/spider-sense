@@ -19,7 +19,7 @@ import jakarta.servlet.http.HttpServletResponse;
  * Without {@code q} it is a window over the primary key and takes about a
  * millisecond; with {@code q} it is {@code lower(name) like '%…%'} over every
  * row, and there is no index on {@code name} or {@code category}, so it is a
- * full scan measured in hundreds of milliseconds. The APM shows them as one
+ * full scan measured in hundreds of milliseconds. The observability tool shows them as one
  * endpoint with two statements, one of them slow.
  */
 public class ItemListServlet extends HttpServlet {

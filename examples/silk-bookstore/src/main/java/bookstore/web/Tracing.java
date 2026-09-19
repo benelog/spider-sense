@@ -17,7 +17,7 @@ import net.benelog.spidersilk.Route;
  * {@code AppServlet} is mapped at {@code /*} and does the routing itself, so
  * every request looks the same from where the agent stands. Left alone, the
  * agent names every server span {@code GET /*} and sets no {@code http.route},
- * and an APM that groups by endpoint then has exactly one endpoint to show —
+ * and an observability tool that groups by endpoint then has exactly one endpoint to show —
  * which makes the whole point of the dashboard disappear.
  *
  * <p>The fix is for the application to say what the agent cannot know. A

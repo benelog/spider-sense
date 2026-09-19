@@ -2,7 +2,7 @@
 
 A Spring Boot 4.1 example for Spider Sense: Spring MVC, Spring Data JPA over Hibernate, an H2 file database, and an HTTP call to `silk-bookstore` so one trace spans two services.
 It listens on port 8082 and calls the bookstore on port 8081.
-Several endpoints are slow or broken on purpose; that is the point, because an APM with nothing to show is not worth looking at.
+Several endpoints are slow or broken on purpose; that is the point, because an observability tool with nothing to show is not worth looking at.
 
 ## Data
 

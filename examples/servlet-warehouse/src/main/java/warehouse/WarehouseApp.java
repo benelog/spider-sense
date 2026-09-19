@@ -98,7 +98,7 @@ public class WarehouseApp {
     }
 
     /**
-     * Every servlet and its mapping, which is also every endpoint the APM will
+     * Every servlet and its mapping, which is also every endpoint the observability tool will
      * name: the OpenTelemetry agent takes {@code http.route} from the servlet
      * mapping, so {@code /items/*} is one endpoint however many SKUs go through it.
      */

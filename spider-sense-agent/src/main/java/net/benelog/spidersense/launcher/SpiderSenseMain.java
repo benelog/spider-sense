@@ -95,7 +95,7 @@ public final class SpiderSenseMain {
         String url = config.baseUrl();
         StringBuilder b = new StringBuilder();
         b.append("Spider Sense ").append(NestedJar.version())
-                .append(" — a local-development APM, standalone.\n")
+                .append(" — a local-development observability tool, standalone.\n")
                 .append("The UI is at ").append(url)
                 .append(" and it is also the OTLP/HTTP endpoint: ").append(url).append("/v1/traces")
                 .append(", /v1/metrics and /v1/logs.\n")
@@ -112,7 +112,7 @@ public final class SpiderSenseMain {
 
     static void printHelp() {
         System.out.println("""
-                Spider Sense — a local-development APM: one jar, OpenTelemetry-native.
+                Spider Sense — a local-development observability tool: one jar, OpenTelemetry-native.
 
                   java -javaagent:spider-sense.jar -jar app.jar          instrument an app, UI inside it
                   java -javaagent:spider-sense.jar -Dspidersense.collector=http://127.0.0.1:4000 -jar app.jar

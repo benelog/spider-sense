@@ -1,7 +1,7 @@
 ---
 name: spider-sense
 description: >-
-  Measure and explain a locally running application with Spider Sense, an APM for the development loop:
+  Measure and explain a locally running application with Spider Sense, an observability tool for the development loop:
   one jar, `-javaagent`, OpenTelemetry-native, with a CLI that answers in Markdown and a verdict in its exit code.
   Use this skill whenever the user asks why a local Java or JVM application (or anything sending OpenTelemetry) is slow,
   where an N+1 comes from, which query costs the most, what is throwing, or why a connection pool runs out;
@@ -17,7 +17,7 @@ metadata:
 
 # Spider Sense
 
-Spider Sense is an APM for the local development loop: one jar attached with `-javaagent`, the stock OpenTelemetry Java agent for instrumentation, and a collector, a UI and a CLI inside the same JVM.
+Spider Sense is an observability tool for the local development loop: one jar attached with `-javaagent`, the stock OpenTelemetry Java agent for instrumentation, and a collector, a UI and a CLI inside the same JVM.
 Everything it collects lands in an H2 file under `~/db/spider-sense/`, opened with `AUTO_SERVER=TRUE`, so the data is shared between processes and outlives the application that produced it.
 For an agent the CLI is the interface, not the dashboard: it prints deterministic Markdown, so two answers over the same window render to the same bytes and can be diffed.
 The same six answers are also an MCP server, for a host that has no shell at all; you have one, so the CLI is your interface, and [references/cli.md](references/cli.md) says how to wire MCP up for a host that does not.

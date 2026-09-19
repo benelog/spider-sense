@@ -212,7 +212,7 @@ publishing {
 
             pom {
                 name = 'spider-sense'
-                description = 'Spider Sense: a local-development APM in one jar, attached with -javaagent, built on the OpenTelemetry Java agent.'
+                description = 'Spider Sense: a local-development observability tool in one jar, attached with -javaagent, built on the OpenTelemetry Java agent.'
                 url = 'https://github.com/benelog/spider-sense'
                 licenses {
                     license {

@@ -56,7 +56,7 @@ final class Init {
     private static final String BODY = """
             ## Spider Sense
 
-            Spider Sense is a local-development APM for this project, and the jar is at `${jar}`.
+            Spider Sense is a local-development observability tool for this project, and the jar is at `${jar}`.
             Start the application under it with `java -javaagent:${jar} -jar <app jar>`, or, when the start command is not yours to change, with `JAVA_TOOL_OPTIONS="-javaagent:${jar}" ./gradlew bootRun` (or `./gradlew run`).
             The UI is then at <http://127.0.0.1:4000> unless the port was changed.
 

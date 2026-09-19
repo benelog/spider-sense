@@ -1,6 +1,6 @@
 # Spider Sense: design
 
-Spider Sense is an APM for the local development loop, in the spirit of [Glowroot](https://glowroot.org/): one jar, attached to a JVM with one option, a UI in the browser a second later.
+Spider Sense is an observability tool for the local development loop, in the spirit of [Glowroot](https://glowroot.org/): one jar, attached to a JVM with one option, a UI in the browser a second later.
 What sets it apart from Glowroot is that everything it collects arrives as OpenTelemetry data over OTLP.
 The instrumentation is the stock OpenTelemetry Java agent, not a bytecode engine of our own, and the collector accepts OTLP/HTTP from any SDK in any language.
 

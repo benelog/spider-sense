@@ -1,6 +1,6 @@
 # Spider Sense
 
-A local-development APM: one jar, `-javaagent`, OpenTelemetry-native, UI built with Spider Silk.
+A local-development observability tool: one jar, `-javaagent`, OpenTelemetry-native, UI built with Spider Silk.
 Read `docs/design.md` (architecture and decisions), `docs/storage.md` (the H2 schema, writer, queries, retention), `docs/api.md` (the JSON contract between server and UI), `docs/ui.md` (pages, look and feel), `docs/agent.md` (findings, marks, compare, check, the text renderings, the CLI and the skill: what AI agents use) and `docs/build-tools.md` (the Gradle plugin and the Maven setup) before changing anything; they are the specification, and a change to behaviour is a change to them first.
 
 ## Modules

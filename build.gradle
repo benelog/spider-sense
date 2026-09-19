@@ -1,4 +1,4 @@
-// Spider Sense: a local-development APM built on OpenTelemetry and Spider Silk.
+// Spider Sense: a local-development observability tool built on OpenTelemetry and Spider Silk.
 //
 // Versions every subproject shares are named here once; a subproject's
 // build.gradle states only what is its own.
