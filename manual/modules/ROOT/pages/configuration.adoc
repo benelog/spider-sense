@@ -113,6 +113,7 @@ A `spidersense.*` key that is not in the table is applied with a warning, so a t
 
 The file is read in every mode: under `-javaagent`, by the standalone jar, and by the xref:cli.adoc[CLI], whose default `--url` is then the Spider Sense the file's `collector`, or `host` and `port`, imply.
 Under xref:gradle-plugin.adoc[the Gradle plugin] or xref:maven.adoc[Maven] the file is read as well, because the working directory of the forked JVM is the project's, and what the build tool adds as `-D` wins over it.
+The Gradle plugin's `configFile` names another file, as `-Dspidersense.config`.
 
 === Environment variables
 

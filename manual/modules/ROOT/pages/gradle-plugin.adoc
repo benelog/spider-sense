@@ -87,6 +87,11 @@ Unset means "leave the jar's own default", and the jar's defaults are in xref:co
 | `bootRun`, `bootTestRun`, `run`
 | the names of the `JavaExec` tasks that get the agent
 
+| `configFile`
+| `RegularFile`
+| unset
+| `-Dspidersense.config=`, the file's absolute path: a xref:configuration.adoc#properties-file[properties file] of `spidersense.*` keys the launcher reads. Every other property of the block wins over a key in the file.
+
 | `service`
 | `String`
 | `project.name`
@@ -162,7 +167,8 @@ Where the jar comes from, in order: the project property `spiderSense.jar`, then
 More than one file in the configuration, or none, is an error naming the configuration when a task that needs the jar runs.
 
 The block sets only `spidersense.*` properties.
-A `spider-sense.properties` in the project directory is read by the launcher as well, because the forked JVM's working directory is the project's, and the block's `-D` properties win over it (xref:configuration.adoc#properties-file[the properties file]).
+A `spider-sense.properties` in the project directory is read by the launcher as well, because the forked JVM's working directory is the project's, and `configFile` names another one.
+The block's `-D` properties win over the file either way (xref:configuration.adoc#properties-file[the properties file]).
 Everything the OpenTelemetry agent takes as `otel.*` goes on the task as usual, and the two combine:
 
 [source,groovy]
@@ -198,8 +204,9 @@ An `enabled` of `false` is the same as not applying the plugin, except that the 
 
 It is a `JavaExec` with the jar as its only class path and no dependency on compiling the project.
 The block's `spidersense.*` properties are passed to it as they are to the application, so a standalone started this way listens where the block says.
-It also sets the environment variable `SPIDERSENSE_URL` to the base URL the block implies, which is `collector` when set and otherwise `http://<host>:<port>` with the defaults filled in.
+When the block names a `collector`, a `host` or a `port`, it also sets the environment variable `SPIDERSENSE_URL` to the base URL they imply, which is `collector` when set and otherwise `http://<host>:<port>` with the defaults filled in.
 A CLI command therefore asks the Spider Sense the application is sending to rather than the default port.
+When the block names none of them the variable stays unset, and the CLI's own default applies: what the `spidersense.*` properties the task gets imply, so a port in `configFile`, or in `spider-sense.properties`, is followed too.
 The exit code is the CLI's exit code, which is what `check` is for.
 
 `spiderSenseInit` runs `init --dir=<the project directory> --jar=<the jar>`.
@@ -290,7 +297,7 @@ spiderSense {
 |===
 
 The task is the `spiderSense` task with `check` and those arguments.
-It asks the Spider Sense the block implies, through `SPIDERSENSE_URL` as above, and prints the check's text rendering.
+It asks the Spider Sense the block implies, through `SPIDERSENSE_URL` as above or the CLI's own default, and prints the check's text rendering.
 Exit code `1` fails the build with `Spider Sense check failed`.
 Exit code `3` fails it with `Spider Sense check had no request to judge`, unless `failOnNoRequests` is `false`.
 Exit code `2` or `4` fails it with `Spider Sense check could not run (exit <n>)`.

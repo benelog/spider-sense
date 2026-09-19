@@ -79,7 +79,7 @@ The launcher reads it first, in `premain`, in the standalone `main` and before i
 From then on the launcher, the server, the extension and the CLI read the system properties exactly as they do for `-D`, so the file adds no second reader anywhere; a value is trimmed, and an empty one is kept, because an empty `spidersense.ignore.endpoints` means "ignore nothing".
 Keys without the prefix are left alone, so the same file can be handed to the OpenTelemetry agent as `otel.javaagent.configuration-file`; a `spidersense.*` key that is not in the table is applied with a warning, so a typo is visible.
 The CLI's default `--url` is what the properties imply, `spidersense.collector` when set, else `http://<host>:<port>` with the defaults filled in ([agent.md](agent.md)), so a command run from the project's directory asks the Spider Sense that directory's file points at; `SPIDERSENSE_URL` still wins.
-Under a build tool the file is read as well, because the launcher runs in the forked JVM and its working directory is the project's, and the `-D` properties the build tool adds win over it.
+Under a build tool the file is read as well, because the launcher runs in the forked JVM and its working directory is the project's, and the `-D` properties the build tool adds win over it; the Gradle plugin's `configFile` names another file, as `-Dspidersense.config` ([build-tools.md](build-tools.md)).
 
 | Property | Default | Meaning |
 |---|---|---|

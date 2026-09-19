@@ -45,6 +45,15 @@ public abstract class SpiderSenseExtension {
     /** The names of the {@link org.gradle.api.tasks.JavaExec} tasks that get the agent. */
     public abstract SetProperty<String> getAttachTo();
 
+    /**
+     * {@code -Dspidersense.config}: a properties file of {@code spidersense.*} keys the launcher
+     * reads, passed as its absolute path. Every other property of this block wins over a key in
+     * the file, because the block's {@code -D} is the more specific statement; without this
+     * property the launcher still reads {@code spider-sense.properties} in the project directory
+     * when there is one, since that is the forked JVM's working directory.
+     */
+    public abstract RegularFileProperty getConfigFile();
+
     /** {@code -Dspidersense.service}, which is {@code otel.service.name} unless that is set already. */
     public abstract Property<String> getService();
 

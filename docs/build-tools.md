@@ -48,6 +48,7 @@ Every property is a lazy Gradle `Property`; unset means "leave the jar's own def
 | `version` | `String` | the plugin's version | the version of `net.benelog.spidersense:spider-sense` the default dependency names |
 | `jar` | `RegularFile` | unset | the jar to attach instead of resolving one; the project property `spiderSense.jar` (`-PspiderSense.jar=/path/to/spider-sense.jar`) wins over the block |
 | `attachTo` | `Set<String>` | `bootRun`, `bootTestRun`, `run` | the names of the `JavaExec` tasks that get the agent |
+| `configFile` | `RegularFile` | unset | `-Dspidersense.config=`, the file's absolute path: a properties file of `spidersense.*` keys the launcher reads ([design.md](design.md#configuration)); every other property of the block wins over a key in the file |
 | `service` | `String` | `project.name` | `-Dspidersense.service=`, which is `otel.service.name` unless that is set already |
 | `port` | `Integer` | unset (`4000`) | `-Dspidersense.port=` |
 | `host` | `String` | unset (`127.0.0.1`) | `-Dspidersense.host=` |
@@ -67,7 +68,7 @@ Where the jar comes from, in order: the project property `spiderSense.jar`, then
 More than one file in the configuration, or none, is an error naming the configuration when a task that needs the jar runs.
 
 The block sets only `spidersense.*` properties.
-A `spider-sense.properties` in the project directory is read by the launcher as well, because the forked JVM's working directory is the project's, and the block's `-D` properties win over it ([design.md](design.md#configuration)).
+A `spider-sense.properties` in the project directory is read by the launcher as well, because the forked JVM's working directory is the project's, and `configFile` names another one; the block's `-D` properties win over the file either way ([design.md](design.md#configuration)).
 Everything the OpenTelemetry agent takes as `otel.*` goes on the task as usual, and the two combine:
 
 ```groovy
@@ -99,7 +100,8 @@ An `enabled` of `false` is the same as not applying the plugin, except that the 
 
 It is a `JavaExec` with the jar as its only class path, `net.benelog.spidersense.launcher.SpiderSenseMain` as its main class, and no dependency on compiling the project.
 The block's `spidersense.*` properties are passed to it as they are to the application, so a standalone started this way listens where the block says.
-It also sets the environment variable `SPIDERSENSE_URL` to the base URL the block implies — `collector` when set, else `http://<host>:<port>` with the defaults filled in — so a CLI command asks the Spider Sense the application is sending to rather than the default port.
+When the block names a `collector`, a `host` or a `port`, it also sets the environment variable `SPIDERSENSE_URL` to the base URL they imply — `collector` when set, else `http://<host>:<port>` with the defaults filled in — so a CLI command asks the Spider Sense the application is sending to rather than the default port.
+When it names none of them the variable stays unset, and the CLI's own default applies: what the `spidersense.*` properties the task gets imply, which is how a port in `configFile`, or in `spider-sense.properties`, is followed too ([agent.md](agent.md)).
 The exit code is the CLI's exit code, which is what `check` is for.
 
 `spiderSenseInit` runs `init --dir=<the project directory> --jar=<the jar>` ([agent.md](agent.md#init)): it writes the Spider Sense block into the project's `CLAUDE.md` and installs the skills into `.claude/skills/`.
@@ -141,7 +143,7 @@ spiderSense {
 | `minApdex` | `Double` | `--min-apdex=` |
 | `failOnNoRequests` | `Boolean` | default `true`: exit code `3` (no request in the window) fails the build too, because a check that judged nothing is not a pass |
 
-The task is the `spiderSense` task with `check` and those arguments, so it asks the Spider Sense the block implies (`SPIDERSENSE_URL` as above) and prints the check's text rendering; exit code `1` fails the build with `Spider Sense check failed`, `3` with `Spider Sense check had no request to judge` unless `failOnNoRequests` is `false`, and `2` or `4` with `Spider Sense check could not run (exit <n>)`, after the CLI's own message has reached the build log.
+The task is the `spiderSense` task with `check` and those arguments, so it asks the Spider Sense the block implies (`SPIDERSENSE_URL` as above, or the CLI's own default) and prints the check's text rendering; exit code `1` fails the build with `Spider Sense check failed`, `3` with `Spider Sense check had no request to judge` unless `failOnNoRequests` is `false`, and `2` or `4` with `Spider Sense check could not run (exit <n>)`, after the CLI's own message has reached the build log.
 With no rule set the CLI's defaults apply (`maxErrors=0`, `maxNPlusOne=0`, `maxP95Ms=<slow.request.ms>`).
 `-PspiderSense.check.since=before` overrides `since` for one run.
 The task depends on nothing: producing the traffic it judges is the build's job, as in the test setup below.

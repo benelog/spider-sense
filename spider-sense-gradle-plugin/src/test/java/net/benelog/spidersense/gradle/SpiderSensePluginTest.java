@@ -172,6 +172,7 @@ class SpiderSensePluginTest {
     void everyPropertyOfTheBlockBecomesASystemProperty() throws IOException {
         buildFile("""
                 jar = file('%JAR%')
+                configFile = file('conf/sense.properties')
                 service = 'orders'
                 port = 4001
                 host = '0.0.0.0'
@@ -189,6 +190,8 @@ class SpiderSensePluginTest {
 
         String output = probe();
 
+        assertThat(output).contains("-Dspidersense.config="
+                + projectDir.resolve("conf/sense.properties").toAbsolutePath());
         assertThat(output).contains("-Dspidersense.service=orders");
         assertThat(output).contains("-Dspidersense.port=4001");
         assertThat(output).contains("-Dspidersense.host=0.0.0.0");
@@ -330,12 +333,39 @@ class SpiderSensePluginTest {
     }
 
     @Test
-    void theSpiderSenseTaskRunsTheJarAndPointsTheCliAtTheDefaultPort() {
+    void theSpiderSenseTaskRunsTheJarAndLeavesTheUrlToTheCliWhenTheBlockNamesNone() {
         String output = gradle("spiderSense", "-q").build().getOutput();
 
-        assertThat(output).contains("SPIDERSENSE_URL=http://127.0.0.1:4000");
+        assertThat(output)
+                .as("the CLI's own default applies, which honours a properties file")
+                .contains("SPIDERSENSE_URL=null");
         assertThat(output).contains("args=[]");
         assertThat(output).contains("-Dspidersense.service=scratch");
+    }
+
+    @Test
+    void theSpiderSenseTaskPassesTheConfigFileAndLetsTheCliReadThePortFromIt() throws IOException {
+        buildFile("""
+                jar = file('%JAR%')
+                configFile = file('sense.properties')
+                """.replace("%JAR%", stubJar.toAbsolutePath().toString()));
+
+        String output = gradle("spiderSense", "-q", "--args=status").build().getOutput();
+
+        assertThat(output).contains("-Dspidersense.config=" + projectDir.resolve("sense.properties").toAbsolutePath());
+        assertThat(output).contains("SPIDERSENSE_URL=null");
+    }
+
+    @Test
+    void aPortInTheBlockStillNamesTheUrlBesideAConfigFile() throws IOException {
+        buildFile("""
+                jar = file('%JAR%')
+                configFile = file('sense.properties')
+                host = '0.0.0.0'
+                """.replace("%JAR%", stubJar.toAbsolutePath().toString()));
+
+        assertThat(gradle("spiderSense", "-q").build().getOutput())
+                .contains("SPIDERSENSE_URL=http://127.0.0.1:4000");
     }
 
     @Test

@@ -27,7 +27,7 @@ Under the Gradle plugin the same jar is one task away, in a project that never c
 
 `-q` keeps Gradle's own lines out of the output.
 The task's exit code is the CLI's exit code.
-The task also sets `SPIDERSENSE_URL` to the base URL the `spiderSense` block implies, so the command asks the Spider Sense the application is sending to rather than the default port (xref:gradle-plugin.adoc#tasks[Tasks]).
+The task also sets `SPIDERSENSE_URL` to the base URL the `spiderSense` block implies when the block names a collector, a host or a port, so the command asks the Spider Sense the application is sending to rather than the default port (xref:gradle-plugin.adoc#tasks[Tasks]).
 
 `SPIDERSENSE_URL` names the Spider Sense to ask whenever `--url` is not given.
 Without either, the `spidersense.*` properties decide: `spidersense.collector` when set, else `http://<host>:<port>` with the defaults filled in, which is `http://127.0.0.1:4000` when nothing is set.

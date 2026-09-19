@@ -235,11 +235,19 @@ public class SpiderSensePlugin implements Plugin<Project> {
      * application is sending to rather than the default port. A host of
      * {@code 0.0.0.0} is an instruction to bind every interface, not an address
      * to call back on.
+     *
+     * <p>Absent when the block names neither a collector, a host nor a port:
+     * the CLI's own default is then what the {@code spidersense.*} properties
+     * the task gets imply, which includes a {@code configFile}, and a URL made
+     * of the defaults here would override the file's port.
      */
     private Provider<String> baseUrl(SpiderSenseExtension extension) {
-        return extension.getCollector().orElse(
-                extension.getHost().orElse("127.0.0.1").zip(extension.getPort().orElse(4000),
-                        (host, port) -> "http://" + ("0.0.0.0".equals(host) ? "127.0.0.1" : host) + ":" + port));
+        Provider<String> hostAndPort = extension.getHost().orElse("127.0.0.1").zip(extension.getPort().orElse(4000),
+                (host, port) -> "http://" + ("0.0.0.0".equals(host) ? "127.0.0.1" : host) + ":" + port);
+        Provider<String> whenNamed = extension.getHost().map(host -> true)
+                .orElse(extension.getPort().map(port -> true))
+                .flatMap(named -> hostAndPort);
+        return extension.getCollector().orElse(whenNamed);
     }
 
     /**
@@ -250,6 +258,7 @@ public class SpiderSensePlugin implements Plugin<Project> {
      */
     private Provider<List<String>> systemProperties(ObjectFactory objects, SpiderSenseExtension extension) {
         ListProperty<String> arguments = objects.listProperty(String.class);
+        arguments.addAll(option("config", extension.getConfigFile().map(file -> file.getAsFile().getAbsolutePath())));
         arguments.addAll(option("service", extension.getService()));
         arguments.addAll(option("port", extension.getPort()));
         arguments.addAll(option("host", extension.getHost()));
@@ -378,9 +387,10 @@ public class SpiderSensePlugin implements Plugin<Project> {
     }
 
     /**
-     * Sets {@code SPIDERSENSE_URL} on the forked JVM when the task runs.
-     * A named action rather than a lambda: the configuration cache stores task
-     * actions, and it can store this one.
+     * Sets {@code SPIDERSENSE_URL} on the forked JVM when the task runs, when
+     * the block implies one ({@link #baseUrl}). A named action rather than a
+     * lambda: the configuration cache stores task actions, and it can store
+     * this one.
      */
     static final class SetSenseUrl implements Action<Task> {
 
@@ -392,7 +402,9 @@ public class SpiderSensePlugin implements Plugin<Project> {
 
         @Override
         public void execute(Task task) {
-            ((JavaExec) task).environment("SPIDERSENSE_URL", url.get());
+            if (url.isPresent()) {
+                ((JavaExec) task).environment("SPIDERSENSE_URL", url.get());
+            }
         }
     }
 
