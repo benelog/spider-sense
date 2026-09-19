@@ -86,16 +86,19 @@ export_demo() {
     sleep "$third"
     java -jar "$SENSE_JAR" mark after --url="$URL" >/dev/null
     sleep $((total - third * 2))
-    sleep 10   # the traces still running at the end of the window, and the writer's last flush
-
     TO_MS="$(now_ms)"
     FROM_MS=$((TO_MS - MINUTES * 60 * 1000))
+    # The traces that started inside the window end, and the agents' batch exporters
+    # (five seconds apart) deliver them; then the demo stops, so the file is still
+    # while it is read and no trace is half exported.
+    sleep 10
+    stop_demo
+    trap - EXIT INT TERM
+
     # Every row since the launch, so the start marks are there for `since=start`; the
     # page shows the last MINUTES of them.
     node scripts/demo-site.mjs export --jar="$SENSE_JAR" --db="${SPIDERSENSE_DB:-~/db/spider-sense/sense}" \
         --since="$LAUNCH_MS" --until="$TO_MS" --from="$FROM_MS" --to="$TO_MS"
-    stop_demo
-    trap - EXIT INT TERM
 }
 
 # The CSV files into a fresh Spider Sense, and every answer the UI asks for out of it.
