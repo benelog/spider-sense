@@ -1,9 +1,9 @@
 = Configuration
 :navtitle: Configuration
 
-Every option of Spider Sense is a system property named `spidersense.*`, given on the command line of the JVM that runs the application.
-Agent mode has no other channel, because the configuration is read before the application's `main`.
-The standalone jar takes the same options as `--key=value` arguments as well.
+Every option of Spider Sense is a `spidersense.*` key.
+It is given as a system property on the command line of the JVM that runs the application, or as a line of a properties file, and the standalone jar takes it as a `--key=value` argument as well.
+Highest first: the `--key=value` argument, the `-Dspidersense.key` system property, the environment variable of the same name, the properties file, the default.
 
 [#properties]
 == Properties
@@ -82,6 +82,37 @@ java -jar "$SENSE" --port=4001 --host=0.0.0.0
 ----
 
 From a build tool, the `spiderSense { }` block of xref:gradle-plugin.adoc#block[the Gradle plugin] has a line for every property in the table, and xref:maven.adoc[Maven] passes them as JVM arguments.
+
+[#properties-file]
+=== In a properties file
+
+The same keys go in a properties file, one per line, and the command line then carries only the agent:
+
+.spider-sense.properties
+[source,properties]
+----
+spidersense.port=4001
+spidersense.service=orders
+spidersense.slow.query.ms=50
+spidersense.ignore.endpoints=/actuator/**,/internal/**
+----
+
+[source,bash]
+----
+java -javaagent:"$SENSE" -jar app.jar
+----
+
+The file is `spider-sense.properties` in the working directory of the JVM, when it exists.
+`-Dspidersense.config=<path>`, or the environment variable `SPIDERSENSE_CONFIG`, names another file; a named file that does not exist is a warning on stderr and the application starts without it.
+The launcher names the file it read on stdout.
+
+A key given as a system property, or as an environment variable of the same name, wins over the file.
+A value is trimmed, and an empty value counts: `spidersense.ignore.endpoints=` ignores nothing, as it does on the command line.
+Keys without the `spidersense.` prefix are left alone, so the same file can be handed to the OpenTelemetry agent with `-Dotel.javaagent.configuration-file=spider-sense.properties` and then carry `otel.*` keys as well.
+A `spidersense.*` key that is not in the table is applied with a warning, so a typo is visible.
+
+The file is read in every mode: under `-javaagent`, by the standalone jar, and by the xref:cli.adoc[CLI], whose default `--url` is then the Spider Sense the file's `collector`, or `host` and `port`, imply.
+Under xref:gradle-plugin.adoc[the Gradle plugin] or xref:maven.adoc[Maven] the file is read as well, because the working directory of the forked JVM is the project's, and what the build tool adds as `-D` wins over it.
 
 === Environment variables
 

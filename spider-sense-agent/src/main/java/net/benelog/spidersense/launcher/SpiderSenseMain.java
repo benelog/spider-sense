@@ -41,7 +41,11 @@ public final class SpiderSenseMain {
                 return;
             }
         }
+        Path file = ConfigFile.apply();
         Config config = Config.fromArgs(args).withMode(Config.STANDALONE);
+        if (file != null) {
+            System.out.println("Configuration: " + file.toAbsolutePath());
+        }
         printBanner(config);
         // Blocks until the server is stopped.
         EmbeddedServer.start(config);
@@ -62,10 +66,12 @@ public final class SpiderSenseMain {
      * the command are the CLI's to print; only the failure to load it at all is reported here.
      *
      * <p>It also leaves this jar's own path in {@value #JAR_PROPERTY}, the one thing the CLI cannot
-     * find out for itself.
+     * find out for itself, and applies the properties file, so that a command run from the
+     * project's directory asks the Spider Sense that directory's file points at.
      */
     static int runCommand(String[] args) {
         try {
+            ConfigFile.apply();
             Path own = NestedJar.ownJar();
             if (own != null) {
                 System.setProperty(JAR_PROPERTY, own.toAbsolutePath().toString());
@@ -125,7 +131,9 @@ public final class SpiderSenseMain {
                                                                         mark <name>, marks, compare, check, sql, init,
                                                                         help
 
-                Options (as --key=value here, as -Dspidersense.key=value under -javaagent):
+                Options (as --key=value here, as -Dspidersense.key=value under -javaagent, or as
+                spidersense.key=value lines in spider-sense.properties in the working directory,
+                or in the file -Dspidersense.config names; the command line wins over the file):
 
                   --port=4000                     UI and OTLP/HTTP port
                   --host=127.0.0.1                bind address; 0.0.0.0 to reach it from elsewhere

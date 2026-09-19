@@ -30,7 +30,8 @@ The task's exit code is the CLI's exit code.
 The task also sets `SPIDERSENSE_URL` to the base URL the `spiderSense` block implies, so the command asks the Spider Sense the application is sending to rather than the default port (xref:gradle-plugin.adoc#tasks[Tasks]).
 
 `SPIDERSENSE_URL` names the Spider Sense to ask whenever `--url` is not given.
-The default without either is `http://127.0.0.1:4000`.
+Without either, the `spidersense.*` properties decide: `spidersense.collector` when set, else `http://<host>:<port>` with the defaults filled in, which is `http://127.0.0.1:4000` when nothing is set.
+The launcher reads xref:configuration.adoc#properties-file[the properties file] before a command runs, so a command run from the project's directory asks the Spider Sense the application in that directory sends to.
 
 [#commands]
 == Commands
@@ -426,7 +427,8 @@ Common options:
   --service=<name>     one service
   --limit=<n>          the lists: findings, traces, queries, errors, logs, marks,
                        and the rows of sql (default 200, at most 5000)
-  --url=<base url>     default http://127.0.0.1:4000, or SPIDERSENSE_URL
+  --url=<base url>     default http://127.0.0.1:4000, or SPIDERSENSE_URL, or what
+                       spider-sense.properties in the working directory implies
   --db=<path or jdbc url>   read the database directly, without asking any server
   --json               the JSON of api.md instead of the text
   --full               whole statements, every repeated span
@@ -466,7 +468,7 @@ a finding id to unack).
 | how many rows: findings 20, traces 20, queries 100, errors 100, logs 200, marks 50, sql 200 (at most 5000)
 
 | `--url=<base url>`
-| `http://127.0.0.1:4000`, or `SPIDERSENSE_URL`
+| `http://127.0.0.1:4000`, or `SPIDERSENSE_URL`, or what the properties file implies
 | which Spider Sense to ask
 
 | `--db=<path or jdbc url>`

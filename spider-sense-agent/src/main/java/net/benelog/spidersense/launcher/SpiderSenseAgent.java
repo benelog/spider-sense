@@ -8,8 +8,8 @@ import java.nio.file.Path;
 /**
  * The {@code Premain-Class}/{@code Agent-Class} of the distributable jar.
  *
- * <p>It does the four steps of {@code docs/design.md}, in order: read the configuration, start the
- * embedded collector + UI unless we are forwarding, fill in the OpenTelemetry defaults a local tool
+ * <p>It does the four steps of {@code docs/design.md}, in order: read the configuration (the
+ * properties file, then the system properties), start the embedded collector + UI unless we are forwarding, fill in the OpenTelemetry defaults a local tool
  * wants, then hand over to the stock agent's own {@code premain}.
  *
  * <p>Nothing here may stop the monitored application from starting, so every step is wrapped: a
@@ -34,8 +34,13 @@ public final class SpiderSenseAgent {
     private static synchronized void install(String agentArgs, Instrumentation inst, String phase) {
         Config config = Config.defaults();
 
-        // 1. Configuration.
+        // 1. Configuration: the properties file first, so that the system properties it fills in
+        // are read exactly as the ones from the command line.
         try {
+            Path file = ConfigFile.apply();
+            if (file != null) {
+                System.out.println(PREFIX + "configuration: " + file.toAbsolutePath());
+            }
             config = Config.fromSystemProperties().withMode(Config.AGENT);
         } catch (Throwable t) {
             warn("could not read the spidersense.* properties, using defaults", t);

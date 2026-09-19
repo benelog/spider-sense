@@ -48,7 +48,7 @@ The extension is extracted the same way, to `extension.jar` beside it, and is lo
 
 `SpiderSenseAgent.premain` does, in order:
 
-1. Read configuration (system properties `spidersense.*`, see below).
+1. Read configuration: the properties file, then the system properties `spidersense.*` (see below).
 2. Unless `spidersense.collector` is set: extract the nested jar, create the `SenseClassLoader`, and invoke `net.benelog.spidersense.server.SpiderSenseServer.main(String[])` with `--port=<port> --mode=agent ...`, on the current thread with the context class loader set to the `SenseClassLoader`. `main` returns once the port is bound (Spider Silk's `start` returns after binding). A failure here is logged to stderr and swallowed: Spider Sense must never prevent the application from starting.
 3. Set defaults for the OpenTelemetry agent, only where the user has not set the property or its environment variable already:
    - `otel.exporter.otlp.protocol=http/protobuf`
@@ -71,7 +71,15 @@ The UI server's Jetty thread pool is marked daemon in agent mode (`JettyServer.t
 
 ### Configuration
 
-All via system properties (agent mode has no other channel before `main`); the standalone jar also takes them as `--key=value` arguments.
+Every option is a `spidersense.*` key, given as a system property, or as a line of a properties file; the standalone jar also takes them as `--key=value` arguments.
+Highest first: the `--key=value` argument, the `-Dspidersense.key` system property, the `SPIDERSENSE_KEY` environment variable of the same name, the properties file, the default.
+
+The properties file is the one `spidersense.config` (or `SPIDERSENSE_CONFIG`) names, else `spider-sense.properties` in the working directory when that exists; a named file that does not exist is a warning on stderr.
+The launcher reads it first, in `premain`, in the standalone `main` and before it runs a CLI command, and applies every `spidersense.*` key as the system property of the same name unless that property or its environment variable is already set.
+From then on the launcher, the server, the extension and the CLI read the system properties exactly as they do for `-D`, so the file adds no second reader anywhere; a value is trimmed, and an empty one is kept, because an empty `spidersense.ignore.endpoints` means "ignore nothing".
+Keys without the prefix are left alone, so the same file can be handed to the OpenTelemetry agent as `otel.javaagent.configuration-file`; a `spidersense.*` key that is not in the table is applied with a warning, so a typo is visible.
+The CLI's default `--url` is what the properties imply, `spidersense.collector` when set, else `http://<host>:<port>` with the defaults filled in ([agent.md](agent.md)), so a command run from the project's directory asks the Spider Sense that directory's file points at; `SPIDERSENSE_URL` still wins.
+Under a build tool the file is read as well, because the launcher runs in the forked JVM and its working directory is the project's, and the `-D` properties the build tool adds win over it.
 
 | Property | Default | Meaning |
 |---|---|---|

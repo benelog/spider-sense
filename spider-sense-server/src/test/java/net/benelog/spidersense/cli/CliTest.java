@@ -119,6 +119,30 @@ class CliTest {
     // --- parsing -------------------------------------------------------------
 
     @Test
+    void theDefaultUrlIsWhatTheSpidersensePropertiesImply() {
+        java.util.Properties none = new java.util.Properties();
+        assertThat(Cli.configuredUrl(none)).isEqualTo("http://127.0.0.1:4000");
+
+        java.util.Properties port = new java.util.Properties();
+        port.setProperty("spidersense.port", "4001");
+        assertThat(Cli.configuredUrl(port)).isEqualTo("http://127.0.0.1:4001");
+
+        java.util.Properties everywhere = new java.util.Properties();
+        everywhere.setProperty("spidersense.host", "0.0.0.0");
+        everywhere.setProperty("spidersense.port", "4002");
+        assertThat(Cli.configuredUrl(everywhere))
+                .as("0.0.0.0 is a bind address, not one to connect to")
+                .isEqualTo("http://127.0.0.1:4002");
+
+        java.util.Properties collector = new java.util.Properties();
+        collector.setProperty("spidersense.collector", "http://elsewhere:4000/");
+        collector.setProperty("spidersense.port", "4002");
+        assertThat(Cli.configuredUrl(collector))
+                .as("an application that forwards sends there, so that is what to ask")
+                .isEqualTo("http://elsewhere:4000");
+    }
+
+    @Test
     void helpIsTheTableAndEveryUsageErrorPrintsItOnStderr() {
         Run help = run("help");
         assertThat(help.exit()).isZero();

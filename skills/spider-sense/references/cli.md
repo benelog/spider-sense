@@ -38,7 +38,7 @@ The launcher treats a first argument that does not start with `-` as a command a
 | `--until=<selector>` | `now` | end of the window |
 | `--service=<name>` | every service | narrow to one service |
 | `--limit=<n>` | per list | how many rows: findings 20, traces 20, queries 100, errors 100, logs 200, marks 50, sql 200 (at most 5000) |
-| `--url=<base url>` | `http://127.0.0.1:4000`, or `SPIDERSENSE_URL` | which Spider Sense to ask |
+| `--url=<base url>` | `http://127.0.0.1:4000`, or `SPIDERSENSE_URL`, or what `spider-sense.properties` in the working directory implies | which Spider Sense to ask |
 | `--db=<path or jdbc url>` | `~/db/spider-sense/sense` | read that database directly, without asking any server |
 | `--json` | off | print the JSON of api.md instead of the text |
 | `--full` | off | keep statements whole and expand collapsed spans |
@@ -513,7 +513,8 @@ Common options:
   --service=<name>     one service
   --limit=<n>          the lists: findings, traces, queries, errors, logs, marks,
                        and the rows of sql (default 200, at most 5000)
-  --url=<base url>     default http://127.0.0.1:4000, or SPIDERSENSE_URL
+  --url=<base url>     default http://127.0.0.1:4000, or SPIDERSENSE_URL, or what
+                       spider-sense.properties in the working directory implies
   --db=<path or jdbc url>   read the database directly, without asking any server
   --json               the JSON of api.md instead of the text
   --full               whole statements, every repeated span

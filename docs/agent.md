@@ -506,7 +506,7 @@ The launcher stays dependency-free.
 | `mcp` | the MCP server over stdio ([MCP](#mcp)); takes `--url` and `--db` and nothing else |
 | `help` | this table |
 
-Common options: `--since=<selector>` (default `15m`), `--until=<selector>`, `--service=<name>`, `--limit=<n>` (the lists: findings, traces, queries, errors, logs, marks, and the rows of `sql`; `endpoints` always lists every endpoint of the window), `--url=<base url>` (default `http://127.0.0.1:4000`, or `SPIDERSENSE_URL`), `--db=<path or jdbc url>`, `--json`, `--full`.
+Common options: `--since=<selector>` (default `15m`), `--until=<selector>`, `--service=<name>`, `--limit=<n>` (the lists: findings, traces, queries, errors, logs, marks, and the rows of `sql`; `endpoints` always lists every endpoint of the window), `--url=<base url>` (default `http://127.0.0.1:4000`, or `SPIDERSENSE_URL`, or the URL the `spidersense.*` properties imply: `spidersense.collector` when set, else host and port; the launcher fills those in from the properties file of the working directory, [design.md](design.md#configuration)), `--db=<path or jdbc url>`, `--json`, `--full`.
 `compare` takes no `--since`: its windows are the two selectors.
 `init` takes none of them at all: it asks nothing and nobody, and its own options are `--dir`, `--jar`, `--no-skill` and `--mcp` ([init](#init)).
 

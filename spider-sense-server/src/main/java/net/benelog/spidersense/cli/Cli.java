@@ -30,7 +30,10 @@ public final class Cli {
     static final int NO_REQUESTS = 3;
     static final int NOT_FOUND = 4;
 
-    /** Where a Spider Sense is when nobody said; {@code SPIDERSENSE_URL} overrides it. */
+    /**
+     * Where a Spider Sense is when nobody said; {@code SPIDERSENSE_URL} overrides it, and so do
+     * the {@code spidersense.*} properties, see {@link #configuredUrl}.
+     */
     static final String DEFAULT_URL = "http://127.0.0.1:4000";
 
     private Cli() {
@@ -131,7 +134,40 @@ public final class Cli {
 
     static String defaultUrl() {
         String named = System.getenv("SPIDERSENSE_URL");
-        return named == null || named.isBlank() ? DEFAULT_URL : named.trim();
+        if (named != null && !named.isBlank()) {
+            return named.trim();
+        }
+        return configuredUrl(System.getProperties());
+    }
+
+    /**
+     * The Spider Sense the {@code spidersense.*} properties imply: the collector when one is named,
+     * else the host and port, with the defaults filled in. The launcher fills these properties in
+     * from the properties file before it runs a command, so a command run where the application
+     * runs asks the Spider Sense the application sends to.
+     */
+    static String configuredUrl(java.util.Properties properties) {
+        String collector = value(properties, "spidersense.collector");
+        if (collector != null) {
+            while (collector.endsWith("/")) {
+                collector = collector.substring(0, collector.length() - 1);
+            }
+            return collector;
+        }
+        String host = value(properties, "spidersense.host");
+        String port = value(properties, "spidersense.port");
+        if (host == null && port == null) {
+            return DEFAULT_URL;
+        }
+        if (host == null || host.equals("0.0.0.0") || host.equals("::") || host.equals("[::]")) {
+            host = "127.0.0.1";
+        }
+        return "http://" + host + ":" + (port == null ? "4000" : port);
+    }
+
+    private static String value(java.util.Properties properties, String key) {
+        String v = properties.getProperty(key);
+        return v == null || v.isBlank() ? null : v.trim();
     }
 
     /**

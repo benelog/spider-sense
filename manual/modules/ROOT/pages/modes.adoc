@@ -68,7 +68,7 @@ java -jar "$SENSE"
 
 The collector and the UI run on port 4000 and nothing is instrumented.
 Anything that speaks OTLP/HTTP can send to it: the two modes above, another language's SDK, or an OpenTelemetry Collector.
-The standalone jar takes its properties as `--key=value` arguments as well as system properties, so `java -jar "$SENSE" --port=4001` is the same as `-Dspidersense.port=4001`.
+The standalone jar takes its properties as `--key=value` arguments as well as system properties, so `java -jar "$SENSE" --port=4001` is the same as `-Dspidersense.port=4001`, and it reads xref:configuration.adoc#properties-file[the properties file] too.
 
 An OpenTelemetry SDK is pointed at it with two environment variables:
 

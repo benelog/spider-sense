@@ -62,7 +62,7 @@ The extension is extracted the same way, to `extension.jar` beside it, and is lo
 
 `SpiderSenseAgent.premain` does four things, in order.
 
-. Read configuration from the system properties `spidersense.*`, listed in xref:configuration.adoc#properties[Configuration].
+. Read configuration: the xref:configuration.adoc#properties-file[properties file], then the system properties `spidersense.*`, listed in xref:configuration.adoc#properties[Configuration].
 . Unless `spidersense.collector` is set: extract the nested jar, create the `SenseClassLoader`, and invoke `net.benelog.spidersense.server.SpiderSenseServer.main(String[])` with `--port=<port> --mode=agent ...`, on the current thread with the context class loader set to the `SenseClassLoader`.
 `main` returns once the port is bound, because Spider Silk's `start` returns after binding.
 A failure here is logged to stderr and swallowed: Spider Sense must never prevent the application from starting.

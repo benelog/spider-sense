@@ -67,6 +67,7 @@ Where the jar comes from, in order: the project property `spiderSense.jar`, then
 More than one file in the configuration, or none, is an error naming the configuration when a task that needs the jar runs.
 
 The block sets only `spidersense.*` properties.
+A `spider-sense.properties` in the project directory is read by the launcher as well, because the forked JVM's working directory is the project's, and the block's `-D` properties win over it ([design.md](design.md#configuration)).
 Everything the OpenTelemetry agent takes as `otel.*` goes on the task as usual, and the two combine:
 
 ```groovy

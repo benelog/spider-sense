@@ -61,7 +61,8 @@ final class Help {
               --service=<name>     one service
               --limit=<n>          the lists: findings, traces, queries, errors, logs, marks,
                                    and the rows of sql (default 200, at most 5000)
-              --url=<base url>     default http://127.0.0.1:4000, or SPIDERSENSE_URL
+              --url=<base url>     default http://127.0.0.1:4000, or SPIDERSENSE_URL, or what
+                                   spider-sense.properties in the working directory implies
               --db=<path or jdbc url>   read the database directly, without asking any server
               --json               the JSON of api.md instead of the text
               --full               whole statements, every repeated span

@@ -48,7 +48,7 @@ Agent mode needs Java 21 or later, because the embedded UI is a Spider Silk appl
 
 ## Configuration
 
-Everything is a system property under `-javaagent`, because `premain` runs before there are any arguments; the standalone jar takes the same keys as `--key=value` without the prefix, and those win over the properties.
+Everything is a system property under `-javaagent`, because `premain` runs before there are any arguments, or a line of `spider-sense.properties` in the working directory (or of the file `-Dspidersense.config=<path>` names), which a system property wins over; the standalone jar takes the same keys as `--key=value` without the prefix, and those win over both.
 
 | Property | Default | Meaning |
 |---|---|---|
