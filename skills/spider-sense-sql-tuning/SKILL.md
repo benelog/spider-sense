@@ -75,7 +75,7 @@ When the shape is not in the table, say what the plan says and propose the small
 ## 3. Design the index
 
 Start from the finding's schema block: the indexes the table already has are `schema.tables[].indexes`, and the columns to index are `schema.unindexed`, the predicate columns no index of their table leads with.
-Only when the finding has no block (`schema` is `null`: the application ran in standalone mode or without the extension, no statement on that table has yet been slow or repeated five times in one trace, or the parse could not vouch for it) does the design ask the database for its indexes.
+Only when the finding has no block (`schema` is `null`: the application ran in standalone mode or without the extension, no statement on that table has been slow yet, or the parse could not vouch for it) does the design ask the database for its indexes.
 Ask Spider Sense first, for the tables it has seen — `java -jar "$SENSE" sql "SELECT table_name, indexes FROM db_table WHERE service = '<service>'"` — and the database's own catalog (`\d <table>`, `SHOW INDEX FROM <table>`, `INFORMATION_SCHEMA.INDEXES`) when that is empty too.
 
 An index is a sorted copy of some columns; the design is which columns, in which order, and what else to carry.

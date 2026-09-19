@@ -5,12 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.opentelemetry.api.baggage.Baggage;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.logs.Severity;
-import io.opentelemetry.api.trace.Span;
-import io.opentelemetry.api.trace.SpanContext;
-import io.opentelemetry.api.trace.TraceFlags;
-import io.opentelemetry.api.trace.TraceState;
 import io.opentelemetry.context.Context;
-import io.opentelemetry.context.Scope;
 import io.opentelemetry.sdk.logs.LogRecordProcessor;
 import io.opentelemetry.sdk.logs.ReadWriteLogRecord;
 import io.opentelemetry.sdk.logs.SdkLoggerProvider;
@@ -169,90 +164,6 @@ class IndexCatalogTest {
                 .containsExactly("ITEMS", "BARE");
     }
 
-    @Test
-    void theFifthRepeatWithinATraceIsLookedUpThoughItIsFast() throws SQLException {
-        String sql = "select * from items where id = ?";
-        try (Scope trace = inTrace("1"); Statement statement = connection.createStatement()) {
-            fast(statement, sql);
-            fast(statement, sql);
-            fast(statement, sql);
-            fast(statement, sql);
-            assertThat(exporter.getFinishedLogRecordItems())
-                    .as("four fast queries are nobody's N+1 yet")
-                    .isEmpty();
-
-            fast(statement, sql);
-        }
-
-        assertThat(onlyRecord().getAttributes().get(TABLE)).isEqualTo("ITEMS");
-    }
-
-    @Test
-    void repeatsAreNotCountedAcrossTraces() throws SQLException {
-        String sql = "select * from items where id = ?";
-        try (Statement statement = connection.createStatement()) {
-            try (Scope first = inTrace("1")) {
-                fast(statement, sql);
-                fast(statement, sql);
-                fast(statement, sql);
-                fast(statement, sql);
-            }
-            try (Scope second = inTrace("2")) {
-                fast(statement, sql);
-            }
-        }
-
-        assertThat(exporter.getFinishedLogRecordItems())
-                .as("the fifth of another trace is that trace's first")
-                .isEmpty();
-    }
-
-    @Test
-    void outsideATraceNothingIsCounted() throws SQLException {
-        String sql = "select * from items where id = ?";
-        try (Statement statement = connection.createStatement()) {
-            for (int i = 0; i < 10; i++) {
-                fast(statement, sql);
-            }
-        }
-
-        assertThat(exporter.getFinishedLogRecordItems())
-                .as("a statement outside a request is nobody's N+1")
-                .isEmpty();
-    }
-
-    @Test
-    void beyondTheDistinctStatementCapNothingIsCounted() throws SQLException {
-        try (Scope trace = inTrace("1"); Statement statement = connection.createStatement()) {
-            for (int i = 0; i < IndexCatalog.MAX_STATEMENTS; i++) {
-                fast(statement, "select * from items where id = " + i);
-            }
-            for (int repeat = 0; repeat < IndexCatalog.N_PLUS_ONE_REPEATS; repeat++) {
-                fast(statement, "select * from bare where x = ?");
-            }
-        }
-
-        assertThat(exporter.getFinishedLogRecordItems())
-                .as("the counter stopped adding keys, so the repeat is never seen")
-                .isEmpty();
-    }
-
-    /** A statement of a trace that took no time at all: what an N+1's queries look like. */
-    private void fast(Statement statement, String sql) {
-        IndexCatalog.afterExecute(statement, sql, 1, THRESHOLD_NANOS);
-    }
-
-    /** A current span of a trace of its own, which is all the repeat counter reads. */
-    private static Scope inTrace(String digit) {
-        SpanContext context = SpanContext.create(
-                "0000000000000000000000000000000".concat(digit),
-                "000000000000000".concat(digit),
-                TraceFlags.getSampled(),
-                TraceState.getDefault());
-        return Span.wrap(context).makeCurrent();
-    }
-
-    /** A prepared statement that really ran, which is the shape the advice sees. */
     private void slow(String sql) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
             if (sql.contains("?")) {

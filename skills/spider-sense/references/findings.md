@@ -68,7 +68,7 @@ The extension reads the index catalog of the tables a slow statement touches thr
 `tables` are the tables the statement names, in the database's own spelling (`ITEMS` on H2, `items` on PostgreSQL), each with its indexes in key order; `indexes` is empty for a table that has none.
 `predicates` are the columns a `where` or `on` clause or an `order by` list refers to, as `table.column`.
 `unindexed` is the subset of them that no index of their table has as its first column, which is the one an index can seek on, so it is the list of columns to consider indexing.
-The block is `null` rather than wrong whenever the parse cannot vouch for it: the application ran in standalone mode or without the extension, no statement on that table has yet been slow or repeated five times in one trace, the scanner did not find the statement's tables, or a column cannot be attributed to one table.
+The block is `null` rather than wrong whenever the parse cannot vouch for it: the application ran in standalone mode or without the extension, no statement on that table has been slow yet, the scanner did not find the statement's tables, or a column cannot be attributed to one table.
 It says nothing about selectivity, wildcards or the plan; `EXPLAIN` and the `spider-sense-sql-tuning` skill answer those.
 
 In the text output it is one line per table, then one line for the columns:

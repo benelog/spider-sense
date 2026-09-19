@@ -42,9 +42,8 @@ public final class StatementInstrumentation implements TypeInstrumentation {
      * <p>Advice code is copied into the instrumented method and cannot see the extension's own
      * classes, only the helpers injected beside the driver; every decision therefore belongs in
      * {@link IndexCatalog}, and what is left here has to stay small enough to be obviously harmless
-     * in a method the application calls on every query. It is called on every query and not only a
-     * slow one, because the helper counts the repeats of a statement within a trace as well: an
-     * N+1's queries are fast, and they are the ones an index most often fixes.
+     * in a method the application calls on every query; the helper returns at once for a statement
+     * under the threshold.
      */
     @SuppressWarnings("unused")
     public static class ExecuteAdvice {

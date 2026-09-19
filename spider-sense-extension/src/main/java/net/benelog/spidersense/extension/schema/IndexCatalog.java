@@ -6,8 +6,6 @@ import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.logs.LogRecordBuilder;
 import io.opentelemetry.api.logs.LoggerProvider;
 import io.opentelemetry.api.logs.Severity;
-import io.opentelemetry.api.trace.Span;
-import io.opentelemetry.api.trace.SpanContext;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
 import io.opentelemetry.instrumentation.api.util.VirtualField;
@@ -46,18 +44,16 @@ import java.util.concurrent.TimeUnit;
  * pool exhaustion the finding is meant to diagnose, and handing this one to another thread is not
  * possible either: the application returns it to the pool as soon as the statement is done.
  *
- * <p>Two kinds of statement are looked up. One has spent {@code spidersense.slow.query.ms} in the
- * database, which is what a {@code slow-query} finding is made of. The other is the fifth execution
- * of the same SQL within the current trace, counted the way {@code SlowQuerySpanProcessor} counts
- * it: the individual queries of an N+1 are never slow, so without that an {@code n-plus-one}
- * finding would be the one finding that never gets its schema block, which is the one place an
- * index is most often the answer.
+ * <p>Only a statement that has spent {@code spidersense.slow.query.ms} in the database is looked
+ * up, which is what a {@code slow-query} finding is made of; an {@code n-plus-one} finding gets a
+ * block only when its repeated statement has also been slow on some table, because counting the
+ * repeats here would cost a map lookup on every statement for the one N+1 whose predicate column
+ * has no index, and a typical N+1 filters on a primary key.
  *
  * <p>What that costs is bounded on every side: each table is looked up once per process, at most
- * {@value #MAX_TABLES} tables are looked up at all, at most {@value #MAX_STATEMENTS} distinct
- * statements of one trace are counted, a thread already inside a lookup does nothing (a driver's
- * own catalog queries come back through the same advice), and every exception is swallowed. A
- * missing catalog is never worth a slow or a broken statement.
+ * {@value #MAX_TABLES} tables are looked up at all, a thread already inside a lookup does nothing
+ * (a driver's own catalog queries come back through the same advice), and every exception is
+ * swallowed. A missing catalog is never worth a slow or a broken statement.
  */
 public final class IndexCatalog {
 
@@ -80,12 +76,6 @@ public final class IndexCatalog {
     /** How many tables one process ever looks up; past it the catalog stops growing. */
     static final int MAX_TABLES = 200;
 
-    /** The repeat that gets the catalog: the same number the server calls an N+1. */
-    static final int N_PLUS_ONE_REPEATS = 5;
-
-    /** How many distinct statements of one trace are counted before the counter gives up. */
-    static final int MAX_STATEMENTS = 256;
-
     /**
      * Read once, at class initialisation: this sits on the path of every statement the application
      * runs, and the value cannot change while it runs.
@@ -103,23 +93,6 @@ public final class IndexCatalog {
     /** Set for the length of a lookup, so the driver's own catalog queries fall straight through. */
     private static final ThreadLocal<Boolean> inside = new ThreadLocal<>();
 
-    /**
-     * The repeats of the trace the thread is in the middle of, and nothing older.
-     *
-     * <p>A thread runs one trace at a time, so the counter can live on the thread and be re-keyed
-     * when a statement of another trace runs on it, which costs no shared map and no lifecycle to
-     * manage. A trace whose repeats run on several threads is counted per thread and may fall short
-     * of five on each; that is the same known price {@code SlowQuerySpanProcessor} pays, and the
-     * same reason.
-     */
-    private static final ThreadLocal<Repeats> repeats = new ThreadLocal<>();
-
-    /** The trace a thread is counting, and how often each statement of it has run. */
-    static final class Repeats {
-        String traceId;
-        final Map<String, Integer> counts = new HashMap<>();
-    }
-
     /** Null means the agent's own, resolved at emit time; a test puts its own provider here. */
     private static volatile LoggerProvider provider;
 
@@ -127,8 +100,7 @@ public final class IndexCatalog {
     }
 
     /**
-     * What the advice calls, on the thread that ran the statement, right after it returned — on
-     * every statement, not only a slow one, because the repeat has to be counted to be found.
+     * What the advice calls, on the thread that ran the statement, right after it returned.
      *
      * @param statement the statement that ran, still open and still holding its connection
      * @param sql the SQL of an {@code execute(String)} call, or null for a prepared statement
@@ -141,17 +113,11 @@ public final class IndexCatalog {
     /** The same, with the threshold given rather than configured, which is what a test wants. */
     static void afterExecute(Statement statement, String sql, long elapsedNanos, long thresholdNanos) {
         try {
-            if (Boolean.TRUE.equals(inside.get())) {
+            if (elapsedNanos < thresholdNanos || Boolean.TRUE.equals(inside.get())) {
                 return;
             }
             String text = sql != null ? sql : preparedSql(statement);
             if (text == null) {
-                return;
-            }
-            // Counted first and always: a mix of slow and fast repeats reaches five like any other,
-            // and the cost on a statement that is neither is one map lookup.
-            boolean fifthRepeat = count(text) == N_PLUS_ONE_REPEATS;
-            if (elapsedNanos < thresholdNanos && !fifthRepeat) {
                 return;
             }
             List<Word> tables = refsOf(text);
@@ -176,37 +142,6 @@ public final class IndexCatalog {
         } catch (Throwable swallowed) {
             // Documented: nothing here may reach the application.
         }
-    }
-
-    /**
-     * How often this statement has now run in this trace on this thread.
-     *
-     * <p>Zero when it is not counted at all, which is what no current trace means — a statement
-     * outside a request is nobody's N+1 — and what beyond {@value #MAX_STATEMENTS} distinct
-     * statements of one trace means: the counter stops adding keys and nothing else changes.
-     */
-    private static int count(String sql) {
-        SpanContext context = Span.current().getSpanContext();
-        if (!context.isValid()) {
-            return 0;
-        }
-        String traceId = context.getTraceId();
-        Repeats counting = repeats.get();
-        if (counting == null) {
-            counting = new Repeats();
-            repeats.set(counting);
-        }
-        if (!traceId.equals(counting.traceId)) {
-            counting.traceId = traceId;
-            counting.counts.clear();
-        }
-        Integer seen = counting.counts.get(sql);
-        if (seen == null && counting.counts.size() >= MAX_STATEMENTS) {
-            return 0;
-        }
-        int count = seen == null ? 1 : seen + 1;
-        counting.counts.put(sql, count);
-        return count;
     }
 
     /**
@@ -464,10 +399,9 @@ public final class IndexCatalog {
         provider = loggerProvider;
     }
 
-    /** For tests: forget which tables have been looked up and what this thread was counting. */
+    /** For tests: forget which tables have been looked up. */
     static void forget() {
         looked.clear();
-        repeats.remove();
     }
 
     private static long configured() {

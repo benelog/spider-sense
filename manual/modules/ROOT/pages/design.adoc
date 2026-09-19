@@ -197,9 +197,10 @@ The extension reads the index catalog of the tables a slow statement touches, so
 
 For that it carries one `InstrumentationModule` of its own, `spider-sense-schema`, registered through `META-INF/services/io.opentelemetry.javaagent.extension.instrumentation.InstrumentationModule`.
 Its advice sits on the `execute`, `executeQuery`, `executeUpdate` and `executeLargeUpdate` methods of every `java.sql.Statement` implementation.
-The advice measures the call and, when it threw nothing and either took at least `spidersense.slow.query.ms` (the same threshold, read the same way) or is the fifth execution of the same SQL text within the current trace, hands the statement to `IndexCatalog`.
-The repeat is counted as the span processor counts it: per thread, keyed by the trace id of the current span and reset when another trace's statement runs on that thread, 256 distinct statements at most.
-That is what gives an `n-plus-one` finding its block, since the individual queries of an N+1 are never slow.
+The advice measures the call and, when it took at least `spidersense.slow.query.ms` (the same threshold, read the same way) and threw nothing, hands the statement to `IndexCatalog`.
+The fifth repeat of a statement within a trace, which the span processor captures a stack for, is deliberately not a trigger here.
+It would cost a map lookup on every statement the application runs, for the one N+1 whose predicate column has no index, and the typical N+1 filters on a primary key.
+An `n-plus-one` finding therefore carries the block only when its statement has also been slow on that table.
 `IndexCatalog` is a helper class the agent injects beside the driver (`getAdditionalHelperClassNames`), because advice runs in the application's class loader and the extension's own classes are not visible there.
 
 `IndexCatalog` takes the statement's SQL from the `execute(String …)` argument, or, for a `PreparedStatement`, from the `VirtualField<PreparedStatement, String>` the agent's JDBC instrumentation fills at prepare time.

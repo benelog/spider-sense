@@ -8,7 +8,7 @@ import java.util.List;
 
 /**
  * The extension's own instrumentation module, {@code spider-sense-schema}: the advice that reads
- * the index catalog of the tables a slow statement — or the fifth repeat of one within a trace —
+ * the index catalog of the tables a slow statement
  * touched ({@code docs/design.md}, "The extension").
  *
  * <p>It exists because the catalog needs a {@link java.sql.Connection}, and a span processor never
@@ -37,7 +37,6 @@ public final class SchemaInstrumentationModule extends InstrumentationModule {
     private static final List<String> HELPERS = Collections.unmodifiableList(Arrays.asList(
             HELPER_PACKAGE + "IndexCatalog",
             HELPER_PACKAGE + "IndexCatalog$Word",
-            HELPER_PACKAGE + "IndexCatalog$Repeats",
             HELPER_PACKAGE + "IndexCatalog$Index"));
 
     public SchemaInstrumentationModule() {
