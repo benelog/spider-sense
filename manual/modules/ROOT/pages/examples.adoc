@@ -42,13 +42,13 @@ Each of the five lives under `examples/` in https://github.com/{project-repo}[th
 [#static-demo]
 == The demo without installing anything
 
-https://spider-sense.benelog.net/demo[spider-sense.benelog.net/demo] is the same UI over a recording of the demo below: the four applications under one Spider Sense for five minutes, every page answered from files, no server behind it.
+https://spider-sense.benelog.net/demo[spider-sense.benelog.net/demo] is the same UI over a recording of the demo below: the four applications under one Spider Sense for five minutes, every page answered from a database of the recording, no server behind it.
 Everything that reads works, from the map to a single trace's profile, and the range, the marks and the compare page cover the recorded window.
 Anything that writes, such as a mark or an acknowledgement, answers that the page is a recording.
 
-The recording is the rows themselves: a https://www.dolthub.com/repositories/benelog/spider-sense-demo[DoltHub database] with the tables of xref:storage.adoc[Storage] as a running Spider Sense keeps them, so a trace of the demo can be queried there as SQL, and every recording is a commit of that database.
-`scripts/demo-site.sh record` makes one: it runs `scripts/demo-shared.sh` for `MINUTES` (five by default), marks `before` and `after` along the way, exports the rows since the launch out of the H2 file, and pushes them to DoltHub.
-`scripts/demo-site.sh assemble` builds the page from them, which is what the manual's build does: it pulls the tables, loads them into a fresh Spider Sense, captures every answer the UI asks for, and writes `build/demo-site/`, which any static file server can serve.
+The recording is a https://www.dolthub.com/repositories/benelog/spider-sense-demo[DoltHub database] with the tables of xref:storage.adoc[Storage] as a running Spider Sense keeps them, plus one table of the answers the UI asks for; the page reads it through DoltHub's SQL API as it is opened, so every trace of the recording opens, and the rows can be queried there as SQL too.
+`scripts/demo-site.sh record` makes one: it runs `scripts/demo-shared.sh` for `MINUTES` (five by default), marks `before` and `after` along the way, exports the rows since the launch out of the H2 file, loads them into a fresh Spider Sense to capture the answers, and pushes both to DoltHub.
+`scripts/demo-site.sh recapture` redoes the answers from the rows already there, after a change to the server's queries.
 
 == The two scripts
 

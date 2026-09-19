@@ -3,7 +3,7 @@
   "private": true,
   "description": "Antora documentation site for Spider Sense",
   "scripts": {
-    "docs": "antora --fetch antora-playbook.yml && scripts/demo-site.sh assemble build/site/demo"
+    "docs": "antora --fetch antora-playbook.yml && node scripts/demo-site.mjs assemble build/site/demo"
   },
   "devDependencies": {
     "@antora/cli": "3.2.0",

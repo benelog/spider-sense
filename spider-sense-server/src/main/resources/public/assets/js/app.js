@@ -322,7 +322,7 @@ function setNav(open) {
 async function boot() {
   if (new URLSearchParams(location.search).get('mock') === '1') {
     await import('./dev/mock.js');
-  } else if (document.documentElement.dataset.snapshot || new URLSearchParams(location.search).get('snapshot')) {
+  } else if (document.documentElement.dataset.dolthub || new URLSearchParams(location.search).get('dolthub')) {
     await import('./dev/replay.js');
   }
 

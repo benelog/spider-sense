@@ -10,9 +10,8 @@ on:
     paths:
       - 'manual/**'
       - 'supplemental-ui/**'
-      - 'scripts/demo-site.sh'
       - 'scripts/demo-site.mjs'
-      - 'spider-sense-server/src/main/**'
+      - 'spider-sense-server/src/main/resources/public/**'
       - 'antora-playbook.yml'
       - 'package.json'
       - 'package-lock.json'
@@ -40,13 +39,6 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      # The demo page is built by running the jar over the recorded rows
-      # (docs/design.md, "The published demo"), so the site build needs Java.
-      - uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: 21
-          cache: gradle
       - run: npm ci
       - run: npm run docs
       - uses: actions/configure-pages@v6

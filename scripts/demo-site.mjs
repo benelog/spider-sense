@@ -1,18 +1,19 @@
 #!/usr/bin/env node
 // The published demo's data path (docs/design.md, "The published demo"). The demo's
-// rows live in a DoltHub database with the tables of docs/storage.md, and this script
-// moves them, one CSV per table, between H2 and DoltHub:
+// rows live in a DoltHub database with the tables of docs/storage.md, plus one table
+// of the answers the UI asks for, and this script moves them, one CSV per table,
+// between H2, a running Spider Sense and DoltHub:
 //
 //   export    the tables of a window out of an H2 database into CSV files
+//   load      the CSV files into the H2 database of a running Spider Sense
+//   capture   every answer the UI asks that Spider Sense for, over the recording's
+//             window, into answer.csv beside the tables
 //   push      the CSV files into the DoltHub database, one commit per table
 //   pull      the DoltHub tables back into CSV files
-//   load      the CSV files into the H2 database of a running Spider Sense
-//   capture   every answer the UI asks that Spider Sense for, over the recording's window
-//   assemble  the UI and the captured answers as one static directory
+//   assemble  the UI as one static directory that reads the DoltHub database
 //
-// scripts/demo-site.sh runs them in order: `record` is export and push, `assemble` is
-// pull, load, capture and assemble. H2 is driven through org.h2.tools.Shell from the
-// server jar nested in the Spider Sense jar, so nothing here needs Java beyond the jar.
+// scripts/demo-site.sh runs them in order. H2 is driven through org.h2.tools.Shell from
+// the server jar nested in the Spider Sense jar, so nothing here needs Java beyond it.
 
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -96,8 +97,16 @@ const TABLES = [
   { name: 'meta', key: ['key'], window: 'meta',
     columns: 'key value', required: 'key value',
     ddl: '`key` VARCHAR(64) NOT NULL, `value` TEXT NOT NULL' },
+  // Not an H2 table: what capture asked a Spider Sense loaded with the rows above,
+  // keyed by path and query without from/to, plus /manifest (the window, the services
+  // and the keys). The page reads the answers from here and the rows it lists from
+  // the tables (assets/js/dev/replay.js).
+  { name: 'answer', key: ['key'], h2: false, window: null,
+    columns: 'key body', required: 'key body',
+    ddl: '`key` VARCHAR(768) NOT NULL, body LONGTEXT NOT NULL' },
 ];
 for (const t of TABLES) {
+  t.h2 = t.h2 !== false;
   t.columns = t.columns.split(/\s+/).filter(Boolean);
   t.bool = (t.bool || '').split(/\s+/).filter(Boolean);
   t.required = (t.required || '').split(/\s+/).filter(Boolean);
@@ -173,6 +182,7 @@ function exportTables(opts) {
 
   const statements = [];
   for (const table of TABLES) {
+    if (!table.h2) continue;
     const select = table.columns.map((c) => (table.bool.includes(c) ? 'CASE WHEN ' + c + ' THEN 1 ELSE 0 END' : c) + ' AS "' + c + '"').join(', ');
     let query;
     if (table.window === 'meta') {
@@ -193,14 +203,35 @@ function exportTables(opts) {
 
   const home = homedir();
   for (const table of TABLES) {
+    if (!table.h2) continue;
     const file = join(dir, table.name + '.csv');
     const text = readFileSync(file, 'utf8');
     writeFileSync(file, text.split(home).join('/home/me'));
     console.log('  ' + table.name + ': ' + rowsIn(text) + ' rows, ' + (text.length / 1024).toFixed(0) + ' KB');
   }
+  writeRecording(opts, {});
+}
+
+/** recording.json beside the data: the window and what made it, for capture and the page. */
+function writeRecording(opts, source) {
+  const recording = { ...recordingOf(readMeta(opts)), source: { url: dolt.page(), ...source } };
+  const file = resolve(root, opts.recording || join(DATA, 'recording.json'));
+  writeFileSync(file, JSON.stringify(recording, null, 1));
+  return { recording, file };
 }
 
 // --- CSV, the little of it that is needed ---------------------------------------
+
+function csvCell(value) {
+  const s = value === null || value === undefined ? '' : String(value);
+  return /[",\r\n]/.test(s) || s === '' ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+function toCsv(columns, rows) {
+  const lines = [columns.join(',')];
+  for (const row of rows) lines.push(columns.map((c) => csvCell(row[c])).join(','));
+  return lines.join('\n') + '\n';
+}
 
 /** RFC 4180 with quoted newlines; the first record is the header. */
 function parseCsv(text) {
@@ -228,7 +259,7 @@ const rowsIn = (text) => Math.max(parseCsv(text).length - 1, 0);
 
 /** meta.csv as a map. */
 function readMeta(opts) {
-  const records = parseCsv(readFileSync(csvOf(opts, TABLES.at(-1)), 'utf8'));
+  const records = parseCsv(readFileSync(csvOf(opts, TABLES.find((t) => t.name === 'meta')), 'utf8'));
   const header = records.shift() || [];
   const key = header.indexOf('key');
   const value = header.indexOf('value');
@@ -464,7 +495,9 @@ async function push(opts) {
   const message = 'Recording of ' + when + ' UTC, Spider Sense ' + recording.version;
   console.log('pushing ' + tablesDir(opts) + ' to ' + dolt.page() + ' (' + DOLTHUB.branch + ')');
   await doltEnsureTables();
+  const only = opts.only ? new Set(opts.only.split(',')) : null;
   for (const table of TABLES) {
+    if (only && !only.has(table.name)) continue;
     const bytes = readFileSync(csvOf(opts, table));
     console.log('import ' + table.name + ' (' + (bytes.length / 1024).toFixed(0) + ' KB)');
     await doltImportInto(table, bytes, message + ': ' + table.name);
@@ -485,9 +518,7 @@ async function pull(opts) {
     writeFileSync(csvOf(opts, table), text);
     console.log('  ' + table.name + ': ' + rowsIn(text) + ' rows, ' + (text.length / 1024).toFixed(0) + ' KB');
   }
-  const recording = { ...recordingOf(readMeta(opts)), source: { url: dolt.page(), branch: ref, commit: await doltHead(ref) } };
-  const file = resolve(root, opts.recording || join(DATA, 'recording.json'));
-  writeFileSync(file, JSON.stringify(recording, null, 1));
+  const { recording, file } = writeRecording(opts, { branch: ref, commit: await doltHead(ref) });
   console.log('wrote ' + file + ' (commit ' + recording.source.commit + ')');
 }
 
@@ -511,6 +542,7 @@ async function load(opts) {
 
   const statements = [];
   for (const table of TABLES) {
+    if (!table.h2) continue;
     const read = 'CSVREAD(' + sqlString(csvOf(opts, table)) + ", NULL, 'charset=UTF-8')";
     const cells = table.columns.map((c) => {
       const cell = c.toUpperCase();   // H2 reads the header's names as unquoted identifiers
@@ -527,41 +559,35 @@ async function load(opts) {
   console.log('loading ' + tablesDir(opts) + ' into ' + jdbcUrl(opts.db));
   const out = h2(opts, statements.join(';\n'));
   const counts = [...out.matchAll(/^\(Update count: (\d+)/gm)].map((m) => Number(m[1]));
-  console.log('  ' + TABLES.map((t, i) => t.name + ' ' + (counts[i] ?? '?')).join(', '));
+  console.log('  ' + TABLES.filter((t) => t.h2).map((t, i) => t.name + ' ' + (counts[i] ?? '?')).join(', '));
 }
 
 // --- capture -----------------------------------------------------------------
+//
+// What the page cannot make from the tables by itself: every aggregation, over the
+// window, unfiltered and per service, plus every endpoint, query, error and metric
+// series they mention, and every pair of marks for compare. The lists the page makes
+// from the tables (traces, one trace, logs, marks, acks) are not asked.
 
 const QUERY_SORTS = ['total', 'calls', 'avg', 'p95', 'max'];
-const SEVERITIES = ['INFO', 'WARN', 'ERROR'];   // TRACE and DEBUG fall back to the unfiltered list, which they equal
-const MAX_TRACES = 250;
-const MAX_TRACE_BYTES = 300_000;   // a trace of thousands of spans is left out; the page says so
-const MAX_TRACE_LOGS = 40;
 const MAX_METRICS_PER_SERVICE = 120;
 const CONCURRENCY = 4;
 
 async function capture(opts) {
   const url = (opts.url || 'http://127.0.0.1:4090').replace(/\/$/, '');
-  const out = resolve(root, opts.out || join(DATA, 'answers'));
   const info = JSON.parse(readFileSync(resolve(root, opts.recording || join(DATA, 'recording.json')), 'utf8'));
   const { from, to } = info.window;
   const home = homedir();
-
-  rmSync(out, { recursive: true, force: true });
-  mkdirSync(out, { recursive: true });
-
-  const files = {};
-  let count = 0;
-  const seenTraces = new Set();
+  const answers = new Map();
 
   function keyOf(path, params) {
     const names = Object.keys(params).filter((k) => params[k] !== undefined && params[k] !== null && params[k] !== '').sort();
     return path + (names.length ? '?' + names.map((k) => k + '=' + params[k]).join('&') : '');
   }
 
-  async function get(path, params = {}, windowed = true, maxBytes = 0) {
+  async function get(path, params = {}, windowed = true) {
     const key = keyOf(path, params);
-    if (files[key]) return files[key].body;
+    if (answers.has(key)) return answers.get(key).body;
     const usp = new URLSearchParams();
     if (windowed) { usp.set('from', String(from)); usp.set('to', String(to)); }
     for (const [k, v] of Object.entries(params)) {
@@ -575,18 +601,10 @@ async function capture(opts) {
       console.warn('skip ' + key + ': ' + res.status);
       return null;
     }
-    if (maxBytes && text.length > maxBytes) {
-      console.warn('skip ' + key + ': ' + text.length + ' bytes');
-      return null;
-    }
     text = text.split(home).join('/home/me');
-    for (const id of text.matchAll(/\b[0-9a-f]{32}\b/g)) seenTraces.add(id[0]);
-    const name = createHash('sha1').update(key).digest('hex').slice(0, 16) + '.json';
-    writeFileSync(join(out, name), text);
     let body = null;
     try { body = JSON.parse(text); } catch (e) { body = null; }
-    files[key] = { name, body };
-    count++;
+    answers.set(key, { text, body });
     return body;
   }
 
@@ -601,12 +619,10 @@ async function capture(opts) {
     await Promise.all(workers);
   }
 
-  console.log('capturing ' + url + ' over ' + new Date(from).toISOString() + ' .. ' + new Date(to).toISOString() + ' into ' + out);
+  console.log('capturing ' + url + ' over ' + new Date(from).toISOString() + ' .. ' + new Date(to).toISOString());
 
   const status = await get('/api/status', {}, false);
   if (!status) throw new Error('no Spider Sense at ' + url);
-  await get('/api/marks', { limit: 50 }, false);
-  await get('/api/acks', { limit: 200 }, false);
   const servicesRes = await get('/api/services');
   const services = (servicesRes && servicesRes.services || []).map((s) => s.name);
   await get('/api/overview');
@@ -614,7 +630,7 @@ async function capture(opts) {
   for (const name of services) await get('/api/services/' + encodeURIComponent(name));
 
   const scopes = ['', ...services];
-  const endpoints = new Map();
+  const endpoints = new Set();
   const queries = new Set();
   const errors = new Set();
   const metrics = new Map();
@@ -623,8 +639,7 @@ async function capture(opts) {
     await get('/api/findings', { ...s, limit: 100 });
     await get('/api/findings', { ...s, limit: 5, hideAcked: 'true' });
     const eps = await get('/api/endpoints', s);
-    for (const e of (eps && eps.endpoints) || []) endpoints.set(e.endpointId, e.service);
-    for (const st of ['', 'ok', 'error']) await get('/api/traces', { ...s, limit: 50, status: st });
+    for (const e of (eps && eps.endpoints) || []) endpoints.add(e.endpointId);
     await get('/api/scatter', { ...s, limit: 5000 });
     for (const sort of QUERY_SORTS) {
       const q = await get('/api/queries', { ...s, sort, limit: 100 });
@@ -632,16 +647,12 @@ async function capture(opts) {
     }
     const errs = await get('/api/errors', { ...s, limit: 100 });
     for (const row of (errs && errs.errors) || []) errors.add(row.errorId);
-    for (const severity of ['', ...SEVERITIES]) await get('/api/logs', { ...s, limit: 200, severity });
     await get('/api/jvm', s);
     const catalog = await get('/api/metrics', s, false);
     metrics.set(service, ((catalog && catalog.metrics) || []).map((m) => m.name).slice(0, MAX_METRICS_PER_SERVICE));
   }
 
-  await each([...endpoints], async ([id, service]) => {
-    await get('/api/endpoints/' + encodeURIComponent(id));
-    await get('/api/traces', { service, endpointId: id, limit: 50 });
-  });
+  await each([...endpoints], (id) => get('/api/endpoints/' + encodeURIComponent(id)));
   await each([...queries], (id) => get('/api/queries/' + encodeURIComponent(id)));
   await each([...errors], (id) => get('/api/errors/' + encodeURIComponent(id)));
 
@@ -654,7 +665,7 @@ async function capture(opts) {
   }
   await each(series, (p) => get('/api/metrics/series', p));
 
-  const marksRes = files['/api/marks?limit=50'] && files['/api/marks?limit=50'].body;
+  const marksRes = await fetch(url + '/api/marks?limit=50').then((r) => r.json()).catch(() => null);
   const marks = ((marksRes && marksRes.marks) || []).map((m) => m.name);
   const selectors = [...new Set([...marks, 'start'])];
   for (const service of scopes) {
@@ -666,39 +677,40 @@ async function capture(opts) {
     }
   }
 
-  const traceIds = [...seenTraces].slice(0, MAX_TRACES);
-  await each(traceIds, (id) => get('/api/traces/' + id, {}, false, MAX_TRACE_BYTES));
-  await each(traceIds.slice(0, MAX_TRACE_LOGS), (id) => get('/api/logs', { traceId: id, limit: 200 }));
-
   const manifest = {
     capturedAt: Date.now(),
     recordedAt: info.recordedAt,
     window: { from, to },
     version: status.version || null,
     services,
-    source: info.source,
-    files: Object.fromEntries(Object.entries(files).map(([k, v]) => [k, v.name])),
+    keys: [...answers.keys()],
   };
-  writeFileSync(join(out, 'manifest.json'), JSON.stringify(manifest, null, 1));
-  console.log('captured ' + count + ' answers, ' + traceIds.length + ' traces, ' + services.length + ' services');
+  const rows = [{ key: '/manifest', body: JSON.stringify(manifest) }];
+  for (const [key, value] of answers) rows.push({ key, body: value.text });
+  const table = TABLES.find((t) => t.name === 'answer');
+  mkdirSync(tablesDir(opts), { recursive: true });
+  const csv = toCsv(table.columns, rows);
+  writeFileSync(csvOf(opts, table), csv);
+  console.log('captured ' + answers.size + ' answers, ' + services.length + ' services, into ' + csvOf(opts, table)
+    + ' (' + (csv.length / 1024).toFixed(0) + ' KB)');
 }
 
 // --- assemble ----------------------------------------------------------------
 
+/** The UI as a static page that reads the DoltHub database: nothing else is copied. */
 function assemble(opts) {
   const out = resolve(root, opts._[0] || 'build/demo-site');
-  const data = resolve(root, opts.data || join(DATA, 'answers'));
-  readFileSync(join(data, 'manifest.json'));
+  const ref = opts.ref || DOLTHUB.branch;
+  const source = DOLTHUB.owner + '/' + DOLTHUB.database + '@' + ref;
   rmSync(out, { recursive: true, force: true });
   mkdirSync(out, { recursive: true });
   cpSync(PUBLIC, out, { recursive: true });
-  cpSync(data, join(out, 'data'), { recursive: true });
   const index = readFileSync(join(PUBLIC, 'index.html'), 'utf8')
-    .replace('<html lang="en"', '<html lang="en" data-snapshot="data/"')
+    .replace('<html lang="en"', '<html lang="en" data-dolthub="' + source + '"')
     .replace('<title>Spider Sense</title>', '<title>Spider Sense demo</title>');
-  if (!index.includes('data-snapshot')) throw new Error('index.html has no <html lang="en" to mark');
+  if (!index.includes('data-dolthub')) throw new Error('index.html has no <html lang="en" to mark');
   writeFileSync(join(out, 'index.html'), index);
-  console.log('assembled ' + out + ' (open it through any static file server, e.g. python3 -m http.server -d ' + out + ')');
+  console.log('assembled ' + out + ' over ' + source + ' (open it through any static file server, e.g. python3 -m http.server -d ' + out + ')');
 }
 
 // --- main --------------------------------------------------------------------
@@ -721,11 +733,11 @@ try {
   else {
     console.error([
       'usage: demo-site.mjs export --db=<h2 path> --since=<ms> --until=<ms> [--from=<ms> --to=<ms>] [--jar=] [--tables=<dir>]',
-      '       demo-site.mjs push [--tables=<dir>] [--dolthub=owner/database] [--branch=]      (DOLTHUB_TOKEN)',
-      '       demo-site.mjs pull [--tables=<dir>] [--recording=<file>] [--ref=<branch or commit>]',
       '       demo-site.mjs load --db=<h2 path> [--url=<spider sense>] [--jar=] [--tables=<dir>]',
-      '       demo-site.mjs capture [--url=<spider sense>] [--out=<dir>] [--recording=<file>]',
-      '       demo-site.mjs assemble [<out dir>] [--data=<dir>]',
+      '       demo-site.mjs capture [--url=<spider sense>] [--recording=<file>] [--tables=<dir>]',
+      '       demo-site.mjs push [--only=<table,...>] [--tables=<dir>] [--dolthub=owner/database] [--branch=]   (DOLTHUB_TOKEN)',
+      '       demo-site.mjs pull [--tables=<dir>] [--recording=<file>] [--ref=<branch or commit>]',
+      '       demo-site.mjs assemble [<out dir>] [--dolthub=owner/database] [--ref=<branch or commit>]',
     ].join('\n'));
     process.exit(2);
   }
