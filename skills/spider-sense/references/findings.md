@@ -49,7 +49,7 @@ In the text output the ranked table comes first and these fields follow as one n
 
 **About `code`.** The OpenTelemetry Java agent does not record where a span was started from, so `code` comes from the `exception.stacktrace` of an error, the `code.function` / `code.namespace` attributes that a few instrumentations set, and the `code.stacktrace` that Spider Sense's own agent extension captures.
 The extension captures that stack on every database span slower than `slow.query.ms`, on the fifth repeat of a statement within one trace, on every non-database `CLIENT` span slower than `slow.request.ms`, and on the fifth repeat of an HTTP call within one trace, which is what gives `slow-query`, `n-plus-one`, `slow-external` and `n-plus-one-http` findings a line.
-It is therefore reliable for `error`, `slow-query`, `n-plus-one`, `n-plus-one-http` and `slow-external` findings, often present for `log-error`, and often empty for the others; when it is empty, open a trace from `traces` and read the tree, which names the endpoint and the statement even when it cannot name the line.
+It is therefore reliable for `error`, `slow-query`, `n-plus-one` and `slow-external` findings, present for `n-plus-one-http` only when the client ends the call's span on the thread that made it (the JDK `HttpClient` and the reactive clients do not, so the finding often names no line), often present for `log-error`, and often empty for the others; when it is empty, open a trace from `traces` and read the tree, which names the endpoint and the statement even when it cannot name the line.
 A stack trace is reduced to its application frames by dropping known framework prefixes (`java.`, `jakarta.`, `org.springframework.`, `org.hibernate.`, `org.apache.`, `com.zaxxer.`, `org.h2.`, `io.opentelemetry.` and others).
 When that heuristic guesses wrong, `-Dspidersense.app.packages=com.acme,org.acme` replaces it with an allowlist.
 
@@ -157,7 +157,7 @@ GET /orders/{id} calls GET localhost:8081/api/books/? 6 times per request
 ```
 
 Open a trace from `traces`: the repeated `CLIENT` spans collapse into one `× n` line under the entry span, and the span above them is the loop.
-`code` is the call site of the fifth repeat, so it names the line that issues the call.
+`code` is the call site of the fifth repeat when the client ends the span on the thread that made the call; a client that completes the exchange on a worker thread ends every repeat somewhere else, the extension's per-thread counter never reaches five, and the finding names no line. Then the trace tree names the loop.
 
 ### What to do
 
