@@ -1,9 +1,12 @@
 package net.benelog.spidersense.query;
 
+import java.net.URI;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -803,6 +806,44 @@ public final class Queries {
     }
 
     /**
+     * {@code GET localhost:8081/api/books/?}: what two outbound calls have to share
+     * to be the same call (agent.md, "The repeated call").
+     *
+     * <p>The span's name, the dependency {@link #target}, and the path and query of
+     * {@code url.full} with every run of digits replaced, which is what a loop
+     * varies. The host is taken from the target rather than from the URL, so the port
+     * stays a port rather than becoming {@code ?}, and the status is left out because
+     * the same call can answer differently for two items.
+     *
+     * <p>Public and shared, because an {@code n-plus-one-http} finding groups on it
+     * and the aggregated hot spans name an outbound call with it: one call has one
+     * name wherever it is reported.
+     */
+    public static String callName(SpanRecord span) {
+        String target = target(span);
+        String url = span.attr("url.full");
+        if (url == null) {
+            return span.name() + " " + target;
+        }
+        return span.name() + " " + target + Ids.normaliseDigits(pathOf(url));
+    }
+
+    /** The path and query of an absolute URL, or the whole of it when it is not one. */
+    private static String pathOf(String url) {
+        try {
+            URI parsed = URI.create(url);
+            String path = parsed.getRawPath();
+            if (path == null) {
+                return url;
+            }
+            String query = parsed.getRawQuery();
+            return query == null ? path : path + "?" + query;
+        } catch (IllegalArgumentException notAUrl) {
+            return url;
+        }
+    }
+
+    /**
      * The outbound HTTP calls of the window, row by row.
      *
      * <p>Read rather than aggregated because the group a {@code slow-external}
@@ -823,6 +864,132 @@ public final class Queries {
         }
         int rank = (int) Math.ceil(fraction * sorted.length);
         return sorted[Math.min(sorted.length - 1, Math.max(0, rank - 1))];
+    }
+
+    // --- where the time went -------------------------------------------------
+
+    /** One summary a set of traces spent self time in (agent.md, "Where the time went"). */
+    public record HotSpan(String name, String category, double selfMs, double share, long count) {
+    }
+
+    /**
+     * Where a set of traces spent their time: the three hottest summaries and the
+     * four shares.
+     *
+     * @param hotSpans  the largest {@code selfMs} first, at most three, empty when
+     *        there is nothing to read
+     * @param breakdown {@code db}, {@code http}, {@code internal} and {@code self},
+     *        summing to 1; empty when {@code hotSpans} is
+     */
+    public record TimeSplit(List<HotSpan> hotSpans, Map<String, Double> breakdown) {
+
+        public static final TimeSplit NONE = new TimeSplit(List.of(), Map.of());
+    }
+
+    /** How many summaries a {@link TimeSplit} names (agent.md). */
+    private static final int HOT_SPANS = 3;
+
+    /** The four shares of a breakdown, in the order they are written (agent.md). */
+    private static final List<String> BUCKETS = List.of("db", "http", "internal", "self");
+
+    private static final double[] EMPTY_SUM = new double[2];
+
+    /**
+     * The aggregated answer to "where did the time go", over one sample of traces.
+     *
+     * <p>One trace is an anecdote, so a {@code slow-endpoint} and a {@code slow-job}
+     * ask it over the twenty slowest traces they have (agent.md, "Where the time
+     * went"), and the endpoint page asks it over the twenty it already shows. It is
+     * read out of the spans rather than out of an aggregate, because a summary is
+     * built from the attributes and not from a column, which is why the sample is
+     * bounded rather than the window.
+     *
+     * <p>Only the spans of {@code service} count, the rule {@link #databaseWork}
+     * already uses: the database work of a downstream service belongs to that
+     * service's own endpoint, and leaving its server span out is what makes the wait
+     * on an outbound call land in {@code http} where the caller can see it.
+     */
+    public TimeSplit timeSplit(Window window, String service, List<String> traceIds) {
+        if (traceIds.isEmpty()) {
+            return TimeSplit.NONE;
+        }
+        List<Object> params = new ArrayList<>(List.of(window.from(), window.to(), service));
+        params.addAll(traceIds);
+        List<SpanRecord> spans = sql.query("SELECT " + Rows.SPAN_COLUMNS + " FROM span"
+                        + " WHERE start_ms BETWEEN ? AND ? AND service = ? AND trace_id IN ("
+                        + Sql.placeholders(traceIds.size()) + ") LIMIT " + MAX_DEPENDENCY_ROWS,
+                params, Rows::span);
+        if (spans.isEmpty()) {
+            return TimeSplit.NONE;
+        }
+
+        Set<String> known = new HashSet<>();
+        for (SpanRecord span : spans) {
+            known.add(span.spanId());
+        }
+        Map<String, Long> childNanos = new HashMap<>();
+        for (SpanRecord span : spans) {
+            String parent = span.parentSpanId();
+            if (parent != null && known.contains(parent)) {
+                childNanos.merge(parent, span.durationNanos(), Long::sum);
+            }
+        }
+
+        double totalMs = 0;
+        // Insertion order is the order the JSON and the text print, so it is written out
+        // rather than taken from a Map.of, whose iteration order is not specified.
+        Map<String, Double> shares = new LinkedHashMap<>();
+        for (String bucket : BUCKETS) {
+            shares.put(bucket, 0.0);
+        }
+        Map<String, double[]> hottest = new LinkedHashMap<>();
+        Map<String, String[]> named = new LinkedHashMap<>();
+        for (SpanRecord span : spans) {
+            double selfMs = Math.max(0, span.durationNanos()
+                    - childNanos.getOrDefault(span.spanId(), 0L)) / 1_000_000.0;
+            String parent = span.parentSpanId();
+            if (parent == null || !known.contains(parent)) {
+                // A top span: the entry span of a request, the root span of a job. Its own
+                // self time is the request's own code, and its duration is what the shares
+                // are taken over.
+                totalMs += span.durationMillis();
+                shares.merge("self", selfMs, Double::sum);
+                continue;
+            }
+            String bucket = switch (span.category()) {
+                case "db", "http" -> span.category();
+                default -> "internal";
+            };
+            shares.merge(bucket, selfMs, Double::sum);
+            // An outbound call is named as an n-plus-one-http names it, so the same call
+            // reads the same in both; everything else is its summary, digits replaced.
+            String name = "http".equals(span.category()) && "CLIENT".equals(span.kind())
+                    ? callName(span) : Ids.normaliseDigits(span.summary());
+            String key = span.category() + "\0" + name;
+            named.putIfAbsent(key, new String[]{name, span.category()});
+            double[] summed = hottest.computeIfAbsent(key, k -> new double[2]);
+            summed[0] += selfMs;
+            summed[1]++;
+        }
+        if (totalMs <= 0) {
+            return TimeSplit.NONE;
+        }
+
+        double total = totalMs;
+        shares.replaceAll((bucket, ms) -> Math.min(1, ms / total));
+        List<HotSpan> hotSpans = new ArrayList<>();
+        // Keyed by category and summary, but named by the summary alone: two categories
+        // never produce the same one, and the key is not what a reader wants to see.
+        named.forEach((key, name) -> {
+            double[] summed = hottest.getOrDefault(key, EMPTY_SUM);
+            hotSpans.add(new HotSpan(name[0], name[1], summed[0],
+                    Math.min(1, summed[0] / total), (long) summed[1]));
+        });
+        hotSpans.sort(Comparator.comparingDouble(HotSpan::selfMs).reversed()
+                .thenComparing(HotSpan::name));
+        return new TimeSplit(
+                List.copyOf(hotSpans.subList(0, Math.min(HOT_SPANS, hotSpans.size()))),
+                Collections.unmodifiableMap(shares));
     }
 
     // --- the service map -----------------------------------------------------

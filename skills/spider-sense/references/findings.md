@@ -45,7 +45,7 @@ The thresholds are the server's: `slow.request.ms` is 500 by default and `slow.q
 `traces` are the three slowest traces for `slow-*`, the three newest for `error` and `log-error`, the three most recent affected for `n-plus-one` and `n-plus-one-http`, and none for `pool-exhausted` and the three JVM kinds.
 
 In the text output the ranked table comes first and these fields follow as one numbered block per row, in that order and mostly without labels:
-`<n>. <id> — <why>`, then the `numbers` on one line as `name value, name value`, then `hot span: <name> · <selfMs> self · <share>` when the kind has one, then the `statement` when there is one, then the schema lines when the finding has that block, then the `code` frames one per line, then `traces: <id> <id>`.
+`<n>. <id> — <why>`, then the `numbers` on one line as `name value, name value`, then `hot span: <name> · <selfMs> self · <share>` when the kind has one, then the `hot spans:` lines and the `breakdown:` line when it has those, then the `statement` when there is one, then the schema lines when the finding has that block, then the `code` frames one per line, then `traces: <id> <id>`.
 
 **About `code`.** The OpenTelemetry Java agent does not record where a span was started from, so `code` comes from the `exception.stacktrace` of an error, the `code.function` / `code.namespace` attributes that a few instrumentations set, and the `code.stacktrace` that Spider Sense's own agent extension captures.
 The extension captures that stack on every database span slower than `slow.query.ms`, on the fifth repeat of a statement within one trace, on every non-database `CLIENT` span slower than `slow.request.ms`, and on the fifth repeat of an HTTP call within one trace, which is what gives `slow-query`, `n-plus-one`, `slow-external` and `n-plus-one-http` findings a line.
@@ -232,16 +232,29 @@ Re-run the same exercise and check the query's `p95` and `total` columns in `com
 
 ## `slow-endpoint`
 
-`numbers`: `calls`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `apdex`, `dbCallsPerRequest`, `dbMsPerRequest`, `dbShare` (0..1 in the JSON, the part of the endpoint's total time spent in database spans of the same trace and service; the text prints it as a percentage, `93.0%`), `hotSpan`.
+`numbers`: `calls`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `apdex`, `dbCallsPerRequest`, `dbMsPerRequest`, `dbShare` (0..1 in the JSON, the part of the endpoint's total time spent in database spans of the same trace and service; the text prints it as a percentage, `93.0%`), `hotSpan`, `hotSpans`, `breakdown`.
 
 `hotSpan` is where the time went in the first evidence trace: the span with the largest self time (its duration minus the durations of its direct children), that time, and its share of the trace.
 It reads as one line, `hot span: SELECT order_line · 312.4 ms self · 62.0%`, and it is the first clue when `dbShare` is low, because it names the span instead of leaving the trace to be read.
 It is `null` only when the finding has no trace.
 
+`hotSpans` and `breakdown` answer the same question over many traces rather than one: the 20 slowest traces of the endpoint in the window, of which the first three are `traces`.
+Only the spans of the endpoint's own service count, so the wait on an outbound call lands in `http` rather than in the callee's queries.
+
+```
+   hot spans: SELECT order_line · 4,210.5 ms · 44.0% · ×126
+              GET localhost:8081/api/books/? · 1,980.0 ms · 21.0% · ×42
+   breakdown: db 44.0% · http 21.0% · internal 7.0% · self 28.0%
+```
+
+`hotSpans` is the three summaries with the largest summed self time, each with that time, its share of the sample and how many spans went into it; a summary has its digits replaced by `?`, so one call to 40 items is one row.
+`breakdown` is four shares that sum to 1: `db`, `http`, `internal` and `self`, where `self` is the request's own time outside any child span.
+Read `breakdown` before opening a trace — it says whether to look at the queries, at the calls, or at the code.
+
 `dbShare` is the fork in the road.
 
 - **High `dbShare`** (most of the time in the database): the endpoint is not the problem, its queries are. Look for an `n-plus-one` or `slow-query` finding with this endpoint among its `callers`, or run `queries --service=` over the same window, and fix it there.
-- **Low `dbShare`**: the time is elsewhere. Open the slowest trace from `traces` and read the tree: a `CLIENT` span to another service or an external host that dominates the duration is the answer, and so is a long stretch with no child spans at all, which is the endpoint's own code.
+- **Low `dbShare`**: the time is elsewhere, and `breakdown` says where. High `http` is a call out, which `hotSpans` names; high `self` is the endpoint's own code. Then open the slowest trace from `traces` and read the tree: a `CLIENT` span that dominates the duration is the answer, and so is a long stretch with no child spans at all.
 
 A `CLIENT` span whose child `SERVER` span is nearly as long moves the question to the other service; the same loop applies there, with `--service=` set to it.
 A `CLIENT` span much longer than the `SERVER` span it wraps is connection setup, queueing or serialisation, not the callee.
@@ -265,7 +278,7 @@ An endpoint that fans out to several independent calls can run them together rat
 
 ## `slow-job`
 
-`numbers`: `runs`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `dbCallsPerRun`, `dbMsPerRun`, `dbShare` (0..1 in the JSON, the part of the job's total time spent in database spans of the same trace and service; the text prints it as a percentage), `hotSpan` (the same line `slow-endpoint` carries, over the job's first evidence trace).
+`numbers`: `runs`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `dbCallsPerRun`, `dbMsPerRun`, `dbShare` (0..1 in the JSON, the part of the job's total time spent in database spans of the same trace and service; the text prints it as a percentage), `hotSpan`, `hotSpans` and `breakdown` (the same three `slow-endpoint` carries, over the job's 20 slowest runs).
 
 A job is a root `INTERNAL` span: a scheduled method, an `@Async` call, a batch step.
 It is work the application did to itself, so it is never an entry span: it is in no request count, in no Apdex and in no `check` verdict, and this finding is the one place a slow scheduler tick or batch step is reported.

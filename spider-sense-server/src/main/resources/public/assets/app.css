@@ -388,6 +388,13 @@ input::placeholder { color: var(--text-muted); opacity: 0.8; }
 .duration-cell .dbar { width: 100%; }
 
 .statusbar { display: flex; height: 5px; width: 70px; border-radius: 3px; overflow: hidden; background: var(--bg-raised); gap: 1px; }
+
+/* Where the time went (docs/agent.md): one bar, four fixed buckets in a fixed order. */
+.breakdown { display: flex; height: 5px; width: 120px; border-radius: 3px; overflow: hidden; background: var(--bg-raised); gap: 1px; }
+.breakdown .seg-db { background: var(--accent); }
+.breakdown .seg-http { background: var(--series-8); }
+.breakdown .seg-internal { background: var(--warn); }
+.breakdown .seg-self { background: var(--silk); }
 .statusbar .seg-ok { background: var(--ok); }
 .statusbar .seg-warn { background: var(--warn); }
 .statusbar .seg-bad { background: var(--err); }
@@ -725,6 +732,12 @@ details.collapsible > summary:hover { color: var(--text); }
 .f-code { display: grid; gap: 2px; }
 .f-code .f-frame { color: var(--text); white-space: pre-wrap; word-break: break-word; }
 .f-schema { display: grid; gap: 2px; font-size: 11px; }
+.f-numbers .f-wide { grid-column: 1 / -1; }
+.f-hot { display: grid; gap: 1px; }
+.f-hot li { display: flex; gap: 8px; align-items: baseline; font-size: 11.5px; min-width: 0; }
+.f-hot-name { font-family: var(--font-mono); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.f-hot-num { color: var(--text-muted); white-space: nowrap; }
+.f-breakdown { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 11.5px; }
 .f-schema-line { white-space: pre-wrap; word-break: break-word; }
 .f-links { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .f-links .btn { margin-left: auto; }

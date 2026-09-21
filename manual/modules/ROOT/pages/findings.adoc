@@ -138,10 +138,46 @@ In the text rendering the block sits between the statement and the code frames, 
 xref:api.adoc[`GET /api/queries`] carries the same block on every query group, and the xref:cli.adoc[CLI]'s `queries` table has an `unindexed` column for it.
 The xref:pages.adoc#findings[Findings page] shows the block under the statement, and the xref:pages.adoc#queries[Queries page] has the same `unindexed` column.
 
+[#time]
+=== Where the time went
+
+One trace is an anecdote, so a `slow-endpoint` and a `slow-job` also answer "where did the time go" over many.
+`hotSpans` names the three summaries that took the most time, and `breakdown` says what kind of work the time was.
+
+[source,json]
+----
+"hotSpans": [ { "name": "SELECT order_line", "category": "db", "selfMs": 4210.5, "share": 0.44, "count": 126 },
+              { "name": "GET localhost:8081/api/books/?", "category": "http", "selfMs": 1980.0, "share": 0.21, "count": 42 } ],
+"breakdown": { "db": 0.44, "http": 0.21, "internal": 0.07, "self": 0.28 }
+----
+
+Both are computed over the finding's sample: the 20 slowest traces of the endpoint or the job in the window, of which the first three are the `traces` the finding carries.
+A share is therefore a share of those traces' summed duration, while the finding's own `totalMs` stays the window's.
+Only the spans of the finding's own service count, the rule `dbShare` already uses: leaving the downstream server span out is what makes the wait on an outbound call land in `http` where the caller can see it.
+
+Self time is a span's duration less the durations of its direct children within that set, never below zero, as the xref:pages.adoc#traces[Profile view] computes it.
+A span whose parent is not in the set is a top span — the entry span of a request, the root span of a job — and the top spans are what the shares are taken over.
+
+`hotSpans` is every span but the top ones, grouped by its category and its name, summed, the largest `selfMs` first.
+The name is the span's summary with every run of digits replaced by `?`, and an outbound call is named as <<n-plus-one-http,`n-plus-one-http`>> names it, so one call to 40 items is one row.
+`count` is how many spans went into the row.
+
+`breakdown` is `db`, `http`, `internal` and `self`, which sum to 1.
+`self` is the top spans' own self time, which is the request's own code and the framework, and `internal` absorbs the `messaging` and `rpc` categories: the question the four answer is whether the time was spent waiting on the database, waiting on the network, or working.
+It is the number to read first when `dbShare` is low, and the xref:pages.adoc#endpoints[endpoint page] draws the same four shares as one bar.
+
+In the text rendering they come after the numbers and before the statement:
+
+----
+   hot spans: SELECT order_line · 4,210.5 ms · 44.0% · ×126
+              GET localhost:8081/api/books/? · 1,980.0 ms · 21.0% · ×42
+   breakdown: db 44.0% · http 21.0% · internal 7.0% · self 28.0%
+----
+
 == The text rendering
 
 The ranked table comes first, and the fields follow as one numbered block per row, in the same order.
-A block is `<n>. <id> — <why>`, then the `numbers` on one line, then the hot span line when the kind has one, then the statement when there is one, then the <<schema,schema lines>> when the finding has that block, then the `code` frames one per line, then the trace ids.
+A block is `<n>. <id> — <why>`, then the `numbers` on one line, then the hot span line when the kind has one, then the <<time,hot spans and the breakdown>> when it has those, then the statement when there is one, then the <<schema,schema lines>> when the finding has that block, then the `code` frames one per line, then the trace ids.
 
 [source]
 ----
@@ -272,14 +308,15 @@ An endpoint whose p95 exceeds `slow.request.ms`.
 It is `high` when the p95 exceeds four times the threshold, which is the "frustrated" bound of the Apdex, and `medium` otherwise.
 The impact it is ranked by is total time.
 
-`numbers`: `calls`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `apdex`, `dbCallsPerRequest`, `dbMsPerRequest`, `dbShare` (the part of the endpoint's total time spent in database spans of the same trace and service, printed as a percentage), `hotSpan`.
+`numbers`: `calls`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `apdex`, `dbCallsPerRequest`, `dbMsPerRequest`, `dbShare` (the part of the endpoint's total time spent in database spans of the same trace and service, printed as a percentage), `hotSpan`, `hotSpans`, `breakdown`.
 
 `dbShare` is the fork in the road.
 
 * *High `dbShare`* means the endpoint is not the problem and its queries are.
   Look for an `n-plus-one` or `slow-query` finding with this endpoint among its `callers`, and fix it there.
 * *Low `dbShare`* means the time is elsewhere.
-  `hotSpan` names the span that holds it, and the slowest trace from `traces` shows the rest.
+  <<time,`breakdown`>> says whether it is the network or the endpoint's own code, `hotSpans` names the three summaries that took the most of it, and the slowest trace from `traces` shows the rest.
+  `hotSpan` names the one span that holds it in that one trace.
   A `CLIENT` span that dominates the duration is the answer, and so is a long stretch with no child spans at all, which is the endpoint's own code.
 
 What to do:
@@ -300,14 +337,14 @@ A job whose p95 exceeds `slow.request.ms`, grouped by service and span name.
 A job is a root `INTERNAL` span: a scheduled method, an `@Async` call, a batch step.
 Severity and impact are the same as `slow-endpoint`.
 
-`numbers`: `runs`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `dbCallsPerRun`, `dbMsPerRun`, `dbShare`, `hotSpan`.
+`numbers`: `runs`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `dbCallsPerRun`, `dbMsPerRun`, `dbShare`, `hotSpan`, `hotSpans`, `breakdown`.
 
 A job is work the application did to itself, so it is never an entry span.
 It is in no request count, in no Apdex and in no `check` verdict, and this finding is the one place a slow scheduler tick or batch step is reported.
 
 `dbShare` forks the same way it does for `slow-endpoint`.
 High means the job's queries are the problem, and a job is where an N+1 hides best, because nobody is waiting for it.
-Low means the time is the job's own code, and the slowest trace shows the loop or the call that holds it.
+Low means the time is the job's own code, and <<time,`breakdown`>> and `hotSpans` say where it went before a trace has to be opened.
 
 What to do:
 

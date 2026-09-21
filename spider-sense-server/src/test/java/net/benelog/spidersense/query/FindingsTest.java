@@ -618,6 +618,89 @@ class FindingsTest {
     }
 
     @Test
+    void aSlowEndpointSumsItsHotSpansOverEveryTraceOfTheSample() {
+        // Two requests, each one slow query and one outbound call to a different item.
+        for (int n = 1; n <= 2; n++) {
+            Span.Builder root = entry(n, "/orders/report", 1000);
+            decoder.accept(Otlp.traces(Otlp.service("orders"), root,
+                    query(root, 10 * n, "select * from orders", "orders", NOW, 600),
+                    call(root, 10 * n + 1, "/api/books/" + n, NOW, 200)));
+        }
+        flush();
+
+        Findings.Finding finding = of(Findings.SLOW_ENDPOINT).get(0);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> hot =
+                (List<Map<String, Object>>) finding.numbers().get("hotSpans");
+        assertThat(hot).hasSize(2);
+        assertThat(hot.get(0).get("name")).isEqualTo("SELECT orders");
+        assertThat((Double) hot.get(0).get("selfMs"))
+                .as("600 ms in each of the two traces")
+                .isCloseTo(1200.0, within(1e-6));
+        assertThat(hot.get(0).get("count")).isEqualTo(2L);
+        assertThat((Double) hot.get(0).get("share")).isCloseTo(0.6, within(1e-9));
+        assertThat(hot.get(1).get("name"))
+                .as("two URLs that differ only in their digits are one row")
+                .isEqualTo("GET localhost:8081/api/books/?");
+        assertThat(hot.get(1).get("count")).isEqualTo(2L);
+    }
+
+    @Test
+    void theBreakdownOfASlowEndpointSumsToOne() {
+        Span.Builder root = entry(1, "/orders/report", 1000);
+        decoder.accept(Otlp.traces(Otlp.service("orders"), root,
+                query(root, 100, "select * from orders", "orders", NOW, 600),
+                call(root, 101, "/api/books/1", NOW, 200)));
+        flush();
+
+        @SuppressWarnings("unchecked")
+        Map<String, Double> breakdown =
+                (Map<String, Double>) of(Findings.SLOW_ENDPOINT).get(0).numbers().get("breakdown");
+        assertThat(breakdown).containsOnlyKeys("db", "http", "internal", "self");
+        assertThat(breakdown.get("db")).isCloseTo(0.6, within(1e-9));
+        assertThat(breakdown.get("http")).isCloseTo(0.2, within(1e-9));
+        assertThat(breakdown.get("internal")).isCloseTo(0.0, within(1e-9));
+        assertThat(breakdown.get("self"))
+                .as("the entry span's own time is what is left")
+                .isCloseTo(0.2, within(1e-9));
+        assertThat(breakdown.values().stream().mapToDouble(Double::doubleValue).sum())
+                .isCloseTo(1.0, within(1e-9));
+    }
+
+    @Test
+    void theSpansOfADownstreamServiceBelongToItsOwnEndpoint() {
+        Span.Builder root = entry(1, "/orders/{id}", 1000);
+        Span.Builder outbound = call(root, 100, "/api/books/1", NOW, 900);
+        decoder.accept(Otlp.traces(Otlp.service("orders"), root, outbound));
+        // The callee's own server span and query, under the caller's outbound call.
+        Span.Builder downstream = Otlp.child(outbound, spanId(200), "GET /api/books/{id}",
+                Span.SpanKind.SPAN_KIND_SERVER, NOW, 880,
+                Otlp.attr("http.request.method", "GET"),
+                Otlp.attr("http.route", "/api/books/{id}"),
+                Otlp.attr("http.response.status_code", 200));
+        decoder.accept(Otlp.traces(Otlp.service("bookstore"), downstream,
+                query(downstream, 201, "select * from book where id = ?", "book", NOW, 850)));
+        flush();
+
+        Findings.Finding caller = of(Findings.SLOW_ENDPOINT).stream()
+                .filter(f -> f.title().startsWith("GET /orders/{id}")).findFirst().orElseThrow();
+
+        @SuppressWarnings("unchecked")
+        Map<String, Double> breakdown = (Map<String, Double>) caller.numbers().get("breakdown");
+        assertThat(breakdown.get("http"))
+                .as("the wait on the call is the caller's, and the callee's server span is not")
+                .isCloseTo(0.9, within(1e-9));
+        assertThat(breakdown.get("db"))
+                .as("the callee's query belongs to the callee's endpoint")
+                .isCloseTo(0.0, within(1e-9));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> hot = (List<Map<String, Object>>) caller.numbers().get("hotSpans");
+        assertThat(hot).extracting(row -> row.get("name"))
+                .doesNotContain("SELECT book");
+    }
+
+    @Test
     void anErrorLogNoTraceReportsIsALogError() {
         decoder.accept(Otlp.traces(Otlp.service("orders"), entry(1, "/orders/{id}", 10)));
         decoder.accept(Otlp.logs(Otlp.service("orders"), "orders.web.OrderController",

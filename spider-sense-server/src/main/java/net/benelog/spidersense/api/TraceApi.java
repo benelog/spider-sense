@@ -104,15 +104,26 @@ public final class TraceApi {
             throw new HttpException(HttpStatus.NOT_FOUND, "No such endpoint in this window: " + endpointId);
         }
         Stats.EndpointStats endpoint = found.get(0);
+        List<Stats.TraceSummary> slowest =
+                queries.tracesContaining(window, "endpoint_id = ?", endpointId, DETAIL_TRACES, true);
+        List<String> sample = new ArrayList<>(slowest.size());
+        for (Stats.TraceSummary trace : slowest) {
+            sample.add(trace.traceId());
+        }
+        // The same breakdown a slow-endpoint finding carries, over the same traces
+        // (agent.md, "Where the time went"), so the page and the finding agree.
+        Json.JsonObject breakdown = Json.obj();
+        queries.timeSplit(window, endpoint.service(), sample).breakdown()
+                .forEach(breakdown::put);
         return WebResponse.json(Json.obj()
                 .put("endpoint", Codecs.endpoint(endpoint))
                 .put("series", Codecs.serviceSeries(queries.buckets(window, null, endpointId)))
                 .put("queries", Codecs.queries(calledFrom(window, endpoint)))
                 .put("errors", Codecs.errorGroups(failedIn(window, endpoint)))
-                .put("traces", Codecs.traceSummaries(queries.tracesContaining(window,
-                        "endpoint_id = ?", endpointId, DETAIL_TRACES, true)))
+                .put("traces", Codecs.traceSummaries(slowest))
                 .put("recent", Codecs.traceSummaries(queries.tracesContaining(window,
-                        "endpoint_id = ?", endpointId, DETAIL_TRACES, false))));
+                        "endpoint_id = ?", endpointId, DETAIL_TRACES, false)))
+                .put("breakdown", breakdown));
     }
 
     /** The queries whose callers include this endpoint. */

@@ -192,6 +192,9 @@ class AgentApiTest {
             assertThat(text).contains("hot span: GET /orders/{id} → 200 · 587.0 ms self · 65.2%");
             assertThat(text).as("the object is a line of its own, never a pair on the numbers line")
                     .doesNotContain("hotSpan");
+            assertThat(text).as("where the time went, over the sample")
+                    .contains("   hot spans: SELECT book · 300.0 ms · 33.3% · ×1\n")
+                    .contains("breakdown: db 34.7% · http 0.0% · internal 0.1% · self 65.2%");
 
             Json.JsonObject body = json(client.get("/api/findings?since=5m"));
             Json.JsonObject logError = null;

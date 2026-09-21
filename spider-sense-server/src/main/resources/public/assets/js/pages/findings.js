@@ -3,7 +3,7 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, panel, table, chip, serviceChip, renderList, copyBlock, spinner, errorBox, emptyState, snippetBlocks, dialog, toast } from '../ui.js';
+import { h, fill, panel, table, chip, serviceChip, renderList, copyBlock, spinner, errorBox, emptyState, snippetBlocks, dialog, toast, breakdownBar, breakdownLead } from '../ui.js';
 import { formatSql } from '../sql.js';
 import { fmtApdex } from '../buckets.js';
 import { count, dur, rate, pct, bytes, time, bothTimes, truncate, shortId } from '../format.js';
@@ -96,6 +96,7 @@ const NUMBER_LABEL = {
   dbCallsPerRequest: 'db calls / request', dbMsPerRequest: 'db ms / request',
   dbCallsPerRun: 'db calls / run', dbMsPerRun: 'db ms / run', dbShare: 'db share',
   slowCalls: 'slow calls', medianRepeats: 'median repeats', maxRepeats: 'max repeats',
+  hotSpans: 'hot spans', breakdown: 'breakdown',
   firstSeen: 'first seen', lastSeen: 'last seen', usedMax: 'used max', pendingMax: 'pending max',
   at: 'worst at', worstMs: 'longest', shareMax: 'worst share', ratioMax: 'worst ratio',
   gc: 'collector', hotSpan: 'hot span',
@@ -115,6 +116,8 @@ function numberLabel(key) {
 function numberValue(key, value, kind) {
   if (value === null || value === undefined) return h('span.muted', '-');
   if (key === 'hotSpan') return hotSpanLine(value);
+  if (key === 'hotSpans') return hotSpanList(value);
+  if (key === 'breakdown') return breakdownLine(value);
   if (Array.isArray(value)) {
     if (!value.length) return h('span.muted', 'none');
     return h('ul.f-list', value.slice(0, 5).map((item) => h('li',
@@ -171,6 +174,26 @@ export function schemaLines(schema) {
           h('span.muted', '; unindexed: '),
           unindexed.length ? h('span.accent', unindexed.join(', ')) : h('span.muted', 'none')]
         : h('span.muted', 'none')));
+}
+
+/**
+ * The three summaries the time went to, over the finding's sample (docs/agent.md,
+ * "Where the time went"): the name, then its own time, share and count.
+ */
+function hotSpanList(spans) {
+  if (!Array.isArray(spans) || !spans.length) return h('span.muted', 'none');
+  return h('ul.f-hot', spans.map((hot) => h('li',
+    h('span.f-hot-name', { title: String(hot.name || '') }, String(hot.name || '')),
+    h('span.f-hot-num', dur(hot.selfMs) + ' · ' + pct(hot.share) + ' · ×' + count(hot.count)))));
+}
+
+/** The four shares as the bar the endpoint page draws, with the numbers beside it. */
+function breakdownLine(breakdown) {
+  const bar = breakdownBar(breakdown);
+  if (!bar) return h('span.muted', 'none');
+  return h('div.f-breakdown', bar,
+    h('span.muted', ['db', 'http', 'internal', 'self']
+      .map((bucket) => bucket + ' ' + pct(breakdown[bucket] || 0)).join(' · ')));
 }
 
 /**
@@ -255,13 +278,22 @@ function ackLine(finding, onChange) {
 export function evidence(finding, onChange) {
   // A hot span the finding has no trace for is left out, as the text rendering leaves it out.
   const numbers = Object.entries(finding.numbers || {})
-    .filter(([key, value]) => key !== 'hotSpan' || value);
+    .filter(([key, value]) => {
+      if (key === 'hotSpan') return !!value;
+      // An empty sample says nothing, as a finding without a trace says nothing.
+      if (key === 'hotSpans') return Array.isArray(value) && value.length > 0;
+      if (key === 'breakdown') return !!breakdownLead(value);
+      return true;
+    });
   const traces = finding.traces || [];
   const target = findingTarget(finding);
   return h('div.f-evidence',
     finding.why ? h('p.f-why', finding.why) : null,
     numbers.length
-      ? h('dl.f-numbers', numbers.map(([key, value]) => h('div',
+      ? h('dl.f-numbers', numbers.map(([key, value]) => h('div', {
+        // Two of them are lists rather than values, so they take the whole row.
+        class: key === 'hotSpans' || key === 'breakdown' ? 'f-wide' : null,
+      },
         h('dt', numberLabel(key)),
         h('dd', numberValue(key, value, finding.kind)))))
       : null,

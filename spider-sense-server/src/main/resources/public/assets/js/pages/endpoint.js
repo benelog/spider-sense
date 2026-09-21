@@ -2,7 +2,7 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, panel, table, chip, methodChip, statusBar, tabs, spinner, errorBox, serviceChip } from '../ui.js';
+import { h, fill, panel, table, chip, methodChip, statusBar, tabs, spinner, errorBox, serviceChip, breakdownBar, breakdownLead } from '../ui.js';
 import { redCharts } from './service.js';
 import { histogramBars, apdexClass, fmtApdex } from '../buckets.js';
 import { traceTable } from './traces.js';
@@ -32,6 +32,9 @@ export function render(root, ctx) {
   }
 
   function paintHead(e) {
+    const breakdown = (data && data.breakdown) || {};
+    const bar = breakdownBar(breakdown);
+    const lead = breakdownLead(breakdown);
     fill(head,
       h('div.row', { style: { gap: '10px' } },
         methodChip(e.method),
@@ -46,6 +49,8 @@ export function render(root, ctx) {
         item('max', dur(e.maxMs)),
         item('errors', e.errors ? h('span.bad', count(e.errors)) : '0'),
         h('div.th-item', h('span.k', 'status'), statusBar(e.statusCodes)),
+        // Where the time went, over the 20 slowest traces (docs/agent.md).
+        bar ? h('div.th-item', h('span.k', 'time in ' + lead[0]), bar) : null,
         histogramBars(e.histogram, { compact: true })));
   }
 

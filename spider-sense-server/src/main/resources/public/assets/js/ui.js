@@ -550,6 +550,39 @@ export function durationBar(value, max, klass) {
 }
 
 /** 2xx / 4xx / 5xx mini bar. */
+/**
+ * Where an endpoint's or a job's time went, as one stacked bar (docs/ui.md):
+ * `db`, `http`, `internal` and `self`, each segment sized by its share.
+ *
+ * <p>The order and the colours are fixed, so two bars can be compared at a
+ * glance; the shares are in the title and the largest bucket is named in words
+ * beside it, so the colour is never the only carrier.
+ *
+ * @returns null when there is no breakdown to draw
+ */
+export function breakdownBar(breakdown) {
+  const buckets = ['db', 'http', 'internal', 'self'];
+  const total = buckets.reduce((sum, b) => sum + (Number(breakdown && breakdown[b]) || 0), 0);
+  if (!total) return null;
+  const title = buckets
+    .map((b) => b + ' ' + ((breakdown[b] || 0) * 100).toFixed(1) + '%')
+    .join(' · ');
+  return h('span.breakdown', { title },
+    buckets.map((b) => ((breakdown[b] || 0) > 0
+      ? h('span', { class: 'seg seg-' + b, style: { width: ((breakdown[b] / total) * 100) + '%' } })
+      : null)));
+}
+
+/** The bucket the most time went to, so the bar is readable without its colours. */
+export function breakdownLead(breakdown) {
+  let lead = null;
+  for (const bucket of ['db', 'http', 'internal', 'self']) {
+    const share = Number(breakdown && breakdown[bucket]) || 0;
+    if (!lead || share > lead[1]) lead = [bucket, share];
+  }
+  return lead && lead[1] > 0 ? lead : null;
+}
+
 export function statusBar(statusCodes) {
   const entries = Object.entries(statusCodes || {});
   const total = entries.reduce((s, [, n]) => s + n, 0);

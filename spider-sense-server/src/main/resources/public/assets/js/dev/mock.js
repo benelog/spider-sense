@@ -918,6 +918,57 @@ function statusBody() {
   };
 }
 
+/**
+ * Where a sample of traces spent its time, as the server's `Queries.timeSplit`
+ * computes it (docs/agent.md, "Where the time went"): the three hottest
+ * summaries and the four shares, over the spans of one service only.
+ */
+function timeSplit(traces, service) {
+  const spans = [];
+  for (const trace of traces) {
+    for (const span of trace.spans) if (span.service === service) spans.push(span);
+  }
+  if (!spans.length) return { hotSpans: [], breakdown: {} };
+  const known = new Set(spans.map((s) => s.spanId));
+  const childMs = new Map();
+  for (const span of spans) {
+    if (span.parentSpanId && known.has(span.parentSpanId)) {
+      childMs.set(span.parentSpanId, (childMs.get(span.parentSpanId) || 0) + span.durationMs);
+    }
+  }
+  let total = 0;
+  const shares = { db: 0, http: 0, internal: 0, self: 0 };
+  const hottest = new Map();
+  for (const span of spans) {
+    const self = Math.max(0, span.durationMs - (childMs.get(span.spanId) || 0));
+    if (!span.parentSpanId || !known.has(span.parentSpanId)) {
+      total += span.durationMs;
+      shares.self += self;
+      continue;
+    }
+    shares[span.category === 'db' || span.category === 'http' ? span.category : 'internal'] += self;
+    const name = String(span.summary).replace(/\d+/g, '?');
+    const row = hottest.get(name) || { name, category: span.category, selfMs: 0, count: 0 };
+    row.selfMs += self;
+    row.count++;
+    hottest.set(name, row);
+  }
+  if (total <= 0) return { hotSpans: [], breakdown: {} };
+  const breakdown = {};
+  for (const bucket of ['db', 'http', 'internal', 'self']) {
+    breakdown[bucket] = Math.min(1, shares[bucket] / total);
+  }
+  const hotSpans = [...hottest.values()]
+    .sort((a, b) => b.selfMs - a.selfMs || a.name.localeCompare(b.name))
+    .slice(0, 3)
+    .map((row) => ({
+      name: row.name, category: row.category,
+      selfMs: Math.round(row.selfMs * 100) / 100,
+      share: Math.min(1, row.selfMs / total), count: row.count,
+    }));
+  return { hotSpans, breakdown };
+}
+
 // --- marks, findings and compare (docs/agent.md) -------------------------
 
 /** Two automatic start marks and the pair a person made around a change. */
@@ -1059,6 +1110,9 @@ function findingsFor(w, service, limit, hideAcked) {
 
   for (const e of endpointStats(w, service)) {
     if (e.p95Ms <= SLOW_REQUEST_MS) continue;
+    const sample = inWindow(w, e.service).filter((t) => t.endpointId === e.endpointId)
+      .slice().sort((a, b) => b.durationMs - a.durationMs).slice(0, 20);
+    const split = timeSplit(sample, e.service);
     found.push({
       id: findingId('slow-endpoint', e.service, e.endpointId),
       kind: 'slow-endpoint', severity: e.p95Ms > SLOW_REQUEST_MS * 4 ? 'high' : 'medium', service: e.service,
@@ -1069,6 +1123,7 @@ function findingsFor(w, service, limit, hideAcked) {
         calls: e.calls, p50Ms: e.p50Ms, p95Ms: e.p95Ms, maxMs: e.maxMs, totalMs: e.totalMs,
         apdex: e.apdex, dbCallsPerRequest: 2.4, dbMsPerRequest: 310.2, dbShare: 0.62,
         hotSpan: { name: 'SELECT reviews', category: 'db', selfMs: 312.4, share: 0.62 },
+        hotSpans: split.hotSpans, breakdown: split.breakdown,
       },
       statement: null,
       code: [],
@@ -1090,6 +1145,12 @@ function findingsFor(w, service, limit, hideAcked) {
         runs: 14, p50Ms: 1480, p95Ms: 2130, maxMs: 2890, totalMs: 24800,
         dbCallsPerRun: 38.5, dbMsPerRun: 1260.4, dbShare: 0.71,
         hotSpan: { name: 'SELECT order_line', category: 'db', selfMs: 1260.4, share: 0.59 },
+        hotSpans: [
+          { name: 'SELECT order_line (h2)', category: 'db', selfMs: 17645.6, share: 0.59, count: 539 },
+          { name: 'SELECT customers (h2)', category: 'db', selfMs: 3570.2, share: 0.12, count: 196 },
+          { name: 'OrderReportJob.render', category: 'internal', selfMs: 2380.1, share: 0.08, count: 14 },
+        ],
+        breakdown: { db: 0.71, http: 0.0, internal: 0.08, self: 0.21 },
       },
       statement: null,
       code: ['com.example.orders.OrderReportJob.run(OrderReportJob.java:36)'],
@@ -1404,6 +1465,8 @@ const ROUTES = [
       errors: errorGroups(w, ep.service).filter((e) => e.endpoints.some((x) => x.name === ep.name)).map(strip),
       traces: list.slice().sort((a, b) => b.durationMs - a.durationMs).slice(0, 20).map(summary),
       recent: list.slice().sort((a, b) => b.start - a.start).slice(0, 20).map(summary),
+      breakdown: timeSplit(
+        list.slice().sort((a, b) => b.durationMs - a.durationMs).slice(0, 20), ep.service).breakdown,
     };
   }],
 

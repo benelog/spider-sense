@@ -153,7 +153,9 @@ In a `series`, `histogram` is four aligned arrays, one per bucket; the errors of
 
 `GET /api/endpoints?from&to&service` → `{ "endpoints": [ <EndpointStats> ] }` across services, sorted by total time desc.
 
-`GET /api/endpoints/{endpointId}?from&to` → `{ "endpoint": <EndpointStats>, "series": {...as service series...}, "queries": [<QueryStats>], "errors": [<ErrorGroup>], "traces": [<TraceSummary> x 20 slowest], "recent": [<TraceSummary> x 20 newest] }`.
+`GET /api/endpoints/{endpointId}?from&to` → `{ "endpoint": <EndpointStats>, "series": {...as service series...}, "queries": [<QueryStats>], "errors": [<ErrorGroup>], "traces": [<TraceSummary> x 20 slowest], "recent": [<TraceSummary> x 20 newest], "breakdown": { "db": 0.44, "http": 0.21, "internal": 0.07, "self": 0.28 } }`.
+
+`breakdown` is where the endpoint's time went over the 20 slowest traces, the same four shares a `slow-endpoint` finding carries (agent.md, "Where the time went"); `{}` when those traces add up to nothing.
 
 ## Traces
 

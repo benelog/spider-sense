@@ -8,6 +8,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 import net.benelog.spidersense.query.Check;
 import net.benelog.spidersense.query.CodeFrames;
@@ -215,6 +216,7 @@ final class Text {
             if (hot != null) {
                 text.append("   ").append(hot).append('\n');
             }
+            whereTheTimeWent(text, finding.numbers());
             if (finding.statement() != null) {
                 text.append("   ").append(statement(finding.statement(), full)).append('\n');
             }
@@ -279,7 +281,7 @@ final class Text {
     private static String numbers(Map<String, Object> numbers) {
         List<String> parts = new ArrayList<>();
         numbers.forEach((key, value) -> {
-            if (!HOT_SPAN.equals(key) && !(value instanceof Map<?, ?>)) {
+            if (!LINES_OF_THEIR_OWN.contains(key) && !(value instanceof Map<?, ?>)) {
                 parts.add(key + " " + scalar(key, value));
             }
         });
@@ -287,6 +289,11 @@ final class Text {
     }
 
     private static final String HOT_SPAN = "hotSpan";
+    private static final String HOT_SPANS = "hotSpans";
+    private static final String BREAKDOWN = "breakdown";
+
+    /** The values that read as a sentence rather than as a pair, and get their own line. */
+    private static final Set<String> LINES_OF_THEIR_OWN = Set.of(HOT_SPAN, HOT_SPANS, BREAKDOWN);
 
     /**
      * {@code hot span: SELECT order_line · 312.4 ms self · 62.0%}: where the time
@@ -304,6 +311,47 @@ final class Text {
                 + " · " + (selfMs instanceof Number self ? Numbers.millis(self.doubleValue()) : "—")
                 + " self · "
                 + (share instanceof Number part ? Numbers.percent(part.doubleValue()) : "—");
+    }
+
+    /**
+     * {@code hot spans:} and one indented line per summary, then {@code breakdown:}
+     * on a line of its own: where the time went over the finding's sample (agent.md,
+     * "Where the time went").
+     *
+     * <p>Lines rather than a table, because there are three of them and they sit
+     * inside a finding's block; the indent is the one the block already uses, so the
+     * continuation lines read as continuations.
+     *
+     * <p>Nothing is appended when the finding has neither.
+     */
+    private static void whereTheTimeWent(StringBuilder text, Map<String, Object> numbers) {
+        if (numbers.get(HOT_SPANS) instanceof List<?> spans && !spans.isEmpty()) {
+            String indent = "";
+            text.append("   hot spans: ");
+            for (Object each : spans) {
+                if (!(each instanceof Map<?, ?> hot)) {
+                    continue;
+                }
+                text.append(indent).append(hot.get("name"))
+                        .append(" · ").append(millis(hot.get("selfMs")))
+                        .append(" · ").append(percent(hot.get("share")))
+                        .append(" · ×").append(scalar(hot.get("count"))).append('\n');
+                indent = "              ";
+            }
+        }
+        if (numbers.get(BREAKDOWN) instanceof Map<?, ?> breakdown && !breakdown.isEmpty()) {
+            List<String> parts = new ArrayList<>();
+            breakdown.forEach((bucket, share) -> parts.add(bucket + " " + percent(share)));
+            text.append("   breakdown: ").append(String.join(" · ", parts)).append('\n');
+        }
+    }
+
+    private static String millis(@Nullable Object value) {
+        return value instanceof Number number ? Numbers.millis(number.doubleValue()) : "—";
+    }
+
+    private static String percent(@Nullable Object value) {
+        return value instanceof Number number ? Numbers.percent(number.doubleValue()) : "—";
     }
 
     /**

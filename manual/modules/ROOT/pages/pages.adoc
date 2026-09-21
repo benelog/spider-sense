@@ -53,6 +53,7 @@ The table has the position, the severity as a dot and a word, the kind chip, the
 That number is the count for `error` and `log-error`, the median repeats times the endpoints affected (`42 × 3`) for `n-plus-one` and `n-plus-one-http`, the total time for `slow-query`, `slow-endpoint`, `slow-job` and `slow-external`, the peak pending requests for `pool-exhausted`, the worst pause for `gc-pause`, the peak ratio as a percentage for `heap-pressure`, and the growth for `thread-growth`.
 
 A row click expands it in place into the evidence: the `why` sentence, the kind's numbers as a grid of keys and values, the statement pretty-printed when there is one, the code frames as a monospace list, and the traces as links to the trace page.
+A `slow-endpoint` and a `slow-job` carry two more rows, each spanning the grid: xref:findings.adoc#time[*hot spans*], the three summaries the time went to with their own time, share and count, and *breakdown*, the same stacked bar the endpoint page draws with its four shares written beside it.
 Under the statement of a `slow-query` or an `n-plus-one` comes the xref:findings.adoc#schema[schema block], in small monospace, the lines the CLI prints: one per table with the indexes it carries, `none` for a table that has none, then one for the columns the statement filters on, with the ones no index leads with named after `unindexed` and in the accent colour.
 A finding without the block shows nothing for it.
 `callers` and `endpoints` appear as a short list, and `hotSpan` as one line.
@@ -146,10 +147,13 @@ Both link to their own page.
 . *Dependencies*: kind icon, target, calls, errors, avg, and p95.
 . *Resource attributes*, as a collapsed table of keys and values.
 
+[#endpoints]
 === Endpoint
 
 `+#/endpoints/{endpointId}+` is one route of one service.
 The header gives the method, the route, the service, the Apdex and the compact Response summary.
+Beside them is the *time breakdown*, one stacked bar in four fixed colours — `db` in the accent colour, `http` in teal, `internal` in the warning colour, `self` in the strand grey — over the endpoint's 20 slowest traces in the window, the same four shares a xref:findings.adoc#time[`slow-endpoint`] finding carries.
+Its caption names the bucket the most time went to, so the bar reads without its colours, and the four shares are in its tooltip.
 The same three charts follow, with the same *Requests* | *Load* toggle.
 Under them are four tabs: *Slowest traces*, *Recent traces*, *Queries*, and *Errors*.
 The trace rows are the rows of the Traces page.

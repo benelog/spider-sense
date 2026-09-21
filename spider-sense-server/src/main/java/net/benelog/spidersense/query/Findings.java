@@ -1,6 +1,5 @@
 package net.benelog.spidersense.query;
 
-import java.net.URI;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -62,6 +61,13 @@ public final class Findings {
     private static final int LOUD_REPEATS = 20;
 
     private static final int EVIDENCE_TRACES = 3;
+
+    /**
+     * The traces a {@code slow-endpoint} or a {@code slow-job} reads the aggregated
+     * hot spans and the breakdown from; the first {@link #EVIDENCE_TRACES} of them
+     * are the finding's own {@code traces} (agent.md, "Where the time went").
+     */
+    private static final int SAMPLE_TRACES = 20;
     private static final int CANDIDATES = 500;
     private static final int GROUPS = 100;
 
@@ -604,7 +610,7 @@ public final class Findings {
                 continue;
             }
             String target = Queries.target(span);
-            String call = callName(span, target);
+            String call = Queries.callName(span);
             byEntry.computeIfAbsent(entry.spanId() + "\0" + call, key -> new ArrayList<>())
                     .add(new CallRepeat(span.traceId(),
                             Ids.endpointId(entry.service(), entry.endpoint()), entry.endpoint(),
@@ -690,39 +696,6 @@ public final class Findings {
         return found;
     }
 
-    /**
-     * {@code GET localhost:8081/api/books/?}: what two outbound calls have to share
-     * to be the same call (agent.md, "The repeated call").
-     *
-     * <p>The span's name, the dependency target, and the path and query of
-     * {@code url.full} with every run of digits replaced, which is what a loop
-     * varies. The host is taken from the target rather than from the URL, so the
-     * port stays a port rather than becoming {@code ?}, and the status is left out
-     * because the same call can answer differently for two items.
-     */
-    private static String callName(SpanRecord span, String target) {
-        String url = span.attr("url.full");
-        if (url == null) {
-            return span.name() + " " + target;
-        }
-        return span.name() + " " + target + Ids.normaliseDigits(pathOf(url));
-    }
-
-    /** The path and query of an absolute URL, or the whole of it when it is not one. */
-    private static String pathOf(String url) {
-        try {
-            URI parsed = URI.create(url);
-            String path = parsed.getRawPath();
-            if (path == null) {
-                return url;
-            }
-            String query = parsed.getRawQuery();
-            return query == null ? path : path + "?" + query;
-        } catch (IllegalArgumentException notAUrl) {
-            return url;
-        }
-    }
-
     // --- slow query ----------------------------------------------------------
 
     private List<Ranked> slowQueries(Window window, @Nullable String service) {
@@ -797,8 +770,10 @@ public final class Findings {
             double share = endpoint.totalMs() <= 0 ? 0
                     : Math.min(1, work.totalMs() / endpoint.totalMs());
 
-            List<String> traces = traceIds(queries.tracesContaining(window, "endpoint_id = ?",
-                    endpoint.endpointId(), EVIDENCE_TRACES, true));
+            List<String> sample = traceIds(queries.tracesContaining(window, "endpoint_id = ?",
+                    endpoint.endpointId(), SAMPLE_TRACES, true));
+            List<String> traces = evidence(sample);
+            Queries.TimeSplit split = queries.timeSplit(window, endpoint.service(), sample);
 
             Map<String, Object> numbers = new LinkedHashMap<>();
             numbers.put("calls", endpoint.calls());
@@ -811,6 +786,8 @@ public final class Findings {
             numbers.put("dbMsPerRequest", msPerRequest);
             numbers.put("dbShare", share);
             numbers.put("hotSpan", hotSpan(traces));
+            numbers.put("hotSpans", hotSpans(split));
+            numbers.put("breakdown", split.breakdown());
 
             String severity = endpoint.p95Ms() > 4 * tingles.slowRequestMs() ? HIGH : MEDIUM;
             Finding finding = new Finding(
@@ -866,9 +843,11 @@ public final class Findings {
             double msPerRun = job.runs() == 0 ? 0 : work.totalMs() / job.runs();
             double share = job.totalMs() <= 0 ? 0 : Math.min(1, work.totalMs() / job.totalMs());
 
-            List<String> traces = traceIds(queries.tracesContaining(window,
+            List<String> sample = traceIds(queries.tracesContaining(window,
                     "parent_span_id IS NULL AND s.kind = 'INTERNAL' AND s.service = ? AND s.name = ?",
-                    List.of(job.service(), job.name()), EVIDENCE_TRACES, true));
+                    List.of(job.service(), job.name()), SAMPLE_TRACES, true));
+            List<String> traces = evidence(sample);
+            Queries.TimeSplit split = queries.timeSplit(window, job.service(), sample);
 
             Map<String, Object> numbers = new LinkedHashMap<>();
             numbers.put("runs", job.runs());
@@ -880,6 +859,8 @@ public final class Findings {
             numbers.put("dbMsPerRun", msPerRun);
             numbers.put("dbShare", share);
             numbers.put("hotSpan", hotSpan(traces));
+            numbers.put("hotSpans", hotSpans(split));
+            numbers.put("breakdown", split.breakdown());
 
             String severity = job.p95Ms() > 4 * tingles.slowRequestMs() ? HIGH : MEDIUM;
             Finding finding = new Finding(
@@ -1429,6 +1410,29 @@ public final class Findings {
         hot.put("share", detail.durationMs() <= 0 ? 0.0
                 : Math.min(1, selfMs / detail.durationMs()));
         return hot;
+    }
+
+    /** The evidence a finding carries, which is the head of the sample it read. */
+    private static List<String> evidence(List<String> sample) {
+        return List.copyOf(sample.subList(0, Math.min(EVIDENCE_TRACES, sample.size())));
+    }
+
+    /**
+     * The aggregated hot spans as {@code numbers} carries them: a list of small maps,
+     * as {@code callers} and {@code endpoints} are (agent.md).
+     */
+    private static List<Map<String, Object>> hotSpans(Queries.TimeSplit split) {
+        List<Map<String, Object>> list = new ArrayList<>(split.hotSpans().size());
+        for (Queries.HotSpan hot : split.hotSpans()) {
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("name", hot.name());
+            entry.put("category", hot.category());
+            entry.put("selfMs", hot.selfMs());
+            entry.put("share", hot.share());
+            entry.put("count", hot.count());
+            list.add(entry);
+        }
+        return list;
     }
 
     /** One line, cut at {@code max} characters with an ellipsis. */

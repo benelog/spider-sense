@@ -124,8 +124,8 @@ Each finding carries:
 - `n-plus-one`: `requests` (entry spans of the endpoint in the window, as design.md defines an entry span), `affected` (of them, how many repeated), `medianRepeats`, `maxRepeats`, `msPerRequest` (summed time of the repeated statement, per affected request).
 - `n-plus-one-http`: the same five as `n-plus-one`, over the repeated call rather than the repeated statement; `subject.endpointId` is the endpoint, `subject.target` is the host it called and the title is `<endpoint> calls <call> <medianRepeats> times per request`.
 - `slow-query`: `calls`, `slowCalls`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `callers` (as api.md's `QueryStats.callers`).
-- `slow-endpoint`: `calls`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `apdex`, `dbCallsPerRequest`, `dbMsPerRequest`, `dbShare` (0..1: the part of the endpoint's total time spent in database spans of the same trace and service), `hotSpan`.
-- `slow-job`: `runs`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `dbCallsPerRun`, `dbMsPerRun`, `dbShare`, the same measures as `slow-endpoint` over the job's runs, `hotSpan`; `subject.job` is the span name and the title is `<job> is slow`.
+- `slow-endpoint`: `calls`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `apdex`, `dbCallsPerRequest`, `dbMsPerRequest`, `dbShare` (0..1: the part of the endpoint's total time spent in database spans of the same trace and service), `hotSpan`, `hotSpans`, `breakdown`.
+- `slow-job`: `runs`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `dbCallsPerRun`, `dbMsPerRun`, `dbShare`, the same measures as `slow-endpoint` over the job's runs, `hotSpan`, `hotSpans`, `breakdown`; `subject.job` is the span name and the title is `<job> is slow`.
 - `slow-external`: `calls`, `errors`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `callers` (as `slow-query`'s: the entry spans up the chain); `subject.target` is the target and the title is `GET localhost:8081 is slow` (the span name, then the target).
 - `log-error`: `count` (uncovered records), `firstSeen`, `lastSeen`, `logger`, `message` (normalised), `endpoints` (the entry span of each record's trace, as `error`'s `endpoints`; `(no endpoint)` for a record without one); `subject.logger` is the logger and the title is `ERROR in <logger short name>: <message cut at 80>`.
 - `pool-exhausted`: `pool`, `max`, `usedMax`, `pendingMax`, `at` (the worst point).
@@ -135,6 +135,39 @@ Each finding carries:
 
 `hotSpan` is where the time went in the finding's first evidence trace: `{ "name": "<summary>", "category": "db" | "http" | "internal" | …, "selfMs": 312.4, "share": 0.62 }`, the span with the largest self time (its duration minus the durations of its direct children, never below zero, as the Profile view computes it) and that self time's share of the trace's duration; `null` when the finding has no trace.
 It is the first clue when `dbShare` is low, and in the text rendering it is one line, `hot span: <name> · <selfMs> self · <share>`.
+
+### Where the time went
+
+One trace is an anecdote, so a `slow-endpoint` and a `slow-job` also answer the same question over many: `hotSpans` names the three summaries that took the most time, and `breakdown` says what kind of work the time was.
+
+```json
+"hotSpans": [ { "name": "SELECT order_line", "category": "db", "selfMs": 4210.5, "share": 0.44, "count": 126 },
+              { "name": "GET localhost:8081/api/books/?", "category": "http", "selfMs": 1980.0, "share": 0.21, "count": 42 } ],
+"breakdown": { "db": 0.44, "http": 0.21, "internal": 0.07, "self": 0.28 }
+```
+
+Both are computed over the finding's **sample**: the 20 slowest traces of the endpoint or the job in the window, of which the first three are the `traces` the finding carries.
+Twenty rather than every trace because the answer is read out of the spans themselves rather than out of an aggregate, and the slowest twenty are where a slow endpoint's time is; a share is therefore a share of those traces' summed duration, and the finding's own `totalMs` stays the window's.
+Only the spans of the finding's own service count, the rule `dbShare` already uses: the database work of a downstream service belongs to that service's own endpoint, and leaving its server span out is what makes the wait on an outbound call land in `http` where the caller can see it.
+
+**Self time** is a span's duration less the durations of its direct children within that set, never below zero, as the Profile view computes it.
+A span whose parent is not in the set is a **top span** — the entry span of a request, the root span of a job — and the top spans are what the shares are taken over.
+
+- `hotSpans`: every span but the top ones, grouped by its category and its name, summed, the three largest by `selfMs` first. `count` is how many spans went into the row, and `share` is `selfMs` over the sample's total.
+  The name is the span's summary with every run of digits replaced by `?`, and for an outbound call it is the call of [The repeated call](#the-repeated-call) — `GET localhost:8081/api/books/?` — so one call to 40 items is one row and reads the same here as it does in an `n-plus-one-http`.
+- `breakdown`: `db`, `http`, `internal` and `self`, which sum to 1. `self` is the top spans' own self time — the request's own code, the framework, everything not in a child span — and `internal` absorbs the `messaging` and `rpc` categories, because the question the four answer is "waiting on the database, waiting on the network, or working".
+
+`breakdown` is the number to read first when `dbShare` is low: it says whether to look at the queries, at the calls, or at the code, without opening a trace.
+`GET /api/endpoints/{endpointId}` ([api.md](api.md)) carries the same `breakdown` over the same sample, which is what the endpoint page draws.
+Both are absent (`hotSpans` empty, `breakdown` empty) when the finding has no trace, or when the sample's spans add up to nothing.
+
+In the text rendering they come after the numbers and before the statement:
+
+```
+   hot spans: SELECT order_line · 4,210.5 ms · 44.0% · ×126
+              GET localhost:8081/api/books/? · 1,980.0 ms · 21.0% · ×42
+   breakdown: db 44.0% · http 21.0% · internal 7.0% · self 28.0%
+```
 
 `traces` are the three slowest traces for `slow-*`, the three newest for `error` and `log-error` (records with a trace id), the three most recent affected for `n-plus-one` and `n-plus-one-http`, none for `pool-exhausted` and the JVM kinds.
 A job is never a request: it is not in `requests`, not in the Apdex and not in `check`; `slow-job` is the one place a slow scheduler tick or batch step is reported.
