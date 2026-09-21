@@ -165,12 +165,15 @@ public final class Check {
             case MAX_N_PLUS_ONE -> {
                 List<Findings.Finding> found = new ArrayList<>();
                 for (Findings.Finding finding : findings.findings(window, service, FINDINGS)) {
-                    if (Findings.N_PLUS_ONE.equals(finding.kind())
+                    // A loop of queries and a loop of outbound calls are one mistake to
+                    // the caller, so one rule counts both (agent.md).
+                    if ((Findings.N_PLUS_ONE.equals(finding.kind())
+                            || Findings.N_PLUS_ONE_HTTP.equals(finding.kind()))
                             && (endpoint == null || inScope(finding, endpoints))) {
                         found.add(finding);
                     }
                 }
-                String detail = found.isEmpty() ? "no repeated statement in the window"
+                String detail = found.isEmpty() ? "no repeated statement or call in the window"
                         : Numbers.plural(found.size(), "finding") + ": " + found.get(0).title();
                 yield max(rule, limit, found.size(), detail);
             }

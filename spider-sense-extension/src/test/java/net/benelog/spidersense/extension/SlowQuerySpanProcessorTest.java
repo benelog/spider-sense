@@ -307,6 +307,66 @@ class SlowQuerySpanProcessorTest {
                 .isNull());
     }
 
+    @Test
+    void theFifthRepeatOfAFastCallCarriesTheStackAndNoLaterRepeatDoes() {
+        inOneTrace(() -> {
+            for (int i = 0; i < 6; i++) {
+                call("http://localhost:8081/api/books/" + (100 + i));
+            }
+        });
+
+        List<SpanData> repeats = exportedCalls();
+        assertThat(repeats).hasSize(6);
+        for (int i = 0; i < SlowQuerySpanProcessor.N_PLUS_ONE_REPEATS - 1; i++) {
+            assertThat(stacktraceOf(repeats.get(i))).as("repeat " + (i + 1)).isNull();
+        }
+        assertThat(stacktraceOf(repeats.get(4)))
+                .as("the digits are what the loop varies, so six URLs are one call")
+                .isNotNull()
+                .contains("SlowQuerySpanProcessorTest");
+        assertThat(stacktraceOf(repeats.get(5)))
+                .as("one capture per call per trace, not one per repeat")
+                .isNull();
+    }
+
+    @Test
+    void twoCallsThatDifferInMoreThanTheirDigitsAreCountedOnTheirOwn() {
+        inOneTrace(() -> {
+            for (int i = 0; i < 4; i++) {
+                call("http://localhost:8081/api/books/" + i);
+            }
+            for (int i = 0; i < 5; i++) {
+                call("http://localhost:8081/api/authors/" + i);
+            }
+        });
+
+        List<SpanData> repeats = exportedCalls();
+        assertThat(repeats).hasSize(9);
+        for (int i = 0; i < 8; i++) {
+            assertThat(stacktraceOf(repeats.get(i))).as("call " + (i + 1)).isNull();
+        }
+        assertThat(stacktraceOf(repeats.get(8)))
+                .as("the fifth repeat of the second call")
+                .isNotNull();
+    }
+
+    @Test
+    void anOutboundCallThatIsNotHttpIsNeverCounted() {
+        inOneTrace(() -> {
+            for (int i = 0; i < 6; i++) {
+                tracer.spanBuilder("publish orders")
+                        .setSpanKind(SpanKind.CLIENT)
+                        .setAttribute("messaging.system", "kafka")
+                        .startSpan()
+                        .end();
+            }
+        });
+
+        assertThat(exportedCalls())
+                .as("only an HTTP call is the fourth case")
+                .allSatisfy(span -> assertThat(stacktraceOf(span)).isNull());
+    }
+
     private SpanData exported() {
         tracerProvider.forceFlush().join(10, TimeUnit.SECONDS);
         assertThat(exporter.getFinishedSpanItems()).hasSize(1);
@@ -338,6 +398,28 @@ class SlowQuerySpanProcessorTest {
         } finally {
             entry.end();
         }
+    }
+
+    /** An outbound HTTP call that ends well inside the threshold, so only the counter can fire. */
+    private void call(String url) {
+        tracer.spanBuilder("GET")
+                .setSpanKind(SpanKind.CLIENT)
+                .setAttribute("http.request.method", "GET")
+                .setAttribute("url.full", url)
+                .startSpan()
+                .end();
+    }
+
+    /** The outbound spans the processor saw, in the order they ended. */
+    private List<SpanData> exportedCalls() {
+        tracerProvider.forceFlush().join(10, TimeUnit.SECONDS);
+        List<SpanData> calls = new ArrayList<>();
+        for (SpanData span : exporter.getFinishedSpanItems()) {
+            if (span.getKind() == SpanKind.CLIENT) {
+                calls.add(span);
+            }
+        }
+        return calls;
     }
 
     /** A database span that ends well inside the threshold, so only the counter can fire on it. */

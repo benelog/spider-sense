@@ -9,11 +9,12 @@ import io.opentelemetry.sdk.trace.internal.ExtendedSpanProcessor;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Gives a slow database span, the fifth repeat of a statement within a trace, and a slow outbound
- * call the stack it was issued from, as {@code code.stacktrace}.
+ * Gives a slow database span, the fifth repeat of a statement within a trace, a slow outbound call
+ * and the fifth repeat of an HTTP call the stack it was issued from, as {@code code.stacktrace}.
  *
  * <p>The stock OpenTelemetry agent records where an exception was thrown and nothing about where a
  * query came from, so a {@code slow-query} or {@code n-plus-one} finding could name a statement but
@@ -32,6 +33,10 @@ import org.jspecify.annotations.Nullable;
  * <p>The third case is a slow outbound call: a {@code CLIENT} span that is not a database span and
  * took at least {@code spidersense.slow.request.ms}, so a {@code slow-external} finding names the
  * line that made the call rather than only the host it went to.
+ *
+ * <p>The fourth is that case's N+1, counted exactly as the statements are: an outbound HTTP call is
+ * counted per trace under its name and its URL with the digits replaced, and the fifth repeat gets
+ * the stack, so an {@code n-plus-one-http} finding names the loop rather than only the host.
  */
 public final class SlowQuerySpanProcessor implements ExtendedSpanProcessor {
 
@@ -46,10 +51,19 @@ public final class SlowQuerySpanProcessor implements ExtendedSpanProcessor {
     static final AttributeKey<String> DB_QUERY_TEXT = AttributeKey.stringKey("db.query.text");
     static final AttributeKey<String> DB_STATEMENT = AttributeKey.stringKey("db.statement");
 
+    /** What makes an outbound span an HTTP call, and what says where it went. */
+    static final AttributeKey<String> HTTP_REQUEST_METHOD =
+            AttributeKey.stringKey("http.request.method");
+    static final AttributeKey<String> HTTP_METHOD = AttributeKey.stringKey("http.method");
+    static final AttributeKey<String> URL_FULL = AttributeKey.stringKey("url.full");
+
+    /** The digits a loop varies; the server's {@code Ids.normaliseDigits}, repeated here. */
+    private static final Pattern DIGITS = Pattern.compile("\\d+");
+
     /** The repeat that gets the stack: the server's {@code Findings.REPEATS}. */
     static final int N_PLUS_ONE_REPEATS = 5;
 
-    /** How many distinct statements of one trace are counted before the counter gives up. */
+    /** How many distinct statements and calls of one trace are counted before it gives up. */
     static final int MAX_STATEMENTS = 256;
 
     /** The same threshold the server calls a tingle, so what is captured is what gets reported. */
@@ -81,7 +95,7 @@ public final class SlowQuerySpanProcessor implements ExtendedSpanProcessor {
     @SuppressWarnings("ThreadLocalUsage")
     private final ThreadLocal<Repeats> repeats = new ThreadLocal<>();
 
-    /** The trace a thread is counting, and how often each statement of it has ended. */
+    /** The trace a thread is counting, and how often each statement or call of it has ended. */
     private static final class Repeats {
         private @Nullable String traceId;
         private final Map<String, Integer> counts = new HashMap<>();
@@ -127,16 +141,20 @@ public final class SlowQuerySpanProcessor implements ExtendedSpanProcessor {
     public void onEnding(ReadWriteSpan span) {
         try {
             if (span.getAttribute(DB_SYSTEM) == null && span.getAttribute(DB_SYSTEM_NAME) == null) {
-                // Not a database span: the one other case is a slow outbound call.
-                if (span.getKind() == SpanKind.CLIENT
-                        && span.getLatencyNanos() >= requestThresholdNanos) {
+                // Not a database span: the other two cases are a slow outbound call and a call
+                // repeated within one trace, which is the N+1 an ORM cannot cause.
+                if (span.getKind() != SpanKind.CLIENT) {
+                    return;
+                }
+                if (span.getLatencyNanos() >= requestThresholdNanos
+                        || (isHttp(span) && count(span, callOf(span)) == N_PLUS_ONE_REPEATS)) {
                     capture(span);
                 }
                 return;
             }
             boolean slow = span.getLatencyNanos() >= thresholdNanos;
             // Slow spans are counted too, so a mix of slow and fast repeats reaches five like any other.
-            boolean fifthRepeat = count(span) == N_PLUS_ONE_REPEATS;
+            boolean fifthRepeat = count(span, statementOf(span)) == N_PLUS_ONE_REPEATS;
             if (!slow && !fifthRepeat) {
                 return;
             }
@@ -168,7 +186,7 @@ public final class SlowQuerySpanProcessor implements ExtendedSpanProcessor {
      * <p>Zero when the statement is not counted at all, which is what beyond {@link #MAX_STATEMENTS}
      * distinct statements of one trace means: the counter stops adding keys and nothing else changes.
      */
-    private int count(ReadWriteSpan span) {
+    private int count(ReadWriteSpan span, String key) {
         String traceId = span.getSpanContext().getTraceId();
         Repeats counting = repeats.get();
         if (counting == null) {
@@ -179,14 +197,34 @@ public final class SlowQuerySpanProcessor implements ExtendedSpanProcessor {
             counting.traceId = traceId;
             counting.counts.clear();
         }
-        String statement = statementOf(span);
-        Integer seen = counting.counts.get(statement);
+        Integer seen = counting.counts.get(key);
         if (seen == null && counting.counts.size() >= MAX_STATEMENTS) {
             return 0;
         }
         int count = seen == null ? 1 : seen + 1;
-        counting.counts.put(statement, count);
+        counting.counts.put(key, count);
         return count;
+    }
+
+    /** Whether an outbound span is an HTTP call: the rule the server's {@code category()} uses. */
+    private static boolean isHttp(ReadWriteSpan span) {
+        return span.getAttribute(HTTP_REQUEST_METHOD) != null
+                || span.getAttribute(HTTP_METHOD) != null
+                || span.getAttribute(URL_FULL) != null;
+    }
+
+    /**
+     * What two outbound calls have to share to be the same call: the span's name and its URL with
+     * every run of digits replaced by {@code ?}.
+     *
+     * <p>The digits are what a loop varies, so replacing them is what makes three calls one call,
+     * and the server groups the finding on the same rule ({@code docs/agent.md}, "The repeated
+     * call"). The key carries a prefix, so a URL is never counted as a statement of the same trace.
+     */
+    private static String callOf(ReadWriteSpan span) {
+        String url = span.getAttribute(URL_FULL);
+        return "http\0" + span.getName() + " "
+                + (url == null ? "" : DIGITS.matcher(url).replaceAll("?"));
     }
 
     /** What two spans have to share to be the same statement: the query text, else the span name. */

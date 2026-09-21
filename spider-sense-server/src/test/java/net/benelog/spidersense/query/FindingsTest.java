@@ -97,6 +97,18 @@ class FindingsTest {
                 Otlp.attr("http.response.status_code", 200));
     }
 
+    /** An outbound HTTP call to one path, as a loop over items makes one per item. */
+    private static Span.Builder call(Span.Builder parent, int id, String path, long startMs,
+            long durationMs) {
+        return Otlp.child(parent, spanId(id), "GET", Span.SpanKind.SPAN_KIND_CLIENT,
+                startMs, durationMs,
+                Otlp.attr("http.request.method", "GET"),
+                Otlp.attr("url.full", "http://localhost:8081" + path),
+                Otlp.attr("server.address", "localhost"),
+                Otlp.attr("server.port", 8081L),
+                Otlp.attr("http.response.status_code", 200));
+    }
+
     /** A job: a root {@code INTERNAL} span, named the way a scheduler names one. */
     private Span.Builder job(int n, String name, long durationMs) {
         return Otlp.span(traceId(n), spanId(n), name, Span.SpanKind.SPAN_KIND_INTERNAL,
@@ -198,6 +210,87 @@ class FindingsTest {
 
         assertThat(repeated).hasSize(1);
         assertThat(repeated.get(0).code()).isEmpty();
+    }
+
+    @Test
+    void theSameCallRepeatedUnderOneEntrySpanIsAnNPlusOneHttp() {
+        Span.Builder root = entry(1, "/orders/{id}", 60);
+        List<Span.Builder> spans = new ArrayList<>();
+        spans.add(root);
+        for (int i = 0; i < 6; i++) {
+            // Only the digits differ, which is what a loop over items varies.
+            spans.add(call(root, 100 + i, "/api/books/" + (155 + i), NOW + i, 2));
+        }
+        decoder.accept(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
+        flush();
+
+        List<Findings.Finding> repeated = of(Findings.N_PLUS_ONE_HTTP);
+
+        assertThat(repeated).hasSize(1);
+        Findings.Finding finding = repeated.get(0);
+        assertThat(finding.title())
+                .isEqualTo("GET /orders/{id} calls GET localhost:8081/api/books/? 6 times per request");
+        assertThat(finding.numbers().get("requests")).isEqualTo(1L);
+        assertThat(finding.numbers().get("affected")).isEqualTo(1L);
+        assertThat(finding.numbers().get("medianRepeats")).isEqualTo(6L);
+        assertThat(finding.numbers().get("maxRepeats")).isEqualTo(6L);
+        assertThat(finding.statement()).isNull();
+        assertThat(finding.subject().endpointId()).isNotBlank();
+        assertThat(finding.subject().target()).isEqualTo("localhost:8081");
+        assertThat(finding.traces()).containsExactly(traceId(1));
+    }
+
+    @Test
+    void fourRepeatsOfACallAreNotAnNPlusOneHttp() {
+        Span.Builder root = entry(1, "/orders/{id}", 60);
+        List<Span.Builder> spans = new ArrayList<>();
+        spans.add(root);
+        for (int i = 0; i < 4; i++) {
+            spans.add(call(root, 100 + i, "/api/books/" + i, NOW + i, 2));
+        }
+        decoder.accept(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
+        flush();
+
+        assertThat(of(Findings.N_PLUS_ONE_HTTP)).isEmpty();
+    }
+
+    @Test
+    void twoCallsThatDifferInMoreThanTheirDigitsAreTwoCalls() {
+        Span.Builder root = entry(1, "/orders/{id}", 60);
+        List<Span.Builder> spans = new ArrayList<>();
+        spans.add(root);
+        for (int i = 0; i < 3; i++) {
+            spans.add(call(root, 100 + i, "/api/books/" + i, NOW + i, 2));
+        }
+        for (int i = 0; i < 3; i++) {
+            spans.add(call(root, 200 + i, "/api/authors/" + i, NOW + i, 2));
+        }
+        decoder.accept(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
+        flush();
+
+        assertThat(of(Findings.N_PLUS_ONE_HTTP))
+                .as("three of each is six calls and no repeat worth reporting")
+                .isEmpty();
+    }
+
+    @Test
+    void theNPlusOneHttpTakesItsCodeFromTheRepeatThatCarriesTheStack() {
+        Span.Builder root = entry(1, "/orders/{id}", 60);
+        List<Span.Builder> spans = new ArrayList<>();
+        spans.add(root);
+        for (int i = 0; i < 6; i++) {
+            Span.Builder repeat = call(root, 100 + i, "/api/books/" + i, NOW + i, 2);
+            if (i == 4) {
+                repeat.addAttributes(Otlp.attr("code.stacktrace", QUERY_STACKTRACE));
+            }
+            spans.add(repeat);
+        }
+        decoder.accept(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
+        flush();
+
+        assertThat(of(Findings.N_PLUS_ONE_HTTP).get(0).code()).containsExactly(
+                "orders.OrderLineRepository.findByOrderId(OrderLineRepository.java:29)",
+                "orders.OrderService.lines(OrderService.java:54)");
     }
 
     @Test

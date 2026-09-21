@@ -453,7 +453,7 @@ Rules and the value each one measures:
 | `--max-error-rate` | failed entry spans over entry spans |
 | `--max-queries-per-request` | database spans per entry span, the highest of any endpoint |
 | `--max-slow-queries` | query calls over `slow.query.ms` |
-| `--max-n-plus-one` | `n-plus-one` findings |
+| `--max-n-plus-one` | `n-plus-one` and `n-plus-one-http` findings |
 | `--max-log-errors` | `log-error` findings' uncovered records summed |
 | `--min-apdex` | the Apdex over the scope |
 

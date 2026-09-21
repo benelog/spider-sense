@@ -430,8 +430,8 @@ public final class McpServer {
                                         + "database calls per request than this."),
                                 Arg.number("maxSlowQueries", "Fail when more query calls than this "
                                         + "ran over the slow-query threshold."),
-                                Arg.number("maxNPlusOne", "Fail when more n-plus-one findings than "
-                                        + "this were found."),
+                                Arg.number("maxNPlusOne", "Fail when more n-plus-one and "
+                                        + "n-plus-one-http findings than this were found."),
                                 Arg.number("minApdex", "Fail when the Apdex over the scope is below "
                                         + "this.")),
                         List.of()),

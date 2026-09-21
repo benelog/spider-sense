@@ -45,7 +45,7 @@ Every rule given is evaluated, and each one is a limit compared against a value 
 
 | `--max-n-plus-one`
 | `0`
-| The number of `n-plus-one` findings.
+| The number of `n-plus-one` and `n-plus-one-http` findings.
 
 | `--max-log-errors`
 | none

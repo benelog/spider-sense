@@ -83,6 +83,7 @@ Findings are ranked by severity (`high` before `medium` before `low`; no rule pr
 |---|---|---|---|
 | `error` | an error group (api.md) with at least one occurrence in the window | `high` | count |
 | `n-plus-one` | in one trace, the same query group runs 5 or more times under the same entry span; aggregated per (endpoint, query group) over the window | `high` when the repeats reach 20 or their summed time exceeds `slow.request.ms`, else `medium` | affected requests × median repeats |
+| `n-plus-one-http` | in one trace, the same outbound HTTP call runs 5 or more times under the same entry span; aggregated per (endpoint, call) over the window | as `n-plus-one` | affected requests × median repeats |
 | `slow-query` | a query group whose p95 exceeds `slow.query.ms` | `high` when p95 exceeds ten times the threshold, else `medium` | total time |
 | `slow-endpoint` | an endpoint whose p95 exceeds `slow.request.ms` | `high` when p95 exceeds four times the threshold (the "frustrated" bound of the Apdex), else `medium` | total time |
 | `slow-job` | a job (a root `INTERNAL` span, design.md: a scheduled method, an `@Async` call, a batch step), grouped by `(service, span name)`, whose p95 exceeds `slow.request.ms` | as `slow-endpoint` | total time |
@@ -121,6 +122,7 @@ Each finding carries:
 
 - `error`: `count`, `firstSeen`, `lastSeen`, `type`, `message` (normalised), `endpoints` (name and count, as api.md's `ErrorGroup.endpoints`).
 - `n-plus-one`: `requests` (entry spans of the endpoint in the window, as design.md defines an entry span), `affected` (of them, how many repeated), `medianRepeats`, `maxRepeats`, `msPerRequest` (summed time of the repeated statement, per affected request).
+- `n-plus-one-http`: the same five as `n-plus-one`, over the repeated call rather than the repeated statement; `subject.endpointId` is the endpoint, `subject.target` is the host it called and the title is `<endpoint> calls <call> <medianRepeats> times per request`.
 - `slow-query`: `calls`, `slowCalls`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `callers` (as api.md's `QueryStats.callers`).
 - `slow-endpoint`: `calls`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `apdex`, `dbCallsPerRequest`, `dbMsPerRequest`, `dbShare` (0..1: the part of the endpoint's total time spent in database spans of the same trace and service), `hotSpan`.
 - `slow-job`: `runs`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `dbCallsPerRun`, `dbMsPerRun`, `dbShare`, the same measures as `slow-endpoint` over the job's runs, `hotSpan`; `subject.job` is the span name and the title is `<job> is slow`.
@@ -134,7 +136,7 @@ Each finding carries:
 `hotSpan` is where the time went in the finding's first evidence trace: `{ "name": "<summary>", "category": "db" | "http" | "internal" | …, "selfMs": 312.4, "share": 0.62 }`, the span with the largest self time (its duration minus the durations of its direct children, never below zero, as the Profile view computes it) and that self time's share of the trace's duration; `null` when the finding has no trace.
 It is the first clue when `dbShare` is low, and in the text rendering it is one line, `hot span: <name> · <selfMs> self · <share>`.
 
-`traces` are the three slowest traces for `slow-*`, the three newest for `error` and `log-error` (records with a trace id), the three most recent affected for `n-plus-one`, none for `pool-exhausted` and the JVM kinds.
+`traces` are the three slowest traces for `slow-*`, the three newest for `error` and `log-error` (records with a trace id), the three most recent affected for `n-plus-one` and `n-plus-one-http`, none for `pool-exhausted` and the JVM kinds.
 A job is never a request: it is not in `requests`, not in the Apdex and not in `check`; `slow-job` is the one place a slow scheduler tick or batch step is reported.
 An endpoint that `spidersense.ignore.endpoints` excludes (design.md) is not an entry span and produces no finding of any kind.
 
@@ -144,10 +146,10 @@ A stack trace is reduced to its application frames: frames whose package is not 
 
 Framework prefixes dropped by default: `java.`, `javax.`, `jdk.`, `sun.`, `com.sun.`, `jakarta.`, `org.springframework.`, `org.hibernate.`, `org.eclipse.jetty.`, `org.apache.`, `io.opentelemetry.`, `com.zaxxer.`, `org.h2.`, `net.benelog.spidersilk.`, `kotlin.`, `scala.`, `reactor.`, `io.netty.`, `ch.qos.logback.`, `org.slf4j.`, `org.junit.`, `gg.jte.`.
 
-Slow queries, repeated queries and slow outbound calls have a code location too, and it is the one thing Spider Sense collects itself: its OpenTelemetry extension ([design.md](design.md#the-extension)) sets `code.stacktrace` on every database span that ran at least `slow.query.ms`, on the fifth repeat of a statement within one trace, and on every non-database `CLIENT` span that ran at least `slow.request.ms`, so `slow-query`, `n-plus-one` and `slow-external` findings carry `code` just as an error does.
+Slow queries, repeated queries, repeated calls and slow outbound calls have a code location too, and it is the one thing Spider Sense collects itself: its OpenTelemetry extension ([design.md](design.md#the-extension)) sets `code.stacktrace` on every database span that ran at least `slow.query.ms`, on the fifth repeat of a statement within one trace, on every non-database `CLIENT` span that ran at least `slow.request.ms`, and on the fifth repeat of an HTTP call within one trace, so `slow-query`, `n-plus-one`, `slow-external` and `n-plus-one-http` findings carry `code` just as an error does.
 A `log-error` finding takes its `code` from the `exception.stacktrace` attribute of the group's newest record, when the logging bridge exported one.
 Those frames are the truest of the three, because they are the span's own thread at the moment the statement finished, not a guess from an attribute; they are reduced by the same rules as `exception.stacktrace` above.
-An `n-plus-one` finding takes its `code` from the span of the repeated group that carries `code.stacktrace`, which is the fifth repeat, and falls back to the group's newest span when none does (an application run without the extension).
+An `n-plus-one` or `n-plus-one-http` finding takes its `code` from the span of the repeated group that carries `code.stacktrace`, which is the fifth repeat, and falls back to the group's newest span when none does (an application run without the extension).
 A `slow-job` finding takes its `code` from the `code.function` and `code.namespace` attributes the scheduling instrumentations set on the job's span.
 
 ### The schema block
@@ -182,6 +184,27 @@ In the text rendering the block sits between the statement and the code frames, 
 
 `predicates: none` stands alone when the statement has no predicate, `unindexed: none` when every predicate is served, and a finding without the block prints nothing for it.
 `GET /api/queries` ([api.md](api.md)) carries the same block on every query group, and its text rendering has an `unindexed` column between `callers` and `statement`: the unindexed columns joined by `, `, `none` when every predicate is served, `—` when there is no block.
+
+### The repeated call
+
+An `n-plus-one-http` is the N+1 an ORM cannot cause: a loop that fetches one remote resource per item.
+The trace shows it as a run of `CLIENT` spans of category `http` under one entry span, and the example trace above is exactly that shape.
+
+Two of those spans are **the same call** when they agree on their name, their target and their path once every run of digits is replaced by `?`.
+The call is written the way it is grouped:
+
+```
+GET localhost:8081/api/books/?
+```
+
+The span's name, the dependency target of [api.md](api.md) (`localhost:8081`, the host and port the call went to), and the path and query of `url.full`, digits replaced.
+The digits are what a loop varies, so replacing them is what makes three calls one call; it is the same key the trace diff aligns on.
+The status is not part of it, because the same call can answer `200` to one item and `404` to the next, and the host is kept out of the digit rule so that the port stays readable.
+A span with no `url.full` is named `<span name> <target>` and grouped by that.
+
+The rule then is `n-plus-one`'s with the call in place of the statement: five or more of the same call under one entry span makes that request affected, the affected requests of one `(endpoint, call)` over the window make the finding, and `numbers`, the severity, the impact, the evidence traces and the text rendering are the ones `n-plus-one` has.
+`statement` is `null`, and `subject.target` names the host so that the callee's own findings are one filter away.
+`check` counts it under `maxNPlusOne`, with the DB kind: to a caller, a loop of queries and a loop of calls are one mistake.
 
 ## Acknowledgements
 
@@ -314,7 +337,7 @@ Rules are query parameters; every rule given is evaluated, and when none is give
 | `maxErrorRate` | failed entry spans over entry spans |
 | `maxQueriesPerRequest` | database spans per entry span, the highest of any endpoint |
 | `maxSlowQueries` | query calls over `slow.query.ms` |
-| `maxNPlusOne` | `n-plus-one` findings |
+| `maxNPlusOne` | `n-plus-one` and `n-plus-one-http` findings |
 | `maxLogErrors` | `log-error` findings' uncovered records summed |
 | `minApdex` | the Apdex over the scope |
 

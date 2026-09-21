@@ -155,6 +155,8 @@ A trace whose repeats end on several threads is counted per thread and may fall 
 At most 256 distinct statements are counted per trace; beyond that the counter stops and nothing else changes.
 
 The third case is a slow outbound call: a `CLIENT` span that is not a database span (no `db.system`/`db.system.name`) and has taken at least `spidersense.slow.request.ms` (`SPIDERSENSE_SLOW_REQUEST_MS`; default 500, read once like the other threshold) gets the same `code.stacktrace`, so a `slow-external` finding (agent.md) names the line that made the call.
+The fourth is that case's N+1, and it counts exactly as the statements do: an outbound `CLIENT` span that carries an HTTP method or a `url.full` is counted per thread under the key `<method> <url.full with every run of digits replaced by `?`>`, in the same per-trace map, and the fifth repeat gets the stack, so an `n-plus-one-http` finding (agent.md) names the loop rather than only the host.
+The key is prefixed so that a URL can never collide with a statement, and the 256 statements a trace counts are 256 keys of either kind.
 The same frames are dropped, the same cap applies, and a span that already carries the attribute is left alone.
 The lines are formatted like `Throwable.printStackTrace` writes them (`\tat package.Class.method(File.java:41)`, one per line, no header), so the server reduces them to application frames with exactly the code it already uses for `exception.stacktrace` ([agent.md](agent.md)).
 The leading frames of `Thread.getStackTrace`, of the processor itself and of `io.opentelemetry.` (the SDK's own `end()` path) are dropped, and the trace is cut at 64 frames.

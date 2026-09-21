@@ -1112,6 +1112,24 @@ function findingsFor(w, service, limit, hideAcked) {
   }
 
   if (!service || service === 'spring-orders') {
+    const call = 'GET localhost:8081/api/books/?';
+    found.push({
+      id: findingId('n-plus-one-http', 'spring-orders', 'GET /orders/{id}|' + call),
+      kind: 'n-plus-one-http', severity: 'high', service: 'spring-orders',
+      title: 'GET /orders/{id} calls ' + call + ' 6 times per request',
+      why: '14 of 22 requests repeated it; 8, 7 and 6 times; 412.0 ms per request in that call',
+      subject: {
+        ...NO_SUBJECT,
+        endpointId: (ENDPOINTS.find((e) => e.route === '/orders/{id}') || {}).endpointId,
+        target: 'localhost:8081',
+      },
+      numbers: { requests: 22, affected: 14, medianRepeats: 6, maxRepeats: 8, msPerRequest: 412.0 },
+      statement: null,
+      code: ['com.example.orders.OrderEnricher.enrich(OrderEnricher.java:48)'],
+      traces: inWindow(w, 'spring-orders').slice(-3).map((t) => t.traceId),
+      impact: 6 * 14,
+    });
+
     found.push({
       id: findingId('slow-external', 'spring-orders', 'localhost:8081|GET'),
       kind: 'slow-external', severity: 'medium', service: 'spring-orders',

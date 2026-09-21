@@ -18,7 +18,7 @@ xref:marks-and-compare.adoc#time-selectors[Time selectors] define the window, wh
 
 Findings are ranked by severity (`high` before `medium` before `low`), then by kind, then by impact within a kind, then by id, so the list is stable between two calls over the same data.
 No rule produces `low` today, and the value is reserved for gentler kinds.
-The kind order is `error`, `n-plus-one`, `slow-query`, `slow-endpoint`, `slow-job`, `slow-external`, `log-error`, `pool-exhausted`, `gc-pause`, `heap-pressure`, `thread-growth`.
+The kind order is `error`, `n-plus-one`, `n-plus-one-http`, `slow-query`, `slow-endpoint`, `slow-job`, `slow-external`, `log-error`, `pool-exhausted`, `gc-pause`, `heap-pressure`, `thread-growth`.
 Each kind below names the impact number it is ranked by.
 
 The list is bounded.
@@ -84,10 +84,10 @@ It is `null` only when the finding has no trace.
 The OpenTelemetry Java agent does not record where a span was started from, so `code` comes from three sources.
 The first is the `exception.stacktrace` of an error.
 The second is the `code.function` and `code.namespace` attributes that a few instrumentations set, which is where a `slow-job` finding's frames come from.
-The third is the `code.stacktrace` that Spider Sense's own agent extension captures, on every database span slower than `slow.query.ms`, on the fifth repeat of a statement within one trace, and on every non-database `CLIENT` span slower than `slow.request.ms`.
+The third is the `code.stacktrace` that Spider Sense's own agent extension captures, on every database span slower than `slow.query.ms`, on the fifth repeat of a statement within one trace, on every non-database `CLIENT` span slower than `slow.request.ms`, and on the fifth repeat of an HTTP call within one trace.
 
 Those extension frames are the truest of the three, because they are the span's own thread at the moment the span finished rather than a guess from an attribute.
-`code` is therefore reliable for `error`, `slow-query`, `n-plus-one` and `slow-external` findings, often present for `log-error`, and often empty for the others.
+`code` is therefore reliable for `error`, `slow-query`, `n-plus-one`, `n-plus-one-http` and `slow-external` findings, often present for `log-error`, and often empty for the others.
 When it is empty, open a trace from `traces` and read the tree, which names the endpoint and the statement even when it cannot name the line.
 
 A stack trace is reduced to its application frames by dropping known framework prefixes: `java.`, `javax.`, `jdk.`, `sun.`, `com.sun.`, `jakarta.`, `org.springframework.`, `org.hibernate.`, `org.eclipse.jetty.`, `org.apache.`, `io.opentelemetry.`, `com.zaxxer.`, `org.h2.`, `net.benelog.spidersilk.`, `kotlin.`, `scala.`, `reactor.`, `io.netty.`, `ch.qos.logback.`, `org.slf4j.`, `org.junit.` and `gg.jte.`.
@@ -214,6 +214,33 @@ What to do:
 * An `IN` list with a varying number of parameters produces a new statement text per size, so Spider Sense groups those calls separately.
 
 After the fix, `compare` should show the query's `calls/req` down to 1 and the endpoint's verdict `better`, and `check --max-queries-per-request=` locks it in.
+
+[#n-plus-one-http]
+=== n-plus-one-http
+
+The same outbound HTTP call runs 5 or more times under the same entry span in one trace, aggregated per endpoint and call over the window.
+It is the N+1 an ORM cannot cause: a loop that fetches one remote resource per item.
+The severity, the impact and the `numbers` are `n-plus-one`'s, over the repeated call rather than the repeated statement; `statement` is `null` and `subject.target` names the host that was called.
+
+Two calls are the same call when they agree on their name, their target and their path once every run of digits is replaced by `?`, so the finding names one call:
+
+----
+GET /orders/{id} calls GET localhost:8081/api/books/? 6 times per request
+----
+
+The digits are what a loop varies, so replacing them is what makes three calls one call.
+The status is not part of the call, because the same call can answer `200` for one item and `404` for the next, and the host keeps its port because the digit rule is applied to the path alone.
+`code` is the call site of the fifth repeat, so it names the line that issues the call.
+
+What to do:
+
+* *Ask for the whole set once*: a batch endpoint (`GET /api/books?ids=1,2,3`) or a bulk query on the callee, and group the answers in memory.
+  When the callee is yours, adding that endpoint is usually the smaller change.
+* *Cache what does not change per request*: a per-request cache removes the repeats inside one request, a short-lived shared cache removes them across requests.
+* *Move the join to the callee*: when every item needs the same enrichment, let the callee return it with the list rather than answering one item at a time.
+* When neither is possible, make the calls concurrently, which shortens the request without removing the load.
+
+`check --max-n-plus-one=0` fails on this kind as it does on `n-plus-one`: to a caller, a loop of queries and a loop of calls are one mistake.
 
 [#slow-query]
 === slow-query

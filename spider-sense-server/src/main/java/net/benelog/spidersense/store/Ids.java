@@ -3,6 +3,7 @@ package net.benelog.spidersense.store;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.regex.Pattern;
 
 import org.jspecify.annotations.Nullable;
 
@@ -58,6 +59,21 @@ public final class Ids {
         }
         return message.replaceAll("'[^']*'", "'?'").replaceAll("\\d+", "?");
     }
+
+    /**
+     * A line with the numbers a loop varies taken out of it: every run of digits
+     * becomes {@code ?}.
+     *
+     * <p>It is what makes {@code /api/books/155} and {@code /api/books/87} one
+     * thing in three places — the trace diff aligns on it, the {@code
+     * n-plus-one-http} rule groups on it and the aggregated hot spans do
+     * (agent.md) — so it is written here once rather than three times.
+     */
+    public static String normaliseDigits(@Nullable String line) {
+        return line == null ? "" : DIGITS.matcher(line).replaceAll("?");
+    }
+
+    private static final Pattern DIGITS = Pattern.compile("\\d+");
 
     private static byte[] sha256(byte[] input) {
         try {

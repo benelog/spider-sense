@@ -1,5 +1,6 @@
 package net.benelog.spidersense.query;
 
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -40,6 +41,7 @@ public final class Findings {
     public static final String ERROR = "error";
     public static final String LOG_ERROR = "log-error";
     public static final String N_PLUS_ONE = "n-plus-one";
+    public static final String N_PLUS_ONE_HTTP = "n-plus-one-http";
     public static final String SLOW_QUERY = "slow-query";
     public static final String SLOW_ENDPOINT = "slow-endpoint";
     public static final String SLOW_JOB = "slow-job";
@@ -197,6 +199,7 @@ public final class Findings {
         found.addAll(errors(window, service));
         found.addAll(logErrors(window, service, ancestors));
         found.addAll(nPlusOne(window, service, ancestors));
+        found.addAll(nPlusOneHttp(window, service, ancestors));
         found.addAll(slowQueries(window, service));
         found.addAll(slowEndpoints(window, service));
         found.addAll(slowJobs(window, service));
@@ -233,7 +236,8 @@ public final class Findings {
     /** A finding with the impact it is ranked by inside its kind. */
     private record Ranked(Finding finding, double impact) {
 
-        private static final List<String> KINDS = List.of(ERROR, LOG_ERROR, N_PLUS_ONE, SLOW_QUERY,
+        private static final List<String> KINDS = List.of(ERROR, LOG_ERROR, N_PLUS_ONE,
+                N_PLUS_ONE_HTTP, SLOW_QUERY,
                 SLOW_ENDPOINT, SLOW_JOB, SLOW_EXTERNAL, POOL_EXHAUSTED, GC_PAUSE, HEAP_PRESSURE,
                 THREAD_GROWTH);
 
@@ -572,6 +576,151 @@ public final class Findings {
             params.add(service);
         }
         return sql.count("SELECT COUNT(*) FROM span WHERE " + where, params);
+    }
+
+    // --- n + 1 over HTTP ------------------------------------------------------
+
+    /** One repeated outbound call under one entry span. */
+    private record CallRepeat(String traceId, String endpointId, String endpoint, String service,
+            String target, String call, int repeats, double totalMs, long start,
+            Map<String, Object> attributes) {
+    }
+
+    /**
+     * The same outbound call, five or more times under one entry span.
+     *
+     * <p>The N+1 an ORM cannot cause: a loop that fetches one remote resource per
+     * item. It is {@link #nPlusOne}'s rule with the call in place of the statement,
+     * and it reads what {@link #slowExternal} reads — the window's outbound HTTP
+     * spans and the parent-chain walk — because the call's target lives in the
+     * attributes rather than in a column.
+     */
+    private List<Ranked> nPlusOneHttp(Window window, @Nullable String service, Ancestors ancestors) {
+        Queries.Ancestry ancestry = ancestors.get();
+        Map<String, List<CallRepeat>> byEntry = new LinkedHashMap<>();
+        for (SpanRecord span : queries.outboundHttp(window, service)) {
+            Queries.Ancestry.Entry entry = ancestry.entryOf(span.spanId());
+            if (entry == null) {
+                continue;
+            }
+            String target = Queries.target(span);
+            String call = callName(span, target);
+            byEntry.computeIfAbsent(entry.spanId() + "\0" + call, key -> new ArrayList<>())
+                    .add(new CallRepeat(span.traceId(),
+                            Ids.endpointId(entry.service(), entry.endpoint()), entry.endpoint(),
+                            entry.service(), target, call, 1, span.durationMillis(),
+                            span.startMillis(), span.attributes()));
+        }
+
+        Map<String, List<CallRepeat>> byEndpointAndCall = new LinkedHashMap<>();
+        byEntry.values().forEach(calls -> {
+            if (calls.size() < REPEATS) {
+                return;
+            }
+            CallRepeat first = calls.get(0);
+            double totalMs = 0;
+            long start = Long.MAX_VALUE;
+            // The extension captures the stack on the fifth repeat, as it does for a statement.
+            Map<String, Object> attributes = first.attributes();
+            boolean located = false;
+            for (CallRepeat call : calls) {
+                totalMs += call.totalMs();
+                start = Math.min(start, call.start());
+                if (!located && call.attributes().containsKey("code.stacktrace")) {
+                    attributes = call.attributes();
+                    located = true;
+                }
+            }
+            byEndpointAndCall
+                    .computeIfAbsent(first.endpointId() + "\0" + first.call(), key -> new ArrayList<>())
+                    .add(new CallRepeat(first.traceId(), first.endpointId(), first.endpoint(),
+                            first.service(), first.target(), first.call(), calls.size(), totalMs,
+                            start, attributes));
+        });
+
+        Map<String, Long> requestsByEndpoint = new HashMap<>();
+        List<Ranked> found = new ArrayList<>();
+        byEndpointAndCall.values().forEach(affected -> {
+            CallRepeat first = affected.get(0);
+            long requests = requestsByEndpoint.computeIfAbsent(first.endpointId(),
+                    id -> requests(window, service, id));
+            int[] repeats = new int[affected.size()];
+            double totalMs = 0;
+            for (int i = 0; i < affected.size(); i++) {
+                repeats[i] = affected.get(i).repeats();
+                totalMs += affected.get(i).totalMs();
+            }
+            Arrays.sort(repeats);
+            long median = repeats[(int) Math.ceil(0.5 * repeats.length) - 1];
+            long max = repeats[repeats.length - 1];
+            double msPerRequest = totalMs / affected.size();
+
+            Map<String, Object> numbers = new LinkedHashMap<>();
+            numbers.put("requests", requests);
+            numbers.put("affected", (long) affected.size());
+            numbers.put("medianRepeats", median);
+            numbers.put("maxRepeats", max);
+            numbers.put("msPerRequest", msPerRequest);
+
+            String severity = median >= LOUD_REPEATS || msPerRequest > tingles.slowRequestMs()
+                    ? HIGH : MEDIUM;
+            List<CallRepeat> newest = new ArrayList<>(affected);
+            newest.sort(Comparator.comparingLong(CallRepeat::start).reversed());
+            List<String> traces = new ArrayList<>();
+            List<String> code = List.of();
+            for (CallRepeat repeat : newest) {
+                if (traces.size() < EVIDENCE_TRACES && !traces.contains(repeat.traceId())) {
+                    traces.add(repeat.traceId());
+                }
+                if (code.isEmpty()) {
+                    code = frames.ofAttributes(repeat.attributes());
+                }
+            }
+            Finding finding = new Finding(
+                    id(N_PLUS_ONE_HTTP, first.service(), first.endpointId() + "\0" + first.call()),
+                    N_PLUS_ONE_HTTP, severity, first.service(),
+                    first.endpoint() + " calls " + first.call() + " " + median + " times per request",
+                    affected.size() + " of " + Numbers.plural(requests, "request") + " repeated it; "
+                            + counts(repeats) + " times; " + Numbers.millis(msPerRequest)
+                            + " per request in that call",
+                    new Subject(first.endpointId(), null, null, null, null, first.target(), null, null),
+                    numbers, null, code, List.copyOf(traces));
+            found.add(new Ranked(finding, affected.size() * (double) median));
+        });
+        return found;
+    }
+
+    /**
+     * {@code GET localhost:8081/api/books/?}: what two outbound calls have to share
+     * to be the same call (agent.md, "The repeated call").
+     *
+     * <p>The span's name, the dependency target, and the path and query of
+     * {@code url.full} with every run of digits replaced, which is what a loop
+     * varies. The host is taken from the target rather than from the URL, so the
+     * port stays a port rather than becoming {@code ?}, and the status is left out
+     * because the same call can answer differently for two items.
+     */
+    private static String callName(SpanRecord span, String target) {
+        String url = span.attr("url.full");
+        if (url == null) {
+            return span.name() + " " + target;
+        }
+        return span.name() + " " + target + Ids.normaliseDigits(pathOf(url));
+    }
+
+    /** The path and query of an absolute URL, or the whole of it when it is not one. */
+    private static String pathOf(String url) {
+        try {
+            URI parsed = URI.create(url);
+            String path = parsed.getRawPath();
+            if (path == null) {
+                return url;
+            }
+            String query = parsed.getRawQuery();
+            return query == null ? path : path + "?" + query;
+        } catch (IllegalArgumentException notAUrl) {
+            return url;
+        }
     }
 
     // --- slow query ----------------------------------------------------------

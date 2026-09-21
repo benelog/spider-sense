@@ -94,6 +94,7 @@ When a finding is known and accepted — the user says it is slow by design, or 
 | Kind | What it means | What it usually wants |
 |---|---|---|
 | `n-plus-one` | the same query group ran 5 or more times under one entry span | a fetch join, batch loading, or one query with `IN (…)` |
+| `n-plus-one-http` | the same outbound HTTP call ran 5 or more times under one entry span | a batch endpoint on the callee, or a cache; `check --max-n-plus-one=` counts it with the query kind |
 | `slow-query` | a query group whose p95 is over `slow.query.ms` | an index, a rewrite, or not selecting what is not needed |
 | `slow-endpoint`, high `dbShare` | most of the endpoint's time is in database spans | look at its queries; the fix is one of the two above |
 | `slow-endpoint`, low `dbShare` | the time is elsewhere | look at the external call in its trace, or at the code itself |

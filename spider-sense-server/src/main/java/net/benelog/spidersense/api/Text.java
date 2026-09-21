@@ -8,7 +8,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.regex.Pattern;
 
 import net.benelog.spidersense.query.Check;
 import net.benelog.spidersense.query.CodeFrames;
@@ -20,6 +19,7 @@ import net.benelog.spidersense.query.SchemaBlock;
 import net.benelog.spidersense.query.Stats;
 import net.benelog.spidersense.query.Window;
 import net.benelog.spidersense.store.Acks;
+import net.benelog.spidersense.store.Ids;
 import net.benelog.spidersense.store.Importer;
 import net.benelog.spidersense.store.LogRecord;
 import net.benelog.spidersense.store.Marks;
@@ -55,9 +55,6 @@ final class Text {
 
     /** A run of identical siblings longer than this collapses into one line. */
     private static final int COLLAPSE_AFTER = 3;
-
-    /** Every run of digits in a summary is one {@code ?} before two traces are aligned. */
-    private static final Pattern DIGITS = Pattern.compile("\\d+");
 
     private static final int OFFSET_WIDTH = 11;
     private static final int DURATION_WIDTH = 10;
@@ -725,8 +722,7 @@ final class Text {
          * {@code /api/books/87} are the same line of the same tree.
          */
         String key() {
-            return depth + " " + span.category() + " "
-                    + DIGITS.matcher(span.summary()).replaceAll("?");
+            return depth + " " + span.category() + " " + Ids.normaliseDigits(span.summary());
         }
     }
 

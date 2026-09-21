@@ -14,6 +14,7 @@ The list is bounded: 20 by default, 100 at most.
 |---|---|---|---|
 | `error` | an error group with at least one occurrence in the window | `high` | count |
 | `n-plus-one` | in one trace, the same query group runs 5 or more times under the same entry span; aggregated per (endpoint, query group) over the window | `high` when the repeats reach 20 or their summed time exceeds `slow.request.ms`, else `medium` | affected requests × median repeats |
+| `n-plus-one-http` | in one trace, the same outbound HTTP call runs 5 or more times under the same entry span; aggregated per (endpoint, call) over the window | as `n-plus-one` | affected requests × median repeats |
 | `slow-query` | a query group whose p95 exceeds `slow.query.ms` | `high` when p95 exceeds ten times the threshold, else `medium` | total time |
 | `slow-endpoint` | an endpoint whose p95 exceeds `slow.request.ms` | `high` when p95 exceeds four times the threshold, else `medium` | total time |
 | `slow-job` | a job (a root `INTERNAL` span: a scheduled method, an `@Async` call, a batch step), grouped by (service, span name), whose p95 exceeds `slow.request.ms` | `high` when p95 exceeds four times the threshold, else `medium` | total time |
@@ -41,14 +42,14 @@ The thresholds are the server's: `slow.request.ms` is 500 by default and `slow.q
 | `traces` | at most 3 trace ids: the evidence, and what `trace <id>` opens |
 | `schema` | `slow-query` and `n-plus-one` only: the statement's tables with the indexes they carry, the columns it filters on, and the ones no index serves; `null` when there is no catalog to read |
 
-`traces` are the three slowest traces for `slow-*`, the three newest for `error` and `log-error`, the three most recent affected for `n-plus-one`, and none for `pool-exhausted` and the three JVM kinds.
+`traces` are the three slowest traces for `slow-*`, the three newest for `error` and `log-error`, the three most recent affected for `n-plus-one` and `n-plus-one-http`, and none for `pool-exhausted` and the three JVM kinds.
 
 In the text output the ranked table comes first and these fields follow as one numbered block per row, in that order and mostly without labels:
 `<n>. <id> — <why>`, then the `numbers` on one line as `name value, name value`, then `hot span: <name> · <selfMs> self · <share>` when the kind has one, then the `statement` when there is one, then the schema lines when the finding has that block, then the `code` frames one per line, then `traces: <id> <id>`.
 
 **About `code`.** The OpenTelemetry Java agent does not record where a span was started from, so `code` comes from the `exception.stacktrace` of an error, the `code.function` / `code.namespace` attributes that a few instrumentations set, and the `code.stacktrace` that Spider Sense's own agent extension captures.
-The extension captures that stack on every database span slower than `slow.query.ms`, on the fifth repeat of a statement within one trace, and on every non-database `CLIENT` span slower than `slow.request.ms`, which is what gives `slow-query`, `n-plus-one` and `slow-external` findings a line.
-It is therefore reliable for `error`, `slow-query`, `n-plus-one` and `slow-external` findings, often present for `log-error`, and often empty for the others; when it is empty, open a trace from `traces` and read the tree, which names the endpoint and the statement even when it cannot name the line.
+The extension captures that stack on every database span slower than `slow.query.ms`, on the fifth repeat of a statement within one trace, on every non-database `CLIENT` span slower than `slow.request.ms`, and on the fifth repeat of an HTTP call within one trace, which is what gives `slow-query`, `n-plus-one`, `slow-external` and `n-plus-one-http` findings a line.
+It is therefore reliable for `error`, `slow-query`, `n-plus-one`, `n-plus-one-http` and `slow-external` findings, often present for `log-error`, and often empty for the others; when it is empty, open a trace from `traces` and read the tree, which names the endpoint and the statement even when it cannot name the line.
 A stack trace is reduced to its application frames by dropping known framework prefixes (`java.`, `jakarta.`, `org.springframework.`, `org.hibernate.`, `org.apache.`, `com.zaxxer.`, `org.h2.`, `io.opentelemetry.` and others).
 When that heuristic guesses wrong, `-Dspidersense.app.packages=com.acme,org.acme` replaces it with an allowlist.
 
@@ -140,6 +141,47 @@ A very large key set is chunked (a thousand at a time) rather than sent as one e
 Note that an `IN` list with a varying number of parameters produces a new statement text per size, so Spider Sense will group those calls separately.
 
 After the fix, `compare --before=before --after=after` should show the query's `calls/req` down to 1 and the endpoint's verdict `better`; `check --max-queries-per-request=` locks it in.
+
+---
+
+## `n-plus-one-http`
+
+`numbers`: the same five as `n-plus-one`, over the repeated call rather than the repeated statement.
+`statement` is `null` and `subject.target` is the host that was called, so the callee's own findings are one `--service=` away.
+
+This is the N+1 an ORM cannot cause: a loop that fetches one remote resource per item.
+Two calls are the same call when they agree on their name, their target and their path once every run of digits is replaced by `?`, which is what the title names:
+
+```
+GET /orders/{id} calls GET localhost:8081/api/books/? 6 times per request
+```
+
+Open a trace from `traces`: the repeated `CLIENT` spans collapse into one `× n` line under the entry span, and the span above them is the loop.
+`code` is the call site of the fifth repeat, so it names the line that issues the call.
+
+### What to do
+
+**Ask for the whole set once.** When the callee is yours, a batch endpoint is usually the smaller change:
+
+```java
+// Before: one call per item
+for (OrderLine line : order.lines()) {
+    books.add(client.get("/api/books/" + line.bookId(), Book.class));   // N calls
+}
+
+// After: one call for the set
+List<Book> books = client.get("/api/books?ids=" + join(bookIds), BookList.class).books();
+```
+
+**Cache what does not change per request.** A per-request cache removes the repeats inside one request; a short-lived shared cache (Caffeine, `@Cacheable` with a TTL) removes them across requests.
+Cache the resource, not the response, so that a change on the callee is visible within the TTL.
+
+**Move the join to the callee.** When every item needs the same enrichment, let the callee return it with the list rather than answering one item at a time.
+
+**When neither is possible**, make the calls concurrently — a thread pool, `CompletableFuture.allOf`, or a reactive `flatMap` with a bounded concurrency — which shortens the request without removing the load on the callee.
+Set a timeout while you are there: a loop of calls with no timeout is how a slow dependency becomes an exhausted thread pool.
+
+After the fix, `compare` should show the endpoint's verdict `better` and the `slow-external` group's `calls` down; `check --max-n-plus-one=0` fails on this kind as it does on `n-plus-one`.
 
 ---
 

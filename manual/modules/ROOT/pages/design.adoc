@@ -185,6 +185,10 @@ At most 256 distinct statements are counted per trace, and beyond that the count
 
 The third case is a slow outbound call.
 A `CLIENT` span that is not a database span (no `db.system` or `db.system.name`) and has taken at least `spidersense.slow.request.ms` (`SPIDERSENSE_SLOW_REQUEST_MS`, default 500, read once like the other threshold) gets the same `code.stacktrace`, so a xref:findings.adoc#slow-external[`slow-external`] finding names the line that made the call.
+
+The fourth case is that one's N+1, and it counts exactly as the statements do.
+An outbound `CLIENT` span that carries an HTTP method or a `url.full` is counted per thread under its name and its URL with every run of digits replaced by `?`, in the same per-trace map, and the fifth repeat gets the stack, so an xref:findings.adoc#n-plus-one-http[`n-plus-one-http`] finding names the loop rather than only the host.
+The key is prefixed, so a URL is never counted as a statement of the same trace, and the 256 keys a trace counts are of either kind.
 The same frames are dropped, the same cap applies, and a span that already carries the attribute is left alone.
 
 The lines are formatted as `Throwable.printStackTrace` writes them: `\tat package.Class.method(File.java:41)`, one per line, no header.

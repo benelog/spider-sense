@@ -50,7 +50,7 @@ Before any service has sent anything, the page shows the logo, one sentence, and
 It shows what xref:findings.adoc[findings] gives an agent, in the same order.
 
 The table has the position, the severity as a dot and a word, the kind chip, the service chip, the title, and in a right-aligned column the number the kind is ranked by.
-That number is the count for `error` and `log-error`, the median repeats times the endpoints affected (`42 × 3`) for `n-plus-one`, the total time for `slow-query`, `slow-endpoint`, `slow-job` and `slow-external`, the peak pending requests for `pool-exhausted`, the worst pause for `gc-pause`, the peak ratio as a percentage for `heap-pressure`, and the growth for `thread-growth`.
+That number is the count for `error` and `log-error`, the median repeats times the endpoints affected (`42 × 3`) for `n-plus-one` and `n-plus-one-http`, the total time for `slow-query`, `slow-endpoint`, `slow-job` and `slow-external`, the peak pending requests for `pool-exhausted`, the worst pause for `gc-pause`, the peak ratio as a percentage for `heap-pressure`, and the growth for `thread-growth`.
 
 A row click expands it in place into the evidence: the `why` sentence, the kind's numbers as a grid of keys and values, the statement pretty-printed when there is one, the code frames as a monospace list, and the traces as links to the trace page.
 Under the statement of a `slow-query` or an `n-plus-one` comes the xref:findings.adoc#schema[schema block], in small monospace, the lines the CLI prints: one per table with the indexes it carries, `none` for a table that has none, then one for the columns the statement filters on, with the ones no index leads with named after `unindexed` and in the accent colour.

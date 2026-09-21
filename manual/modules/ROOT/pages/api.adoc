@@ -461,7 +461,7 @@ xref:findings.adoc#acknowledgements[Acknowledgements] describes what they mean.
 [source,json]
 ----
 { "id": "n-plus-one:1a2b3c4d5e6f",
-  "kind": "error" | "log-error" | "n-plus-one" | "slow-query" | "slow-endpoint" | "slow-job" | "slow-external" | "pool-exhausted" | "gc-pause" | "heap-pressure" | "thread-growth",
+  "kind": "error" | "log-error" | "n-plus-one" | "n-plus-one-http" | "slow-query" | "slow-endpoint" | "slow-job" | "slow-external" | "pool-exhausted" | "gc-pause" | "heap-pressure" | "thread-growth",
   "severity": "high" | "medium" | "low", "service": "…", "title": "…", "why": "…",
   "subject": { "endpointId": "…" | null, "queryId": "…" | null, "errorId": "…" | null, "pool": "…" | null, "job": "…" | null,
                "target": "…" | null, "logger": "…" | null, "jvm": "…" | null },

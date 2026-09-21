@@ -12,6 +12,7 @@ const KIND_LABEL = {
   error: 'error',
   'log-error': 'log error',
   'n-plus-one': 'n+1',
+  'n-plus-one-http': 'n+1 http',
   'slow-query': 'slow query',
   'slow-endpoint': 'slow endpoint',
   'slow-job': 'slow job',
@@ -80,7 +81,8 @@ export function impactOf(finding) {
   switch (finding.kind) {
     case 'error': return h('span.bad', count(n.count));
     case 'log-error': return h('span.bad', count(n.count));
-    case 'n-plus-one': return h('span', count(n.medianRepeats) + ' × ' + count(n.affected));
+    case 'n-plus-one':
+    case 'n-plus-one-http': return h('span', count(n.medianRepeats) + ' × ' + count(n.affected));
     case 'pool-exhausted': return h('span', count(n.pendingMax));
     case 'gc-pause': return h('span', dur(n.worstMs));
     case 'heap-pressure': return h('span', pct(n.ratioMax));
