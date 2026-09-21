@@ -12,7 +12,10 @@ import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Set;
+
+import org.jspecify.annotations.Nullable;
 
 /**
  * The escape hatch: one read-only statement over the schema storage.md documents.
@@ -80,8 +83,10 @@ public final class ReadOnlyQuery {
      * @param limit clamped to {@code [1, LIMIT_MAX]}; one row more is fetched than
      *              returned, which is how truncation is known rather than guessed
      */
-    public Result run(String statement, int limit) {
+    public Result run(@Nullable String statement, int limit) {
         guard(statement);
+        // guard refuses a statement that is null or blank, so this one is neither.
+        String sql = Objects.requireNonNull(statement, "guard let a null statement through");
         int cap = Math.min(Math.max(1, limit), LIMIT_MAX);
         long started = System.nanoTime();
         try (Connection connection = database.reader()) {
@@ -90,7 +95,7 @@ public final class ReadOnlyQuery {
             try (Statement command = connection.createStatement()) {
                 command.setMaxRows(cap + 1);
                 command.setQueryTimeout(TIMEOUT_SECONDS);
-                try (ResultSet rs = command.executeQuery(statement)) {
+                try (ResultSet rs = command.executeQuery(sql)) {
                     return read(rs, cap, started);
                 }
             } finally {
@@ -175,7 +180,7 @@ public final class ReadOnlyQuery {
      * <p>Read over {@link #bare(String)}, so a keyword inside a comment or a
      * string literal is not mistaken for the statement's own.
      */
-    static void guard(String statement) {
+    static void guard(@Nullable String statement) {
         if (statement == null || statement.isBlank()) {
             throw new Refused("a statement is needed: sql was empty");
         }
@@ -256,7 +261,7 @@ public final class ReadOnlyQuery {
     }
 
     /** H2 says why on several lines; an error is one line here, as agent.md asks. */
-    private static String oneLine(String message) {
+    private static String oneLine(@Nullable String message) {
         return message == null ? "the statement failed" : message.replaceAll("\\s+", " ").trim();
     }
 }

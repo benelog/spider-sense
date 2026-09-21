@@ -23,6 +23,7 @@ import net.benelog.spidersense.store.SpanRecord;
 import net.benelog.spidersense.store.Sql;
 import net.benelog.spidersense.store.Tingle;
 import net.benelog.spidersense.store.Tingles;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Every read the JSON API makes, as SQL over the window.
@@ -72,13 +73,14 @@ public final class Queries {
     // --- filters -------------------------------------------------------------
 
     /** Everything {@code GET /api/traces} can be narrowed by. */
-    public record TraceFilter(Window window, String service, String endpointId, Long minMs, Long maxMs,
-            String status, String q, Long before, int limit) {
+    public record TraceFilter(Window window, @Nullable String service, @Nullable String endpointId,
+            @Nullable Long minMs, @Nullable Long maxMs, @Nullable String status, @Nullable String q,
+            @Nullable Long before, int limit) {
     }
 
     /** Everything {@code GET /api/logs} can be narrowed by. */
-    public record LogFilter(Window window, String service, String severity, String q, String traceId,
-            Long before, int limit) {
+    public record LogFilter(Window window, @Nullable String service, @Nullable String severity,
+            @Nullable String q, @Nullable String traceId, @Nullable Long before, int limit) {
     }
 
     /** One trace, as {@code GET /api/traces/{traceId}} answers it. */
@@ -88,7 +90,7 @@ public final class Queries {
 
     // --- totals and series ---------------------------------------------------
 
-    public Stats.Totals totals(Window window, String service) {
+    public Stats.Totals totals(Window window, @Nullable String service) {
         Clause where = entryWindow(window, service);
         String query = "SELECT COUNT(*) AS calls, SUM(CASE WHEN error THEN 1 ELSE 0 END) AS errors,"
                 + " MAX(duration_ns) AS max_ns, " + responseBuckets.columns() + ", " + PERCENTILES
@@ -110,7 +112,7 @@ public final class Queries {
     }
 
     /** Requests, errors and percentiles per bucket. */
-    public Stats.Buckets buckets(Window window, String service, String endpointId) {
+    public Stats.Buckets buckets(Window window, @Nullable String service, @Nullable String endpointId) {
         Clause where = entryWindow(window, service);
         if (endpointId != null) {
             where = where.and("endpoint_id = ?", endpointId);
@@ -129,7 +131,7 @@ public final class Queries {
         double[] p99 = new double[t.length];
         long[][] histogram = ResponseBuckets.emptySeries(t.length);
         long first = window.alignedFrom() / bucket;
-        sql.query(query, where.params(), rs -> {
+        sql.forEach(query, where.params(), rs -> {
             int i = (int) (rs.getLong("b") - first);
             if (i >= 0 && i < t.length) {
                 requests[i] = rs.getLong("calls");
@@ -142,7 +144,6 @@ public final class Queries {
                     histogram[slot][i] = counts[slot];
                 }
             }
-            return null;
         });
         return new Stats.Buckets(t, requests, errors, p50, p95, p99, histogram);
     }
@@ -152,12 +153,10 @@ public final class Queries {
     public List<Stats.ServiceSummary> services(Window window) {
         Map<String, Stats.Totals> byService = new HashMap<>();
         Clause where = entryWindow(window, null);
-        sql.query("SELECT service, COUNT(*) AS calls, SUM(CASE WHEN error THEN 1 ELSE 0 END) AS errors,"
+        sql.forEach("SELECT service, COUNT(*) AS calls, SUM(CASE WHEN error THEN 1 ELSE 0 END) AS errors,"
                 + " MAX(duration_ns) AS max_ns, " + responseBuckets.columns() + ", " + PERCENTILES
-                + " FROM span WHERE " + where.sql() + " GROUP BY service", where.params(), rs -> {
-                    byService.put(rs.getString("service"), totals(rs, window.rangeSeconds()));
-                    return null;
-                });
+                + " FROM span WHERE " + where.sql() + " GROUP BY service", where.params(), rs ->
+                        byService.put(rs.getString("service"), totals(rs, window.rangeSeconds())));
 
         Map<String, long[]> sparklines = sparklines(window);
         Set<String> withJvm = new HashSet<>(sql.query(
@@ -175,7 +174,7 @@ public final class Queries {
         return summaries;
     }
 
-    public Stats.ServiceSummary service(String name, Window window) {
+    public Stats.@Nullable ServiceSummary service(String name, Window window) {
         for (Stats.ServiceSummary summary : services(window)) {
             if (summary.name().equals(name)) {
                 return summary;
@@ -190,14 +189,13 @@ public final class Queries {
         int count = window.bucketCount();
         Clause where = entryWindow(window, null);
         Map<String, long[]> sparklines = new HashMap<>();
-        sql.query("SELECT service, start_ms / " + bucket + " AS b, COUNT(*) AS calls FROM span WHERE "
+        sql.forEach("SELECT service, start_ms / " + bucket + " AS b, COUNT(*) AS calls FROM span WHERE "
                 + where.sql() + " GROUP BY service, start_ms / " + bucket, where.params(), rs -> {
                     int i = (int) (rs.getLong("b") - first);
                     if (i >= 0 && i < count) {
                         sparklines.computeIfAbsent(rs.getString("service"), s -> new long[count])[i] =
                                 rs.getLong("calls");
                     }
-                    return null;
                 });
         return sparklines;
     }
@@ -215,7 +213,8 @@ public final class Queries {
 
     // --- endpoints -----------------------------------------------------------
 
-    public List<Stats.EndpointStats> endpoints(Window window, String service, String endpointId) {
+    public List<Stats.EndpointStats> endpoints(Window window, @Nullable String service,
+            @Nullable String endpointId) {
         Clause where = entryWindow(window, service).and("endpoint_id IS NOT NULL");
         if (endpointId != null) {
             where = where.and("endpoint_id = ?", endpointId);
@@ -261,7 +260,7 @@ public final class Queries {
      * {@code dbShare} and a comparison's {@code dbCallsPerRequest} are the same
      * question, so they are one statement.
      */
-    public Map<String, DbWork> databaseWork(Window window, String service) {
+    public Map<String, DbWork> databaseWork(Window window, @Nullable String service) {
         List<Object> params = new ArrayList<>(List.of(window.from(), window.to(),
                 window.from(), window.to()));
         String where = "e.entry AND e.endpoint_id IS NOT NULL AND e.start_ms BETWEEN ? AND ?"
@@ -271,13 +270,12 @@ public final class Queries {
             params.add(service);
         }
         Map<String, DbWork> work = new HashMap<>();
-        sql.query("SELECT e.endpoint_id AS id, COUNT(*) AS calls, SUM(d.duration_ns) AS total_ns"
+        sql.forEach("SELECT e.endpoint_id AS id, COUNT(*) AS calls, SUM(d.duration_ns) AS total_ns"
                 + " FROM span e JOIN span d ON d.trace_id = e.trace_id AND d.service = e.service"
                 + " AND d.query_id IS NOT NULL WHERE " + where + " GROUP BY e.endpoint_id",
-                params, rs -> {
-                    work.put(rs.getString("id"), new DbWork(rs.getLong("calls"), Rows.ms(rs, "total_ns")));
-                    return null;
-                });
+                params, rs ->
+                        work.put(rs.getString("id"),
+                                new DbWork(rs.getLong("calls"), Rows.ms(rs, "total_ns"))));
         return work;
     }
 
@@ -288,7 +286,7 @@ public final class Queries {
      * a {@code slow-job} finding is about (storage.md): a job is not an endpoint, so
      * it is keyed by the service and the span name rather than by an endpoint id.
      */
-    public Map<String, DbWork> jobDatabaseWork(Window window, String service) {
+    public Map<String, DbWork> jobDatabaseWork(Window window, @Nullable String service) {
         List<Object> params = new ArrayList<>(List.of(window.from(), window.to(),
                 window.from(), window.to()));
         String where = "r.parent_span_id IS NULL AND r.kind = 'INTERNAL'"
@@ -298,33 +296,29 @@ public final class Queries {
             params.add(service);
         }
         Map<String, DbWork> work = new HashMap<>();
-        sql.query("SELECT r.service AS service, r.name AS name, COUNT(d.id) AS calls,"
+        sql.forEach("SELECT r.service AS service, r.name AS name, COUNT(d.id) AS calls,"
                 + " SUM(d.duration_ns) AS total_ns"
                 + " FROM span r JOIN span d ON d.trace_id = r.trace_id AND d.service = r.service"
                 + " AND d.query_id IS NOT NULL WHERE " + where + " GROUP BY r.service, r.name",
-                params, rs -> {
-                    work.put(rs.getString("service") + "\0" + rs.getString("name"),
-                            new DbWork(rs.getLong("calls"), Rows.ms(rs, "total_ns")));
-                    return null;
-                });
+                params, rs ->
+                        work.put(rs.getString("service") + "\0" + rs.getString("name"),
+                                new DbWork(rs.getLong("calls"), Rows.ms(rs, "total_ns"))));
         return work;
     }
 
     private Map<String, Map<String, Long>> statusCodes(Clause where) {
         Map<String, Map<String, Long>> byEndpoint = new HashMap<>();
-        sql.query("SELECT endpoint_id, http_status, COUNT(*) AS calls FROM span WHERE " + where.sql()
-                + " AND http_status IS NOT NULL GROUP BY endpoint_id, http_status", where.params(), rs -> {
-                    byEndpoint.computeIfAbsent(rs.getString("endpoint_id"), id -> new TreeMap<>())
-                            .put(String.valueOf(rs.getInt("http_status")), rs.getLong("calls"));
-                    return null;
-                });
+        sql.forEach("SELECT endpoint_id, http_status, COUNT(*) AS calls FROM span WHERE " + where.sql()
+                + " AND http_status IS NOT NULL GROUP BY endpoint_id, http_status", where.params(), rs ->
+                        byEndpoint.computeIfAbsent(rs.getString("endpoint_id"), id -> new TreeMap<>())
+                                .put(String.valueOf(rs.getInt("http_status")), rs.getLong("calls")));
         return byEndpoint;
     }
 
     // --- queries -------------------------------------------------------------
 
-    public List<Stats.QueryStats> queries(Window window, String service, String sort, int limit,
-            String queryId) {
+    public List<Stats.QueryStats> queries(Window window, @Nullable String service,
+            @Nullable String sort, int limit, @Nullable String queryId) {
         Clause where = window(window, service).and("query_id IS NOT NULL");
         if (queryId != null) {
             where = where.and("query_id = ?", queryId);
@@ -397,7 +391,7 @@ public final class Queries {
         Map<String, Map<String, String>> callerService = new HashMap<>();
         Clause where = window(window, null)
                 .and("query_id IN (" + Sql.placeholders(ids.size()) + ")", ids.toArray());
-        sql.query("SELECT query_id, trace_id, span_id, service FROM span WHERE " + where.sql(),
+        sql.forEach("SELECT query_id, trace_id, span_id, service FROM span WHERE " + where.sql(),
                 where.params(), rs -> {
                     String queryId = rs.getString("query_id");
                     Ancestry.Entry entry = ancestry.entryOf(rs.getString("span_id"));
@@ -406,7 +400,6 @@ public final class Queries {
                             .computeIfAbsent(name, n -> new long[1])[0]++;
                     callerService.computeIfAbsent(queryId, id -> new HashMap<>())
                             .putIfAbsent(name, entry == null ? rs.getString("service") : entry.service());
-                    return null;
                 });
 
         List<Stats.QueryStats> withCallers = new ArrayList<>(stats.size());
@@ -443,7 +436,7 @@ public final class Queries {
         long[] counts = new long[t.length];
         long[] errors = new long[t.length];
         double[] p95 = new double[t.length];
-        sql.query("SELECT start_ms / " + bucket + " AS b, COUNT(*) AS calls,"
+        sql.forEach("SELECT start_ms / " + bucket + " AS b, COUNT(*) AS calls,"
                 + " SUM(CASE WHEN error THEN 1 ELSE 0 END) AS errors, " + PERCENTILES
                 + " FROM span WHERE " + where.sql() + " GROUP BY start_ms / " + bucket,
                 where.params(), rs -> {
@@ -453,7 +446,6 @@ public final class Queries {
                         errors[i] = rs.getLong("errors");
                         p95[i] = Rows.ms(rs, "p95_ns");
                     }
-                    return null;
                 });
         return new Stats.Buckets(t, counts, errors, new double[t.length], p95, new double[t.length],
                 ResponseBuckets.emptySeries(t.length));
@@ -461,7 +453,8 @@ public final class Queries {
 
     // --- errors --------------------------------------------------------------
 
-    public List<Stats.ErrorGroup> errors(Window window, String service, int limit, String errorId) {
+    public List<Stats.ErrorGroup> errors(Window window, @Nullable String service, int limit,
+            @Nullable String errorId) {
         Clause where = window(window, service).and("error").and("error_id IS NOT NULL");
         if (errorId != null) {
             where = where.and("error_id = ?", errorId);
@@ -502,7 +495,7 @@ public final class Queries {
                 + " ROW_NUMBER() OVER (PARTITION BY error_id ORDER BY start_ms DESC, id DESC) AS rn"
                 + " FROM span WHERE " + where.sql() + ") WHERE rn = 1";
         Map<String, Stats.ErrorSample> samples = new HashMap<>();
-        sql.query(query, where.params(), rs -> {
+        sql.forEach(query, where.params(), rs -> {
             String stacktrace = null;
             for (SpanRecord.SpanEvent event : AttrJson.decodeEvents(rs.getString("events"))) {
                 Object trace = event.attributes().get("exception.stacktrace");
@@ -513,7 +506,6 @@ public final class Queries {
             samples.put(rs.getString("error_id"), new Stats.ErrorSample(rs.getString("trace_id"),
                     rs.getString("span_id"), rs.getLong("start_ms"), rs.getString("error_message"),
                     stacktrace));
-            return null;
         });
         return samples;
     }
@@ -523,12 +515,11 @@ public final class Queries {
         Clause where = window(window, null)
                 .and("error_id IN (" + Sql.placeholders(ids.size()) + ")", ids.toArray());
         Map<String, Map<String, long[]>> counts = new LinkedHashMap<>();
-        sql.query("SELECT error_id, span_id FROM span WHERE " + where.sql(), where.params(), rs -> {
+        sql.forEach("SELECT error_id, span_id FROM span WHERE " + where.sql(), where.params(), rs -> {
             Ancestry.Entry entry = ancestry.entryOf(rs.getString("span_id"));
             counts.computeIfAbsent(rs.getString("error_id"), id -> new LinkedHashMap<>())
                     .computeIfAbsent(entry == null ? "(no endpoint)" : entry.endpoint(),
                             n -> new long[1])[0]++;
-            return null;
         });
         Map<String, List<Stats.EndpointCount>> endpoints = new HashMap<>();
         counts.forEach((errorId, byEndpoint) -> {
@@ -587,7 +578,7 @@ public final class Queries {
         return where;
     }
 
-    public TraceDetail trace(String traceId) {
+    public @Nullable TraceDetail trace(String traceId) {
         List<SpanRecord> spans = sql.query(
                 "SELECT " + Rows.SPAN_COLUMNS + " FROM span WHERE trace_id = ? ORDER BY start_ns",
                 List.of(traceId), Rows::span);
@@ -663,7 +654,8 @@ public final class Queries {
 
     // --- scatter -------------------------------------------------------------
 
-    public List<Stats.ScatterPoint> scatter(Window window, String service, String endpointId, int limit) {
+    public List<Stats.ScatterPoint> scatter(Window window, @Nullable String service,
+            @Nullable String endpointId, int limit) {
         Clause where = entryWindow(window, service);
         if (endpointId != null) {
             where = where.and("endpoint_id = ?", endpointId);
@@ -818,7 +810,7 @@ public final class Queries {
      * in the attributes rather than in a column ({@link #target}); the same cap as
      * the dependency scan applies, for the same reason.
      */
-    public List<SpanRecord> outboundHttp(Window window, String service) {
+    public List<SpanRecord> outboundHttp(Window window, @Nullable String service) {
         Clause where = window(window, service).and("kind = 'CLIENT'").and("category = 'http'");
         return sql.query("SELECT " + Rows.SPAN_COLUMNS + " FROM span WHERE " + where.sql()
                 + " LIMIT " + MAX_DEPENDENCY_ROWS, where.params(), Rows::span);
@@ -1037,23 +1029,23 @@ public final class Queries {
 
     public long oldestSpan() {
         Long value = sql.queryOne("SELECT MIN(start_ms) FROM span", List.of(),
-                rs -> Sql.longOrNull(rs, 1));
+                rs -> rs.getLong(1));
         return value == null ? 0 : value;
     }
 
     public long oldestLog() {
-        Long value = sql.queryOne("SELECT MIN(at_ms) FROM log", List.of(), rs -> Sql.longOrNull(rs, 1));
+        Long value = sql.queryOne("SELECT MIN(at_ms) FROM log", List.of(), rs -> rs.getLong(1));
         return value == null ? 0 : value;
     }
 
     // --- building blocks -----------------------------------------------------
 
-    private static Clause window(Window window, String service) {
+    private static Clause window(Window window, @Nullable String service) {
         Clause where = new Clause("start_ms BETWEEN ? AND ?", window.from(), window.to());
         return service == null ? where : where.and("service = ?", service);
     }
 
-    private static Clause entryWindow(Window window, String service) {
+    private static Clause entryWindow(Window window, @Nullable String service) {
         return window(window, service).and("entry");
     }
 
@@ -1088,7 +1080,7 @@ public final class Queries {
         static Ancestry of(Sql sql, Window window) {
             Map<String, Entry> entries = new HashMap<>();
             Map<String, String> parents = new HashMap<>();
-            sql.query("SELECT span_id, parent_span_id, entry, endpoint, service, name FROM span"
+            sql.forEach("SELECT span_id, parent_span_id, entry, endpoint, service, name FROM span"
                     + " WHERE start_ms BETWEEN ? AND ?", List.of(window.from(), window.to()), rs -> {
                         String spanId = rs.getString("span_id");
                         String parent = rs.getString("parent_span_id");
@@ -1101,12 +1093,11 @@ public final class Queries {
                                     endpoint == null ? rs.getString("name") : endpoint,
                                     rs.getString("service")));
                         }
-                        return null;
                     });
             return new Ancestry(entries, parents);
         }
 
-        Entry entryOf(String spanId) {
+        @Nullable Entry entryOf(@Nullable String spanId) {
             String current = spanId;
             for (int depth = 0; current != null && depth < 64; depth++) {
                 Entry entry = entries.get(current);

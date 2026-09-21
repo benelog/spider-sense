@@ -1,5 +1,7 @@
 package net.benelog.spidersense.store;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * One point of one series.
  *
@@ -11,6 +13,9 @@ package net.benelog.spidersense.store;
  * @param bucketCounts null unless this is a histogram with explicit buckets
  * @param bounds       the explicit bucket boundaries, one shorter than {@code bucketCounts}
  */
+// Arrays rather than lists: a histogram's counts and bounds are read positionally
+// and by index in percentile(), and boxing every bucket would buy nothing.
+@SuppressWarnings("ArrayRecordComponent")
 public record MetricPoint(
         long at,
         double value,
@@ -18,21 +23,23 @@ public record MetricPoint(
         double sum,
         double min,
         double max,
-        long[] bucketCounts,
-        double[] bounds) {
+        long @Nullable [] bucketCounts,
+        double @Nullable [] bounds) {
 
     public static MetricPoint number(long at, double value) {
         return new MetricPoint(at, value, 0, 0, 0, 0, null, null);
     }
 
     public static MetricPoint histogram(long at, long count, double sum, double min, double max,
-            long[] bucketCounts, double[] bounds) {
+            long @Nullable [] bucketCounts, double @Nullable [] bounds) {
         double mean = count == 0 ? 0 : sum / count;
         return new MetricPoint(at, mean, count, sum, min, max, bucketCounts, bounds);
     }
 
     public boolean hasBuckets() {
-        return bucketCounts != null && bounds != null && bucketCounts.length == bounds.length + 1;
+        long[] counts = bucketCounts;
+        double[] edges = bounds;
+        return counts != null && edges != null && counts.length == edges.length + 1;
     }
 
     /**
@@ -43,16 +50,19 @@ public record MetricPoint(
      * everything, and there is no width to interpolate inside.
      */
     public double percentile(double fraction) {
-        if (!hasBuckets() || count == 0 || bounds.length == 0) {
+        long[] counts = bucketCounts;
+        double[] edges = bounds;
+        if (counts == null || edges == null || counts.length != edges.length + 1
+                || count == 0 || edges.length == 0) {
             return Double.NaN;
         }
         double target = fraction * count;
         long cumulative = 0;
-        for (int i = 0; i < bucketCounts.length; i++) {
-            long inBucket = bucketCounts[i];
+        for (int i = 0; i < counts.length; i++) {
+            long inBucket = counts[i];
             if (cumulative + inBucket >= target && inBucket > 0) {
-                double low = i == 0 ? Math.min(min, bounds[0]) : bounds[i - 1];
-                double high = i == bounds.length ? Math.max(max, bounds[bounds.length - 1]) : bounds[i];
+                double low = i == 0 ? Math.min(min, edges[0]) : edges[i - 1];
+                double high = i == edges.length ? Math.max(max, edges[edges.length - 1]) : edges[i];
                 double within = (target - cumulative) / inBucket;
                 return low + (high - low) * Math.min(1.0, Math.max(0.0, within));
             }

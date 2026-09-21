@@ -1,7 +1,5 @@
 package net.benelog.spidersense.cli;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintStream;
@@ -16,6 +14,8 @@ import java.util.Map;
 import java.util.TreeMap;
 
 import net.benelog.spidersilk.json.Json;
+import org.jspecify.annotations.Nullable;
+import static java.nio.charset.StandardCharsets.UTF_8;
 
 /**
  * {@code java -jar spider-sense.jar init}: the few lines a project's {@code CLAUDE.md}
@@ -289,7 +289,7 @@ final class Init {
                         + " is missing; --no-skill writes the CLAUDE.md block alone");
             }
             List<String> names = new ArrayList<>();
-            for (String line : new String(in.readAllBytes(), UTF_8).split("\n")) {
+            for (String line : new String(in.readAllBytes(), UTF_8).split("\n", -1)) {
                 String name = line.trim();
                 if (!name.isEmpty()) {
                     names.add(name);
@@ -308,8 +308,8 @@ final class Init {
     }
 
     /** {@code --jar} when it was given, else the jar the launcher started us from, else nothing. */
-    private static String jar(Options options) {
-        String named = options.value("jar", null);
+    private static @Nullable String jar(Options options) {
+        String named = options.valueOrNull("jar");
         String path = named == null || named.isBlank() ? System.getProperty(JAR_PROPERTY) : named;
         if (path == null || path.isBlank()) {
             return null;

@@ -5,6 +5,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Which services exist, and which one the server is embedded in.
  *
@@ -23,12 +25,12 @@ public final class ServiceRegistry {
 
     private final Map<String, Boolean> seen = new ConcurrentHashMap<>();
     private final Sql sql;
-    private final String configuredEmbedded;
+    private final @Nullable String configuredEmbedded;
     private final long ownPid;
 
-    private volatile String embedded;
+    private volatile @Nullable String embedded;
 
-    public ServiceRegistry(Sql sql, String configuredEmbedded) {
+    public ServiceRegistry(Sql sql, @Nullable String configuredEmbedded) {
         this.sql = sql;
         this.configuredEmbedded = configuredEmbedded;
         this.embedded = configuredEmbedded;
@@ -61,7 +63,7 @@ public final class ServiceRegistry {
     }
 
     /** The service the server is embedded in, or null when it is standalone or not yet known. */
-    public String embeddedService() {
+    public @Nullable String embeddedService() {
         return embedded;
     }
 
@@ -69,7 +71,7 @@ public final class ServiceRegistry {
         return name.equals(embedded) || name.equals(configuredEmbedded);
     }
 
-    public ServiceInfo get(String name) {
+    public @Nullable ServiceInfo get(String name) {
         return sql.queryOne("SELECT * FROM service WHERE name = ?", List.of(name), this::map);
     }
 

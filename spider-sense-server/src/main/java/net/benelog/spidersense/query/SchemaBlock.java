@@ -6,6 +6,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Which columns a statement filters on, and which of them no index leads with.
  *
@@ -31,7 +33,7 @@ public record SchemaBlock(List<Table> tables, List<String> predicates, List<Stri
      *
      * @param schema null when the database reports none
      */
-    public record Table(String table, String schema, List<Index> indexes) {
+    public record Table(String table, @Nullable String schema, List<Index> indexes) {
     }
 
     /**
@@ -40,7 +42,8 @@ public record SchemaBlock(List<Table> tables, List<String> predicates, List<Stri
      * @param catalog the tables of the statement's service, keyed by lower-cased
      *        name, as {@link Catalog#forService(String)} returns them
      */
-    public static SchemaBlock of(String statement, Map<String, List<Catalog.Table>> catalog) {
+    public static @Nullable SchemaBlock of(@Nullable String statement,
+            @Nullable Map<String, List<Catalog.Table>> catalog) {
         if (statement == null || statement.isBlank() || catalog == null || catalog.isEmpty()) {
             return null;
         }
@@ -78,7 +81,8 @@ public record SchemaBlock(List<Table> tables, List<String> predicates, List<Stri
      * which schema it meant, and otherwise the first row is as good an answer as
      * the database gave us.
      */
-    private static Catalog.Table pick(List<Catalog.Table> rows, String schema) {
+    private static Catalog.@Nullable Table pick(@Nullable List<Catalog.Table> rows,
+            @Nullable String schema) {
         if (rows == null || rows.isEmpty()) {
             return null;
         }
@@ -98,7 +102,7 @@ public record SchemaBlock(List<Table> tables, List<String> predicates, List<Stri
      * <p>A column an index carries second is served no better by it than a column
      * no index carries at all, so only the leading column counts (agent.md).
      */
-    private static boolean served(Catalog.Table table, String column) {
+    private static boolean served(Catalog.@Nullable Table table, String column) {
         if (table == null) {
             return false;
         }

@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.Set;
 
 import net.benelog.spidersilk.json.Json;
+import org.jspecify.annotations.Nullable;
 
 /**
  * An exported session document, written back into the store (agent.md,
@@ -488,7 +489,7 @@ public final class Importer {
         return count;
     }
 
-    private static String buckets(Json.JsonObject point) {
+    private static @Nullable String buckets(Json.JsonObject point) {
         Json.JsonObject object = point.optObject("buckets");
         return object == null ? null : Writer.cut(object.toJson(), 8192);
     }
@@ -510,17 +511,17 @@ public final class Importer {
         return window == null ? 0 : window.optLong("to", 0);
     }
 
-    private static Json.JsonObject window(Json.JsonObject document) {
+    private static Json.@Nullable JsonObject window(Json.JsonObject document) {
         Json.JsonObject header = document.optObject("spiderSense");
         return header == null ? null : header.optObject("window");
     }
 
-    private static String string(Json.JsonObject object, String key) {
-        return object.optString(key, null);
+    private static @Nullable String string(Json.JsonObject object, String key) {
+        return AttrJson.optionalString(object, key);
     }
 
     /** A nullable integer column: JSON null stays null rather than becoming zero. */
-    private static Long number(Json.JsonObject object, String key) {
+    private static @Nullable Long number(Json.JsonObject object, String key) {
         if (!object.has(key) || object.get(key).isNull()) {
             return null;
         }
@@ -543,7 +544,7 @@ public final class Importer {
         return object.get(key).toJson();
     }
 
-    private static String or(String value, String fallback) {
+    private static String or(@Nullable String value, String fallback) {
         return value == null ? fallback : value;
     }
 }

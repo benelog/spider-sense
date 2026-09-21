@@ -1,6 +1,7 @@
 package loadgen;
 
 import java.net.URI;
+import org.jspecify.annotations.Nullable;
 
 /**
  * One HTTP call.
@@ -8,7 +9,7 @@ import java.net.URI;
  * returned by the previous step of the same scenario (the create - pay - ship sequence).
  * A step that has a body carries the content type to send it with.
  */
-public record Step(Target target, String method, String path, String body, String contentType) {
+public record Step(Target target, String method, String path, @Nullable String body, @Nullable String contentType) {
 
     public static final String ID_PLACEHOLDER = "{id}";
     public static final String JSON = "application/json";

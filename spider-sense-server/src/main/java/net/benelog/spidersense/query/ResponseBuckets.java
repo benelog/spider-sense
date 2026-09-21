@@ -3,6 +3,8 @@ package net.benelog.spidersense.query;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The response-time scale every page shares: the bucket bounds, the histogram
  * counted against them, and the Apdex that histogram implies.
@@ -62,7 +64,7 @@ public record ResponseBuckets(long slowRequestMs) {
      * Satisfied up to {@code T}, tolerating up to {@code 4T} at half weight,
      * errors frustrated; {@code null} rather than zero when nothing was requested.
      */
-    public static Double apdex(long[] histogram, long requests) {
+    public static @Nullable Double apdex(long[] histogram, long requests) {
         if (requests <= 0) {
             return null;
         }

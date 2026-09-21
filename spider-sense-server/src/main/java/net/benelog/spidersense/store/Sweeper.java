@@ -5,6 +5,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Retention: rows older than {@code spidersense.retention.hours} go, and one row
  * cap guards the clock (storage.md, "Retention").
@@ -88,12 +90,18 @@ public final class Sweeper implements AutoCloseable {
     }
 
     public Sweeper start() {
-        scheduler.scheduleWithFixedDelay(this::sweepQuietly, FIRST_RUN_SECONDS, INTERVAL_SECONDS,
-                TimeUnit.SECONDS);
+        // The future is the handle of a task that never completes; sweepQuietly
+        // already logs what it swallows, so there is nothing to check here.
+        var unused = scheduler.scheduleWithFixedDelay(this::sweepQuietly, FIRST_RUN_SECONDS,
+                INTERVAL_SECONDS, TimeUnit.SECONDS);
         return this;
     }
 
-    /** @return the number of rows deleted */
+    /**
+     * Deletes everything the retention rules no longer keep.
+     *
+     * @return the number of rows deleted
+     */
     public int sweep() {
         long cutoff = System.currentTimeMillis() - retentionHours * HOUR_MS;
         int deleted = 0;
@@ -146,11 +154,11 @@ public final class Sweeper implements AutoCloseable {
     }
 
     /** {@code MIN(start_ms)}, or null when there is no span at all. */
-    private Long oldestSpan() {
-        return sql.queryOne("SELECT MIN(start_ms) FROM span", List.of(), rs -> {
-            long value = rs.getLong(1);
-            return rs.wasNull() ? null : value;
-        });
+    private @Nullable Long oldestSpan() {
+        Long oldest = sql.queryOne("SELECT MIN(start_ms) FROM span", List.of(), rs -> rs.getLong(1));
+        // MIN over an empty table is one row holding NULL, which JDBC reads as 0,
+        // and no span ever started at the epoch: 0 is "there is no span".
+        return oldest == null || oldest == 0 ? null : oldest;
     }
 
     private void sweepQuietly() {

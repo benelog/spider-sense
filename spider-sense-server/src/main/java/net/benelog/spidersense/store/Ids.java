@@ -4,6 +4,8 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Stable short identifiers for the groups the API exposes (endpoints, queries,
  * error groups).
@@ -50,7 +52,7 @@ public final class Ids {
      * and {@code Order 43 is already shipped} are one error group: runs of digits
      * become {@code ?} and quoted strings become {@code '?'}.
      */
-    public static String normaliseMessage(String message) {
+    public static String normaliseMessage(@Nullable String message) {
         if (message == null) {
             return "";
         }

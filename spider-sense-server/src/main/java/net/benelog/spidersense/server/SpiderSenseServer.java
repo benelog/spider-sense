@@ -6,10 +6,6 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import org.eclipse.jetty.util.thread.QueuedThreadPool;
-import org.eclipse.jetty.util.thread.ScheduledExecutorScheduler;
-import org.eclipse.jetty.util.thread.Scheduler;
-
 import net.benelog.spidersense.api.AgentApi;
 import net.benelog.spidersense.api.ApiRoutes;
 import net.benelog.spidersense.api.EventsApi;
@@ -30,6 +26,10 @@ import net.benelog.spidersilk.HttpStatus;
 import net.benelog.spidersilk.WebResponse;
 import net.benelog.spidersilk.json.Json;
 import net.benelog.spidersilk.server.JettyServer;
+import org.eclipse.jetty.util.thread.QueuedThreadPool;
+import org.eclipse.jetty.util.thread.ScheduledExecutorScheduler;
+import org.eclipse.jetty.util.thread.Scheduler;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The collector and UI: an OTLP/HTTP receiver, an H2-backed store and a JSON API,
@@ -188,7 +188,7 @@ public final class SpiderSenseServer implements AutoCloseable {
      * nothing about our resources. Spider Silk's {@code StaticFiles} resolves the
      * same way ({@code StaticFiles.class.getResource}), so the two agree.
      */
-    private static String index() {
+    private static @Nullable String index() {
         try (InputStream in = SpiderSenseServer.class.getClassLoader().getResourceAsStream(INDEX)) {
             return in == null ? null : new String(in.readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException e) {

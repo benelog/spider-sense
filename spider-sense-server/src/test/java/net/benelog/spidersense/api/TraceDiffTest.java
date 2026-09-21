@@ -160,7 +160,7 @@ class TraceDiffTest {
 
         assertThat(text).startsWith("# trace diff " + A + " → " + A + "  300.0 ms → 300.0 ms"
                 + "  (+0.0 ms, +0.0%)  46 → 46 spans");
-        for (String line : text.split("\n")) {
+        for (String line : text.split("\n", -1)) {
             if (line.startsWith("+") || line.startsWith("-")) {
                 throw new AssertionError("a trace differs from itself: " + line);
             }

@@ -8,6 +8,8 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
 import java.time.Duration;
+import java.time.LocalTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.ExecutorService;
@@ -17,6 +19,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Sends a steady, jittered trickle of requests to silk-bookstore, spring-orders and
@@ -91,7 +94,7 @@ public final class LoadGen {
             Scenario scenario = Scenarios.pick(random);
             List<Step> steps = scenario.steps(random);
             if (inFlight.tryAcquire()) {
-                workers.submit(() -> {
+                workers.execute(() -> {
                     try {
                         execute(steps);
                     } finally {
@@ -140,12 +143,14 @@ public final class LoadGen {
     }
 
     /** Returns the response body, or null when the request failed outright. */
-    private String send(Step step) {
+    private @Nullable String send(Step step) {
         URI uri = step.uri(options);
         HttpRequest.Builder builder = HttpRequest.newBuilder(uri).timeout(REQUEST_TIMEOUT);
         if (step.method().equals("POST")) {
-            builder.header("Content-Type", step.contentType() == null ? Step.JSON : step.contentType())
-                    .POST(HttpRequest.BodyPublishers.ofString(step.body() == null ? "" : step.body()));
+            String contentType = step.contentType();
+            String body = step.body();
+            builder.header("Content-Type", contentType == null ? Step.JSON : contentType)
+                    .POST(HttpRequest.BodyPublishers.ofString(body == null ? "" : body));
         } else {
             builder.GET();
         }
@@ -215,7 +220,7 @@ public final class LoadGen {
         return deepest.getClass().getSimpleName();
     }
 
-    private static Long idIn(String body) {
+    private static @Nullable Long idIn(String body) {
         Matcher matcher = ID.matcher(body);
         return matcher.find() ? Long.valueOf(matcher.group(1)) : null;
     }
@@ -225,6 +230,6 @@ public final class LoadGen {
     }
 
     private static String timestamp() {
-        return java.time.LocalTime.now().withNano(0).toString();
+        return LocalTime.now(ZoneId.systemDefault()).withNano(0).toString();
     }
 }

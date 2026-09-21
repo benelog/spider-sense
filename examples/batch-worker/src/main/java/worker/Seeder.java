@@ -7,6 +7,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.Random;
 
 import javax.sql.DataSource;
@@ -87,7 +88,7 @@ public final class Seeder {
 
     private void seedEvents() {
         Random random = new Random(42);
-        Timestamp now = Timestamp.valueOf(LocalDateTime.now());
+        Timestamp now = Timestamp.valueOf(LocalDateTime.now(ZoneId.systemDefault()));
         String sql = "insert into events (account_id, amount, kind, note, occurred_at) values (?, ?, ?, ?, ?)";
         try (Connection connection = dataSource.getConnection();
              PreparedStatement statement = connection.prepareStatement(sql)) {

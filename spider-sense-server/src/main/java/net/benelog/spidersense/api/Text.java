@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.regex.Pattern;
 
 import net.benelog.spidersense.query.Check;
@@ -25,6 +26,7 @@ import net.benelog.spidersense.store.Marks;
 import net.benelog.spidersense.store.ReadOnlyQuery;
 import net.benelog.spidersense.store.SpanRecord;
 import net.benelog.spidersense.store.Tingles;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The Markdown beside the JSON: what {@link Codecs} is to the UI, this is to an
@@ -73,7 +75,8 @@ final class Text {
     // --- headings and empty states -------------------------------------------
 
     /** {@code # findings  2026-09-17T10:00:00+09:00 → 10:15:00  (15m, all services, 120 requests)}. */
-    static String heading(String what, Window window, String service, Long requests) {
+    static String heading(String what, Window window, @Nullable String service,
+            @Nullable Long requests) {
         return heading(what, window, service, requests, 0);
     }
 
@@ -84,7 +87,8 @@ final class Text {
      * a heading that always said {@code 0 acked} would spend a phrase on nothing
      * (agent.md, "Acknowledgements").
      */
-    static String heading(String what, Window window, String service, Long requests, int acked) {
+    static String heading(String what, Window window, @Nullable String service,
+            @Nullable Long requests, int acked) {
         StringBuilder line = new StringBuilder("# ").append(what).append("  ")
                 .append(instant(window.from())).append(" → ").append(clock(window.to()))
                 .append("  (").append(range(window)).append(", ")
@@ -104,7 +108,8 @@ final class Text {
      * <p>With no request at all the answer is not "nothing is wrong" but "nothing
      * arrived", so it also says where to send some.
      */
-    static String empty(String what, Window window, long requests, String otlpEndpoint) {
+    static String empty(String what, Window window, long requests,
+            @Nullable String otlpEndpoint) {
         String line = "no " + what + " since " + instant(window.from())
                 + " (" + range(window) + ", " + requests + (requests == 1 ? " request" : " requests")
                 + ")\n";
@@ -164,7 +169,7 @@ final class Text {
 
     // --- status ---------------------------------------------------------------
 
-    static String status(Map<String, String> fields) {
+    static String status(Map<String, @Nullable String> fields) {
         StringBuilder text = new StringBuilder("# status\n\n");
         table(text, List.of("field", "value"));
         fields.forEach((key, value) -> row(text, List.of(key, value == null ? "—" : value)));
@@ -173,8 +178,8 @@ final class Text {
 
     // --- findings -------------------------------------------------------------
 
-    static String findings(Window window, String service, long requests,
-            List<Findings.Finding> findings, boolean full, String otlpEndpoint) {
+    static String findings(Window window, @Nullable String service, long requests,
+            List<Findings.Finding> findings, boolean full, @Nullable String otlpEndpoint) {
         return findings(window, service, requests, 0, findings, full, otlpEndpoint);
     }
 
@@ -185,8 +190,8 @@ final class Text {
      * acknowledged finding: it is still last in the table, and the one word says
      * why without a column of its own (agent.md, "Acknowledgements").
      */
-    static String findings(Window window, String service, long requests, int acked,
-            List<Findings.Finding> findings, boolean full, String otlpEndpoint) {
+    static String findings(Window window, @Nullable String service, long requests, int acked,
+            List<Findings.Finding> findings, boolean full, @Nullable String otlpEndpoint) {
         if (findings.isEmpty()) {
             return heading("findings", window, service, requests, acked) + "\n"
                     + empty("findings", window, requests, otlpEndpoint);
@@ -235,7 +240,7 @@ final class Text {
      * second line; the first is what is already there, so that the answer can be
      * checked rather than believed. A finding without a block prints nothing.
      */
-    private static void schema(StringBuilder text, SchemaBlock block) {
+    private static void schema(StringBuilder text, @Nullable SchemaBlock block) {
         if (block == null) {
             return;
         }
@@ -260,7 +265,7 @@ final class Text {
     }
 
     /** The unindexed columns of a query group, as the {@code queries} table shows them. */
-    private static String unindexed(SchemaBlock block) {
+    private static String unindexed(@Nullable SchemaBlock block) {
         if (block == null) {
             return "—";
         }
@@ -292,7 +297,7 @@ final class Text {
      *
      * @return null when the finding has no hot span, which is a finding with no trace
      */
-    private static String hotSpan(Map<String, Object> numbers) {
+    private static @Nullable String hotSpan(Map<String, Object> numbers) {
         if (!(numbers.get(HOT_SPAN) instanceof Map<?, ?> hot)) {
             return null;
         }
@@ -309,7 +314,7 @@ final class Text {
      * percentage, an Apdex is a score. Without this a {@code firstSeen} would read
      * as {@code 1,789,596,953,808}, which is a number and not an answer.
      */
-    private static String scalar(String key, Object value) {
+    private static String scalar(String key, @Nullable Object value) {
         if (value instanceof Number number) {
             if ("at".equals(key) || key.endsWith("Seen")) {
                 return instantMillis(number.longValue());
@@ -325,7 +330,7 @@ final class Text {
         return scalar(value);
     }
 
-    private static String scalar(Object value) {
+    private static String scalar(@Nullable Object value) {
         return switch (value) {
             case null -> "—";
             case Double number -> Numbers.number(number);
@@ -419,7 +424,8 @@ final class Text {
 
     // --- compare --------------------------------------------------------------
 
-    static String compare(Compare.Comparison comparison, String service, boolean full) {
+    static String compare(Compare.Comparison comparison, @Nullable String service,
+            boolean full) {
         StringBuilder text = new StringBuilder("# compare  ")
                 .append(instant(comparison.before().from())).append(" → ")
                 .append(clock(comparison.before().to())).append("  vs  ")
@@ -493,21 +499,22 @@ final class Text {
         return before + " → " + after;
     }
 
-    private static String count(Long value) {
+    private static String count(@Nullable Long value) {
         return value == null ? "—" : Numbers.count(value);
     }
 
-    private static String millis(Double value) {
+    private static String millis(@Nullable Double value) {
         return value == null ? "—" : Numbers.millis(value);
     }
 
-    private static String number(Double value) {
+    private static String number(@Nullable Double value) {
         return value == null ? "—" : Numbers.number(value);
     }
 
     // --- check ----------------------------------------------------------------
 
-    static String check(Check.CheckResult result, Window window, String service, String endpoint) {
+    static String check(Check.CheckResult result, Window window, @Nullable String service,
+            @Nullable String endpoint) {
         String verdict = result.pass() == null ? "no verdict" : result.pass() ? "pass" : "fail";
         StringBuilder text = new StringBuilder("# check  ").append(verdict).append("  ")
                 .append(instant(window.from())).append(" → ").append(clock(window.to()))
@@ -542,7 +549,7 @@ final class Text {
 
     // --- lists ----------------------------------------------------------------
 
-    static String traces(Window window, String service, List<Stats.TraceSummary> traces, long total,
+    static String traces(Window window, @Nullable String service, List<Stats.TraceSummary> traces, long total,
             long requests, String otlpEndpoint) {
         if (traces.isEmpty()) {
             return heading("traces", window, service, requests) + "\n"
@@ -565,7 +572,7 @@ final class Text {
         return text.toString();
     }
 
-    static String endpoints(Window window, String service, List<Stats.EndpointStats> endpoints,
+    static String endpoints(Window window, @Nullable String service, List<Stats.EndpointStats> endpoints,
             long requests, String otlpEndpoint) {
         if (endpoints.isEmpty()) {
             return heading("endpoints", window, service, requests) + "\n"
@@ -585,7 +592,7 @@ final class Text {
         return text.toString();
     }
 
-    static String queries(Window window, String service, List<Stats.QueryStats> queries, long requests,
+    static String queries(Window window, @Nullable String service, List<Stats.QueryStats> queries, long requests,
             boolean full, String otlpEndpoint) {
         if (queries.isEmpty()) {
             return heading("queries", window, service, requests) + "\n"
@@ -611,7 +618,7 @@ final class Text {
         return text.toString();
     }
 
-    static String errors(Window window, String service, List<Stats.ErrorGroup> errors, long requests,
+    static String errors(Window window, @Nullable String service, List<Stats.ErrorGroup> errors, long requests,
             boolean full, CodeFrames frames, String otlpEndpoint) {
         if (errors.isEmpty()) {
             return heading("errors", window, service, requests) + "\n"
@@ -647,7 +654,7 @@ final class Text {
         return text.toString();
     }
 
-    static String logs(Window window, String service, List<LogRecord> logs, long total,
+    static String logs(Window window, @Nullable String service, List<LogRecord> logs, long total,
             String otlpEndpoint) {
         if (logs.isEmpty()) {
             return heading("logs", window, service, null) + "\n"
@@ -811,7 +818,8 @@ final class Text {
     }
 
     private static void collect(List<TraceLine> lines, List<SpanRecord> siblings,
-            Map<String, List<SpanRecord>> children, int depth, String parentService, long startNs,
+            Map<String, List<SpanRecord>> children, int depth, @Nullable String parentService,
+            long startNs,
             Tingles tingles, CodeFrames frames, boolean full) {
         siblings.sort((a, b) -> Long.compare(a.startNanos(), b.startNanos()));
         int i = 0;
@@ -862,7 +870,7 @@ final class Text {
     }
 
     /** The span as the tree says it; the service is named only where it changes. */
-    private static String spanText(SpanRecord span, String parentService) {
+    private static String spanText(SpanRecord span, @Nullable String parentService) {
         return prefix(span)
                 + (span.service().equals(parentService) ? "" : span.service() + " ")
                 + span.summary();
@@ -904,11 +912,12 @@ final class Text {
      *                collapsed group does even where the other side collapsed
      *                nothing — a count that changed is the whole finding
      */
-    record DiffLine(char op, TraceLine a, TraceLine b, boolean counted) {
+    record DiffLine(char op, @Nullable TraceLine a, @Nullable TraceLine b, boolean counted) {
 
         /** The side the line is rendered from: {@code a} where there is one. */
         TraceLine either() {
-            return a == null ? b : a;
+            // Every line came from one side or the other; neither is a line at all.
+            return Objects.requireNonNull(a == null ? b : a, "a diff line has a side");
         }
 
         /**
@@ -1036,7 +1045,7 @@ final class Text {
     }
 
     /** One side's duration, or a dash where that side has no such span. */
-    private static String side(TraceLine line) {
+    private static String side(@Nullable TraceLine line) {
         return line == null ? "—" : Numbers.millis(line.durationMs());
     }
 
@@ -1097,7 +1106,7 @@ final class Text {
      * round trip. Text is cut like a statement, at 200 characters unless
      * {@code full}.
      */
-    private static String cell(Object value, boolean full) {
+    private static String cell(@Nullable Object value, boolean full) {
         return switch (value) {
             case null -> "—";
             case Boolean flag -> String.valueOf(flag);
@@ -1107,7 +1116,7 @@ final class Text {
         };
     }
 
-    static String statement(String statement, boolean full) {
+    static String statement(@Nullable String statement, boolean full) {
         if (statement == null) {
             return "—";
         }
@@ -1116,11 +1125,11 @@ final class Text {
     }
 
     /** A table cell cannot carry a newline or a bar. */
-    static String oneLine(String value) {
+    static String oneLine(@Nullable String value) {
         return value == null ? "—" : value.replaceAll("\\s+", " ").replace("|", "\\|").trim();
     }
 
-    private static String or(String value) {
+    private static String or(@Nullable String value) {
         return value == null || value.isBlank() ? "—" : value;
     }
 

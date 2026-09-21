@@ -2,6 +2,8 @@ package net.benelog.spidersense.store;
 
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * One log line, with the ids that correlate it to a trace.
  *
@@ -16,9 +18,9 @@ public record LogRecord(
         String severity,
         int severityNumber,
         String body,
-        String logger,
-        String traceId,
-        String spanId,
+        @Nullable String logger,
+        @Nullable String traceId,
+        @Nullable String spanId,
         Map<String, Object> attributes) {
 
     /** The OTLP severity ranges; anything outside them has no text. */

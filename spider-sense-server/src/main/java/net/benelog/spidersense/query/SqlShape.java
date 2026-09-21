@@ -8,6 +8,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * What a statement selects from and filters on: the tables, and the columns a
  * {@code where}, an {@code on} or an {@code order by} names.
@@ -29,7 +31,7 @@ import java.util.Set;
 final class SqlShape {
 
     /** A table the statement names, with the schema it was qualified by. */
-    record TableRef(String name, String schema) {
+    record TableRef(String name, @Nullable String schema) {
     }
 
     /** A column a predicate refers to, attributed to the table it belongs to. */
@@ -158,7 +160,7 @@ final class SqlShape {
      * {@code having} is skipped rather than read: its columns are aggregates over
      * groups, which no index on a column serves.
      */
-    private static Region opens(List<Token> tokens, int i, String word) {
+    private static @Nullable Region opens(List<Token> tokens, int i, String word) {
         if (word.equals("where") || word.equals("on")) {
             return Region.PREDICATE;
         }
@@ -211,7 +213,7 @@ final class SqlShape {
         return i;
     }
 
-    private boolean contains(String name, String schema) {
+    private boolean contains(String name, @Nullable String schema) {
         for (TableRef table : tables) {
             if (table.name().equals(name) && java.util.Objects.equals(table.schema(), schema)) {
                 return true;
@@ -227,7 +229,7 @@ final class SqlShape {
      *        is recorded all the same so that a column qualified by it is known to
      *        be unattributable
      */
-    private int alias(List<Token> tokens, int start, String table) {
+    private int alias(List<Token> tokens, int start, @Nullable String table) {
         int i = start;
         if (i < tokens.size() && "as".equals(tokens.get(i).keyword())) {
             i++;
@@ -313,7 +315,7 @@ final class SqlShape {
         }
 
         /** The word this token is, when it is one that can never be a name. */
-        String keyword() {
+        @Nullable String keyword() {
             return kind == Kind.NAME && !quoted && parts.size() == 1 && KEYWORDS.contains(text)
                     ? text : null;
         }

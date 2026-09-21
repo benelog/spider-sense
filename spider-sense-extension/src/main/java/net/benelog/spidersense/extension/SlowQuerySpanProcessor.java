@@ -9,6 +9,7 @@ import io.opentelemetry.sdk.trace.internal.ExtendedSpanProcessor;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Gives a slow database span, the fifth repeat of a statement within a trace, and a slow outbound
@@ -75,11 +76,14 @@ public final class SlowQuerySpanProcessor implements ExtendedSpanProcessor {
      * A trace whose repeats are spread over several threads is counted per thread and may fall short
      * of five on each; that is the known price ({@code docs/design.md}).
      */
+    // Not static: the counter belongs to this processor, so a second processor, which is what a
+    // test builds, starts from nothing rather than inheriting another one's counts.
+    @SuppressWarnings("ThreadLocalUsage")
     private final ThreadLocal<Repeats> repeats = new ThreadLocal<>();
 
     /** The trace a thread is counting, and how often each statement of it has ended. */
     private static final class Repeats {
-        private String traceId;
+        private @Nullable String traceId;
         private final Map<String, Integer> counts = new HashMap<>();
     }
 

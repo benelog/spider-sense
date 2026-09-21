@@ -2,6 +2,7 @@ package warehouse;
 
 import java.io.File;
 import java.nio.file.Files;
+import java.util.Locale;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -50,8 +51,14 @@ public class WarehouseApp {
     private final int requestedPort;
     private final int seedItems;
 
+    // start() opens the pool and builds Tomcat before anything else reads these three.
+    @SuppressWarnings("NullAway.Init")
     private Tomcat tomcat;
+
+    @SuppressWarnings("NullAway.Init")
     private DataSource dataSource;
+
+    @SuppressWarnings("NullAway.Init")
     private AsyncServlet asyncServlet;
 
     public WarehouseApp(String jdbcUrl, int requestedPort, int seedItems) {
@@ -187,7 +194,7 @@ public class WarehouseApp {
      * {@code SET QUERY_CACHE_SIZE} statement any more.
      */
     static String withoutQueryCache(String jdbcUrl) {
-        return jdbcUrl.toUpperCase().contains("QUERY_CACHE_SIZE")
+        return jdbcUrl.toUpperCase(Locale.ROOT).contains("QUERY_CACHE_SIZE")
                 ? jdbcUrl
                 : jdbcUrl + ";QUERY_CACHE_SIZE=0";
     }

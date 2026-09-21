@@ -21,6 +21,7 @@ import net.benelog.spidersense.store.SpanRecord;
 import net.benelog.spidersense.store.Tingle;
 import net.benelog.spidersense.store.Tingles;
 import net.benelog.spidersilk.json.Json;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The wire format, written by hand, in one place.
@@ -49,12 +50,12 @@ public final class Codecs {
         return object.put(key, round(value));
     }
 
-    static Json.JsonObject put(Json.JsonObject object, String key, Long value) {
+    static Json.JsonObject put(Json.JsonObject object, String key, @Nullable Long value) {
         return value == null ? object.putNull(key) : object.put(key, value.longValue());
     }
 
     /** A score that is absent rather than zero — an Apdex over no request at all. */
-    static Json.JsonObject put(Json.JsonObject object, String key, Double value) {
+    static Json.JsonObject put(Json.JsonObject object, String key, @Nullable Double value) {
         return value == null ? object.putNull(key) : put(object, key, value.doubleValue());
     }
 
@@ -114,7 +115,7 @@ public final class Codecs {
         return object;
     }
 
-    private static Json.JsonValue value(Object value) {
+    private static Json.JsonValue value(@Nullable Object value) {
         Json.JsonObject holder = Json.obj();
         switch (value) {
             case null -> holder.putNull("v");
@@ -295,7 +296,7 @@ public final class Codecs {
      * <p>Null rather than an empty object, because "no index serves nothing" and
      * "nobody could tell" are different answers and the UI shows them differently.
      */
-    static Json.JsonObject schema(SchemaBlock block) {
+    static Json.@Nullable JsonObject schema(@Nullable SchemaBlock block) {
         if (block == null) {
             return null;
         }
@@ -514,8 +515,8 @@ public final class Codecs {
                     .put("id", node.id())
                     .put("kind", node.kind())
                     .put("name", node.name());
-            if (node.isService()) {
-                Stats.Totals totals = node.totals();
+            Stats.Totals totals = node.totals();
+            if (totals != null) {
                 object.put("requests", totals.requests())
                         .put("errors", totals.errors())
                         .put("errorRate", round(totals.errorRate()))
@@ -674,8 +675,8 @@ public final class Codecs {
                 .put("connectionPools", connectionPools);
     }
 
-    static Json.JsonObject error(String message) {
-        return Json.obj().put("error", message);
+    static Json.JsonObject error(@Nullable String message) {
+        return Json.obj().put("error", message == null ? "Bad request" : message);
     }
 
     // --- the agent interface --------------------------------------------------
@@ -828,7 +829,7 @@ public final class Codecs {
                 .put("errors", errors);
     }
 
-    private static Json.JsonValue side(Compare.Side side) {
+    private static Json.@Nullable JsonValue side(Compare.@Nullable Side side) {
         if (side == null) {
             return null;
         }
@@ -843,7 +844,7 @@ public final class Codecs {
         return object;
     }
 
-    private static Json.JsonValue querySide(Compare.QuerySide side) {
+    private static Json.@Nullable JsonValue querySide(Compare.@Nullable QuerySide side) {
         if (side == null) {
             return null;
         }
@@ -900,7 +901,7 @@ public final class Codecs {
     }
 
     /** A cell stays the type the store holds it as; anything else is its text. */
-    private static void cell(Json.JsonArray cells, Object value) {
+    private static void cell(Json.JsonArray cells, @Nullable Object value) {
         switch (value) {
             case null -> cells.add((Json.JsonValue) null);
             case Boolean flag -> cells.add(flag.booleanValue());

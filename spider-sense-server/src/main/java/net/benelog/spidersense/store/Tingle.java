@@ -1,5 +1,7 @@
 package net.benelog.spidersense.store;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A noteworthy event, derived at ingest against the configured thresholds.
  *
@@ -8,8 +10,8 @@ package net.benelog.spidersense.store;
  *
  * @param kind one of {@code slow-request}, {@code slow-query}, {@code error}
  */
-public record Tingle(String kind, long at, String service, String title, String detail,
-        String traceId, String spanId, double durationMs) {
+public record Tingle(String kind, long at, String service, String title, @Nullable String detail,
+        @Nullable String traceId, @Nullable String spanId, double durationMs) {
 
     public static final String SLOW_REQUEST = "slow-request";
     public static final String SLOW_QUERY = "slow-query";

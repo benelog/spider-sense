@@ -13,6 +13,7 @@ import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -26,6 +27,9 @@ class SlowQuerySpanProcessorTest {
 
     /** Small enough that a test can sleep past it, large enough that a fast span stays under it. */
     private static final long THRESHOLD_MS = 50;
+
+    /** One frame per line, as {@code Throwable.printStackTrace} writes them. */
+    private static final Pattern LINES = Pattern.compile("\\R");
 
     private InMemorySpanExporter exporter;
     private SdkTracerProvider tracerProvider;
@@ -54,12 +58,12 @@ class SlowQuerySpanProcessorTest {
 
         String stacktrace = exported().getAttributes().get(SlowQuerySpanProcessor.CODE_STACKTRACE);
         assertThat(stacktrace).as("code.stacktrace").isNotNull();
-        String first = stacktrace.split("\\R")[0];
+        String first = LINES.split(stacktrace, 2)[0];
         assertThat(first)
                 .as("the frames start where the query was issued, not inside the SDK")
                 .startsWith("\tat ")
                 .contains("SlowQuerySpanProcessorTest.aSlowDatabaseSpanCarriesTheStackItWasIssuedFrom");
-        assertThat(stacktrace.split("\\R"))
+        assertThat(LINES.split(stacktrace))
                 .allMatch(line -> line.startsWith("\tat "))
                 .hasSizeLessThanOrEqualTo(SlowQuerySpanProcessor.MAX_FRAMES);
     }
@@ -102,7 +106,7 @@ class SlowQuerySpanProcessorTest {
 
         String stacktrace = exported().getAttributes().get(SlowQuerySpanProcessor.CODE_STACKTRACE);
         assertThat(stacktrace).as("code.stacktrace").isNotNull();
-        assertThat(stacktrace.split("\\R")[0])
+        assertThat(LINES.split(stacktrace, 2)[0])
                 .contains("SlowQuerySpanProcessorTest.aSlowOutboundCallCarriesTheStackItWasMadeFrom");
     }
 
@@ -187,7 +191,7 @@ class SlowQuerySpanProcessorTest {
             frames[i] = new StackTraceElement("orders.Frame" + i, "run", "Frame.java", i);
         }
 
-        assertThat(SlowQuerySpanProcessor.format(frames).split("\\R"))
+        assertThat(LINES.split(SlowQuerySpanProcessor.format(frames)))
                 .hasSize(SlowQuerySpanProcessor.MAX_FRAMES);
     }
 

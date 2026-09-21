@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.TreeMap;
 
 import net.benelog.spidersilk.json.Json;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Attributes and span events as the JSON text the {@code attributes} and
@@ -26,6 +27,16 @@ public final class AttrJson {
     private AttrJson() {
     }
 
+    /**
+     * An optional string member: absent, JSON null and a missing key all read as null.
+     *
+     * <p>{@link Json.JsonObject#optString} takes a fallback that may not itself be
+     * null, so this is how a reader asks for "the value, or nothing".
+     */
+    public static @Nullable String optionalString(Json.JsonObject object, String key) {
+        return object.has(key) && !object.get(key).isNull() ? object.get(key).asString() : null;
+    }
+
     public static String encode(Map<String, Object> attributes) {
         if (attributes.isEmpty()) {
             return EMPTY_OBJECT;
@@ -40,7 +51,7 @@ public final class AttrJson {
         return encode(new TreeMap<>(attributes));
     }
 
-    public static Map<String, Object> decode(String json) {
+    public static Map<String, Object> decode(@Nullable String json) {
         if (json == null || json.isEmpty() || EMPTY_OBJECT.equals(json)) {
             return Map.of();
         }
@@ -68,7 +79,7 @@ public final class AttrJson {
         return array.toJson();
     }
 
-    public static List<SpanRecord.SpanEvent> decodeEvents(String json) {
+    public static List<SpanRecord.SpanEvent> decodeEvents(@Nullable String json) {
         if (json == null || json.isEmpty() || EMPTY_ARRAY.equals(json)) {
             return List.of();
         }
@@ -88,7 +99,7 @@ public final class AttrJson {
         return Json.arr().addAll(values).toJson();
     }
 
-    public static List<String> decodeStrings(String json) {
+    public static List<String> decodeStrings(@Nullable String json) {
         if (json == null || json.isEmpty() || EMPTY_ARRAY.equals(json)) {
             return List.of();
         }
@@ -99,7 +110,7 @@ public final class AttrJson {
         return values;
     }
 
-    private static Json.JsonValue toJson(Object value) {
+    private static Json.JsonValue toJson(@Nullable Object value) {
         Json.JsonObject holder = Json.obj();
         switch (value) {
             case null -> holder.putNull("v");
@@ -120,7 +131,7 @@ public final class AttrJson {
         return holder.get("v");
     }
 
-    private static Object fromJson(Json.JsonValue value) {
+    private static @Nullable Object fromJson(Json.JsonValue value) {
         if (value.isNull()) {
             return null;
         }

@@ -2,6 +2,8 @@ package net.benelog.spidersense.query;
 
 import java.util.Locale;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The way a number is said, in one place.
  *
@@ -18,12 +20,12 @@ public final class Numbers {
     }
 
     /** {@code 1,532.4 ms}; an absent duration is a dash. */
-    public static String millis(Double value) {
+    public static String millis(@Nullable Double value) {
         return value == null || value.isNaN() || value.isInfinite() ? "—" : number(value) + " ms";
     }
 
     /** {@code 1,532.4}: one decimal and a thousands separator. */
-    public static String number(Double value) {
+    public static String number(@Nullable Double value) {
         return value == null || value.isNaN() || value.isInfinite()
                 ? "—" : String.format(Locale.US, "%,.1f", value);
     }
@@ -34,7 +36,7 @@ public final class Numbers {
     }
 
     /** {@code 43.0%} from a fraction of one; an absent rate is a dash. */
-    public static String percent(Double fraction) {
+    public static String percent(@Nullable Double fraction) {
         return fraction == null || fraction.isNaN() || fraction.isInfinite()
                 ? "—" : String.format(Locale.US, "%,.1f%%", fraction * 100);
     }
@@ -45,7 +47,7 @@ public final class Numbers {
     }
 
     /** {@code 0.931}, the way an Apdex is written; {@code null} is a dash. */
-    public static String score(Double value) {
+    public static String score(@Nullable Double value) {
         return value == null || value.isNaN() || value.isInfinite()
                 ? "—" : String.format(Locale.US, "%.3f", value);
     }

@@ -4,6 +4,7 @@ import java.lang.instrument.Instrumentation;
 import java.lang.reflect.Method;
 import java.net.URI;
 import java.nio.file.Path;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The {@code Premain-Class}/{@code Agent-Class} of the distributable jar.
@@ -84,7 +85,7 @@ public final class SpiderSenseAgent {
      * whatever the user already told OpenTelemetry. The collector uses it to recognise the service
      * it is embedded in and drop the UI's own traffic.
      */
-    private static String effectiveServiceName(Config config) {
+    private static @Nullable String effectiveServiceName(Config config) {
         return config.service() != null ? config.service() : Config.propertyOrEnv("otel.service.name");
     }
 
@@ -159,7 +160,7 @@ public final class SpiderSenseAgent {
     }
 
     /** Sets a system property only when neither it nor its environment variable is set already. */
-    static void setDefault(String property, String value) {
+    static void setDefault(String property, @Nullable String value) {
         if (value != null && Config.propertyOrEnv(property) == null) {
             System.setProperty(property, value);
         }

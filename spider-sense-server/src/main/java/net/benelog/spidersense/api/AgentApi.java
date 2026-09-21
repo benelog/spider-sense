@@ -7,6 +7,7 @@ import net.benelog.spidersense.query.Check;
 import net.benelog.spidersense.query.Selectors;
 import net.benelog.spidersense.query.Window;
 import net.benelog.spidersense.store.Acks;
+import net.benelog.spidersense.store.AttrJson;
 import net.benelog.spidersense.store.Marks;
 import net.benelog.spidersense.store.ReadOnlyQuery;
 import net.benelog.spidersilk.App;
@@ -15,6 +16,7 @@ import net.benelog.spidersilk.HttpStatus;
 import net.benelog.spidersilk.WebRequest;
 import net.benelog.spidersilk.WebResponse;
 import net.benelog.spidersilk.json.Json;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The endpoints that exist for an agent rather than for the UI: findings and
@@ -90,13 +92,13 @@ public final class AgentApi {
         String note = null;
         if (body != null && !body.isBlank()) {
             Json.JsonObject object = req.bodyJson().asObject();
-            note = object.optString("note", null);
+            note = AttrJson.optionalString(object, "note");
         }
         Acks.Ack ack;
         try {
             ack = reports.ackStore().ack(req.pathParam("id"), note);
         } catch (IllegalArgumentException e) {
-            throw new HttpException(HttpStatus.BAD_REQUEST, e.getMessage());
+            throw badRequest(e);
         }
         return Params.answer(req, reports.ack(ack)).status(HttpStatus.CREATED);
     }
@@ -108,7 +110,7 @@ public final class AgentApi {
         try {
             removed = reports.ackStore().unack(id);
         } catch (IllegalArgumentException e) {
-            throw new HttpException(HttpStatus.BAD_REQUEST, e.getMessage());
+            throw badRequest(e);
         }
         if (!removed) {
             throw new HttpException(HttpStatus.NOT_FOUND, "No such acknowledgement: " + id);
@@ -126,15 +128,15 @@ public final class AgentApi {
 
     public WebResponse mark(WebRequest req) {
         Json.JsonObject body = req.bodyJson().asObject();
-        String name = body.optString("name", null);
-        String note = body.optString("note", null);
-        String service = body.optString("service", null);
+        String name = AttrJson.optionalString(body, "name");
+        String note = AttrJson.optionalString(body, "note");
+        String service = AttrJson.optionalString(body, "service");
         Long at = body.has("at") && !body.get("at").isNull() ? body.getLong("at") : null;
         Marks.Mark mark;
         try {
             mark = reports.markStore().create(name, service, note, at);
         } catch (IllegalArgumentException e) {
-            throw new HttpException(HttpStatus.BAD_REQUEST, e.getMessage());
+            throw badRequest(e);
         }
         return Params.answer(req, reports.mark(mark)).status(HttpStatus.CREATED);
     }
@@ -172,7 +174,7 @@ public final class AgentApi {
      */
     public WebResponse sql(WebRequest req) {
         Json.JsonObject body = req.bodyJson().asObject();
-        String statement = body.optString("sql", null);
+        String statement = AttrJson.optionalString(body, "sql");
         int limit = ReadOnlyQuery.LIMIT;
         if (body.has("limit") && !body.get("limit").isNull()) {
             limit = (int) body.getLong("limit");
@@ -186,6 +188,12 @@ public final class AgentApi {
         } catch (IllegalArgumentException | IllegalStateException e) {
             return Params.problem(req, e.getMessage());
         }
+    }
+
+    /** The rejection an {@code IllegalArgumentException} from the store means. */
+    private static HttpException badRequest(IllegalArgumentException e) {
+        String message = e.getMessage();
+        return new HttpException(HttpStatus.BAD_REQUEST, message == null ? "Bad request" : message);
     }
 
     public WebResponse check(WebRequest req) {

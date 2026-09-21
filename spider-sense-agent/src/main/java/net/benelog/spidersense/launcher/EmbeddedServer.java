@@ -4,6 +4,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.util.List;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Starts the collector + UI inside the current JVM, in its own class loader.
@@ -18,12 +19,14 @@ final class EmbeddedServer {
     static final String SERVER_CLASS = "net.benelog.spidersense.server.SpiderSenseServer";
 
     /** Non-null once started; keeps the loader alive and makes a second attach a no-op. */
-    private static volatile SenseClassLoader started;
+    private static volatile @Nullable SenseClassLoader started;
 
     private EmbeddedServer() {
     }
 
     /**
+     * Starts the collector and UI in this JVM, at most once.
+     *
      * @return {@code false} when a server is already running in this JVM, {@code true} when this
      *         call started one (in standalone mode the call does not return until shutdown)
      */

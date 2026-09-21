@@ -1,7 +1,10 @@
+import net.ltgt.gradle.errorprone.CheckSeverity
+
 plugins {
     id 'java-gradle-plugin'
     id 'maven-publish'
     id 'signing'
+    id 'net.ltgt.errorprone' version '5.1.1'
 }
 
 group = 'net.benelog.spidersense'
@@ -17,7 +20,14 @@ repositories {
     gradlePluginPortal()
 }
 
+// An included build reads none of the root's ext block, so the versions the
+// root build.gradle names for Error Prone, NullAway, and JSpecify are repeated
+// here; keep them the same.
 dependencies {
+    compileOnly 'org.jspecify:jspecify:1.0.1'
+    errorprone 'com.google.errorprone:error_prone_core:2.50.0'
+    errorprone 'com.uber.nullaway:nullaway:0.14.1'
+
     testImplementation gradleTestKit()
     testImplementation 'org.junit.jupiter:junit-jupiter:6.1.3'
     testImplementation 'org.assertj:assertj-core:3.27.7'
@@ -27,6 +37,23 @@ dependencies {
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
     options.release = 21
+    // Gradle instantiates an abstract extension or task type through a generated
+    // subclass, and the @Inject on the abstract constructor is what tells it
+    // which services to pass; Error Prone knows only Guice's rule.
+    options.errorprone.disable('InjectOnConstructorOfAbstractClass')
+}
+
+// The same rules as the root build: NullAway over the @NullMarked main code only.
+tasks.named('compileJava', JavaCompile) {
+    options.errorprone {
+        check('NullAway', CheckSeverity.ERROR)
+        option('NullAway:OnlyNullMarked', 'true')
+        option('NullAway:JSpecifyMode', 'true')
+    }
+}
+
+tasks.withType(JavaCompile).matching { it.name != 'compileJava' }.configureEach {
+    options.errorprone.disable('NullAway')
 }
 
 tasks.withType(Test).configureEach {

@@ -19,6 +19,7 @@ import net.benelog.spidersense.store.AttrJson;
 import net.benelog.spidersense.store.Schema;
 import net.benelog.spidersense.store.Sql;
 import net.benelog.spidersilk.json.Json;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The whole window as one JSON document: every service, span, log record,
@@ -51,8 +52,9 @@ final class SessionExport {
      *
      * @param service one service, or null for every one of them
      */
-    static void write(Sql sql, Window window, String service, OutputStream out) {
-        sql.with(connection -> {
+    static void write(Sql sql, Window window, @Nullable String service, OutputStream out) {
+        // Work always answers with something; there is nothing to answer with here.
+        Boolean unused = sql.with(connection -> {
             Writer text = new BufferedWriter(new OutputStreamWriter(out, StandardCharsets.UTF_8), 8192);
             try {
                 document(connection, window, service, text);
@@ -60,11 +62,12 @@ final class SessionExport {
             } catch (IOException e) {
                 throw new UncheckedIOException("could not write the export", e);
             }
-            return null;
+            return Boolean.TRUE;
         }, "export the window");
     }
 
-    private static void document(Connection connection, Window window, String service, Writer text)
+    private static void document(Connection connection, Window window, @Nullable String service,
+            Writer text)
             throws SQLException, IOException {
         text.write("{\"spiderSense\":");
         text.write(Json.obj()
@@ -119,7 +122,7 @@ final class SessionExport {
 
     // --- the sections -----------------------------------------------------------
 
-    private static Select services(String service) {
+    private static Select services(@Nullable String service) {
         return service == null
                 ? new Select("SELECT * FROM service ORDER BY name", List.of())
                 : new Select("SELECT * FROM service WHERE name = ? ORDER BY name", List.of(service));
@@ -135,7 +138,7 @@ final class SessionExport {
                 .put("resource", Json.parse(orEmpty(rs.getString("resource"))));
     }
 
-    private static Select spans(Window window, String service) {
+    private static Select spans(Window window, @Nullable String service) {
         return windowed("SELECT * FROM span WHERE start_ms BETWEEN ? AND ?", "service",
                 " ORDER BY start_ms, id", window, service);
     }
@@ -176,7 +179,7 @@ final class SessionExport {
                 .put("events", Json.parse(orEmptyArray(rs.getString("events"))));
     }
 
-    private static Select logs(Window window, String service) {
+    private static Select logs(Window window, @Nullable String service) {
         return windowed("SELECT * FROM log WHERE at_ms BETWEEN ? AND ?", "service",
                 " ORDER BY at_ms, id", window, service);
     }
@@ -213,7 +216,7 @@ final class SessionExport {
     }
 
     /** Only the series with a point in the window; the others describe nothing here. */
-    private static Select series(Window window, String service) {
+    private static Select series(Window window, @Nullable String service) {
         String sql = """
                 SELECT DISTINCT s.id, s.service, s.name, s.attributes
                 FROM metric_series s JOIN metric_point p ON p.series_id = s.id
@@ -234,7 +237,7 @@ final class SessionExport {
                 .put("attributes", Json.parse(orEmpty(rs.getString("attributes"))));
     }
 
-    private static Select points(Window window, String service) {
+    private static Select points(Window window, @Nullable String service) {
         String sql = """
                 SELECT p.* FROM metric_point p JOIN metric_series s ON s.id = p.series_id
                 WHERE p.at_ms BETWEEN ? AND ?""";
@@ -259,7 +262,7 @@ final class SessionExport {
                 .put("buckets", buckets == null ? null : Json.parse(buckets));
     }
 
-    private static Select tingles(Window window, String service) {
+    private static Select tingles(Window window, @Nullable String service) {
         return windowed("SELECT * FROM tingle WHERE at_ms BETWEEN ? AND ?", "service",
                 " ORDER BY at_ms, id", window, service);
     }
@@ -280,7 +283,7 @@ final class SessionExport {
      * A mark of no service belongs to every service, so {@code service=x} keeps it:
      * "before" was the moment, not the application.
      */
-    private static Select marks(Window window, String service) {
+    private static Select marks(Window window, @Nullable String service) {
         String sql = "SELECT * FROM mark WHERE at_ms BETWEEN ? AND ?";
         List<Object> params = new ArrayList<>(List.of(window.from(), window.to()));
         if (service != null) {
@@ -301,7 +304,7 @@ final class SessionExport {
     // --- the plumbing --------------------------------------------------------------
 
     private static Select windowed(String sql, String serviceColumn, String order, Window window,
-            String service) {
+            @Nullable String service) {
         List<Object> params = new ArrayList<>(List.of(window.from(), window.to()));
         String statement = sql;
         if (service != null) {
@@ -315,26 +318,26 @@ final class SessionExport {
      * A nullable number as the JSON value it is: a number, or null — which
      * {@code put(key, (JsonValue) null)} writes as {@code null}.
      */
-    private static Json.JsonValue value(Long number) {
+    private static Json.@Nullable JsonValue value(@Nullable Long number) {
         return number == null ? null : Json.obj().put("v", number.longValue()).get("v");
     }
 
     /** The same for a double; a NaN or an infinity has no JSON syntax, so it is null. */
-    private static Json.JsonValue value(Double number) {
+    private static Json.@Nullable JsonValue value(@Nullable Double number) {
         return number == null || number.isNaN() || number.isInfinite()
                 ? null : Json.obj().put("v", number.doubleValue()).get("v");
     }
 
-    private static Double doubleOrNull(ResultSet rs, String column) throws SQLException {
+    private static @Nullable Double doubleOrNull(ResultSet rs, String column) throws SQLException {
         double value = rs.getDouble(column);
         return rs.wasNull() ? null : value;
     }
 
-    private static String orEmpty(String json) {
+    private static String orEmpty(@Nullable String json) {
         return json == null || json.isEmpty() ? AttrJson.EMPTY_OBJECT : json;
     }
 
-    private static String orEmptyArray(String json) {
+    private static String orEmptyArray(@Nullable String json) {
         return json == null || json.isEmpty() ? AttrJson.EMPTY_ARRAY : json;
     }
 }

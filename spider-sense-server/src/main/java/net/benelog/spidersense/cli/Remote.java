@@ -17,6 +17,7 @@ import java.util.Map;
 import net.benelog.spidersense.api.AgentApi;
 import net.benelog.spidersense.api.Reports;
 import net.benelog.spidersilk.json.Json;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The CLI when a Spider Sense is running: one HTTP call, and its body printed
@@ -77,7 +78,7 @@ final class Remote {
             return response.statusCode() == 404 ? Cli.NOT_FOUND : Cli.USAGE;
         }
         if (Options.UNACK.equals(options.command())) {
-            Reports.Report report = Reports.unack(options.argument());
+            Reports.Report report = Reports.unack(options.requiredArgument());
             print(out, options.flag("json") ? report.json().toJson() : report.text());
             return Cli.OK;
         }
@@ -93,7 +94,7 @@ final class Remote {
      * and with no {@code --out} it goes to standard output as it arrives.
      */
     private static int export(Options options, String base, PrintStream out, PrintStream err) {
-        String name = options.value("out", null);
+        String name = options.valueOrNull("out");
         URI uri = URI.create(trimSlash(base) + window(options, new Query("/api/export")));
         HttpRequest request = HttpRequest.newBuilder(uri).timeout(READ).GET().build();
         HttpClient client = HttpClient.newBuilder().connectTimeout(CONNECT).build();
@@ -135,7 +136,7 @@ final class Remote {
      * (api.md), so the bytes on the wire are the bytes on disk.
      */
     private static int importFile(Options options, String base, PrintStream out, PrintStream err) {
-        String name = options.argument();
+        String name = options.requiredArgument();
         byte[] body = Sessions.bytes(name);
         String format = options.flag("json") ? "json" : "text";
         HttpRequest.Builder request = HttpRequest
@@ -178,7 +179,7 @@ final class Remote {
      *
      * @return the response body, or null when the server answered with none
      */
-    static String post(String base, String path, String body) {
+    static @Nullable String post(String base, String path, @Nullable String body) {
         HttpRequest request = HttpRequest.newBuilder(URI.create(trimSlash(base) + path))
                 .timeout(READ)
                 .header("Content-Type", "application/json")
@@ -217,13 +218,13 @@ final class Remote {
                     .add("limit", options.limit(Limits.FINDINGS, Limits.FINDINGS_MAX))
                     .add("hideAcked", options.flag("hide-acked") ? "true" : null);
             case Options.ACK, Options.UNACK ->
-                    new Query("/api/findings/" + encode(options.argument()) + "/ack");
-            case Options.TRACE -> new Query("/api/traces/" + encode(options.argument()))
-                    .add("diff", options.value("diff", null));
+                    new Query("/api/findings/" + encode(options.requiredArgument()) + "/ack");
+            case Options.TRACE -> new Query("/api/traces/" + encode(options.requiredArgument()))
+                    .add("diff", options.valueOrNull("diff"));
             case "traces" -> window(options, new Query("/api/traces"))
-                    .add("status", options.value("status", null))
-                    .add("minMs", options.value("min-ms", null))
-                    .add("q", options.value("q", null))
+                    .add("status", options.valueOrNull("status"))
+                    .add("minMs", options.valueOrNull("min-ms"))
+                    .add("q", options.valueOrNull("q"))
                     .add("limit", options.limit(Limits.TRACES, Limits.TRACES_MAX));
             case "endpoints" -> window(options, new Query("/api/endpoints"));
             case "queries" -> window(options, new Query("/api/queries"))
@@ -231,17 +232,17 @@ final class Remote {
             case "errors" -> window(options, new Query("/api/errors"))
                     .add("limit", options.limit(Limits.ERRORS, Limits.ERRORS_MAX));
             case "logs" -> window(options, new Query("/api/logs"))
-                    .add("severity", options.value("severity", null))
-                    .add("q", options.value("q", null))
-                    .add("traceId", options.value("trace", null))
+                    .add("severity", options.valueOrNull("severity"))
+                    .add("q", options.valueOrNull("q"))
+                    .add("traceId", options.valueOrNull("trace"))
                     .add("limit", options.limit(Limits.LOGS, Limits.LOGS_MAX));
             case Options.MARK -> new Query("/api/marks");
             case "marks" -> new Query("/api/marks").add("limit", options.limit(Limits.MARKS, Limits.MARKS_MAX));
             case Options.COMPARE -> new Query("/api/compare")
-                    .add("before", options.value("before", null))
-                    .add("after", options.value("after", null))
-                    .add("until", options.value("until", null))
-                    .add("service", options.value("service", null));
+                    .add("before", options.valueOrNull("before"))
+                    .add("after", options.valueOrNull("after"))
+                    .add("until", options.valueOrNull("until"))
+                    .add("service", options.valueOrNull("service"));
             case Options.CHECK -> check(options);
             case Options.SQL -> new Query("/api/sql");
             default -> throw new Options.Usage("unknown command: " + options.command());
@@ -254,7 +255,7 @@ final class Remote {
 
     private static Query check(Options options) {
         Query query = window(options, new Query("/api/check"))
-                .add("endpoint", options.value("endpoint", null));
+                .add("endpoint", options.valueOrNull("endpoint"));
         for (Map.Entry<String, Double> rule : options.rules().entrySet()) {
             query.add(rule.getKey(), plain(rule.getValue()));
         }
@@ -264,8 +265,8 @@ final class Remote {
     private static Query window(Options options, Query query) {
         return query
                 .add("since", options.value("since", Limits.SINCE))
-                .add("until", options.value("until", null))
-                .add("service", options.value("service", null));
+                .add("until", options.valueOrNull("until"))
+                .add("service", options.valueOrNull("service"));
     }
 
     /**
@@ -275,18 +276,18 @@ final class Remote {
      * about, so they travel in a body; everything else is a window and some
      * filters, which are query parameters (api.md).
      */
-    private static String body(Options options) {
+    private static @Nullable String body(Options options) {
         return switch (options.command()) {
             case Options.MARK -> Json.obj()
-                    .put("name", options.argument())
-                    .put("note", options.value("note", null))
-                    .put("service", options.value("service", null))
+                    .put("name", options.requiredArgument())
+                    .put("note", options.valueOrNull("note"))
+                    .put("service", options.valueOrNull("service"))
                     .toJson();
             case Options.ACK -> Json.obj()
-                    .put("note", options.value("note", null))
+                    .put("note", options.valueOrNull("note"))
                     .toJson();
             case Options.SQL -> Json.obj()
-                    .put("sql", options.argument())
+                    .put("sql", options.requiredArgument())
                     .put("limit", options.limit(Limits.SQL, Limits.SQL_MAX))
                     .toJson();
             default -> null;
@@ -333,7 +334,7 @@ final class Remote {
         return "HTTP " + response.statusCode() + (body == null || body.isBlank() ? "" : ": " + body.trim());
     }
 
-    private static void print(PrintStream out, String body) {
+    private static void print(PrintStream out, @Nullable String body) {
         if (body == null || body.isEmpty()) {
             return;
         }
@@ -359,7 +360,7 @@ final class Remote {
                 : String.valueOf(value);
     }
 
-    private static String encode(String value) {
+    private static String encode(@Nullable String value) {
         return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
     }
 
@@ -373,7 +374,7 @@ final class Remote {
             this.url = new StringBuilder(path);
         }
 
-        Query add(String key, String value) {
+        Query add(String key, @Nullable String value) {
             if (value != null) {
                 url.append(started ? '&' : '?').append(key).append('=').append(encode(value));
                 started = true;

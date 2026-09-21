@@ -1,7 +1,5 @@
 package net.benelog.spidersense.cli;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
-
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -16,6 +14,8 @@ import net.benelog.spidersense.mcp.McpServer;
 import net.benelog.spidersense.mcp.McpTools;
 import net.benelog.spidersense.server.Config;
 import net.benelog.spidersilk.json.Json;
+import org.jspecify.annotations.Nullable;
+import static java.nio.charset.StandardCharsets.UTF_8;
 
 /**
  * {@code java -jar spider-sense.jar mcp}: the MCP server over stdio, for a host
@@ -40,16 +40,17 @@ final class Mcp {
     private final PrintStream err;
 
     /** The Spider Sense to forward a call to, or null once the file is the answer. */
-    private String base;
+    private @Nullable String base;
 
     /** A named {@code --url} is a statement that there is a server there. */
     private final boolean named;
 
     /** Opened on the first call that needs it, and only if one does. */
-    private Config config;
-    private Reports reports;
+    private @Nullable Config config;
+    private @Nullable Reports reports;
 
-    private Mcp(Options options, String base, boolean named, PrintStream out, PrintStream err) {
+    private Mcp(Options options, @Nullable String base, boolean named, PrintStream out,
+            PrintStream err) {
         this.options = options;
         this.base = base;
         this.named = named;
@@ -60,7 +61,7 @@ final class Mcp {
 
     static int run(Options options, String defaultUrl, InputStream in, PrintStream out,
             PrintStream err) {
-        String url = options.value("url", null);
+        String url = options.valueOrNull("url");
         // --db says where to read, which leaves no question to ask a server.
         String base = options.has("db") ? null : url == null ? defaultUrl : url;
         Mcp mcp = new Mcp(options, base, url != null, out, err);
@@ -99,16 +100,17 @@ final class Mcp {
      * the server's own bytes, so the two transports cannot render differently:
      * over HTTP it is the same {@link McpServer} answering.
      */
-    private String handle(String line) {
-        if (base != null && "tools/call".equals(method(line))) {
+    private @Nullable String handle(String line) {
+        String forwardTo = base;
+        if (forwardTo != null && "tools/call".equals(method(line))) {
             try {
-                return Remote.post(base, "/mcp", line);
+                return Remote.post(forwardTo, "/mcp", line);
             } catch (Remote.Unreachable e) {
                 if (named) {
-                    String said = "no Spider Sense at " + base + " (" + e.getMessage() + ")";
+                    String said = "no Spider Sense at " + forwardTo + " (" + e.getMessage() + ")";
                     return server.handle(line, (name, arguments) -> McpServer.ToolResult.failed(said));
                 }
-                err.println("(no Spider Sense at " + base + "; reading "
+                err.println("(no Spider Sense at " + forwardTo + "; reading "
                         + Local.describe(config()) + " directly)");
                 err.flush();
                 base = null;
@@ -118,21 +120,25 @@ final class Mcp {
     }
 
     private McpServer.ToolResult inProcess(String name, Map<String, Object> arguments) {
-        if (reports == null) {
-            reports = Reports.readOnly(config());
+        Reports opened = reports;
+        if (opened == null) {
+            opened = Reports.readOnly(config());
+            reports = opened;
         }
-        return new McpTools(reports).call(name, arguments);
+        return new McpTools(opened).call(name, arguments);
     }
 
     private Config config() {
-        if (config == null) {
-            config = Local.config(options);
+        Config opened = config;
+        if (opened == null) {
+            opened = Local.config(options);
+            config = opened;
         }
-        return config;
+        return opened;
     }
 
     /** The method of a message, or null when it does not have one this can read. */
-    private static String method(String line) {
+    private static @Nullable String method(String line) {
         try {
             if (Json.parse(line) instanceof Json.JsonObject object
                     && object.has("method") && object.get("method").isString()) {
@@ -145,8 +151,9 @@ final class Mcp {
     }
 
     private void close() {
-        if (reports != null) {
-            reports.close();
+        Reports opened = reports;
+        if (opened != null) {
+            opened.close();
         }
     }
 }

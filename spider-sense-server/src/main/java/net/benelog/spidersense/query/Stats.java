@@ -3,6 +3,8 @@ package net.benelog.spidersense.query;
 import java.util.List;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The shapes the JSON API answers with, one record per named object in api.md.
  *
@@ -26,8 +28,12 @@ public final class Stats {
      * {@code apdex} is the score they imply, {@code null} when nothing was
      * requested.
      */
+    // Arrays rather than lists: the histogram is five fixed counts the UI reads
+    // positionally, and the wire format is a JSON array either way (docs/api.md).
+    @SuppressWarnings("ArrayRecordComponent")
     public record Totals(long requests, long errors, double errorRate, double rps,
-            double p50Ms, double p95Ms, double p99Ms, double maxMs, long[] histogram, Double apdex) {
+            double p50Ms, double p95Ms, double p99Ms, double maxMs, long[] histogram,
+            @Nullable Double apdex) {
 
         public static final Totals EMPTY =
                 new Totals(0, 0, 0, 0, 0, 0, 0, 0, ResponseBuckets.empty(), null);
@@ -38,18 +44,28 @@ public final class Stats {
      * requests writes {@code null} for its percentiles rather than a zero, which
      * would draw a line down to the axis.
      */
+    // Arrays rather than lists: these are one chart's aligned series, written to JSON
+    // as they are, and boxing every sample would buy nothing (docs/api.md).
+    @SuppressWarnings("ArrayRecordComponent")
     public record Buckets(long[] t, long[] requests, long[] errors,
             double[] p50Ms, double[] p95Ms, double[] p99Ms, long[][] histogram) {
     }
 
-    public record ServiceSummary(String name, String language, boolean embedded,
+    // Arrays rather than lists: the sparkline and the histogram are aligned series the
+    // UI reads positionally, and the wire format is a JSON array either way (docs/api.md).
+    @SuppressWarnings("ArrayRecordComponent")
+    public record ServiceSummary(String name, @Nullable String language, boolean embedded,
             long firstSeen, long lastSeen, Totals totals, long[] sparkline, boolean hasJvm) {
     }
 
-    public record EndpointStats(String endpointId, String service, String method, String route,
-            String name, String kind, long calls, long errors, double errorRate, double rps,
-            double avgMs, double p50Ms, double p95Ms, double p99Ms, double maxMs, double totalMs,
-            long[] histogram, Double apdex, Map<String, Long> statusCodes) {
+    // Arrays rather than lists: the histogram is five fixed counts the UI reads
+    // positionally, and the wire format is a JSON array either way (docs/api.md).
+    @SuppressWarnings("ArrayRecordComponent")
+    public record EndpointStats(String endpointId, String service, @Nullable String method,
+            @Nullable String route, String name, @Nullable String kind, long calls, long errors,
+            double errorRate, double rps, double avgMs, double p50Ms, double p95Ms, double p99Ms,
+            double maxMs, double totalMs, long[] histogram, @Nullable Double apdex,
+            Map<String, Long> statusCodes) {
     }
 
     /** Which endpoint issued a query, and how often. */
@@ -57,28 +73,33 @@ public final class Stats {
     }
 
     /**
+     * One statement over the window, with the endpoints that issued it.
+     *
      * @param schema the index catalog of the tables the statement names, or null
      *        when there is none to vouch for (agent.md, "The schema block")
      */
-    public record QueryStats(String queryId, String service, String system, String namespace,
-            String operation, String table, String statement, long calls, long errors,
+    public record QueryStats(String queryId, String service, @Nullable String system,
+            @Nullable String namespace, @Nullable String operation, @Nullable String table,
+            String statement, long calls, long errors,
             double avgMs, double p50Ms, double p95Ms, double maxMs, double totalMs, long slowCalls,
-            List<Caller> callers, long lastSeen, SchemaBlock schema) {
+            List<Caller> callers, long lastSeen, @Nullable SchemaBlock schema) {
     }
 
     public record EndpointCount(String name, long count) {
     }
 
-    public record ErrorSample(String traceId, String spanId, long at, String message, String stacktrace) {
+    public record ErrorSample(String traceId, String spanId, long at, @Nullable String message,
+            @Nullable String stacktrace) {
     }
 
-    public record ErrorGroup(String errorId, String service, String type, String message, long count,
-            long firstSeen, long lastSeen, List<EndpointCount> endpoints, ErrorSample sample) {
+    public record ErrorGroup(String errorId, String service, @Nullable String type,
+            @Nullable String message, long count,
+            long firstSeen, long lastSeen, List<EndpointCount> endpoints, @Nullable ErrorSample sample) {
     }
 
     public record TraceSummary(String traceId, long start, double durationMs, String rootName,
-            String rootService, String rootKind, List<String> services, int spanCount, int errorCount,
-            int dbCount, Long httpStatus, boolean slow, boolean error) {
+            String rootService, @Nullable String rootKind, List<String> services, int spanCount,
+            int errorCount, int dbCount, @Nullable Long httpStatus, boolean slow, boolean error) {
     }
 
     /** An outbound call one service makes, grouped by what it calls. */
@@ -105,7 +126,7 @@ public final class Stats {
      * @param kind {@code user}, {@code service}, {@code db}, {@code http},
      *        {@code messaging} or {@code rpc}
      */
-    public record Node(String id, String kind, String name, Totals totals, boolean hasJvm,
+    public record Node(String id, String kind, String name, @Nullable Totals totals, boolean hasJvm,
             long calls, long errors, double avgMs, double p95Ms) {
 
         public static Node user() {

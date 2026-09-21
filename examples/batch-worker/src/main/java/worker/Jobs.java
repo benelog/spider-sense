@@ -141,7 +141,7 @@ public class Jobs {
             try {
                 gateway.send(target.id(), target.name());
                 markReminded(target.id());
-                awaitAcknowledgement(target.id());
+                awaitAcknowledgement();
                 sent++;
             } catch (IOException e) {
                 failed++;
@@ -169,7 +169,7 @@ public class Jobs {
      * arrives. The cap keeps the JVM from running out of threads, so the
      * process survives to be measured.
      */
-    private void awaitAcknowledgement(long accountId) {
+    private void awaitAcknowledgement() {
         if (leakedThreads.get() >= settings.leakMax()) {
             return;
         }

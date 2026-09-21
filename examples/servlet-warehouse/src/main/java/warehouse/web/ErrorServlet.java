@@ -37,8 +37,11 @@ public class ErrorServlet extends HttpServlet {
     /** Tomcat wraps what the servlet threw in a ServletException; the message we want is inside. */
     private Throwable rootCause(Throwable throwable) {
         Throwable cause = throwable;
-        while (cause.getCause() != null && cause.getCause() != cause) {
-            cause = cause.getCause();
+        Throwable next = cause.getCause();
+        // A throwable that is its own cause would loop for ever, so the walk stops there.
+        while (next != null && !next.equals(cause)) {
+            cause = next;
+            next = cause.getCause();
         }
         return cause;
     }

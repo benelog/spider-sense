@@ -20,7 +20,9 @@ import java.util.Map;
 import java.util.Set;
 
 import net.benelog.spidersense.query.Selectors;
+import net.benelog.spidersense.store.AttrJson;
 import net.benelog.spidersilk.json.Json;
+import org.jspecify.annotations.Nullable;
 
 /**
  * {@code tail}: the CLI's window on {@code GET /api/events}.
@@ -51,7 +53,8 @@ final class Tail {
     private static final int SERVICE_WIDTH = 16;
 
     /** What one {@code tail} was asked to show, and what ends it. */
-    record Watch(String kind, String service, Long untilTraces, Long timeoutMs, boolean json) {
+    record Watch(@Nullable String kind, @Nullable String service, @Nullable Long untilTraces,
+            @Nullable Long timeoutMs, boolean json) {
     }
 
     private final Watch watch;
@@ -92,14 +95,14 @@ final class Tail {
 
     /** The options {@code tail} takes, read once so a bad one is refused before the stream. */
     static Watch watch(Options options) {
-        String kind = options.value("kind", null);
+        String kind = options.valueOrNull("kind");
         if (kind != null && !KINDS.contains(kind)) {
             throw new Options.Usage("--kind is one of " + String.join(", ", new java.util.TreeSet<>(KINDS)));
         }
         Long timeout = options.has("timeout")
-                ? Selectors.durationMillis(options.value("timeout", null))
+                ? Selectors.durationMillis(options.valueOrNull("timeout"))
                 : null;
-        return new Watch(kind, options.value("service", null), options.optionalLong("until-traces"),
+        return new Watch(kind, options.valueOrNull("service"), options.optionalLong("until-traces"),
                 timeout, options.flag("json"));
     }
 
@@ -113,10 +116,11 @@ final class Tail {
      */
     private static int follow(InputStream body, Watch watch, PrintStream out) {
         Thread deadline = null;
-        if (watch.timeoutMs() != null) {
+        Long timeoutMs = watch.timeoutMs();
+        if (timeoutMs != null) {
             deadline = new Thread(() -> {
                 try {
-                    Thread.sleep(watch.timeoutMs());
+                    Thread.sleep(timeoutMs);
                 } catch (InterruptedException interrupted) {
                     return;
                 }
@@ -216,10 +220,11 @@ final class Tail {
     }
 
     private boolean matches(Json.JsonObject tingle) {
-        if (watch.kind() != null && !watch.kind().equals(tingle.optString("kind", null))) {
+        if (watch.kind() != null && !watch.kind().equals(AttrJson.optionalString(tingle, "kind"))) {
             return false;
         }
-        return watch.service() == null || watch.service().equals(tingle.optString("service", null));
+        return watch.service() == null
+                || watch.service().equals(AttrJson.optionalString(tingle, "service"));
     }
 
     /**
@@ -232,7 +237,7 @@ final class Tail {
                 .append(pad(tingle.optString("service", "—"), SERVICE_WIDTH));
         List<String> rest = new ArrayList<>(3);
         for (String key : List.of("title", "detail", "traceId")) {
-            String value = tingle.optString(key, null);
+            String value = AttrJson.optionalString(tingle, key);
             if (value != null && !value.isBlank()) {
                 rest.add(oneLine(value));
             }

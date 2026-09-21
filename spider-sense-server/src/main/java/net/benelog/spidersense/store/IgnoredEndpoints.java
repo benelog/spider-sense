@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The endpoints {@code spidersense.ignore.endpoints} takes out of the request
  * count: a list of glob patterns, compiled once.
@@ -53,10 +55,10 @@ public final class IgnoredEndpoints {
      * trimmed and blanks dropped, so an empty value — and a value of nothing but
      * commas — ignores nothing.
      */
-    public static IgnoredEndpoints of(String commaSeparated) {
+    public static IgnoredEndpoints of(@Nullable String commaSeparated) {
         List<String> patterns = new ArrayList<>();
         if (commaSeparated != null) {
-            for (String entry : commaSeparated.split(",")) {
+            for (String entry : commaSeparated.split(",", -1)) {
                 String trimmed = entry.trim();
                 if (!trimmed.isEmpty()) {
                     patterns.add(trimmed);
@@ -104,7 +106,7 @@ public final class IgnoredEndpoints {
      * leading {@code METHOD } removed as well, so {@code /actuator/**} covers
      * every method while {@code GET /actuator/**} covers only {@code GET}.
      */
-    private boolean matchesName(String name) {
+    private boolean matchesName(@Nullable String name) {
         if (name == null) {
             return false;
         }

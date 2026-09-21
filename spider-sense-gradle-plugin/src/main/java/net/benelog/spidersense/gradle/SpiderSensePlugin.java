@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.Callable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Runs an application under Spider Sense.
@@ -366,11 +367,11 @@ public class SpiderSensePlugin implements Plugin<Project> {
      */
     static final class JarSource implements Callable<Object> {
 
-        private final Provider<Boolean> attached;
+        private final @Nullable Provider<Boolean> attached;
         private final Provider<File> namedJar;
         private final Configuration configuration;
 
-        JarSource(Provider<Boolean> attached, Provider<File> namedJar, Configuration configuration) {
+        JarSource(@Nullable Provider<Boolean> attached, Provider<File> namedJar, Configuration configuration) {
             this.attached = attached;
             this.namedJar = namedJar;
             this.configuration = configuration;

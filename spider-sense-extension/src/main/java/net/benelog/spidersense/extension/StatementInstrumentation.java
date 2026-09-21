@@ -12,6 +12,7 @@ import net.benelog.spidersense.extension.schema.IndexCatalog;
 import net.bytebuddy.asm.Advice;
 import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.matcher.ElementMatcher;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The one type this module instruments: every implementation of {@link java.sql.Statement}, which
@@ -63,7 +64,7 @@ public final class StatementInstrumentation implements TypeInstrumentation {
                 @Advice.This Statement statement,
                 @Advice.AllArguments Object[] args,
                 @Advice.Enter long start,
-                @Advice.Thrown Throwable thrown) {
+                @Advice.Thrown @Nullable Throwable thrown) {
             if (thrown == null) {
                 String sql = args.length > 0 && args[0] instanceof String ? (String) args[0] : null;
                 IndexCatalog.afterExecute(statement, sql, System.nanoTime() - start);

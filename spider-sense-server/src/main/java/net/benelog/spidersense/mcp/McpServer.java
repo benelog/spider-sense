@@ -4,7 +4,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import net.benelog.spidersense.store.AttrJson;
 import net.benelog.spidersilk.json.Json;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The Model Context Protocol, as one JSON-RPC dispatcher and nothing else.
@@ -60,7 +62,8 @@ public final class McpServer {
     static final int INTERNAL_ERROR = -32603;
 
     /** One tool's answer: the Markdown, whether it is a failure, and {@code check}'s verdict. */
-    public record ToolResult(String text, boolean isError, Map<String, Object> structured) {
+    public record ToolResult(String text, boolean isError,
+            @Nullable Map<String, Object> structured) {
 
         public static ToolResult of(String text) {
             return new ToolResult(text, false, null);
@@ -102,7 +105,7 @@ public final class McpServer {
      * @return the response as a string, or null when the message was a
      *         notification and there is nothing to answer
      */
-    public String handle(String message) {
+    public @Nullable String handle(String message) {
         return handle(message, runner);
     }
 
@@ -112,7 +115,7 @@ public final class McpServer {
      * <p>The stdio transport uses it to answer a call it could not forward,
      * without building a JSON-RPC envelope of its own.
      */
-    public String handle(String message, ToolRunner with) {
+    public @Nullable String handle(String message, ToolRunner with) {
         Json.JsonValue parsed;
         try {
             parsed = Json.parse(message);
@@ -164,7 +167,7 @@ public final class McpServer {
      * otherwise, which is what the protocol asks a server to do rather than fail.
      */
     private Json.JsonObject initialize(Json.JsonObject params) {
-        String asked = params.optString("protocolVersion", null);
+        String asked = AttrJson.optionalString(params, "protocolVersion");
         String spoken = asked != null && PROTOCOLS.contains(asked) ? asked : LATEST_PROTOCOL;
         return Json.obj()
                 .put("protocolVersion", spoken)
@@ -182,7 +185,7 @@ public final class McpServer {
         }
         Map<String, Object> arguments = tool.read(params.has("arguments")
                 && params.get("arguments") instanceof Json.JsonObject given ? given : Json.obj());
-        ToolResult answer = with.call(name, arguments);
+        ToolResult answer = with.call(tool.name(), arguments);
         Json.JsonObject result = Json.obj()
                 .put("content", Json.arr().add(Json.obj()
                         .put("type", "text")
@@ -194,7 +197,7 @@ public final class McpServer {
         return result;
     }
 
-    private static Json.JsonObject failIfUnknown(String name) {
+    private static Json.JsonObject failIfUnknown(@Nullable String name) {
         throw new BadArgument(name == null
                 ? "tools/call needs a tool name"
                 : "No such tool: " + name + "; the tools are " + Tools.names());
@@ -220,18 +223,19 @@ public final class McpServer {
 
     // --- the envelope ---------------------------------------------------------
 
-    private static String result(Json.JsonValue id, Json.JsonObject payload) {
+    private static String result(Json.@Nullable JsonValue id, Json.JsonObject payload) {
         return envelope(id).put("result", payload).toJson();
     }
 
-    private static String error(Json.JsonValue id, int code, String message) {
+    private static String error(Json.@Nullable JsonValue id, int code,
+            @Nullable String message) {
         return envelope(id).put("error", Json.obj()
                 .put("code", code)
                 .put("message", message == null ? "" : message)).toJson();
     }
 
     /** The id is echoed as it came — a number stays a number, a string a string. */
-    private static Json.JsonObject envelope(Json.JsonValue id) {
+    private static Json.JsonObject envelope(Json.@Nullable JsonValue id) {
         Json.JsonObject object = Json.obj().put("jsonrpc", "2.0");
         if (id == null || id.isNull()) {
             object.putNull("id");
@@ -245,8 +249,8 @@ public final class McpServer {
     static final class Tools {
 
         /** One argument, with the JSON Schema it is published as. */
-        record Arg(String name, String type, String description, Double minimum, Double maximum,
-                String pattern) {
+        record Arg(String name, String type, String description, @Nullable Double minimum,
+                @Nullable Double maximum, @Nullable String pattern) {
 
             static Arg string(String name, String description) {
                 return new Arg(name, "string", description, null, null, null);
@@ -453,7 +457,7 @@ public final class McpServer {
             return tools;
         }
 
-        static Tool byName(String name) {
+        static @Nullable Tool byName(@Nullable String name) {
             for (Tool tool : TOOLS) {
                 if (tool.name().equals(name)) {
                     return tool;

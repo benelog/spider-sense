@@ -73,11 +73,12 @@ public class AsyncServlet extends HttpServlet {
             }
         });
 
-        scheduler.schedule(() -> answer(async, answered, HttpServletResponse.SC_OK,
+        // Nothing waits on the two deadlines: whichever fires first answers, and answer() swallows the rest.
+        var unusedAnswer = scheduler.schedule(() -> answer(async, answered, HttpServletResponse.SC_OK,
                 """
                 {"waitedMs":%d}""".formatted(wait)), wait, TimeUnit.MILLISECONDS);
 
-        scheduler.schedule(() -> answer(async, answered, HttpServletResponse.SC_SERVICE_UNAVAILABLE,
+        var unusedTimeout = scheduler.schedule(() -> answer(async, answered, HttpServletResponse.SC_SERVICE_UNAVAILABLE,
                 """
                 {"error":"timed out"}"""), TIMEOUT_MS, TimeUnit.MILLISECONDS);
     }

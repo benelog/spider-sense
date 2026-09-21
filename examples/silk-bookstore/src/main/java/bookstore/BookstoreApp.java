@@ -73,7 +73,8 @@ public class BookstoreApp {
         // Anything else is the framework's 500, whose body is filled in below and
         // whose exception the request logger hands to Tracing.
         app.exception(IllegalArgumentException.class, (req, e) ->
-                problem(req, HttpStatus.BAD_REQUEST, e.getMessage()));
+                problem(req, HttpStatus.BAD_REQUEST,
+                        Objects.requireNonNullElse(e.getMessage(), "Bad request")));
 
         // A 404 thrown as HttpException is a status, not a failure: it comes
         // here for its body without passing through any exception handler.

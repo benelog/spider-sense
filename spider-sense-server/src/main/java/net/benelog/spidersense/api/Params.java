@@ -10,6 +10,7 @@ import net.benelog.spidersense.query.Window;
 import net.benelog.spidersilk.HttpStatus;
 import net.benelog.spidersilk.WebRequest;
 import net.benelog.spidersilk.WebResponse;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Query parameters, read the same way by every endpoint.
@@ -65,7 +66,8 @@ final class Params {
         if (accept == null || accept.isBlank()) {
             return false;
         }
-        String first = accept.split(",")[0].split(";")[0].trim().toLowerCase(java.util.Locale.ROOT);
+        String first = accept.split(",", -1)[0].split(";", -1)[0].trim()
+                .toLowerCase(java.util.Locale.ROOT);
         return "text/markdown".equals(first) || "text/plain".equals(first);
     }
 
@@ -89,7 +91,7 @@ final class Params {
      * caller that asked for Markdown gets the message on one line rather than a
      * JSON object it was not expecting (agent.md).
      */
-    static WebResponse problem(WebRequest req, String message) {
+    static WebResponse problem(WebRequest req, @Nullable String message) {
         String said = message == null || message.isBlank() ? "Bad request" : message;
         return wantsText(req)
                 ? WebResponse.text(said + "\n").contentType(Text.CONTENT_TYPE)
@@ -102,11 +104,11 @@ final class Params {
         return Math.min(Math.max(1, limit), max);
     }
 
-    static String service(WebRequest req) {
+    static @Nullable String service(WebRequest req) {
         return req.queryParamOrNull("service");
     }
 
-    static Long optionalLong(WebRequest req, String name) {
+    static @Nullable Long optionalLong(WebRequest req, String name) {
         return req.queryParamOrNull(name) == null ? null : req.queryParam(name, Long::parseLong);
     }
 
@@ -123,7 +125,7 @@ final class Params {
         if (query == null || query.isEmpty()) {
             return filters;
         }
-        for (String pair : query.split("&")) {
+        for (String pair : query.split("&", -1)) {
             int equals = pair.indexOf('=');
             if (equals <= 0) {
                 continue;

@@ -1,6 +1,7 @@
 package bookstore.service;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 
 import bookstore.domain.Review;
 import bookstore.repository.BookRepository;
@@ -31,10 +32,11 @@ public class ReviewService {
             throw new IllegalArgumentException("rating must be between 1 and 5, was " + rating);
         }
         return tx.write(() -> {
-            books.findById(bookId).orElseThrow(
-                    () -> new HttpException(HttpStatus.NOT_FOUND, "No book " + bookId));
+            if (books.findById(bookId).isEmpty()) {
+                throw new HttpException(HttpStatus.NOT_FOUND, "No book " + bookId);
+            }
             return reviews.insert(new Review(null, bookId, authorId, rating, body,
-                    LocalDateTime.now()));
+                    LocalDateTime.now(ZoneId.systemDefault())));
         });
     }
 }

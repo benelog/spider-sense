@@ -3,6 +3,8 @@ package net.benelog.spidersense.store;
 import java.util.List;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * One span as the store keeps it: the OTLP fields that matter, plus derived
  * accessors that answer the questions the API asks.
@@ -24,14 +26,14 @@ import java.util.Map;
 public record SpanRecord(
         String traceId,
         String spanId,
-        String parentSpanId,
+        @Nullable String parentSpanId,
         String service,
         String name,
         String kind,
         long startNanos,
         long endNanos,
         String status,
-        String statusMessage,
+        @Nullable String statusMessage,
         Map<String, Object> attributes,
         List<SpanEvent> events,
         String scope) {
@@ -62,7 +64,7 @@ public record SpanRecord(
     // --- attribute lookup across both generations of semantic conventions ---
 
     /** The first of {@code keys} the span carries, as a string, or null. */
-    public String attr(String... keys) {
+    public @Nullable String attr(String... keys) {
         for (String key : keys) {
             Object value = attributes.get(key);
             if (value != null) {
@@ -72,7 +74,7 @@ public record SpanRecord(
         return null;
     }
 
-    private Long attrLong(String... keys) {
+    private @Nullable Long attrLong(String... keys) {
         for (String key : keys) {
             Object value = attributes.get(key);
             if (value instanceof Number n) {
@@ -89,36 +91,36 @@ public record SpanRecord(
         return null;
     }
 
-    public String httpMethod() {
+    public @Nullable String httpMethod() {
         return attr("http.request.method", "http.method");
     }
 
-    public String httpRoute() {
+    public @Nullable String httpRoute() {
         return attr("http.route");
     }
 
-    public Long httpStatus() {
+    public @Nullable Long httpStatus() {
         return attrLong("http.response.status_code", "http.status_code");
     }
 
-    public String urlPath() {
+    public @Nullable String urlPath() {
         return attr("url.path", "http.target");
     }
 
-    public String serverAddress() {
+    public @Nullable String serverAddress() {
         return attr("server.address", "net.peer.name");
     }
 
-    public Long serverPort() {
+    public @Nullable Long serverPort() {
         return attrLong("server.port", "net.peer.port");
     }
 
-    public String dbSystem() {
+    public @Nullable String dbSystem() {
         return attr("db.system.name", "db.system");
     }
 
     /** The statement as the instrumentation sanitised it, cut at {@value #MAX_STATEMENT}. */
-    public String dbStatement() {
+    public @Nullable String dbStatement() {
         String statement = attr("db.query.text", "db.statement");
         if (statement == null) {
             return null;
@@ -126,15 +128,15 @@ public record SpanRecord(
         return statement.length() <= MAX_STATEMENT ? statement : statement.substring(0, MAX_STATEMENT);
     }
 
-    public String dbNamespace() {
+    public @Nullable String dbNamespace() {
         return attr("db.namespace", "db.name");
     }
 
-    public String dbOperation() {
+    public @Nullable String dbOperation() {
         return attr("db.operation.name", "db.operation");
     }
 
-    public String dbTable() {
+    public @Nullable String dbTable() {
         return attr("db.collection.name", "db.sql.table");
     }
 
@@ -161,7 +163,7 @@ public record SpanRecord(
     }
 
     /** The exception event, or null. Three sources of error are merged; this is one of them. */
-    public SpanEvent exceptionEvent() {
+    public @Nullable SpanEvent exceptionEvent() {
         for (SpanEvent event : events) {
             if ("exception".equals(event.name())) {
                 return event;
@@ -174,7 +176,7 @@ public record SpanRecord(
         return "ERROR".equals(status) || exceptionEvent() != null || attributes.containsKey("error.type");
     }
 
-    public String errorType() {
+    public @Nullable String errorType() {
         SpanEvent exception = exceptionEvent();
         if (exception != null) {
             Object type = exception.attributes().get("exception.type");
@@ -189,7 +191,7 @@ public record SpanRecord(
         return isError() ? "error" : null;
     }
 
-    public String errorMessage() {
+    public @Nullable String errorMessage() {
         SpanEvent exception = exceptionEvent();
         if (exception != null) {
             Object message = exception.attributes().get("exception.message");
@@ -200,7 +202,7 @@ public record SpanRecord(
         return statusMessage;
     }
 
-    public String stacktrace() {
+    public @Nullable String stacktrace() {
         SpanEvent exception = exceptionEvent();
         if (exception == null) {
             return null;

@@ -2,6 +2,8 @@ package net.benelog.spidersense.store;
 
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A service as the resource attributes describe it.
  *
@@ -11,12 +13,12 @@ import java.util.Map;
 public record ServiceInfo(String name, Map<String, Object> resource, long firstSeen, long lastSeen,
         boolean embedded) {
 
-    public String language() {
+    public @Nullable String language() {
         Object language = resource.get("telemetry.sdk.language");
         return language == null ? null : String.valueOf(language);
     }
 
-    public Long pid() {
+    public @Nullable Long pid() {
         Object pid = resource.get("process.pid");
         return pid instanceof Number n ? n.longValue() : null;
     }

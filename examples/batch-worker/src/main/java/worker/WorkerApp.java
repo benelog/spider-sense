@@ -74,10 +74,15 @@ public final class WorkerApp {
         Jobs jobs = new Jobs(pool, new ReminderGateway(), settings);
         ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2, named("worker-scheduler-"));
 
-        scheduler.scheduleAtFixedRate(guarded("reconcile-balances", jobs::reconcileBalances), 5, 15, TimeUnit.SECONDS);
-        scheduler.scheduleAtFixedRate(guarded("send-reminders", jobs::sendReminders), 0, 5, TimeUnit.SECONDS);
-        scheduler.scheduleAtFixedRate(guarded("archive-events", jobs::archiveEvents), 0, 10, TimeUnit.SECONDS);
-        scheduler.scheduleAtFixedRate(guarded("rebuild-report", jobs::rebuildReport), 10, 20, TimeUnit.SECONDS);
+        // The schedules run until the JVM stops, so nothing waits on the futures; guarded() already logs a failure.
+        var unusedReconcile = scheduler.scheduleAtFixedRate(
+                guarded("reconcile-balances", jobs::reconcileBalances), 5, 15, TimeUnit.SECONDS);
+        var unusedReminders = scheduler.scheduleAtFixedRate(
+                guarded("send-reminders", jobs::sendReminders), 0, 5, TimeUnit.SECONDS);
+        var unusedArchive = scheduler.scheduleAtFixedRate(
+                guarded("archive-events", jobs::archiveEvents), 0, 10, TimeUnit.SECONDS);
+        var unusedReport = scheduler.scheduleAtFixedRate(
+                guarded("rebuild-report", jobs::rebuildReport), 10, 20, TimeUnit.SECONDS);
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             log.info("Stopping the scheduler");

@@ -5,6 +5,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Everything one OTLP request produced, on its way to the {@link Writer}.
  *
@@ -34,8 +36,8 @@ public final class Batch {
      *        the key of the row can be a primary key rather than a nullable one
      * @param indexes    the JSON array as received, stored and read back verbatim
      */
-    public record Catalog(String service, String schemaName, String table, String product,
-            String indexes, long at) {
+    public record Catalog(String service, String schemaName, String table,
+            @Nullable String product, String indexes, long at) {
     }
 
     private final List<SpanRecord> spans = new ArrayList<>();

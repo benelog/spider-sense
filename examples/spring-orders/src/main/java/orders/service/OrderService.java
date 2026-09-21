@@ -3,9 +3,11 @@ package orders.service;
 import java.math.BigDecimal;
 import java.sql.Date;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.NoSuchElementException;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -26,6 +28,7 @@ import orders.web.Dtos.PageView;
 import orders.web.Dtos.RevenueReport;
 import orders.web.Dtos.RevenueRow;
 import orders.web.Dtos.TopProductRow;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
@@ -99,7 +102,7 @@ public class OrderService {
                 .orElseThrow(() -> new IllegalArgumentException(
                         "customerId " + request.customerId() + " does not exist"));
 
-        Order order = new Order(customer, LocalDateTime.now(), OrderStatus.NEW);
+        Order order = new Order(customer, LocalDateTime.now(ZoneId.systemDefault()), OrderStatus.NEW);
         for (CreateOrderLine requested : request.lines()) {
             Product product = products.findById(requested.productId())
                     .orElseThrow(() -> new IllegalArgumentException(
@@ -146,7 +149,7 @@ public class OrderService {
 
     @Transactional(readOnly = true)
     public List<CustomerView> searchCustomers(String q, int limit) {
-        String needle = q == null ? "" : q.toLowerCase();
+        String needle = q == null ? "" : q.toLowerCase(Locale.ROOT);
         return customers.searchByName(needle, PageRequest.of(0, limit)).stream()
                 .map(c -> new CustomerView(c.getId(), c.getName(), c.getEmail()))
                 .toList();
@@ -155,7 +158,7 @@ public class OrderService {
     /** The deliberately slow one: two grouping queries over every order and every line. */
     @Transactional(readOnly = true)
     public RevenueReport revenue(int days) {
-        LocalDateTime since = LocalDateTime.now().minusDays(days);
+        LocalDateTime since = LocalDateTime.now(ZoneId.systemDefault()).minusDays(days);
         long started = System.nanoTime();
 
         List<RevenueRow> byStatusAndDay = new ArrayList<>();
@@ -194,11 +197,11 @@ public class OrderService {
                 ISO.format(order.getCreatedAt()), order.getStatus().name(), order.getTotal(), lines);
     }
 
-    private static String string(Object value) {
+    private static @Nullable String string(@Nullable Object value) {
         return value == null ? null : value.toString();
     }
 
-    private static String day(Object value) {
+    private static @Nullable String day(@Nullable Object value) {
         if (value == null) {
             return null;
         }
@@ -208,11 +211,11 @@ public class OrderService {
         return value.toString();
     }
 
-    private static long number(Object value) {
+    private static long number(@Nullable Object value) {
         return value == null ? 0L : ((Number) value).longValue();
     }
 
-    private static BigDecimal decimal(Object value) {
+    private static BigDecimal decimal(@Nullable Object value) {
         if (value == null) {
             return BigDecimal.ZERO;
         }

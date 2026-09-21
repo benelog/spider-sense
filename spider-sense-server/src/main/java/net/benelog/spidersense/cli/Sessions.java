@@ -12,6 +12,8 @@ import java.util.Locale;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Where an exported session document goes and where it comes from, for both
  * modes of {@code export} and {@code import}.
@@ -26,7 +28,7 @@ final class Sessions {
     private Sessions() {
     }
 
-    static boolean gzipped(String name) {
+    static boolean gzipped(@Nullable String name) {
         return name != null && name.toLowerCase(Locale.ROOT).endsWith(".gz");
     }
 
@@ -37,7 +39,7 @@ final class Sessions {
      * <p>Standard output is never closed — it is the process's — so a caller that
      * closes what this returns closes only a stream of its own.
      */
-    static OutputStream out(String name, PrintStream stdout) throws IOException {
+    static OutputStream out(@Nullable String name, PrintStream stdout) throws IOException {
         if (name == null) {
             return new OutputStream() {
                 @Override

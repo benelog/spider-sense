@@ -7,6 +7,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.Random;
 
 import javax.sql.DataSource;
@@ -190,7 +191,7 @@ public class Seeder {
     /** Only the first 200 items get movements, which is what makes {@code /items/*} an N+1. */
     private void seedMovements(Connection connection) throws SQLException {
         Random random = new Random(7);
-        Timestamp now = Timestamp.valueOf(LocalDateTime.now());
+        Timestamp now = Timestamp.valueOf(LocalDateTime.now(ZoneId.systemDefault()));
         try (PreparedStatement insert = connection.prepareStatement("""
                 insert into movements (item_id, supplier_id, delta, note, moved_at)
                 values (?, ?, ?, ?, ?)

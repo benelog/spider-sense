@@ -14,6 +14,7 @@ import java.security.CodeSource;
 import java.util.Properties;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Finds the distributable jar we are running from and unpacks the nested jars out of it.
@@ -77,7 +78,7 @@ final class NestedJar {
      * @throws IOException when the entry is there but cannot be unpacked, or the override names a
      *                     file that is not there
      */
-    static Path extensionJar() throws IOException {
+    static @Nullable Path extensionJar() throws IOException {
         Path own = ownJar();
         if (own != null && hasEntry(own, EXTENSION_ENTRY)) {
             return extractFrom(own, EXTENSION_ENTRY, extensionFile(version()));
@@ -94,7 +95,7 @@ final class NestedJar {
     }
 
     /** The jar this class was loaded from, or {@code null} for exploded classes. */
-    static Path ownJar() {
+    static @Nullable Path ownJar() {
         try {
             CodeSource source = NestedJar.class.getProtectionDomain().getCodeSource();
             if (source == null) {
@@ -192,7 +193,7 @@ final class NestedJar {
         return v != null && !v.isEmpty() ? v : "dev";
     }
 
-    private static String propertiesVersion() {
+    private static @Nullable String propertiesVersion() {
         try (InputStream in = NestedJar.class.getResourceAsStream("/spider-sense.properties")) {
             if (in == null) {
                 return null;

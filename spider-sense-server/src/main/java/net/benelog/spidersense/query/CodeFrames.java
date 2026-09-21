@@ -7,6 +7,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Where a finding's code is, as far as the stock OpenTelemetry agent knows.
  *
@@ -40,10 +42,10 @@ public final class CodeFrames {
     private final List<String> appPackages;
 
     /** @param appPackages the comma-separated {@code spidersense.app.packages}; empty means unset */
-    public CodeFrames(String appPackages) {
+    public CodeFrames(@Nullable String appPackages) {
         List<String> prefixes = new ArrayList<>();
         if (appPackages != null) {
-            for (String each : appPackages.split(",")) {
+            for (String each : appPackages.split(",", -1)) {
                 String prefix = each.trim();
                 if (!prefix.isEmpty()) {
                     prefixes.add(prefix.endsWith(".") ? prefix : prefix + ".");
@@ -54,12 +56,12 @@ public final class CodeFrames {
     }
 
     /** The application frames of a stack trace, innermost first, at most {@value #MAX_FRAMES}. */
-    public List<String> ofStacktrace(String stacktrace) {
+    public List<String> ofStacktrace(@Nullable String stacktrace) {
         if (stacktrace == null || stacktrace.isBlank()) {
             return List.of();
         }
         Set<String> frames = new LinkedHashSet<>();
-        for (String raw : stacktrace.split("\\R")) {
+        for (String raw : stacktrace.split("\\R", -1)) {
             String line = raw.trim();
             if (!line.startsWith("at ")) {
                 continue;
@@ -87,7 +89,7 @@ public final class CodeFrames {
      * in those, so the frame is {@code namespace.function}, still enough to open
      * the right class.
      */
-    public List<String> ofAttributes(Map<String, Object> attributes) {
+    public List<String> ofAttributes(@Nullable Map<String, Object> attributes) {
         if (attributes == null) {
             return List.of();
         }
@@ -109,7 +111,7 @@ public final class CodeFrames {
     }
 
     /** The stack trace's frames, and the span attributes' frame when the trace gave none. */
-    public List<String> of(String stacktrace, Map<String, Object> attributes) {
+    public List<String> of(@Nullable String stacktrace, @Nullable Map<String, Object> attributes) {
         List<String> frames = ofStacktrace(stacktrace);
         if (!frames.isEmpty()) {
             return frames;

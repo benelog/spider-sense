@@ -2,6 +2,7 @@ package bookstore.service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 import bookstore.domain.AuthorStat;
 import bookstore.domain.Book;
@@ -14,6 +15,7 @@ import bookstore.repository.BookRepository;
 import bookstore.repository.ReviewRepository;
 import net.benelog.spidersilk.HttpException;
 import net.benelog.spidersilk.HttpStatus;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The reading side of the bookstore, including the parts that are slow on purpose.
@@ -65,7 +67,7 @@ public class BookService {
      * One page of the list. Without a query this is an indexed window; with one
      * it is the unindexed {@code like '%...%'} over every row.
      */
-    public BookPage list(String query, int page, int pageSize) {
+    public BookPage list(@Nullable String query, int page, int pageSize) {
         int offset = (page - 1) * pageSize;
         if (query == null || query.isBlank()) {
             List<Book> rows = books.page(pageSize + 1, offset);
@@ -75,7 +77,7 @@ public class BookService {
         return page(rows, -1, page, pageSize, query);
     }
 
-    private BookPage page(List<Book> rows, long total, int page, int pageSize, String query) {
+    private BookPage page(List<Book> rows, long total, int page, int pageSize, @Nullable String query) {
         boolean hasNext = rows.size() > pageSize;
         List<Book> shown = hasNext ? rows.subList(0, pageSize) : rows;
         return new BookPage(List.copyOf(shown), total, page, pageSize, query, hasNext);
@@ -98,7 +100,9 @@ public class BookService {
             List<ReviewView> views = new ArrayList<>(rows.size());
             for (Review review : rows) {
                 String name = authors.findNameById(review.authorId());   // one query, per review
-                views.add(new ReviewView(review.id(), review.rating(), review.body(), name));
+                // A review read back from the database always carries its generated id.
+                Long reviewId = Objects.requireNonNull(review.id(), "a stored review has an id");
+                views.add(new ReviewView(reviewId, review.rating(), review.body(), name));
             }
             return new BookDetail(book, List.copyOf(views));
         });

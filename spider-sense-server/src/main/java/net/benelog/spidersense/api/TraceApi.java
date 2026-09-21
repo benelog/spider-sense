@@ -163,7 +163,7 @@ public final class TraceApi {
             try {
                 return Params.answer(req, reports.traceDiff(traceId, diff, Params.full(req)));
             } catch (Reports.NoSuchTrace e) {
-                throw new HttpException(HttpStatus.NOT_FOUND, e.getMessage());
+                throw new HttpException(HttpStatus.NOT_FOUND, "No such trace: " + e.traceId());
             }
         }
         Reports.Report report = reports.trace(traceId, Params.full(req));

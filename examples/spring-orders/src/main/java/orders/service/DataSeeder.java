@@ -3,6 +3,7 @@ package orders.service;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
@@ -52,7 +53,9 @@ public class DataSeeder implements CommandLineRunner {
 
     private final TransactionTemplate tx;
 
+    // Spring injects the persistence context after the constructor has run.
     @PersistenceContext
+    @SuppressWarnings("NullAway.Init")
     private EntityManager em;
 
     @Value("${orders.seed.customers:500}")
@@ -134,7 +137,7 @@ public class DataSeeder implements CommandLineRunner {
 
     private void insertOrders(Random random, List<Long> customerIds, List<Long> productIds, int offset, int count) {
         OrderStatus[] statuses = OrderStatus.values();
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(ZoneId.systemDefault());
         for (int i = 0; i < count; i++) {
             Customer customer = em.getReference(Customer.class, customerIds.get(random.nextInt(customerIds.size())));
             LocalDateTime createdAt = now

@@ -12,6 +12,7 @@ import java.util.jar.Attributes;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
 import java.util.jar.Manifest;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -74,8 +75,9 @@ class NestedJarTest {
 
         NestedJar.extractFrom(jar, target);
 
-        assertThat(Files.list(target.getParent()).map(p -> p.getFileName().toString()))
-                .containsExactly("server.jar");
+        try (Stream<Path> files = Files.list(target.getParent())) {
+            assertThat(files.map(p -> p.getFileName().toString())).containsExactly("server.jar");
+        }
     }
 
     @Test
@@ -142,8 +144,10 @@ class NestedJarTest {
 
         assertThat(server).hasContent("the server fat jar");
         assertThat(extension).hasContent("the extension jar");
-        assertThat(Files.list(server.getParent()).map(p -> p.getFileName().toString()))
-                .containsExactlyInAnyOrder("server.jar", "extension.jar");
+        try (Stream<Path> files = Files.list(server.getParent())) {
+            assertThat(files.map(p -> p.getFileName().toString()))
+                    .containsExactlyInAnyOrder("server.jar", "extension.jar");
+        }
     }
 
     @Test

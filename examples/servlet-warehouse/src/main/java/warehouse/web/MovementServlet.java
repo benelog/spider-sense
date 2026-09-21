@@ -8,12 +8,14 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 
 import javax.sql.DataSource;
 
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.jspecify.annotations.Nullable;
 
 /**
  * {@code POST /api/movements}: the only write in the application, and the only
@@ -82,7 +84,7 @@ public class MovementServlet extends HttpServlet {
     }
 
     /** {@code for update} holds the row until the commit, which is the point of the transaction. */
-    private Locked lock(Connection connection, String sku) throws SQLException {
+    private @Nullable Locked lock(Connection connection, String sku) throws SQLException {
         try (PreparedStatement select = connection.prepareStatement(
                 "select id, supplier_id, quantity from items where sku = ? for update")) {
             select.setString(1, sku);
@@ -105,7 +107,7 @@ public class MovementServlet extends HttpServlet {
             insert.setLong(2, locked.supplierId);
             insert.setInt(3, delta);
             insert.setString(4, note == null ? "manual adjustment" : note);
-            insert.setTimestamp(5, Timestamp.valueOf(LocalDateTime.now()));
+            insert.setTimestamp(5, Timestamp.valueOf(LocalDateTime.now(ZoneId.systemDefault())));
             insert.executeUpdate();
             try (ResultSet keys = insert.getGeneratedKeys()) {
                 return keys.next() ? keys.getLong(1) : 0;
@@ -122,7 +124,7 @@ public class MovementServlet extends HttpServlet {
         }
     }
 
-    private void rollback(Connection connection) {
+    private void rollback(@Nullable Connection connection) {
         if (connection != null) {
             try {
                 connection.rollback();
@@ -132,7 +134,7 @@ public class MovementServlet extends HttpServlet {
         }
     }
 
-    private void close(Connection connection) {
+    private void close(@Nullable Connection connection) {
         if (connection != null) {
             try {
                 connection.setAutoCommit(true);

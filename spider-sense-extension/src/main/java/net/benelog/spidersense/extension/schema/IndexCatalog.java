@@ -27,6 +27,7 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Reads the index catalog of the tables a slow statement touched and emits it as one log record per
@@ -94,7 +95,7 @@ public final class IndexCatalog {
     private static final ThreadLocal<Boolean> inside = new ThreadLocal<>();
 
     /** Null means the agent's own, resolved at emit time; a test puts its own provider here. */
-    private static volatile LoggerProvider provider;
+    private static volatile @Nullable LoggerProvider provider;
 
     private IndexCatalog() {
     }
@@ -106,12 +107,13 @@ public final class IndexCatalog {
      * @param sql the SQL of an {@code execute(String)} call, or null for a prepared statement
      * @param elapsedNanos how long the call took
      */
-    public static void afterExecute(Statement statement, String sql, long elapsedNanos) {
+    public static void afterExecute(Statement statement, @Nullable String sql, long elapsedNanos) {
         afterExecute(statement, sql, elapsedNanos, THRESHOLD_NANOS);
     }
 
     /** The same, with the threshold given rather than configured, which is what a test wants. */
-    static void afterExecute(Statement statement, String sql, long elapsedNanos, long thresholdNanos) {
+    static void afterExecute(
+            Statement statement, @Nullable String sql, long elapsedNanos, long thresholdNanos) {
         try {
             if (elapsedNanos < thresholdNanos || Boolean.TRUE.equals(inside.get())) {
                 return;
@@ -152,11 +154,11 @@ public final class IndexCatalog {
      * portable way of telling. Outside the agent the field is empty, and a statement whose SQL
      * cannot be had is left alone.
      */
-    private static String preparedSql(Statement statement) {
-        if (!(statement instanceof PreparedStatement)) {
+    private static @Nullable String preparedSql(Statement statement) {
+        if (!(statement instanceof PreparedStatement prepared)) {
             return null;
         }
-        return VirtualField.find(PreparedStatement.class, String.class).get((PreparedStatement) statement);
+        return VirtualField.find(PreparedStatement.class, String.class).get(prepared);
     }
 
     /** One attempt per table per process, recorded before the attempt so a failure is not retried. */
@@ -183,7 +185,8 @@ public final class IndexCatalog {
      * would carry forever. A name found in several schemas is emitted once per schema, because the
      * statement does not say which one it meant and both answers are facts.
      */
-    private static void lookUp(DatabaseMetaData meta, String catalog, Word table) throws SQLException {
+    private static void lookUp(DatabaseMetaData meta, @Nullable String catalog, Word table)
+            throws SQLException {
         String schema = null;
         String name = table.text;
         int dot = name.lastIndexOf('.');
@@ -248,7 +251,7 @@ public final class IndexCatalog {
         return out.toString();
     }
 
-    private static String catalogOf(Connection connection) {
+    private static @Nullable String catalogOf(Connection connection) {
         try {
             return connection.getCatalog();
         } catch (SQLException unavailable) {
@@ -257,7 +260,8 @@ public final class IndexCatalog {
     }
 
     /** One record per table, under the scope the server reads catalog rows from. */
-    private static void emit(DatabaseMetaData meta, String catalog, String schema, String table)
+    private static void emit(
+            DatabaseMetaData meta, @Nullable String catalog, @Nullable String schema, String table)
             throws SQLException {
         String indexes = json(indexesOf(meta, catalog, schema, table));
         String product = meta.getDatabaseProductName();
@@ -284,8 +288,8 @@ public final class IndexCatalog {
      * letting the driver update the table's statistics on a request thread. The statistic rows the
      * call also returns carry no index and are dropped.
      */
-    private static List<Index> indexesOf(
-            DatabaseMetaData meta, String catalog, String schema, String table) throws SQLException {
+    private static List<Index> indexesOf(DatabaseMetaData meta, @Nullable String catalog,
+            @Nullable String schema, String table) throws SQLException {
         Map<String, Index> byName = new LinkedHashMap<>();
         try (ResultSet rows = meta.getIndexInfo(catalog, schema, table, false, true)) {
             while (rows.next()) {
@@ -355,33 +359,20 @@ public final class IndexCatalog {
         for (int i = 0; i < text.length(); i++) {
             char c = text.charAt(i);
             switch (c) {
-                case '"':
-                    out.append("\\\"");
-                    break;
-                case '\\':
-                    out.append("\\\\");
-                    break;
-                case '\n':
-                    out.append("\\n");
-                    break;
-                case '\r':
-                    out.append("\\r");
-                    break;
-                case '\t':
-                    out.append("\\t");
-                    break;
-                case '\b':
-                    out.append("\\b");
-                    break;
-                case '\f':
-                    out.append("\\f");
-                    break;
-                default:
+                case '"' -> out.append("\\\"");
+                case '\\' -> out.append("\\\\");
+                case '\n' -> out.append("\\n");
+                case '\r' -> out.append("\\r");
+                case '\t' -> out.append("\\t");
+                case '\b' -> out.append("\\b");
+                case '\f' -> out.append("\\f");
+                default -> {
                     if (c < 0x20) {
                         out.append(String.format(Locale.ROOT, "\\u%04x", (int) c));
                     } else {
                         out.append(c);
                     }
+                }
             }
         }
         out.append('"');
@@ -395,7 +386,7 @@ public final class IndexCatalog {
     }
 
     /** For tests: where the records go. Null puts the agent's own provider back. */
-    static void loggerProvider(LoggerProvider loggerProvider) {
+    static void loggerProvider(@Nullable LoggerProvider loggerProvider) {
         provider = loggerProvider;
     }
 
@@ -635,13 +626,13 @@ public final class IndexCatalog {
     static final class Word {
         final String text;
         final boolean quoted;
-        final String schema;
+        final @Nullable String schema;
 
         Word(String text, boolean quoted) {
             this(text, quoted, null);
         }
 
-        Word(String text, boolean quoted, String schema) {
+        Word(String text, boolean quoted, @Nullable String schema) {
             this.text = text;
             this.quoted = quoted;
             this.schema = schema;

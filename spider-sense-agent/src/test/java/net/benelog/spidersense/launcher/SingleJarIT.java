@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.BeforeAll;
@@ -212,6 +213,9 @@ class SingleJarIT {
                 .doesNotContain("NoClassDefFoundError");
     }
 
+    /** What separates two frames of the compact {@code code} array. */
+    private static final Pattern BETWEEN_FRAMES = Pattern.compile("\",\"");
+
     /** The {@code code} array of one compact finding object. */
     private static List<String> codeFrames(String compactFinding) {
         int start = compactFinding.indexOf("\"code\":[");
@@ -220,7 +224,8 @@ class SingleJarIT {
         int end = compactFinding.indexOf(']', start);
         String inside = compactFinding.substring(start, end);
         List<String> frames = new ArrayList<>();
-        for (String each : inside.split("\",\"")) {
+        // The limit keeps a trailing empty frame rather than dropping it; the loop skips it either way.
+        for (String each : BETWEEN_FRAMES.split(inside, -1)) {
             String frame = each.replace("\"", "").trim();
             if (!frame.isEmpty()) {
                 frames.add(frame);

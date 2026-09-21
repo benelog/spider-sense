@@ -8,6 +8,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Named moments: {@code before}, {@code after-fix}, {@code start}.
  *
@@ -25,7 +27,7 @@ import java.util.regex.Pattern;
 public final class Marks {
 
     /** One named moment. {@code service} and {@code note} are optional. */
-    public record Mark(long id, long at, String name, String service, String note) {
+    public record Mark(long id, long at, String name, @Nullable String service, @Nullable String note) {
     }
 
     /** What a mark may be called; the same expression api.md states. */
@@ -48,7 +50,8 @@ public final class Marks {
      * @param at the instant, or null for now
      * @throws IllegalArgumentException when the name is not {@link #NAME}
      */
-    public Mark create(String name, String service, String note, Long at) {
+    public Mark create(@Nullable String name, @Nullable String service, @Nullable String note,
+            @Nullable Long at) {
         if (name == null || !NAME.matcher(name).matches()) {
             throw new IllegalArgumentException(
                     "A mark name is 1 to 64 characters of [A-Za-z0-9._-]: " + name);
@@ -86,7 +89,7 @@ public final class Marks {
      * sharing the database both write a {@code start}; with none of that service
      * the newest of any service is the honest answer rather than nothing at all.
      */
-    public Mark newest(String name, String service) {
+    public @Nullable Mark newest(String name, @Nullable String service) {
         if (service != null) {
             Mark ofService = sql.queryOne(
                     "SELECT * FROM mark WHERE name = ? AND service = ? ORDER BY at_ms DESC, id DESC LIMIT 1",

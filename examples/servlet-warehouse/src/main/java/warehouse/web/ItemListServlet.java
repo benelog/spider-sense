@@ -5,6 +5,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.Locale;
 
 import javax.sql.DataSource;
 
@@ -41,7 +42,7 @@ public class ItemListServlet extends HttpServlet {
             if (q == null || q.isBlank()) {
                 listByPage(connection, page, rows);
             } else {
-                search(connection, q.toLowerCase(), rows);
+                search(connection, q.toLowerCase(Locale.ROOT), rows);
             }
         } catch (SQLException e) {
             throw new IllegalStateException("Could not list items", e);

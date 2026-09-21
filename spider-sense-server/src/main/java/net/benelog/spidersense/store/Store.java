@@ -3,6 +3,8 @@ package net.benelog.spidersense.store;
 import java.nio.file.Path;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The data layer behind one object: the database, the write-behind writer, the
  * retention sweeper, the service registry, the tingle rules and the event bus.
@@ -25,15 +27,16 @@ public final class Store implements AutoCloseable {
     private final IngestCap ingestCap;
 
     /** The store with the ignore list at its documented default. */
-    public Store(String jdbcUrl, Path databaseFile, int retentionHours,
-            long slowRequestMs, long slowQueryMs, String embeddedService) {
+    public Store(String jdbcUrl, @Nullable Path databaseFile, int retentionHours,
+            long slowRequestMs, long slowQueryMs, @Nullable String embeddedService) {
         this(jdbcUrl, databaseFile, retentionHours, slowRequestMs, slowQueryMs, embeddedService,
                 IgnoredEndpoints.DEFAULT);
     }
 
     /** The store with the span cap at its default and no ingest cap. */
-    public Store(String jdbcUrl, Path databaseFile, int retentionHours,
-            long slowRequestMs, long slowQueryMs, String embeddedService, String ignoreEndpoints) {
+    public Store(String jdbcUrl, @Nullable Path databaseFile, int retentionHours,
+            long slowRequestMs, long slowQueryMs, @Nullable String embeddedService,
+            @Nullable String ignoreEndpoints) {
         this(jdbcUrl, databaseFile, retentionHours, slowRequestMs, slowQueryMs, embeddedService,
                 ignoreEndpoints, Sweeper.DEFAULT_RETENTION_SPANS, IngestCap.none());
     }
@@ -43,8 +46,9 @@ public final class Store implements AutoCloseable {
      * @param ingestCap      what decides whether a span is written at all (storage.md,
      *                       "The ingest cap"); {@link IngestCap#none()} accepts everything
      */
-    public Store(String jdbcUrl, Path databaseFile, int retentionHours,
-            long slowRequestMs, long slowQueryMs, String embeddedService, String ignoreEndpoints,
+    public Store(String jdbcUrl, @Nullable Path databaseFile, int retentionHours,
+            long slowRequestMs, long slowQueryMs, @Nullable String embeddedService,
+            @Nullable String ignoreEndpoints,
             long retentionSpans, IngestCap ingestCap) {
         this.database = Database.open(jdbcUrl, databaseFile);
         this.sql = database.sql();

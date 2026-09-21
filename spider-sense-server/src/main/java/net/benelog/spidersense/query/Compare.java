@@ -7,7 +7,10 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+
+import org.jspecify.annotations.Nullable;
 
 /**
  * Two windows side by side, endpoint by endpoint, query by query, error by error.
@@ -45,16 +48,16 @@ public final class Compare {
     public record QuerySide(long calls, double callsPerRequest, double p95Ms, double totalMs) {
     }
 
-    public record EndpointDiff(String endpointId, String service, String name, Side before, Side after,
-            String verdict) {
+    public record EndpointDiff(String endpointId, String service, String name,
+            @Nullable Side before, @Nullable Side after, String verdict) {
     }
 
-    public record QueryDiff(String queryId, String service, String statement, QuerySide before,
-            QuerySide after, String verdict) {
+    public record QueryDiff(String queryId, String service, @Nullable String statement,
+            @Nullable QuerySide before, @Nullable QuerySide after, String verdict) {
     }
 
-    public record ErrorDiff(String errorId, String service, String type, String message, long before,
-            long after, String verdict) {
+    public record ErrorDiff(String errorId, String service, @Nullable String type,
+            @Nullable String message, long before, long after, String verdict) {
     }
 
     /** The whole answer of {@code GET /api/compare}. */
@@ -69,7 +72,7 @@ public final class Compare {
         this.queries = queries;
     }
 
-    public Comparison compare(Window before, Window after, String service) {
+    public Comparison compare(Window before, Window after, @Nullable String service) {
         Map<String, Stats.EndpointStats> beforeEndpoints = endpoints(before, service);
         Map<String, Stats.EndpointStats> afterEndpoints = endpoints(after, service);
         Map<String, Queries.DbWork> beforeWork = queries.databaseWork(before, service);
@@ -80,7 +83,8 @@ public final class Compare {
         for (String id : union(beforeEndpoints.keySet(), afterEndpoints.keySet())) {
             Stats.EndpointStats one = beforeEndpoints.get(id);
             Stats.EndpointStats two = afterEndpoints.get(id);
-            Stats.EndpointStats any = one != null ? one : two;
+            Stats.EndpointStats any = Objects.requireNonNull(one != null ? one : two,
+                    "the id came from one of the two windows");
             Side sideBefore = side(one, beforeWork.get(id));
             Side sideAfter = side(two, afterWork.get(id));
             weight.put(id, (one == null ? 0 : one.totalMs()) + (two == null ? 0 : two.totalMs()));
@@ -98,7 +102,8 @@ public final class Compare {
         for (String id : union(beforeQueries.keySet(), afterQueries.keySet())) {
             Stats.QueryStats one = beforeQueries.get(id);
             Stats.QueryStats two = afterQueries.get(id);
-            Stats.QueryStats any = one != null ? one : two;
+            Stats.QueryStats any = Objects.requireNonNull(one != null ? one : two,
+                    "the id came from one of the two windows");
             QuerySide sideBefore = querySide(one, beforeRequests);
             QuerySide sideAfter = querySide(two, afterRequests);
             queryWeight.put(id, (one == null ? 0 : one.totalMs()) + (two == null ? 0 : two.totalMs()));
@@ -113,7 +118,8 @@ public final class Compare {
         for (String id : union(beforeErrors.keySet(), afterErrors.keySet())) {
             Stats.ErrorGroup one = beforeErrors.get(id);
             Stats.ErrorGroup two = afterErrors.get(id);
-            Stats.ErrorGroup any = one != null ? one : two;
+            Stats.ErrorGroup any = Objects.requireNonNull(one != null ? one : two,
+                    "the id came from one of the two windows");
             long countBefore = one == null ? 0 : one.count();
             long countAfter = two == null ? 0 : two.count();
             errorDiffs.add(new ErrorDiff(id, any.service(), any.type(), any.message(), countBefore,
@@ -134,7 +140,7 @@ public final class Compare {
      * if its errors did not disappear, and the errors are asked about first because
      * a failing endpoint is worse than a slow one whatever the percentile says.
      */
-    static String verdict(Side before, Side after) {
+    static String verdict(@Nullable Side before, @Nullable Side after) {
         if (before == null) {
             return NEW;
         }
@@ -156,7 +162,7 @@ public final class Compare {
         return SAME;
     }
 
-    static String queryVerdict(QuerySide before, QuerySide after) {
+    static String queryVerdict(@Nullable QuerySide before, @Nullable QuerySide after) {
         if (before == null) {
             return NEW;
         }
@@ -203,7 +209,8 @@ public final class Compare {
 
     // --- sides ---------------------------------------------------------------
 
-    private static Side side(Stats.EndpointStats stats, Queries.DbWork work) {
+    private static @Nullable Side side(Stats.@Nullable EndpointStats stats,
+            Queries.@Nullable DbWork work) {
         if (stats == null) {
             return null;
         }
@@ -218,7 +225,7 @@ public final class Compare {
      * calls of the query: "this statement now runs four times a request" is the
      * sentence an N+1 fix is judged by.
      */
-    private static QuerySide querySide(Stats.QueryStats stats, long requests) {
+    private static @Nullable QuerySide querySide(Stats.@Nullable QueryStats stats, long requests) {
         if (stats == null) {
             return null;
         }
@@ -226,7 +233,7 @@ public final class Compare {
                 stats.p95Ms(), stats.totalMs());
     }
 
-    private Map<String, Stats.EndpointStats> endpoints(Window window, String service) {
+    private Map<String, Stats.EndpointStats> endpoints(Window window, @Nullable String service) {
         Map<String, Stats.EndpointStats> byId = new LinkedHashMap<>();
         for (Stats.EndpointStats endpoint : queries.endpoints(window, service, null)) {
             byId.put(endpoint.endpointId(), endpoint);
@@ -234,7 +241,7 @@ public final class Compare {
         return byId;
     }
 
-    private Map<String, Stats.QueryStats> queries(Window window, String service) {
+    private Map<String, Stats.QueryStats> queries(Window window, @Nullable String service) {
         Map<String, Stats.QueryStats> byId = new LinkedHashMap<>();
         for (Stats.QueryStats query : queries.queries(window, service, "total", GROUPS, null)) {
             byId.put(query.queryId(), query);
@@ -242,7 +249,7 @@ public final class Compare {
         return byId;
     }
 
-    private Map<String, Stats.ErrorGroup> errors(Window window, String service) {
+    private Map<String, Stats.ErrorGroup> errors(Window window, @Nullable String service) {
         Map<String, Stats.ErrorGroup> byId = new LinkedHashMap<>();
         for (Stats.ErrorGroup group : queries.errors(window, service, GROUPS, null)) {
             byId.put(group.errorId(), group);

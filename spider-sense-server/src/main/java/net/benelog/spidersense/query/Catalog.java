@@ -8,6 +8,7 @@ import java.util.Map;
 
 import net.benelog.spidersense.store.Sql;
 import net.benelog.spidersilk.json.Json;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The index catalog of a service, as the extension read it through JDBC metadata.
@@ -35,7 +36,7 @@ public final class Catalog {
      * @param name   the database's own spelling: {@code ITEMS} on H2,
      *        {@code items} on PostgreSQL
      */
-    public record Table(String schema, String name, List<Index> indexes) {
+    public record Table(@Nullable String schema, String name, List<Index> indexes) {
     }
 
     private final Sql sql;
@@ -54,18 +55,17 @@ public final class Catalog {
      */
     public Map<String, List<Table>> forService(String service) {
         Map<String, List<Table>> byName = new LinkedHashMap<>();
-        sql.query("SELECT schema_name, table_name, product, indexes FROM db_table WHERE service = ?",
+        sql.forEach("SELECT schema_name, table_name, product, indexes FROM db_table WHERE service = ?",
                 List.of(service), rs -> {
                     String name = rs.getString("table_name");
                     List<Index> indexes = indexes(rs.getString("indexes"));
                     if (name == null || indexes == null) {
-                        return null;
+                        return;
                     }
                     String schema = rs.getString("schema_name");
                     byName.computeIfAbsent(name.toLowerCase(Locale.ROOT), key -> new ArrayList<>())
                             .add(new Table(schema == null || schema.isEmpty() ? null : schema, name,
                                     indexes));
-                    return null;
                 });
         return byName;
     }
@@ -77,7 +77,7 @@ public final class Catalog {
      * block it would feed says "no index serves this column", and a wrong block is
      * worse than no block at all (agent.md).
      */
-    private static List<Index> indexes(String json) {
+    private static @Nullable List<Index> indexes(@Nullable String json) {
         if (json == null || json.isBlank()) {
             return List.of();
         }

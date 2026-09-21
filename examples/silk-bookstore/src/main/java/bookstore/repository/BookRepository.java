@@ -1,6 +1,7 @@
 package bookstore.repository;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
@@ -82,7 +83,7 @@ public class BookRepository {
                 order by published_year desc, id
                 limit :limit offset :offset
                 """,
-                Map.of("pattern", "%" + query.toLowerCase() + "%",
+                Map.of("pattern", "%" + query.toLowerCase(Locale.ROOT) + "%",
                         "limit", limit, "offset", offset),
                 BOOK);
     }

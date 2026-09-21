@@ -5,6 +5,8 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.LongSupplier;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * {@code spidersense.ingest.max-spans-per-second}: what protects the file from a
  * load test (storage.md, "The ingest cap").
@@ -27,7 +29,7 @@ public final class IngestCap {
     /** The window of traces a burst may still add spans to. */
     private static final int REMEMBERED_TRACES = 10_000;
 
-    private final Long maxSpansPerSecond;
+    private final @Nullable Long maxSpansPerSecond;
     private final LongSupplier clock;
     private final AtomicLong droppedSpans = new AtomicLong();
 
@@ -43,7 +45,7 @@ public final class IngestCap {
     private long second = Long.MIN_VALUE;
     private long countThisSecond;
 
-    public IngestCap(Long maxSpansPerSecond, LongSupplier clock) {
+    public IngestCap(@Nullable Long maxSpansPerSecond, LongSupplier clock) {
         this.maxSpansPerSecond = maxSpansPerSecond == null || maxSpansPerSecond <= 0
                 ? null
                 : maxSpansPerSecond;
@@ -51,7 +53,7 @@ public final class IngestCap {
     }
 
     /** The cap as configured, on the system clock. */
-    public static IngestCap of(Long maxSpansPerSecond) {
+    public static IngestCap of(@Nullable Long maxSpansPerSecond) {
         return new IngestCap(maxSpansPerSecond, System::currentTimeMillis);
     }
 
@@ -61,7 +63,7 @@ public final class IngestCap {
     }
 
     /** What {@code /api/status.ingest.maxSpansPerSecond} reports; null when unset. */
-    public Long maxSpansPerSecond() {
+    public @Nullable Long maxSpansPerSecond() {
         return maxSpansPerSecond;
     }
 

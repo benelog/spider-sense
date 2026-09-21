@@ -28,6 +28,10 @@ Read `docs/design.md` (architecture and decisions), `docs/storage.md` (the H2 sc
 - **Every agent-facing answer comes from the same `Queries` as the UI**, and its text rendering is deterministic over the window (`docs/agent.md`); the CLI never renders on its own, it prints what the server or the in-process renderer produced.
 - **No frontend build.** Plain HTML/CSS/ES modules; the only vendored library is uPlot.
 - Versions shared across modules are declared once in the root `build.gradle` `ext` block; the release version is `version` in `gradle.properties`, which the jar, the plugin, and the plugin's default jar version all read.
+  The Gradle plugin is an included build and reads none of that block, so it repeats the Error Prone, NullAway, and JSpecify versions in its own `build.gradle`; a bump lands in both places.
+- **Error Prone runs inside every javac, and NullAway with it on main code.** Every main package is `@NullMarked` (a `package-info.java` per package, and a new package gets one), so a null reaching a non-`@Nullable` type is a compile error; nullness is written with JSpecify's `@Nullable` (a type-use annotation: `@Nullable Foo`, `Foo @Nullable []`), on the compile class path only, so no jar ships it.
+  A finding is fixed in the code; a suppression carries a comment saying why, and a check is disabled in a build file only when it misreads a convention the whole module follows (`InjectOnConstructorOfAbstractClass` on Gradle's managed types, in the plugin).
+  Tests are exempt from NullAway (they pass null on purpose) but not from the other checks.
 - **The plugin adds arguments, it never edits a task's own `jvmArgs`**, and every value in it is a lazy provider (configuration-cache safe); the examples apply it against the jar the build just made, never against Maven Central.
 - Markdown is one sentence per line (as in Spider Silk), and so is the AsciiDoc under `manual/`.
 - **The manual lives in `manual/`, as an Antora component, and is published at <https://spider-sense.benelog.net> by `.github/workflows/docs.yml`.**

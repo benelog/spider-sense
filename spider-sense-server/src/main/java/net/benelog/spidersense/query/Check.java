@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 
 import net.benelog.spidersense.store.Tingles;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Thresholds as a verdict, so an agent can use Spider Sense the way it uses a
@@ -37,11 +38,13 @@ public final class Check {
     private static final int GROUPS = 100;
     private static final int FINDINGS = 100;
 
-    public record RuleCheck(String rule, double limit, Double actual, boolean pass, String detail) {
+    public record RuleCheck(String rule, double limit, @Nullable Double actual, boolean pass,
+            String detail) {
     }
 
     /** {@code pass} is null when there was no request to judge. */
-    public record CheckResult(Boolean pass, long requests, String reason, List<RuleCheck> checks) {
+    public record CheckResult(@Nullable Boolean pass, long requests, @Nullable String reason,
+            List<RuleCheck> checks) {
     }
 
     private final Queries queries;
@@ -66,10 +69,11 @@ public final class Check {
     /**
      * Every rule given, over the scope.
      *
-     * @param endpoint an {@code endpointId} or an endpoint name, or null for every
+     * @param endpoint an endpoint id or an endpoint name, or null for every
      *        endpoint of the window
      */
-    public CheckResult check(Window window, String service, String endpoint, Map<String, Double> rules) {
+    public CheckResult check(Window window, @Nullable String service, @Nullable String endpoint,
+            @Nullable Map<String, Double> rules) {
         Map<String, Double> asked = rules == null || rules.isEmpty() ? defaults() : rules;
         List<Stats.EndpointStats> endpoints = scope(window, service, endpoint);
 
@@ -104,8 +108,9 @@ public final class Check {
         return new CheckResult(pass, requests, null, checks);
     }
 
-    private RuleCheck evaluate(String rule, double limit, Window window, String service, String endpoint,
-            List<Stats.EndpointStats> endpoints, long requests, long errors, Stats.Totals totals) {
+    private RuleCheck evaluate(String rule, double limit, Window window, @Nullable String service,
+            @Nullable String endpoint, List<Stats.EndpointStats> endpoints, long requests, long errors,
+            Stats.Totals totals) {
         return switch (rule) {
             case MAX_P95_MS -> {
                 Stats.EndpointStats worst = null;
@@ -122,7 +127,7 @@ public final class Check {
             }
             case MAX_ERRORS -> {
                 long count = errorCount(window, service, endpoint);
-                yield max(rule, limit, count, count == 0 ? "no error in the window"
+                yield max(rule, limit, (double) count, count == 0 ? "no error in the window"
                         : Numbers.plural(count, "occurrence") + " over the window");
             }
             case MAX_ERROR_RATE -> {
@@ -154,7 +159,7 @@ public final class Check {
                         slow += query.slowCalls();
                     }
                 }
-                yield max(rule, limit, slow,
+                yield max(rule, limit, (double) slow,
                         Numbers.plural(slow, "call") + " over " + tingles.slowQueryMs() + " ms");
             }
             case MAX_N_PLUS_ONE -> {
@@ -186,7 +191,7 @@ public final class Check {
                 }
                 String detail = worst == null ? "no ERROR log outside a failed trace"
                         : Numbers.plural(records, "record") + ": " + worst.title();
-                yield max(rule, limit, records, detail);
+                yield max(rule, limit, (double) records, detail);
             }
             default -> {
                 Double apdex = apdex(endpoints, endpoint, totals);
@@ -204,7 +209,8 @@ public final class Check {
     }
 
     /** The endpoints the scope covers: one, or every endpoint of the window. */
-    private List<Stats.EndpointStats> scope(Window window, String service, String endpoint) {
+    private List<Stats.EndpointStats> scope(Window window, @Nullable String service,
+            @Nullable String endpoint) {
         List<Stats.EndpointStats> endpoints = queries.endpoints(window, service, null);
         if (endpoint == null) {
             return endpoints;
@@ -218,7 +224,7 @@ public final class Check {
         return matching;
     }
 
-    private long errorCount(Window window, String service, String endpoint) {
+    private long errorCount(Window window, @Nullable String service, @Nullable String endpoint) {
         long count = 0;
         for (Stats.ErrorGroup group : queries.errors(window, service, GROUPS, null)) {
             if (endpoint == null) {
@@ -260,8 +266,8 @@ public final class Check {
     }
 
     /** One endpoint's Apdex, or the scope's; null when nothing was requested. */
-    private static Double apdex(List<Stats.EndpointStats> endpoints, String endpoint,
-            Stats.Totals totals) {
+    private static @Nullable Double apdex(List<Stats.EndpointStats> endpoints,
+            @Nullable String endpoint, Stats.Totals totals) {
         if (endpoint == null) {
             return totals.apdex();
         }

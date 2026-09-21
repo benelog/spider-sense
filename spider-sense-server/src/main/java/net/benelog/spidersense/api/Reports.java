@@ -29,6 +29,7 @@ import net.benelog.spidersense.store.Store;
 import net.benelog.spidersense.store.Tingles;
 import net.benelog.spidersense.store.Writer;
 import net.benelog.spidersilk.json.Json;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Every answer the agent interface gives, as data rather than as a response.
@@ -75,7 +76,7 @@ public final class Reports implements AutoCloseable {
     private final Config config;
     private final Database database;
     private final boolean ownsDatabase;
-    private final Store store;
+    private final @Nullable Store store;
     private final IntSupplier port;
 
     private final Queries queries;
@@ -92,7 +93,7 @@ public final class Reports implements AutoCloseable {
     private final ReadOnlyQuery readOnly;
 
     /** Created on the first import of a read-only open; the server's is the store's. */
-    private Writer importWriter;
+    private @Nullable Writer importWriter;
 
     /** The server's way: everything is already open, and the writer's counters exist. */
     public Reports(Config config, Store store, IntSupplier port) {
@@ -116,8 +117,8 @@ public final class Reports implements AutoCloseable {
                 new ServiceRegistry(sql, config.embeddedService()), new Marks(sql), true);
     }
 
-    private Reports(Config config, Database database, Store store, IntSupplier port, Tingles tingles,
-            ServiceRegistry services, Marks marks, boolean ownsDatabase) {
+    private Reports(Config config, Database database, @Nullable Store store, IntSupplier port,
+            Tingles tingles, ServiceRegistry services, Marks marks, boolean ownsDatabase) {
         this.config = config;
         this.database = database;
         this.store = store;
@@ -175,7 +176,7 @@ public final class Reports implements AutoCloseable {
      * because in the CLI's read-only mode there is no server: the mode is
      * {@code file} and there is no endpoint to advertise.
      */
-    public Report status(String mode, String endpoint, long startedAt) {
+    public Report status(String mode, @Nullable String endpoint, long startedAt) {
         Database.Storage storage = database.storage();
         Json.JsonObject otlp = Json.obj();
         if (endpoint != null) {
@@ -221,7 +222,7 @@ public final class Reports implements AutoCloseable {
                         .put("span", queries.oldestSpan())
                         .put("log", queries.oldestLog()));
 
-        Map<String, String> fields = new LinkedHashMap<>();
+        Map<String, @Nullable String> fields = new LinkedHashMap<>();
         fields.put("name", ApiRoutes.NAME + " " + ApiRoutes.VERSION);
         fields.put("mode", mode);
         fields.put("endpoint", endpoint);
@@ -271,12 +272,16 @@ public final class Reports implements AutoCloseable {
 
     // --- findings, marks, compare, check --------------------------------------
 
-    public Report findings(Window window, String service, int limit, boolean full) {
+    public Report findings(Window window, @Nullable String service, int limit, boolean full) {
         return findings(window, service, limit, full, false);
     }
 
-    /** @param hideAcked whether acknowledged findings are left out rather than ranked last */
-    public Report findings(Window window, String service, int limit, boolean full,
+    /**
+     * The same report, narrowed to what a reader has not accepted yet.
+     *
+     * @param hideAcked whether acknowledged findings are left out rather than ranked last
+     */
+    public Report findings(Window window, @Nullable String service, int limit, boolean full,
             boolean hideAcked) {
         Findings.Answer answer = findings.answer(window, service, limit, hideAcked);
         List<Findings.Finding> found = answer.findings();
@@ -296,7 +301,8 @@ public final class Reports implements AutoCloseable {
     }
 
     /** Records a mark, which the CLI must be able to do with no server running. */
-    public Marks.Mark mark(String name, String note, String service) {
+    public Marks.Mark mark(@Nullable String name, @Nullable String note,
+            @Nullable String service) {
         return marks.create(name, service, note, null);
     }
 
@@ -305,7 +311,7 @@ public final class Reports implements AutoCloseable {
     }
 
     /** Acknowledges a finding, which the CLI must be able to do with no server running. */
-    public Acks.Ack ack(String findingId, String note) {
+    public Acks.Ack ack(@Nullable String findingId, @Nullable String note) {
         return acks.ack(findingId, note);
     }
 
@@ -338,14 +344,16 @@ public final class Reports implements AutoCloseable {
      * starts with it, so exercising, marking and exercising again gives two windows
      * that do not share a request.
      */
-    public Report compare(long before, long after, long until, String service, boolean full) {
+    public Report compare(long before, long after, long until, @Nullable String service,
+            boolean full) {
         Window first = Window.of(before, Math.max(before, after - 1));
         Window second = Window.of(after, Math.max(after, until));
         Compare.Comparison comparison = compare.compare(first, second, service);
         return new Report(Codecs.comparison(comparison), Text.compare(comparison, service, full));
     }
 
-    public Report check(Window window, String service, String endpoint, Map<String, Double> rules) {
+    public Report check(Window window, @Nullable String service, @Nullable String endpoint,
+            Map<String, Double> rules) {
         Check.CheckResult result = check.check(window, service, endpoint, rules);
         return new Report(Codecs.checkResult(result), Text.check(result, window, service, endpoint));
     }
@@ -370,7 +378,7 @@ public final class Reports implements AutoCloseable {
     }
 
     /** One trace, or null when the id is not stored. */
-    public Report trace(String traceId, boolean full) {
+    public @Nullable Report trace(String traceId, boolean full) {
         Queries.TraceDetail trace = queries.trace(traceId);
         if (trace == null) {
             return null;
@@ -406,21 +414,22 @@ public final class Reports implements AutoCloseable {
         return trace;
     }
 
-    public Report endpoints(Window window, String service) {
+    public Report endpoints(Window window, @Nullable String service) {
         List<Stats.EndpointStats> endpoints = queries.endpoints(window, service, null);
         long requests = queries.totals(window, service).requests();
         return new Report(Json.obj().put("endpoints", Codecs.endpoints(endpoints)),
                 Text.endpoints(window, service, endpoints, requests, endpoint()));
     }
 
-    public Report queries(Window window, String service, String sort, int limit, boolean full) {
+    public Report queries(Window window, @Nullable String service, @Nullable String sort, int limit,
+            boolean full) {
         List<Stats.QueryStats> list = queries.queries(window, service, sort, limit, null);
         long requests = queries.totals(window, service).requests();
         return new Report(Json.obj().put("queries", Codecs.queries(list)),
                 Text.queries(window, service, list, requests, full, endpoint()));
     }
 
-    public Report errors(Window window, String service, int limit, boolean full) {
+    public Report errors(Window window, @Nullable String service, int limit, boolean full) {
         List<Stats.ErrorGroup> list = queries.errors(window, service, limit, null);
         long requests = queries.totals(window, service).requests();
         return new Report(Json.obj().put("errors", Codecs.errorGroups(list)),
@@ -448,7 +457,7 @@ public final class Reports implements AutoCloseable {
      *                               when H2 refuses it
      * @throws IllegalStateException when the database has no reader user yet
      */
-    public Report sql(String statement, int limit, boolean full) {
+    public Report sql(@Nullable String statement, int limit, boolean full) {
         ReadOnlyQuery.Result result = readOnly.run(statement, limit);
         return new Report(Codecs.sqlResult(result), Text.sql(result, limit, full));
     }
@@ -463,7 +472,7 @@ public final class Reports implements AutoCloseable {
      * does: the file the CLI writes and the download the browser gets must be the
      * same bytes.
      */
-    public void export(Window window, String service, OutputStream out) {
+    public void export(Window window, @Nullable String service, OutputStream out) {
         SessionExport.write(database.sql(), window, service, out);
     }
 
@@ -493,10 +502,12 @@ public final class Reports implements AutoCloseable {
         if (store != null) {
             return store.importer();
         }
-        if (importWriter == null) {
-            importWriter = new Writer(database.sql(), new EventBus(), tingles);
+        Writer writer = importWriter;
+        if (writer == null) {
+            writer = new Writer(database.sql(), new EventBus(), tingles);
+            importWriter = writer;
         }
-        return importWriter.importer();
+        return writer.importer();
     }
 
     public Report imported(Importer.Result result) {
@@ -520,8 +531,9 @@ public final class Reports implements AutoCloseable {
 
     @Override
     public void close() {
-        if (importWriter != null) {
-            importWriter.close();
+        Writer writer = importWriter;
+        if (writer != null) {
+            writer.close();
         }
         if (ownsDatabase) {
             database.close();

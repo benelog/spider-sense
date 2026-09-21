@@ -8,6 +8,7 @@ import java.util.Map;
 import net.benelog.spidersense.store.AttrJson;
 import net.benelog.spidersense.store.MetricPoint;
 import net.benelog.spidersense.store.Sql;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Metric reads: the catalog, and the points of one metric's series over a window.
@@ -28,7 +29,7 @@ public final class MetricQueries {
     public record SeriesData(String service, String name, String type, String unit, boolean monotonic,
             String temporality, Map<String, Object> attributes, List<MetricPoint> points) {
 
-        public String attribute(String key) {
+        public @Nullable String attribute(String key) {
             Object value = attributes.get(key);
             return value == null ? null : String.valueOf(value);
         }
@@ -40,28 +41,26 @@ public final class MetricQueries {
         this.sql = sql;
     }
 
-    public List<MetricMeta> catalog(String service) {
+    public List<MetricMeta> catalog(@Nullable String service) {
         Map<String, List<String>> servicesByName = new LinkedHashMap<>();
         Map<String, Integer> seriesByName = new LinkedHashMap<>();
         String seriesSql = "SELECT name, service FROM metric_series"
                 + (service == null ? "" : " WHERE service = ?") + " ORDER BY name, service";
-        sql.query(seriesSql, service == null ? List.of() : List.of(service), rs -> {
+        sql.forEach(seriesSql, service == null ? List.of() : List.of(service), rs -> {
             String name = rs.getString("name");
             List<String> names = servicesByName.computeIfAbsent(name, n -> new ArrayList<>());
             if (!names.contains(rs.getString("service"))) {
                 names.add(rs.getString("service"));
             }
             seriesByName.merge(name, 1, Integer::sum);
-            return null;
         });
         if (servicesByName.isEmpty()) {
             return List.of();
         }
         Map<String, String[]> metadata = new LinkedHashMap<>();
-        sql.query("SELECT name, type, unit, description FROM metric", List.of(), rs -> {
+        sql.forEach("SELECT name, type, unit, description FROM metric", List.of(), rs -> {
             metadata.put(rs.getString("name"), new String[]{rs.getString("type"), rs.getString("unit"),
                     rs.getString("description")});
-            return null;
         });
         List<MetricMeta> catalog = new ArrayList<>(servicesByName.size());
         servicesByName.forEach((name, names) -> {
@@ -79,8 +78,8 @@ public final class MetricQueries {
      * @param attributeFilters every entry must match exactly; applied in Java
      *        because the attributes are one JSON column, not rows of their own
      */
-    public List<SeriesData> series(String name, String service, Map<String, String> attributeFilters,
-            Window window) {
+    public List<SeriesData> series(String name, @Nullable String service,
+            Map<String, String> attributeFilters, Window window) {
         String[] meta = sql.queryOne("SELECT type, unit, monotonic, temporality FROM metric WHERE name = ?",
                 List.of(name), rs -> new String[]{rs.getString("type"), rs.getString("unit"),
                         String.valueOf(rs.getBoolean("monotonic")), rs.getString("temporality")});
@@ -101,7 +100,7 @@ public final class MetricQueries {
         params.add(window.to());
 
         Map<Long, SeriesBuilder> builders = new LinkedHashMap<>();
-        sql.query(query.toString(), params, rs -> {
+        sql.forEach(query.toString(), params, rs -> {
             long id = rs.getLong("id");
             SeriesBuilder builder = builders.get(id);
             if (builder == null) {
@@ -110,7 +109,6 @@ public final class MetricQueries {
                 builders.put(id, builder);
             }
             builder.points.add(point(rs));
-            return null;
         });
 
         List<SeriesData> data = new ArrayList<>();
@@ -125,7 +123,7 @@ public final class MetricQueries {
     }
 
     /** The newest point of a metric for a service, whatever its attributes. */
-    public MetricPoint latest(String name, String service, Window window) {
+    public @Nullable MetricPoint latest(String name, @Nullable String service, Window window) {
         List<SeriesData> series = series(name, service, Map.of(), window);
         MetricPoint newest = null;
         for (SeriesData data : series) {

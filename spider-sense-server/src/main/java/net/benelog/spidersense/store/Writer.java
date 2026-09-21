@@ -14,7 +14,10 @@ import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+
+import org.jspecify.annotations.Nullable;
 
 /**
  * Write-behind: the OTLP handler hands over a {@link Batch} and returns, and one
@@ -52,8 +55,9 @@ public final class Writer implements AutoCloseable {
     private final Tingles tingles;
     private final Thread thread;
 
+    private final AtomicInteger queuedRecords = new AtomicInteger();
+
     private volatile boolean running = true;
-    private volatile int queuedRecords;
 
     public Writer(Sql sql, EventBus events, Tingles tingles) {
         this.sql = sql;
@@ -81,8 +85,8 @@ public final class Writer implements AutoCloseable {
             }
             dropped.incrementAndGet();
         }
-        queuedRecords += batch.records();
-        if (queuedRecords >= FLUSH_RECORDS) {
+        int queued = queuedRecords.addAndGet(batch.records());
+        if (queued >= FLUSH_RECORDS) {
             synchronized (wakeUp) {
                 wakeUp.notifyAll();
             }
@@ -138,7 +142,7 @@ public final class Writer implements AutoCloseable {
         synchronized (flushLock) {
             List<Batch> batches = new ArrayList<>();
             queue.drainTo(batches);
-            queuedRecords = 0;
+            queuedRecords.set(0);
             if (batches.isEmpty()) {
                 return;
             }
@@ -265,9 +269,9 @@ public final class Writer implements AutoCloseable {
             KEY(trace_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""";
 
     /** One row per span of the touched traces, enough to rebuild the summaries. */
-    private record TraceSpan(String traceId, String spanId, String parentSpanId, String service,
-            String name, String endpoint, String kind, long startMs, long startNs, long durationNs,
-            boolean error, boolean isDb, Long httpStatus) {
+    private record TraceSpan(String traceId, String spanId, @Nullable String parentSpanId,
+            String service, String name, @Nullable String endpoint, String kind, long startMs,
+            long startNs, long durationNs, boolean error, boolean isDb, @Nullable Long httpStatus) {
     }
 
     void mergeTraces(Connection connection, Set<String> traceIds) throws SQLException {
@@ -509,7 +513,7 @@ public final class Writer implements AutoCloseable {
      * and running the application again. A sighting without a {@code process.pid}
      * marks nothing, since there is nothing to compare.
      */
-    private void markRestart(Connection connection, Batch.Sighting sighting, Object pid)
+    private void markRestart(Connection connection, Batch.Sighting sighting, @Nullable Object pid)
             throws SQLException {
         if (!(pid instanceof Number number)) {
             return;
@@ -588,17 +592,19 @@ public final class Writer implements AutoCloseable {
         }
     }
 
-    private static String buckets(MetricPoint point) {
-        if (!point.hasBuckets()) {
+    private static @Nullable String buckets(MetricPoint point) {
+        double[] bounds = point.bounds();
+        long[] counts = point.bucketCounts();
+        if (!point.hasBuckets() || bounds == null || counts == null) {
             return null;
         }
         StringBuilder json = new StringBuilder("{\"bounds\":[");
-        for (int i = 0; i < point.bounds().length; i++) {
-            json.append(i == 0 ? "" : ",").append(point.bounds()[i]);
+        for (int i = 0; i < bounds.length; i++) {
+            json.append(i == 0 ? "" : ",").append(bounds[i]);
         }
         json.append("],\"counts\":[");
-        for (int i = 0; i < point.bucketCounts().length; i++) {
-            json.append(i == 0 ? "" : ",").append(point.bucketCounts()[i]);
+        for (int i = 0; i < counts.length; i++) {
+            json.append(i == 0 ? "" : ",").append(counts[i]);
         }
         return json.append("]}").toString();
     }
@@ -664,7 +670,8 @@ public final class Writer implements AutoCloseable {
         seriesIds.clear();
     }
 
-    static void setLong(PreparedStatement statement, int index, Long value) throws SQLException {
+    static void setLong(PreparedStatement statement, int index, @Nullable Long value)
+            throws SQLException {
         if (value == null) {
             statement.setNull(index, java.sql.Types.BIGINT);
         } else {
@@ -672,7 +679,7 @@ public final class Writer implements AutoCloseable {
         }
     }
 
-    static String cut(String value, int max) {
+    static @Nullable String cut(@Nullable String value, int max) {
         if (value == null) {
             return null;
         }

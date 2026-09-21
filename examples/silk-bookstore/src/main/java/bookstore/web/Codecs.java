@@ -1,6 +1,7 @@
 package bookstore.web;
 
 import java.util.List;
+import java.util.Objects;
 
 import bookstore.domain.AuthorStat;
 import bookstore.domain.Book;
@@ -38,8 +39,9 @@ final class Codecs {
 
     static final JsonWriter<List<AuthorStat>> AUTHOR_STATS = JsonWriter.list(AUTHOR_STAT);
 
+    // Only a review that has been inserted is ever written out, and the insert returns its id.
     static final JsonWriter<Review> REVIEW = review -> Json.obj()
-            .put("id", review.id())
+            .put("id", Objects.requireNonNull(review.id(), "a review that has been inserted has an id"))
             .put("bookId", review.bookId())
             .put("authorId", review.authorId())
             .put("rating", review.rating())

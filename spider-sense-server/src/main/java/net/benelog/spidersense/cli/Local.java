@@ -15,6 +15,7 @@ import net.benelog.spidersense.query.Window;
 import net.benelog.spidersense.server.Config;
 import net.benelog.spidersense.store.Marks;
 import net.benelog.spidersilk.json.Json;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The CLI when nothing answers at the URL: the H2 file, opened in process for
@@ -68,16 +69,16 @@ final class Local {
     }
 
     private static int answer(Options options, Reports reports, PrintStream out, PrintStream err) {
-        String service = options.value("service", null);
+        String service = options.valueOrNull("service");
         if (Options.EXPORT.equals(options.command())) {
             return export(options, reports, service, out, err);
         }
         if (Options.UNACK.equals(options.command())) {
-            if (!reports.ackStore().unack(options.argument())) {
-                err.println("spider-sense: No such acknowledgement: " + options.argument());
+            if (!reports.ackStore().unack(options.requiredArgument())) {
+                err.println("spider-sense: No such acknowledgement: " + options.requiredArgument());
                 return Cli.NOT_FOUND;
             }
-            Reports.Report withdrawn = Reports.unack(options.argument());
+            Reports.Report withdrawn = Reports.unack(options.requiredArgument());
             print(out, options.flag("json") ? withdrawn.json().toJson() : withdrawn.text());
             return Cli.OK;
         }
@@ -87,15 +88,15 @@ final class Local {
                     options.limit(Limits.FINDINGS, Limits.FINDINGS_MAX), options.flag("full"),
                     options.flag("hide-acked"));
             case Options.ACK -> reports.ack(
-                    reports.ack(options.argument(), options.value("note", null)));
+                    reports.ack(options.requiredArgument(), options.valueOrNull("note")));
             case Options.TRACE -> options.has("diff")
-                    ? reports.traceDiff(options.argument(), options.value("diff", null),
+                    ? reports.traceDiff(options.requiredArgument(), options.value("diff", ""),
                             options.flag("full"))
-                    : reports.trace(options.argument(), options.flag("full"));
+                    : reports.trace(options.requiredArgument(), options.flag("full"));
             case "traces" -> reports.traces(new Queries.TraceFilter(
                     window(options, reports, service), service, null,
                     options.optionalLong("min-ms"), null,
-                    options.value("status", null), options.value("q", null), null,
+                    options.valueOrNull("status"), options.valueOrNull("q"), null,
                     options.limit(Limits.TRACES, Limits.TRACES_MAX)), options.flag("full"));
             case "endpoints" -> reports.endpoints(window(options, reports, service), service);
             case "queries" -> reports.queries(window(options, reports, service), service, null,
@@ -104,22 +105,22 @@ final class Local {
                     options.limit(Limits.ERRORS, Limits.ERRORS_MAX), options.flag("full"));
             case "logs" -> reports.logs(new Queries.LogFilter(
                     window(options, reports, service), service,
-                    options.value("severity", null), options.value("q", null),
-                    options.value("trace", null), null,
+                    options.valueOrNull("severity"), options.valueOrNull("q"),
+                    options.valueOrNull("trace"), null,
                     options.limit(Limits.LOGS, Limits.LOGS_MAX)));
             case Options.MARK -> mark(options, reports, service);
             case "marks" -> reports.marks(options.limit(Limits.MARKS, Limits.MARKS_MAX));
             case Options.COMPARE -> compare(options, reports, service);
-            case Options.SQL -> reports.sql(options.argument(),
+            case Options.SQL -> reports.sql(options.requiredArgument(),
                     options.limit(Limits.SQL, Limits.SQL_MAX), options.flag("full"));
             case Options.CHECK -> reports.check(window(options, reports, service), service,
-                    options.value("endpoint", null), options.rules());
+                    options.valueOrNull("endpoint"), options.rules());
             case Options.IMPORT -> reports.imported(
-                    reports.importDocument(Json.parse(Sessions.read(options.argument())).asObject()));
+                    reports.importDocument(Json.parse(Sessions.read(options.requiredArgument())).asObject()));
             default -> throw new Options.Usage("unknown command: " + options.command());
         };
         if (report == null) {
-            err.println("spider-sense: No such trace: " + options.argument());
+            err.println("spider-sense: No such trace: " + options.requiredArgument());
             return Cli.NOT_FOUND;
         }
         print(out, options.flag("json") ? report.json().toJson() : report.text());
@@ -133,9 +134,9 @@ final class Local {
      * <p>It is not a {@link Reports.Report} because it is not an answer to print:
      * one is a rendering of a few rows, this is the rows themselves.
      */
-    private static int export(Options options, Reports reports, String service, PrintStream out,
+    private static int export(Options options, Reports reports, @Nullable String service, PrintStream out,
             PrintStream err) {
-        String name = options.value("out", null);
+        String name = options.valueOrNull("out");
         Window window = window(options, reports, service);
         try (OutputStream file = Sessions.out(name, out)) {
             reports.export(window, service, file);
@@ -148,8 +149,8 @@ final class Local {
         return Cli.OK;
     }
 
-    private static Reports.Report mark(Options options, Reports reports, String service) {
-        Marks.Mark mark = reports.mark(options.argument(), options.value("note", null), service);
+    private static Reports.Report mark(Options options, Reports reports, @Nullable String service) {
+        Marks.Mark mark = reports.mark(options.requiredArgument(), options.valueOrNull("note"), service);
         return reports.mark(mark);
     }
 
@@ -159,19 +160,19 @@ final class Local {
      * counted back from that, so {@code --before=10m --after=5m} reads left to
      * right.
      */
-    private static Reports.Report compare(Options options, Reports reports, String service) {
+    private static Reports.Report compare(Options options, Reports reports, @Nullable String service) {
         Selectors selectors = reports.selectors();
         long now = System.currentTimeMillis();
-        String until = options.value("until", null);
+        String until = options.valueOrNull("until");
         long untilAt = until == null ? now : selectors.resolve(until, now, service);
-        long afterAt = selectors.resolve(options.value("after", null), untilAt, service);
-        long beforeAt = selectors.resolve(options.value("before", null), afterAt, service);
+        long afterAt = selectors.resolve(options.valueOrNull("after"), untilAt, service);
+        long beforeAt = selectors.resolve(options.valueOrNull("before"), afterAt, service);
         return reports.compare(beforeAt, afterAt, untilAt, service, options.flag("full"));
     }
 
-    private static Window window(Options options, Reports reports, String service) {
+    private static Window window(Options options, Reports reports, @Nullable String service) {
         return reports.selectors().window(null, null,
-                options.value("since", Limits.SINCE), options.value("until", null), service);
+                options.value("since", Limits.SINCE), options.valueOrNull("until"), service);
     }
 
     private static int verdict(Reports.Report report) {
@@ -182,7 +183,7 @@ final class Local {
         return pass.asBoolean() ? Cli.OK : Cli.CHECK_FAILED;
     }
 
-    private static void print(PrintStream out, String body) {
+    private static void print(PrintStream out, @Nullable String body) {
         if (body == null || body.isEmpty()) {
             return;
         }

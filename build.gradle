@@ -2,8 +2,11 @@
 //
 // Versions every subproject shares are named here once; a subproject's
 // build.gradle states only what is its own.
+import net.ltgt.gradle.errorprone.CheckSeverity
+
 plugins {
     id 'base'
+    id 'net.ltgt.errorprone' version '5.1.1' apply false
 }
 
 ext {
@@ -19,6 +22,9 @@ ext {
     tomcatVersion = '11.0.26'            // org.apache.tomcat.embed:tomcat-embed-core, org.apache.tomcat:tomcat-jdbc
     hikariVersion = '7.1.0'
     logbackVersion = '1.5.38'
+    errorProneVersion = '2.50.0'        // com.google.errorprone:error_prone_core
+    nullAwayVersion = '0.14.1'          // com.uber.nullaway:nullaway
+    jspecifyVersion = '1.0.1'           // org.jspecify:jspecify
 }
 
 subprojects {
@@ -27,13 +33,45 @@ subprojects {
     }
 
     plugins.withId('java') {
+        apply plugin: 'net.ltgt.errorprone'
+
         java {
             sourceCompatibility = JavaVersion.VERSION_21
             targetCompatibility = JavaVersion.VERSION_21
         }
+
+        // Error Prone runs inside javac on every module, and NullAway with it:
+        // every main package is @NullMarked (a package-info.java per package),
+        // so a null that reaches a non-@Nullable type is a compile error, and
+        // the JSpecify annotations are how the code says where null is allowed.
+        // compileOnly, not implementation: the annotations are read at compile
+        // time and nothing needs them at run time, so the launcher jar stays
+        // dependency-free and the nested jars ship nothing extra.
+        dependencies {
+            compileOnly "org.jspecify:jspecify:${rootProject.ext.jspecifyVersion}"
+            errorprone "com.google.errorprone:error_prone_core:${rootProject.ext.errorProneVersion}"
+            errorprone "com.uber.nullaway:nullaway:${rootProject.ext.nullAwayVersion}"
+        }
+
         tasks.withType(JavaCompile).configureEach {
             options.release = 21
             options.encoding = 'UTF-8'
+            // Sources the build generates (jte's precompiled templates carry no
+            // @Generated) are not this project's to fix.
+            options.errorprone.excludedPaths = '.*/build/generated.*'
+        }
+
+        tasks.named('compileJava', JavaCompile) {
+            options.errorprone {
+                check('NullAway', CheckSeverity.ERROR)
+                option('NullAway:OnlyNullMarked', 'true')
+                option('NullAway:JSpecifyMode', 'true')
+            }
+        }
+
+        // Tests pass null on purpose to check the guards, so only main code is held to it.
+        tasks.withType(JavaCompile).matching { it.name != 'compileJava' }.configureEach {
+            options.errorprone.disable('NullAway')
         }
         tasks.withType(Test).configureEach {
             useJUnitPlatform()

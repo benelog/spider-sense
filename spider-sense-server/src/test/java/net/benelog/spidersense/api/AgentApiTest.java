@@ -111,9 +111,10 @@ class AgentApiTest {
         spans.add(Otlp.failing(Otlp.child(root, "00f067aa0ba902d1", "load",
                         Span.SpanKind.SPAN_KIND_INTERNAL, NOW + 400, 1),
                 "java.lang.IllegalStateException", "no such order 42",
-                "java.lang.IllegalStateException: no such order 42\n"
-                        + "\tat orders.OrderService.load(OrderService.java:41)\n"
-                        + "\tat org.springframework.web.servlet.DispatcherServlet.doService(D.java:1)"));
+                """
+                java.lang.IllegalStateException: no such order 42
+                \tat orders.OrderService.load(OrderService.java:41)
+                \tat org.springframework.web.servlet.DispatcherServlet.doService(D.java:1)"""));
         return Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])).toByteArray();
     }
 

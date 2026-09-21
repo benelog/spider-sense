@@ -10,6 +10,7 @@ import net.benelog.spidersilk.App;
 import net.benelog.spidersilk.WebRequest;
 import net.benelog.spidersilk.WebResponse;
 import net.benelog.spidersilk.json.Json;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The metric endpoints: the catalog, one metric's series, and the curated JVM
@@ -74,7 +75,7 @@ public final class MetricsApi {
     }
 
     /** With no {@code service} the page shows whichever JVM is there, which is usually the only one. */
-    private String firstServiceWithJvm() {
+    private @Nullable String firstServiceWithJvm() {
         for (MetricQueries.MetricMeta metric : metrics.catalog(null)) {
             if (metric.name().startsWith("jvm.") && !metric.services().isEmpty()) {
                 return metric.services().get(0);

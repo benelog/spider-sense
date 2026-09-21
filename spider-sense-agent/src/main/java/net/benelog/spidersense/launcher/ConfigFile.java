@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Properties;
 import java.util.Set;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The properties file, the one channel besides the command line ({@code docs/design.md},
@@ -56,7 +57,7 @@ final class ConfigFile {
      * Reads the file and applies it to the system properties. Returns the file that was read, or
      * {@code null} when there was none.
      */
-    static Path apply() {
+    static @Nullable Path apply() {
         Path file = locate();
         if (file == null) {
             return null;
@@ -73,7 +74,7 @@ final class ConfigFile {
     }
 
     /** The named file, which must exist, else the default one, which may not. */
-    static Path locate() {
+    static @Nullable Path locate() {
         String named = Config.propertyOrEnv(PROPERTY);
         if (named != null) {
             Path file = Paths.get(named.trim());

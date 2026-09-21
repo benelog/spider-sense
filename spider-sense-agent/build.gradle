@@ -50,17 +50,20 @@ dependencies {
 }
 
 // The launcher must stay dependency-free: everything it needs is in java.base, and the
-// whole top level of the distributable jar ends up on the bootstrap class path.
+// whole top level of the distributable jar ends up on the bootstrap class path. The one
+// jar allowed on the compile class path is JSpecify, which the root build adds to every
+// module as compileOnly: its annotations are read by NullAway at compile time and by
+// nothing at run time, so the launcher still ships and loads without it.
 tasks.named('compileJava') {
     // The class path is read into a provider here, while the build file is
     // read: a closure that asked `configurations` when the task runs would
     // reach back into this script, which the configuration cache cannot store.
     def compileClasspath = configurations.compileClasspath.elements
     doFirst {
-        def dependencies = compileClasspath.get()
+        def dependencies = compileClasspath.get().collect { it.asFile }
+                .findAll { !(it.name ==~ /jspecify-.*\.jar/) }
         if (!dependencies.isEmpty()) {
-            throw new GradleException('The launcher must have no compile dependencies: ' +
-                    dependencies.collect { it.asFile })
+            throw new GradleException('The launcher must have no compile dependencies: ' + dependencies)
         }
     }
 }

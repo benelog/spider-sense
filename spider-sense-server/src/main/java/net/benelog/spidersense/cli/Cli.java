@@ -6,6 +6,7 @@ import java.io.PrintStream;
 import net.benelog.spidersense.api.Reports;
 import net.benelog.spidersense.query.Selectors;
 import net.benelog.spidersense.server.Config;
+import org.jspecify.annotations.Nullable;
 
 /**
  * {@code java -jar spider-sense.jar findings --since=start}: the agent interface
@@ -110,7 +111,7 @@ public final class Cli {
         if (options.has("db")) {
             return Local.run(options, out, err);
         }
-        String named = options.value("url", null);
+        String named = options.valueOrNull("url");
         String base = named == null ? defaultUrl : named;
         try {
             return Remote.run(options, base, out, err);
@@ -165,7 +166,7 @@ public final class Cli {
         return "http://" + host + ":" + (port == null ? "4000" : port);
     }
 
-    private static String value(java.util.Properties properties, String key) {
+    private static @Nullable String value(java.util.Properties properties, String key) {
         String v = properties.getProperty(key);
         return v == null || v.isBlank() ? null : v.trim();
     }

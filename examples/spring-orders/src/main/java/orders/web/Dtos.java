@@ -9,6 +9,7 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
+import org.jspecify.annotations.Nullable;
 
 /** Every JSON shape this service speaks, in one place. */
 public final class Dtos {
@@ -21,7 +22,8 @@ public final class Dtos {
     }
 
     public record EnrichedLineView(Long id, Long productId, String productName, int quantity,
-                                   BigDecimal unitPrice, BigDecimal lineTotal, Map<String, Object> book) {
+                                   BigDecimal unitPrice, BigDecimal lineTotal,
+                                   @Nullable Map<String, Object> book) {
     }
 
     public record OrderView(Long id, Long customerId, String customerName, String createdAt,
@@ -38,10 +40,12 @@ public final class Dtos {
     public record CustomerView(Long id, String name, String email) {
     }
 
-    public record RevenueRow(String status, String day, BigDecimal revenue, long orders, long items) {
+    public record RevenueRow(@Nullable String status, @Nullable String day, BigDecimal revenue,
+                             long orders, long items) {
     }
 
-    public record TopProductRow(Long productId, String sku, String name, long quantity, BigDecimal revenue) {
+    public record TopProductRow(@Nullable Long productId, @Nullable String sku, @Nullable String name,
+                                long quantity, BigDecimal revenue) {
     }
 
     public record RevenueReport(int days, long queryMillis, List<RevenueRow> byStatusAndDay,
@@ -58,7 +62,7 @@ public final class Dtos {
                                      List<@Valid CreateOrderLine> lines) {
     }
 
-    public record ErrorView(int status, String error, String message) {
+    public record ErrorView(int status, String error, @Nullable String message) {
     }
 
     public record OkView(boolean ok) {

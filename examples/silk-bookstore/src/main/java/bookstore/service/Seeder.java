@@ -4,12 +4,14 @@ import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 
 import javax.sql.DataSource;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.support.EncodedResource;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -119,7 +121,8 @@ public class Seeder {
 
     private void seedBooks(JdbcTemplate jdbc) {
         Random random = new Random(42);
-        List<String> authors = jdbc.queryForList("select name from authors order by id", String.class);
+        List<@Nullable String> authors =
+                jdbc.queryForList("select name from authors order by id", String.class);
         List<Object[]> batch = new ArrayList<>(BATCH);
         String sql = """
                 insert into books (isbn, title, author, price, published_year, description)
@@ -156,7 +159,7 @@ public class Seeder {
         Random random = new Random(7);
         long authors = count(jdbc, "authors");
         List<Object[]> rows = new ArrayList<>();
-        Timestamp now = Timestamp.valueOf(LocalDateTime.now());
+        Timestamp now = Timestamp.valueOf(LocalDateTime.now(ZoneId.systemDefault()));
         for (long bookId = 1; bookId <= Math.min(REVIEWED_BOOKS, bookCount); bookId++) {
             for (int i = 0; i < REVIEWS_PER_BOOK; i++) {
                 rows.add(new Object[]{bookId, 1 + random.nextInt((int) authors),

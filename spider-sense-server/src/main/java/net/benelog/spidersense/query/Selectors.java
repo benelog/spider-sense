@@ -4,6 +4,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import net.benelog.spidersense.store.Marks;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The time selectors of the agent interface: {@code since=15m}, {@code until=now},
@@ -52,7 +53,7 @@ public final class Selectors {
      * @param service the service a {@code start} (or any other mark) is preferred
      *        from, or null
      */
-    public long resolve(String selector, long anchor, String service) {
+    public long resolve(@Nullable String selector, long anchor, @Nullable String service) {
         String value = selector == null ? null : selector.trim();
         if (value == null || value.isEmpty()) {
             throw new BadSelector("An empty time selector: expected a duration, epoch milliseconds,"
@@ -88,7 +89,7 @@ public final class Selectors {
      * <p>Only the duration form is one: a mark or {@code now} names a moment, and
      * a moment is not a timeout.
      */
-    public static long durationMillis(String selector) {
+    public static long durationMillis(@Nullable String selector) {
         String value = selector == null ? null : selector.trim();
         Matcher duration = value == null ? null : DURATION.matcher(value);
         if (duration == null || !duration.matches()) {
@@ -104,7 +105,8 @@ public final class Selectors {
      * <p>{@code from} and {@code to} win when both are given, so every URL the UI
      * builds keeps working unchanged (api.md).
      */
-    public Window window(Long from, Long to, String since, String until, String service) {
+    public Window window(@Nullable Long from, @Nullable Long to, @Nullable String since,
+            @Nullable String until, @Nullable String service) {
         long now = System.currentTimeMillis();
         long end = to != null ? to : (until == null ? now : resolve(until, now, service));
         long start = from != null ? from

@@ -6,9 +6,11 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 import net.benelog.spidersense.query.Check;
+import org.jspecify.annotations.Nullable;
 
 /**
  * One command line, parsed: {@code <command> [argument] [--options]}.
@@ -90,10 +92,10 @@ final class Options {
             IMPORT, "a file to read");
 
     private final String command;
-    private final String argument;
+    private final @Nullable String argument;
     private final Map<String, String> values;
 
-    private Options(String command, String argument, Map<String, String> values) {
+    private Options(String command, @Nullable String argument, Map<String, String> values) {
         this.command = command;
         this.argument = argument;
         this.values = values;
@@ -140,8 +142,13 @@ final class Options {
     }
 
     /** The command's own word: a trace id or a mark name. */
-    String argument() {
+    @Nullable String argument() {
         return argument;
+    }
+
+    /** The same word, for a command {@link #parse} refuses without one. */
+    String requiredArgument() {
+        return Objects.requireNonNull(argument, command + " was parsed without its argument");
     }
 
     boolean has(String key) {
@@ -151,6 +158,11 @@ final class Options {
     String value(String key, String fallback) {
         String value = values.get(key);
         return value == null ? fallback : value;
+    }
+
+    /** The option's value, or null when it was not given. */
+    @Nullable String valueOrNull(String key) {
+        return values.get(key);
     }
 
     /** A flag is true when named, unless it was given a value that is not "true". */
@@ -166,12 +178,13 @@ final class Options {
         return Math.min(Math.max(1, (int) number("limit")), max);
     }
 
-    Long optionalLong(String key) {
+    @Nullable Long optionalLong(String key) {
         return has(key) ? (long) number(key) : null;
     }
 
     private double number(String key) {
-        String value = value(key, null);
+        // Every caller asks has(key) first, so there is something to parse.
+        String value = Objects.requireNonNull(valueOrNull(key), "--" + key + " was not given");
         try {
             return Double.parseDouble(value.trim());
         } catch (NumberFormatException e) {

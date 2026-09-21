@@ -3,6 +3,7 @@ package net.benelog.spidersense.ingest;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.IntSupplier;
 
 import io.opentelemetry.proto.collector.logs.v1.ExportLogsServiceRequest;
@@ -21,12 +22,12 @@ import io.opentelemetry.proto.trace.v1.ResourceSpans;
 import io.opentelemetry.proto.trace.v1.ScopeSpans;
 import io.opentelemetry.proto.trace.v1.Span;
 import io.opentelemetry.proto.trace.v1.Status;
-
 import net.benelog.spidersense.store.Batch;
 import net.benelog.spidersense.store.LogRecord;
 import net.benelog.spidersense.store.MetricPoint;
 import net.benelog.spidersense.store.SpanRecord;
 import net.benelog.spidersense.store.Store;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Turns OTLP protobuf messages into store records.
@@ -56,7 +57,11 @@ public final class OtlpDecoder {
 
     // --- traces ---
 
-    /** @return the batch that was queued, for tests that want to see what was decoded */
+    /**
+     * Decodes one trace export and queues it.
+     *
+     * @return the batch that was queued, for tests that want to see what was decoded
+     */
     public Batch accept(ExportTraceServiceRequest request) {
         long now = System.currentTimeMillis();
         Batch batch = new Batch();
@@ -116,9 +121,11 @@ public final class OtlpDecoder {
                     Attrs.toMap(event.getAttributesList())));
         }
         Status status = span.getStatus();
+        // OTLP requires both ids of a span; they are the store's primary key, and a
+        // span without them could not be written or joined to anything.
         return new SpanRecord(
-                Attrs.hex(span.getTraceId()),
-                Attrs.hex(span.getSpanId()),
+                Objects.requireNonNull(Attrs.hex(span.getTraceId()), "a span carries a trace id"),
+                Objects.requireNonNull(Attrs.hex(span.getSpanId()), "a span carries a span id"),
                 Attrs.hex(span.getParentSpanId()),
                 service,
                 span.getName(),
@@ -293,7 +300,8 @@ public final class OtlpDecoder {
      * <p>The {@code indexes} text is kept exactly as it arrived: the store is not
      * the place to reformat JSON it will hand back unchanged.
      */
-    private static Batch.Catalog toCatalog(Map<String, Object> attributes, String service, long at) {
+    private static Batch.@Nullable Catalog toCatalog(Map<String, Object> attributes, String service,
+            long at) {
         Object table = attributes.get(SCHEMA_TABLE);
         if (table == null) {
             return null;

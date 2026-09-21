@@ -11,6 +11,7 @@ import java.util.Set;
 
 import org.h2.jdbcx.JdbcConnectionPool;
 import org.h2.jdbcx.JdbcDataSource;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The H2 database behind everything: opened, schema-checked, and pooled.
@@ -25,8 +26,8 @@ import org.h2.jdbcx.JdbcDataSource;
 public final class Database implements AutoCloseable {
 
     /** What {@code /api/status.storage} reports, minus the writer's counters. */
-    public record Storage(String url, String path, long sizeBytes, boolean fallback,
-            String fallbackReason) {
+    public record Storage(String url, @Nullable String path, long sizeBytes, boolean fallback,
+            @Nullable String fallbackReason) {
     }
 
     private static final System.Logger LOG = System.getLogger(Database.class.getName());
@@ -35,18 +36,19 @@ public final class Database implements AutoCloseable {
     private final JdbcConnectionPool pool;
     private final Sql sql;
     private final String url;
-    private final Path file;
-    private final String fallbackReason;
+    private final @Nullable Path file;
+    private final @Nullable String fallbackReason;
 
     /** How long two Spider Sense processes starting at once may wait for each other's H2. */
     private static final long OPEN_RETRY_MS = 15_000;
     private static final long OPEN_RETRY_PAUSE_MS = 500;
 
-    private Database(String url, Path file, String fallbackReason) {
+    private Database(String url, @Nullable Path file, @Nullable String fallbackReason) {
         this(url, file, fallbackReason, true);
     }
 
-    private Database(String url, Path file, String fallbackReason, boolean upgrade) {
+    private Database(String url, @Nullable Path file, @Nullable String fallbackReason,
+            boolean upgrade) {
         this.url = url;
         this.file = file;
         this.fallbackReason = fallbackReason;
@@ -66,7 +68,7 @@ public final class Database implements AutoCloseable {
      *
      * @param file the {@code .mv.db} the URL names, or null for an in-memory URL
      */
-    public static Database open(String url, Path file) {
+    public static Database open(String url, @Nullable Path file) {
         try {
             if (file != null && file.getParent() != null) {
                 Files.createDirectories(file.getParent());
@@ -93,7 +95,7 @@ public final class Database implements AutoCloseable {
      *
      * @throws IllegalStateException when the file is missing or of another version
      */
-    public static Database openExisting(String url, Path file) {
+    public static Database openExisting(String url, @Nullable Path file) {
         if (file != null && !Files.isRegularFile(file)) {
             throw new IllegalStateException("no Spider Sense database at " + file
                     + "; start an application with -javaagent:spider-sense.jar first");
@@ -114,7 +116,7 @@ public final class Database implements AutoCloseable {
      * races the first one's CREATE TABLE). H2 does not wait for that itself, so this does:
      * a file-backed URL is retried for a few seconds before the caller gives up on it.
      */
-    private static Database openWithRetry(String url, Path file) {
+    private static Database openWithRetry(String url, @Nullable Path file) {
         long deadline = System.currentTimeMillis() + OPEN_RETRY_MS;
         RuntimeException last = null;
         while (true) {
@@ -191,7 +193,7 @@ public final class Database implements AutoCloseable {
     private static final Set<String> READER_SETTINGS = Set.of("AUTO_SERVER", "NON_KEYWORDS");
 
     static String readerUrl(String url) {
-        String[] parts = url.split(";");
+        String[] parts = url.split(";", -1);
         StringBuilder reader = new StringBuilder(parts[0]);
         for (int i = 1; i < parts.length; i++) {
             String setting = parts[i];

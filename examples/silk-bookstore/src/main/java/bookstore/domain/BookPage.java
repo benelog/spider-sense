@@ -2,6 +2,8 @@ package bookstore.domain;
 
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * One page of the book list.
  *
@@ -9,7 +11,7 @@ import java.util.List;
  * {@code like '%...%'} would scan the table a second time, so the list asks for
  * one row more than it shows and reports {@code hasNext} instead.
  */
-public record BookPage(List<Book> books, long total, int page, int pageSize, String query,
+public record BookPage(List<Book> books, long total, int page, int pageSize, @Nullable String query,
                        boolean hasNext) {
 
     public int nextPage() {

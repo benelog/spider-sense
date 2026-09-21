@@ -7,11 +7,10 @@ import java.util.List;
 import java.util.Map;
 
 import com.google.protobuf.ByteString;
-
 import io.opentelemetry.proto.common.v1.AnyValue;
 import io.opentelemetry.proto.common.v1.KeyValue;
-
 import net.benelog.spidersilk.json.Json;
+import org.jspecify.annotations.Nullable;
 
 /**
  * OTLP attribute values turned into the plain Java values the store keeps.
@@ -42,7 +41,7 @@ public final class Attrs {
     }
 
     /** Null for a value OTLP left unset, which the caller drops. */
-    public static Object value(AnyValue value) {
+    public static @Nullable Object value(AnyValue value) {
         return switch (value.getValueCase()) {
             case STRING_VALUE -> value.getStringValue();
             case BOOL_VALUE -> value.getBoolValue();
@@ -62,7 +61,10 @@ public final class Attrs {
             case KVLIST_VALUE -> {
                 Json.JsonObject object = Json.obj();
                 for (KeyValue entry : value.getKvlistValue().getValuesList()) {
-                    put(object, entry.getKey(), value(entry.getValue()));
+                    Object nested = value(entry.getValue());
+                    if (nested != null) {
+                        put(object, entry.getKey(), nested);
+                    }
                 }
                 yield object.toJson();
             }
@@ -80,7 +82,7 @@ public final class Attrs {
     }
 
     /** 32 or 16 lowercase hex characters, or null for the empty id OTLP uses to mean "none". */
-    public static String hex(ByteString id) {
+    public static @Nullable String hex(ByteString id) {
         if (id.isEmpty()) {
             return null;
         }

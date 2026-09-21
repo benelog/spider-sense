@@ -10,21 +10,19 @@ import java.util.zip.GZIPInputStream;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.Message;
 import com.google.protobuf.util.JsonFormat;
-
 import io.opentelemetry.proto.collector.logs.v1.ExportLogsServiceRequest;
 import io.opentelemetry.proto.collector.logs.v1.ExportLogsServiceResponse;
 import io.opentelemetry.proto.collector.metrics.v1.ExportMetricsServiceRequest;
 import io.opentelemetry.proto.collector.metrics.v1.ExportMetricsServiceResponse;
 import io.opentelemetry.proto.collector.trace.v1.ExportTraceServiceRequest;
 import io.opentelemetry.proto.collector.trace.v1.ExportTraceServiceResponse;
-
 import net.benelog.spidersense.store.Writer;
-
 import net.benelog.spidersilk.App;
 import net.benelog.spidersilk.HttpStatus;
 import net.benelog.spidersilk.WebRequest;
 import net.benelog.spidersilk.WebResponse;
 import net.benelog.spidersilk.json.Json;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The OTLP/HTTP endpoints: {@code POST /v1/traces}, {@code /v1/metrics},
@@ -139,7 +137,7 @@ public final class OtlpReceiver {
     }
 
     /** The request's encoding, or null when it is one we do not speak. */
-    private static String encodingOf(WebRequest req) {
+    private static @Nullable String encodingOf(WebRequest req) {
         String contentType = req.contentType();
         if (contentType == null) {
             return null;

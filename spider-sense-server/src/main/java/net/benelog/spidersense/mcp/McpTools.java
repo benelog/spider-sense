@@ -10,6 +10,7 @@ import net.benelog.spidersense.query.Selectors;
 import net.benelog.spidersense.query.Window;
 import net.benelog.spidersense.store.Marks;
 import net.benelog.spidersilk.json.Json;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The six tools, as the six {@link Reports} calls the CLI makes.
@@ -60,6 +61,11 @@ public final class McpTools implements McpServer.ToolRunner {
 
     private McpServer.ToolResult trace(Map<String, Object> arguments) {
         String traceId = string(arguments, "traceId");
+        if (traceId == null) {
+            // The tool's schema names traceId as required; a host that sent none
+            // gets the tool's own failure rather than a protocol error.
+            return McpServer.ToolResult.failed("trace needs a traceId");
+        }
         String diff = string(arguments, "diff");
         if (diff != null) {
             return text(reports.traceDiff(traceId, diff, flag(arguments, "full")));
@@ -70,7 +76,7 @@ public final class McpTools implements McpServer.ToolRunner {
                 : text(report);
     }
 
-    private McpServer.ToolResult mark(Map<String, Object> arguments, String service) {
+    private McpServer.ToolResult mark(Map<String, Object> arguments, @Nullable String service) {
         Marks.Mark mark = reports.mark(string(arguments, "name"), string(arguments, "note"), service);
         return text(reports.mark(mark));
     }
@@ -80,7 +86,7 @@ public final class McpTools implements McpServer.ToolRunner {
      * them: the end first, then {@code after} counted back from it, then
      * {@code before} counted back from that.
      */
-    private McpServer.ToolResult compare(Map<String, Object> arguments, String service) {
+    private McpServer.ToolResult compare(Map<String, Object> arguments, @Nullable String service) {
         Selectors selectors = reports.selectors();
         long now = System.currentTimeMillis();
         String until = string(arguments, "until");
@@ -95,7 +101,7 @@ public final class McpTools implements McpServer.ToolRunner {
      * {@code structuredContent} so a host need not read the heading for it
      * (agent.md).
      */
-    private McpServer.ToolResult check(Map<String, Object> arguments, String service) {
+    private McpServer.ToolResult check(Map<String, Object> arguments, @Nullable String service) {
         Map<String, Double> rules = new LinkedHashMap<>();
         for (String rule : Check.RULES) {
             Object value = arguments.get(rule);
@@ -113,7 +119,7 @@ public final class McpTools implements McpServer.ToolRunner {
         return new McpServer.ToolResult(report.text(), false, structured);
     }
 
-    private Window window(Map<String, Object> arguments, String service) {
+    private Window window(Map<String, Object> arguments, @Nullable String service) {
         String since = string(arguments, "since");
         return reports.selectors().window(null, null, since == null ? Limits.SINCE : since,
                 string(arguments, "until"), service);
@@ -123,7 +129,7 @@ public final class McpTools implements McpServer.ToolRunner {
         return McpServer.ToolResult.of(report.text());
     }
 
-    private static String string(Map<String, Object> arguments, String key) {
+    private static @Nullable String string(Map<String, Object> arguments, String key) {
         Object value = arguments.get(key);
         return value instanceof String said ? said : null;
     }
@@ -142,7 +148,7 @@ public final class McpTools implements McpServer.ToolRunner {
     }
 
     /** A tool result is one message, and a host shows it as one line. */
-    private static String oneLine(String message) {
+    private static String oneLine(@Nullable String message) {
         if (message == null || message.isBlank()) {
             return "the call could not be answered";
         }

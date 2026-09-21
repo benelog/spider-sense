@@ -3,6 +3,7 @@ package net.benelog.spidersense.launcher;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The Spider Sense configuration, exactly the table in {@code docs/design.md} plus the mode.
@@ -19,10 +20,10 @@ import java.util.Locale;
 public record Config(
         int port,
         String host,
-        String collector,
-        String service,
-        String db,
-        Integer retentionHours,
+        @Nullable String collector,
+        @Nullable String service,
+        @Nullable String db,
+        @Nullable Integer retentionHours,
         long slowRequestMs,
         long slowQueryMs,
         boolean open,
@@ -52,9 +53,9 @@ public record Config(
         return new Config(
                 intProperty("spidersense.port", d.port()),
                 stringProperty("spidersense.host", d.host()),
-                stringProperty("spidersense.collector", d.collector()),
-                stringProperty("spidersense.service", d.service()),
-                stringProperty("spidersense.db", d.db()),
+                optionalProperty("spidersense.collector"),
+                optionalProperty("spidersense.service"),
+                optionalProperty("spidersense.db"),
                 integerProperty("spidersense.retention.hours"),
                 longProperty("spidersense.slow.request.ms", d.slowRequestMs()),
                 longProperty("spidersense.slow.query.ms", d.slowQueryMs()),
@@ -127,7 +128,7 @@ public record Config(
                 slowRequestMs, slowQueryMs, open, newMode);
     }
 
-    public Config withService(String newService) {
+    public Config withService(@Nullable String newService) {
         return new Config(port, host, collector, newService, db, retentionHours,
                 slowRequestMs, slowQueryMs, open, mode);
     }
@@ -137,7 +138,7 @@ public record Config(
                 slowRequestMs, slowQueryMs, open, mode);
     }
 
-    public Config withDb(String newDb) {
+    public Config withDb(@Nullable String newDb) {
         return new Config(port, host, collector, service, newDb, retentionHours,
                 slowRequestMs, slowQueryMs, open, mode);
     }
@@ -201,7 +202,7 @@ public record Config(
     }
 
     /** The system property if set, else the matching environment variable, else {@code null}. */
-    public static String propertyOrEnv(String property) {
+    public static @Nullable String propertyOrEnv(String property) {
         String v = System.getProperty(property);
         if (v == null) {
             v = System.getenv(envName(property));
@@ -209,7 +210,7 @@ public record Config(
         return emptyToNull(v);
     }
 
-    private static String emptyToNull(String v) {
+    private static @Nullable String emptyToNull(@Nullable String v) {
         return v == null || v.isEmpty() ? null : v;
     }
 
@@ -218,12 +219,17 @@ public record Config(
         return v != null ? v : fallback;
     }
 
+    /** A property whose absence is itself the value: the launcher passes it on only when set. */
+    private static @Nullable String optionalProperty(String name) {
+        return emptyToNull(System.getProperty(name));
+    }
+
     private static int intProperty(String name, int fallback) {
         String v = emptyToNull(System.getProperty(name));
         return v != null ? Integer.parseInt(v.trim()) : fallback;
     }
 
-    private static Integer integerProperty(String name) {
+    private static @Nullable Integer integerProperty(String name) {
         String v = emptyToNull(System.getProperty(name));
         return v != null ? Integer.valueOf(v.trim()) : null;
     }

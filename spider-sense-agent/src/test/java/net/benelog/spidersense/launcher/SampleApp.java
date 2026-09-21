@@ -74,6 +74,9 @@ public final class SampleApp {
     }
 
     public static void main(String[] args) throws Exception {
+        // The address is a literal and not a host name, so there is nothing to select between;
+        // the client below reaches the server at the same literal.
+        @SuppressWarnings("AddressSelection")
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         ExecutorService pool = Executors.newFixedThreadPool(2, runnable -> {
             Thread t = new Thread(runnable, "sample-http");

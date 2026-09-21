@@ -12,6 +12,9 @@ import jakarta.persistence.Table;
 
 @Entity
 @Table(name = "product")
+// JPA fills these by reflection after the no-arg constructor, and the generated id
+// only exists once the row is written, so nothing here is set on every path.
+@SuppressWarnings("NullAway.Init")
 public class Product {
 
     @Id

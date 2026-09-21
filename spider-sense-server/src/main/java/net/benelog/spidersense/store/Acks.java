@@ -9,6 +9,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Findings a reader has seen and accepted (agent.md, "Acknowledgements").
  *
@@ -26,7 +28,7 @@ import java.util.Map;
 public final class Acks {
 
     /** One acknowledged finding. {@code note} is optional. */
-    public record Ack(String findingId, long at, String note) {
+    public record Ack(String findingId, long at, @Nullable String note) {
     }
 
     /**
@@ -52,7 +54,7 @@ public final class Acks {
      *
      * @throws IllegalArgumentException when the id is blank or too long
      */
-    public Ack ack(String findingId, String note) {
+    public Ack ack(@Nullable String findingId, @Nullable String note) {
         String id = checked(findingId);
         long at = System.currentTimeMillis();
         String cutNote = note != null && note.length() > MAX_NOTE ? note.substring(0, MAX_NOTE) : note;
@@ -67,7 +69,7 @@ public final class Acks {
      * @return whether there was one to withdraw, which is the difference between
      *         {@code 204} and {@code 404} (api.md)
      */
-    public boolean unack(String findingId) {
+    public boolean unack(@Nullable String findingId) {
         return sql.update("DELETE FROM ack WHERE finding_id = ?",
                 List.of(checked(findingId))) > 0;
     }
@@ -86,7 +88,7 @@ public final class Acks {
      * the ranking has the ids already, and the attachment must not turn a ranked
      * list into twenty queries.
      */
-    public Map<String, Ack> byId(Collection<String> findingIds) {
+    public Map<String, Ack> byId(@Nullable Collection<String> findingIds) {
         Map<String, Ack> byId = new LinkedHashMap<>();
         if (findingIds == null || findingIds.isEmpty()) {
             return byId;
@@ -99,7 +101,7 @@ public final class Acks {
         return byId;
     }
 
-    private static String checked(String findingId) {
+    private static String checked(@Nullable String findingId) {
         String id = findingId == null ? null : findingId.trim();
         if (id == null || id.isEmpty() || id.length() > MAX_ID) {
             throw new IllegalArgumentException(

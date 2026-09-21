@@ -9,6 +9,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 import net.benelog.spidersense.store.Acks;
@@ -21,6 +22,7 @@ import net.benelog.spidersense.store.ServiceRegistry;
 import net.benelog.spidersense.store.SpanRecord;
 import net.benelog.spidersense.store.Sql;
 import net.benelog.spidersense.store.Tingles;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The primary answer an agent gets: a ranked, bounded list of things worth fixing.
@@ -84,12 +86,13 @@ public final class Findings {
     private static final int THREADS_DOUBLED_FROM = 20;
 
     /** Which group a finding is about; the fields that do not apply are null. */
-    public record Subject(String endpointId, String queryId, String errorId, String pool, String job,
-            String target, String logger, String jvm) {
+    public record Subject(@Nullable String endpointId, @Nullable String queryId,
+            @Nullable String errorId, @Nullable String pool, @Nullable String job,
+            @Nullable String target, @Nullable String logger, @Nullable String jvm) {
     }
 
     /** When a finding was acknowledged, and why (agent.md, "Acknowledgements"). */
-    public record Ack(long at, String note) {
+    public record Ack(long at, @Nullable String note) {
     }
 
     /**
@@ -104,12 +107,12 @@ public final class Findings {
      *        only when the catalog knows every table (agent.md)
      */
     public record Finding(String id, String kind, String severity, String service, String title,
-            String why, Subject subject, Map<String, Object> numbers, String statement,
-            List<String> code, List<String> traces, Ack ack, SchemaBlock schema) {
+            String why, Subject subject, Map<String, Object> numbers, @Nullable String statement,
+            List<String> code, List<String> traces, @Nullable Ack ack, @Nullable SchemaBlock schema) {
 
         /** A finding as a rule makes one: nothing has acknowledged it yet. */
         public Finding(String id, String kind, String severity, String service, String title,
-                String why, Subject subject, Map<String, Object> numbers, String statement,
+                String why, Subject subject, Map<String, Object> numbers, @Nullable String statement,
                 List<String> code, List<String> traces) {
             this(id, kind, severity, service, title, why, subject, numbers, statement, code,
                     traces, null, null);
@@ -122,7 +125,7 @@ public final class Findings {
         }
 
         /** The same finding, with the block its statement and the catalog produced. */
-        public Finding withSchema(SchemaBlock block) {
+        public Finding withSchema(@Nullable SchemaBlock block) {
             return new Finding(id, kind, severity, service, title, why, subject, numbers,
                     statement, code, traces, ack, block);
         }
@@ -167,12 +170,17 @@ public final class Findings {
      * different kinds are different units and are never compared with each other;
      * the kinds keep the order agent.md's table has.
      */
-    public List<Finding> findings(Window window, String service, int limit) {
+    public List<Finding> findings(Window window, @Nullable String service, int limit) {
         return findings(window, service, limit, false);
     }
 
-    /** @param hideAcked whether acknowledged findings are left out rather than ranked last */
-    public List<Finding> findings(Window window, String service, int limit, boolean hideAcked) {
+    /**
+     * The same ranking, narrowed to what a reader has not accepted yet.
+     *
+     * @param hideAcked whether acknowledged findings are left out rather than ranked last
+     */
+    public List<Finding> findings(Window window, @Nullable String service, int limit,
+            boolean hideAcked) {
         return answer(window, service, limit, hideAcked).findings();
     }
 
@@ -183,7 +191,7 @@ public final class Findings {
      * partition is stable, so the list a reader saw yesterday has not been
      * reshuffled, only pushed down (agent.md, "Acknowledgements").
      */
-    public Answer answer(Window window, String service, int limit, boolean hideAcked) {
+    public Answer answer(Window window, @Nullable String service, int limit, boolean hideAcked) {
         Ancestors ancestors = new Ancestors(sql, window);
         List<Ranked> found = new ArrayList<>();
         found.addAll(errors(window, service));
@@ -246,7 +254,7 @@ public final class Findings {
 
     // --- error ---------------------------------------------------------------
 
-    private List<Ranked> errors(Window window, String service) {
+    private List<Ranked> errors(Window window, @Nullable String service) {
         List<Ranked> found = new ArrayList<>();
         for (Stats.ErrorGroup group : queries.errors(window, service, GROUPS, null)) {
             if (group.count() <= 0) {
@@ -280,7 +288,8 @@ public final class Findings {
     // --- log error -----------------------------------------------------------
 
     /** One {@code ERROR} log record nothing else reports, and where it came from. */
-    private record LogLine(long at, String traceId, String endpoint, Map<String, Object> attributes) {
+    private record LogLine(long at, @Nullable String traceId, String endpoint,
+            Map<String, Object> attributes) {
     }
 
     /**
@@ -296,7 +305,7 @@ public final class Findings {
      * Java regular expression rather than SQL, so the rows are read and grouped
      * here; the cap is the same order as the dependency scan's.
      */
-    private List<Ranked> logErrors(Window window, String service, Ancestors ancestors) {
+    private List<Ranked> logErrors(Window window, @Nullable String service, Ancestors ancestors) {
         List<Object> params = new ArrayList<>(List.of(window.from(), window.to()));
         String where = "l.at_ms BETWEEN ? AND ? AND l.severity_number >= " + ERROR_SEVERITY
                 + " AND (t.trace_id IS NULL OR t.error_count = 0)";
@@ -306,7 +315,7 @@ public final class Findings {
         }
         Map<String, List<LogLine>> byGroup = new LinkedHashMap<>();
         Map<String, String[]> named = new LinkedHashMap<>();
-        sql.query("SELECT l.service AS service, l.logger AS logger, l.body AS body, l.at_ms AS at_ms,"
+        sql.forEach("SELECT l.service AS service, l.logger AS logger, l.body AS body, l.at_ms AS at_ms,"
                 + " l.trace_id AS trace_id, l.span_id AS span_id, l.attributes AS attributes,"
                 + " t.root_name AS root_name FROM log l"
                 + " LEFT JOIN trace t ON t.trace_id = l.trace_id WHERE " + where
@@ -320,12 +329,11 @@ public final class Findings {
                                     endpointOf(ancestors, rs.getString("span_id"),
                                             rs.getString("root_name")),
                                     AttrJson.decode(rs.getString("attributes"))));
-                    return null;
                 });
 
         List<Ranked> found = new ArrayList<>();
         byGroup.forEach((key, records) -> {
-            String[] parts = named.get(key);
+            String[] parts = Objects.requireNonNull(named.get(key), "every group was named as it was read");
             String serviceName = parts[0];
             String logger = parts[1];
             String message = parts[2];
@@ -369,7 +377,8 @@ public final class Findings {
     }
 
     /** The endpoint a log record belongs to, as an {@code error} finding's endpoints are found. */
-    private static String endpointOf(Ancestors ancestors, String spanId, String rootName) {
+    private static String endpointOf(Ancestors ancestors, @Nullable String spanId,
+            @Nullable String rootName) {
         if (spanId != null && !spanId.isBlank()) {
             Queries.Ancestry.Entry entry = ancestors.get().entryOf(spanId);
             if (entry != null) {
@@ -380,12 +389,12 @@ public final class Findings {
     }
 
     /** The logging bridge exports the throwable as an attribute when there was one. */
-    private static String stacktraceOf(Map<String, Object> attributes) {
+    private static @Nullable String stacktraceOf(@Nullable Map<String, Object> attributes) {
         Object stacktrace = attributes == null ? null : attributes.get("exception.stacktrace");
         return stacktrace == null ? null : String.valueOf(stacktrace);
     }
 
-    private static String logger(String logger) {
+    private static String logger(@Nullable String logger) {
         return logger == null || logger.isBlank() ? "(no logger)" : logger;
     }
 
@@ -393,7 +402,7 @@ public final class Findings {
 
     /** One repeated statement under one entry span. */
     private record Repeat(String traceId, String endpointId, String endpoint, String service,
-            String queryId, String statement, String queryName, int repeats, double totalMs,
+            String queryId, @Nullable String statement, String queryName, int repeats, double totalMs,
             long start, Map<String, Object> attributes) {
     }
 
@@ -406,7 +415,7 @@ public final class Findings {
      * callers already use, because two endpoints of one trace each running the
      * statement four times is not an N+1 and grouping by trace alone cannot tell.
      */
-    private List<Ranked> nPlusOne(Window window, String service, Ancestors ancestors) {
+    private List<Ranked> nPlusOne(Window window, @Nullable String service, Ancestors ancestors) {
         List<String[]> candidates = candidates(window, service);
         if (candidates.isEmpty()) {
             return List.of();
@@ -433,16 +442,16 @@ public final class Findings {
         }
         Queries.Ancestry ancestry = ancestors.get();
         Map<String, List<Repeat>> byEntry = new LinkedHashMap<>();
-        sql.query("SELECT span_id, trace_id, query_id, service, start_ms, duration_ns, db_statement,"
+        sql.forEach("SELECT span_id, trace_id, query_id, service, start_ms, duration_ns, db_statement,"
                 + " db_operation, db_table, attributes FROM span WHERE " + where, params, rs -> {
                     String traceId = rs.getString("trace_id");
                     String queryId = rs.getString("query_id");
                     if (!pairs.contains(traceId + "\0" + queryId)) {
-                        return null;
+                        return;
                     }
                     Queries.Ancestry.Entry entry = ancestry.entryOf(rs.getString("span_id"));
                     if (entry == null) {
-                        return null;
+                        return;
                     }
                     String endpointId = Ids.endpointId(entry.service(), entry.endpoint());
                     byEntry.computeIfAbsent(entry.spanId() + "\0" + queryId, key -> new ArrayList<>())
@@ -452,7 +461,6 @@ public final class Findings {
                                             rs.getString("db_statement")),
                                     1, rs.getLong("duration_ns") / 1_000_000.0, rs.getLong("start_ms"),
                                     AttrJson.decode(rs.getString("attributes"))));
-                    return null;
                 });
 
         Map<String, List<Repeat>> byEndpointAndQuery = new LinkedHashMap<>();
@@ -543,7 +551,7 @@ public final class Findings {
         return found;
     }
 
-    private List<String[]> candidates(Window window, String service) {
+    private List<String[]> candidates(Window window, @Nullable String service) {
         List<Object> params = new ArrayList<>(List.of(window.from(), window.to()));
         String where = "start_ms BETWEEN ? AND ? AND query_id IS NOT NULL";
         if (service != null) {
@@ -556,7 +564,7 @@ public final class Findings {
                 params, rs -> new String[]{rs.getString("trace_id"), rs.getString("query_id")});
     }
 
-    private long requests(Window window, String service, String endpointId) {
+    private long requests(Window window, @Nullable String service, String endpointId) {
         List<Object> params = new ArrayList<>(List.of(window.from(), window.to(), endpointId));
         String where = "start_ms BETWEEN ? AND ? AND entry AND endpoint_id = ?";
         if (service != null) {
@@ -568,7 +576,7 @@ public final class Findings {
 
     // --- slow query ----------------------------------------------------------
 
-    private List<Ranked> slowQueries(Window window, String service) {
+    private List<Ranked> slowQueries(Window window, @Nullable String service) {
         List<Stats.QueryStats> slow = new ArrayList<>();
         for (Stats.QueryStats query : queries.queries(window, service, "total", GROUPS, null)) {
             if (query.p95Ms() > tingles.slowQueryMs()) {
@@ -620,7 +628,7 @@ public final class Findings {
 
     // --- slow endpoint -------------------------------------------------------
 
-    private List<Ranked> slowEndpoints(Window window, String service) {
+    private List<Ranked> slowEndpoints(Window window, @Nullable String service) {
         List<Stats.EndpointStats> slow = new ArrayList<>();
         for (Stats.EndpointStats endpoint : queries.endpoints(window, service, null)) {
             if (endpoint.p95Ms() > tingles.slowRequestMs()) {
@@ -688,7 +696,7 @@ public final class Findings {
      * or batch step is reported, and it measures over the runs of a job exactly what
      * {@code slow-endpoint} measures over the requests of an endpoint.
      */
-    private List<Ranked> slowJobs(Window window, String service) {
+    private List<Ranked> slowJobs(Window window, @Nullable String service) {
         List<Job> slow = new ArrayList<>();
         for (Job job : jobs(window, service)) {
             if (job.p95Ms() > tingles.slowRequestMs()) {
@@ -743,7 +751,7 @@ public final class Findings {
     }
 
     /** The job groups of the window, the heaviest first (storage.md). */
-    private List<Job> jobs(Window window, String service) {
+    private List<Job> jobs(Window window, @Nullable String service) {
         List<Object> params = new ArrayList<>(List.of(window.from(), window.to()));
         String where = jobWhere(service, params);
         return sql.query("SELECT service, name, COUNT(*) AS runs,"
@@ -762,22 +770,21 @@ public final class Findings {
      * <p>One statement for every group, as {@link #sampleAttributes} does for a
      * single column; a job is keyed by two, so it partitions by both.
      */
-    private Map<String, Map<String, Object>> jobSampleAttributes(Window window, String service) {
+    private Map<String, Map<String, Object>> jobSampleAttributes(Window window,
+            @Nullable String service) {
         List<Object> params = new ArrayList<>(List.of(window.from(), window.to()));
         String where = jobWhere(service, params);
         Map<String, Map<String, Object>> samples = new HashMap<>();
-        sql.query("SELECT * FROM (SELECT service, name, attributes,"
+        sql.forEach("SELECT * FROM (SELECT service, name, attributes,"
                 + " ROW_NUMBER() OVER (PARTITION BY service, name ORDER BY start_ms DESC, id DESC) AS rn"
-                + " FROM span WHERE " + where + ") WHERE rn = 1", params, rs -> {
-                    samples.put(rs.getString("service") + "\0" + rs.getString("name"),
-                            AttrJson.decode(rs.getString("attributes")));
-                    return null;
-                });
+                + " FROM span WHERE " + where + ") WHERE rn = 1", params, rs ->
+                        samples.put(rs.getString("service") + "\0" + rs.getString("name"),
+                                AttrJson.decode(rs.getString("attributes"))));
         return samples;
     }
 
     /** A run of a job: a root {@code INTERNAL} span of the window (design.md). */
-    private static String jobWhere(String service, List<Object> params) {
+    private static String jobWhere(@Nullable String service, List<Object> params) {
         String where = "start_ms BETWEEN ? AND ? AND parent_span_id IS NULL AND kind = 'INTERNAL'";
         if (service != null) {
             params.add(service);
@@ -798,7 +805,7 @@ public final class Findings {
      * than by a {@code GROUP BY}; the percentiles are the nearest-rank ones
      * {@code PERCENTILE_DISC} gives the other rules.
      */
-    private List<Ranked> slowExternal(Window window, String service, Ancestors ancestors) {
+    private List<Ranked> slowExternal(Window window, @Nullable String service, Ancestors ancestors) {
         Map<String, List<SpanRecord>> byGroup = new LinkedHashMap<>();
         for (SpanRecord span : queries.outboundHttp(window, service)) {
             byGroup.computeIfAbsent(
@@ -816,7 +823,7 @@ public final class Findings {
         return found;
     }
 
-    private Ranked external(Window window, Ancestors ancestors, String service, String target,
+    private @Nullable Ranked external(Window window, Ancestors ancestors, String service, String target,
             String name, List<SpanRecord> calls) {
         double[] durations = new double[calls.size()];
         double totalMs = 0;
@@ -878,7 +885,9 @@ public final class Findings {
         }
         List<Stats.Caller> list = new ArrayList<>();
         counts.forEach((endpoint, count) ->
-                list.add(new Stats.Caller(endpoint, byService.get(endpoint), count[0])));
+                list.add(new Stats.Caller(endpoint,
+                        Objects.requireNonNull(byService.get(endpoint), "every endpoint was named"),
+                        count[0])));
         list.sort((a, b) -> Long.compare(b.calls(), a.calls()));
         return list;
     }
@@ -910,7 +919,7 @@ public final class Findings {
 
     // --- pool exhausted ------------------------------------------------------
 
-    private List<Ranked> poolExhausted(Window window, String service) {
+    private List<Ranked> poolExhausted(Window window, @Nullable String service) {
         List<Ranked> found = new ArrayList<>();
         for (String name : servicesInScope(service)) {
             for (JvmView.ConnectionPool pool : JvmView.connectionPools(metrics, name, window)) {
@@ -930,7 +939,7 @@ public final class Findings {
      * equals max" is the moment the next one would have: both are the pool being the
      * bottleneck rather than the database.
      */
-    private Ranked exhausted(String service, JvmView.ConnectionPool pool) {
+    private @Nullable Ranked exhausted(String service, JvmView.ConnectionPool pool) {
         long at = 0;
         double worstPending = 0;
         double worstUsed = 0;
@@ -978,7 +987,7 @@ public final class Findings {
         return new Ranked(finding, worstPending * 1_000_000 + worstUsed);
     }
 
-    private List<String> servicesInScope(String service) {
+    private List<String> servicesInScope(@Nullable String service) {
         if (service != null) {
             return List.of(service);
         }
@@ -998,7 +1007,7 @@ public final class Findings {
      * it is, instead of producing {@code slow-endpoint} findings that point at the
      * wrong thing.
      */
-    private List<Ranked> jvm(Window window, String service) {
+    private List<Ranked> jvm(Window window, @Nullable String service) {
         List<Ranked> found = new ArrayList<>();
         for (String name : servicesInScope(service)) {
             for (MetricQueries.SeriesData series :
@@ -1014,7 +1023,7 @@ public final class Findings {
         return found;
     }
 
-    private static void add(List<Ranked> found, Ranked ranked) {
+    private static void add(List<Ranked> found, @Nullable Ranked ranked) {
         if (ranked != null) {
             found.add(ranked);
         }
@@ -1030,7 +1039,7 @@ public final class Findings {
      * away. {@code jvm.gc.duration} is seconds by the semantic conventions, and the
      * stored unit is trusted over that when it says otherwise.
      */
-    private Ranked gcPause(String service, MetricQueries.SeriesData series) {
+    private @Nullable Ranked gcPause(String service, MetricQueries.SeriesData series) {
         List<MetricPoint> points = series.points();
         if (points.isEmpty()) {
             return null;
@@ -1100,7 +1109,7 @@ public final class Findings {
     }
 
     /** The heap against its limit, summed over the pools exactly as the JVM page sums them. */
-    private Ranked heapPressure(String service, Window window) {
+    private @Nullable Ranked heapPressure(String service, Window window) {
         JvmView.Memory heap = JvmView.heap(metrics, service, window);
         double ratioMax = 0;
         double usedMax = 0;
@@ -1141,7 +1150,7 @@ public final class Findings {
     }
 
     /** Threads at the end of the window against threads at its start. */
-    private Ranked threadGrowth(String service, Window window) {
+    private @Nullable Ranked threadGrowth(String service, Window window) {
         JvmView.Threads threads = JvmView.threads(metrics, service, window);
         double first = Double.NaN;
         double last = Double.NaN;
@@ -1204,7 +1213,7 @@ public final class Findings {
 
         private final Sql sql;
         private final Window window;
-        private Queries.Ancestry ancestry;
+        private Queries.@Nullable Ancestry ancestry;
 
         private Ancestors(Sql sql, Window window) {
             this.sql = sql;
@@ -1212,10 +1221,12 @@ public final class Findings {
         }
 
         Queries.Ancestry get() {
-            if (ancestry == null) {
-                ancestry = Queries.Ancestry.of(sql, window);
+            Queries.Ancestry loaded = ancestry;
+            if (loaded == null) {
+                loaded = Queries.Ancestry.of(sql, window);
+                ancestry = loaded;
             }
-            return ancestry;
+            return loaded;
         }
     }
 
@@ -1229,7 +1240,7 @@ public final class Findings {
      *
      * @return null when the finding has no trace
      */
-    private Map<String, Object> hotSpan(List<String> traces) {
+    private @Nullable Map<String, Object> hotSpan(List<String> traces) {
         if (traces.isEmpty()) {
             return null;
         }
@@ -1272,7 +1283,7 @@ public final class Findings {
     }
 
     /** One line, cut at {@code max} characters with an ellipsis. */
-    private static String cut(String text, int max) {
+    private static String cut(@Nullable String text, int max) {
         String single = text == null ? "" : text.replaceAll("\\s+", " ").trim();
         return single.length() <= max ? single : single.substring(0, max) + "…";
     }
@@ -1291,13 +1302,12 @@ public final class Findings {
         List<Object> params = new ArrayList<>(List.of(window.from(), window.to()));
         params.addAll(ids);
         Map<String, Map<String, Object>> samples = new HashMap<>();
-        sql.query("SELECT * FROM (SELECT " + column + " AS group_id, attributes,"
+        sql.forEach("SELECT * FROM (SELECT " + column + " AS group_id, attributes,"
                 + " ROW_NUMBER() OVER (PARTITION BY " + column + " ORDER BY start_ms DESC, id DESC) AS rn"
                 + " FROM span WHERE start_ms BETWEEN ? AND ? AND " + column + " IN ("
-                + Sql.placeholders(ids.size()) + ")) WHERE rn = 1", params, rs -> {
-                    samples.put(rs.getString("group_id"), AttrJson.decode(rs.getString("attributes")));
-                    return null;
-                });
+                + Sql.placeholders(ids.size()) + ")) WHERE rn = 1", params, rs ->
+                        samples.put(rs.getString("group_id"),
+                                AttrJson.decode(rs.getString("attributes"))));
         return samples;
     }
 
@@ -1333,7 +1343,8 @@ public final class Findings {
     }
 
     /** {@code SELECT order_line}, or the statement itself when the agent named no table. */
-    public static String queryName(String operation, String table, String statement) {
+    public static String queryName(@Nullable String operation, @Nullable String table,
+            @Nullable String statement) {
         if (operation != null && table != null) {
             return operation + " " + table;
         }
@@ -1345,7 +1356,7 @@ public final class Findings {
     }
 
     /** {@code java.lang.IllegalStateException} is said as {@code IllegalStateException}. */
-    public static String simpleName(String type) {
+    public static String simpleName(@Nullable String type) {
         if (type == null) {
             return "error";
         }

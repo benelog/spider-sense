@@ -1,10 +1,12 @@
 package net.benelog.spidersense.server;
 
+import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
 
 import net.benelog.spidersense.store.IgnoredEndpoints;
 import net.benelog.spidersense.store.Sweeper;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Everything the server is told at startup.
@@ -27,7 +29,7 @@ import net.benelog.spidersense.store.Sweeper;
  * @param embeddedService  the {@code service.name} of the JVM the server runs inside, or null
  *                         when nobody knows it yet — see {@code ServiceRegistry}
  * @param appPackages      comma-separated package prefixes that count as application code in a
- *                         finding's {@code code} frames; empty means "everything that is not a
+ *                         finding's code frames; empty means "everything that is not a
  *                         known framework" (agent.md)
  * @param ignoreEndpoints  comma-separated glob patterns; an entry span whose endpoint matches one
  *                         of them is written with {@code entry} false and is therefore not a
@@ -41,10 +43,10 @@ public record Config(
         String db,
         int retentionHours,
         long retentionSpans,
-        Long maxSpansPerSecond,
+        @Nullable Long maxSpansPerSecond,
         long slowRequestMs,
         long slowQueryMs,
-        String embeddedService,
+        @Nullable String embeddedService,
         String appPackages,
         String ignoreEndpoints) {
 
@@ -115,7 +117,7 @@ public record Config(
     }
 
     /** The database file, or null for an in-memory database. */
-    public java.nio.file.Path databaseFile() {
+    public @Nullable Path databaseFile() {
         String url = jdbcUrl();
         if (url.startsWith("jdbc:h2:mem:")) {
             return null;
@@ -126,7 +128,7 @@ public record Config(
         if (path.startsWith("file:")) {
             path = path.substring("file:".length());
         }
-        return java.nio.file.Path.of(expandHome(path) + ".mv.db");
+        return Path.of(expandHome(path) + ".mv.db");
     }
 
     private static String expandHome(String path) {
@@ -136,7 +138,7 @@ public record Config(
         return path;
     }
 
-    private static String embeddedService(Map<String, String> values) {
+    private static @Nullable String embeddedService(Map<String, String> values) {
         String named = values.get("embedded-service");
         if (named != null) {
             return named;
@@ -153,21 +155,24 @@ public record Config(
      * {@code -Dspidersense.ignore.endpoints=} means.
      */
     private static String string(Map<String, String> values, String key, String fallback) {
-        String value = values.get(key);
-        if (value == null) {
-            value = System.getProperty("spidersense." + key);
-        }
+        String value = stringOrNull(values, key);
         return value == null ? fallback : value;
     }
 
+    /** The same with no fallback: null when neither channel said anything. */
+    private static @Nullable String stringOrNull(Map<String, String> values, String key) {
+        String value = values.get(key);
+        return value == null ? System.getProperty("spidersense." + key) : value;
+    }
+
     /** The same, but {@code null} when nobody said anything: an unset cap is not a cap of zero. */
-    private static Long optionalNumber(Map<String, String> values, String key) {
-        String value = string(values, key, null);
+    private static @Nullable Long optionalNumber(Map<String, String> values, String key) {
+        String value = stringOrNull(values, key);
         return value == null || value.isBlank() ? null : parse(key, value);
     }
 
     private static Long number(Map<String, String> values, String key, long fallback) {
-        String value = string(values, key, null);
+        String value = stringOrNull(values, key);
         if (value == null) {
             return fallback;
         }

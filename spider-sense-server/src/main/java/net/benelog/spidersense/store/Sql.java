@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import javax.sql.DataSource;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The whole persistence framework: a pool, a row mapper and four methods.
@@ -23,6 +24,12 @@ public final class Sql {
     @FunctionalInterface
     public interface RowMapper<T> {
         T map(ResultSet rs) throws SQLException;
+    }
+
+    /** A row read for what it does with the row rather than for what it answers with. */
+    @FunctionalInterface
+    public interface RowReader {
+        void read(ResultSet rs) throws SQLException;
     }
 
     /** Work that needs the connection itself — the writer's batches, the sweeper's transaction. */
@@ -59,8 +66,27 @@ public final class Sql {
         }, sql);
     }
 
+    /**
+     * Every row of a query that is read for its effect: the reader fills a map or
+     * an array as it goes and there is no list of rows to build.
+     */
+    public void forEach(String sql, List<Object> params, RowReader reader) {
+        // Work always answers with something; there is nothing to answer with here.
+        Boolean unused = with(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(sql)) {
+                bind(statement, params);
+                try (ResultSet rs = statement.executeQuery()) {
+                    while (rs.next()) {
+                        reader.read(rs);
+                    }
+                }
+            }
+            return Boolean.TRUE;
+        }, sql);
+    }
+
     /** The first row, or null when there is none. */
-    public <T> T queryOne(String sql, List<Object> params, RowMapper<T> mapper) {
+    public <T> @Nullable T queryOne(String sql, List<Object> params, RowMapper<T> mapper) {
         List<T> rows = query(sql, params, mapper);
         return rows.isEmpty() ? null : rows.get(0);
     }
@@ -81,13 +107,14 @@ public final class Sql {
 
     /** DDL and other statements with no parameters. */
     public void execute(String... statements) {
-        with(connection -> {
+        // Work always answers with something; there is nothing to answer with here.
+        Boolean unused = with(connection -> {
             try (Statement statement = connection.createStatement()) {
                 for (String each : statements) {
                     statement.execute(each);
                 }
             }
-            return null;
+            return Boolean.TRUE;
         }, statements.length == 0 ? "" : statements[0]);
     }
 
@@ -116,13 +143,13 @@ public final class Sql {
     }
 
     /** A nullable integer column; JDBC's {@code getInt} cannot tell 0 from NULL. */
-    public static Long longOrNull(ResultSet rs, String column) throws SQLException {
+    public static @Nullable Long longOrNull(ResultSet rs, String column) throws SQLException {
         long value = rs.getLong(column);
         return rs.wasNull() ? null : value;
     }
 
     /** The same, by column index, for an aggregate with no name. */
-    public static Long longOrNull(ResultSet rs, int column) throws SQLException {
+    public static @Nullable Long longOrNull(ResultSet rs, int column) throws SQLException {
         long value = rs.getLong(column);
         return rs.wasNull() ? null : value;
     }

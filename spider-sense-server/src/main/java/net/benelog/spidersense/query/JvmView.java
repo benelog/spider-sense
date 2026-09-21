@@ -10,6 +10,7 @@ import net.benelog.spidersense.query.MetricQueries.SeriesData;
 import net.benelog.spidersense.store.MetricPoint;
 import net.benelog.spidersense.store.MetricSeriesNames;
 import net.benelog.spidersense.store.ServiceInfo;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The curated JVM page, assembled from the OpenTelemetry Java agent's stable
@@ -24,34 +25,61 @@ import net.benelog.spidersense.store.ServiceInfo;
  * the UI draws empty charts, which is the honest answer for a service that is not
  * a JVM.
  */
-public record JvmView(String service, Runtime runtime, Memory heap, Memory nonHeap, List<Pool> pools,
+public record JvmView(@Nullable String service, Runtime runtime, Memory heap, Memory nonHeap,
+        List<Pool> pools,
         List<Gc> gc, Threads threads, Cpu cpu, Classes classes,
         List<ConnectionPool> connectionPools) {
 
-    public record Runtime(String jvm, Long pid, String host, Long cpuCount) {
+    // Runtime is the name docs/api.md gives this object and the UI reads; renaming it to
+    // avoid the clash with java.lang.Runtime would change the published shape.
+    @SuppressWarnings("AvoidCommonTypeNames")
+    public record Runtime(@Nullable String jvm, @Nullable Long pid, @Nullable String host,
+            @Nullable Long cpuCount) {
     }
 
     /** {@code limit} is empty for non-heap, which has none. */
+    // Arrays rather than lists: these are one chart's aligned series, written to JSON
+    // as they are, and boxing every sample would buy nothing (docs/api.md).
+    @SuppressWarnings("ArrayRecordComponent")
     public record Memory(long[] t, double[] used, double[] committed, double[] limit) {
     }
 
-    public record Pool(String name, String type, long[] t, double[] used) {
+    // Arrays rather than lists: these are one chart's aligned series, written to JSON
+    // as they are, and boxing every sample would buy nothing (docs/api.md).
+    @SuppressWarnings("ArrayRecordComponent")
+    public record Pool(String name, @Nullable String type, long[] t, double[] used) {
     }
 
     /** Per bucket rather than per point: a cumulative histogram's deltas are what a chart shows. */
-    public record Gc(String name, String action, long[] t, long[] count, double[] durationMs) {
+    // Arrays rather than lists: these are one chart's aligned series, written to JSON
+    // as they are, and boxing every sample would buy nothing (docs/api.md).
+    @SuppressWarnings("ArrayRecordComponent")
+    public record Gc(@Nullable String name, @Nullable String action, long[] t, long[] count,
+            double[] durationMs) {
     }
 
+    // Arrays rather than lists: these are one chart's aligned series, written to JSON
+    // as they are, and boxing every sample would buy nothing (docs/api.md).
+    @SuppressWarnings("ArrayRecordComponent")
     public record Threads(long[] t, double[] count, double[] daemon) {
     }
 
+    // Arrays rather than lists: these are one chart's aligned series, written to JSON
+    // as they are, and boxing every sample would buy nothing (docs/api.md).
+    @SuppressWarnings("ArrayRecordComponent")
     public record Cpu(long[] t, double[] utilization, double[] systemLoad1m) {
     }
 
+    // Arrays rather than lists: these are one chart's aligned series, written to JSON
+    // as they are, and boxing every sample would buy nothing (docs/api.md).
+    @SuppressWarnings("ArrayRecordComponent")
     public record Classes(long[] t, double[] loaded) {
     }
 
     /** One JDBC pool; {@code max} and {@code pending} are null per point when unreported. */
+    // Arrays rather than lists: these are one chart's aligned series, written to JSON
+    // as they are, and boxing every sample would buy nothing (docs/api.md).
+    @SuppressWarnings("ArrayRecordComponent")
     public record ConnectionPool(String name, long[] t, double[] used, double[] idle, double[] max,
             double[] pending) {
     }
@@ -59,7 +87,8 @@ public record JvmView(String service, Runtime runtime, Memory heap, Memory nonHe
     private static final long[] NO_TIME = {};
     private static final double[] NO_VALUES = {};
 
-    public static JvmView of(MetricQueries metrics, ServiceInfo service, String name, Window window) {
+    public static JvmView of(MetricQueries metrics, @Nullable ServiceInfo service, String name,
+            Window window) {
         List<SeriesData> used = metrics.series(MetricSeriesNames.MEMORY_USED, name, Map.of(), window);
         List<SeriesData> committed = metrics.series(MetricSeriesNames.MEMORY_COMMITTED, name, Map.of(), window);
         List<SeriesData> limit = metrics.series(MetricSeriesNames.MEMORY_LIMIT, name, Map.of(), window);
@@ -77,7 +106,8 @@ public record JvmView(String service, Runtime runtime, Memory heap, Memory nonHe
                 connectionPools(metrics, name, window));
     }
 
-    private static Runtime runtime(MetricQueries metrics, ServiceInfo service, String name, Window window) {
+    private static Runtime runtime(MetricQueries metrics, @Nullable ServiceInfo service, String name,
+            Window window) {
         Map<String, Object> resource = service == null ? Map.of() : service.resource();
         String runtimeName = string(resource, "process.runtime.name");
         String version = string(resource, "process.runtime.version");
@@ -198,10 +228,6 @@ public record JvmView(String service, Runtime runtime, Memory heap, Memory nonHe
      * first and the stable one second. A pool that reports no maximum and no queue
      * writes a null per point rather than a shorter array, so every array of a pool
      * lines up with its own timeline.
-     */
-    /**
-     * The JDBC pools one service reports, read from either generation of the
-     * semantic conventions.
      *
      * <p>Public because a {@code pool-exhausted} finding asks the same question of
      * the same series (agent.md), and two readings of "what did the pool do" would
@@ -308,18 +334,18 @@ public record JvmView(String service, Runtime runtime, Memory heap, Memory nonHe
         return values;
     }
 
-    private static String string(Map<String, Object> resource, String key) {
+    private static @Nullable String string(Map<String, Object> resource, String key) {
         Object value = resource.get(key);
         return value == null ? null : String.valueOf(value);
     }
 
-    private static Long number(Map<String, Object> resource, String key) {
+    private static @Nullable Long number(Map<String, Object> resource, String key) {
         Object value = resource.get(key);
         return value instanceof Number n ? n.longValue() : null;
     }
 
     /** Kept so an empty view is one expression. */
-    public static JvmView empty(String service) {
+    public static JvmView empty(@Nullable String service) {
         return new JvmView(service, new Runtime(null, null, null, null),
                 new Memory(NO_TIME, NO_VALUES, NO_VALUES, NO_VALUES),
                 new Memory(NO_TIME, NO_VALUES, NO_VALUES, NO_VALUES),

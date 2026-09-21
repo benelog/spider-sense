@@ -13,6 +13,7 @@ import javax.sql.DataSource;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.jspecify.annotations.Nullable;
 
 /**
  * {@code GET /items/{sku}}: one item, its movements, and the supplier behind
@@ -71,7 +72,7 @@ public class ItemServlet extends HttpServlet {
         }
     }
 
-    private Item findItem(Connection connection, String sku) throws SQLException {
+    private @Nullable Item findItem(Connection connection, String sku) throws SQLException {
         try (PreparedStatement select = connection.prepareStatement("""
                 select id, sku, name, category, quantity, unit_price, location
                 from items where sku = ?

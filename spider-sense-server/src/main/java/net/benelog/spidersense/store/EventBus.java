@@ -43,8 +43,8 @@ public final class EventBus {
         }
     }
 
-    public void publishAll(String name, List<?> payloads) {
-        for (Object payload : payloads) {
+    public <T> void publishAll(String name, List<T> payloads) {
+        for (T payload : payloads) {
             publish(name, payload);
         }
     }
