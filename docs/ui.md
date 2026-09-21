@@ -101,7 +101,10 @@ Empty state (no service yet): the logo large, one sentence, and the snippet dial
 
 The agent's primary answer (agent.md), for people: `GET /api/findings?from&to&service&limit=100`, ranked as the API ranks it.
 A table: `#`, severity (the dot and the word), kind chip, service chip, title, and the impact number the kind is ranked by in a right-aligned column (`count` for `error` and `log-error`, `medianRepeats × affected` shown as `42 × 3` for `n-plus-one`, `totalMs` for `slow-query`, `slow-endpoint`, `slow-job` and `slow-external`, `pendingMax` for `pool-exhausted`, `worstMs` for `gc-pause`, `ratioMax` as a percentage for `heap-pressure`, `last` minus `first` for `thread-growth`).
-A row click expands it in place into the evidence: the `why` sentence, the kind's `numbers` as a key/value grid (durations, counts and rates formatted as everywhere else; `callers` and `endpoints` as a short list, `hotSpan` as the one line agent.md gives it), the `statement` pretty-printed when there is one, the `code` frames as a monospace list, and the `traces` as links to the trace page.
+A row click expands it in place into the evidence: the `why` sentence, the kind's `numbers` as a key/value grid (durations, counts and rates formatted as everywhere else; `callers` and `endpoints` as a short list, `hotSpan` as the one line agent.md gives it), the `statement` pretty-printed when there is one, the `schema` block under it, the `code` frames as a monospace list, and the `traces` as links to the trace page.
+The **schema block** (agent.md, "The schema block") is rendered as the text rendering renders it, monospace and small with the labels dimmed: one line per table, `indexes ITEMS: PRIMARY_KEY_8 (ID) unique, IDX_ITEMS_SUPPLIER (SUPPLIER_ID, NAME)`, with `none` for a table that carries none, then one line for the columns, `predicates: items.name, items.category; unindexed: items.name`, the unindexed names in `--accent` behind the word `unindexed` that already says what they are.
+`predicates: none` stands alone when the statement has no predicate, `unindexed: none` when every predicate is served, and a finding whose `schema` is `null` shows nothing for it.
+Nothing is computed in the page: the names are the ones the API carries, so they are the CLI's.
 The row also carries a **Go to** link to the subject's page, as the Overview panel's row click does.
 The expanded row survives a Live refresh when the finding is still in the list (keyed by `id`).
 An acknowledged finding (`ack` not null, agent.md) is listed after the others, dimmed, its severity cell reading `acked` with the note as its title; the expanded evidence of any finding ends with an **Acknowledge** button (a small dialog for the optional note, then `POST /api/findings/{id}/ack`) or, when acknowledged, the note and an **Unacknowledge** button (`DELETE`).
@@ -181,8 +184,9 @@ Detail page:
 
 ### Queries `#/queries` and `#/queries/{queryId}`
 
-List: sort selector (total / avg / p95 / max / calls), a text filter on the statement, then a table: statement (monospace, one line, full text in a title tooltip), system chip, operation, table, calls, avg, p95, max, total, slow calls (accent when > 0), last seen. The statement cell is the wide one.
-Detail: the full statement pretty-printed, stats tiles, a calls/p95 chart, the callers list (endpoint → count), the slowest traces table.
+List: sort selector (total / avg / p95 / max / calls), a text filter on the statement, then a table: statement (monospace, one line, full text in a title tooltip), system chip, operation, table, unindexed, calls, avg, p95, max, total, slow calls (accent when > 0), last seen. The statement cell is the wide one.
+**Unindexed** is the `schema` block's `unindexed` (api.md), the columns the statement filters on that no index leads with, joined by `, ` in `--accent` and cut to the column width with the full list in the title: `none` when every predicate is served, `—` when there is no block, exactly the column the text rendering has.
+Detail: the full statement pretty-printed, the schema block under it as the findings page renders it, stats tiles, a calls/p95 chart, the callers list (endpoint → count), the slowest traces table.
 
 ### Errors `#/errors` and `#/errors/{errorId}`
 

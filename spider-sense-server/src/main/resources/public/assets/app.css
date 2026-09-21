@@ -724,6 +724,8 @@ details.collapsible > summary:hover { color: var(--text); }
 .f-list-count { font-family: var(--font-mono); color: var(--text-muted); }
 .f-code { display: grid; gap: 2px; }
 .f-code .f-frame { color: var(--text); white-space: pre-wrap; word-break: break-word; }
+.f-schema { display: grid; gap: 2px; font-size: 11px; }
+.f-schema-line { white-space: pre-wrap; word-break: break-word; }
 .f-links { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .f-links .btn { margin-left: auto; }
 

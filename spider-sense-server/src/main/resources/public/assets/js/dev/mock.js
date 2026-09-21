@@ -78,6 +78,31 @@ const QUERIES = [
 
 const queryOf = (statement) => QUERIES.find((q) => q.statement === statement);
 
+/**
+ * The schema block of docs/agent.md, by index into QUERIES: the tables' indexes as
+ * the extension read them, the columns the statement filters on, and the ones no
+ * index leads with. A statement the parse cannot vouch for carries none, and so
+ * does a query group whose service never ran under the extension.
+ */
+const SCHEMAS = {
+  0: { tables: [{ table: 'books', schema: 'public', indexes: [{ name: 'primary_key_2', unique: true, columns: ['id'] }] }],
+    predicates: ['books.id'], unindexed: [] },
+  1: { tables: [{ table: 'books', schema: 'public', indexes: [{ name: 'primary_key_2', unique: true, columns: ['id'] }, { name: 'idx_books_author', unique: false, columns: ['author', 'title'] }] }],
+    predicates: ['books.title'], unindexed: ['books.title'] },
+  2: { tables: [{ table: 'reviews', schema: 'public', indexes: [{ name: 'primary_key_5', unique: true, columns: ['id'] }] }],
+    predicates: ['reviews.book_id'], unindexed: ['reviews.book_id'] },
+  3: { tables: [{ table: 'books', schema: 'public', indexes: [{ name: 'primary_key_2', unique: true, columns: ['id'] }] }],
+    predicates: [], unindexed: [] },
+  4: { tables: [{ table: 'orders', schema: 'public', indexes: [{ name: 'primary_key_8', unique: true, columns: ['id'] }, { name: 'idx_orders_customer', unique: false, columns: ['customer_id'] }] }],
+    predicates: ['orders.customer_id'], unindexed: [] },
+  6: { tables: [{ table: 'customers', schema: 'public', indexes: [{ name: 'primary_key_a', unique: true, columns: ['id'] }] }],
+    predicates: ['customers.id'], unindexed: [] },
+  7: { tables: [{ table: 'orders', schema: 'public', indexes: [{ name: 'primary_key_8', unique: true, columns: ['id'] }, { name: 'idx_orders_customer', unique: false, columns: ['customer_id'] }] }],
+    predicates: ['orders.id'], unindexed: [] },
+  8: { tables: [{ table: 'order_lines', schema: 'public', indexes: [] }], predicates: [], unindexed: [] },
+};
+QUERIES.forEach((q, i) => { q.schema = SCHEMAS[i] || null; });
+
 const ERRORS = [
   {
     service: 'spring-orders',
@@ -610,6 +635,7 @@ function queryStats(w, service) {
       maxMs: sorted.length ? sorted[sorted.length - 1] : 0,
       totalMs: Math.round(total * 100) / 100,
       slowCalls: slow,
+      schema: q.schema || null,
       callers: [...callers.entries()].map(([k, calls]) => ({ endpoint: k.split('|')[1], service: k.split('|')[0], calls })).sort((a, b) => b.calls - a.calls),
       lastSeen,
     };
@@ -1002,6 +1028,7 @@ function findingsFor(w, service, limit, hideAcked) {
       subject: { ...NO_SUBJECT, endpointId: nPlusOne.endpointId, queryId: repeated.queryId },
       numbers: { requests: affected, affected, medianRepeats: 6, maxRepeats: 6, msPerRequest: 7.4 },
       statement: repeated.statement,
+      schema: repeated.schema,
       code: ['net.benelog.bookstore.ReviewRepository.findByBook(ReviewRepository.java:41)',
         'net.benelog.bookstore.BookHandler.reviews(BookHandler.java:74)'],
       traces: inWindow(w, nPlusOne.service).filter((t) => t.endpointId === nPlusOne.endpointId).slice(-3).map((t) => t.traceId),
@@ -1023,6 +1050,7 @@ function findingsFor(w, service, limit, hideAcked) {
         totalMs: q.totalMs, callers: q.callers,
       },
       statement: q.statement,
+      schema: q.schema,
       code: ['net.benelog.bookstore.BookRepository.search(BookRepository.java:58)'],
       traces: inWindow(w, q.service).slice(-3).map((t) => t.traceId),
       impact: q.totalMs,
@@ -1174,7 +1202,8 @@ function findingsFor(w, service, limit, hideAcked) {
     if (!hideAcked) accepted.push({ ...finding, ack: { at: row.at, note: row.note } });
   }
   const ranked = open.concat(accepted);
-  return { requests, acked, findings: ranked.slice(0, limit).map(({ impact, ...rest }) => rest) };
+  // `schema` is on every finding, null on the kinds that never carry one (api.md).
+  return { requests, acked, findings: ranked.slice(0, limit).map(({ impact, ...rest }) => ({ schema: null, ...rest })) };
 }
 
 /** api.md's Totals over one window. */

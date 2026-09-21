@@ -142,6 +142,36 @@ function hotSpanLine(hot) {
 }
 
 /**
+ * The schema block under the statement (docs/agent.md, "The schema block"), as the
+ * text rendering has it: one line per table, then one line for the columns.
+ *
+ * <p>Nothing is computed here. The tables, the predicates and the unindexed columns
+ * are the ones the API carries, so the page and the CLI say the same thing; a
+ * finding whose block is null shows nothing.
+ */
+export function schemaLines(schema) {
+  if (!schema) return null;
+  const predicates = schema.predicates || [];
+  const unindexed = schema.unindexed || [];
+  return h('div.f-schema.mono',
+    (schema.tables || []).map((t) => h('div.f-schema-line',
+      h('span.muted', 'indexes ' + t.table + ': '),
+      (t.indexes || []).length
+        ? (t.indexes || []).map((index, i) => h('span',
+          i ? ', ' : null,
+          (index.name || '') + ' (' + (index.columns || []).join(', ') + ')',
+          index.unique ? h('span.muted', ' unique') : null))
+        : h('span.muted', 'none'))),
+    h('div.f-schema-line',
+      h('span.muted', 'predicates: '),
+      predicates.length
+        ? [predicates.join(', '),
+          h('span.muted', '; unindexed: '),
+          unindexed.length ? h('span.accent', unindexed.join(', ')) : h('span.muted', 'none')]
+        : h('span.muted', 'none')));
+}
+
+/**
  * The Acknowledge dialog (docs/ui.md): one optional note, then the POST.
  *
  * <p>Small on purpose — an acknowledgement is a sentence about why a finding is
@@ -234,6 +264,7 @@ export function evidence(finding, onChange) {
         h('dd', numberValue(key, value, finding.kind)))))
       : null,
     finding.statement ? copyBlock(formatSql(finding.statement)) : null,
+    schemaLines(finding.schema),
     (finding.code || []).length
       ? h('div.f-code', h('div.sub-head', 'Code'),
         (finding.code || []).map((frame) => h('div.mono.f-frame', frame)))

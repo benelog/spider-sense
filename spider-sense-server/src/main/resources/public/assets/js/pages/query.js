@@ -6,6 +6,7 @@ import { h, fill, panel, stat, table, chip, serviceChip, copyBlock, spinner, err
 import { timeSeries, legend } from '../charts.js';
 import { formatSql } from '../sql.js';
 import { traceTable } from './traces.js';
+import { schemaLines } from './findings.js';
 import { dur, count, rel, bothTimes } from '../format.js';
 
 export function render(root, ctx) {
@@ -50,7 +51,8 @@ export function render(root, ctx) {
           q.table ? chip(q.table, { title: 'db.sql.table' }) : null,
           serviceChip(q.service),
           h('span.muted', { style: { marginLeft: 'auto', fontSize: '11px' }, title: bothTimes(q.lastSeen) }, 'last seen ' + rel(q.lastSeen))),
-        copyBlock(formatSql(q.statement || '')));
+        copyBlock(formatSql(q.statement || '')),
+        schemaLines(q.schema));
 
       fill(statsRow,
         stat(count(q.calls), '', 'calls'),

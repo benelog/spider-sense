@@ -136,6 +136,7 @@ In the text rendering the block sits between the statement and the code frames, 
 
 `predicates: none` stands alone when the statement has no predicate, `unindexed: none` when every predicate is served, and a finding without the block prints nothing for it.
 xref:api.adoc[`GET /api/queries`] carries the same block on every query group, and the xref:cli.adoc[CLI]'s `queries` table has an `unindexed` column for it.
+The xref:pages.adoc#findings[Findings page] shows the block under the statement, and the xref:pages.adoc#queries[Queries page] has the same `unindexed` column.
 
 == The text rendering
 

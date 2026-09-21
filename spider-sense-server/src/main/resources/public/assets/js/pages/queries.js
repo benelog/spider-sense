@@ -14,6 +14,19 @@ const SORTS = [
   { id: 'calls', label: 'Calls' },
 ];
 
+/**
+ * The `unindexed` cell (docs/ui.md): the columns the statement filters on that no
+ * index leads with, as the text rendering's column has them — `none` when every
+ * predicate is served, `—` when the query group carries no schema block.
+ */
+function unindexedCell(schema) {
+  if (!schema) return h('span.muted', '—');
+  const columns = schema.unindexed || [];
+  if (!columns.length) return h('span.muted', 'none');
+  const text = columns.join(', ');
+  return h('span.cell-ellipsis.mono.accent', { title: text }, text);
+}
+
 export function render(root, ctx) {
   let destroyed = false;
   let rows = [];
@@ -47,6 +60,7 @@ export function render(root, ctx) {
     { key: 'system', label: 'System', sortable: false, width: '68px', render: (q) => (q.system ? chip(q.system) : h('span.muted', '-')) },
     { key: 'operation', label: 'Op', sortable: false, width: '68px', render: (q) => h('span.mono', q.operation || '-') },
     { key: 'table', label: 'Table', sortable: false, width: '110px', render: (q) => h('span.cell-ellipsis.mono.muted', { title: q.table || '' }, q.table || '-') },
+    { key: 'unindexed', label: 'Unindexed', sortable: false, width: '140px', render: (q) => unindexedCell(q.schema) },
     { key: 'service', label: 'Service', sortable: false, width: '150px', render: (q) => serviceChip(q.service) },
     { key: 'calls', label: 'Calls', align: 'right', sortable: false, width: '70px', render: (q) => count(q.calls) },
     { key: 'avgMs', label: 'avg', align: 'right', sortable: false, width: '74px', render: (q) => dur(q.avgMs) },
