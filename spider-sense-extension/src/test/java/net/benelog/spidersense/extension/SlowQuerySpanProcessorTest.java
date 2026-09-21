@@ -351,6 +351,31 @@ class SlowQuerySpanProcessorTest {
     }
 
     @Test
+    void aSlowRepeatCountsTowardsTheFifthLikeAnyOther() {
+        inOneTrace(() -> {
+            for (int i = 0; i < 2; i++) {
+                Span span = tracer.spanBuilder("GET")
+                        .setSpanKind(SpanKind.CLIENT)
+                        .setAttribute("http.request.method", "GET")
+                        .setAttribute("url.full", "http://localhost:8081/api/books/" + i)
+                        .startSpan();
+                sleep(THRESHOLD_MS * 2);
+                span.end();
+            }
+            for (int i = 2; i < 5; i++) {
+                call("http://localhost:8081/api/books/" + i);
+            }
+        });
+
+        List<SpanData> repeats = exportedCalls();
+        assertThat(repeats).hasSize(5);
+        assertThat(stacktraceOf(repeats.get(3))).as("the fourth repeat").isNull();
+        assertThat(stacktraceOf(repeats.get(4)))
+                .as("the two slow repeats count, so the fifth is still the fifth")
+                .isNotNull();
+    }
+
+    @Test
     void anOutboundCallThatIsNotHttpIsNeverCounted() {
         inOneTrace(() -> {
             for (int i = 0; i < 6; i++) {

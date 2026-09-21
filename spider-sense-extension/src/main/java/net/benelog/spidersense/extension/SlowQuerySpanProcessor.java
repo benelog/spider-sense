@@ -146,8 +146,11 @@ public final class SlowQuerySpanProcessor implements ExtendedSpanProcessor {
                 if (span.getKind() != SpanKind.CLIENT) {
                     return;
                 }
-                if (span.getLatencyNanos() >= requestThresholdNanos
-                        || (isHttp(span) && count(span, callOf(span)) == N_PLUS_ONE_REPEATS)) {
+                boolean slowCall = span.getLatencyNanos() >= requestThresholdNanos;
+                // Counted before the threshold is read, and never short-circuited: a mix of
+                // slow and fast repeats reaches five like any other, as the statements do.
+                boolean fifthCall = isHttp(span) && count(span, callOf(span)) == N_PLUS_ONE_REPEATS;
+                if (slowCall || fifthCall) {
                     capture(span);
                 }
                 return;
