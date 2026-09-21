@@ -1,16 +1,18 @@
 package net.benelog.spidersense.extension;
 
 import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.trace.SpanContext;
 import io.opentelemetry.api.trace.SpanKind;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.sdk.trace.ReadWriteSpan;
 import io.opentelemetry.sdk.trace.ReadableSpan;
 import io.opentelemetry.sdk.trace.internal.ExtendedSpanProcessor;
-import java.util.HashMap;
-import java.util.Map;
+import org.jspecify.annotations.Nullable;
+import java.util.Iterator;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
-import org.jspecify.annotations.Nullable;
 
 /**
  * Gives a slow database span, the fifth repeat of a statement within a trace, a slow outbound call
@@ -66,6 +68,14 @@ public final class SlowQuerySpanProcessor implements ExtendedSpanProcessor {
     /** How many distinct statements and calls of one trace are counted before it gives up. */
     static final int MAX_STATEMENTS = 256;
 
+    /**
+     * How many traces are counted at once, so a map keyed by trace id cannot grow without bound.
+     *
+     * <p>A trace is normally forgotten when its local root ends; this is the guard for the one that
+     * never does, which is a crash or a leak in the monitored application.
+     */
+    static final int MAX_TRACES = 1_000;
+
     /** The same threshold the server calls a tingle, so what is captured is what gets reported. */
     static final String THRESHOLD_PROPERTY = "spidersense.slow.query.ms";
     static final String THRESHOLD_ENV = "SPIDERSENSE_SLOW_QUERY_MS";
@@ -83,23 +93,20 @@ public final class SlowQuerySpanProcessor implements ExtendedSpanProcessor {
     private final long requestThresholdNanos;
 
     /**
-     * The repeats of the trace the thread is in the middle of, and nothing older.
+     * How often each statement and call of a trace has ended, by trace id.
      *
-     * <p>A thread runs one trace at a time, so the counter can live on the thread and be re-keyed
-     * when a span of another trace ends on it, which costs no shared map and no lifecycle to manage.
-     * A trace whose repeats are spread over several threads is counted per thread and may fall short
-     * of five on each; that is the known price ({@code docs/design.md}).
+     * <p>Per trace and not per thread, which is what this was. A counter on the thread is cheaper
+     * and needs no lifecycle, and it is also wrong for anything asynchronous: a client that
+     * completes its exchange off the calling thread ends every span of a run on a different worker,
+     * each of them counts one repeat, and none reaches five. That is most HTTP clients, so a
+     * thread-local counter gave an {@code n-plus-one-http} finding no code location at all in the
+     * common case ({@code docs/design.md}, "The extension").
+     *
+     * <p>Not static: the counter belongs to this processor, so a second processor, which is what a
+     * test builds, starts from nothing rather than inheriting another one's counts.
      */
-    // Not static: the counter belongs to this processor, so a second processor, which is what a
-    // test builds, starts from nothing rather than inheriting another one's counts.
-    @SuppressWarnings("ThreadLocalUsage")
-    private final ThreadLocal<Repeats> repeats = new ThreadLocal<>();
-
-    /** The trace a thread is counting, and how often each statement or call of it has ended. */
-    private static final class Repeats {
-        private @Nullable String traceId;
-        private final Map<String, Integer> counts = new HashMap<>();
-    }
+    private final ConcurrentMap<String, ConcurrentMap<String, Integer>> repeats =
+            new ConcurrentHashMap<>();
 
     /** The configured thresholds, read once: this runs on every span that ends. */
     public SlowQuerySpanProcessor() {
@@ -140,34 +147,63 @@ public final class SlowQuerySpanProcessor implements ExtendedSpanProcessor {
     @Override
     public void onEnding(ReadWriteSpan span) {
         try {
-            if (span.getAttribute(DB_SYSTEM) == null && span.getAttribute(DB_SYSTEM_NAME) == null) {
-                // Not a database span: the other two cases are a slow outbound call and a call
-                // repeated within one trace, which is the N+1 an ORM cannot cause.
-                if (span.getKind() != SpanKind.CLIENT) {
-                    return;
-                }
-                boolean slowCall = span.getLatencyNanos() >= requestThresholdNanos;
-                // Counted before the threshold is read, and never short-circuited: a mix of
-                // slow and fast repeats reaches five like any other, as the statements do.
-                boolean fifthCall = isHttp(span) && count(span, callOf(span)) == N_PLUS_ONE_REPEATS;
-                if (slowCall || fifthCall) {
-                    capture(span);
-                }
-                return;
+            if (isLocalRoot(span)) {
+                repeats.remove(span.getSpanContext().getTraceId());
             }
-            boolean slow = span.getLatencyNanos() >= thresholdNanos;
-            // Slow spans are counted too, so a mix of slow and fast repeats reaches five like any other.
-            boolean fifthRepeat = count(span, statementOf(span)) == N_PLUS_ONE_REPEATS;
-            if (!slow && !fifthRepeat) {
-                return;
+            // The repeats are counted and captured at the start (onStart); here only the
+            // thresholds, which need a duration and can therefore only be read at the end.
+            long threshold = isDatabase(span) ? thresholdNanos
+                    : span.getKind() == SpanKind.CLIENT ? requestThresholdNanos : Long.MAX_VALUE;
+            if (span.getLatencyNanos() >= threshold) {
+                capture(span);
             }
-            capture(span);
         } catch (Throwable swallowed) {
             // Documented: nothing this processor does may reach the application.
         }
     }
 
-    /** The stack of the thread ending the span, unless the span already carries one. */
+    /**
+     * The repeat, counted and captured where the call was made.
+     *
+     * <p>This is the half of the work that cannot wait for the end of the span. The stack at the
+     * end is the stack of whichever thread ends it, and for an asynchronous client that is the
+     * completion callback of a {@code CompletableFuture} on a worker: every frame of it belongs to
+     * the JDK and the finding names no line. At the start the thread is still the one that made the
+     * call, so the stack is the call site ({@code docs/design.md}, "The extension").
+     *
+     * <p>The span already carries the attributes the instrumentation sets on the request, which is
+     * what the statement and the URL are, so the key is the same one the end would have computed.
+     */
+    @Override
+    public void onStart(Context parentContext, ReadWriteSpan span) {
+        try {
+            String key = repeatKey(span);
+            if (key != null && count(span, key) == N_PLUS_ONE_REPEATS) {
+                capture(span);
+            }
+        } catch (Throwable swallowed) {
+            // Documented: nothing this processor does may reach the application.
+        }
+    }
+
+    @Override
+    public boolean isStartRequired() {
+        return true;
+    }
+
+    /** What a span's repeats are counted under, or null when it is neither a statement nor a call. */
+    private static @Nullable String repeatKey(ReadWriteSpan span) {
+        if (isDatabase(span)) {
+            return statementOf(span);
+        }
+        return span.getKind() == SpanKind.CLIENT && isHttp(span) ? callOf(span) : null;
+    }
+
+    private static boolean isDatabase(ReadWriteSpan span) {
+        return span.getAttribute(DB_SYSTEM) != null || span.getAttribute(DB_SYSTEM_NAME) != null;
+    }
+
+    /** The stack of the thread the span is on, unless the span already carries one. */
     private static void capture(ReadWriteSpan span) {
         if (span.getAttribute(CODE_STACKTRACE) != null) {
             return;
@@ -184,29 +220,62 @@ public final class SlowQuerySpanProcessor implements ExtendedSpanProcessor {
     }
 
     /**
-     * How often this statement has now ended in this trace on this thread.
+     * How often this statement or call has now started in this trace.
      *
-     * <p>Zero when the statement is not counted at all, which is what beyond {@link #MAX_STATEMENTS}
-     * distinct statements of one trace means: the counter stops adding keys and nothing else changes.
+     * <p>Zero when it is not counted at all, which is what beyond {@link #MAX_STATEMENTS} distinct
+     * keys of one trace means: the counter stops adding keys and nothing else changes.
      */
     private int count(ReadWriteSpan span, String key) {
-        String traceId = span.getSpanContext().getTraceId();
-        Repeats counting = repeats.get();
-        if (counting == null) {
-            counting = new Repeats();
-            repeats.set(counting);
-        }
-        if (!traceId.equals(counting.traceId)) {
-            counting.traceId = traceId;
-            counting.counts.clear();
-        }
-        Integer seen = counting.counts.get(key);
-        if (seen == null && counting.counts.size() >= MAX_STATEMENTS) {
+        ConcurrentMap<String, Integer> counts = countsOf(span.getSpanContext().getTraceId());
+        if (!counts.containsKey(key) && counts.size() >= MAX_STATEMENTS) {
             return 0;
         }
-        int count = seen == null ? 1 : seen + 1;
-        counting.counts.put(key, count);
-        return count;
+        // merge is atomic, so exactly one of several threads ending the repeats of one trace
+        // sees the fifth and captures the stack.
+        return counts.merge(key, 1, Integer::sum);
+    }
+
+    /** How many traces are being counted; a test's way of seeing that they are forgotten. */
+    int tracesCounted() {
+        return repeats.size();
+    }
+
+    /** The counts of one trace, made on first sight and kept until its local root ends. */
+    private ConcurrentMap<String, Integer> countsOf(String traceId) {
+        ConcurrentMap<String, Integer> counts = repeats.get(traceId);
+        if (counts != null) {
+            return counts;
+        }
+        ConcurrentMap<String, Integer> fresh = new ConcurrentHashMap<>();
+        ConcurrentMap<String, Integer> raced = repeats.putIfAbsent(traceId, fresh);
+        if (raced != null) {
+            return raced;
+        }
+        // Bounded on insert rather than swept: an application that never ends a root span would
+        // otherwise keep every trace it ever started. Which traces go is not defined, and under
+        // that much load a missing code location is the least of it.
+        while (repeats.size() > MAX_TRACES) {
+            Iterator<String> oldest = repeats.keySet().iterator();
+            if (!oldest.hasNext()) {
+                break;
+            }
+            oldest.next();
+            oldest.remove();
+        }
+        return fresh;
+    }
+
+    /**
+     * Whether this span is where the trace entered this process: a root span, or the entry span
+     * under a caller that is traced too.
+     *
+     * <p>It ends after everything it started, so it is when this process's work on the trace is
+     * done and the counts can go. A span of that trace that ends later simply starts the count
+     * again, which is what a counter on the thread did when the thread moved on.
+     */
+    private static boolean isLocalRoot(ReadWriteSpan span) {
+        SpanContext parent = span.getParentSpanContext();
+        return !parent.isValid() || parent.isRemote();
     }
 
     /** Whether an outbound span is an HTTP call: the rule the server's {@code category()} uses. */
@@ -237,16 +306,6 @@ public final class SlowQuerySpanProcessor implements ExtendedSpanProcessor {
             statement = span.getAttribute(DB_STATEMENT);
         }
         return statement == null ? span.getName() : statement;
-    }
-
-    @Override
-    public void onStart(Context parentContext, ReadWriteSpan span) {
-        // Nothing to do at the start.
-    }
-
-    @Override
-    public boolean isStartRequired() {
-        return false;
     }
 
     @Override

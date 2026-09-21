@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.SpanKind;
 import io.opentelemetry.api.trace.Tracer;
+import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter;
 import io.opentelemetry.sdk.trace.SdkTracerProvider;
@@ -34,12 +35,14 @@ class SlowQuerySpanProcessorTest {
     private InMemorySpanExporter exporter;
     private SdkTracerProvider tracerProvider;
     private Tracer tracer;
+    private SlowQuerySpanProcessor processor;
 
     @BeforeEach
     void start() {
         exporter = InMemorySpanExporter.create();
+        processor = new SlowQuerySpanProcessor(THRESHOLD_MS, THRESHOLD_MS);
         tracerProvider = SdkTracerProvider.builder()
-                .addSpanProcessor(new SlowQuerySpanProcessor(THRESHOLD_MS, THRESHOLD_MS))
+                .addSpanProcessor(processor)
                 .addSpanProcessor(SimpleSpanProcessor.create(exporter))
                 .build();
         tracer = tracerProvider.get("test");
@@ -240,7 +243,7 @@ class SlowQuerySpanProcessorTest {
     }
 
     @Test
-    void aSpanOfAnotherTraceOnTheSameThreadStartsTheCountOver() {
+    void eachTraceIsCountedOnItsOwn() {
         inOneTrace(() -> {
             for (int i = 0; i < 4; i++) {
                 query("select * from order_line where order_id = ?");
@@ -376,6 +379,81 @@ class SlowQuerySpanProcessorTest {
     }
 
     @Test
+    void repeatsStartedOnDifferentThreadsStillReachTheFifth() {
+        Span entry = tracer.spanBuilder("GET /orders/{id}").startSpan();
+        Context trace;
+        try (Scope ignored = entry.makeCurrent()) {
+            trace = Context.current();
+        }
+        // A fan-out: every call is made by a worker of its own, and a counter on the thread
+        // would see one repeat on each of them and never reach five.
+        for (int i = 0; i < 6; i++) {
+            String url = "http://localhost:8081/api/books/" + i;
+            onItsOwnThread(() -> tracer.spanBuilder("GET")
+                    .setParent(trace)
+                    .setSpanKind(SpanKind.CLIENT)
+                    .setAttribute("http.request.method", "GET")
+                    .setAttribute("url.full", url)
+                    .startSpan()
+                    .end());
+        }
+        entry.end();
+
+        List<SpanData> repeats = exportedCalls();
+        assertThat(repeats).hasSize(6);
+        for (int i = 0; i < SlowQuerySpanProcessor.N_PLUS_ONE_REPEATS - 1; i++) {
+            assertThat(stacktraceOf(repeats.get(i))).as("repeat " + (i + 1)).isNull();
+        }
+        assertThat(stacktraceOf(repeats.get(4)))
+                .as("the trace counts the repeats, not the thread that happened to make them")
+                .isNotNull();
+        assertThat(stacktraceOf(repeats.get(5))).as("and only the fifth").isNull();
+    }
+
+    @Test
+    void theStackIsTheThreadThatMadeTheCallNotTheOneThatEndedIt() {
+        List<Span> calls = new ArrayList<>();
+        Span entry = tracer.spanBuilder("GET /orders/{id}").startSpan();
+        try (Scope ignored = entry.makeCurrent()) {
+            for (int i = 0; i < 5; i++) {
+                calls.add(tracer.spanBuilder("GET")
+                        .setSpanKind(SpanKind.CLIENT)
+                        .setAttribute("http.request.method", "GET")
+                        .setAttribute("url.full", "http://localhost:8081/api/books/" + i)
+                        .startSpan());
+            }
+        }
+        // As an asynchronous client ends them: on the completion callback's thread, whose stack
+        // is the JDK's own and says nothing about the loop that made the calls.
+        for (Span call : calls) {
+            onItsOwnThread(call::end);
+        }
+        entry.end();
+
+        String stacktrace = stacktraceOf(exportedCalls().get(4));
+        assertThat(stacktrace).isNotNull();
+        assertThat(stacktrace)
+                .as("the call site, which only the starting thread knows")
+                .contains("SlowQuerySpanProcessorTest.theStackIsTheThreadThatMadeTheCallNotTheOneThatEndedIt");
+    }
+
+    @Test
+    void aTraceIsForgottenWhenItsLocalRootEnds() {
+        inOneTrace(() -> {
+            for (int i = 0; i < 4; i++) {
+                query("select * from order_line where order_id = ?");
+            }
+            assertThat(processor.tracesCounted())
+                    .as("counted while the request is in flight")
+                    .isEqualTo(1);
+        });
+
+        assertThat(processor.tracesCounted())
+                .as("the entry span ends after everything it started, so the counts can go")
+                .isZero();
+    }
+
+    @Test
     void anOutboundCallThatIsNotHttpIsNeverCounted() {
         inOneTrace(() -> {
             for (int i = 0; i < 6; i++) {
@@ -454,6 +532,18 @@ class SlowQuerySpanProcessorTest {
                 .setAttribute("db.query.text", statement)
                 .startSpan()
                 .end();
+    }
+
+    /** Runs {@code work} on a fresh thread and waits for it, so the end order stays fixed. */
+    private static void onItsOwnThread(Runnable work) {
+        Thread worker = new Thread(work);
+        worker.start();
+        try {
+            worker.join();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(e);
+        }
     }
 
     private static void sleep(long millis) {

@@ -175,27 +175,36 @@ The environment variable `SPIDERSENSE_SLOW_QUERY_MS` also works, the default is 
 
 The second case is the N+1.
 The individual queries of an N+1 are fast, so the threshold above would never fire on them, and an `n-plus-one` finding would name a statement and no line.
-The processor counts, per thread, how many database spans of the current trace have ended with the same statement (`db.query.text` or `db.statement`, else the span name).
-The count is keyed by trace id and reset when a span of another trace ends on that thread.
+The processor counts, per trace, how many spans of it have started with the same statement (`db.query.text` or `db.statement`, else the span name).
 When a statement reaches its fifth repeat, the same number that makes a query group an N+1 on the server (xref:findings.adoc#n-plus-one[N+1]), the stack is captured on that one span and on no later repeat.
 The cost is therefore one capture per repeated statement per trace, and the server's `n-plus-one` rule prefers the span of the group that carries `code.stacktrace` for the finding's `code`.
-A trace whose repeats end on several threads is counted per thread and may fall short of five on each.
-That is a known limit of keeping the counter thread-local, chosen because the alternative is a shared map with the life of every trace to manage.
-It bites the repeated HTTP call hardest, because a client that completes the exchange off the calling thread ends every span of the run on a different worker, and then an xref:findings.adoc#n-plus-one-http[`n-plus-one-http`] finding names no line.
-At most 256 distinct statements are counted per trace, and beyond that the counter stops and nothing else changes.
+
+This is the one thing the processor does when the span starts rather than when it ends, and it has to be.
+The stack at the end is the stack of whichever thread ends the span, and for an asynchronous client that is a completion callback on a worker, every frame of which belongs to the JDK; the finding would carry a code location the server reduces to nothing.
+At the start the thread is still the one that made the call, so the stack is the call site, and the span already carries what the instrumentation set on the request.
+The threshold cases stay at the end, because a duration is the one thing the start does not know.
+
+The counter is one map from trace id to that trace's counts, read on every database and outbound span that ends.
+A counter on the thread would be cheaper and need no lifecycle, and it is what this was: it is also wrong for anything asynchronous, because a client that completes its exchange off the calling thread ends every span of a run on a different worker and each of them counts one repeat.
+That is most HTTP clients, so a thread-local counter gave an xref:findings.adoc#n-plus-one-http[`n-plus-one-http`] finding no code location at all in the common case.
+
+The map is bounded twice.
+A trace is forgotten when its local root ends, a span with no parent or with a parent in another process, because that is this process's work on the trace finished; a span of that trace that ends later starts the count again.
+And the map holds at most 1 000 traces, so a trace whose local root never ends cannot keep its counts for ever; inserting past the cap drops other traces until it fits.
+At most 256 distinct statements and calls are counted per trace, and beyond that the counter stops and nothing else changes.
 
 The third case is a slow outbound call.
 A `CLIENT` span that is not a database span (no `db.system` or `db.system.name`) and has taken at least `spidersense.slow.request.ms` (`SPIDERSENSE_SLOW_REQUEST_MS`, default 500, read once like the other threshold) gets the same `code.stacktrace`, so a xref:findings.adoc#slow-external[`slow-external`] finding names the line that made the call.
 
 The fourth case is that one's N+1, and it counts exactly as the statements do.
-An outbound `CLIENT` span that carries an HTTP method or a `url.full` is counted per thread under its name and its URL with every run of digits replaced by `?`, in the same per-trace map, and the fifth repeat gets the stack, so an xref:findings.adoc#n-plus-one-http[`n-plus-one-http`] finding names the loop rather than only the host.
+An outbound `CLIENT` span that carries an HTTP method or a `url.full` is counted under its name and its URL with every run of digits replaced by `?`, in the same per-trace map, and the fifth repeat gets the stack, so an xref:findings.adoc#n-plus-one-http[`n-plus-one-http`] finding names the loop rather than only the host.
 The key is prefixed, so a URL is never counted as a statement of the same trace, and the 256 keys a trace counts are of either kind.
 The same frames are dropped, the same cap applies, and a span that already carries the attribute is left alone.
 
 The lines are formatted as `Throwable.printStackTrace` writes them: `\tat package.Class.method(File.java:41)`, one per line, no header.
 The server therefore reduces them to application frames with exactly the code it already uses for `exception.stacktrace` (xref:findings.adoc#code[Code frames]).
 The leading frames of `Thread.getStackTrace`, of the processor itself and of `io.opentelemetry.`, which is the SDK's own `end()` path, are dropped, and the trace is cut at 64 frames.
-`isStartRequired()` and `isEndRequired()` are false, `isOnEndingRequired()` is true, and anything thrown inside `onEnding` is swallowed: a missing code location is never worth a broken span.
+`isStartRequired()` and `isOnEndingRequired()` are true and `isEndRequired()` is false, because by `onEnd` the span is immutable and nothing can be set on it; anything thrown inside either callback is swallowed, since a missing code location is never worth a broken span.
 
 The fourth case is the one that needs a `Connection`, which no span processor has.
 The extension reads the index catalog of the tables a slow statement touches, so a xref:findings.adoc#slow-query[`slow-query`] or xref:findings.adoc#n-plus-one[`n-plus-one`] finding can say which of the columns the statement filters on no index serves (xref:findings.adoc#schema[The schema block]).

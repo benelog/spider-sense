@@ -87,8 +87,7 @@ The second is the `code.function` and `code.namespace` attributes that a few ins
 The third is the `code.stacktrace` that Spider Sense's own agent extension captures, on every database span slower than `slow.query.ms`, on the fifth repeat of a statement within one trace, on every non-database `CLIENT` span slower than `slow.request.ms`, and on the fifth repeat of an HTTP call within one trace.
 
 Those extension frames are the truest of the three, because they are the span's own thread at the moment the span finished rather than a guess from an attribute.
-`code` is therefore reliable for `error`, `slow-query`, `n-plus-one` and `slow-external` findings, often present for `log-error`, and often empty for the others.
-For `n-plus-one-http` it is there only when the client ends the call's span on the thread that made the call: the JDK `HttpClient` and the reactive clients complete the exchange on a worker thread, so the counter behind it never reaches five (xref:design.adoc#extension[The extension]).
+`code` is therefore reliable for `error`, `slow-query`, `n-plus-one`, `n-plus-one-http` and `slow-external` findings, often present for `log-error`, and often empty for the others.
 When it is empty, open a trace from `traces` and read the tree, which names the endpoint and the statement even when it cannot name the line.
 
 A stack trace is reduced to its application frames by dropping known framework prefixes: `java.`, `javax.`, `jdk.`, `sun.`, `com.sun.`, `jakarta.`, `org.springframework.`, `org.hibernate.`, `org.eclipse.jetty.`, `org.apache.`, `io.opentelemetry.`, `com.zaxxer.`, `org.h2.`, `net.benelog.spidersilk.`, `kotlin.`, `scala.`, `reactor.`, `io.netty.`, `ch.qos.logback.`, `org.slf4j.`, `org.junit.` and `gg.jte.`.
@@ -267,7 +266,7 @@ GET /orders/{id} calls GET localhost:8081/api/books/? 6 times per request
 
 The digits are what a loop varies, so replacing them is what makes three calls one call.
 The status is not part of the call, because the same call can answer `200` for one item and `404` for the next, and the host keeps its port because the digit rule is applied to the path alone.
-`code` is the call site of the fifth repeat, but only when the client ends the span on the thread that made the call; otherwise the finding names no line and the trace tree shows the loop instead.
+`code` is the call site of the fifth repeat, so it names the line that issues the call.
 
 What to do:
 
