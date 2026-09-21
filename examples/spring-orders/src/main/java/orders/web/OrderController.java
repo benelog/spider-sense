@@ -27,9 +27,6 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/orders")
 public class OrderController {
 
-    /** How many lines of an order are enriched from the bookstore. */
-    private static final int ENRICHED_LINES = 3;
-
     private final OrderService service;
     private final BookstoreClient bookstore;
 
@@ -50,17 +47,43 @@ public class OrderController {
     }
 
     /**
-     * Calls silk-bookstore once per line (first three only).
+     * An N+1 over HTTP, on purpose: one call to silk-bookstore per line of the order.
+     * A seeded order has two to six lines, so most requests make the five calls that
+     * make this an {@code n-plus-one-http} finding.
      * When the bookstore is down every "book" is null and the response is still 200.
      */
     @GetMapping("/{id}/enriched")
     public EnrichedOrderView enriched(@PathVariable long id) {
-        OrderView order = service.loadForEnrichment(id, ENRICHED_LINES);
+        OrderView order = service.getWithLazyNPlusOne(id);
         List<EnrichedLineView> lines = new ArrayList<>(order.lines().size());
         for (LineView line : order.lines()) {
             Map<String, Object> book = bookstore.findBook(line.productId());
             lines.add(new EnrichedLineView(line.id(), line.productId(), line.productName(),
                     line.quantity(), line.unitPrice(), line.lineTotal(), book));
+        }
+        return new EnrichedOrderView(order.id(), order.customerId(), order.customerName(),
+                order.createdAt(), order.status(), order.total(), lines);
+    }
+
+    /**
+     * The same answer with the loop fixed: one call for the whole set of product ids,
+     * which is the batch endpoint an {@code n-plus-one-http} finding asks for.
+     * It is here so the fix can be measured against the endpoint above with
+     * {@code compare}, and it is the shape to copy, not the one above.
+     */
+    @GetMapping("/{id}/enriched-batch")
+    public EnrichedOrderView enrichedBatch(@PathVariable long id) {
+        OrderView order = service.getWithLazyNPlusOne(id);
+        List<Long> productIds = new ArrayList<>(order.lines().size());
+        for (LineView line : order.lines()) {
+            productIds.add(line.productId());
+        }
+        Map<Long, Map<String, Object>> books = bookstore.findBooks(productIds);
+        List<EnrichedLineView> lines = new ArrayList<>(order.lines().size());
+        for (LineView line : order.lines()) {
+            lines.add(new EnrichedLineView(line.id(), line.productId(), line.productName(),
+                    line.quantity(), line.unitPrice(), line.lineTotal(),
+                    books.get(line.productId())));
         }
         return new EnrichedOrderView(order.id(), order.customerId(), order.customerName(),
                 order.createdAt(), order.status(), order.total(), lines);

@@ -1,5 +1,6 @@
 package bookstore.web;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -28,6 +29,9 @@ public class ApiController {
     private static final long DEFAULT_SLOW_MS = 800;
     private static final int SEARCH_LIMIT = 20;
 
+    /** A batch is a round trip saved, not a way to ask for the whole table. */
+    private static final int MAX_IDS = 100;
+
     private final BookService books;
     private final ReviewService reviews;
 
@@ -39,6 +43,31 @@ public class ApiController {
     /** Fast: one primary key lookup. spring-orders calls this over HTTP. */
     public WebResponse showBook(WebRequest req) {
         return WebResponse.json(books.book(req.pathParamLong("id")), Codecs.BOOK);
+    }
+
+    /**
+     * Fast: the whole set in one call, {@code /api/books?ids=1,2,3}.
+     *
+     * <p>It is the endpoint a caller that loops over {@code /api/books/<id>} should ask
+     * for, so the fix an {@code n-plus-one-http} finding wants exists here to be
+     * measured against the loop. An id that is not a number is a 400, as a rating
+     * outside 1..5 is; an id nobody has is simply absent from the answer.
+     */
+    public WebResponse booksByIds(WebRequest req) {
+        String[] parts = req.param("ids").split(",", -1);
+        if (parts.length > MAX_IDS) {
+            throw new HttpException(HttpStatus.BAD_REQUEST,
+                    "At most " + MAX_IDS + " ids, asked for " + parts.length);
+        }
+        List<Long> ids = new ArrayList<>(parts.length);
+        for (String part : parts) {
+            try {
+                ids.add(Long.parseLong(part.trim()));
+            } catch (NumberFormatException notANumber) {
+                throw new HttpException(HttpStatus.BAD_REQUEST, "Not a book id: " + part);
+            }
+        }
+        return WebResponse.json(books.books(ids), Codecs.BOOKS);
     }
 
     /** Slow: the same unindexed {@code like '%...%'} the HTML search runs. */

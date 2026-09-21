@@ -112,6 +112,10 @@ public class BookstoreApp {
         app.get("/api/flaky", "Fails about 30% of the time", api::flaky);
         app.post("/api/reviews", "Adds a review; rating outside 1..5 is a 400", api::addReview);
 
+        // /api/books?ids=1,2,3 is its own path rather than a route of the group below,
+        // because it has no segment after /api/books at all.
+        app.get("/api/books", "Several books in one call: ?ids=1,2,3", api::booksByIds);
+
         // The literal routes register before /api/books/{id}: registration order
         // breaks ties, so "search" and "stats" must not be read as an id.
         app.path("/api/books", group -> {

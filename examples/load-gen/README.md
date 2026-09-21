@@ -39,7 +39,7 @@ Ctrl-C stops it and a shutdown hook prints the totals.
 
 ## The scenario mix
 
-Weights are relative and add up to 148; the table lives in `Scenarios.java`.
+Weights are relative and add up to 150; the table lives in `Scenarios.java`.
 
 | Scenario | Weight | Request |
 |---|---|---|
@@ -53,7 +53,8 @@ Weights are relative and add up to 148; the table lives in `Scenarios.java`.
 | `bookstore.post-review` | 3 | `POST /api/reviews`, one review in ten with a rating outside 1-5 so the app answers 400 |
 | `orders.page` | 15 | `GET /api/orders?page&size` |
 | `orders.by-id` | 10 | `GET /api/orders/{id}`, id in 1-50000 |
-| `orders.enriched` | 8 | `GET /api/orders/{id}/enriched`, which fans out to the bookstore |
+| `orders.enriched` | 8 | `GET /api/orders/{id}/enriched`, which calls the bookstore once per line: the N+1 over HTTP |
+| `orders.enriched-batch` | 2 | `GET /api/orders/{id}/enriched-batch`, the same answer in one call: the fix beside it |
 | `orders.revenue-report` | 2 | `GET /api/reports/revenue?days=` |
 | `orders.customer-search` | 5 | `GET /api/customers/search?q=` |
 | `orders.checkout` | 4 | `POST /api/orders`, then pay, then ship, chaining the id from the first response |

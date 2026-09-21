@@ -2,6 +2,10 @@ package orders.service;
 
 import java.net.http.HttpClient;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 
 import org.jspecify.annotations.Nullable;
@@ -28,6 +32,10 @@ public class BookstoreClient {
             new ParameterizedTypeReference<>() {
             };
 
+    private static final ParameterizedTypeReference<List<Map<String, Object>>> BOOK_LIST =
+            new ParameterizedTypeReference<>() {
+            };
+
     private final RestClient restClient;
 
     public BookstoreClient(RestClient.Builder builder,
@@ -49,6 +57,42 @@ public class BookstoreClient {
         } catch (Exception e) {
             log.debug("bookstore lookup for book {} failed: {}", bookId, e.toString());
             return null;
+        }
+    }
+
+    /**
+     * The whole set in one call, which is what the N+1 above should have been.
+     * The answer is keyed by id, so a caller that looped can index into it; an id the
+     * bookstore does not know is simply absent, and a failed call is an empty map, as
+     * a failed single lookup is null.
+     */
+    public Map<Long, Map<String, Object>> findBooks(List<Long> bookIds) {
+        if (bookIds.isEmpty()) {
+            return Map.of();
+        }
+        List<String> ids = new ArrayList<>(bookIds.size());
+        for (Long bookId : new LinkedHashSet<>(bookIds)) {
+            ids.add(String.valueOf(bookId));
+        }
+        try {
+            List<Map<String, Object>> books = restClient.get()
+                    .uri(builder -> builder.path("/api/books")
+                            .queryParam("ids", String.join(",", ids)).build())
+                    .retrieve()
+                    .body(BOOK_LIST);
+            if (books == null) {
+                return Map.of();
+            }
+            Map<Long, Map<String, Object>> byId = new LinkedHashMap<>();
+            for (Map<String, Object> book : books) {
+                if (book.get("id") instanceof Number id) {
+                    byId.put(id.longValue(), book);
+                }
+            }
+            return byId;
+        } catch (Exception e) {
+            log.debug("bookstore lookup for {} books failed: {}", ids.size(), e.toString());
+            return Map.of();
         }
     }
 }

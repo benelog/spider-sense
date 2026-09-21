@@ -114,6 +114,15 @@ class OrdersApiTest {
     }
 
     @Test
+    void theBatchEnrichmentAnswersTheSameShape() throws Exception {
+        HttpResponse<String> response = get("/api/orders/" + firstOrderId() + "/enriched-batch");
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.body())
+                .as("one call for every line, and still 200 when the bookstore is down")
+                .contains("\"book\":null");
+    }
+
+    @Test
     void revenueReportAnswers() throws Exception {
         HttpResponse<String> response = get("/api/reports/revenue?days=365");
         assertThat(response.statusCode()).isEqualTo(200);

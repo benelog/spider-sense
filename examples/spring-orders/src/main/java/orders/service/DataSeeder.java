@@ -146,7 +146,10 @@ public class DataSeeder implements CommandLineRunner {
             OrderStatus status = statuses[weightedStatus(random)];
             Order order = new Order(customer, createdAt, status);
 
-            int lineCount = 1 + random.nextInt(5);
+            // Two to six, so a loop over the lines of an order reaches the five repeats
+            // that make an n-plus-one (agent.md) on more than half of them: the enriched
+            // endpoint's one call per line is what the demo is here to show.
+            int lineCount = 2 + random.nextInt(5);
             BigDecimal total = BigDecimal.ZERO;
             for (int l = 0; l < lineCount; l++) {
                 Product product = em.getReference(Product.class, productIds.get(random.nextInt(productIds.size())));

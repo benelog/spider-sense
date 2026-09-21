@@ -181,6 +181,7 @@ When a statement reaches its fifth repeat, the same number that makes a query gr
 The cost is therefore one capture per repeated statement per trace, and the server's `n-plus-one` rule prefers the span of the group that carries `code.stacktrace` for the finding's `code`.
 A trace whose repeats end on several threads is counted per thread and may fall short of five on each.
 That is a known limit of keeping the counter thread-local, chosen because the alternative is a shared map with the life of every trace to manage.
+It bites the repeated HTTP call hardest, because a client that completes the exchange off the calling thread ends every span of the run on a different worker, and then an xref:findings.adoc#n-plus-one-http[`n-plus-one-http`] finding names no line.
 At most 256 distinct statements are counted per trace, and beyond that the counter stops and nothing else changes.
 
 The third case is a slow outbound call.

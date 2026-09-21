@@ -17,7 +17,7 @@ class ScenariosTest {
     @Test
     void weightsAddUpToTheAdvertisedTotal() {
         int sum = Scenarios.all().stream().mapToInt(Scenario::weight).sum();
-        assertThat(sum).isEqualTo(Scenarios.TOTAL_WEIGHT).isEqualTo(148);
+        assertThat(sum).isEqualTo(Scenarios.TOTAL_WEIGHT).isEqualTo(150);
         assertThat(Scenarios.all()).allSatisfy(scenario -> assertThat(scenario.weight()).isPositive());
     }
 

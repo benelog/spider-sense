@@ -64,6 +64,17 @@ public class BookService {
     }
 
     /**
+     * Fast: the same lookup for a whole set. spring-orders calls this over HTTP
+     * instead of calling {@link #book} once per order line.
+     *
+     * <p>An id the bookstore does not know is left out rather than a 404: the caller
+     * asked about several books and one missing one is not an error.
+     */
+    public List<Book> books(List<Long> ids) {
+        return books.findByIds(ids);
+    }
+
+    /**
      * One page of the list. Without a query this is an indexed window; with one
      * it is the unindexed {@code like '%...%'} over every row.
      */

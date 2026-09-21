@@ -58,6 +58,28 @@ class BookstoreAppTest {
     }
 
     @Test
+    void severalBooksInOneCall() {
+        WebTest.test(app, client -> {
+            var response = client.get("/api/books?ids=1,2,3");
+            assertThat(response.statusCode()).isEqualTo(200);
+            assertThat(response.body())
+                    .as("one round trip instead of three")
+                    .contains("\"id\":1")
+                    .contains("\"id\":2")
+                    .contains("\"id\":3");
+        });
+    }
+
+    @Test
+    void anIdThatIsNotANumberAnswers400() {
+        WebTest.test(app, client -> {
+            var response = client.get("/api/books?ids=1,nope");
+            assertThat(response.statusCode()).isEqualTo(400);
+            assertThat(response.body()).contains("Not a book id");
+        });
+    }
+
+    @Test
     void searchFindsMatches() {
         WebTest.test(app, client -> {
             var response = client.get("/api/books/search?q=dragon");

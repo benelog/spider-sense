@@ -119,7 +119,7 @@ java -jar "$SENSE" findings --since=15m
 ----
 
 Each finding points back at one of the faults above, so xref:findings.adoc[Findings] can be read against code that is known to be wrong.
-The web applications produce `n-plus-one`, `slow-query`, `slow-endpoint`, `slow-external` and `error`; the worker adds `slow-job`, `log-error`, `pool-exhausted` and `thread-growth`, and it is the one service on which `check` has nothing to judge, because a job is never a request.
+The web applications produce `n-plus-one`, `n-plus-one-http`, `slow-query`, `slow-endpoint`, `slow-external` and `error`; the worker adds `slow-job`, `log-error`, `pool-exhausted` and `thread-growth`, and it is the one service on which `check` has nothing to judge, because a job is never a request.
 xref:agent-loop.adoc#the-loop[The Loop] walks the whole cycle on them.
 
 [#hand-it-to-an-agent]

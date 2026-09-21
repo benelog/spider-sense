@@ -40,7 +40,9 @@ public class IndexController {
                 <tr><td><a href="/api/orders/1"><code>GET /api/orders/{id}</code></a></td>
                     <td>One order, lazy loads every product</td><td class="slow">N+1 on purpose</td></tr>
                 <tr><td><a href="/api/orders/1/enriched"><code>GET /api/orders/{id}/enriched</code></a></td>
-                    <td>Calls silk-bookstore per line (first 3)</td><td class="slow">cross-service trace</td></tr>
+                    <td>Calls silk-bookstore once per line</td><td class="slow">N+1 over HTTP on purpose</td></tr>
+                <tr><td><a href="/api/orders/1/enriched-batch"><code>GET /api/orders/{id}/enriched-batch</code></a></td>
+                    <td>The same answer, one call for every line</td><td class="fast">the fix, for comparison</td></tr>
                 <tr><td><a href="/api/reports/revenue?days=90"><code>GET /api/reports/revenue?days</code></a></td>
                     <td>Two grouping queries over every order</td><td class="slow">slow on purpose</td></tr>
                 <tr><td><a href="/api/customers/search?q=a"><code>GET /api/customers/search?q</code></a></td>

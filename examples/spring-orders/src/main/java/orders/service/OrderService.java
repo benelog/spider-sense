@@ -85,17 +85,6 @@ public class OrderService {
                 ISO.format(order.getCreatedAt()), order.getStatus().name(), order.getTotal(), lines);
     }
 
-    /** Same load as above, but limited to the first three lines, which the caller then enriches over HTTP. */
-    @Transactional(readOnly = true)
-    public OrderView loadForEnrichment(long id, int maxLines) {
-        OrderView full = getWithLazyNPlusOne(id);
-        List<LineView> limited = full.lines().size() > maxLines
-                ? List.copyOf(full.lines().subList(0, maxLines))
-                : full.lines();
-        return new OrderView(full.id(), full.customerId(), full.customerName(), full.createdAt(),
-                full.status(), full.total(), limited);
-    }
-
     @Transactional
     public OrderView create(CreateOrderRequest request) {
         Customer customer = customers.findById(request.customerId())

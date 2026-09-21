@@ -55,6 +55,22 @@ public class BookRepository {
                 Map.of("id", id), BOOK).stream().findFirst();
     }
 
+    /**
+     * Fast: the primary key again, for a whole set at once. This is what a caller
+     * that would otherwise call {@link #findById} in a loop should ask for.
+     *
+     * <p>The number of parameters varies with the number of ids, so the statement
+     * text does too and an observability tool groups those calls separately. That is
+     * the price of an {@code IN} list, and it is still one round trip instead of N.
+     */
+    public List<Book> findByIds(List<Long> ids) {
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        return jdbc.query("select " + COLUMNS + " from books where id in (:ids) order by id",
+                Map.of("ids", ids), BOOK);
+    }
+
     /** Fast: an ordered window over the primary key. */
     public List<Book> page(int limit, int offset) {
         return jdbc.query("select " + COLUMNS + " from books order by id limit :limit offset :offset",

@@ -41,7 +41,7 @@ public final class Scenarios {
     };
 
     private static final List<Scenario> ALL = List.of(
-            // --- silk-bookstore: 57 of the 109 weight ---
+            // --- silk-bookstore: 57 of the 150 weight ---
             new Scenario("bookstore.book-page", 20,
                     r -> List.of(Step.get(Target.BOOKSTORE, "/books/" + reviewedBookId(r)))),
             new Scenario("bookstore.api-book", 15,
@@ -64,13 +64,17 @@ public final class Scenarios {
                                     + ",\"rating\":" + (r.nextInt(10) == 0 ? 9 : 1 + r.nextInt(5))
                                     + ",\"body\":\"" + word(r) + " " + word(r) + ", from load-gen\"}"))),
 
-            // --- spring-orders: 52 of the 109 weight ---
+            // --- spring-orders: 54 of the 150 weight ---
             new Scenario("orders.page", 15,
                     r -> List.of(Step.get(Target.ORDERS, "/api/orders?page=" + r.nextInt(50) + "&size=20"))),
             new Scenario("orders.by-id", 10,
                     r -> List.of(Step.get(Target.ORDERS, "/api/orders/" + orderId(r)))),
             new Scenario("orders.enriched", 8,
                     r -> List.of(Step.get(Target.ORDERS, "/api/orders/" + orderId(r) + "/enriched"))),
+            // The same answer with the loop fixed, so compare has a before and an after.
+            new Scenario("orders.enriched-batch", 2,
+                    r -> List.of(Step.get(Target.ORDERS,
+                            "/api/orders/" + orderId(r) + "/enriched-batch"))),
             new Scenario("orders.revenue-report", 2,
                     r -> List.of(Step.get(Target.ORDERS, "/api/reports/revenue?days=" + (7 + r.nextInt(84))))),
             new Scenario("orders.customer-search", 5,

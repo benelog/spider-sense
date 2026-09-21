@@ -24,7 +24,8 @@ H2 2.x needs the single-quoted form and the explicit `(long)`: `sleep(long)` and
 | `GET /books?page&q` | Paginated list. Without `q` it is an indexed window over the primary key | no |
 | `GET /books?q=dragon` | With `q` it is `where lower(title) like '%q%' or lower(description) like '%q%'`, a full scan of 200,000 rows | **yes, ~350-450 ms** |
 | `GET /books/{id}` | One book and its reviews, then one query per review for the reviewer's name | **yes, N+1: 22 queries for a seeded book** |
-| `GET /api/books/{id}` | One book as JSON, by primary key. This is what spring-orders calls over HTTP | no, ~1 ms |
+| `GET /api/books/{id}` | One book as JSON, by primary key. This is what spring-orders calls over HTTP, once per order line | no, ~1 ms |
+| `GET /api/books?ids=1,2,3` | The same lookup for a whole set, `where id in (...)`, at most 100 ids | no, ~2 ms; the endpoint a caller that loops should ask for, and 400 when an id is not a number |
 | `GET /api/books/search?q=` | The same full scan as the page, as JSON | **yes, ~350-450 ms** |
 | `GET /api/books/stats` | `select author, count(*), avg(price) ... group by author` over every row, then `select sleep(300)` | **yes, ~450-550 ms** |
 | `GET /api/slow?ms=` | Sleeps `ms` (default 800) in Java, no database at all: a slow URL that is not a slow query | **yes, by request** |
