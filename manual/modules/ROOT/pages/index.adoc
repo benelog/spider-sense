@@ -6,46 +6,51 @@ image::logo.svg[Spider Sense,160]
 Feel what moves on the web.
 
 Spider Sense is an observability tool for the local development loop.
-One jar, one JVM option, and a browser tab that shows every request, every SQL statement, every error, every log line and the JVM's vital signs of the application you are working on, a second after they happen.
-It takes the three OpenTelemetry signals, traces, metrics and logs, and answers with them what is slow, what failed and why, and what the application was doing at that moment.
+You need one jar, one JVM option and a browser tab, and the tab shows every request, every SQL statement, every error, every log line and the JVM's vital signs of the application you are working on, a second after they happen.
+It collects the three OpenTelemetry signals (traces, metrics and logs) and uses them to answer what is slow, what failed and why, and what the application was doing at that moment.
 
 It is a sibling of https://spider-silk.benelog.net[Spider Silk], the web framework its UI is built with, and it follows the same idea: thin by design.
 Silk is the web a spider builds, and Sense is what the spider feels through it, the tingle when something on the web moves.
-The product tells you that something is slow or broken before you go looking.
+Spider Sense tells you that something is slow or broken before you go looking.
 
 == What it is for
 
 An AI coding agent fixes what it can see.::
-Spider Sense gives the agent the performance and error feedback a person would get from a dashboard, as text with numbers and trace ids, so an N+1 in a JPA repository or a query without an index is found and fixed in the agent's own loop, before `git commit` and `git push`, not on the development server a week later.
+Spider Sense gives the agent the performance and error feedback a person would get from a dashboard, as text with numbers and trace ids.
+An N+1 in a JPA repository or a query without an index is then found and fixed in the agent's own loop, before `git commit` and `git push`, not on the development server a week later.
 xref:agent-loop.adoc[The Loop] is that cycle: run under Spider Sense, exercise, `findings`, fix, `compare`, `check`.
 
 A developer watches the application while writing it.::
-Every request, query, error, log line and the JVM's vital signs of the application on the local machine, a second after they happen, so a slow endpoint or an exception is noticed and understood while the code is still open, rather than found later by someone else.
+Spider Sense shows every request, query, error, log line and the JVM's vital signs of the application on the local machine, a second after they happen.
+A slow endpoint or an exception is then noticed and understood while the code is still open, rather than found later by someone else.
 
 The tests become a diagnosis.::
 A test run under Spider Sense leaves the same traces, queries, errors and logs as a request from a browser, so `findings` says what the code the tests exercised did wrong, and `check` turns that into a build failure.
-It is the fastest feedback there is, for the agent and the person alike: one `./gradlew test`, and the N+1 is named with its statement and its line before anyone opens a browser.
+This is the fastest feedback there is, for the agent and the person alike: after one `./gradlew test`, the N+1 is named with its statement and its line before anyone opens a browser.
 xref:gradle-plugin.adoc#tests[The Gradle Plugin] and xref:maven.adoc[Maven] show the one-line setup that forwards a test JVM to a standalone Spider Sense.
 
 The OpenTelemetry setup is checked before it ships.::
-Metrics, traces and logs arrive here exactly as they would at the real backend, so a custom meter, a span attribute, a service name or a Spring Boot Actuator metric is confirmed to be collected and aggregated as intended before the application is deployed to a development server.
+Metrics, traces and logs arrive at Spider Sense exactly as they would at the real backend, so a custom meter, a span attribute, a service name or a Spring Boot Actuator metric is confirmed to be collected and aggregated as intended before the application is deployed to a development server.
 
 == Three ideas
 
 One option, OpenTelemetry data.::
-`-javaagent:spider-sense.jar` is all it takes: the UI is served from the monitored JVM.
+`-javaagent:spider-sense.jar` is the only option the application needs.
+The UI is served from the monitored JVM.
 The instrumentation is the stock https://github.com/open-telemetry/opentelemetry-java-instrumentation[OpenTelemetry Java agent], and the collector speaks OTLP/HTTP.
-Anything that emits OpenTelemetry can send to it, and a Spring Boot application's Actuator metrics arrive the same way.
-In xref:modes.adoc#standalone[standalone mode] the same jar is a collector and dashboard for every other platform: a Node.js, Python, Go or .NET application with the OpenTelemetry SDK, or an OpenTelemetry Collector, sends over OTLP/HTTP with `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf`, and a Java application can send from the stock `opentelemetry-javaagent.jar`, or any OpenTelemetry-compatible agent, instead of the Spider Sense jar.
+Anything that emits OpenTelemetry can send to the collector, and a Spring Boot application's Actuator metrics arrive the same way.
+In xref:modes.adoc#standalone[standalone mode] the same jar is a collector and dashboard for every other platform.
+A Node.js, Python, Go or .NET application with the OpenTelemetry SDK, or an OpenTelemetry Collector, sends over OTLP/HTTP with `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf`.
+A Java application can send from the stock `opentelemetry-javaagent.jar`, or any OpenTelemetry-compatible agent, instead of the Spider Sense jar.
 
 Nothing to install, and the data outlives the application.::
 There is no Docker, no account, and no server to run.
-What it collects goes into an H2 file under `~/db/spider-sense/`, so `java -jar spider-sense.jar` opens the same screens on the same data after the application has stopped or crashed.
-Rows older than a day are swept.
+Spider Sense writes what it collects to an H2 file under `~/db/spider-sense/`, so `java -jar spider-sense.jar` opens the same screens on the same data after the application has stopped or crashed.
+The sweeper deletes rows older than a day.
 
 Built for the questions you ask while coding.::
-Which endpoint is slow, which query made it slow, what a request did step by step, what threw, and what the log said at that moment.
-The products the screens learned from are named in xref:design.adoc[Design].
+The screens answer which endpoint is slow, which query made it slow, what a request did step by step, what threw, and what the log said at that moment.
+xref:design.adoc[Design] names the products the screens learned from.
 
 == What you see
 
@@ -102,16 +107,23 @@ java -jar spider-sense.jar check --max-queries-per-request=10       # exit code 
 ----
 
 Every command prints Markdown, takes `--json` for the JSON, and asks the running Spider Sense over HTTP.
-It reads the H2 file directly when none is running, so it still answers after the application has crashed.
-xref:agent-skill.adoc[Two agent skills] teach an agent the whole loop and, for a slow query or an N+1, the index to add, the rewrite or the fetch join, and `java -jar spider-sense.jar init` installs both into a project.
-xref:agent-quickstart.adoc[Quick Start for Agents] is the short way in: install the skill, choose the CLI or MCP, and what to ask.
+A command reads the H2 file directly when no Spider Sense is running, so it still answers after the application has crashed.
+xref:agent-skill.adoc[Two agent skills] teach an agent the whole loop and, for a slow query or an N+1, the index to add, the rewrite or the fetch join.
+`java -jar spider-sense.jar init` installs both into a project.
+xref:agent-quickstart.adoc[Quick Start for Agents] is the short way in: it covers installing the skill, choosing between the CLI and MCP, and what to ask.
 The same answers are also xref:mcp.adoc[an MCP server], for a host that has no shell.
 xref:agent-loop.adoc[The Loop] is where to start.
 
 == The examples
 
-Four deliberately misbehaving applications and a load generator come with the repository, so there is something to look at before there is anything of your own: `spring-orders` is a Spring Boot application over Spring Data JPA with a slow report, a lazy-loading N+1 and a call to another service so one trace spans two, `servlet-warehouse` is the same kind of trouble on plain Servlets under embedded Tomcat, `batch-worker` has no web server and shows slow jobs, a pool that runs dry, log-only errors and a thread leak, `silk-bookstore` is a Spider Silk application over spring-jdbc and H2 with a full-scan search, an N+1 page and an endpoint that fails at random, and `load-gen` drives the web applications at a few requests per second.
-`scripts/demo-shared.sh` starts all of them behind one Spider Sense, and xref:examples.adoc[The Examples] says what each one does wrong and how to hand the demo to an AI agent.
+Four deliberately misbehaving applications and a load generator come with the repository, so there is something to look at before there is anything of your own.
+`spring-orders` is a Spring Boot application over Spring Data JPA with a slow report, a lazy-loading N+1 and a call to another service, so one trace spans two.
+`servlet-warehouse` is the same kind of trouble on plain Servlets under embedded Tomcat.
+`batch-worker` has no web server and shows slow jobs, a pool that runs dry, log-only errors and a thread leak.
+`silk-bookstore` is a Spider Silk application over spring-jdbc and H2 with a full-scan search, an N+1 page and an endpoint that fails at random.
+`load-gen` drives the web applications at a few requests per second.
+`scripts/demo-shared.sh` starts all of them behind one Spider Sense.
+xref:examples.adoc[The Examples] says what each one does wrong and how to hand the demo to an AI agent.
 https://spider-sense.benelog.net/demo[A recording of that demo] is published as a static page, so the screens can be seen before anything is installed.
 
 == Where to go next
@@ -121,4 +133,5 @@ xref:modes.adoc[The Three Modes] explains agent, forwarding and standalone, and 
 xref:configuration.adoc[Configuration] lists every property.
 xref:agent-loop.adoc[The Loop] is the same product from an AI agent's side.
 
-https://github.com/{project-repo}[The repository] holds the specifications the manual is written from, and the license is Apache-2.0.
+https://github.com/{project-repo}[The repository] holds the specifications the manual is written from.
+The license is Apache-2.0.

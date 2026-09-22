@@ -1,7 +1,7 @@
 = Maven
 :navtitle: Maven
 
-There is no Spider Sense Maven plugin, because the Spring Boot Maven plugin already has the two parameters this needs.
+There is no Spider Sense Maven plugin, because the Spring Boot Maven plugin already has the two parameters Spider Sense needs.
 `agents` (user property `spring-boot.run.agents`) takes agent jars and puts each on the forked JVM as `-javaagent:`.
 `jvmArguments` (`spring-boot.run.jvmArguments`) or `systemPropertyVariables` carry the `spidersense.*` properties.
 Both parameters belong to `spring-boot:run` and to `spring-boot:start`, the goal that runs the application around integration tests.
@@ -21,8 +21,8 @@ Every property the jar takes is listed in xref:configuration.adoc#properties[Con
 [#pom]
 == In the POM
 
-The `maven-dependency-plugin` copies the jar from Maven Central into `target/` before the application starts, and the run goal names it as an agent.
-`spring-boot:run` runs the `test-compile` phase first, so a copy bound to `initialize` is done by then.
+The `maven-dependency-plugin` copies the jar from Maven Central into `target/` before the application starts, and `spring-boot:run` names it in `agents`.
+`spring-boot:run` runs the `test-compile` phase first, so the copy bound to the `initialize` phase has finished by then.
 Put both in a profile, so `mvn spring-boot:run -Psense` is the run under Spider Sense and `mvn spring-boot:run` is the plain one:
 
 [source,xml,subs="attributes+"]
@@ -85,7 +85,8 @@ Drop the `maven-dependency-plugin` execution and set `spider-sense.jar` to the f
 == Tests under Surefire
 
 Surefire forks its own JVM and takes its options from `argLine`.
-Forward to a standalone Spider Sense rather than embedding one, because a test JVM is short-lived and may be forked more than once, and several embedded servers would fight over one port.
+Forward to a standalone Spider Sense rather than embedding one.
+A test JVM is short-lived and may be forked more than once, and several embedded servers would fight over one port.
 
 [source,xml]
 ----
@@ -112,7 +113,7 @@ java -javaagent:/home/me/tools/spider-sense.jar -Dspidersense.service=orders -ja
 
 == The CLI from `target/`
 
-The CLI is the same jar, so once the profile above has copied it into `target/` it is one command away:
+The CLI is the same jar, so once the `sense` profile has copied it into `target/`, you run it from there:
 
 [source,bash]
 ----

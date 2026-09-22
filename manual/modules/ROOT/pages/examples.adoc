@@ -2,7 +2,8 @@
 :navtitle: The Examples
 
 The repository carries four deliberately misbehaving applications and a load generator, so there is something to look at before there is anything of your own.
-All of them send to whichever Spider Sense they are pointed at, and each one does something wrong on purpose.
+All of them send to whichever Spider Sense they are pointed at.
+Each one does something wrong on purpose.
 Three are web applications on three different stacks, and the fourth has no web server at all.
 
 == The applications
@@ -11,8 +12,10 @@ spring-orders::
 A Spring Boot 4.1 application with Spring Data JPA and H2 over an orders and customers domain, on port 8082.
 It has a slow report endpoint whose JPQL runs over a large table, a lazy-loading N+1 page, a checkout that fails with a business exception, and a flaky endpoint that fails 20% of the time.
 One endpoint calls `silk-bookstore` over HTTP, so a trace spans two services.
-Spring Boot Actuator is on, and its Micrometer meters, from `http.server.requests` and the HikariCP pool to Spring Data repository invocations, Tomcat sessions and Logback events, reach Spider Sense through the agent's Micrometer bridge, so the xref:pages.adoc#metrics[metrics explorer] shows about ninety metrics for this one service.
-The bridge is off in the OpenTelemetry agent by default; `-Dotel.instrumentation.micrometer.enabled=true` turns it on, and `bootRun` and the demo scripts pass it.
+Spring Boot Actuator is on, and its Micrometer meters, from `http.server.requests` and the HikariCP pool to Spring Data repository invocations, Tomcat sessions and Logback events, reach Spider Sense through the agent's Micrometer bridge.
+The xref:pages.adoc#metrics[metrics explorer] therefore shows about ninety metrics for this one service.
+The OpenTelemetry agent has the bridge off by default.
+`-Dotel.instrumentation.micrometer.enabled=true` turns it on, and `bootRun` and the demo scripts pass it.
 
 servlet-warehouse::
 A Jakarta Servlet application on embedded Tomcat 11, with plain JDBC over Tomcat's own pool and H2, on port 8083.
@@ -23,30 +26,32 @@ batch-worker::
 A plain Java program with HikariCP, Logback and H2 that runs scheduled jobs and serves no HTTP at all.
 It exists for the questions the web applications cannot raise: a service with zero requests that still has a JVM, logs and jobs, and the findings the other three never produce.
 A reconciliation job scans 300,000 unindexed rows, which is a slow query inside a job, and a report job streams every row into memory, which is a slow job.
-A reminder job catches a gateway failure and logs it at `ERROR`, so the span is fine and only the log knows, which is a `log-error`.
+A reminder job catches a gateway failure and logs it at `ERROR`, so the span succeeds and only the log records the failure, which is a `log-error`.
 An archive job holds a connection while it sleeps through a slow upload, eight tasks over a pool of three, so the pool runs dry, the last tasks fail on the connection timeout, and the job is slow as well.
 Every reminder starts a thread that waits for an acknowledgement that never comes, so the thread count climbs until a cap.
 
 silk-bookstore::
 A Spider Silk application with jte pages and a JSON API, over spring-jdbc and an H2 file database, on port 8081.
 About 200,000 rows are seeded, so an unindexed `LIKE '%…%'` search is a real slow query.
-An `SLEEP` alias makes one query slow by decree, one page runs N+1 queries, one endpoint throws, and one endpoint sleeps without running any SQL.
+A `SLEEP` alias makes one query slow on purpose, one page runs N+1 queries, one endpoint throws, and one endpoint sleeps without running any SQL.
 
 load-gen::
 A plain Java program that hits the three web applications at a randomised rate, so the dashboards fill without manual clicking.
 It is instrumented too, through `java.net.http`, so some traces start at the client.
-The worker needs no traffic; its jobs run on their own.
+`batch-worker` needs no traffic, because its jobs run on their own.
 
 Each of the five lives under `examples/` in https://github.com/{project-repo}[the repository], with a README that lists every route or job and says why it is wrong.
 
 [#static-demo]
 == The demo without installing anything
 
-https://spider-sense.benelog.net/demo[spider-sense.benelog.net/demo] is the same UI over a recording of the demo below: the four applications under one Spider Sense for five minutes, every page answered from a database of the recording, no server behind it.
+https://spider-sense.benelog.net/demo[spider-sense.benelog.net/demo] is the same UI over a recording of the demo below: the four applications under one Spider Sense for five minutes.
+Every page is answered from a database of the recording, with no server behind it.
 Everything that reads works, from the map to a single trace's profile, and the range, the marks and the compare page cover the recorded window.
 Anything that writes, such as a mark or an acknowledgement, answers that the page is a recording.
 
-The recording is a https://www.dolthub.com/repositories/benelog/spider-sense-demo[DoltHub database] with the tables of xref:storage.adoc[Storage] as a running Spider Sense keeps them, plus one table of the answers the UI asks for; the page reads it through DoltHub's SQL API as it is opened, so every trace of the recording opens, and the rows can be queried there as SQL too.
+The recording is a https://www.dolthub.com/repositories/benelog/spider-sense-demo[DoltHub database] with the tables of xref:storage.adoc[Storage] as a running Spider Sense keeps them, plus one table of the answers the UI asks for.
+The page reads it through DoltHub's SQL API as it is opened, so every trace of the recording opens, and the rows can be queried there as SQL too.
 `scripts/demo-site.sh record` makes one: it runs `scripts/demo-shared.sh` for `MINUTES` (five by default), marks `before` and `after` along the way, exports the rows since the launch out of the H2 file, loads them into a fresh Spider Sense to capture the answers, and pushes both to DoltHub.
 `scripts/demo-site.sh recapture` redoes the answers from the rows already there, after a change to the server's queries.
 
@@ -54,7 +59,8 @@ The recording is a https://www.dolthub.com/repositories/benelog/spider-sense-dem
 
 Both scripts build what they need, start everything, print where each thing is, and stop it all on Ctrl-C.
 Pass `--no-build` to skip the Gradle build when nothing has changed.
-Every process writes its log to `build/demo-logs/`, and `RPS` sets the load generator's rate, which defaults to 4 requests per second.
+Every process writes its log to `build/demo-logs/`.
+`RPS` sets the load generator's rate, which defaults to 4 requests per second.
 
 [source,bash]
 ----
@@ -66,8 +72,8 @@ scripts/demo.sh             # each application with its own embedded Spider Sens
 
 `scripts/demo-shared.sh` is one xref:modes.adoc#standalone[standalone] Spider Sense on port 4000, which the four applications and the load generator forward to with `-Dspidersense.collector=`.
 `SENSE_PORT` moves it.
-This is where a trace crossing two services shows up in one place, where the xref:pages.adoc#map[map] has every service on it, and where one `findings` call covers all of them.
-The applications keep their own ports: 8081, 8082 and 8083, and the worker has none.
+In this setup a trace crossing two services shows up in one place, the xref:pages.adoc#map[map] has every service on it, and one `findings` call covers all of them.
+The applications keep their own ports: 8082 for `spring-orders`, 8083 for `servlet-warehouse` and 8081 for `silk-bookstore`, and `batch-worker` has none.
 
 The load generator runs under the agent here as well, named `load-gen`, so its calls are the root of the traces they start.
 
@@ -98,7 +104,7 @@ The load generator runs without the agent here.
 | http://127.0.0.1:4003[]
 |===
 
-The four share the one H2 file under `~/db/spider-sense/`, so `java -jar "$SENSE" findings` on the default port answers for every service, and `--url=http://127.0.0.1:4003` asks one of the others instead.
+The four share the one H2 file under `~/db/spider-sense/`, so `java -jar "$SENSE" findings` on the default port answers for every service, and `--url=http://127.0.0.1:4003` asks the one `batch-worker` hosts instead.
 
 == After the applications stop
 
@@ -110,7 +116,7 @@ image::services-standalone.jpg[The Services page listing silk-bookstore and spri
 
 == What to do with them
 
-The examples are the shortest way to see each page with real data on it, and they are also the fixture the agent loop is described against.
+The examples are the shortest way to see each page with real data on it, and the manual describes the agent loop against them.
 Start `scripts/demo-shared.sh`, let the load generator run for a minute, and then read the findings:
 
 [source,bash]
@@ -119,7 +125,8 @@ java -jar "$SENSE" findings --since=15m
 ----
 
 Each finding points back at one of the faults above, so xref:findings.adoc[Findings] can be read against code that is known to be wrong.
-The web applications produce `n-plus-one`, `n-plus-one-http`, `slow-query`, `slow-endpoint`, `slow-external` and `error`; the worker adds `slow-job`, `log-error`, `pool-exhausted` and `thread-growth`, and it is the one service on which `check` has nothing to judge, because a job is never a request.
+The web applications produce `n-plus-one`, `n-plus-one-http`, `slow-query`, `slow-endpoint`, `slow-external` and `error`.
+`batch-worker` adds `slow-job`, `log-error`, `pool-exhausted` and `thread-growth`, and it is the one service on which `check` has nothing to judge, because a job is never a request.
 xref:agent-loop.adoc#the-loop[The Loop] walks the whole cycle on them.
 
 [#hand-it-to-an-agent]
@@ -138,4 +145,5 @@ one of its traces and tell me which line under examples/ causes it. Do not fix a
 
 The agent answers with the findings as the tool printed them, a trace id for each as evidence, and the file and line each fault comes from, because the finding carries the code location and the README beside each example says what is wrong on purpose.
 A second prompt of "fix the N+1 in spring-orders and show me before and after" has it fix, restart the application, exercise the same endpoints, and run `compare --before=demo --after=…` (xref:marks-and-compare.adoc[Marks and Compare]).
-In a project of your own, `java -jar spider-sense.jar init` installs the same skill and writes the jar's path into `CLAUDE.md`, and xref:agent-quickstart.adoc[Quick Start for Agents] lists the prompts that work from there.
+In a project of your own, `java -jar spider-sense.jar init` installs the same skill and writes the jar's path into `CLAUDE.md`.
+xref:agent-quickstart.adoc[Quick Start for Agents] lists the prompts that work from there.

@@ -6,7 +6,7 @@ The command line is a fourth way in, and it starts no server at all.
 
 Spider Sense is a `-javaagent`, so it has to be on the JVM's command line when the application starts.
 An application that is already running cannot be brought under it, and there is no supported way to attach later.
-Restart it.
+Restart the application with `-javaagent` on its command line.
 
 The examples below assume the jar's absolute path is in `$SENSE`, as xref:install.adoc#from-source[Installation] sets it.
 
@@ -38,7 +38,7 @@ java -javaagent:"$SENSE" -Dotel.service.name=my-app -cp build/classes/java/main 
 
 The OpenTelemetry Java agent instruments the application, and a collector and UI start inside the same JVM on port 4000.
 The agent exports to them over loopback.
-This is the Glowroot-style deployment: one option, one process, and the UI at http://127.0.0.1:4000[].
+Agent mode is one option, one process, and the UI at http://127.0.0.1:4000[].
 
 `-Dspidersense.port=4001` moves the UI when 4000 is taken.
 Spider Sense never prevents the application from starting: a failure in its own startup is logged to the application's stderr and swallowed.
@@ -51,12 +51,13 @@ Spider Sense never prevents the application from starting: a failure in its own 
 java -javaagent:"$SENSE" -Dspidersense.collector=http://127.0.0.1:4000 -jar app.jar
 ----
 
-The instrumentation is the same, and no UI starts in the application's JVM.
-The agent exports to a Spider Sense running elsewhere, which is how several applications share one.
+The instrumentation is the same as in agent mode, but no UI starts in the application's JVM.
+The agent exports to a Spider Sense running elsewhere, so several applications can share one Spider Sense.
 
-Forwarding is what to use when two applications call each other, because a trace that crosses them then arrives in one place.
+Use forwarding when two applications call each other, so that a trace crossing both arrives in one place.
 Start the standalone Spider Sense first, then each application with `-Dspidersense.collector=` pointing at it.
-It is also the right mode for a test task: a test JVM is short-lived and may be forked more than once, and several embedded instances would fight over the port.
+Forwarding is also the right mode for a test task.
+A test JVM is short-lived and may be forked more than once, and several embedded instances would fight over the port.
 
 [#standalone]
 == Standalone
@@ -68,9 +69,10 @@ java -jar "$SENSE"
 
 The collector and the UI run on port 4000 and nothing is instrumented.
 Anything that speaks OTLP/HTTP can send to it: the two modes above, another language's SDK, or an OpenTelemetry Collector.
-The standalone jar takes its properties as `--key=value` arguments as well as system properties, so `java -jar "$SENSE" --port=4001` is the same as `-Dspidersense.port=4001`, and it reads xref:configuration.adoc#properties-file[the properties file] too.
+The standalone jar takes its properties as `--key=value` arguments as well as system properties, so `java -jar "$SENSE" --port=4001` is the same as `-Dspidersense.port=4001`.
+It reads xref:configuration.adoc#properties-file[the properties file] too.
 
-An OpenTelemetry SDK is pointed at it with two environment variables:
+Two environment variables point an OpenTelemetry SDK at the standalone Spider Sense:
 
 [source,bash]
 ----
@@ -79,7 +81,7 @@ export OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4000
 export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 ----
 
-There is no gRPC receiver, which is why the protocol has to be `http/protobuf`.
+The protocol has to be `http/protobuf`, because there is no gRPC receiver.
 
 The same two variables make a Java application send to Spider Sense from any OpenTelemetry-compatible agent, not only the Spider Sense jar: the stock `opentelemetry-javaagent.jar` at a version of your own choosing, a vendor's distribution of it, or an agent already on the command line for another reason.
 
@@ -90,7 +92,8 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4000 OTEL_EXPORTER_OTLP_PROTOCOL=ht
     java -javaagent:opentelemetry-javaagent.jar -jar app.jar
 ----
 
-What the Spider Sense jar adds in agent mode, and this setup lacks, is the defaults and the extension: the endpoint and protocol set for you, a one-second export delay, the runtime metrics on, and `code.stacktrace` on slow queries (xref:design.adoc[Design]); everything else, the pages, the findings and the CLI, is the same, because it is the same data.
+This setup lacks the defaults and the extension that the Spider Sense jar adds in agent mode: the endpoint and protocol set for you, a one-second export delay, the runtime metrics on, and `code.stacktrace` on slow queries (xref:design.adoc[Design]).
+Everything else, the pages, the findings and the CLI, is the same, because it is the same data.
 The extension is also what reads the index catalog of the tables a slow statement touches, so a finding's xref:findings.adoc#schema[schema block] exists only for a service that ran under the Spider Sense jar.
 The receiver also accepts OTLP/JSON, so a shell can post a span with `curl`:
 
@@ -103,7 +106,8 @@ curl -X POST http://127.0.0.1:4000/v1/traces \
 
 xref:api.adoc#ingest[The HTTP API] gives the three ingest paths and what they answer.
 
-Standalone is also how you read data after the application has gone: the H2 file under `~/db/spider-sense/` outlives every process, so `java -jar "$SENSE"` opens the same screens on the same rows.
+Standalone is also how you read data after the application has gone.
+The H2 file under `~/db/spider-sense/` outlives every process, so `java -jar "$SENSE"` opens the same screens on the same rows.
 
 == The command line, the fourth way
 
@@ -118,13 +122,13 @@ xref:cli.adoc[The CLI] documents every command, and xref:agent-loop.adoc[The Loo
 
 == Java versions
 
-The jar itself is Java 21 or later.
-The monitored application can be any JVM the OpenTelemetry Java agent supports, but the embedded UI needs 21 or later, so agent mode requires 21 or later.
+The jar itself needs Java 21 or later.
+The monitored application can run on any JVM the OpenTelemetry Java agent supports, but the embedded UI needs 21 or later, so agent mode requires 21 or later.
 For an application on an older JVM, run Spider Sense standalone and forward to it.
 
 == Starting a JVM that is not `java -jar`
 
-A build tool or a start script that forks the JVM has to pass the option on.
+A build tool or a start script that forks the JVM has to pass `-javaagent` on to it.
 For Gradle and Maven, xref:gradle-plugin.adoc[the Gradle plugin] and xref:maven.adoc[the Maven parameters] are the shortest route, and neither needs an absolute path in the build file.
 The sections below are for everything else.
 
@@ -138,7 +142,7 @@ The script the Gradle `application` plugin generates passes `JAVA_OPTS` and `<AP
 JAVA_OPTS="-javaagent:$SENSE -Dotel.service.name=my-app" build/install/my-app/bin/my-app
 ----
 
-`applicationDefaultJvmArgs` in `build.gradle` is the other place these arguments can live, but that is an edit to the project.
+`applicationDefaultJvmArgs` in `build.gradle` can also carry these arguments, but that edits the project.
 
 === Gradle `run`
 
@@ -151,9 +155,10 @@ tasks.named('run') {
 }
 ----
 
-When the build file is not yours to edit, `./gradlew installDist` and the start script above is the cleaner route.
+When the build file is not yours to edit, `./gradlew installDist` and the start script above are the cleaner route.
 
-WARNING: `JAVA_TOOL_OPTIONS` works too, but every JVM the command starts picks it up, including the Gradle daemon, which then tries to host a Spider Sense of its own on port 4000. Use `--no-daemon` with it, or give the daemon nothing to collide with.
+WARNING: `JAVA_TOOL_OPTIONS` works too, but every JVM the command starts picks it up, including the Gradle daemon, which then tries to host a Spider Sense of its own on port 4000.
+Use `--no-daemon` with it, or give the daemon nothing to collide with.
 
 == Knowing it worked
 
@@ -163,10 +168,11 @@ java -jar "$SENSE" status
 ----
 
 `status` names the mode (`agent` or `standalone`), the port, the OTLP endpoint, the database file and its size, the thresholds in force, the services seen and how many spans are stored.
-`counts.services` including the application's service name, and a span count that grows after a request, is the confirmation.
-The UI at http://127.0.0.1:4000[] is the same information for a person.
+The setup works when `counts.services` includes the application's service name and the span count grows after a request.
+The UI at http://127.0.0.1:4000[] shows the same information to a person.
 
-A restart also writes an automatic `start` mark for the service, so `marks` shows a new row with the note `pid <pid>` every time the application comes up, and `--since=start` means the current run.
+A restart also writes an automatic `start` mark for the service, so `marks` shows a new row with the note `pid <pid>` every time the application comes up.
+`--since=start` therefore means the current run.
 xref:marks-and-compare.adoc#marks[Marks] describes them.
 
 == When it does not work
@@ -200,6 +206,7 @@ xref:marks-and-compare.adoc#marks[Marks] describes them.
 | Windows default to `15m`. Use `--since=start`, or mark a moment and use `--since=<mark>`.
 |===
 
-An application that runs while Spider Sense collects nothing is a configuration question, and `status` plus the application's stdout answer it.
+When the application runs but Spider Sense collects nothing, the cause is in the configuration.
+`status` and the application's stdout are where to look.
 
-xref:examples.adoc[The Examples] has `scripts/demo.sh` and `scripts/demo-shared.sh`, which are these modes in working form: four applications each with their own embedded Spider Sense, and the same four forwarding to one standalone.
+`scripts/demo.sh` and `scripts/demo-shared.sh` in xref:examples.adoc[The Examples] run these modes for real: `demo.sh` starts four applications each with its own embedded Spider Sense, and `demo-shared.sh` forwards the same four to one standalone.

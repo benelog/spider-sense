@@ -2,8 +2,9 @@
 :navtitle: Configuration
 
 Every option of Spider Sense is a `spidersense.*` key.
-It is given as a system property on the command line of the JVM that runs the application, or as a line of a properties file, and the standalone jar takes it as a `--key=value` argument as well.
-Highest first: the `--key=value` argument, the `-Dspidersense.key` system property, the environment variable of the same name, the properties file, the default.
+You set a key as a system property on the command line of the JVM that runs the application, or as a line of a properties file.
+The standalone jar also takes it as a `--key=value` argument.
+The sources in order of precedence, highest first, are the `--key=value` argument, the `-Dspidersense.key` system property, the environment variable of the same name, the properties file, and the default.
 
 [#properties]
 == Properties
@@ -86,7 +87,7 @@ From a build tool, the `spiderSense { }` block of xref:gradle-plugin.adoc#block[
 [#properties-file]
 === In a properties file
 
-The same keys go in a properties file, one per line, and the command line then carries only the agent:
+The same keys go in a properties file, one per line, so the command line carries only `-javaagent`:
 
 .spider-sense.properties
 [source,properties]
@@ -102,8 +103,9 @@ spidersense.ignore.endpoints=/actuator/**,/internal/**
 java -javaagent:"$SENSE" -jar app.jar
 ----
 
-The file is `spider-sense.properties` in the working directory of the JVM, when it exists.
-`-Dspidersense.config=<path>`, or the environment variable `SPIDERSENSE_CONFIG`, names another file; a named file that does not exist is a warning on stderr and the application starts without it.
+Spider Sense reads `spider-sense.properties` from the working directory of the JVM, when that file exists.
+`-Dspidersense.config=<path>`, or the environment variable `SPIDERSENSE_CONFIG`, names another file.
+A named file that does not exist is a warning on stderr, and the application starts without it.
 The launcher names the file it read on stdout.
 
 A key given as a system property, or as an environment variable of the same name, wins over the file.
@@ -111,9 +113,11 @@ A value is trimmed, and an empty value counts: `spidersense.ignore.endpoints=` i
 Keys without the `spidersense.` prefix are left alone, so the same file can be handed to the OpenTelemetry agent with `-Dotel.javaagent.configuration-file=spider-sense.properties` and then carry `otel.*` keys as well.
 A `spidersense.*` key that is not in the table is applied with a warning, so a typo is visible.
 
-The file is read in every mode: under `-javaagent`, by the standalone jar, and by the xref:cli.adoc[CLI], whose default `--url` is then the Spider Sense the file's `collector`, or `host` and `port`, imply.
-Under xref:gradle-plugin.adoc[the Gradle plugin] or xref:maven.adoc[Maven] the file is read as well, because the working directory of the forked JVM is the project's, and what the build tool adds as `-D` wins over it.
-The Gradle plugin's `configFile` names another file, as `-Dspidersense.config`.
+The file is read in every mode: under `-javaagent`, by the standalone jar, and by the xref:cli.adoc[CLI].
+The CLI's default `--url` is then the Spider Sense that the file's `spidersense.collector`, or `spidersense.host` and `spidersense.port`, point to.
+Under xref:gradle-plugin.adoc[the Gradle plugin] or xref:maven.adoc[Maven] the file is read as well, because the working directory of the forked JVM is the project's.
+A `-D` property that the build tool adds wins over the file.
+The Gradle plugin's `configFile` names another file, as `-Dspidersense.config` does.
 
 === Environment variables
 
@@ -179,17 +183,17 @@ Spider Sense only fills in defaults, and only where you have set neither the pro
 | The extension records `code.stacktrace` on a slow query, on the fifth repeat of an N+1, and on a slow outbound call. It also reads the index catalog of the tables a slow statement touches, which is a finding's xref:findings.adoc#schema[schema block].
 |===
 
-`-Dotel.service.name=` is worth setting always, because the alternative is `unknown_service:java`, and the service filter then has nothing to select.
+Always set `-Dotel.service.name=`, because without it the service is `unknown_service:java` and the service filter has nothing to select.
 `-Dspidersense.service=` does the same thing in agent mode.
 
 [#ignored-endpoints]
 == Ignored endpoints
 
-A health check polled every few seconds is the most frequent request of a typical Spring Boot application and the least interesting one.
-It is fast, it never fails, and it dilutes the request count, the Apdex, `check` and every `slow-endpoint` judgement.
-
 `spidersense.ignore.endpoints` is a comma-separated list of glob patterns.
 An entry span whose endpoint matches one of them is stored, is in its trace and is in the trace list, but it is not an endpoint, not a request, not in the Apdex, never a slow-request tingle, never a finding and never a `check` verdict.
+
+A health check polled every few seconds is the most frequent request of a typical Spring Boot application and the least interesting one.
+It is fast, it never fails, and it dilutes the request count, the Apdex, `check` and every `slow-endpoint` judgement.
 The default is `/actuator/**,/health,/healthz,/livez,/readyz`, and an empty value ignores nothing:
 
 [source,bash]
@@ -205,11 +209,12 @@ A pattern is matched against the endpoint name, which is `GET /actuator/health` 
 
 `**` matches anything including `/`, `*` matches anything but `/`, and `?` matches one character that is not `/`.
 The match is case-sensitive and covers the whole name.
-The list in force is shown by `/api/status` as `ignore.endpoints`, and by the `status` command.
+`/api/status` shows the list in force as `ignore.endpoints`, and so does the `status` command.
 
 == How to send data
 
-Three ways reach the same collector, and the UI's "How to send data" dialog prints all three with the port actually in use.
+Data reaches the collector in three ways.
+The UI's "How to send data" dialog prints all three with the port actually in use.
 
 A JVM under the OpenTelemetry Java agent that Spider Sense carries:
 
@@ -236,4 +241,4 @@ curl -X POST http://127.0.0.1:4000/v1/traces \
 ----
 
 `/v1/traces`, `/v1/metrics` and `/v1/logs` accept `application/x-protobuf` and `application/json`, with `Content-Encoding: gzip`.
-xref:api.adoc#ingest[The HTTP API] gives what they answer.
+xref:api.adoc#ingest[The HTTP API] describes what each one answers.
