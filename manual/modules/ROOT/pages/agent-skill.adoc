@@ -7,7 +7,7 @@ The repository carries two agent skills under `skills/`, each a `SKILL.md` an ag
 An agent that has only the CLI's `help` knows every option and none of the method.
 
 `skills/spider-sense-sql-tuning/` teaches query tuning: the index to add, the rewrite, the fetch join, the batch, each verified with `compare` and `check`.
-It is read when a finding names a statement rather than a request.
+An agent reads it when a finding names a statement rather than a request.
 
 Both are distilled from this manual, and the manual stays the source of truth.
 
@@ -34,7 +34,7 @@ Four reference files carry the rest, and an agent reads only the one its task to
 | the schema in the columns that matter, and read-only SQL over it
 |===
 
-The rules in `SKILL.md` are what a manual cannot enforce on its own.
+`SKILL.md` states five rules that a manual cannot enforce on its own.
 Prefer the text output over `--json`, because it is smaller and it is the same data.
 Keep the window small, because the default `--since=15m` drags in whatever ran before.
 Never quote a number the tool did not print.
@@ -56,13 +56,13 @@ It writes a short block into the project's `CLAUDE.md` and copies the skills int
 `--dir` is the project directory, and it defaults to the working directory.
 
 `--jar` is the jar path written into the block.
-Without it, `init` writes the distributable jar the command was started from.
+Without it, `init` writes the path of the distributable jar the command was started from.
 The path is written absolute, as given or as discovered, and never made relative to the project.
-When neither is known, which happens with exploded classes in an IDE and no `--jar`, `init` says which option it needs and exits `2`.
+When no jar path is known, which happens with exploded classes in an IDE and no `--jar`, `init` says which option it needs and exits `2`.
 
 === The block
 
-The block is delimited by `<!-- spider-sense:start -->` and `<!-- spider-sense:end -->`, each on a line of its own, and this is it:
+The block is delimited by `<!-- spider-sense:start -->` and `<!-- spider-sense:end -->`, each on a line of its own, and reads as follows:
 
 [source,markdown]
 ----
@@ -89,9 +89,9 @@ Query tuning — an index to add, a rewrite, a fetch join, a batch — is in the
 <!-- spider-sense:end -->
 ----
 
-The jar path above is the one `init` resolved, and everything else is written as it stands.
-No port of the project is written: the block names the Spider Sense UI's own default, `http://127.0.0.1:4000`, and nothing else.
-The last two lines name `skills/spider-sense/` and `skills/spider-sense-sql-tuning/` of the https://github.com/{project-repo}[Spider Sense repository] instead of the project's own copies when `--no-skill` kept the skills from being installed.
+The jar path above is the one `init` resolved, and every other line is written exactly as shown.
+The block names no port of the project, only the Spider Sense UI's own default, `http://127.0.0.1:4000`.
+When `--no-skill` kept the skills from being installed, the last two lines name `skills/spider-sense/` and `skills/spider-sense-sql-tuning/` of the https://github.com/{project-repo}[Spider Sense repository] instead of the project's own copies.
 
 `init` is idempotent.
 A second run replaces everything between the markers, including the jar path when it has changed, and leaves the rest of the file byte for byte as it was.
@@ -100,7 +100,8 @@ When `CLAUDE.md` does not exist it is created with the block alone, and when it 
 
 === The skill copy
 
-`init` copies every directory under `skills/` — each one's `SKILL.md` and `references/*.md` — into `<dir>/.claude/skills/` under the same name, unless `--no-skill` is given, which skips all of them.
+`init` copies every directory under `skills/`, with its `SKILL.md` and `references/*.md`, into `<dir>/.claude/skills/` under the same name.
+`--no-skill` skips all of them.
 It overwrites the files it owns and leaves anything else in those directories alone.
 
 It is a copy rather than a pointer, because the jar is the distributable and the repository it was built from may not be on the machine at all.
@@ -115,10 +116,10 @@ installed skill to /home/me/project/.claude/skills/spider-sense (5 files)
 installed skill to /home/me/project/.claude/skills/spider-sense-sql-tuning (4 files)
 ----
 
-One line per skill, each with the number of files it wrote.
+`init` prints one line per skill, each with the number of files it wrote.
 The first line is `updated CLAUDE.md block (…)` when the markers were already in the file.
 The skill lines become the single line `skipped skills (--no-skill)` when the skills were not installed.
-`--mcp` adds a third line, `wrote .mcp.json (spider-sense over stdio)` or `updated .mcp.json (…)`, and writes the stdio MCP server into the project's `.mcp.json` (xref:mcp.adoc[MCP]).
+`--mcp` adds a last line, `wrote .mcp.json (spider-sense over stdio)` or `updated .mcp.json (…)`, and writes the stdio MCP server into the project's `.mcp.json` (xref:mcp.adoc[MCP]).
 Without `--mcp` nothing is written and nothing is printed about it, because a host with a shell is meant to use the CLI.
 
 The command then exits `0`.
@@ -138,13 +139,13 @@ Re-running `init` by hand after a bump does the same, because it replaces the bl
 
 == Installing the skills by hand
 
-`init` is the normal way, and it installs for Claude Code.
+`init` is the normal way to install the skills, and it installs them for Claude Code.
 Copy the directories yourself when the jar is not at hand, or when the target is another tool.
 
 === Claude Code
 
 Claude Code reads a project's `.claude/skills/`, which is where `init` puts the skills.
-Copy the directories there instead to get the same result, so that collaborators get them by cloning and install nothing of their own:
+Copying the directories there by hand gives the same result, and collaborators then get the skills by cloning the project and install nothing of their own:
 
 [source,bash,subs="attributes+"]
 ----
@@ -154,7 +155,7 @@ cp -r /tmp/spider-sense/skills/spider-sense .claude/skills/
 cp -r /tmp/spider-sense/skills/spider-sense-sql-tuning .claude/skills/
 ----
 
-A project-level copy is also what Cursor and GitHub Copilot read, so one directory serves three tools.
+Cursor and GitHub Copilot also read the project's `.claude/skills/`, so one directory serves three tools.
 
 === Codex
 
@@ -169,7 +170,7 @@ It also reads the project's `.claude/skills/`, so a project already set up for C
 === GitHub Copilot
 
 Copilot reads a project's `.github/skills/`, and `~/.copilot/skills/` for the coding agent and the CLI.
-It too reads the project's `.claude/skills/`.
+Copilot also reads the project's `.claude/skills/`.
 
 == The manual is the source of truth
 

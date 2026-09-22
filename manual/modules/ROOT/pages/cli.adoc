@@ -1,11 +1,11 @@
 = The CLI
 :navtitle: The CLI
 
-The Spider Sense jar is also a command line: `java -jar spider-sense.jar <command>` answers about a window of the stored data in Markdown made for an agent to read.
+The Spider Sense jar is also a command line: `java -jar spider-sense.jar <command>` answers a question about a window of the stored data, in Markdown made for an agent to read.
 
 The CLI renders nothing itself.
-When a Spider Sense answers at `--url` it fetches `format=text` and prints the body, so the numbers are the numbers the UI shows.
-When none answers it opens the H2 file in process and runs the same queries through the same renderer (<<fallback,the direct-file fallback>>).
+When a Spider Sense answers at `--url`, the CLI fetches the `format=text` rendering and prints the body, so its numbers are the ones the UI shows.
+When none answers, the CLI opens the H2 file in process and runs the same queries through the same renderer (<<fallback,the direct-file fallback>>).
 
 == Invocation
 
@@ -17,7 +17,7 @@ java -jar spider-sense.jar <command> [arguments] [options]
 The launcher treats a first argument that does not start with `-` as a command, and hands the whole line to the CLI inside the nested server jar.
 `--port=` and the other standalone flags still start a server, so `java -jar spider-sense.jar` with no command is the standalone UI rather than a command (xref:modes.adoc#standalone[Standalone]).
 
-Under the Gradle plugin the same jar is one task away, in a project that never checked out the Spider Sense repository:
+Under the Gradle plugin, the `spiderSense` task runs the same CLI, even in a project that never checked out the Spider Sense repository:
 
 [source,bash]
 ----
@@ -27,7 +27,7 @@ Under the Gradle plugin the same jar is one task away, in a project that never c
 
 `-q` keeps Gradle's own lines out of the output.
 The task's exit code is the CLI's exit code.
-The task also sets `SPIDERSENSE_URL` to the base URL the `spiderSense` block implies when the block names a collector, a host or a port, so the command asks the Spider Sense the application is sending to rather than the default port (xref:gradle-plugin.adoc#tasks[Tasks]).
+When the `spiderSense` block names a collector, a host or a port, the task also sets `SPIDERSENSE_URL` to the base URL that block implies, so the command asks the Spider Sense the application is sending to rather than the default port (xref:gradle-plugin.adoc#tasks[Tasks]).
 
 `SPIDERSENSE_URL` names the Spider Sense to ask whenever `--url` is not given.
 Without either, the `spidersense.*` properties decide: `spidersense.collector` when set, else `http://<host>:<port>` with the defaults filled in, which is `http://127.0.0.1:4000` when nothing is set.
@@ -100,12 +100,12 @@ The launcher reads xref:configuration.adoc#properties-file[the properties file] 
 |===
 
 Every example below is the real output of one session against the `spring-orders` example application.
-That Spider Sense was on another port, so each command also carried `--url=http://127.0.0.1:4100`, which is left out here.
+That Spider Sense listened on port 4100, so each command also carried `--url=http://127.0.0.1:4100`, which the listings leave out.
 
 === status
 
 `status` names the mode, the port, the thresholds, the database and how much it holds.
-It is how you confirm that an application really is collecting.
+You run it to confirm that an application really is collecting.
 
 [source]
 ----
@@ -165,7 +165,7 @@ $ java -jar spider-sense.jar findings --since=before
 It is then ranked after every other finding, and its severity column reads `acked`.
 `unack <finding id>` withdraws the acknowledgement, and exits `4` when there was none.
 `findings --hide-acked` leaves the acknowledged findings out altogether.
-The id is what `findings` printed, and it is stable across windows (xref:findings.adoc#acknowledgements[Acknowledgements]).
+The finding id is the one `findings` printed in its `id` column, and it is stable across windows (xref:findings.adoc#acknowledgements[Acknowledgements]).
 
 === trace and traces
 
@@ -227,7 +227,7 @@ $ java -jar spider-sense.jar traces --since=before --limit=5
 
 === endpoints, queries, errors and logs
 
-These four are the tables of the window, the same data the matching UI pages draw.
+`endpoints`, `queries`, `errors` and `logs` print the tables of the window, the same data the matching UI pages draw.
 `endpoints` always lists every endpoint of the window and takes no `--limit`.
 
 [source]
@@ -256,7 +256,7 @@ $ java -jar spider-sense.jar queries --since=before --limit=5
 ----
 
 `unindexed` lists the columns the statement filters on that no index of their table serves, from the xref:findings.adoc#schema[schema block]: `none` when every predicate is served, and `—` when there is no block.
-It is `—` in both rows above because that run collected no index catalog.
+The `unindexed` column is `—` in both rows above because that run collected no index catalog.
 
 `errors` lists the error groups of the window.
 Each group whose sample stack trace has application frames gets a block naming one trace and those frames:
@@ -276,7 +276,7 @@ $ java -jar spider-sense.jar errors --since=before
 
 `logs` prints log lines, newest first.
 `--severity=WARN` sets the floor, `--q=<text>` searches the body, and `--trace=<traceId>` narrows to one trace.
-The count line says how many were printed of how many matched the window:
+The count line says how many lines were printed out of how many matched the window:
 
 [source]
 ----
@@ -292,7 +292,7 @@ $ java -jar spider-sense.jar logs --since=before --limit=3
 === mark and marks
 
 `mark <name>` records a named moment now, and `--note=<text>` keeps a sentence with it.
-`marks` lists the newest 50, newest first.
+`marks` lists the newest 50 marks, newest first.
 xref:marks-and-compare.adoc#marks[Marks] has the rules, including the automatic `start` mark.
 
 [source]
@@ -316,8 +316,9 @@ $ java -jar spider-sense.jar marks
 === compare
 
 `compare --before=<selector> --after=<selector>` puts the window before a mark beside the window after it, endpoint by endpoint and query by query.
-It takes no `--since`, because its windows are the two selectors, and `--until` closes the second one.
-Each row's verdict comes first and the worst rows come first, so the top of each table is the answer.
+It takes no `--since`, because its windows are the two selectors.
+`--until` closes the second window.
+The verdict is each row's first column and the worst rows sort first, so the top of each table is the answer.
 xref:marks-and-compare.adoc#compare[Compare] has the verdicts and their thresholds.
 
 [source]
@@ -374,7 +375,7 @@ $ echo $?
 1
 ----
 
-`--endpoint=` narrows the scope to one endpoint, by its id or by its name, and the heading names it.
+`--endpoint=` narrows the scope to one endpoint, by its id or by its name, and the heading names that endpoint.
 
 === tail
 
@@ -488,11 +489,11 @@ a finding id to unack).
 | `findings` only: leave the acknowledged findings out instead of ranking them last
 |===
 
-`--since` and `--until` take a time selector rather than epoch milliseconds: a duration, epoch milliseconds, a mark name, `start` or `now`.
+`--since` and `--until` take a time selector: a duration, epoch milliseconds, a mark name, `start` or `now`.
 xref:marks-and-compare.adoc#time-selectors[Time selectors] states every form.
 
 Three commands depart from the table.
-`compare` takes no `--since`, because its windows are the two selectors, and `--until` closes the second one.
+`compare` takes no `--since`, because its windows are the two selectors, and its `--until` closes the second window.
 `init` takes none of these options at all, and its own are `--dir`, `--jar`, `--no-skill` and `--mcp`.
 `mcp` takes only `--url` and `--db`.
 
@@ -524,7 +525,8 @@ An option a command does not take is a usage error rather than a silently ignore
 |===
 
 A trace id that matches nothing prints `spider-sense: No such trace: <id>` on stderr and exits `4`, whether the answer came over HTTP or from the file.
-A mark name that matches no mark does the same, naming the mark, and so does `unack` with `spider-sense: No such acknowledgement: <id>`.
+A mark name that matches no mark also exits `4`, with a message naming the mark.
+`unack` of a finding that has no acknowledgement prints `spider-sense: No such acknowledgement: <id>` and exits `4` as well.
 
 Exit code `3` means the exercise step did not reach the application, not that a fix worked.
 
@@ -538,12 +540,12 @@ When nothing answers at the default URL, the CLI opens the H2 database in proces
 (no Spider Sense at http://127.0.0.1:4000; reading /home/me/db/spider-sense/sense.mv.db directly)
 ----
 
-That is what `AUTO_SERVER=TRUE` buys (xref:storage.adoc[Storage]).
-The application has crashed, the UI went with it, and `findings --since=start` still answers.
+`AUTO_SERVER=TRUE` makes this possible (xref:storage.adoc[Storage]).
+After the application has crashed and taken the UI with it, `findings --since=start` still answers.
 
-A `--url` that was named is a statement that there is a server there.
-Nothing answering it is `spider-sense: no Spider Sense at <url> (…)` and exit `2`, rather than a silent fall back to a file that may hold a different application.
-`--db=<path or jdbc url>` is the opposite statement, about where to read, and goes straight to the file without asking any server.
+Naming `--url` states that a server is there.
+When nothing answers it, the CLI prints `spider-sense: no Spider Sense at <url> (…)` and exits `2`, rather than silently falling back to a file that may hold a different application.
+`--db=<path or jdbc url>` states the opposite, where to read, and the CLI goes straight to that file without asking any server.
 
 In that path the thresholds are the defaults, or whatever `--slow.request.ms`, `--slow.query.ms` and `--app.packages` say, since no server is there to ask.
 
@@ -565,9 +567,9 @@ Four commands write rather than read, and they write in this path too: `mark`, `
 == Text rendering
 
 Every answer follows the same rules, so the output is small, stable and diffable.
-The same data renders to the same bytes, which is what lets two answers be diffed.
+The same data renders to the same bytes, so two answers can be diffed.
 
-* The first line is a heading naming what it is and the window, in ISO-8601 with the local offset: `# findings  2026-09-18T12:37:06+09:00 → 12:41:08  (4m 1s, all services, 2456 requests)`.
+* The first line is a heading naming the answer and the window, in ISO-8601 with the local offset: `# findings  2026-09-18T12:37:06+09:00 → 12:41:08  (4m 1s, all services, 2456 requests)`.
 The range is rounded to the second and written in its largest units (`6s`, `2m 30s`, `15m`, `2h`), never in milliseconds.
 * Lists are Markdown tables, and ids are complete: a trace id is 32 hex characters, an endpoint, query or error id 12, because they are passed back.
 * A trace and `logs` are lines rather than a table, and `status` and `mark` answer in their own shape.
@@ -590,7 +592,7 @@ The same renderings are served over HTTP with `format=text` (xref:api.adoc#agent
 [#trace-diff]
 == Trace diff
 
-`trace <a> --diff=<b>` aligns two span trees and renders them as one text with a gutter, so the question after a fix is answered without reading two trees.
+`trace <a> --diff=<b>` aligns two span trees and renders them as one text with a gutter, so after a fix you see which span went away and which one got slower without reading two trees.
 
 [source]
 ----
@@ -637,7 +639,7 @@ java -jar spider-sense.jar tail [--kind=slow-request|slow-query|error] [--servic
 ----
 
 The columns are local time with milliseconds, kind, service, title, detail and trace id, which are the event's own fields in that order.
-`--kind` and `--service` filter, one value each, and no filter means everything.
+`--kind` and `--service` each filter on one value, and without either every event is printed.
 
 `--until-traces=<n>` ends with exit `0` once the stream has shown `n` new traces since the command started.
 `--timeout=<duration>` takes a selector duration such as `30s` or `5m`, and ends with exit `0` when it elapses.
@@ -686,8 +688,8 @@ Acknowledgements are not exported, because they are the reader's rather than the
 java -jar spider-sense.jar sql "SELECT endpoint, COUNT(*) FROM span WHERE entry GROUP BY endpoint"
 ----
 
-`sql` runs one read-only statement over the schema, for the question nobody anticipated.
-It is the escape hatch, not the front door: `findings`, `endpoints`, `queries`, `errors`, `compare` and `check` are the same data with the thresholds, the ranking and the rendering already applied, and they stay right when the schema moves.
+`sql` runs one read-only statement over the schema, for a question no other command answers.
+Reach for it last: `findings`, `endpoints`, `queries`, `errors`, `compare` and `check` are the same data with the thresholds, the ranking and the rendering already applied, and they stay correct when the schema changes.
 
 The answer is a heading and a table:
 
@@ -712,13 +714,13 @@ A SQL `NULL` is `—`.
 
 The statement runs as the H2 user `spider_sense_reader`, which has `SELECT` on the schema and nothing else.
 H2 itself therefore refuses `INSERT`, `UPDATE`, `DELETE`, `DROP` and `ALTER`, and the administrator-only functions `FILE_WRITE`, `CSVWRITE`, `FILE_READ`, `LINK_SCHEMA` and `RUNSCRIPT`.
-Ahead of that, only a single `SELECT`, `WITH`, `TABLE`, `VALUES`, `EXPLAIN` or `SHOW` is accepted, and a second statement after a `;` is refused.
+Before H2 sees the statement, only a single `SELECT`, `WITH`, `TABLE`, `VALUES`, `EXPLAIN` or `SHOW` is accepted, and a second statement after a `;` is refused.
 The connection itself is read-only, with autocommit off, a row cap of the limit plus one and a query timeout of 10 seconds.
 
-Only a server's open creates that user (xref:storage.adoc#reader[Storage]).
+Only a server creates that user, when it opens the database (xref:storage.adoc#reader[Storage]).
 A database an older Spider Sense created has no reader user in it yet, and `sql` then reports `the database has no read-only user yet; start an application or the standalone server with this version first` on stderr and exits `2`.
 
-A statement that is not allowed, and a statement H2 refuses or cannot parse, are both an error message on one line.
+A statement that is not allowed and a statement H2 refuses or cannot parse both print a one-line error message.
 
 === Bounding the window
 
@@ -743,7 +745,7 @@ xref:storage.adoc#schema[The schema] has every table and column.
 
 === Worked queries
 
-Which endpoint issues the most distinct statements, which is the one thing findings cannot rank.
+The endpoints that issue the most distinct statements, a ranking `findings` cannot make.
 An endpoint may run few statements often or many statements once, and the second is a design question rather than an N+1.
 
 [source,sql]

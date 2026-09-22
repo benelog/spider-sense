@@ -10,7 +10,7 @@ A tool call is one call into the same handlers the CLI and the UI use, and its r
 == When to use it
 
 MCP is for the host that has no shell.
-The choice between it and the CLI costs nothing in what is answered, so it is decided by what the host can reach.
+MCP and the CLI give the same answers, so what the host can reach decides between them.
 
 [cols="2,3",options="header"]
 |===
@@ -39,14 +39,14 @@ The skill teaches the loop for the CLI (xref:agent-skill.adoc[The Agent Skill]),
 
 === Streamable HTTP
 
-`POST /mcp` on the server's own port, which is the port the UI answers on.
+The Streamable HTTP transport is `POST /mcp` on the server's own port, which is the port the UI answers on.
 One JSON-RPC 2.0 message travels per request, as `application/json` both ways.
 A request is answered with `200` and the JSON-RPC response, and a notification with `202` and no body.
 
 The server is stateless.
 No session id is issued or required, `GET /mcp` is `405`, and a JSON array is refused with `-32600`.
 
-This transport needs the server to be up, so it is the one that stops answering when the application does.
+This transport needs the server to be up, so it stops answering when the application stops.
 
 === stdio
 
@@ -59,10 +59,12 @@ The `mcp` command reads newline-delimited JSON-RPC on stdin and writes it on std
 Nothing else goes to stdout, diagnostics go to stderr, and the command ends at end of input.
 
 `initialize`, `ping` and `tools/list` are answered in the process.
-A `tools/call` goes to the Spider Sense at `--url` when one answers, and the CLI's default and `SPIDERSENSE_URL` apply.
-When none answers, the H2 file is opened in process exactly as the CLI does it, with the same line on stderr saying so, and `--db` reads a file without asking any server (xref:cli.adoc#fallback[The direct-file fallback]).
+A `tools/call` goes to the Spider Sense at `--url` when one answers there.
+Without `--url`, the CLI's default and `SPIDERSENSE_URL` apply.
+When none answers, the `mcp` command opens the H2 file in process exactly as the CLI does, with the same line on stderr saying so.
+`--db` reads a file without asking any server (xref:cli.adoc#fallback[The direct-file fallback]).
 
-This is the transport for a host on the same machine, and the one that still answers after the application has crashed.
+stdio is the transport for a host on the same machine, and the one that still answers after the application has crashed.
 
 == The tools
 
@@ -104,8 +106,8 @@ A mark name matches `[A-Za-z0-9._-]{1,64}`.
 A result is `{ "content": [ { "type": "text", "text": "<the Markdown>" } ] }`.
 `check` also carries `structuredContent` with `pass` and `requests`, so a host need not read the heading for the verdict.
 
-What the CLI reports on stderr with exit code `4`, such as no such trace or no such mark, is a tool result with `isError: true` whose text is that message on one line.
-So is a refused statement or a bad selector.
+An answer the CLI reports on stderr with exit code `4`, such as no such trace or no such mark, becomes a tool result with `isError: true` whose text is that message on one line.
+A refused statement and a bad selector are reported the same way.
 A missing required argument or an unknown tool is a JSON-RPC `-32602`.
 
 Tool descriptions are one sentence each and say when to use the tool, not how the output looks, because the output is the text rendering and needs no description.

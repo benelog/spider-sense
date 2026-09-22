@@ -663,7 +663,7 @@ installed skill to /home/me/project/.claude/skills/spider-sense-sql-tuning (4 fi
 One line per skill, in the index's order, each with the number of files it wrote.
 The first line is `updated CLAUDE.md block (…)` when the markers were already in the file, and the skill lines are replaced by the single line `skipped skills (--no-skill)` when the skills were not installed.
 
-**`--mcp`.** A third line, `wrote .mcp.json (spider-sense over stdio)` or `updated .mcp.json (…)`, when the option is given: `<dir>/.mcp.json` gets `mcpServers.spider-sense` set to `{ "command": "java", "args": ["-jar", "<jar path>", "mcp"] }`, the same absolute jar path as the block.
+**`--mcp`.** A last line, `wrote .mcp.json (spider-sense over stdio)` or `updated .mcp.json (…)`, when the option is given: `<dir>/.mcp.json` gets `mcpServers.spider-sense` set to `{ "command": "java", "args": ["-jar", "<jar path>", "mcp"] }`, the same absolute jar path as the block.
 An existing file is parsed as JSON and every other entry is kept, though the file is rewritten in the server's own JSON formatting; a file that is not a JSON object is left alone with a message on stderr and exit code `2`.
 Without `--mcp` nothing is written and nothing is printed about it: a host with a shell is meant to use the CLI ([Choosing an interface](#choosing-an-interface)), and `init` should not hand it a second tool for the same answers.
 

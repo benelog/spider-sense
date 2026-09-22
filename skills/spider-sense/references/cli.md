@@ -113,7 +113,7 @@ It reads newline-delimited JSON-RPC on stdin and writes it on stdout, nothing el
 `initialize`, `ping` and `tools/list` are answered in the process; a tool call goes to the Spider Sense at `--url` when one answers and to the H2 file when none does, exactly as every command here decides it, so MCP still answers after the application has crashed.
 The tools are `findings`, `trace`, `mark`, `compare`, `check` and `sql`, their arguments are the options of the same name, and each answers the same Markdown the matching command prints over the same window.
 
-`java -jar spider-sense.jar init --mcp` writes that server into the project's `.mcp.json` as `mcpServers.spider-sense`, keeping every other entry, and prints a third line saying so; a host that reaches a running Spider Sense over HTTP instead is configured by hand with `{"type": "http", "url": "http://127.0.0.1:4000/mcp"}`.
+`java -jar spider-sense.jar init --mcp` writes that server into the project's `.mcp.json` as `mcpServers.spider-sense`, keeping every other entry, and prints a last line saying so; a host that reaches a running Spider Sense over HTTP instead is configured by hand with `{"type": "http", "url": "http://127.0.0.1:4000/mcp"}`.
 Do not enable both the CLI and MCP in one host: two tools that give the same answer make the model choose between them and cost the schema twice.
 
 ## Text rendering conventions
