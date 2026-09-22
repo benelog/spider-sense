@@ -7,7 +7,7 @@ A mark is a named moment, and `compare` puts the window before a mark beside the
 == Time selectors
 
 Every agent-facing endpoint takes `since` and `until` instead of `from` and `to`, because an agent thinks in "since I changed the code" rather than in epoch milliseconds.
-A selector is one of five forms.
+A selector takes one of five forms.
 
 [cols="1,1,3",options="header"]
 |===
@@ -39,15 +39,15 @@ A selector is one of five forms.
 The default `since` is `15m`, and the default `until` is `now`.
 `since=start` therefore means "since the application was last restarted", which is what an agent that just rebuilt the application wants.
 
-A `since` that resolves to a moment after `until` is a `400`, and a usage error in the CLI.
-A mark name that matches no mark is a `404` naming it, and exit code `4` in the CLI.
+A `since` that resolves to a moment after `until` is answered with `400` over HTTP and is a usage error in the CLI.
+A mark name that matches no mark is answered with a `404` that names it over HTTP and exits `4` in the CLI.
 The `from` and `to` parameters of the UI endpoints still work everywhere, and they win when both pairs are given.
 
 [#marks]
 == Marks
 
 A mark is a named moment: `before`, `after-fix`, `v2`.
-It is one row in the store, shared like everything else, and swept with the retention.
+A mark is one row in the store, shared like everything else, and swept with the retention.
 
 [source,bash]
 ----
@@ -60,7 +60,7 @@ mark after at 2026-09-17T08:19:35.837+09:00 — after the fix
 
 The name is required and matches `[A-Za-z0-9._-]{1,64}`.
 `--note=<text>` keeps a note with the moment, and `--service=<name>` ties the mark to one service.
-Over HTTP it is `POST /api/marks` with `{ "name": "before", "note": "…", "service": "…", "at": … }`, where everything but the name is optional and `at` defaults to now.
+Over HTTP, you record a mark with `POST /api/marks` and the body `{ "name": "before", "note": "…", "service": "…", "at": … }`, where everything but the name is optional and `at` defaults to now.
 
 `marks` lists the newest 50, newest first, and `GET /api/marks` answers the same.
 
@@ -84,9 +84,10 @@ $ java -jar spider-sense.jar marks
 
 Spider Sense records a mark by itself whenever a service restarts.
 When the writer sees a service with a `process.pid` it has not stored for that service, it inserts a mark named `start` with that service and the note `pid <pid>`.
-`--since=start` therefore needs no cooperation from anyone, and it covers the run that is going on now.
+`--since=start` therefore works without anyone running `mark`, and it covers the current run.
 
-The UI's Mark button on the top bar records a mark the same way, and marks are drawn as vertical lines on the charts.
+The Mark button on the UI's top bar records a mark the same way.
+The charts draw marks as vertical lines.
 xref:ui.adoc#top-bar[Layout and Controls] covers the button and the lines.
 
 [#compare]

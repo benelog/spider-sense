@@ -9,7 +9,8 @@ java -jar spider-sense.jar check [--since=] [--until=] [--service=] [--endpoint=
     [--max-error-rate=] [--max-queries-per-request=] [--max-slow-queries=] [--max-n-plus-one=] [--max-log-errors=] [--min-apdex=]
 ----
 
-Over HTTP it is `GET /api/check?since&until&service&endpoint&…rules…&format=`, and the rules are query parameters in camel case (`maxP95Ms`, `maxErrors`).
+Over HTTP, the endpoint is `GET /api/check?since&until&service&endpoint&…rules…&format=`.
+The rules are query parameters in camel case (`maxP95Ms`, `maxErrors`).
 The response also carries the verdict as the header `X-Spider-Sense-Pass: true|false|none`, so the CLI asks once for the text rendering and still exits with a code.
 
 [#rules]
@@ -60,7 +61,7 @@ When no rule is given the default set is `--max-errors=0`, `--max-n-plus-one=0` 
 Naming a rule replaces that set, and only the rules named are then evaluated.
 
 `--endpoint=` narrows the scope to one endpoint, by `endpointId` or by name (`GET /api/orders/\{id}`), and the heading names it.
-`--service=` narrows it to one service.
+`--service=` narrows the scope to one service.
 `requests` counts the entry spans in scope, so a seeder's or a scheduler's root spans never make a verdict of their own.
 A job is never a request, so `check` says nothing about one.
 xref:findings.adoc#slow-job[`slow-job`] is the one place a slow scheduler tick or batch step is reported.

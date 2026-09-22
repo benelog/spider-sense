@@ -17,7 +17,8 @@ Findings are computed over the window, not stored, so the same rules over the sa
 xref:marks-and-compare.adoc#time-selectors[Time selectors] define the window, which is the last 15 minutes when nothing says otherwise.
 
 Findings are ranked by severity (`high` before `medium` before `low`), then by kind, then by impact within a kind, then by id, so the list is stable between two calls over the same data.
-No rule produces `low` today, and the value is reserved for gentler kinds.
+No rule produces `low` today.
+The `low` severity is reserved for gentler kinds.
 The kind order is `error`, `n-plus-one`, `n-plus-one-http`, `slow-query`, `slow-endpoint`, `slow-job`, `slow-external`, `log-error`, `pool-exhausted`, `gc-pause`, `heap-pressure`, `thread-growth`.
 Each kind below names the impact number it is ranked by.
 
@@ -25,7 +26,7 @@ The list is bounded.
 `limit` defaults to 20 and is at most 100.
 
 Two thresholds decide the slow kinds: `slow.request.ms` is 500 milliseconds by default and `slow.query.ms` is 100.
-`status` prints the ones in force, and xref:configuration.adoc#properties[Configuration] says how to change them.
+`status` prints the thresholds in force, and xref:configuration.adoc#properties[Configuration] says how to change them.
 An endpoint that `spidersense.ignore.endpoints` excludes is not an entry span and produces no finding of any kind.
 
 == What every finding carries
@@ -39,7 +40,7 @@ An endpoint that `spidersense.ignore.endpoints` excludes is not an entry span an
 | The kind plus 12 hex characters over the kind, the service and the subject. It is stable across windows, so the same problem keeps its id between runs, and it is what `ack` takes.
 
 | `kind`
-| One of the eleven kinds below.
+| One of the twelve kinds below.
 
 | `severity`
 | `high`, `medium` or `low`, and `acked` in the text rendering for an acknowledged finding.
@@ -74,8 +75,9 @@ An endpoint that `spidersense.ignore.endpoints` excludes is not an entry span an
 
 `traces` are the three slowest traces for the `slow-*` kinds, the three newest for `error` and `log-error`, the three most recent affected for `n-plus-one`, and none for `pool-exhausted` and the three JVM kinds.
 
-`hotSpan` is where the time went in the finding's first evidence trace, and the `slow-endpoint` and `slow-job` kinds carry it.
-It is the span with the largest self time, that time, and its share of the trace's duration, and it reads as one line: `hot span: SELECT order_line · 312.4 ms self · 62.0%`.
+`slow-endpoint` and `slow-job` findings carry `hotSpan`, which names where the time went in the finding's first evidence trace.
+`hotSpan` holds the span with the largest self time, that self time, and its share of the trace's duration.
+It reads as one line: `hot span: SELECT order_line · 312.4 ms self · 62.0%`.
 It is `null` only when the finding has no trace.
 
 [#code]
@@ -86,7 +88,7 @@ The first is the `exception.stacktrace` of an error.
 The second is the `code.function` and `code.namespace` attributes that a few instrumentations set, which is where a `slow-job` finding's frames come from.
 The third is the `code.stacktrace` that Spider Sense's own agent extension captures, on every database span slower than `slow.query.ms`, on the fifth repeat of a statement within one trace, on every non-database `CLIENT` span slower than `slow.request.ms`, and on the fifth repeat of an HTTP call within one trace.
 
-Those extension frames are the truest of the three, because they are the span's own thread at the moment the span finished rather than a guess from an attribute.
+Those extension frames are the most accurate of the three, because they are the span's own thread at the moment the span finished rather than a guess from an attribute.
 `code` is therefore reliable for `error`, `slow-query`, `n-plus-one`, `n-plus-one-http` and `slow-external` findings, often present for `log-error`, and often empty for the others.
 When it is empty, open a trace from `traces` and read the tree, which names the endpoint and the statement even when it cannot name the line.
 
@@ -110,8 +112,10 @@ That is a fact read from the database rather than a guess from the statement.
 }
 ----
 
-`tables` are the tables the statement names, each with its indexes as the extension read them through `DatabaseMetaData.getIndexInfo` on the application's own connection (xref:design.adoc#extension[The extension]), and the store keeps them per service and table (xref:storage.adoc#schema[the `db_table` table]).
-The names are the database's spelling, `ITEMS` on H2 and `items` on PostgreSQL, `schema` is `null` when the database reports none, and `indexes` is empty for a table that has none.
+`tables` are the tables the statement names, each with its indexes as the extension read them through `DatabaseMetaData.getIndexInfo` on the application's own connection (xref:design.adoc#extension[The extension]).
+The store keeps them per service and table (xref:storage.adoc#schema[the `db_table` table]).
+The names use the database's spelling: `ITEMS` on H2 and `items` on PostgreSQL.
+`schema` is `null` when the database reports none, and `indexes` is empty for a table that has none.
 
 `predicates` are read from the sanitised statement by a light parse of the common shapes: every column a `where` or `on` clause or an `order by` list refers to, bare (`where name = ?`), qualified (`where i1_0.name like ?`, the alias resolved to its table) or wrapped in a function (`where lower(name) like ?`).
 Each is written as `table.column` in the statement's own spelling, in order of first appearance and once each, and a column named without a qualifier belongs to the statement's only table.
@@ -119,11 +123,13 @@ Each is written as `table.column` in the statement's own spelling, in order of f
 A function in an `order by` list is skipped whole (`order by sum(l.quantity) desc` names no column), because no index sorts an aggregate.
 `unindexed` is the subset of `predicates` that no index of their table has as its first column, the one an index can seek on.
 A column an index carries second is served no better by it than a column no index carries at all.
-A function-wrapped column is matched by its name, so an index on `name` takes `lower(name)` out of `unindexed`, and the statement says whether an expression index is what is really needed.
+A function-wrapped column is matched by its name, so an index on `name` takes `lower(name)` out of `unindexed`.
+The statement shows whether an expression index is what is really needed.
 
 The block is `null` rather than wrong whenever the parse cannot vouch for it: a table the catalog has no row for (the application ran in standalone mode or without the extension, or no statement on that table has been slow yet), a statement whose tables the scanner does not find, or a column it cannot attribute to one table, such as an unqualified column in a join or the alias of a subquery.
 It says nothing about selectivity, wildcards or the plan.
-That is what the `spider-sense-sql-tuning` skill and `EXPLAIN` are for, and the block is what lets the skill write the index without a round trip to the database.
+The `spider-sense-sql-tuning` skill and `EXPLAIN` answer those questions.
+The block lets the skill write the index without a round trip to the database.
 
 In the text rendering the block sits between the statement and the code frames, one line per table, then one line for the columns:
 
@@ -153,20 +159,25 @@ One trace is an anecdote, so a `slow-endpoint` and a `slow-job` also answer "whe
 
 Both are computed over the finding's sample: the 20 slowest traces of the endpoint or the job in the window, of which the first three are the `traces` the finding carries.
 A share is therefore a share of those traces' summed duration, while the finding's own `totalMs` stays the window's.
-Only the spans of the finding's own service count, the rule `dbShare` already uses: leaving the downstream server span out is what makes the wait on an outbound call land in `http` where the caller can see it.
+Only the spans of the finding's own service count, which is the rule `dbShare` already uses.
+Leaving the downstream server span out makes the wait on an outbound call land in `http`, where the caller can see it.
 
 Self time is a span's duration less the durations of its direct children within that set, never below zero, as the xref:pages.adoc#traces[Profile view] computes it.
-A span whose parent is not in the set is a top span — the entry span of a request, the root span of a job — and the top spans are what the shares are taken over.
+A span whose parent is not in the set is a top span: the entry span of a request, or the root span of a job.
+The shares are taken over the top spans.
 
-`hotSpans` is every span but the top ones, grouped by its category and its name, summed, the largest `selfMs` first.
+`hotSpans` groups every span except the top spans by category and name, sums each group, and lists the largest `selfMs` first.
 The name is the span's summary with every run of digits replaced by `?`, and an outbound call is named as <<n-plus-one-http,`n-plus-one-http`>> names it, so one call to 40 items is one row.
 `count` is how many spans went into the row.
 
 `breakdown` is `db`, `http`, `internal` and `self`, which sum to 1.
-`self` is the top spans' own self time, which is the request's own code and the framework, and `internal` absorbs the `messaging` and `rpc` categories: the question the four answer is whether the time was spent waiting on the database, waiting on the network, or working.
-It is the number to read first when `dbShare` is low, and the xref:pages.adoc#endpoints[endpoint page] draws the same four shares as one bar.
+`self` is the top spans' own self time: the request's own code and the framework.
+`internal` absorbs the `messaging` and `rpc` categories.
+The four shares answer whether the time was spent waiting on the database, waiting on the network, or working.
+`breakdown` is the number to read first when `dbShare` is low.
+The xref:pages.adoc#endpoints[endpoint page] draws the same four shares as one bar.
 
-In the text rendering they come after the numbers and before the statement:
+In the text rendering, `hotSpans` and `breakdown` come after the numbers and before the statement:
 
 ----
    hot spans: SELECT order_line · 4,210.5 ms · 44.0% · ×126
@@ -238,7 +249,8 @@ The impact it is ranked by is affected requests multiplied by median repeats.
 Read it as: this endpoint ran that statement `medianRepeats` times in one request, and that cost `msPerRequest`.
 `affected` well below `requests` means only some inputs trigger it, which usually points at a branch or a lazily loaded collection that is only touched sometimes.
 `code` is the call site of the fifth repeat, so it names the line that issues the repeated statement.
-It is empty only when the application ran without the extension, and the trace tree then names the loop.
+`code` is empty only when the application ran without the extension.
+The trace tree then names the loop.
 The <<schema,schema block>> names the tables the repeated statement touches, the indexes they carry, and the columns it filters on that no index serves.
 
 What to do:
@@ -256,7 +268,8 @@ After the fix, `compare` should show the query's `calls/req` down to 1 and the e
 
 The same outbound HTTP call runs 5 or more times under the same entry span in one trace, aggregated per endpoint and call over the window.
 It is the N+1 an ORM cannot cause: a loop that fetches one remote resource per item.
-The severity, the impact and the `numbers` are `n-plus-one`'s, over the repeated call rather than the repeated statement; `statement` is `null` and `subject.target` names the host that was called.
+The severity, the impact and the `numbers` are the same as for `n-plus-one`, measured over the repeated call rather than the repeated statement.
+`statement` is `null`, and `subject.target` names the host that was called.
 
 Two calls are the same call when they agree on their name, their target and their path once every run of digits is replaced by `?`, so the finding names one call:
 
@@ -264,8 +277,9 @@ Two calls are the same call when they agree on their name, their target and thei
 GET /orders/{id} calls GET localhost:8081/api/books/? 6 times per request
 ----
 
-The digits are what a loop varies, so replacing them is what makes three calls one call.
-The status is not part of the call, because the same call can answer `200` for one item and `404` for the next, and the host keeps its port because the digit rule is applied to the path alone.
+A loop varies the digits, so replacing them turns three calls into one call.
+The status is not part of the call, because the same call can answer `200` for one item and `404` for the next.
+The host keeps its port, because the digit rule applies to the path alone.
 `code` is the call site of the fifth repeat, so it names the line that issues the call.
 
 What to do:
@@ -274,7 +288,7 @@ What to do:
   When the callee is yours, adding that endpoint is usually the smaller change.
 * *Cache what does not change per request*: a per-request cache removes the repeats inside one request, a short-lived shared cache removes them across requests.
 * *Move the join to the callee*: when every item needs the same enrichment, let the callee return it with the list rather than answering one item at a time.
-* When neither is possible, make the calls concurrently, which shortens the request without removing the load.
+* When none of these is possible, make the calls concurrently, which shortens the request without removing the load.
 
 `check --max-n-plus-one=0` fails on this kind as it does on `n-plus-one`: to a caller, a loop of queries and a loop of calls are one mistake.
 
@@ -293,7 +307,8 @@ The <<schema,schema block>> names the tables the statement touches, the indexes 
 
 What to do:
 
-* *Add the index* the predicate needs, which the schema block's `unindexed` lists by name, and remember that a leading wildcard (`like '%graph%'`) defeats one.
+* *Add the index* the predicate needs, which the schema block's `unindexed` lists by name.
+  A leading wildcard (`like '%graph%'`) defeats an index.
   Search that genuinely needs an infix match belongs in a search index.
 * *Rewrite the shape*: a correlated subquery per row becomes a join, an unbounded `select count(*)` becomes a bounded count, and an `order by` over an unindexed column becomes an indexed one.
 * *Stop selecting what is not needed*: a projection instead of an entity, or named columns instead of `select *`.
@@ -310,13 +325,13 @@ The impact it is ranked by is total time.
 
 `numbers`: `calls`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `apdex`, `dbCallsPerRequest`, `dbMsPerRequest`, `dbShare` (the part of the endpoint's total time spent in database spans of the same trace and service, printed as a percentage), `hotSpan`, `hotSpans`, `breakdown`.
 
-`dbShare` is the fork in the road.
+`dbShare` decides where to look next.
 
 * *High `dbShare`* means the endpoint is not the problem and its queries are.
   Look for an `n-plus-one` or `slow-query` finding with this endpoint among its `callers`, and fix it there.
 * *Low `dbShare`* means the time is elsewhere.
   <<time,`breakdown`>> says whether it is the network or the endpoint's own code, `hotSpans` names the three summaries that took the most of it, and the slowest trace from `traces` shows the rest.
-  `hotSpan` names the one span that holds it in that one trace.
+  `hotSpan` names the span with the largest self time in the first evidence trace.
   A `CLIENT` span that dominates the duration is the answer, and so is a long stretch with no child spans at all, which is the endpoint's own code.
 
 What to do:
@@ -343,8 +358,8 @@ A job is work the application did to itself, so it is never an entry span.
 It is in no request count, in no Apdex and in no `check` verdict, and this finding is the one place a slow scheduler tick or batch step is reported.
 
 `dbShare` forks the same way it does for `slow-endpoint`.
-High means the job's queries are the problem, and a job is where an N+1 hides best, because nobody is waiting for it.
-Low means the time is the job's own code, and <<time,`breakdown`>> and `hotSpans` say where it went before a trace has to be opened.
+A high `dbShare` means the job's queries are the problem, and a job is where an N+1 hides best, because nobody is waiting for it.
+A low `dbShare` means the time is the job's own code, and <<time,`breakdown`>> and `hotSpans` say where it went before a trace has to be opened.
 
 What to do:
 
@@ -358,12 +373,12 @@ What to do:
 === slow-external
 
 An outbound HTTP call whose p95 exceeds `slow.request.ms`: `CLIENT` spans of category `http`, grouped by service, target and span name.
-The target is what the service map calls the dependency, such as `localhost:8081`, so one row is one thing this service calls rather than every outbound call it makes.
+The target is what the service map calls the dependency, such as `localhost:8081`, so one row is one dependency of this service rather than every outbound call it makes.
 Severity and impact are the same as `slow-endpoint`.
 
 `numbers`: `calls`, `errors`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `callers`.
 
-First decide whose problem it is, by opening the slowest trace from `traces`.
+Open the slowest trace from `traces` first, to decide whose problem it is.
 When the callee is traced too, its `SERVER` span is in the same tree.
 A `SERVER` span nearly as long as the `CLIENT` span moves the question to that service.
 A `CLIENT` span much longer than the `SERVER` span it wraps is connection setup, queueing or serialisation on this side.
@@ -388,7 +403,7 @@ It is always `high`, and the impact it is ranked by is the occurrence count.
 `numbers`: `count`, `firstSeen`, `lastSeen`, `type`, `message` (normalised, digits replaced by `?`), `endpoints` (name and count).
 
 The group is the service, the exception type and the normalised message, so one row is one failure mode rather than one occurrence.
-`code` is at its best here, so the top application frame is where to look.
+`code` is most reliable for this kind, so look at the top application frame first.
 `traces` are the three newest occurrences, and `trace <id>` shows the exception span with its message and frames and the trace's log lines underneath.
 `logs --trace=<traceId>` gives the full log for that request.
 
@@ -398,7 +413,7 @@ What to do, after reading the top frame:
   Fix the code, and add the test that reproduces it.
 * *An expected condition answered as a failure*, such as a business rule violated or an entity not found.
   It should still be visible, but it should answer the client properly rather than escape as a 500.
-  An `@ExceptionHandler` that answers `409 Conflict` is the shape.
+  An `@ExceptionHandler` that answers `409 Conflict` is the usual fix.
 * *A dependency failing*: the trace shows the `CLIENT` span that failed first.
 
 A message that carries the identifier (`Order 42 is already shipped`) still groups correctly, because Spider Sense normalises the digits away.
@@ -436,10 +451,10 @@ A JDBC pool with a point in the window where pending requests are above zero, or
 It is always `high`, and it is ranked by pending first and used second.
 
 `numbers`: `pool`, `max`, `usedMax`, `pendingMax`, `at` (the worst point).
-There are no `traces`, because this comes from the pool's metrics rather than from a span.
+There are no `traces`, because the finding comes from the pool's metrics rather than from a span.
 
 `pendingMax` above zero means threads waited for a connection, and `usedMax` equal to `max` means the pool was full.
-A pool at its limit is a symptom, and there are two causes worth considering.
+A pool at its limit is a symptom with two causes worth considering.
 
 What to do:
 
@@ -447,7 +462,7 @@ What to do:
   A connection taken outside a `try`-with-resources, a transaction left open, or a stream consumed after the transaction that produced it ended.
   In Spring, work that opens a transaction and then makes a slow HTTP call holds a connection for the length of that call, so move the call outside the transactional method.
 * *A pool too small for the concurrency.*
-  This is real, but check the first cause before raising the ceiling, because a leak will exhaust any size.
+  This cause is real, but rule out connections not returned before raising the ceiling, because a leak exhausts any size.
 * `spring.datasource.hikari.leak-detection-threshold=20000` proves which of the two it is: it logs the stack that took a connection and did not give it back, and those log lines are in `logs`.
 
 A pool at its limit also shows as endpoints whose p95 rises while their `dbMsPerRequest` does not, because the wait happens before any database span starts.
@@ -472,7 +487,7 @@ What to do:
   The usual sources are a whole result set loaded to return a page of it, a string built by concatenation in a loop, and a response serialised into memory rather than streamed.
 * *Then the heap.*
   A young generation too small for the allocation rate collects constantly, and `-Xmx` and `-Xms` set to the same value avoid the resizing pauses of a growing heap.
-  On a development machine the honest fix is often that the JVM was given 256 MiB and the workload wants more.
+  On a development machine the real fix is often that the JVM was given 256 MiB and the workload wants more.
 
 `findings --since=start` after the change says whether the pauses are gone.
 A `heap-pressure` finding beside this one says the heap is the cause rather than the allocation rate.
@@ -487,7 +502,7 @@ It is always `high`, and the impact it is ranked by is the highest ratio.
 There are no `traces`.
 
 A heap at 90% of its limit is a run that is about to spend its time collecting, and it usually arrives with a `gc-pause` finding.
-The question is what is being held.
+The question is what the heap is holding.
 
 What to do:
 
@@ -496,7 +511,7 @@ What to do:
 * *A whole result set in memory*: streaming, paging or a projection turns the peak into a plateau.
 * *A heap genuinely too small* for the workload, which is the last thing to conclude rather than the first.
 
-The xref:pages.adoc#jvm[JVM page]'s memory chart over the same window says which it is.
+The xref:pages.adoc#jvm[JVM page]'s memory chart over the same window says which of the three it is.
 A sawtooth that returns to the same floor is allocation, and a floor that climbs is something being retained.
 
 [#thread-growth]
@@ -515,7 +530,7 @@ A count that climbs for as long as the window does is a leak.
 What to do:
 
 * *Something created per request that should be created once*: an executor, an HTTP client, a scheduler, a connection pool.
-* *A pool with no bound*, which grows until the machine says no.
+* *A pool with no bound*, which grows until the machine refuses to create more threads.
   Give it a maximum and a queue.
 * *Threads parked rather than finished*, waiting on a call with no timeout.
 
@@ -534,7 +549,8 @@ java -jar spider-sense.jar unack slow-endpoint:786b594455d0
 java -jar spider-sense.jar findings --hide-acked
 ----
 
-The id is what `findings` printed, and finding ids are stable across windows, so one acknowledgement keeps holding as the window moves.
+The id is the one `findings` printed.
+Finding ids are stable across windows, so one acknowledgement keeps holding as the window moves.
 `unack` with no such acknowledgement exits `4`.
 
 An acknowledged finding is ranked after every other finding, in the same order among themselves.
