@@ -10,7 +10,7 @@ The default JDBC URL is `jdbc:h2:~/db/spider-sense/sense;AUTO_SERVER=TRUE`, whic
 `sense.trace.db` appears beside it when H2 logs a problem.
 `spidersense.db` overrides the URL with a path (`~/db/other/sense`) or a full `jdbc:h2:` URL.
 
-`AUTO_SERVER=TRUE` is what makes the layouts work without ceremony:
+`AUTO_SERVER=TRUE` lets embedded and standalone Spider Sense processes share the file without any setup:
 
 * The first process to open the file becomes its server.
 A second process that opens the same URL connects to the first over a local TCP port, transparently.
@@ -18,7 +18,8 @@ Two applications each embedding Spider Sense, plus a standalone `java -jar spide
 * When the process holding the file exits, the next opener takes over.
 Stop the application, run `java -jar spider-sense.jar`, and the traces of the session that just ended are on screen.
 
-The H2 driver runs inside the `SenseClassLoader`, which the OpenTelemetry agent is told to leave alone, so the application's traces never contain Spider Sense's own SQL.
+The H2 driver runs inside the `SenseClassLoader`, which the OpenTelemetry agent is told to leave alone.
+The application's traces therefore never contain Spider Sense's own SQL.
 An application that uses H2 itself loads its own copy of the driver in its own class loader, and the two copies never meet.
 
 [#schema]
@@ -26,7 +27,8 @@ An application that uses H2 itself loads its own copy of the driver in its own c
 
 There is one row per span, log record, metric point, tingle and mark (a named moment, see xref:marks-and-compare.adoc#marks[Marks]), plus a per-trace summary row that the writer maintains.
 The lists and aggregations the API serves are therefore SQL over indexed columns rather than a scan of blobs.
-Attributes and events are kept as JSON text in the same row, and the columns beside them are the values the queries need, extracted once at ingest.
+Attributes and events are kept as JSON text in the same row.
+The columns beside them hold the values the queries need, extracted once at ingest.
 
 [source,sql]
 ----
@@ -192,43 +194,50 @@ CREATE TABLE IF NOT EXISTS meta (
 ----
 
 The schema is created with `IF NOT EXISTS` at startup.
-`meta.schema_version` is `5`, the version the `db_table` table arrived with, and `ack` arrived with 4 and `mark` with 3.
+`meta.schema_version` is `5`, the version that added the `db_table` table.
+Version 4 added `ack`, and version 3 added `mark`.
 A version that changes a table drops and recreates every table, because the data is a cache of a development session and not a record.
 An `ack` row is an acknowledged finding (xref:findings.adoc#acknowledgements[Acknowledgements]).
-It is not swept by time, since a known finding stays known, and `DELETE /api/data` removes it with everything else.
+The retention sweeper does not delete an `ack` row by age, since a known finding stays known.
+`DELETE /api/data` removes it with everything else.
 A `db_table` row is the index catalog of one table of one service, as the extension read it through JDBC metadata (xref:design.adoc#extension[The extension]).
-It arrives as a log record whose attributes are `spidersense.schema.table`, `spidersense.schema.schema`, `spidersense.schema.product` and `spidersense.schema.indexes`, and the decoder turns that record into a catalog row instead of a log line.
+It arrives as a log record whose attributes are `spidersense.schema.table`, `spidersense.schema.schema`, `spidersense.schema.product` and `spidersense.schema.indexes`.
+The decoder turns that record into a catalog row instead of a log line.
 The row is merged on its key (`MERGE INTO db_table … KEY (service, schema_name, table_name)`), so a table looked up again after a restart replaces its row.
 The `indexes` text is stored as received, and the findings read it back (xref:findings.adoc#schema[The schema block] in Findings).
 `entry` is decided once, when the row is written, so rows written by an older Spider Sense keep the flag they were written with.
-A root `INTERNAL` or database span from before the rule narrowed still counts as a request until the retention sweeper removes it.
+A root `INTERNAL` or database span from before the `entry` rule narrowed still counts as a request until the retention sweeper removes it.
 
-The `design.md` the SQL comments name is xref:design.adoc#endpoint-identity[Endpoint identity] in this manual, and the finding id of the `ack` table is the one xref:findings.adoc[Findings] defines.
+The `design.md` that the SQL comments name is xref:design.adoc#endpoint-identity[Endpoint identity] in this manual.
+The finding id in the `ack` table is the one xref:findings.adoc[Findings] defines.
 
 [#reader]
 == The read-only user
 
-Beside the tables the schema creates one H2 user, `spider_sense_reader`, with `CREATE USER IF NOT EXISTS` and a constant password, and grants it `SELECT` on schema `PUBLIC`.
-It is what `POST /api/sql` and the CLI's xref:cli.adoc#sql[`sql`] run on.
-A user with `SELECT` and nothing else means H2 itself refuses every write, every piece of DDL and the administrator-only functions (`FILE_WRITE`, `CSVWRITE`, `FILE_READ`, `LINK_SCHEMA`, `RUNSCRIPT`) to whatever statement gets that far.
+Beside the tables, the schema creates one H2 user, `spider_sense_reader`, with `CREATE USER IF NOT EXISTS` and a constant password, and grants it `SELECT` on schema `PUBLIC`.
+`POST /api/sql` and the CLI's xref:cli.adoc#sql[`sql`] run their statements as this user.
+Because the user has `SELECT` and nothing else, H2 itself refuses every write, every piece of DDL and the administrator-only functions (`FILE_WRITE`, `CSVWRITE`, `FILE_READ`, `LINK_SCHEMA`, `RUNSCRIPT`) to any statement that gets that far.
 The grant is on the schema rather than on the tables, so it covers a table a later version adds without a `schema_version` bump.
 Creating the user is idempotent on every open.
-Only a server's open creates it, never the CLI's: `AUTO_SERVER=TRUE` may have joined the database of an older Spider Sense, and adding a user to it is as much a change to somebody else's database as recreating its tables would be.
-The reader's connection uses the same JDBC URL with the settings a non-administrator may not apply removed, keeping only `AUTO_SERVER` and `NON_KEYWORDS`.
-H2 turns most of those settings into a `SET` at connect time, and `DB_CLOSE_DELAY`, which the in-memory fallback sets, is one an ordinary user is refused.
+Only a server creates the user when it opens the database, and the CLI never does.
+Through `AUTO_SERVER=TRUE` the CLI may have joined the database of an older Spider Sense, and adding a user to it is as much a change to somebody else's database as recreating its tables would be.
+The reader connects with the same JDBC URL minus the settings a non-administrator may not apply, keeping only `AUTO_SERVER` and `NON_KEYWORDS`.
+H2 turns most of those settings into a `SET` at connect time.
+`DB_CLOSE_DELAY`, which the in-memory fallback sets, is one an ordinary user is refused.
 
 == How it is written
 
 Ingest never touches the database on the request thread.
 The OTLP handler decodes the request into records and hands them to a `Writer`.
 The `Writer` is a bounded queue of 10,000 batches drained by one daemon thread.
-When the queue is full, the oldest batch is dropped and a counter shown on `/api/status` increments.
+When the queue is full, the oldest batch is dropped and `/api/status.storage.droppedBatches` increments.
 The thread flushes every 200 ms, or as soon as 500 records are waiting, in one transaction per flush with JDBC batch inserts.
 The catalog rows of a flush are merged in the same transaction.
 After each flush the writer recomputes the `trace` rows of the trace ids the flush touched (`MERGE INTO trace ... SELECT ... FROM span WHERE trace_id IN (...) GROUP BY trace_id`), because a trace's spans arrive in several exports and from several services.
 It then publishes the flush's tingles and counts to the SSE stream.
 The `service` row is merged on every flush that carries the service.
-When the sighting carries a `process.pid` that differs from the stored one, or the row is new, the writer also inserts a `mark` named `start` for that service with the note `pid <pid>`, which is what `since=start` resolves to.
+When the sighting carries a `process.pid` that differs from the stored one, or the row is new, the writer also inserts a `mark` named `start` for that service with the note `pid <pid>`.
+`since=start` resolves to that mark.
 A JVM shutdown hook flushes what is queued.
 
 Metric points are written on the same path.
@@ -237,13 +246,15 @@ A series row is looked up by `(service, name, attr_hash)` through a small in-mem
 [#ingest-cap]
 === The ingest cap
 
-`spidersense.ingest.max-spans-per-second` is unset by default, and protects the file from a load test.
+`spidersense.ingest.max-spans-per-second` protects the file from a load test.
+It is unset by default.
 The receiver counts the spans it has accepted in the current wall-clock second.
 Once the count is over the cap, a span whose trace id is not among the traces accepted in the last 10,000 is dropped, and a span of a trace already accepted is kept.
 Those 10,000 trace ids are a bounded, insertion-ordered set.
 Every stored trace therefore stays complete, and the dropped ones are whole traces.
 Logs and metric points are never dropped.
-The dropped spans are counted in `/api/status.storage.droppedSpans` and carried on the SSE `stats` event as `droppedSpans`, and the UI shows the number in the sidebar foot while it grows (xref:ui.adoc[Layout and Controls]).
+The dropped spans are counted in `/api/status.storage.droppedSpans` and carried on the SSE `stats` event as `droppedSpans`.
+The UI shows the number in the sidebar foot while it grows (xref:ui.adoc[Layout and Controls]).
 
 == How it is read
 
@@ -272,10 +283,11 @@ Reads are plain JDBC through one small helper, `Sql.query(sql, params, rowMapper
 There is no ORM and no spring-jdbc, so the nested server jar carries only H2 beyond what it already has.
 
 The xref:cli.adoc[CLI] reads the same way when no server answers.
-It opens the same URL, so it joins a running auto-server, or opens the file itself for the length of the command when none is running, and runs the same `Queries` without a writer or a sweeper.
+It opens the same URL, so it joins a running auto-server, or opens the file itself for the length of the command when none is running.
+It runs the same `Queries` without a writer or a sweeper.
 Its open refuses a missing file, and refuses another `schema_version` instead of dropping the tables, since the database it joined may belong to an older server that is still writing to it.
 The three commands that write are `mark`, `ack` and `unack`, and `import`, and they write through the same connection with plain statements.
-`import` is the one that inserts spans, and it does so through the `Writer`'s own insert and `trace` merge, so an imported trace is stored exactly as a received one (xref:cli.adoc#export-import[Export and import]).
+`import` alone inserts spans, and it does so through the `Writer`'s own insert and `trace` merge, so an imported trace is stored exactly as a received one (xref:cli.adoc#export-import[Export and import]).
 
 [#retention]
 == Retention
@@ -287,13 +299,13 @@ A catalog row goes by its `seen_ms`, because a catalog older than the retention 
 At 24 hours of a few requests per second the file stays in the low hundreds of megabytes.
 H2 reclaims space on the next compaction, when the database closes.
 
-Time is the retention, and one row cap guards it: `spidersense.retention.spans`, default 1,000,000, and `0` for none.
+Retention is by time, with one row cap as a guard: `spidersense.retention.spans`, default 1,000,000, and `0` for none.
 After the time sweep, while `SELECT COUNT(*) FROM span` is above the cap, the sweeper takes the oldest hour of data (`MIN(start_ms)` of `span`, plus one hour) and deletes every row of `span`, `trace`, `log`, `metric_point` and `tingle` before that instant.
 Marks and catalog rows are included only when they are older than the retention, as before.
-It proceeds one hour at a time, so a cap crossed by a little costs a little.
+The sweeper proceeds one hour at a time, so a cap crossed by a little costs a little.
 The cap is by rows rather than by file size because an H2 file does not shrink when rows go.
 A size read after a delete would say the same number and ask for the next hour, until nothing was left.
-`/api/status.retention` reports both, as `{ "hours": 24, "spans": 1000000 }`.
+`/api/status.retention` reports both limits, as `{ "hours": 24, "spans": 1000000 }`.
 
 == Failure
 

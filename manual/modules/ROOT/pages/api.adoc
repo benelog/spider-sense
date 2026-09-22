@@ -35,7 +35,8 @@ The request `Content-Type` is `application/x-protobuf` or `application/json`, an
 The answer is `200` with an empty `Export{Trace,Metrics,Logs}ServiceResponse` in the request's content type.
 An undecodable body is `400`, and another content type is `415`.
 Partial success is never reported, so everything decodable is stored.
-A log record carrying the attribute `spidersense.schema.table` is the index catalog of one table, read by xref:design.adoc#extension[the extension], and is stored as a `db_table` row rather than as a log (xref:storage.adoc#schema[Storage]).
+A log record carrying the attribute `spidersense.schema.table` is the index catalog of one table, as read by xref:design.adoc#extension[the extension].
+It is stored as a `db_table` row rather than as a log (xref:storage.adoc#schema[Storage]).
 
 [#status]
 == Status and control
@@ -63,16 +64,17 @@ A log record carrying the attribute `spidersense.schema.table` is the index cata
 }
 ----
 
-`ignore.endpoints` is `spidersense.ignore.endpoints` as configured, described in xref:configuration.adoc#ignored-endpoints[Ignored endpoints].
+`ignore.endpoints` is the configured value of `spidersense.ignore.endpoints`, which xref:configuration.adoc#ignored-endpoints[Ignored endpoints] describes.
 
 *`DELETE /api/data`* answers `204`.
 It deletes every span, trace, log, metric point, tingle, mark and acknowledgement.
 Services and metric metadata stay.
 
-*`GET /api/export?traceId`* answers an `application/json` download (`Content-Disposition: attachment`) of `+{ "traces": [<trace as in GET /api/traces/{id}>] }+`, one trace.
+*`GET /api/export?traceId`* answers one trace as an `application/json` download (`Content-Disposition: attachment`) of `+{ "traces": [<trace as in GET /api/traces/{id}>] }+`.
 
 *`GET /api/export?from&to&since&until&service`* without `traceId` answers the session document described in xref:cli.adoc#export-import[Export and import], streamed.
-*`POST /api/import`* takes that document back and answers the counts, and accepts `Content-Encoding: gzip`.
+*`POST /api/import`* takes that document back and answers the counts.
+It accepts `Content-Encoding: gzip`.
 
 [#events]
 == Live events
@@ -117,9 +119,9 @@ A `: keepalive` comment is sent every 15 s.
 }
 ----
 
-*Response-time buckets and Apdex* are a Pinpoint-style response summary, load chart and Apdex score.
+*Response-time buckets and Apdex* give a response summary, a load chart and an Apdex score.
 `thresholds.responseBucketsMs` is `[T/4, T, 4T]` with `T = slowRequestMs`, so the default buckets are `≤125 ms`, `≤500 ms`, `≤2 s` and `>2 s`.
-Everywhere a `histogram` appears it is five counts: the non-error requests in each of the four buckets, then the error count.
+Every `histogram` is five counts: the non-error requests in each of the four buckets, then the error count.
 The five sum to `requests`.
 `apdex` is `(histogram[0] + histogram[1] + histogram[2] / 2) / requests`, so a request is satisfied up to `T`, tolerating up to `4T`, and an error is frustrated.
 It is rounded to three decimals, and `null` when there is no request.
@@ -194,7 +196,7 @@ It lists every service ever seen, with zeros when nothing falls in the window.
 `q`::
 A case-insensitive substring match over the root span name, every span name, and every string attribute value of the trace.
 `before`::
-Pages backwards, to the traces whose start is strictly before it.
+Pages backwards, to the traces that start strictly before the given epoch ms.
 
 [source,json]
 ----
@@ -244,7 +246,7 @@ With `diff=<traceId>` it answers the two traces aligned instead, as xref:cli.ado
 
 *`GET /api/map?from&to`*
 
-The answer is the topology of the window, drawn Pinpoint-style.
+The answer is the topology of the window.
 There is one node per service, per database, per external HTTP host and per messaging destination, plus one `user` node for the traffic that comes from outside every traced service.
 
 [source,json]
@@ -276,9 +278,10 @@ Its numbers are the `ServiceSummary` numbers.
 * Every other node is an outbound target, grouped as `+GET /api/services/{name}.dependencies+` groups them.
 `kind` is `db`, `http`, `messaging` or `rpc`, and `name` is the dependency's `target`.
 An edge runs from each service that calls it.
-An outbound span whose child is an entry span of another service is that `service → service` edge and not an external target, so a call to `localhost:8081` shows as a call to `silk-bookstore` when the bookstore is traced too.
+An outbound span whose child is an entry span of another service counts as that `service → service` edge, not as an external target.
+A call to `localhost:8081` therefore shows as a call to `silk-bookstore` when the bookstore is traced too.
 * A node with no edge is not listed, so a service whose only traffic is calls to itself does not appear.
-* "Not stored" means not stored at all, whatever the window.
+* A parent is "not stored" only when it is absent from the database, whatever the window.
 A parent that was traced but starts before the window still counts as a traced caller, not as a user.
 
 == Scatter (response-time scatter)
@@ -286,7 +289,7 @@ A parent that was traced but starts before the window still counts as a traced c
 *`GET /api/scatter?from&to&service&endpointId&limit=5000`*
 
 The answer is one point per entry span in the window, newest first, cut at `limit`.
-It says when it was cut so the UI can shrink the window.
+`truncated` says whether the list was cut, so the UI can shrink the window.
 
 [source,json]
 ----
@@ -319,7 +322,8 @@ The points are arrays rather than objects because 5,000 points must stay small o
   "schema": { "tables": [...], "predicates": [...], "unindexed": [...] } | null }
 ----
 
-`schema` is the index catalog of the statement's tables and the columns it filters on that no index serves, as xref:findings.adoc#schema[the schema block] defines it, and it is `null` when there is no catalog to read.
+`schema` is the index catalog of the statement's tables and the columns it filters on that no index serves, as xref:findings.adoc#schema[the schema block] defines it.
+It is `null` when there is no catalog to read.
 
 *`+GET /api/queries/{queryId}?from&to+`* answers `{ "query": <QueryStats>, "series": { "t": [...], "calls": [...], "p95Ms": [...] }, "traces": [<TraceSummary> x 20 slowest containing it] }`.
 
@@ -402,7 +406,7 @@ For a monotonic sum such as `jvm.cpu.time` or the count of `jvm.gc.duration`, `v
 }
 ----
 
-`connectionPools` is a Pinpoint-style "data source" panel.
+`connectionPools` feeds the JVM page's connection pool charts.
 It holds one entry per JDBC pool the agent instruments (HikariCP, Tomcat JDBC, c3p0, and so on), and is empty when the service reports none.
 It is read from `db.client.connections.usage` (attribute `state` = `used` or `idle`, pool from `pool.name`), `db.client.connections.max` and `db.client.connections.pending_requests`.
 It is also read from their stable-semconv names `db.client.connection.count` (`db.client.connection.state`, `db.client.connection.pool.name`), `db.client.connection.max` and `db.client.connection.pending_requests`.
@@ -411,7 +415,7 @@ It is also read from their stable-semconv names `db.client.connection.count` (`d
 [#agent-endpoints]
 == Agent-facing endpoints
 
-This section is the wire shape only.
+This section specifies only the wire shape.
 The semantics are specified elsewhere in this manual: the time selectors and verdicts in xref:marks-and-compare.adoc[Marks and Compare], the finding rules in xref:findings.adoc[Findings], the rules of `check` in xref:check.adoc[Check], and the text renderings in xref:cli.adoc#text-rendering[The CLI].
 
 === Time selectors
@@ -443,18 +447,19 @@ The format of each rendering is given in xref:cli.adoc#text-rendering[The CLI].
 { "id": 12, "at": 1758000000000, "name": "before", "service": "spring-orders" | null, "note": "pid 12345" | null }
 ----
 
-A mark named `start` is inserted by the writer when a service reports a `process.pid` it has not stored for that service.
+The writer inserts a mark named `start` when a service reports a `process.pid` it has not stored for that service.
 
 === Findings
 
 *`GET /api/findings?since&until&service&limit=20&hideAcked=false`* answers `{ "window": {...}, "requests": 120, "acked": 2, "findings": [ <Finding> ] }`.
-The findings are ranked as xref:findings.adoc[Findings] specifies, acknowledged findings come last, and `hideAcked=true` leaves them out.
+The findings are ranked as xref:findings.adoc[Findings] specifies, with acknowledged findings last.
+`hideAcked=true` leaves the acknowledged findings out.
 `limit` is at most 100.
 
 *`+POST /api/findings/{id}/ack+`* with `{ "note": "…" | null }` answers `201` and `{ "findingId": "…", "at": …, "note": … }`.
 *`+DELETE /api/findings/{id}/ack+`* answers `204` or `404`.
 *`GET /api/acks`* answers `{ "acks": [ { "findingId", "at", "note" } ] }`, newest first.
-xref:findings.adoc#acknowledgements[Acknowledgements] describes what they mean.
+xref:findings.adoc#acknowledgements[Acknowledgements] describes what an acknowledgement means.
 
 `Finding`:
 
@@ -520,7 +525,8 @@ The CLI can therefore ask once for the text rendering and still exit with a code
 
 `columns` are H2's own labels, which upper-case an unquoted name.
 A cell is a JSON number, string, boolean or null, as the store holds it, and an H2 `TIMESTAMP` is an ISO string.
-`limit` defaults to 200 and is capped at 5000, and a `limit` below 1 is a `400`.
+`limit` defaults to 200 and is capped at 5000.
+A `limit` below 1 is a `400`.
 `truncated` says whether the cap cut the rows off.
 The statement must be a single `SELECT`, `WITH`, `TABLE`, `VALUES`, `EXPLAIN` or `SHOW`, and it runs as an H2 user that has `SELECT` and nothing else (xref:cli.adoc#sql[the CLI's `sql`], xref:storage.adoc#reader[the read-only user]).
 A refused statement and a statement H2 would not run are both `400`: `{ "error": "…" }`, or the message on one line when the text rendering was asked for.
@@ -528,7 +534,7 @@ A refused statement and a statement H2 would not run are both `400`: `{ "error":
 === MCP
 
 *`POST /mcp`* takes one JSON-RPC 2.0 message as `application/json`.
-The semantics, the six tools and their arguments are in xref:mcp.adoc[MCP].
+xref:mcp.adoc[MCP] specifies the semantics, the six tools and their arguments.
 
 * A request (`id` present) is answered `200` with the JSON-RPC response as `application/json`.
 A notification is answered `202` with no body.
@@ -543,21 +549,22 @@ A missing required argument or an unknown tool name is `-32602`.
 == Static UI
 
 `GET /` and every path without an `/api/` or `/v1/` prefix that has no file answer the UI's `index.html`.
-The router is hash-based, so this is mostly `/`.
+The UI's router is hash-based, so in practice this path is almost always `/`.
 
 `GET /assets/**` answers files under `public/assets`.
 
 == Clarifications
 
-These are decisions the server made where the contract left room, recorded so the UI can rely on them.
+This section records the decisions the server made where the contract left room, so the UI can rely on them.
 
 === Endpoint identity
 
 An entry span's endpoint name is `METHOD route` when `http.route` is present *and is not a servlet-mapping wildcard* (`/`, `/*`, or anything ending in `/*`).
 Otherwise it is the span name.
-A wildcard mapping says "everything", so honouring it would collapse every endpoint of a Spring Boot application into `GET /*`, and OpenTelemetry already names a server span `METHOD route` or just `METHOD`.
+A wildcard mapping says "everything", so honouring it would collapse every endpoint of a Spring Boot application into `GET /*`.
+OpenTelemetry already names a server span `METHOD route` or just `METHOD`.
 A span whose endpoint name matches `spidersense.ignore.endpoints` (xref:configuration.adoc#ignored-endpoints[Ignored endpoints]) is stored with `entry` false and no endpoint.
-It is in its trace and in `/api/traces`, and in nothing that counts requests.
+Such a span still appears in its trace and in `/api/traces`, but in nothing that counts requests.
 `endpointId` is the first 12 hex characters of the SHA-256 of `service + " " + name`.
 `queryId` hashes `service\0system\0statement` and `errorId` hashes `service\0type\0normalisedMessage` the same way.
 
@@ -583,7 +590,7 @@ Lists paged with `before` are newest first, with the row id breaking a tie insid
 === Free-text search
 
 `q` on `/api/traces` matches, case-insensitively, any span name or any part of the span's attribute JSON in that trace.
-It is the `LOWER(name) LIKE ? OR LOWER(attributes) LIKE ?` of xref:storage.adoc[Storage].
+It runs as the `LOWER(name) LIKE ? OR LOWER(attributes) LIKE ?` that xref:storage.adoc[Storage] describes.
 Span *event* attributes, notably `exception.message`, are not searched.
 Search an error's endpoint or type instead, or use `/api/errors`.
 `q` on `/api/logs` matches the body and the attribute JSON.
@@ -592,7 +599,7 @@ Search an error's endpoint or type instead, or use `/api/errors`.
 
 `step` on `/api/metrics/series` is accepted and ignored.
 The exporter's interval already sets the resolution, and resampling a second time blurs the spike the chart is being read for.
-`rate=true` only changes `v` for a monotonic sum, and other types are unaffected.
+`rate=true` changes `v` only for a monotonic sum, and leaves other types unaffected.
 An exponential histogram is stored as a histogram with count, sum, min and max only, so its `p95` is `null`.
 `runtime.jvm` is `process.runtime.name + " " + process.runtime.version`, falling back to `process.runtime.description`.
 `GET /api/jvm` without `service` answers for the first service that sent any `jvm.*` metric, which locally is usually the only one.
@@ -605,7 +612,8 @@ An exponential histogram is stored as a histogram with count, sum, min and max o
 
 === Status and ingest
 
-`/api/status.storage.path` is `null` and `sizeBytes` is `0` for an in-memory database, which is the fallback and the one the tests use.
+For an in-memory database, `/api/status.storage.path` is `null` and `sizeBytes` is `0`.
+The in-memory database is the fallback, and the one the tests use.
 `counts.spans` counts stored spans, so spans dropped by the self-monitoring rule are not in it.
 That rule drops only `SERVER` spans on the server's own port.
 A `CLIENT` span calling that port is an application genuinely talking to Spider Sense, and it stays in its trace.
@@ -623,6 +631,6 @@ An error request is counted in the fifth histogram slot only, whatever its durat
 === Tingles
 
 Tingles are rows in the `tingle` table, so `/api/overview.tingles` survives a restart and is visible to every Spider Sense process sharing the database.
-An in-memory mirror of the last 500 is not kept, as it would be a second source of truth for the same list.
+The server keeps no in-memory mirror of the last 500, because it would be a second source of truth for the same list.
 An error tingle is raised for an entry span that failed, and for any other span carrying an exception event of its own, so a failure that propagated up a trace does not produce one tingle per frame.
 `slow-query` uses the span's summary as its `title` and the statement as its `detail`.
