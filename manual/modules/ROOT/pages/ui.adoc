@@ -1,7 +1,7 @@
 = Layout and Controls
 :navtitle: Layout and Controls
 
-The Spider Sense UI is one page in the browser, a sidebar of pages beside a top bar of controls that every page obeys.
+The Spider Sense UI is a single browser page: a sidebar that lists the pages, beside a top bar of controls that every page obeys.
 
 .The Overview, with the request rate, the error rate, the percentiles, the throughput chart, the services, and the tingle feed
 image::overview.jpg[Overview: request rate, error rate, percentiles, the throughput chart, the services, and the tingle feed,900]
@@ -17,11 +17,12 @@ Colour is never the only carrier of meaning: an error also gets a bolt, and some
 
 The sidebar lists the pages: Overview, Findings, Compare, Map, Services, Scatter, Traces, Queries, Errors, Logs, JVM, and Metrics.
 On a narrow window it collapses to icons, and on a phone-sized one it becomes a drawer behind a menu button.
-The rest of the window is the page, under the top bar.
+The selected page fills the rest of the window, under the top bar.
 
-The sidebar foot shows the mode Spider Sense runs in, its port, its version, and a "how to send data" link that opens the snippet dialog.
-When spans have been dropped, the foot adds a `dropping spans` line in amber, with the number dropped as its title.
-That happens when the traffic crossed xref:configuration.adoc#properties[`spidersense.ingest.max-spans-per-second`], and the line stays for a minute after the last increase, so a load test reads as partial data rather than as a quiet application.
+The sidebar foot shows the mode Spider Sense runs in, its port, its version, and a "how to send data" link that opens the How to send data dialog.
+When spans have been dropped, the foot adds a `dropping spans` line in amber, with the number of dropped spans as its title.
+Spans are dropped when the traffic crosses xref:configuration.adoc#properties[`spidersense.ingest.max-spans-per-second`].
+The line stays for a minute after the last increase, so a load test reads as partial data rather than as a quiet application.
 
 [#top-bar]
 == The top bar
@@ -38,7 +39,7 @@ Marking is your half of the loop an agent runs: mark, exercise, compare.
 xref:marks-and-compare.adoc#marks[Marks] covers what a mark is and how the agent's side reads it.
 
 Service filter::
-All services, or one.
+Selects all services, or one.
 It applies to every page that takes a service.
 
 Time range::
@@ -46,7 +47,7 @@ Time range::
 `all` starts at the oldest span in storage.
 
 Live::
-The page refreshes every few seconds, and the end of the window moves with the clock.
+The page refreshes every 5 seconds, and the end of the window moves with the clock.
 A "spans/s" readout sits beside the toggle.
 Every tingle increments the badge on the sidebar and appears at the top of the Overview feed as it happens.
 
@@ -64,8 +65,8 @@ The pulse respects a reduced-motion preference.
 == Dialogs
 
 How to send data::
-Three tabs, `-javaagent`, environment variables, and `curl`.
-Each is a copyable block carrying the endpoint this Spider Sense actually listens on.
+Has three tabs: `-javaagent`, environment variables, and `curl`.
+Each tab is a copyable block carrying the endpoint this Spider Sense actually listens on.
 
 Clear data::
 Asks for confirmation, then deletes the stored data.

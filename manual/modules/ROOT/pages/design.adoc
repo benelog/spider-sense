@@ -3,7 +3,7 @@
 
 Spider Sense is an observability tool for the local development loop, in the spirit of https://glowroot.org/[Glowroot]: one jar, attached to a JVM with one option, a UI in the browser a second later.
 
-What sets it apart from Glowroot is that everything it collects arrives as OpenTelemetry data over OTLP.
+Unlike Glowroot, Spider Sense receives everything it collects as OpenTelemetry data over OTLP.
 The instrumentation is the stock OpenTelemetry Java agent, not a bytecode engine of our own, and the collector accepts OTLP/HTTP from any SDK in any language.
 
 The UI is a Spider Silk application (`net.benelog.spidersilk`), and the product is a sibling of Spider Silk: same author, same logo family, same "thin by design" attitude.
@@ -53,7 +53,7 @@ The bundled agent is OpenTelemetry Java agent {otel-agent-version}, and the nest
 
 The launcher is deliberately tiny and dependency-free because the OpenTelemetry agent appends the whole jar to the bootstrap class path (`Instrumentation.appendToBootstrapClassLoaderSearch`), so everything at the top level becomes bootstrap-visible.
 The server and its dependencies therefore live in a nested jar that the launcher extracts to `${java.io.tmpdir}/spider-sense-<version>/server.jar`, skipping the extraction when the file is already present with the same size.
-It loads that jar through a dedicated `SenseClassLoader extends URLClassLoader` whose parent is the platform class loader.
+The launcher loads that jar through a dedicated `SenseClassLoader extends URLClassLoader` whose parent is the platform class loader.
 The server never sees the application's classes, and the application never sees Jetty or protobuf from the server.
 The extension is extracted the same way, to `extension.jar` beside it, and is loaded by the OpenTelemetry agent's own `ExtensionClassLoader` rather than by ours.
 
@@ -68,7 +68,7 @@ The extension is extracted the same way, to `extension.jar` beside it, and is lo
 A failure here is logged to stderr and swallowed: Spider Sense must never prevent the application from starting.
 . Set defaults for the OpenTelemetry agent, only where the user has not set the property or its environment variable already.
 . Call `io.opentelemetry.javaagent.OpenTelemetryAgent.premain(agentArgs, inst)`.
-Its jar-location check only requires a `Premain-Class` attribute in the manifest of the jar that class came from, verified against {otel-agent-version}'s `verifyJarManifestMainClassIsThis`, so our manifest satisfies it.
+The agent's jar-location check only requires a `Premain-Class` attribute in the manifest of the jar that class came from, verified against {otel-agent-version}'s `verifyJarManifestMainClassIsThis`, so our manifest satisfies it.
 
 The defaults of step 3 are:
 
@@ -76,7 +76,7 @@ The defaults of step 3 are:
 The protocol the embedded receiver speaks.
 `otel.exporter.otlp.endpoint=http://127.0.0.1:<port>`::
 Or `spidersense.collector` when it is set.
-The literal address is used rather than `localhost`, which may resolve to `::1` while the UI binds `127.0.0.1`.
+The launcher uses the literal address rather than `localhost`, which may resolve to `::1` while the UI binds `127.0.0.1`.
 `otel.service.name`::
 `spidersense.service` if given, else the OpenTelemetry agent's own default (`unknown_service:java`).
 The UI shows the jar or main class hint from the resource attributes when the name is the default.
@@ -90,19 +90,19 @@ The agent skips every class the UI server's loader defines, so the UI's own Jett
 The agent source confirms the mechanism: `GlobalIgnoredTypesConfigurer` already ignores `ExtensionClassLoader` this way, and `otel.javaagent.exclude-class-loaders` feeds `IgnoredTypesBuilder.ignoreClassLoader`.
 `otel.instrumentation.runtime-telemetry.enabled=true`::
 JVM metrics.
-This is already the default, and is stated for clarity.
+This is already the agent's default, and the launcher sets it for clarity.
 `otel.javaagent.extensions=${java.io.tmpdir}/spider-sense-<version>/extension.jar`::
 Appended to the user's own comma-separated list when one is set.
 It points at <<extension,the extension>>.
-Failing to extract it or to point at it is a warning on stderr and nothing else, because a missing code location is not a reason to hold up the application.
+When the launcher fails to extract the extension or to point at it, it prints a warning on stderr and nothing else, because a missing code location is not a reason to hold up the application.
 
 `SpiderSenseMain.main`, the standalone entry point, does step 2 with `--mode=standalone` and then blocks on `join`.
-When its first argument does not start with `-` it is a CLI command instead.
+When its first argument does not start with `-`, that argument is a CLI command instead.
 The launcher then loads the nested jar the same way and invokes `net.benelog.spidersense.cli.Cli.run(String[])`, exiting with what it returns (xref:cli.adoc[The CLI]).
 It also sets the system property `spidersense.jar` to its own jar's absolute path first, because `init` has to write that path into a project's `CLAUDE.md`, and the CLI, running out of the nested jar in a temporary directory, could not find it otherwise.
 
 Even with the class-loader exclusion in place, the collector drops any `SERVER` span whose `server.port` attribute equals its own port and whose service is the one it is embedded in.
-That is belt and braces, so a misconfiguration never shows the UI monitoring itself.
+This second guard ensures that a misconfiguration never shows the UI monitoring itself.
 `CLIENT` spans are kept: an application that calls Spider Sense's port is doing something real, and that call belongs in its trace.
 
 The UI server's Jetty thread pool is marked daemon in agent mode (`JettyServer.threadPool(...)` with `QueuedThreadPool.setDaemon(true)`) and with `shutdownHook(false)`, so a short-lived command-line application still exits when its `main` returns.
@@ -124,13 +124,13 @@ Senders set `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf`.
 . *Store*: an H2 file database under the user's home, `~/db/spider-sense/sense` with `AUTO_SERVER=TRUE`, shared by every Spider Sense process on the machine and kept after the monitored application stops, so the analysis screen is still there after a restart or a crash.
 Ingest goes through a write-behind queue and one writer thread, and every API answer is SQL over indexed columns.
 The schema, the writer, the queries and the retention sweeper are specified in xref:storage.adoc[Storage].
-One small in-memory piece remains, the `EventBus`: ingest notifications to SSE subscribers, coalesced to at most 4 messages per second.
+The one in-memory piece is the `EventBus`, which sends ingest notifications to SSE subscribers, coalesced to at most 4 messages per second.
 . *JSON API and static UI*: the contract in xref:api.adoc[The HTTP API], and the UI in `src/main/resources/public` as xref:pages.adoc[The Pages] describes it.
 . *The agent interface*: findings, marks, compare, check and a Markdown rendering of every list, over the same `Queries` as the UI.
 The xref:cli.adoc[CLI] fronts them, and an MCP adapter (`POST /mcp`, and `mcp` over stdio) serves hosts without a shell.
 xref:agent-loop.adoc#interfaces[The Loop] states which of the two a host should use.
 
-Semantic conventions: the OpenTelemetry Java agent still emits the older database attributes by default (`db.system`, `db.statement`, `db.name`, `db.operation`, `db.sql.table`) and the stable HTTP ones (`http.request.method`, `http.route`, `url.path`, `http.response.status_code`, `server.port`).
+By default, the OpenTelemetry Java agent still emits the older database attributes (`db.system`, `db.statement`, `db.name`, `db.operation`, `db.sql.table`) and the stable HTTP ones (`http.request.method`, `http.route`, `url.path`, `http.response.status_code`, `server.port`).
 With `otel.semconv-stability.opt-in=database` it emits `db.system.name`, `db.query.text`, `db.namespace`, `db.operation.name` and `db.collection.name`.
 The decoder normalises both generations into `SpanRecord`'s accessors, and also the pre-stable HTTP names (`http.method`, `http.target`, `http.status_code`) for other SDKs.
 
@@ -147,7 +147,7 @@ A client root span is a request someone made, which is how the load generator's 
 A root `INTERNAL` span and a root database span are work the application did to itself.
 A seeder's tens of thousands of `INSERT` statements, or a scheduler's tick, are not requests, and counting them would drown the endpoint list, the request totals, Apdex and `check`.
 Such spans are still stored, still have a `trace` row and still render in the trace tree.
-They are simply not endpoints, not requests and never `slow request` tingles.
+They are not endpoints, not requests, and never `slow request` tingles.
 
 A root `INTERNAL` span is a *job*: a scheduled method, an `@Async` call, a batch step.
 Jobs have their own finding, xref:findings.adoc#slow-job[`slow-job`], so a slow one is reported without ever being counted as a request.
@@ -157,8 +157,8 @@ It is fast, it never fails, and it dilutes the request count, the Apdex, `check`
 `spidersense.ignore.endpoints` takes an entry span out of all of that while still storing it, and xref:configuration.adoc#ignored-endpoints[Ignored endpoints] specifies the patterns and the matching.
 
 Query identity is the service, the database system, and the statement as the agent sanitised it.
-The agent replaces literals with `?` by default, which is exactly the grouping wanted.
-A statement is shown at most 2000 characters.
+The agent replaces literals with `?` by default, which gives exactly the grouping Spider Sense needs.
+At most 2000 characters of a statement are shown.
 
 [#extension]
 == The extension
@@ -171,45 +171,54 @@ That callback runs on the thread that is ending the span, before the span become
 
 The first case is a slow query.
 When the span carries a `db.system` or `db.system.name` attribute and has taken at least `spidersense.slow.query.ms`, the processor writes `Thread.currentThread().getStackTrace()` into the span attribute `code.stacktrace`.
-The environment variable `SPIDERSENSE_SLOW_QUERY_MS` also works, the default is 100, which is the same threshold the server calls a tingle, and the value is read once when the processor is built.
+The environment variable `SPIDERSENSE_SLOW_QUERY_MS` sets the threshold as well.
+The default is 100, the same threshold at which the server calls a query a tingle.
+The value is read once, when the processor is built.
 
 The second case is the N+1.
 The individual queries of an N+1 are fast, so the threshold above would never fire on them, and an `n-plus-one` finding would name a statement and no line.
 The processor counts, per trace, how many spans of it have started with the same statement (`db.query.text` or `db.statement`, else the span name).
 When a statement reaches its fifth repeat, the same number that makes a query group an N+1 on the server (xref:findings.adoc#n-plus-one[N+1]), the stack is captured on that one span and on no later repeat.
-The cost is therefore one capture per repeated statement per trace, and the server's `n-plus-one` rule prefers the span of the group that carries `code.stacktrace` for the finding's `code`.
+The cost is therefore one capture per repeated statement per trace.
+The server's `n-plus-one` rule prefers the span of the group that carries `code.stacktrace` for the finding's `code`.
 
-This is the one thing the processor does when the span starts rather than when it ends, and it has to be.
-The stack at the end is the stack of whichever thread ends the span, and for an asynchronous client that is a completion callback on a worker, every frame of which belongs to the JDK; the finding would carry a code location the server reduces to nothing.
+Counting the repeats and capturing the fifth are the one thing the processor does when a span starts rather than when it ends, and they have to be.
+The stack at the end is the stack of whichever thread ends the span, and for an asynchronous client that is a completion callback on a worker, every frame of which belongs to the JDK.
+The finding would then carry a code location the server reduces to nothing.
 At the start the thread is still the one that made the call, so the stack is the call site, and the span already carries what the instrumentation set on the request.
 The threshold cases stay at the end, because a duration is the one thing the start does not know.
 
 The counter is one map from trace id to that trace's counts, read on every database and outbound span that ends.
-A counter on the thread would be cheaper and need no lifecycle, and it is what this was: it is also wrong for anything asynchronous, because a client that completes its exchange off the calling thread ends every span of a run on a different worker and each of them counts one repeat.
-That is most HTTP clients, so a thread-local counter gave an xref:findings.adoc#n-plus-one-http[`n-plus-one-http`] finding no code location at all in the common case.
+A thread-local counter would be cheaper and need no lifecycle, and the counter used to be one.
+A thread-local counter is wrong for anything asynchronous, because a client that completes its exchange off the calling thread ends every span of a run on a different worker and each of them counts one repeat.
+Most HTTP clients work that way, so the thread-local counter gave an xref:findings.adoc#n-plus-one-http[`n-plus-one-http`] finding no code location at all in the common case.
 
 The map is bounded twice.
-A trace is forgotten when its local root ends, a span with no parent or with a parent in another process, because that is this process's work on the trace finished; a span of that trace that ends later starts the count again.
-And the map holds at most 1 000 traces, so a trace whose local root never ends cannot keep its counts for ever; inserting past the cap drops other traces until it fits.
+A trace is forgotten when its local root ends, a span with no parent or with a parent in another process, because this process's work on the trace is then finished.
+A span of that trace that ends later starts the count again.
+The map also holds at most 1 000 traces, so a trace whose local root never ends cannot keep its counts for ever.
+Inserting past the cap drops other traces until the map is back within it.
 At most 256 distinct statements and calls are counted per trace, and beyond that the counter stops and nothing else changes.
 
 The third case is a slow outbound call.
 A `CLIENT` span that is not a database span (no `db.system` or `db.system.name`) and has taken at least `spidersense.slow.request.ms` (`SPIDERSENSE_SLOW_REQUEST_MS`, default 500, read once like the other threshold) gets the same `code.stacktrace`, so a xref:findings.adoc#slow-external[`slow-external`] finding names the line that made the call.
 
-The fourth case is that one's N+1, and it counts exactly as the statements do.
+The fourth case is the N+1 of outbound calls, and it counts exactly as the statements do.
 An outbound `CLIENT` span that carries an HTTP method or a `url.full` is counted under its name and its URL with every run of digits replaced by `?`, in the same per-trace map, and the fifth repeat gets the stack, so an xref:findings.adoc#n-plus-one-http[`n-plus-one-http`] finding names the loop rather than only the host.
-The key is prefixed, so a URL is never counted as a statement of the same trace, and the 256 keys a trace counts are of either kind.
+The key is prefixed, so a URL is never counted as a statement of the same trace.
+The 256 keys a trace counts can be of either kind.
 The same frames are dropped, the same cap applies, and a span that already carries the attribute is left alone.
 
 The lines are formatted as `Throwable.printStackTrace` writes them: `\tat package.Class.method(File.java:41)`, one per line, no header.
 The server therefore reduces them to application frames with exactly the code it already uses for `exception.stacktrace` (xref:findings.adoc#code[Code frames]).
 The leading frames of `Thread.getStackTrace`, of the processor itself and of `io.opentelemetry.`, which is the SDK's own `end()` path, are dropped, and the trace is cut at 64 frames.
-`isStartRequired()` and `isOnEndingRequired()` are true and `isEndRequired()` is false, because by `onEnd` the span is immutable and nothing can be set on it; anything thrown inside either callback is swallowed, since a missing code location is never worth a broken span.
+`isStartRequired()` and `isOnEndingRequired()` are true and `isEndRequired()` is false, because by `onEnd` the span is immutable and nothing can be set on it.
+Anything thrown inside either callback is swallowed, since a missing code location is never worth a broken span.
 
-The fourth case is the one that needs a `Connection`, which no span processor has.
+The index catalog is the one part of the extension that needs a `Connection`, which no span processor has.
 The extension reads the index catalog of the tables a slow statement touches, so a xref:findings.adoc#slow-query[`slow-query`] or xref:findings.adoc#n-plus-one[`n-plus-one`] finding can say which of the columns the statement filters on no index serves (xref:findings.adoc#schema[The schema block]).
 
-For that it carries one `InstrumentationModule` of its own, `spider-sense-schema`, registered through `META-INF/services/io.opentelemetry.javaagent.extension.instrumentation.InstrumentationModule`.
+For the catalog, the extension carries one `InstrumentationModule` of its own, `spider-sense-schema`, registered through `META-INF/services/io.opentelemetry.javaagent.extension.instrumentation.InstrumentationModule`.
 Its advice sits on the `execute`, `executeQuery`, `executeUpdate` and `executeLargeUpdate` methods of every `java.sql.Statement` implementation.
 The advice measures the call and, when it took at least `spidersense.slow.query.ms` (the same threshold, read the same way) and threw nothing, hands the statement to `IndexCatalog`.
 The fifth repeat of a statement within a trace, which the span processor captures a stack for, is deliberately not a trigger here.
@@ -219,7 +228,7 @@ An `n-plus-one` finding therefore carries the block only when its statement has 
 
 `IndexCatalog` takes the statement's SQL from the `execute(String …)` argument, or, for a `PreparedStatement`, from the `VirtualField<PreparedStatement, String>` the agent's JDBC instrumentation fills at prepare time.
 A statement with neither is left alone.
-It scans that SQL for the table names after `from`, `join`, `update`, `into` and `delete from`, reads a comma-separated list after `from`, keeps a `schema.table` qualifier, and unquotes a quoted name.
+`IndexCatalog` scans that SQL for the table names after `from`, `join`, `update`, `into` and `delete from`, reads a comma-separated list after `from`, keeps a `schema.table` qualifier, and unquotes a quoted name.
 
 The lookup runs once per table per process, keyed by the connection's JDBC URL and the table name, and stops after 200 tables.
 It asks the standard `DatabaseMetaData` whether the table exists (`getTables`, so a name the scanner misread is silently nothing) and for its indexes (`getIndexInfo(catalog, schema, table, false, true)`, the statistic rows dropped, the columns in ordinal order).
@@ -229,11 +238,14 @@ The server stores that record as a catalog row and never as a log line (xref:sto
 An unquoted table name is folded the way the database stores identifiers (`storesUpperCaseIdentifiers`, `storesLowerCaseIdentifiers`) before it is looked up, and a quoted one is kept as written.
 
 The lookup stays on the request thread and on the borrowed connection by design.
-A second connection borrowed from the pool for it would be the pool exhaustion the finding is meant to diagnose, and the one the statement used cannot be handed to another thread, because the application returns it to the pool the moment the statement is done.
-What that costs is the driver's catalog query, once per table, on a request that has already spent `slow.query.ms` in the database.
+A second connection borrowed from the pool for the lookup would itself be the pool exhaustion that a `pool-exhausted` finding diagnoses.
+The connection the statement used cannot be handed to another thread, because the application returns it to the pool the moment the statement is done.
+The cost is the driver's catalog query, once per table, on a request that has already spent `slow.query.ms` in the database.
 
 On PostgreSQL and MySQL that catalog query is a statement of its own and would become a database span in the application's trace.
-The extension therefore marks the thread with the baggage entry `spidersense.schema.lookup` for the length of the lookup, and a sampler it wraps around the configured one (`addSamplerCustomizer`) drops every span started under that entry and delegates everything else, so the trace shows the application's statements and nothing of ours.
+The extension therefore marks the thread with the baggage entry `spidersense.schema.lookup` for the length of the lookup.
+A sampler it wraps around the configured one (`addSamplerCustomizer`) drops every span started under that entry and delegates everything else.
+The trace therefore shows the application's statements and none of the lookup's.
 A thread already inside a lookup does nothing, because a driver's catalog queries pass through the same advice.
 Every exception is swallowed: a missing catalog is never worth a slow or a broken statement.
 
@@ -259,7 +271,7 @@ The slow spans are by definition slow, a few microseconds against a hundred mill
 It turns those findings into a line to open.
 That is <<extension,the extension>>: it sets one attribute, and the server and the standalone mode stay unaware of it.
 
-The index catalog is the second thing it does, and the first that needs bytecode advice rather than a span processor, because only the application's own `Connection` can answer which indexes a table has.
+The index catalog is the second thing the extension does, and the first that needs bytecode advice rather than a span processor, because only the application's own `Connection` can answer which indexes a table has.
 It is still confined to the extension, arrives as ordinary OTLP, and the server stays a consumer of what the agent exports.
 
 *In-process export, with a custom `SpanExporter` handing spans straight to the store.*

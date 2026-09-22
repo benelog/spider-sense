@@ -14,7 +14,7 @@ It has five parts.
 Each tile has the number large, the unit small, and a one-word caption.
 Colour appears only where it carries meaning.
 An error rate above 1% is red, a p95 above the slow threshold is amber, and Apdex is red below 0.7 and amber below 0.85.
-The Apdex tile reads `0.93`, and its title says the T it was computed with.
+The Apdex tile reads, for example, `0.93`, and its title names the T it was computed with.
 
 . *Findings*: the five worst findings of the window, which are the UI's side of xref:findings.adoc[findings].
 A row carries a severity dot (red for high, amber for medium, grey for low), the kind as a chip, the service chip, the title in bold, and the finding's `why` sentence dimmed on a second line.
@@ -28,7 +28,7 @@ With no finding in the window the panel says `Nothing worth fixing in this windo
 Requests draws the requests per time bucket as grey bars, with the errors stacked on top in red.
 Load splits the same bars into the four response-time buckets, stacked bottom-up in the bucket colours, with the errors on top.
 In both, p95 is a line on a second y-axis in the accent colour.
-Beside it, the *Response summary* draws five vertical bars, one per response-time bucket and one for errors, with the count above each bar and the label beneath.
+Beside the chart, the *Response summary* draws five vertical bars, one per response-time bucket and one for errors, with the count above each bar and the label beneath.
 The tallest bar sets the scale, and a tooltip gives each bar's share.
 The bars are labelled from the bucket bounds, `≤125 ms`, `≤500 ms`, `≤2 s`, `>2 s`, and `error`, and they keep those colours wherever a histogram or a load chart appears.
 Below 900 px the chart and the summary stack.
@@ -52,12 +52,14 @@ It shows what xref:findings.adoc[findings] gives an agent, in the same order.
 The table has the position, the severity as a dot and a word, the kind chip, the service chip, the title, and in a right-aligned column the number the kind is ranked by.
 That number is the count for `error` and `log-error`, the median repeats times the endpoints affected (`42 × 3`) for `n-plus-one` and `n-plus-one-http`, the total time for `slow-query`, `slow-endpoint`, `slow-job` and `slow-external`, the peak pending requests for `pool-exhausted`, the worst pause for `gc-pause`, the peak ratio as a percentage for `heap-pressure`, and the growth for `thread-growth`.
 
-A row click expands it in place into the evidence: the `why` sentence, the kind's numbers as a grid of keys and values, the statement pretty-printed when there is one, the code frames as a monospace list, and the traces as links to the trace page.
+A row click expands the row in place to show the evidence: the `why` sentence, the kind's numbers as a grid of keys and values, the statement pretty-printed when there is one, the code frames as a monospace list, and the traces as links to the trace page.
 A `slow-endpoint` and a `slow-job` carry two more rows, each spanning the grid: xref:findings.adoc#time[*hot spans*], the three summaries the time went to with their own time, share and count, and *breakdown*, the same stacked bar the endpoint page draws with its four shares written beside it.
-Under the statement of a `slow-query` or an `n-plus-one` comes the xref:findings.adoc#schema[schema block], in small monospace, the lines the CLI prints: one per table with the indexes it carries, `none` for a table that has none, then one for the columns the statement filters on, with the ones no index leads with named after `unindexed` and in the accent colour.
+Under the statement of a `slow-query` or an `n-plus-one` comes the xref:findings.adoc#schema[schema block] in small monospace, with the same lines the CLI prints.
+It has one line per table with the indexes it carries, `none` for a table that has none, then one line for the columns the statement filters on.
+The columns no index leads with are named after `unindexed`, in the accent colour.
 A finding without the block shows nothing for it.
 `callers` and `endpoints` appear as a short list, and `hotSpan` as one line.
-The row also carries a *Go to* link to the subject's page, the destination the Overview's row click uses.
+The row also carries a *Go to* link to the subject's page, the same destination as a row click on the Overview.
 An expanded row stays expanded across a Live refresh while the finding is still in the list.
 
 An acknowledged finding is listed after the others, dimmed, with `acked` in its severity cell and the note as its title.
@@ -130,7 +132,7 @@ When no call has been traced at all, the page shows the snippet instead.
 `#/services` lists every service: name, language, requests, rps, error rate, Apdex, p50, p95, p99, a sparkline, and when it was last seen.
 A row click opens the service.
 
-`+#/services/{name}+` is the service itself, in seven parts.
+`+#/services/{name}+` is the page of one service, in seven parts.
 
 . A header with the name, the resource chips (language, runtime and version, host, pid), a *JVM* button when the service reports JVM metrics, a *Traces* button, and the compact Response summary on the right.
 . The stat tiles of the Overview: requests, Apdex, error rate, p50, p95, p99, and rps.
@@ -138,12 +140,13 @@ A row click opens the service.
 The first carries the *Requests* | *Load* toggle of the Overview and defaults to Load.
 The choice is shared with the Overview through the hash query.
 . The *Endpoints* table: method chip, route, calls, rps, Apdex, avg, p50, p95, p99, max, errors, and a status-code mini-bar (2xx green, 4xx amber, 5xx red).
-Clicking a header sorts by that column, and the default is total time.
+Clicking a header sorts by that column.
+The default sort is total time.
 A row click opens the endpoint.
 . *Top queries* and *Top errors*, side by side.
 Top queries gives the statement in monospace on one line, calls, avg, p95 and total.
 Top errors gives the type, the message, the count and when it was last seen.
-Both link to their own page.
+Their rows link to the query page and the error page.
 . *Dependencies*: kind icon, target, calls, errors, avg, and p95.
 . *Resource attributes*, as a collapsed table of keys and values.
 
@@ -152,11 +155,12 @@ Both link to their own page.
 
 `+#/endpoints/{endpointId}+` is one route of one service.
 The header gives the method, the route, the service, the Apdex and the compact Response summary.
-Beside them is the *time breakdown*, one stacked bar in four fixed colours — `db` in the accent colour, `http` in teal, `internal` in the warning colour, `self` in the strand grey — over the endpoint's 20 slowest traces in the window, the same four shares a xref:findings.adoc#time[`slow-endpoint`] finding carries.
+Beside them is the *time breakdown*, one stacked bar over the endpoint's 20 slowest traces in the window, with the same four shares a xref:findings.adoc#time[`slow-endpoint`] finding carries.
+Its four fixed colours are `db` in the accent colour, `http` in teal, `internal` in the warning colour, and `self` in the strand grey.
 Its caption names the bucket the most time went to, so the bar reads without its colours, and the four shares are in its tooltip.
 The same three charts follow, with the same *Requests* | *Load* toggle.
 Under them are four tabs: *Slowest traces*, *Recent traces*, *Queries*, and *Errors*.
-The trace rows are the rows of the Traces page.
+The trace rows have the same columns as the list on the Traces page.
 
 [#scatter]
 == Scatter
@@ -169,8 +173,9 @@ image::scatter.jpg[Scatter: every request as a dot on time by response time,800]
 The chart has two modes, *Dots* and *Heatmap*, chosen with a toggle above it and remembered in the hash query as `mode=heatmap`.
 Dots is the default: one 3 px dot per request in its service's colour, errors drawn as red crosses on top, and slow requests ringed in amber.
 The y-axis is linear, with its maximum at the window's p99 times 1.5 and a `▲ n above` note for the points that fall outside it.
-The Log scale toggle switches the axis.
-Heatmap is the mode for a dense window: the plot area is divided into cells, each filled in the accent colour with an opacity that follows its count against the densest cell, and a cell holding an error is outlined in red.
+The Log scale toggle switches the y-axis to a logarithmic scale.
+Heatmap is the mode for a dense window.
+It divides the plot area into cells, each filled in the accent colour with an opacity that follows its count against the densest cell, and a cell holding an error is outlined in red.
 Hovering a cell gives its time span, its response-time span, its count and its errors.
 
 Above the chart sit the legend of services (click one to hide or show it), the *Success* and *Failed* toggles, the Log scale toggle, the mode toggle, the counts of points, errors and slow requests, and a notice when the list was truncated.
@@ -178,7 +183,8 @@ Success and Failed both start on.
 Turning one off hides those points, and the counts, the selection and the y-axis maximum follow.
 
 Drag a rectangle in either mode to list the traces inside it, in a table beneath the chart.
-The rectangle gives the time range and the duration range, and the current service and the Success and Failed toggles apply to it.
+The rectangle gives the time range and the duration range.
+The service filter and the Success and Failed toggles apply to the selection as well.
 `Esc` clears the selection.
 In Dots, hovering a point gives the endpoint, the service, the duration and the time, and a click opens the trace.
 With Live on, points stream in from the right every 2 seconds and the x-axis slides.
@@ -191,9 +197,9 @@ With Live on, points stream in from the right every 2 seconds and the x-axis sli
 === The list
 
 The query bar takes free text, a duration range as two small number fields, a status of `all`, `error` or `ok`, and an endpoint when a service is selected.
-Enter applies it, and so does a short pause in typing.
+Enter applies the query, and so does a short pause in typing.
 The table gives the time, the root name in bold with the service chips, the duration with a bar proportional to the slowest row, the span count, the DB calls, the status code, and the error and slow markers.
-Newest first, with *Load more* under it.
+The rows are newest first, with *Load more* under the table.
 
 === The header
 
@@ -229,7 +235,8 @@ The profile is the view for reading what a request did, in order, and where the 
 It lists the same spans as a flat table: the position, the start offset (`+12.3 ms`), the gap since the previous step, the elapsed time, the *self* time, the self time as a *%* of the trace, the depth as indentation, a one-line summary such as `SELECT orders … (h2)`, and the service.
 Self time is the elapsed time minus the durations of the direct children, never below zero.
 The order is chronological.
-Clicking the Elapsed or Self header sorts by it, descending, and the gap column then reads `-`.
+Clicking the Elapsed or Self header sorts by that column, descending.
+The gap column then reads `-`.
 Clicking the Start header restores the chronological order.
 The three largest self times that are at least 5% of the trace are marked `hot`, so the step that spent the time is visible without reading every row.
 A step over the slow threshold is tinted amber, and an error red.
@@ -241,7 +248,7 @@ The trace's log records come last, oldest first, each with a severity chip, its 
 [#queries]
 == Queries
 
-`#/queries` groups the SQL statements as the agent sanitised them.
+`#/queries` groups the SQL statements as the OpenTelemetry agent sanitised them.
 
 .Queries grouped by statement with calls, average, p95, max and total time
 image::queries.jpg[Queries grouped by statement with calls, average, p95, max and total time,800]
@@ -261,12 +268,12 @@ A row gives the type in monospace with the package dimmed, the message, the serv
 A row click opens the error.
 
 `+#/errors/{errorId}+` gives the header, a chart of the count, a sample stack trace, the endpoints, and the recent traces.
-The application's own frames are highlighted in the stack trace, which are the frames whose package matches the top-level package of the first frame.
+The stack trace highlights the application's own frames: the frames whose package matches the top-level package of the first frame.
 
 [#logs]
 == Logs
 
-`#/logs` is the application's log records.
+`#/logs` lists the application's log records.
 The query bar takes free text, a minimum severity, and a trace id, which is prefilled when you arrive from a trace.
 The table is dense: the time to the millisecond, a severity chip coloured by level, the service chip, the logger dimmed, the body with its newlines kept, and a link to the trace when the record carries one.
 A row click expands its attributes and its stack trace.
@@ -276,7 +283,7 @@ With Live on the page tails: new lines arrive at the top, and the scroll positio
 [#jvm]
 == JVM
 
-`#/jvm` needs one service, so choose it in the top bar.
+`#/jvm` shows one service, which you choose with the service filter in the top bar.
 While the filter is on all services, the page offers a picker of the services that report JVM metrics.
 
 .JVM heap, non-heap, memory pools and garbage collection
@@ -306,4 +313,4 @@ Times read as `HH:mm:ss` within today, and `MMM d HH:mm:ss` otherwise.
 A feed gives the relative time, "12 s ago", a table the absolute one, and a tooltip both.
 Every list re-renders in place when Live refreshes it, without losing the scroll position or the selection.
 The whole UI works at 360 px wide: a table scrolls horizontally inside its panel, the charts shrink, and the drawer becomes a full-screen sheet.
-It makes no external request at all, since the fonts are the system's, the chart library is vendored, and the logo is inline.
+The UI makes no external request at all: the fonts are the system's, the chart library is vendored, and the logo is inline.
