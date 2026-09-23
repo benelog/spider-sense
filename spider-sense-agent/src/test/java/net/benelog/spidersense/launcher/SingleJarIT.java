@@ -43,6 +43,9 @@ class SingleJarIT {
             .connectTimeout(Duration.ofSeconds(2))
             .build();
 
+    /** How many times SampleApp calls its own {@code /hello}. */
+    private static final int SAMPLE_CALLS = 3;
+
     @TempDir
     Path work;
 
@@ -86,10 +89,16 @@ class SingleJarIT {
                     () -> get(base + "/api/status"),
                     body -> compact(body).contains("\"mode\":\"agent\""));
 
-            traces = await("a trace whose root service is sample", log, app,
+            // Every assertion below reads this one snapshot, so it waits for all of the sample's
+            // calls to be whole: a trace row is written from whatever spans have arrived, and the
+            // SERVER span of a call can land before the CLIENT root above it.
+            traces = await("the sample's " + SAMPLE_CALLS + " calls, each a CLIENT root over its SERVER span",
+                    log, app,
                     () -> get(base + "/api/traces?limit=50"),
-                    body -> compact(body).contains("\"rootService\":\"sample\""));
+                    SingleJarIT::sampleCallsComplete);
 
+            // The traces above are whole, so the service is already there; nothing below reads a
+            // count out of this answer.
             services = await("sample in /api/services", log, app,
                     () -> get(base + "/api/services"),
                     body -> compact(body).contains("\"name\":\"sample\""));
@@ -296,9 +305,10 @@ class SingleJarIT {
             assertThat(mark.exit()).as("mark: %s", mark.err()).isZero();
             assertThat(mark.out()).startsWith("mark before at ").contains("the first run");
 
-            await("a trace whose root service is sample", log, app,
+            await("the sample's " + SAMPLE_CALLS + " calls, each a CLIENT root over its SERVER span",
+                    log, app,
                     () -> get(base + "/api/traces?limit=50"),
-                    body -> compact(body).contains("\"rootService\":\"sample\""));
+                    SingleJarIT::sampleCallsComplete);
 
             Command findings = cli("findings", "--since=before", "--url=" + base);
             assertThat(findings.exit()).as("findings: %s", findings.err()).isZero();
@@ -434,6 +444,19 @@ class SingleJarIT {
         } catch (IOException | InterruptedException e) {
             return null;
         }
+    }
+
+    /**
+     * Whether every call SampleApp makes to its own {@code /hello} has arrived whole: a trace whose
+     * root is the sample's CLIENT span with the SERVER span under it.
+     */
+    private static boolean sampleCallsComplete(String body) {
+        long whole = traceSummaries(body).stream()
+                .filter(t -> t.contains("\"rootService\":\"sample\"")
+                        && t.contains("\"rootKind\":\"CLIENT\"")
+                        && t.contains("\"spanCount\":2,"))
+                .count();
+        return whole >= SAMPLE_CALLS;
     }
 
     /** The objects of the {@code traces} array, each as a compact string. */
