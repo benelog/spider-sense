@@ -149,6 +149,30 @@ function cells(line) {
   return line.trim().replace(/^\|/, '').replace(/\|$/, '').split(/(?<!\\)\|/).map((c) => c.trim());
 }
 
+const LIST = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/;
+
+/** List items as nested lists, by indentation; an ordered list keeps the number it starts at. */
+function listHtml(entries) {
+  let k = 0;
+  const build = (level) => {
+    const first = entries[k];
+    const tag = first.ordered ? 'ol' : 'ul';
+    let html = '<' + tag + (first.ordered && first.start > 1 ? ' start="' + first.start + '"' : '') + '>';
+    while (k < entries.length && entries[k].indent >= level) {
+      if (entries[k].indent > level) {
+        html = html.replace(/<\/li>$/, '') + build(entries[k].indent) + '</li>';
+        continue;
+      }
+      html += '<li>' + entries[k].text.split('\n').map(inline).join('<br>') + '</li>';
+      k++;
+    }
+    return html + '</' + tag + '>';
+  };
+  let out = '';
+  while (k < entries.length) out += build(entries[k].indent);
+  return out;
+}
+
 function markdown(text) {
   const lines = text.replace(/\r/g, '').split('\n');
   const out = [];
@@ -187,23 +211,20 @@ function markdown(text) {
         + rows.map((r) => '<tr>' + r.map((c) => '<td>' + inline(c) + '</td>').join('') + '</tr>').join('') + '</tbody></table></div>');
       continue;
     }
-    const item = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/.exec(line);
-    if (item) {
+    if (LIST.test(line)) {
       flush();
-      const ordered = /\d/.test(item[2]);
-      const items = [];
+      const entries = [];
       while (i < lines.length) {
-        const m = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/.exec(lines[i]);
+        const m = LIST.exec(lines[i]);
         if (m) {
-          items.push({ indent: m[1].length, text: m[3] });
+          entries.push({ indent: m[1].length, ordered: /\d/.test(m[2]), start: parseInt(m[2], 10), text: m[3] });
           i++;
-        } else if (lines[i].trim() && /^\s{2,}/.test(lines[i]) && items.length) {
-          items[items.length - 1].text += '\n' + lines[i].trim();
+        } else if (lines[i].trim() && /^\s{2,}/.test(lines[i]) && entries.length) {
+          entries[entries.length - 1].text += '\n' + lines[i].trim();
           i++;
         } else break;
       }
-      out.push((ordered ? '<ol>' : '<ul>') + items.map((it) => '<li' + (it.indent ? ' style="margin-left:' + it.indent + 'ch"' : '') + '>'
-        + it.text.split('\n').map(inline).join('<br>') + '</li>').join('') + (ordered ? '</ol>' : '</ul>'));
+      out.push(listHtml(entries));
       continue;
     }
     if (/^>\s?/.test(line)) {

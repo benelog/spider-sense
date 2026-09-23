@@ -204,6 +204,7 @@ main {
 .md h1, .md h2, .md h3, .md h4 { font-size: inherit; margin: 10px 0 6px; font-weight: 700; }
 .md h1, .md h2 { text-decoration: underline; text-underline-offset: 3px; }
 .md ul, .md ol { margin: 0 0 8px; padding-left: 3ch; }
+.md li > ul, .md li > ol { margin: 0; }
 .md li { margin: 0; }
 .md code { color: var(--t-code); }
 .md pre { margin: 6px 0 10px; padding: 8px 10px; background: rgba(255, 255, 255, 0.04); overflow-x: auto; white-space: pre; }
