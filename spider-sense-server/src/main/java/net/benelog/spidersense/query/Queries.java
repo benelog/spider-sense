@@ -5,6 +5,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -262,6 +263,9 @@ public final class Queries {
      * service's own endpoint, not to the one that called it. A finding's
      * {@code dbShare} and a comparison's {@code dbCallsPerRequest} are the same
      * question, so they are one statement.
+     *
+     * <p>{@code d} is read by its trace: left to itself, H2 reads it by service and
+     * instant, every span of the service in the window once per entry span.
      */
     public Map<String, DbWork> databaseWork(Window window, @Nullable String service) {
         List<Object> params = new ArrayList<>(List.of(window.from(), window.to(),
@@ -274,7 +278,7 @@ public final class Queries {
         }
         Map<String, DbWork> work = new HashMap<>();
         sql.forEach("SELECT e.endpoint_id AS id, COUNT(*) AS calls, SUM(d.duration_ns) AS total_ns"
-                + " FROM span e JOIN span d ON d.trace_id = e.trace_id AND d.service = e.service"
+                + " FROM span e JOIN span d USE INDEX (span_trace) ON d.trace_id = e.trace_id AND d.service = e.service"
                 + " AND d.query_id IS NOT NULL WHERE " + where + " GROUP BY e.endpoint_id",
                 params, rs ->
                         work.put(rs.getString("id"),
@@ -301,7 +305,7 @@ public final class Queries {
         Map<String, DbWork> work = new HashMap<>();
         sql.forEach("SELECT r.service AS service, r.name AS name, COUNT(d.id) AS calls,"
                 + " SUM(d.duration_ns) AS total_ns"
-                + " FROM span r JOIN span d ON d.trace_id = r.trace_id AND d.service = r.service"
+                + " FROM span r JOIN span d USE INDEX (span_trace) ON d.trace_id = r.trace_id AND d.service = r.service"
                 + " AND d.query_id IS NOT NULL WHERE " + where + " GROUP BY r.service, r.name",
                 params, rs ->
                         work.put(rs.getString("service") + "\0" + rs.getString("name"),
@@ -686,11 +690,32 @@ public final class Queries {
     public List<Stats.TraceSummary> tracesContaining(Window window, String predicate,
             List<Object> values, int limit, boolean slowest) {
         Clause where = new Clause("t.start_ms BETWEEN ? AND ?", window.from(), window.to())
-                .and("EXISTS (SELECT 1 FROM span s WHERE s.trace_id = t.trace_id AND s." + predicate + ")",
+                // An IN over the matching spans rather than an EXISTS per trace: H2 reads
+                // the spans by the predicate's index once instead of probing every trace.
+                .and("t.trace_id IN (SELECT s.trace_id FROM span s WHERE s." + predicate + ")",
                         values.toArray());
         String order = slowest ? "t.duration_ns DESC" : "t.start_ms DESC";
         return sql.query("SELECT * FROM trace t WHERE " + where.sql() + " ORDER BY " + order
                 + " LIMIT " + Math.max(1, limit), where.params(), Rows::trace);
+    }
+
+    /**
+     * The traces of the window among the given ids, slowest first.
+     *
+     * <p>{@link #tracesContaining} with a {@code trace_id IN} predicate answers the
+     * same, but H2 runs its {@code EXISTS} once per trace of the window; the ids
+     * are {@code trace}'s own key, so this reads only their rows.
+     */
+    public List<Stats.TraceSummary> slowestOf(Window window, Collection<String> traceIds, int limit) {
+        if (traceIds.isEmpty()) {
+            return List.of();
+        }
+        List<Object> params = new ArrayList<>(traceIds);
+        params.add(window.from());
+        params.add(window.to());
+        return sql.query("SELECT * FROM trace t WHERE t.trace_id IN (" + Sql.placeholders(traceIds.size())
+                + ") AND t.start_ms BETWEEN ? AND ? ORDER BY t.duration_ns DESC LIMIT " + Math.max(1, limit),
+                params, Rows::trace);
     }
 
     // --- scatter -------------------------------------------------------------

@@ -1244,12 +1244,7 @@ public final class Findings {
             }
             candidates.add(call.traceId());
         }
-        if (candidates.isEmpty()) {
-            return List.of();
-        }
-        return traceIds(queries.tracesContaining(window,
-                "trace_id IN (" + Sql.placeholders(candidates.size()) + ")",
-                new ArrayList<>(candidates), EVIDENCE_TRACES, true));
+        return traceIds(queries.slowestOf(window, candidates, EVIDENCE_TRACES));
     }
 
     // --- pool exhausted ------------------------------------------------------
