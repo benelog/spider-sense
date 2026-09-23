@@ -146,4 +146,13 @@ one of its traces and tell me which line under examples/ causes it. Do not fix a
 The agent answers with the findings as the tool printed them, a trace id for each as evidence, and the file and line each fault comes from, because the finding carries the code location and the README beside each example says what is wrong on purpose.
 A second prompt of "fix the N+1 in spring-orders and show me before and after" has it fix, restart the application, exercise the same endpoints, and run `compare --before=demo --after=…` (xref:marks-and-compare.adoc[Marks and Compare]).
 In a project of your own, `java -jar spider-sense.jar init` installs the same skill and writes the jar's path into `CLAUDE.md`.
+
+The prompt can be watched before it is tried.
+Real sessions of it are replayed in a terminal, from the event stream each agent printed, in English and in Korean:
+
+* Claude Code: https://spider-sense.benelog.net/agent-demo/claude-code/[English], https://spider-sense.benelog.net/agent-demo/claude-code/ko/[Korean]
+* Codex CLI: https://spider-sense.benelog.net/agent-demo/codex/[English], https://spider-sense.benelog.net/agent-demo/codex/ko/[Korean]
+
+Each session is two tables in the same DoltHub database as the recorded UI.
+`scripts/agent-demo.sh record claude en` records one, and `scripts/agent-demo.sh push` pushes the sessions there.
 xref:agent-quickstart.adoc[Quick Start for Agents] lists the prompts that work from there.

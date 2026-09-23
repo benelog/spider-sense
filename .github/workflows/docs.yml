@@ -11,6 +11,7 @@ on:
       - 'manual/**'
       - 'supplemental-ui/**'
       - 'scripts/demo-site.mjs'
+      - 'scripts/agent-demo/**'
       - 'spider-sense-server/src/main/resources/public/**'
       - 'antora-playbook.yml'
       - 'package.json'

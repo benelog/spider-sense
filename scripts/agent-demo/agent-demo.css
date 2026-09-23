@@ -1,0 +1,301 @@
+/* The agent demo: a page around a terminal that replays a recorded session. Dark, like the UI. */
+
+:root {
+  --bg: #171a21;
+  --bg-panel: #1f232c;
+  --line: #343a47;
+  --text: #e6e9ef;
+  --text-muted: #8a93a6;
+  --accent: #e2603f;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, "D2Coding", "Nanum Gothic Coding", "Noto Sans Mono CJK KR", monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+
+  /* The terminal, per agent. */
+  --t-bg: #1a1a1a;
+  --t-text: #e8e8e8;
+  --t-dim: #8b8b8b;
+  --t-faint: #5c5c5c;
+  --t-ok: #4eba65;
+  --t-err: #ff6b80;
+  --t-code: #b1b9f9;
+  --t-brand: #d77757;
+  --t-user-bg: #2a2a2a;
+}
+
+.codex {
+  --t-bg: #0d0d0d;
+  --t-text: #e6e6e6;
+  --t-dim: #8c8c8c;
+  --t-faint: #555;
+  --t-ok: #3fb950;
+  --t-err: #f85149;
+  --t-code: #5fd7ff;
+  --t-brand: #e6e6e6;
+  --t-user-bg: #232323;
+}
+
+* { box-sizing: border-box; }
+
+html, body { margin: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 var(--sans);
+}
+
+a { color: inherit; }
+
+.top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 18px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-panel);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.top-title { color: var(--text-muted); margin-right: auto; }
+
+.switch {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.switch a {
+  padding: 4px 12px;
+  font-size: 14px;
+  text-decoration: none;
+  color: var(--text-muted);
+}
+
+.switch a + a { border-left: 1px solid var(--line); }
+
+.switch a[aria-current="page"] {
+  background: var(--accent);
+  color: #fff;
+}
+
+.switch a:not([aria-current="page"]):hover { color: var(--text); }
+
+main {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 20px 16px 48px;
+}
+
+.caption {
+  margin: 0 0 16px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.caption strong { color: var(--text); font-weight: 600; }
+
+.window {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+
+.window-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 12px;
+  background: #2b2b2b;
+  border-bottom: 1px solid #111;
+}
+
+.lights { display: inline-flex; gap: 7px; }
+.lights i { width: 11px; height: 11px; border-radius: 50%; background: #ff5f57; }
+.lights i:nth-child(2) { background: #febc2e; }
+.lights i:nth-child(3) { background: #28c840; }
+
+.window-title {
+  position: absolute;
+  left: 60px;
+  right: 60px;
+  text-align: center;
+  font: 12px var(--mono);
+  color: #a0a0a0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.term {
+  height: min(72vh, 760px);
+  overflow-y: auto;
+  padding: 14px 16px 10px;
+  background: var(--t-bg);
+  color: var(--t-text);
+  font: 13px/1.55 var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.term:focus { outline: none; }
+
+.term .row { white-space: pre-wrap; }
+.term .gap { margin-top: 12px; }
+.dim { color: var(--t-dim); }
+.faint { color: var(--t-faint); }
+.bold { font-weight: 700; }
+.ok { color: var(--t-ok); }
+.err { color: var(--t-err); }
+.brand-c { color: var(--t-brand); }
+.italic { font-style: italic; }
+
+/* The welcome box. */
+.welcome {
+  border: 1px solid var(--t-brand);
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+}
+
+.codex .welcome { border-color: var(--t-faint); display: inline-block; min-width: min(100%, 460px); }
+
+
+/* A step: a bullet in a gutter, then its body. */
+.step { display: grid; grid-template-columns: 2ch 1fr; margin-top: 12px; }
+.step > .bullet { white-space: pre; }
+.step > .body { min-width: 0; }
+.step .sub { display: grid; grid-template-columns: 5ch 1fr; }
+.codex .step .sub { grid-template-columns: 4ch 1fr; }
+.step .sub > span:first-child { white-space: pre; color: var(--t-dim); }
+.step .sub pre { margin: 0; white-space: pre-wrap; font: inherit; color: var(--t-dim); }
+.step .sub pre.err { color: var(--t-err); }
+.running .bullet { animation: blink 1s steps(2, start) infinite; color: var(--t-dim); }
+
+@keyframes blink { to { visibility: hidden; } }
+
+.more { color: var(--t-faint); cursor: pointer; }
+.more:hover { color: var(--t-dim); text-decoration: underline; }
+
+.user {
+  margin-top: 12px;
+  padding: 6px 10px;
+  background: var(--t-user-bg);
+  white-space: pre-wrap;
+}
+
+.user .caret { color: var(--t-dim); }
+
+.cmd { color: var(--t-text); }
+.codex .cmd .verb { font-weight: 700; }
+
+/* Markdown inside a message. */
+.md p { margin: 0 0 8px; }
+.md p:last-child, .md ul:last-child, .md ol:last-child { margin-bottom: 0; }
+.md h1, .md h2, .md h3, .md h4 { font-size: inherit; margin: 10px 0 6px; font-weight: 700; }
+.md h1, .md h2 { text-decoration: underline; text-underline-offset: 3px; }
+.md ul, .md ol { margin: 0 0 8px; padding-left: 3ch; }
+.md li { margin: 0; }
+.md code { color: var(--t-code); }
+.md pre { margin: 6px 0 10px; padding: 8px 10px; background: rgba(255, 255, 255, 0.04); overflow-x: auto; white-space: pre; }
+.md pre code { color: var(--t-text); }
+.md strong { font-weight: 700; }
+.md em { font-style: italic; }
+.md a { color: var(--t-code); }
+.md blockquote { margin: 0 0 8px; padding-left: 1.5ch; border-left: 2px solid var(--t-faint); color: var(--t-dim); }
+.md .table { overflow-x: auto; margin: 4px 0 10px; }
+.md table { border-collapse: collapse; }
+.md th, .md td { border: 1px solid var(--t-faint); padding: 1px 8px; text-align: left; vertical-align: top; }
+.md th { font-weight: 700; }
+.md .cursor { display: inline-block; width: 0.6em; background: var(--t-text); animation: blink 1s steps(2, start) infinite; }
+
+/* The line that says the agent is at work, and the box the next prompt would go in. */
+.status { margin-top: 12px; min-height: 1.55em; white-space: pre-wrap; }
+.status .spin { color: var(--t-brand); }
+.codex .status .spin { color: var(--t-text); }
+.status .shimmer {
+  background: linear-gradient(90deg, var(--t-dim) 0%, var(--t-text) 45%, var(--t-dim) 90%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 2s linear infinite;
+}
+
+@keyframes shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+
+.composer {
+  margin-top: 8px;
+  border: 1px solid var(--t-faint);
+  border-radius: 6px;
+  padding: 4px 10px;
+  color: var(--t-faint);
+  white-space: pre-wrap;
+}
+
+.codex .composer { border: 0; border-radius: 0; background: var(--t-user-bg); padding: 6px 10px; }
+.composer .typed { color: var(--t-text); }
+.hint { display: flex; justify-content: space-between; gap: 12px; padding: 2px 2px 0; color: var(--t-faint); font-size: 12px; }
+
+.worked { margin-top: 12px; color: var(--t-dim); display: flex; gap: 1ch; align-items: center; }
+.worked::after { content: ""; flex: 1; border-top: 1px solid var(--t-faint); }
+.claude .worked::after { display: none; }
+
+/* Under the terminal. */
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.controls button {
+  min-width: 36px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg-panel);
+  color: var(--text);
+  font: 14px var(--sans);
+  cursor: pointer;
+}
+
+.controls button:hover { border-color: var(--text-muted); }
+.controls button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+.progress {
+  flex: 1 1 200px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--line);
+  cursor: pointer;
+  position: relative;
+}
+
+.progress-fill { height: 100%; width: 0; border-radius: 4px; background: var(--accent); }
+
+.clock { font: 13px var(--mono); color: var(--text-muted); min-width: 9ch; text-align: right; }
+
+.speeds { display: inline-flex; gap: 4px; }
+
+.notes { margin-top: 18px; color: var(--text-muted); font-size: 14px; }
+.notes a { color: var(--text); }
+
+.error-box { padding: 24px; color: var(--t-err); }
+
+@media (max-width: 640px) {
+  .top-title { display: none; }
+  .brand { margin-right: auto; }
+  .term { font-size: 12px; height: 70vh; padding: 10px; }
+}

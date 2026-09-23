@@ -20,7 +20,7 @@
 
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -765,6 +765,248 @@ async function capture(opts) {
     + ' (' + (csv.length / 1024).toFixed(0) + ' KB)');
 }
 
+// --- the agent demo ------------------------------------------------------------
+//
+// scripts/agent-demo.sh keeps what Claude Code (`-p --output-format stream-json`) or
+// Codex CLI (`exec --json`) printed, each line stamped with the time it arrived, as
+// build/agent-demo/<agent>-<lang>.jsonl. agent-push reads them as one row per session
+// and one row per thing the terminal would have shown (the prompt, a message, a spell
+// of thinking, a tool call with its output), with the home directory anonymised, and
+// replaces the two tables on DoltHub with them, keeping the sessions it was not given.
+
+const AGENT_TABLES = [
+  { name: 'agent_session', key: ['id'],
+    columns: 'id agent lang agent_version model cwd prompt recorded_at duration_ms turns summary',
+    ddl: `id VARCHAR(32) NOT NULL, agent VARCHAR(16) NOT NULL, lang VARCHAR(8) NOT NULL, agent_version VARCHAR(64),
+          model VARCHAR(128), cwd VARCHAR(1024), prompt TEXT NOT NULL, recorded_at BIGINT NOT NULL,
+          duration_ms BIGINT NOT NULL, turns INT, summary TEXT` },
+  { name: 'agent_event', key: ['session_id', 'seq'],
+    columns: 'session_id seq at_ms end_ms kind tool title input output error',
+    ddl: `session_id VARCHAR(32) NOT NULL, seq INT NOT NULL, at_ms BIGINT NOT NULL, end_ms BIGINT, kind VARCHAR(16) NOT NULL,
+          tool VARCHAR(64), title TEXT, input TEXT, output LONGTEXT, error BOOLEAN NOT NULL` },
+];
+for (const t of AGENT_TABLES) t.columns = t.columns.split(/\s+/).filter(Boolean);
+
+/** A string with the home directory anonymised, in the path and in the dashed form Claude Code's temp paths use. */
+function anonymised(text) {
+  if (text === null || text === undefined) return text;
+  const home = homedir();
+  return String(text).split(home).join('/home/me').split(home.replace(/\//g, '-')).join('-home-me');
+}
+
+function stampedLines(file) {
+  return readFileSync(file, 'utf8').split('\n').filter(Boolean).map((line) => {
+    const tab = line.indexOf('\t');
+    try {
+      return { t: Number(line.slice(0, tab)), e: JSON.parse(line.slice(tab + 1)) };
+    } catch (e) {
+      return null;
+    }
+  }).filter(Boolean);
+}
+
+/** The text of a Claude tool_result's content, which is a string or a list of blocks. */
+function resultText(content) {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content.map((c) => (c.type === 'text' ? c.text : c.type === 'tool_reference' ? c.tool_name : '')).join('\n');
+}
+
+/** Claude Code's stream: assistant blocks in order, each tool_use closed by the tool_result that answers it. */
+function claudeSession(lines, started) {
+  const session = { agent: 'claude', model: null, agent_version: null, cwd: null, duration_ms: 0, turns: null, summary: null };
+  const events = [];
+  const open = new Map();
+  const hidden = new Set(['ToolSearch']);   // plumbing the terminal does not show as a step of the work
+  for (const { t, e } of lines) {
+    const at = t - started;
+    if (e.type === 'system' && e.subtype === 'init') {
+      session.model = e.model;
+      session.agent_version = e.claude_code_version || null;
+      session.cwd = e.cwd;
+    } else if (e.type === 'assistant') {
+      for (const block of e.message.content || []) {
+        if (block.type === 'text' && block.text.trim()) {
+          events.push({ at_ms: at, kind: 'text', output: block.text });
+        } else if (block.type === 'thinking' || block.type === 'redacted_thinking') {
+          const last = events[events.length - 1];
+          if (last && last.kind === 'thinking') last.end_ms = at;
+          else events.push({ at_ms: at, end_ms: at, kind: 'thinking', output: block.thinking || '' });
+        } else if (block.type === 'tool_use') {
+          if (hidden.has(block.name)) { open.set(block.id, null); continue; }
+          const input = block.input || {};
+          const title = input.command ?? input.file_path ?? input.pattern ?? input.description ?? input.prompt ?? '';
+          const ev = { at_ms: at, kind: 'tool', tool: block.name, title: String(title), input: JSON.stringify(input), output: '', error: false };
+          events.push(ev);
+          open.set(block.id, ev);
+        }
+      }
+    } else if (e.type === 'user' && Array.isArray(e.message && e.message.content)) {
+      for (const block of e.message.content) {
+        if (block.type !== 'tool_result') continue;
+        const ev = open.get(block.tool_use_id);
+        if (!ev) continue;
+        ev.end_ms = at;
+        ev.output = resultText(block.content);
+        ev.error = !!block.is_error;
+      }
+    } else if (e.type === 'result') {
+      session.duration_ms = at;   // on the stamps' clock, which the events are on; the result's own starts later
+      session.turns = e.num_turns || null;
+      session.summary = e.result || null;
+      events.push({ at_ms: at, kind: 'end', output: '' });
+    }
+  }
+  return { session, events };
+}
+
+/** `/bin/bash -lc '…'` as the command itself. */
+function shellCommand(command) {
+  const m = /^(?:\/\S*\/)?(?:bash|sh|zsh) -l?c (['"])([\s\S]*)\1$/.exec(String(command).trim());
+  if (!m) return String(command);
+  return m[1] === "'" ? m[2].replace(/'\\''/g, "'") : m[2].replace(/\\"/g, '"');
+}
+
+/** Codex CLI's stream: items as they complete, a command with its output. */
+function codexSession(lines, started) {
+  const session = { agent: 'codex', model: null, agent_version: null, cwd: root, duration_ms: 0, turns: 0, summary: null };
+  const events = [];
+  const byId = new Map();
+  for (const { t, e } of lines) {
+    const at = t - started;
+    if (e.type === 'turn.started') session.turns++;
+    if (e.type === 'turn.completed') {
+      session.duration_ms = at;
+      events.push({ at_ms: at, kind: 'end', output: '' });
+    }
+    if (!e.item || !String(e.type).startsWith('item.')) continue;
+    const item = e.item;
+    let ev = byId.get(item.id);
+    if (!ev) {
+      if (item.type === 'agent_message') ev = { at_ms: at, kind: 'text', output: '' };
+      else if (item.type === 'reasoning') ev = { at_ms: at, kind: 'thinking', output: '' };
+      else if (item.type === 'command_execution') ev = { at_ms: at, kind: 'tool', tool: 'shell', title: '', output: '', error: false };
+      else if (item.type === 'file_change') ev = { at_ms: at, kind: 'tool', tool: 'apply_patch', title: '', output: '', error: false };
+      else if (item.type === 'mcp_tool_call') ev = { at_ms: at, kind: 'tool', tool: 'mcp', title: '', output: '', error: false };
+      else if (item.type === 'web_search') ev = { at_ms: at, kind: 'tool', tool: 'web_search', title: '', output: '', error: false };
+      else if (item.type === 'todo_list') ev = { at_ms: at, kind: 'plan', output: '' };
+      else continue;
+      byId.set(item.id, ev);
+      events.push(ev);
+    }
+    if (item.type === 'agent_message' || item.type === 'reasoning') ev.output = item.text || '';
+    else if (item.type === 'command_execution') {
+      ev.title = shellCommand(item.command || '');
+      ev.input = JSON.stringify({ command: item.command });
+      ev.output = item.aggregated_output || '';
+      if (item.exit_code !== undefined && item.exit_code !== null) ev.error = item.exit_code !== 0;
+    } else if (item.type === 'file_change') {
+      ev.title = (item.changes || []).map((c) => c.kind + ' ' + c.path).join(', ');
+      ev.input = JSON.stringify(item.changes || []);
+    } else if (item.type === 'mcp_tool_call') {
+      ev.title = (item.server || '') + '.' + (item.tool || '');
+      ev.input = JSON.stringify(item.arguments || {});
+      ev.output = JSON.stringify(item.result || item.error || '');
+    } else if (item.type === 'web_search') ev.title = item.query || '';
+    else if (item.type === 'todo_list') ev.output = JSON.stringify(item.items || []);
+    if (e.type === 'item.completed') ev.end_ms = at;
+  }
+  const last = events.filter((ev) => ev.kind === 'text').pop();
+  session.summary = last ? last.output : null;
+  return { session, events };
+}
+
+function agentVersion(agent) {
+  const r = spawnSync(agent, ['--version'], { encoding: 'utf8' });
+  const m = /(\d+\.\d+\.\d+)/.exec((r.stdout || '') + (r.stderr || ''));
+  return m ? m[1] : null;
+}
+
+function codexModel() {
+  try {
+    const text = readFileSync(join(homedir(), '.codex/config.toml'), 'utf8');
+    const model = /^model\s*=\s*"([^"]+)"/m.exec(text);
+    const effort = /^model_reasoning_effort\s*=\s*"([^"]+)"/m.exec(text);
+    return model ? model[1] + (effort ? ' ' + effort[1] : '') : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+/** One recorded session as its rows. */
+function agentRows(dir, id) {
+  const [agent, lang] = id.split('-');
+  const started = Number(readFileSync(join(dir, id + '.started'), 'utf8').trim());
+  const prompt = readFileSync(join(dir, id + '.prompt'), 'utf8').trim();
+  const lines = stampedLines(join(dir, id + '.jsonl'));
+  if (!lines.length) throw new Error(id + ': the stream is empty; see ' + join(dir, id + '.err'));
+  const { session, events } = agent === 'claude' ? claudeSession(lines, started) : codexSession(lines, started);
+  if (agent === 'codex') {
+    session.agent_version = agentVersion('codex');
+    session.model = codexModel();
+  }
+  if (!session.duration_ms) session.duration_ms = lines[lines.length - 1].t - started;
+  events.unshift({ at_ms: 0, kind: 'user', output: prompt });
+  const sessionRow = {
+    id, agent, lang, agent_version: session.agent_version, model: session.model, cwd: anonymised(session.cwd),
+    prompt, recorded_at: started, duration_ms: session.duration_ms, turns: session.turns, summary: anonymised(session.summary),
+  };
+  const eventRows = events.map((ev, i) => ({
+    session_id: id, seq: i, at_ms: Math.max(0, ev.at_ms), end_ms: ev.end_ms ?? null, kind: ev.kind, tool: ev.tool ?? null,
+    title: anonymised(ev.title ?? null), input: anonymised(ev.input ?? null), output: anonymised(ev.output ?? ''),
+    error: ev.error ? 1 : 0,
+  }));
+  return { sessionRow, eventRows };
+}
+
+function rowsCsv(table, rows) {
+  return toCsv(table.columns, rows);
+}
+
+async function agentPush(opts) {
+  const dir = resolve(root, opts.dir || 'build/agent-demo');
+  const ids = (existsSync(dir) ? readdirSync(dir) : []).filter((f) => f.endsWith('.jsonl')).map((f) => f.slice(0, -6)).sort();
+  if (!ids.length) throw new Error('no recorded session in ' + dir + ' (scripts/agent-demo.sh record)');
+  const sessions = [];
+  const events = [];
+  for (const id of ids) {
+    const { sessionRow, eventRows } = agentRows(dir, id);
+    console.log(id + ': ' + eventRows.length + ' events over ' + (sessionRow.duration_ms / 1000).toFixed(0) + ' s, '
+      + sessionRow.agent + ' ' + sessionRow.agent_version + ', ' + sessionRow.model);
+    sessions.push(sessionRow);
+    events.push(...eventRows);
+    // What the page reads, for a look at a session before it is pushed (agent-demo.js, ?rows=).
+    writeFileSync(join(dir, id + '.rows.json'), JSON.stringify({ session: sessionRow, events: eventRows }));
+  }
+  if (opts['dry-run']) {
+    writeFileSync(join(dir, 'agent_session.csv'), rowsCsv(AGENT_TABLES[0], sessions));
+    writeFileSync(join(dir, 'agent_event.csv'), rowsCsv(AGENT_TABLES[1], events));
+    console.log('wrote ' + join(dir, 'agent_session.csv') + ' and agent_event.csv; nothing pushed');
+    return;
+  }
+  // The sessions on DoltHub that were not recorded here stay: an import replaces a table.
+  await doltEnsureTables(AGENT_TABLES);
+  const kept = new Set(ids);
+  const otherIds = (await doltQuery(DOLTHUB.branch, 'SELECT id FROM agent_session')).map((r) => r.id).filter((id) => !kept.has(id));
+  for (const id of otherIds) {
+    console.log(id + ': kept as it is on DoltHub');
+    sessions.push(...await doltQuery(DOLTHUB.branch, 'SELECT * FROM agent_session WHERE id = ' + sqlString(id)));
+    for (let from = 0; ; from += 1000) {
+      const rows = await doltQuery(DOLTHUB.branch, 'SELECT * FROM agent_event WHERE session_id = ' + sqlString(id)
+        + ' ORDER BY seq LIMIT 1000 OFFSET ' + from);
+      events.push(...rows);
+      if (rows.length < 1000) break;
+    }
+  }
+  const message = 'Agent demo: ' + ids.join(', ') + ' recorded ' + new Date(Math.max(...sessions.map((s) => Number(s.recorded_at)))).toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+  for (const [table, rows] of [[AGENT_TABLES[0], sessions], [AGENT_TABLES[1], events]]) {
+    const bytes = Buffer.from(rowsCsv(table, rows));
+    console.log('import ' + table.name + ' (' + rows.length + ' rows, ' + (bytes.length / 1024).toFixed(0) + ' KB)');
+    await doltImportInto(table, bytes, message + ': ' + table.name);
+  }
+  console.log('pushed; the branch head is ' + (await doltHead(DOLTHUB.branch)));
+}
+
 // --- assemble ----------------------------------------------------------------
 
 /** The UI as a static page that reads the DoltHub database: nothing else is copied. */
@@ -781,6 +1023,38 @@ function assemble(opts) {
   if (!index.includes('data-dolthub')) throw new Error('index.html has no <html lang="en" to mark');
   writeFileSync(join(out, 'index.html'), index);
   console.log('assembled ' + out + ' over ' + source + ' (open it through any static file server, e.g. python3 -m http.server -d ' + out + ')');
+  assembleAgentDemo(join(dirname(out), 'agent-demo'), source);
+}
+
+/**
+ * The agent demo beside the UI demo: one page per recorded session, at
+ * agent-demo/{claude-code,codex}/ in English and at …/ko/ in Korean, over the assets
+ * they share; agent-demo/ itself leads to the first.
+ */
+function assembleAgentDemo(out, source) {
+  const from = join(root, 'scripts/agent-demo');
+  rmSync(out, { recursive: true, force: true });
+  mkdirSync(join(out, 'assets'), { recursive: true });
+  for (const file of ['agent-demo.js', 'agent-demo.css']) cpSync(join(from, file), join(out, 'assets', file));
+  cpSync(join(PUBLIC, 'assets/logo.svg'), join(out, 'assets/logo.svg'));
+  const template = readFileSync(join(from, 'index.html'), 'utf8');
+  for (const [dir, agent] of [['claude-code', 'claude'], ['codex', 'codex']]) {
+    for (const lang of ['en', 'ko']) {
+      const base = lang === 'en' ? '../' : '../../';
+      const page = template
+        .replace('<html lang="en" data-session="claude-en" data-dolthub="benelog/spider-sense-demo@main">',
+          '<html lang="' + lang + '" data-session="' + agent + '-' + lang + '" data-dolthub="' + source + '" data-base="' + base + '">')
+        .replaceAll('{{assets}}', base + 'assets')
+        .replaceAll('{{root}}', base + '../');
+      if (!page.includes('data-base=')) throw new Error('scripts/agent-demo/index.html has no <html> to mark');
+      const dirOut = join(out, dir, lang === 'en' ? '' : 'ko');
+      mkdirSync(dirOut, { recursive: true });
+      writeFileSync(join(dirOut, 'index.html'), page);
+    }
+  }
+  writeFileSync(join(out, 'index.html'), '<!doctype html><meta charset="utf-8"><title>Spider Sense agent demo</title>'
+    + '<meta http-equiv="refresh" content="0; url=claude-code/"><a href="claude-code/">Claude Code</a> · <a href="codex/">Codex CLI</a>\n');
+  console.log('assembled ' + out + ': claude-code/, claude-code/ko/, codex/, codex/ko/');
 }
 
 // --- main --------------------------------------------------------------------
@@ -799,6 +1073,7 @@ try {
   else if (command === 'pull') await pull(opts);
   else if (command === 'load') await load(opts);
   else if (command === 'capture') await capture(opts);
+  else if (command === 'agent-push') await agentPush(opts);
   else if (command === 'assemble') assemble(opts);
   else {
     console.error([
@@ -807,6 +1082,7 @@ try {
       '       demo-site.mjs capture [--url=<spider sense>] [--recording=<file>] [--tables=<dir>]',
       '       demo-site.mjs push [--only=<table,...>] [--tables=<dir>] [--dolthub=owner/database] [--branch=]   (DOLTHUB_TOKEN)',
       '       demo-site.mjs pull [--tables=<dir>] [--recording=<file>] [--ref=<branch or commit>]',
+      '       demo-site.mjs agent-push [--dir=build/agent-demo] [--dry-run] [--dolthub=owner/database] [--branch=]   (DOLTHUB_TOKEN)',
       '       demo-site.mjs assemble [<out dir>] [--dolthub=owner/database] [--ref=<branch or commit>]',
     ].join('\n'));
     process.exit(2);

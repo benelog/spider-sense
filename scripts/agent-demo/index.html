@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en" data-session="claude-en" data-dolthub="benelog/spider-sense-demo@main">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Spider Sense agent demo</title>
+  <meta name="description" content="A real run of an AI coding agent using the Spider Sense skill, replayed from its event stream.">
+  <link rel="icon" href="{{assets}}/logo.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,700;1,400&display=swap">
+  <link rel="stylesheet" href="{{assets}}/agent-demo.css">
+  <script type="module" src="{{assets}}/agent-demo.js"></script>
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="{{root}}"><img src="{{assets}}/logo.svg" alt="" width="22" height="22"> Spider Sense</a>
+    <span class="top-title" data-i18n="title">Agent demo</span>
+    <nav class="switch" aria-label="Agent">
+      <a data-agent="claude">Claude Code</a>
+      <a data-agent="codex">Codex CLI</a>
+    </nav>
+    <nav class="switch" aria-label="Language">
+      <a data-lang="en">English</a>
+      <a data-lang="ko">한국어</a>
+    </nav>
+  </header>
+
+  <main>
+    <p class="caption" id="caption"></p>
+
+    <div class="window">
+      <div class="window-bar">
+        <span class="lights"><i></i><i></i><i></i></span>
+        <span class="window-title" id="window-title"></span>
+      </div>
+      <div class="term" id="term" tabindex="0" aria-live="off"></div>
+    </div>
+
+    <div class="controls">
+      <button type="button" id="play" data-i18n-title="play"></button>
+      <button type="button" id="restart" data-i18n-title="restart">⟲</button>
+      <div class="progress" id="progress" role="slider" aria-valuemin="0" aria-valuemax="100" tabindex="0"><div class="progress-fill" id="progress-fill"></div></div>
+      <span class="clock" id="clock">0:00</span>
+      <span class="speeds" id="speeds">
+        <button type="button" data-speed="1">1×</button>
+        <button type="button" data-speed="2">2×</button>
+        <button type="button" data-speed="4">4×</button>
+      </span>
+      <button type="button" id="end" data-i18n-title="end">⏭</button>
+    </div>
+
+    <p class="notes" id="notes"></p>
+  </main>
+</body>
+</html>

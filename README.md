@@ -126,6 +126,7 @@ one of its traces and tell me which line under examples/ causes it. Do not fix a
 ```
 
 The agent answers with the findings as the tool printed them, the trace ids as evidence, and the file and line each fault comes from.
+**Watch it first:** real runs of this prompt, replayed from the agents' event streams, in [Claude Code](https://spider-sense.benelog.net/agent-demo/claude-code/) ([한국어](https://spider-sense.benelog.net/agent-demo/claude-code/ko/)) and [Codex CLI](https://spider-sense.benelog.net/agent-demo/codex/) ([한국어](https://spider-sense.benelog.net/agent-demo/codex/ko/)).
 A follow-up of "fix the N+1 in spring-orders and show me before and after" makes it fix, restart, exercise the same endpoints, and run `compare`.
 In your own project, `java -jar spider-sense.jar init` installs the same skills into `.claude/skills/` and writes the jar's path into `CLAUDE.md`, so the prompt starts at "start the app under Spider Sense".
 

@@ -238,6 +238,18 @@ It then starts a fresh standalone Spider Sense on `build/demo-data/sense` with r
 `scripts/demo-site.mjs assemble`, which `npm run docs` runs, copies the UI into `build/site/demo` and marks `index.html` with `data-dolthub="benelog/spider-sense-demo@main"`, which makes `app.js` load `assets/js/dev/replay.js` instead of talking to a server; the Docs workflow needs neither Java nor the recording for it, and nothing of the recording is committed to this repository.
 Recording needs `DOLTHUB_TOKEN`, a writer's API token of the database, kept in `.envrc`; the page needs nothing, since the database is public.
 
+### The agent demo
+
+The README's prompt that hands the demo to an agent is published as it ran, too: four pages that replay a real session of Claude Code and of Codex CLI on it, each in English and in Korean, at <https://spider-sense.benelog.net/agent-demo/claude-code/>, `…/claude-code/ko/`, `…/codex/` and `…/codex/ko/`.
+Nothing in them is written by hand: `scripts/agent-demo.sh record <claude|codex> <en|ko>` runs the agent headless in this checkout on that prompt (the Korean one is its translation), `claude -p --output-format stream-json` or `codex exec --json`, stamps every line of the stream with the time it arrived, since neither stream carries one, and stops whatever demo the agent started once it is done.
+Claude Code runs with the project's settings only and no edit tool; Codex runs in its `workspace-write` sandbox with the network open and `~/db/spider-sense` writable, since the demo needs both.
+The tree is clean when a session is recorded, so what the agent reads of it is the commit.
+`scripts/agent-demo.sh push` (`scripts/demo-site.mjs agent-push`) turns the streams into two more tables of the same DoltHub database, with the home directory anonymised: `agent_session`, one row per session (`id` such as `claude-ko`, the agent, its version and model, the working directory, the prompt, when it was recorded, how long it took), and `agent_event`, one row per thing the terminal shows (`kind` `user`, `text`, `thinking`, `tool`, `plan` or `end`, with the tool's name, its title and input, its output, whether it failed, and when it started and ended, in milliseconds from the start).
+An import replaces a table, so the push keeps the rows of every session it was not given.
+The page (`scripts/agent-demo/`, which `assemble` copies to `build/site/agent-demo` with the session and the database set on `<html>`) reads the two tables through the same SQL API and draws the session in a terminal after the agent's own: Claude Code's `⏺ Bash(…)` with `⎿` under it, Codex's `• Ran …`, `• Explored` for its reads and searches, and `─ Worked for …`.
+The replay is a function of the play time, so it seeks: a pause between two events is capped at 1.6 seconds and an answer is revealed at a readable rate, while the spinner's clock shows the recorded time, so the agent's two-minute wait passes in two seconds and still says two minutes.
+Long outputs show their first four lines and expand on a click.
+
 ## What was considered and rejected
 
 - **An OpenTelemetry agent extension instead of our own premain.** The extension mechanism (`extensions/` inside the agent jar, `AgentListener`) would also work, and `ExtensionClassLoader` is already exclusion-listed. Rejected because the UI would then depend on the agent's SPI and lifecycle, and the standalone mode would still need a launcher of its own. A premain that wraps the agent's premain keeps the server a plain program that the agent happens to be pointed at over a standard protocol.
