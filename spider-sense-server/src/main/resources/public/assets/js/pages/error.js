@@ -4,20 +4,20 @@ import * as api from '../api.js';
 import * as router from '../router.js';
 import { h, fill, panel, stat, table, serviceChip, idButton, spinner, errorBox } from '../ui.js';
 import { timeSeries, legend } from '../charts.js';
-import { stackTrace } from '../sql.js';
-import { codeFrame } from '../frames.js';
+import { codeFrame, foldedStack, framesMode, framesToggle } from '../frames.js';
+import { copyButtons, cliLine } from '../copyas.js';
 import { traceTable } from './traces.js';
 import { count, rel, bothTimes, full, splitType } from '../format.js';
 
-/** One section per cause, the root cause first (ui.md). */
-function exceptionChain(chain) {
+/** One section per cause, the root cause first, each folded as a stack trace (ui.md). */
+function exceptionChain(chain, mode) {
   return chain.map((cause, i) => {
     const lines = [cause.type ? cause.type + (cause.message ? ': ' + cause.message : '') : cause.message]
       .concat(cause.frames.map((frame) => '\tat ' + frame))
       .concat(cause.more ? ['\t... ' + cause.more + ' more'] : []);
     return h('div', { style: { marginTop: i ? '12px' : '0' } },
       chain.length > 1 ? h('div.sub-head', i === 0 ? 'Root cause' : 'Wrapped by') : null,
-      stackTrace(lines.filter((line) => line).join('\n')));
+      foldedStack(lines.filter((line) => line).join('\n'), mode));
   });
 }
 
@@ -25,6 +25,9 @@ export function render(root, ctx) {
   const id = ctx.params.id;
   let destroyed = false;
   let chart = null;
+  let mode = framesMode(ctx.query);
+  let lastChain = null;
+  let loaded = null;
 
   const head = h('div', { style: { padding: '14px', display: 'grid', gap: '8px' } });
   const headPanel = panel({}, head);
@@ -33,7 +36,26 @@ export function render(root, ctx) {
   const chartLegend = h('div');
   const chartPanel = panel({ title: 'Occurrences' }, chartLegend, chartBody);
   const stackBody = h('div', { style: { padding: '14px' } });
-  const stackPanel = panel({ title: 'Sample stack trace' }, stackBody);
+  const stackTraceBox = h('div');
+  const modeBox = h('div.row', { style: { gap: '2px' } });
+  const stackPanel = panel({ title: 'Sample stack trace', actions: modeBox }, stackBody);
+
+  // App frames | All, remembered in the hash query (docs/ui.md).
+  // A Live refresh repaints only when the trace or the mode changed, so an expanded run stays open.
+  let painted = null;
+  function paintStack() {
+    const key = mode + '|' + JSON.stringify(lastChain);
+    if (key === painted) return;
+    painted = key;
+    fill(modeBox, framesToggle(mode, (next) => {
+      mode = next;
+      router.setQuery({ frames: next === 'all' ? 'all' : '' });
+      paintStack();
+    }));
+    fill(stackTraceBox, lastChain && lastChain.length
+      ? exceptionChain(lastChain, mode)
+      : h('span.muted', 'This error carried no stack trace.'));
+  }
   const endpointsBody = h('div');
   const tracesBody = h('div');
   const half = h('div.grid-2',
@@ -52,9 +74,11 @@ export function render(root, ctx) {
 
   async function load() {
     try {
-      const data = await api.errorGroup(id);
+      const win = api.windowFor();
+      const data = await api.errorGroup(id, { window: win });
       if (destroyed) return;
       const e = data.error || {};
+      loaded = { window: win, service: e.service };
       build();
       const { pkg, name } = splitType(e.type);
       ctx.setTitle(name || 'Error');
@@ -67,7 +91,11 @@ export function render(root, ctx) {
           h('span.muted', { style: { fontSize: '11px' } }, 'sample'),
           idButton(e.sample.traceId, 'Copy trace id'),
           h('a.link-btn', { href: router.href('/traces/' + e.sample.traceId, api.sharedQuery()) }, 'Open trace'),
-          h('span.muted', { style: { fontSize: '11px' }, title: bothTimes(e.sample.at) }, full(e.sample.at))) : null);
+          h('span.muted', { style: { fontSize: '11px' }, title: bothTimes(e.sample.at) }, full(e.sample.at))) : null,
+        copyButtons({
+          markdown: () => ({ path: '/api/errors/' + encodeURIComponent(id), query: api.params({}, { window: loaded.window, service: null }) }),
+          cli: () => cliLine('errors', loaded.window, loaded.service),
+        }));
 
       fill(statsRow,
         stat(count(e.count), '', 'occurrences', { class: 'is-bad' }),
@@ -86,14 +114,14 @@ export function render(root, ctx) {
       if (chart) chart.update(spec); else chart = timeSeries(chartBody, spec);
 
       const code = data.code || [];
+      lastChain = data.chain || [];
       fill(stackBody,
         code.length
           ? h('div.f-code', { style: { marginBottom: '12px' } }, h('div.sub-head', 'Code'),
             code.map((frame) => codeFrame(frame)))
           : null,
-        (data.chain || []).length
-          ? exceptionChain(data.chain)
-          : h('span.muted', 'This error carried no stack trace.'));
+        stackTraceBox);
+      paintStack();
 
       fill(endpointsBody, table([
         { key: 'name', label: 'Endpoint', sortable: false, cls: 'wide', render: (x) => h('span.cell-ellipsis', { title: x.name }, x.name) },

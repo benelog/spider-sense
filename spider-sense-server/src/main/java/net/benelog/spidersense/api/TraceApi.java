@@ -13,6 +13,7 @@ import net.benelog.spidersilk.HttpStatus;
 import net.benelog.spidersilk.WebRequest;
 import net.benelog.spidersilk.WebResponse;
 import net.benelog.spidersilk.json.Json;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The read endpoints about traffic: the overview, services, endpoints, traces,
@@ -209,6 +210,10 @@ public final class TraceApi {
     public WebResponse query(WebRequest req) {
         String queryId = req.pathParam("queryId");
         Window window = params.window(req);
+        if (Params.wantsText(req)) {
+            return text(reports.queryText(window, Params.service(req), queryId, Params.full(req)),
+                    "No such query in this window: " + queryId);
+        }
         List<Stats.QueryStats> found = queries.queries(window, null, "total", 1, queryId);
         if (found.isEmpty()) {
             throw new HttpException(HttpStatus.NOT_FOUND, "No such query in this window: " + queryId);
@@ -232,6 +237,10 @@ public final class TraceApi {
     public WebResponse error(WebRequest req) {
         String errorId = req.pathParam("errorId");
         Window window = params.window(req);
+        if (Params.wantsText(req)) {
+            return text(reports.errorText(window, Params.service(req), errorId, Params.full(req)),
+                    "No such error in this window: " + errorId);
+        }
         List<Stats.ErrorGroup> found = queries.errors(window, null, 1, errorId);
         if (found.isEmpty()) {
             throw new HttpException(HttpStatus.NOT_FOUND, "No such error in this window: " + errorId);
@@ -253,6 +262,17 @@ public final class TraceApi {
                         .put("count", Codecs.longs(buckets.requests())))
                 .put("traces", Codecs.traceSummaries(queries.tracesContaining(window,
                         "error_id = ?", errorId, DETAIL_TRACES, false))));
+    }
+
+    /**
+     * The text rendering of one group (agent.md, "One finding"), or the {@code 404}
+     * the JSON form answers when the group is not in the window.
+     */
+    private static WebResponse text(@Nullable String text, String missing) {
+        if (text == null) {
+            throw new HttpException(HttpStatus.NOT_FOUND, missing);
+        }
+        return WebResponse.text(text).contentType(Text.CONTENT_TYPE);
     }
 
     public WebResponse logs(WebRequest req) {

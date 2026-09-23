@@ -8,6 +8,7 @@ import { formatSql } from '../sql.js';
 import { fmtApdex } from '../buckets.js';
 import { count, dur, rate, pct, bytes, time, bothTimes, truncate, shortId } from '../format.js';
 import { codeFrame } from '../frames.js';
+import { copyButtons, cliLine } from '../copyas.js';
 
 const KIND_LABEL = {
   regression: 'regression',
@@ -367,8 +368,10 @@ function ackLine(finding, onChange) {
  *
  * @param onChange called after an acknowledgement or a resolution changed, so the page reloads;
  *        with none, the evidence carries no buttons
+ * @param listWindow returns the window the list was last asked for ({ from, to }), which the
+ *        Copy as Markdown and Copy CLI line buttons name; with none, they are left out
  */
-export function evidence(finding, onChange) {
+export function evidence(finding, onChange, listWindow) {
   // A hot span the finding has no trace for is left out, as the text rendering leaves it out.
   const numbers = Object.entries(finding.numbers || {})
     .filter(([key, value]) => {
@@ -406,7 +409,11 @@ export function evidence(finding, onChange) {
         : null,
       target
         ? h('a.btn.btn-ghost', { href: router.href(target.path, target.query) }, 'Go to')
-        : null),
+        : null,
+      listWindow ? copyButtons({
+        markdown: () => ({ path: '/api/findings/' + encodeURIComponent(finding.id), query: api.params({}, { window: listWindow() }) }),
+        cli: () => cliLine('findings', listWindow(), api.state.service),
+      }) : null),
     onChange ? ackLine(finding, onChange) : null);
 }
 
@@ -420,6 +427,7 @@ export function render(root, ctx) {
   let destroyed = false;
   let rows = [];
   let requests = 0;
+  let listWindow = null;
   let node = null;
   const expanded = new Set();
 
@@ -486,7 +494,7 @@ export function render(root, ctx) {
       key: (item) => item.key,
       create: (item) => (item.evidence
         ? h('tr.f-detail', { dataset: { ack: ackSignature(item.finding) } },
-          h('td', { colspan: columns.length }, evidence(item.finding, load)))
+          h('td', { colspan: columns.length }, evidence(item.finding, load, () => listWindow)))
         : buildRow(item.finding, item.index)),
       update: (n, item) => {
         // An open evidence row is left alone by a Live refresh, unless its
@@ -495,7 +503,7 @@ export function render(root, ctx) {
           const signature = ackSignature(item.finding);
           if (n.dataset.ack !== signature) {
             n.dataset.ack = signature;
-            n.replaceChildren(h('td', { colspan: columns.length }, evidence(item.finding, load)));
+            n.replaceChildren(h('td', { colspan: columns.length }, evidence(item.finding, load, () => listWindow)));
           }
           return;
         }
@@ -517,6 +525,7 @@ export function render(root, ctx) {
       if (destroyed) return;
       rows = res.findings || [];
       requests = res.requests || 0;
+      listWindow = res.window || api.windowFor();
       if (!rows.length && !requests) {
         node = null;
         const s = api.state.status || {};

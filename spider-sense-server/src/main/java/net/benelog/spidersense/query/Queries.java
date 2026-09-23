@@ -431,6 +431,44 @@ public final class Queries {
         return groupBuckets(window, "error_id = ?", errorId);
     }
 
+    /** The most points an error group's {@code series} has: a sparkline, not a chart. */
+    public static final int ERROR_SERIES_POINTS = 30;
+
+    /**
+     * Occurrences per bucket for each of these error groups, as the errors page
+     * draws them (api.md, {@code ErrorGroup.series}).
+     *
+     * <p>The buckets are the window's, the ones the Overview charts, merged
+     * {@code ceil(n / 30)} at a time from the oldest, so a sparkline has at most
+     * {@value #ERROR_SERIES_POINTS} points whatever the range. A group with no
+     * occurrence in the window gets zeros.
+     */
+    public Map<String, long[]> errorSeries(Window window, List<String> errorIds) {
+        Map<String, long[]> series = new HashMap<>();
+        if (errorIds.isEmpty()) {
+            return series;
+        }
+        int buckets = window.bucketCount();
+        int merge = (buckets + ERROR_SERIES_POINTS - 1) / ERROR_SERIES_POINTS;
+        int points = (buckets + merge - 1) / merge;
+        for (String id : errorIds) {
+            series.put(id, new long[points]);
+        }
+        long bucket = window.bucketMs();
+        long first = window.alignedFrom() / bucket;
+        Clause where = window(window, null).and("error")
+                .and("error_id IN (" + Sql.placeholders(errorIds.size()) + ")", errorIds.toArray());
+        sql.forEach("SELECT error_id, start_ms / " + bucket + " AS b, COUNT(*) AS calls FROM span WHERE "
+                + where.sql() + " GROUP BY error_id, start_ms / " + bucket, where.params(), rs -> {
+                    int i = (int) (rs.getLong("b") - first);
+                    long[] counts = series.get(rs.getString("error_id"));
+                    if (counts != null && i >= 0 && i < buckets) {
+                        counts[i / merge] += rs.getLong("calls");
+                    }
+                });
+        return series;
+    }
+
     private Stats.Buckets groupBuckets(Window window, String predicate, String id) {
         Clause where = window(window, null).and(predicate, id);
         long bucket = window.bucketMs();

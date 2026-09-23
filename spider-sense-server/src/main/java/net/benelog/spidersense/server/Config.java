@@ -38,6 +38,10 @@ import org.jspecify.annotations.Nullable;
  * @param sourceDirs       comma-separated source roots a code frame is resolved under, or null
  *                         for the default: {@code src/main/java} and {@code src/main/kotlin} of
  *                         the working directory and of each immediate subdirectory (design.md)
+ * @param jar              the absolute path of the distributable jar the server was started
+ *                         from, which the launcher passes as {@code --jar} and the CLI finds in
+ *                         {@code spidersense.jar}; null when nobody knows it (exploded classes,
+ *                         a test), and only ever shown, as {@code /api/status.jar} (api.md)
  */
 public record Config(
         String host,
@@ -52,7 +56,8 @@ public record Config(
         @Nullable String embeddedService,
         String appPackages,
         String ignoreEndpoints,
-        @Nullable String sourceDirs) {
+        @Nullable String sourceDirs,
+        @Nullable String jar) {
 
     public static final String AGENT = "agent";
     public static final String STANDALONE = "standalone";
@@ -85,7 +90,8 @@ public record Config(
                 embeddedService(values),
                 string(values, "app.packages", ""),
                 string(values, "ignore.endpoints", IgnoredEndpoints.DEFAULT),
-                stringOrNull(values, "source.dirs"));
+                stringOrNull(values, "source.dirs"),
+                stringOrNull(values, "jar"));
     }
 
     public boolean agentMode() {

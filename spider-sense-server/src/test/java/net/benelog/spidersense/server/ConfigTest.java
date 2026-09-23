@@ -56,6 +56,15 @@ class ConfigTest {
     }
 
     @Test
+    void theJarPathIsTheLaunchersArgumentAndUnknownOtherwise() {
+        assertThat(Config.parse(new String[]{"--jar=/opt/spider-sense.jar"}).jar())
+                .isEqualTo("/opt/spider-sense.jar");
+        if (System.getProperty("spidersense.jar") == null) {
+            assertThat(Config.parse(new String[0]).jar()).isNull();
+        }
+    }
+
+    @Test
     void systemPropertiesAreTheAgentModeChannelAndArgumentsWin() {
         System.setProperty("spidersense.port", "4123");
         System.setProperty("spidersense.slow.query.ms", "77");

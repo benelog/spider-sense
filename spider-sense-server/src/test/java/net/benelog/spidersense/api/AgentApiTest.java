@@ -689,4 +689,113 @@ class AgentApiTest {
             assertThat(json(client.get("/api/status")).getString("mode")).isEqualTo("standalone");
         });
     }
+
+    /** A fixed window, so two answers over it can be compared byte for byte. */
+    private static String window() {
+        return "from=" + (NOW - 60_000) + "&to=" + (NOW + 60_000);
+    }
+
+    @Test
+    void oneFindingIsItsRowAndItsEvidenceAsTheListPrintsThem() {
+        serve((client, assembly) -> {
+            postProtobuf(client, "/v1/traces", sample());
+
+            Json.JsonArray all = json(client.get("/api/findings?" + window())).getArray("findings");
+            assertThat(all.size()).isGreaterThanOrEqualTo(3);
+            String id = all.get(1).asObject().getString("id");
+
+            Json.JsonObject one = json(client.get("/api/findings/" + id + "?" + window()));
+            assertThat(one.getLong("rank")).isEqualTo(2);
+            assertThat(one.getLong("requests")).isEqualTo(1);
+            assertThat(one.getObject("finding").getString("id")).isEqualTo(id);
+            assertThat(one.getObject("window").has("bucketMs")).isTrue();
+
+            String list = client.get("/api/findings?format=text&" + window()).body();
+            String text = client.get("/api/findings/" + id + "?format=text&" + window()).body();
+            assertThat(text).startsWith("# finding " + id + "  ");
+            // The row and the evidence are the list's own lines, number included.
+            String row = list.lines().filter(line -> line.startsWith("| 2 ")).findFirst().orElseThrow();
+            assertThat(text.lines()).contains(row);
+            int from = list.indexOf("\n2. " + id);
+            int to = list.indexOf("\n3. ", from);
+            String evidence = to < 0 ? list.substring(from) : list.substring(from, to);
+            assertThat(text).endsWith(evidence);
+            // Everything under the heading is the list's, bar the rows of the other findings.
+            assertThat(text.substring(text.indexOf('\n'))).doesNotContain("| 1 ");
+
+            HttpResponse<String> missing = client.get("/api/findings/error:000000000000?" + window());
+            assertThat(missing.statusCode()).isEqualTo(404);
+            assertThat(client.get("/api/findings/" + id + "?from=1&to=2").statusCode()).isEqualTo(404);
+        });
+    }
+
+    @Test
+    void oneErrorGroupAndOneQueryGroupAnswerTheirListsRowAsText() {
+        serve((client, assembly) -> {
+            postProtobuf(client, "/v1/traces", sample());
+
+            String errorId = json(client.get("/api/errors?" + window())).getArray("errors")
+                    .get(0).asObject().getString("errorId");
+            String error = client.get("/api/errors/" + errorId + "?format=text&" + window()).body();
+            assertThat(error).startsWith("# error " + errorId + "  ");
+            String errors = client.get("/api/errors?format=text&" + window()).body();
+            assertThat(error.substring(error.indexOf('\n'))).isEqualTo(errors.substring(errors.indexOf('\n')));
+            assertThat(error).contains("   orders.OrderService.load(OrderService.java:41)\n");
+
+            String queryId = json(client.get("/api/queries?" + window())).getArray("queries")
+                    .get(0).asObject().getString("queryId");
+            String query = client.get("/api/queries/" + queryId + "?format=text&" + window()).body();
+            assertThat(query).startsWith("# query " + queryId + "  ");
+            String row = client.get("/api/queries?format=text&" + window()).body().lines()
+                    .filter(line -> line.startsWith("| " + queryId)).findFirst().orElseThrow();
+            assertThat(query.lines()).contains(row);
+
+            // JSON is still what the pages read, and a group outside the window is 404 in both.
+            assertThat(json(client.get("/api/errors/" + errorId + "?" + window())).has("series")).isTrue();
+            assertThat(client.get("/api/errors/" + errorId + "?format=text&from=1&to=2").statusCode())
+                    .isEqualTo(404);
+            assertThat(client.get("/api/queries/" + queryId + "?format=text&from=1&to=2").statusCode())
+                    .isEqualTo(404);
+        });
+    }
+
+    @Test
+    void anErrorGroupCarriesItsOccurrencesPerBucketInAtMostThirtyPoints() {
+        serve((client, assembly) -> {
+            postProtobuf(client, "/v1/traces", sample());
+
+            // Two minutes at five seconds a bucket: 25 buckets, one point each.
+            Json.JsonObject group = json(client.get("/api/errors?" + window())).getArray("errors")
+                    .get(0).asObject();
+            Json.JsonArray series = group.getArray("series");
+            assertThat(series.size()).isEqualTo(25);
+            assertThat(sum(series)).isEqualTo(group.getLong("count"));
+
+            // An hour at a minute a bucket: 61 buckets, merged three at a time.
+            String hour = "from=" + (NOW - 3_000_000) + "&to=" + (NOW + 600_000);
+            Json.JsonArray merged = json(client.get("/api/errors?" + hour)).getArray("errors")
+                    .get(0).asObject().getArray("series");
+            assertThat(merged.size()).isLessThanOrEqualTo(30).isGreaterThan(1);
+            assertThat(sum(merged)).isEqualTo(1);
+        });
+    }
+
+    private static long sum(Json.JsonArray values) {
+        long total = 0;
+        for (int i = 0; i < values.size(); i++) {
+            total += values.get(i).asLong();
+        }
+        return total;
+    }
+
+    @Test
+    void statusCarriesTheCodeFrameRulesAndTheJarPath() {
+        serve((client, assembly) -> {
+            Json.JsonObject status = json(client.get("/api/status"));
+            Json.JsonObject frames = status.getObject("codeFrames");
+            assertThat(frames.getArray("appPackages").size()).isZero();
+            assertThat(frames.getArray("frameworkPrefixes").get(0).asString()).isEqualTo("java.");
+            assertThat(status.has("jar")).isTrue();
+        });
+    }
 }

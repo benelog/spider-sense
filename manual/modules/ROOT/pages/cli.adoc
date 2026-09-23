@@ -639,6 +639,16 @@ An error span shows its exception and the application frames under it, and the t
 
 The same renderings are served over HTTP with `format=text` (xref:api.adoc#agent-endpoints[Agent-facing endpoints]).
 
+[#one-finding]
+=== One finding
+
+`+GET /api/findings/{id}?format=text+` renders one finding of the window with the code that renders the list.
+The heading reads `# finding <id>` in place of `# findings`, over the same window and service.
+The table has the finding's one row, numbered by its rank in the whole list, and the evidence block under it is the one `findings` prints for that number.
+Everything under the heading is therefore the list's own bytes, except the suspect-change lines the CLI adds.
+`+GET /api/errors/{errorId}+` and `+GET /api/queries/{queryId}+` answer the same way with `format=text`: the heading `# error <id>` or `# query <id>`, then the group's row of the `errors` or `queries` table, and for an error its application frames.
+This is what the UI's xref:pages.adoc#copy-as-markdown[Copy as Markdown] copies.
+
 [#trace-diff]
 == Trace diff
 

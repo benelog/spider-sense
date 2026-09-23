@@ -56,6 +56,8 @@ It is stored as a `db_table` row rather than as a log (xref:storage.adoc#schema[
   "embeddedService": "silk-bookstore" | null,
   "thresholds": { "slowRequestMs": 500, "slowQueryMs": 100, "responseBucketsMs": [125, 500, 2000] },
   "ignore": { "endpoints": ["/actuator/**", "/health", "/healthz", "/livez", "/readyz"] },
+  "codeFrames": { "appPackages": [], "frameworkPrefixes": ["java.", "javax.", …] },
+  "jar": "/home/me/tools/spider-sense-{project-version}.jar" | null,
   "retention": { "hours": 24, "spans": 1000000 },
   "ingest": { "maxSpansPerSecond": null | 5000 },
   "storage": { "url": "jdbc:h2:~/db/spider-sense/sense;AUTO_SERVER=TRUE", "path": "/home/me/db/spider-sense/sense.mv.db", "sizeBytes": 12345678, "fallback": false, "fallbackReason": null, "droppedBatches": 0, "droppedSpans": 0, "queued": 0 },
@@ -65,6 +67,9 @@ It is stored as a `db_table` row rather than as a log (xref:storage.adoc#schema[
 ----
 
 `ignore.endpoints` is the configured value of `spidersense.ignore.endpoints`, which xref:configuration.adoc#ignored-endpoints[Ignored endpoints] describes.
+`codeFrames` carries the rules that make a frame the application's (xref:findings.adoc#code[Code locations]): `appPackages` is `spidersense.app.packages` as prefixes ending in a dot, empty when unset, and `frameworkPrefixes` the prefixes that count as framework when it is unset.
+The error page folds its stack trace by them (xref:pages.adoc#stack-traces[Stack traces]).
+`jar` is the absolute path of the jar the server was started from, or `null` when it is not known; the UI's *Copy CLI line* names it.
 
 *`DELETE /api/data`* answers `204`.
 It deletes every span, trace, log, metric point, tingle, mark, acknowledgement and resolution.
@@ -326,6 +331,7 @@ The points are arrays rather than objects because 5,000 points must stay small o
 It is `null` when there is no catalog to read.
 
 *`+GET /api/queries/{queryId}?from&to+`* answers `{ "query": <QueryStats>, "series": { "t": [...], "calls": [...], "p95Ms": [...] }, "traces": [<TraceSummary> x 20 slowest containing it] }`.
+With `format=text` it answers the group as the `queries` rendering prints it (xref:cli.adoc#one-finding[One finding]), and a group with no call in the window is `404`.
 
 == Errors
 
@@ -343,13 +349,19 @@ It is `null` when there is no catalog to read.
 { "errorId": "…", "service": "…", "type": "java.lang.IllegalStateException", "message": "Order ? is already shipped",
   "count": 12, "firstSeen": ..., "lastSeen": ...,
   "endpoints": [ { "name": "POST /orders/{id}/ship", "count": 12 } ],
-  "sample": { "traceId": "…", "spanId": "…", "at": ..., "message": "Order 42 is already shipped", "stacktrace": "…" } | null }
+  "sample": { "traceId": "…", "spanId": "…", "at": ..., "message": "Order 42 is already shipped", "stacktrace": "…" } | null,
+  "series": [0, 2, 0, 1, ...] }
 ----
+
+`series` is the group's occurrences per time bucket over the window, oldest first, which the Errors page draws as a sparkline.
+The buckets are the Overview's, merged a few at a time from the oldest so there are at most 30 points, and they sum to `count`.
+Only `GET /api/errors` carries it.
 
 *`+GET /api/errors/{errorId}?from&to+`* answers `{ "error": <ErrorGroup>, "code": [ "orders.OrderService.load(OrderService.java:41)" ], "chain": [ <Cause> ], "series": { "t": [...], "count": [...] }, "traces": [<TraceSummary> x 20 newest] }`.
 `code` is the sample stack trace's application frames, reduced as a finding's `code` is (xref:findings.adoc#code[Code locations]), the root cause's first, and empty when there are none.
 `chain` is the sample stack trace read as its exceptions, innermost first: the root cause, then each exception that wraps it, out to the outer one.
 It is empty when there is no sample or no stack trace.
+With `format=text` it answers the group as the `errors` rendering prints it (xref:cli.adoc#one-finding[One finding]), and a group with no occurrence in the window is `404`.
 
 [source,json]
 ----
@@ -461,7 +473,7 @@ An unknown mark name is `404`, and a `since` after `until` is `400`.
 === Text rendering
 
 `format=text`, or an `Accept` header whose first type is `text/markdown` or `text/plain`, answers `text/markdown; charset=utf-8` instead of JSON.
-It applies to `/api/status`, `/api/findings`, `/api/marks`, `/api/compare`, `/api/check`, `/api/sql`, `/api/traces`, `+/api/traces/{id}+`, `/api/endpoints`, `/api/queries`, `/api/errors`, `/api/logs` and `/api/services`.
+It applies to `/api/status`, `/api/findings`, `+/api/findings/{id}+`, `/api/marks`, `/api/compare`, `/api/check`, `/api/sql`, `/api/traces`, `+/api/traces/{id}+`, `/api/endpoints`, `/api/queries`, `+/api/queries/{queryId}+`, `/api/errors`, `+/api/errors/{errorId}+`, `/api/logs` and `/api/services`.
 `full=true` keeps statements whole and expands collapsed spans.
 The format of each rendering is given in xref:cli.adoc#text-rendering[The CLI].
 
@@ -487,6 +499,10 @@ The writer inserts a mark named `start` when a service reports a `process.pid` i
 The findings are ranked as xref:findings.adoc[Findings] specifies, with regressions first and acknowledged findings and resolved findings that have not come back last.
 `hideAcked=true` leaves the acknowledged and the resolved findings out.
 `limit` is at most 100.
+
+*`+GET /api/findings/{id}?since&until&service+`* answers `{ "window": {...}, "requests": 120, "rank": 3, "finding": <Finding> }`, or `404` when the rules do not produce that id over the window.
+`rank` is the finding's place among every finding of the same window and service, acknowledged and resolved ones included.
+Its text rendering is the list's row and evidence for it (xref:cli.adoc#one-finding[One finding]).
 
 *`+POST /api/findings/{id}/ack+`* with `{ "note": "…" | null }` answers `201` and `{ "findingId": "…", "at": …, "note": … }`.
 *`+DELETE /api/findings/{id}/ack+`* answers `204` or `404`.

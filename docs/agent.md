@@ -335,6 +335,32 @@ The rules run over the previous run once per service of the answered page, with 
 
 In the text rendering `state` is a column between `severity` and `kind`.
 
+## One finding
+
+`GET /api/findings/{id}?since&until&service` answers one finding of the window, so a person who sees it in the UI can hand exactly it to an agent (ui.md, "Copy as Markdown").
+The rules run over the window as for the list, with no `limit` and acknowledged and resolved findings included, and the answer is the finding with that id and its `rank` among them; an id the rules do not produce over the window is `404`.
+
+Its text rendering is written by the code that writes the list, so apart from the heading its lines are the list's bytes:
+
+```
+# finding n-plus-one:1d41bc5a9b2c  2026-09-18T12:37:06+09:00 → 12:41:08  (4m 1s, all services, 2456 requests)
+
+| # | severity | state | kind | id | service | title |
+| --- | --- | --- | --- | --- | --- | --- |
+| 2 | medium | new | n-plus-one | n-plus-one:1d41bc5a9b2c | orders | GET /orders/{id} runs SELECT order_line 6 times per request |
+
+2. n-plus-one:1d41bc5a9b2c — 1 of 1 request repeated it; 6 times; 12.0 ms per request in that statement
+   requests 1, affected 1, medianRepeats 6, maxRepeats 6, msPerRequest 12.0
+   select * from order_line where order_id = ?
+   traces: 4bf92f3577b34da6a3ce929d0e0e4736
+```
+
+- The heading is the list's with `finding <id>` in place of `findings`, over the same window and service.
+- The table has the list's columns and the finding's one row, numbered by its rank, and the evidence block under it is the one `findings` prints for that number; `findings --since=<from> --until=<to> --limit=100` over the same window prints both unchanged, bar the suspect-change lines it adds under the code frames, which no HTTP answer carries ([Source lines and the suspect change](#source-lines-and-the-suspect-change)).
+
+`GET /api/errors/{errorId}` and `GET /api/queries/{queryId}` answer the same way with `format=text`: the heading `# error <errorId>` or `# query <queryId>` over the window, then the `errors` or `queries` table with the group's one row, and for an error the sample's application frames as the list prints them.
+The JSON of those two stays the pages' own (api.md).
+
 ## Trace diff
 
 `GET /api/traces/{a}?diff={b}` and `trace <a> --diff=<b> [--full]`: the two span trees aligned by structure and rendered as one text with a gutter, so the question after a fix — which span went away, which one got slower — is answered without reading two trees.
@@ -558,7 +584,7 @@ A host that reaches the server over HTTP is configured by hand with `{ "type": "
 Any endpoint listed here answers Markdown when asked with `format=text` or with an `Accept` header whose first type is `text/markdown` or `text/plain`; the response is `text/markdown; charset=utf-8`.
 JSON stays the default.
 
-Endpoints with a text rendering: `/api/status`, `/api/findings`, `/api/marks`, `/api/compare`, `/api/check`, `/api/sql`, `/api/traces`, `/api/traces/{id}`, `/api/endpoints`, `/api/queries`, `/api/errors`, `/api/logs`, `/api/services`.
+Endpoints with a text rendering: `/api/status`, `/api/findings`, `/api/findings/{id}`, `/api/marks`, `/api/compare`, `/api/check`, `/api/sql`, `/api/traces`, `/api/traces/{id}`, `/api/endpoints`, `/api/queries`, `/api/queries/{queryId}`, `/api/errors`, `/api/errors/{errorId}`, `/api/logs`, `/api/services`.
 
 Every example below is output captured from `scripts/demo-shared.sh` with `silk-bookstore` and `spring-orders` running under the agent and forwarding to one standalone Spider Sense, with the home directory anonymised.
 

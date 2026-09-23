@@ -56,6 +56,7 @@ public final class AgentApi {
 
     public void register(App app) {
         app.get("/api/findings", "What is worth fixing in this window", this::findings);
+        app.get("/api/findings/{id}", "One finding, as the list renders it", this::finding);
         app.post("/api/findings/{id}/ack", "Accept a known finding", this::ack);
         app.delete("/api/findings/{id}/ack", "Withdraw an acknowledgement", this::unack);
         app.post("/api/findings/{id}/resolve", "Mark a finding fixed", this::resolve);
@@ -80,6 +81,20 @@ public final class AgentApi {
         return Params.answer(req, reports.findings(window, Params.service(req),
                 Params.limit(req, FINDINGS, FINDINGS_MAX), Params.full(req),
                 req.queryParam("hideAcked", Boolean::parseBoolean, false)));
+    }
+
+    /**
+     * One finding of the window, its rank among all of them beside it: what the
+     * findings page's Copy as Markdown copies (agent.md, "One finding").
+     */
+    public WebResponse finding(WebRequest req) {
+        String id = req.pathParam("id");
+        Reports.Report report = reports.finding(params.window(req), Params.service(req), id,
+                Params.full(req));
+        if (report == null) {
+            throw new HttpException(HttpStatus.NOT_FOUND, "No such finding in this window: " + id);
+        }
+        return Params.answer(req, report);
     }
 
     /**

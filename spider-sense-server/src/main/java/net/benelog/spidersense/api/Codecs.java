@@ -370,6 +370,16 @@ public final class Codecs {
         return array;
     }
 
+    /** The same, each group with its {@code series} for the errors page's sparkline (api.md). */
+    static Json.JsonArray errorGroups(List<Stats.ErrorGroup> groups, Map<String, long[]> series) {
+        Json.JsonArray array = Json.arr();
+        groups.forEach(group -> {
+            long[] counts = series.get(group.errorId());
+            array.add(errorGroup(group).put("series", longs(counts == null ? new long[0] : counts)));
+        });
+        return array;
+    }
+
     static Json.JsonObject traceSummary(Stats.TraceSummary trace) {
         Json.JsonObject object = Json.obj()
                 .put("traceId", trace.traceId())

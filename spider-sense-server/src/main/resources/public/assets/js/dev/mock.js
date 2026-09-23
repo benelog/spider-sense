@@ -894,6 +894,8 @@ function statusBody() {
       logs: ENDPOINT_BASE + '/v1/logs',
     },
     embeddedService: null,
+    codeFrames: { appPackages: [], frameworkPrefixes: FRAMEWORK },
+    jar: '/home/me/tools/spider-sense-' + VERSION + '.jar',
     thresholds: { slowRequestMs: SLOW_REQUEST_MS, slowQueryMs: SLOW_QUERY_MS, responseBucketsMs: RESPONSE_BUCKETS },
     retention: { hours: 24, spans: 1_000_000 },
     ingest: { maxSpansPerSecond: null },
@@ -998,7 +1000,8 @@ function resolveSelector(selector, fallback, service) {
 
 const FRAMEWORK = ['java.', 'javax.', 'jdk.', 'sun.', 'com.sun.', 'jakarta.', 'org.springframework.',
   'org.hibernate.', 'org.eclipse.jetty.', 'org.apache.', 'io.opentelemetry.', 'com.zaxxer.', 'org.h2.',
-  'net.benelog.spidersilk.'];
+  'net.benelog.spidersilk.', 'kotlin.', 'scala.', 'reactor.', 'io.netty.', 'ch.qos.logback.', 'org.slf4j.',
+  'org.junit.', 'gg.jte.'];
 
 /** A stack trace as its exception chain, innermost first, as docs/api.md answers it. */
 function chainOf(stack) {
@@ -1605,7 +1608,10 @@ const ROUTES = [
     return { frame: q.frame, file: '/home/me/project/src/main/java/' + (pkg ? pkg + '/' : '') + f[2], line, start, lines };
   }],
 
-  [/^\/api\/errors$/, (m, q) => ({ errors: errorGroups(windowOf(q), q.service).slice(0, +(q.limit || 100)).map(strip) })],
+  [/^\/api\/errors$/, (m, q) => {
+    const w = windowOf(q);
+    return { errors: errorGroups(w, q.service).slice(0, +(q.limit || 100)).map((g) => ({ ...strip(g), series: errorSeries(g, w) })) };
+  }],
 
   [/^\/api\/errors\/([^/]+)$/, (m, q) => {
     const w = windowOf(q);
@@ -1636,6 +1642,15 @@ const ROUTES = [
     const limit = Math.min(100, +(q.limit || 20));
     const { requests, acked, resolved, findings } = findingsFor(w, q.service, limit, q.hideAcked === 'true');
     return { window: w, requests, acked, resolved, findings };
+  }],
+
+  [/^\/api\/findings\/([^/]+)$/, (m, q) => {
+    const w = windowOf(q);
+    const id = decodeURIComponent(m[1]);
+    const { requests, findings } = findingsFor(w, q.service, 1000, false);
+    const rank = findings.findIndex((f) => f.id === id) + 1;
+    if (!rank) return { status: 404, body: { error: 'No such finding in this window: ' + id } };
+    return { window: w, requests, rank, finding: findings[rank - 1] };
   }],
 
   [/^\/api\/acks$/, (m, q) => ({
@@ -1687,6 +1702,27 @@ const ROUTES = [
     return { traces: inWindow(w, q.service).map((t) => ({ traceId: t.traceId, start: t.start, end: t.end, durationMs: t.durationMs, services: t.services, spans: t.spans })) };
   }],
 ];
+
+/** Occurrences per bucket, the window's buckets merged until there are at most 30 (docs/api.md). */
+function errorSeries(group, w) {
+  const t = bucketsOf(w);
+  const merge = Math.ceil(t.length / 30);
+  const out = new Array(Math.ceil(t.length / merge)).fill(0);
+  for (const tr of group._traces) {
+    const i = Math.floor((tr.start - t[0]) / w.bucketMs);
+    if (i >= 0 && i < t.length) out[Math.floor(i / merge)]++;
+  }
+  return out;
+}
+
+/**
+ * The mock has no text renderer: a request for one answers a stand-in that names the path
+ * and carries the JSON, so the Copy as Markdown buttons have something to copy.
+ */
+function textStandIn(path, body) {
+  return '# ' + path + '  (mock: the server renders this as docs/agent.md says)\n\n```json\n'
+    + JSON.stringify(body, null, 2) + '\n```\n';
+}
 
 function strip(group) {
   const { _traces, ...rest } = group;
@@ -1778,6 +1814,11 @@ globalThis.fetch = async function mockFetch(input, init) {
     const result = handler(m, query);
     const status = result && result.status ? result.status : 200;
     const body = result && result.status ? result.body : result;
+    if (query.format === 'text' && status === 200) {
+      return new Response(textStandIn(url.pathname, body), {
+        status, headers: { 'content-type': 'text/markdown; charset=utf-8' },
+      });
+    }
     return new Response(JSON.stringify(body), {
       status,
       headers: { 'content-type': 'application/json; charset=utf-8' },

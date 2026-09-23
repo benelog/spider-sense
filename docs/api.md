@@ -42,6 +42,8 @@ A log record carrying the attribute `spidersense.schema.table` is the index cata
   "embeddedService": "silk-bookstore" | null,
   "thresholds": { "slowRequestMs": 500, "slowQueryMs": 100, "responseBucketsMs": [125, 500, 2000] },
   "ignore": { "endpoints": ["/actuator/**", "/health", "/healthz", "/livez", "/readyz"] },   // design.md's spidersense.ignore.endpoints, as configured
+  "codeFrames": { "appPackages": [] | ["com.acme."], "frameworkPrefixes": ["java.", "javax.", …] },   // the rules of agent.md's "Code locations"
+  "jar": "/home/me/tools/spider-sense-0.1.0.jar" | null,
   "retention": { "hours": 24, "spans": 1000000 },
   "ingest": { "maxSpansPerSecond": null | 5000 },
   "storage": { "url": "jdbc:h2:~/db/spider-sense/sense;AUTO_SERVER=TRUE", "path": "/home/me/db/spider-sense/sense.mv.db", "sizeBytes": 12345678, "fallback": false, "fallbackReason": null, "droppedBatches": 0, "droppedSpans": 0, "queued": 0 },
@@ -49,6 +51,9 @@ A log record carrying the attribute `spidersense.schema.table` is the index cata
   "oldest": { "span": 1758000000000, "log": 1758000000000 }
 }
 ```
+
+`codeFrames` is what makes a frame the application's (agent.md, "Code locations"): `appPackages` is `spidersense.app.packages` as prefixes each ending in a dot, empty when unset, and `frameworkPrefixes` the prefixes that are framework when it is unset; the error page folds a stack trace by them (ui.md, "Stack traces").
+`jar` is the absolute path of the distributable jar the server was started from, which the launcher passes to the server, or `null` when it is not known (the server run from exploded classes); the UI's Copy CLI line names it (ui.md, "Copy as Markdown").
 
 `DELETE /api/data` → `204`. Deletes every span, trace, log, metric point, tingle, mark, acknowledgement and resolution (services and metric metadata stay).
 
@@ -272,6 +277,7 @@ Arrays rather than objects: 5,000 points must stay small on the wire.
 ```
 
 `GET /api/queries/{queryId}?from&to` → `{ "query": <QueryStats>, "series": { "t": [...], "calls": [...], "p95Ms": [...] }, "traces": [<TraceSummary> x 20 slowest containing it] }`.
+With `format=text` it answers the group as the `/api/queries` rendering renders it instead (agent.md, "One finding"), and a group with no call in the window is `404` in both.
 
 ## Errors
 
@@ -287,12 +293,17 @@ Arrays rather than objects: 5,000 points must stay small on the wire.
 { "errorId": "…", "service": "…", "type": "java.lang.IllegalStateException", "message": "Order ? is already shipped",
   "count": 12, "firstSeen": ..., "lastSeen": ...,
   "endpoints": [ { "name": "POST /orders/{id}/ship", "count": 12 } ],
-  "sample": { "traceId": "…", "spanId": "…", "at": ..., "message": "Order 42 is already shipped", "stacktrace": "…" } | null }
+  "sample": { "traceId": "…", "spanId": "…", "at": ..., "message": "Order 42 is already shipped", "stacktrace": "…" } | null,
+  "series": [0, 2, 0, 1, ...] }      // GET /api/errors only
 ```
+
+`series` is the group's occurrences per bucket over the window, oldest first, for the errors page's sparkline: the window's buckets (`window.bucketMs`, the Overview's) merged `⌈n / 30⌉` at a time from the oldest, so there are at most 30 points and they sum to `count`.
+Only `GET /api/errors` carries it; an `ErrorGroup` inside another answer does not.
 
 `GET /api/errors/{errorId}?from&to` → `{ "error": <ErrorGroup>, "code": [ "orders.OrderService.load(OrderService.java:41)" ], "chain": [ <Cause> ], "series": { "t": [...], "count": [...] }, "traces": [<TraceSummary> x 20 newest] }`.
 `code` is the sample stack trace's application frames, reduced by the rules a finding's `code` follows (agent.md, "Code locations"): the root cause's first, then those of each exception wrapping it; empty when there is no sample or no application frame.
 `chain` is the sample stack trace read as its exceptions, innermost first: the root cause, then each exception that wraps it, out to the outer one; empty when there is no sample or no stack trace.
+With `format=text` it answers the group as the `/api/errors` rendering renders it instead (agent.md, "One finding"), and a group with no occurrence in the window is `404` in both.
 
 ```json
 { "type": "org.h2.jdbc.JdbcSQLIntegrityConstraintViolationException", "message": "Unique index or primary key violation: …",
@@ -389,7 +400,7 @@ An unknown mark name is `404`; a `since` after `until` is `400`.
 
 ### Text rendering
 
-`format=text`, or an `Accept` header whose first type is `text/markdown` or `text/plain`, answers `text/markdown; charset=utf-8` instead of JSON on: `/api/status`, `/api/findings`, `/api/marks`, `/api/compare`, `/api/check`, `/api/sql`, `/api/traces`, `/api/traces/{id}`, `/api/endpoints`, `/api/queries`, `/api/errors`, `/api/logs`, `/api/services`.
+`format=text`, or an `Accept` header whose first type is `text/markdown` or `text/plain`, answers `text/markdown; charset=utf-8` instead of JSON on: `/api/status`, `/api/findings`, `/api/findings/{id}`, `/api/marks`, `/api/compare`, `/api/check`, `/api/sql`, `/api/traces`, `/api/traces/{id}`, `/api/endpoints`, `/api/queries`, `/api/queries/{queryId}`, `/api/errors`, `/api/errors/{errorId}`, `/api/logs`, `/api/services`.
 `full=true` keeps statements whole and expands collapsed spans.
 The format of each rendering is in agent.md.
 
@@ -411,6 +422,9 @@ A mark named `start` is inserted by the writer when a service reports a `process
 ### Findings
 
 `GET /api/findings?since&until&service&limit=20&hideAcked=false` → `{ "window": {...}, "requests": 120, "acked": 2, "resolved": 1, "findings": [ <Finding> ] }`, ranked as agent.md says, regressions first, acknowledged findings and resolved findings that have not come back last and left out with `hideAcked=true`; `limit` is at most 100.
+
+`GET /api/findings/{id}?since&until&service` → `{ "window": {...}, "requests": 120, "rank": 3, "finding": <Finding> }`: one finding of the window, and its `rank` among every finding the list would answer over the same window and service, acknowledged and resolved ones included, whatever `limit` would have cut; `404` when the rules do not produce that id over the window.
+Its text rendering is the list's row and evidence block for it (agent.md, "One finding").
 
 `POST /api/findings/{id}/ack` with `{ "note": "…" | null }` → `201` `{ "findingId": "…", "at": …, "note": … }`; `DELETE /api/findings/{id}/ack` → `204` or `404`; `GET /api/acks` → `{ "acks": [ { "findingId", "at", "note" } ] }` newest first (agent.md, Acknowledgements).
 

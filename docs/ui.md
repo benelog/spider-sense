@@ -108,7 +108,8 @@ The `code` frames are [code frames](#code-frames): each is a link into the edito
 The **schema block** (agent.md, "The schema block") is rendered as the text rendering renders it, monospace and small with the labels dimmed: one line per table, `indexes ITEMS: PRIMARY_KEY_8 (ID) unique, IDX_ITEMS_SUPPLIER (SUPPLIER_ID, NAME)`, with `none` for a table that carries none, then one line for the columns, `predicates: items.name, items.category; unindexed: items.name`, the unindexed names in `--accent` behind the word `unindexed` that already says what they are.
 `predicates: none` stands alone when the statement has no predicate, `unindexed: none` when every predicate is served, and a finding whose `schema` is `null` shows nothing for it.
 Nothing is computed in the page: the names are the ones the API carries, so they are the CLI's.
-The row also carries a **Go to** link to the subject's page, as the Overview panel's row click does.
+The row also carries a **Go to** link to the subject's page, as the Overview panel's row click does, and the [Copy as Markdown and Copy CLI line](#copy-as-markdown) pair over `GET /api/findings/{id}` and the `findings` command.
+The code frames are not folded: a finding's `code` is already its application frames only (agent.md, "Code locations").
 The expanded row survives a Live refresh when the finding is still in the list (keyed by `id`).
 The **state chip** is the finding's `state` (agent.md, "State"): `new` in `--accent`, since it is what the last restart introduced, `ongoing` in the muted text colour, `regressed` in `--err`, each with a title saying what it means.
 An acknowledged finding (`ack` not null, agent.md) is listed after the others, dimmed, its severity cell reading `acked` with the note as its title; a resolved finding that has not come back (`resolution` not null and a kind other than `regression`) is listed and dimmed the same way, its severity cell reading `resolved`.
@@ -192,13 +193,13 @@ Detail page:
 
 List: sort selector (total / avg / p95 / max / calls), a text filter on the statement, then a table: statement (monospace, one line, full text in a title tooltip), system chip, operation, table, unindexed, calls, avg, p95, max, total, slow calls (accent when > 0), last seen. The statement cell is the wide one.
 **Unindexed** is the `schema` block's `unindexed` (api.md), the columns the statement filters on that no index leads with, joined by `, ` in `--accent` and cut to the column width with the full list in the title: `none` when every predicate is served, `—` when there is no block, exactly the column the text rendering has.
-Detail: the full statement pretty-printed, the schema block under it as the findings page renders it, stats tiles, a calls/p95 chart, the callers list (endpoint → count), the slowest traces table.
+Detail: the full statement pretty-printed, the schema block under it as the findings page renders it, the [Copy as Markdown and Copy CLI line](#copy-as-markdown) pair over `GET /api/queries/{queryId}` and the `queries` command, stats tiles, a calls/p95 chart, the callers list (endpoint → count), the slowest traces table.
 
 ### Errors `#/errors` and `#/errors/{errorId}`
 
-List: type (monospace, package dimmed), message, service chip, count, first seen, last seen, endpoints (chips, first two + "+n"). Row click → detail.
-Detail: header, count chart, the sample's exception chain, endpoints, recent traces.
-The chain is `chain` of `GET /api/errors/{errorId}`, one section per cause, innermost first: the root cause headed **Root cause**, then each exception wrapping it headed **Wrapped by**, out to the outer one (no heading when there is only one); each section is a `<pre>` with its type and message, its frames and its `... n more` line, the app's own frames highlighted (frames whose package matches the section's first frame's top-level package).
+List: type (monospace, package dimmed), message, service chip, count, endpoints (chips, first two + "+n"), occurrences over the window as a sparkline (inline SVG, 120×28, in `--err`, drawn from `ErrorGroup.series` as the services list draws its own), first seen, last seen. Row click → detail.
+Detail: header with the [Copy as Markdown and Copy CLI line](#copy-as-markdown) pair over `GET /api/errors/{errorId}` and the `errors` command, count chart, the sample's exception chain, endpoints, recent traces.
+The chain is `chain` of `GET /api/errors/{errorId}`, one section per cause, innermost first: the root cause headed **Root cause**, then each exception wrapping it headed **Wrapped by**, out to the outer one (no heading when there is only one); each section is its type and message, then its frames and its `... n more` line as a [folded stack trace](#stack-traces).
 Above the chain, in the same panel, a **Code** list: the application frames of the sample (`code` of `GET /api/errors/{errorId}`, the frames a finding would carry, the root cause's first) as [code frames](#code-frames); nothing when there are none.
 With no chain the panel says `This error carried no stack trace.`
 
@@ -209,6 +210,28 @@ A frame that resolves becomes a link, `idea://open?file=<absolute path>&line=<n>
 A frame that does not resolve stays the plain monospace text it was, with nothing under it.
 The source is read when the page asks and never stored, so the lines are those of the file as it is now, which after an edit may no longer be the ones the frame meant.
 The Overview's one frame per finding stays text: the whole row is already a link.
+
+### Stack traces
+
+The error page's sample stack trace is a `<pre>` whose frames are judged by the rules a finding's `code` follows (agent.md, "Code locations"), which the page reads from `/api/status.codeFrames` (api.md) rather than keeping a list of its own: with `appPackages` set, a frame is the application's when it starts with one of them; otherwise it is the application's unless it starts, case-insensitively, with one of `frameworkPrefixes`.
+Application frames are in `--text`, the others in `--text-muted`, the header in `--err` and `Caused by:` lines in `--warn`.
+A toggle in the panel head, **App frames** | **All**, remembered in the hash query (`frames=all`; App frames is the default), decides what is folded.
+In App frames every run of two or more consecutive framework frames is one dimmed, italic line at the run's indentation, `⋯ 12 frames from org.springframework, org.apache`: the count, then the packages in order of first appearance (the framework prefix each frame matched without its dot, or its first two segments under `appPackages`), three at most and `+n` for the rest.
+A click on it, or Enter, expands that run in place; a Live refresh repaints the trace only when it or the mode changed, so an expanded run stays open.
+A single framework frame between two application frames is not folded, since its fold line would be no shorter.
+In All nothing is folded.
+When `/api/status` carries no `codeFrames` (a recording made before it did), nothing is folded or highlighted.
+The span drawer and the Logs page keep the plain highlighted `<pre>`.
+
+### Copy as Markdown
+
+The findings page's expanded row, the error page and the query page carry two buttons, so what a person sees can be handed to an agent as the bytes the agent would have read itself.
+
+- **Copy as Markdown** fetches the text rendering of that one finding or group over the page's window when pressed (`GET /api/findings/{id}?format=text` with the list's `from`, `to` and `service`, `GET /api/errors/{errorId}?format=text` or `GET /api/queries/{queryId}?format=text` with the page's `from` and `to`; agent.md, "One finding") and copies it; a `404` (the finding left the window since) is a toast.
+- **Copy CLI line** copies `java -jar <jar> <command> --since=<from> --until=<to>` with the window's two instants as epoch milliseconds: `findings` with `--service=<name>` when the top bar's filter is on, `errors` and `queries` with `--service=` the group's service.
+  `<jar>` is `/api/status.jar`, single-quoted when it holds a character a shell would read, and `spider-sense.jar` when the server does not know its jar.
+
+The window is the one the page last loaded, so both answer for what is on the screen rather than for a moment later.
 
 ### Logs `#/logs`
 
@@ -233,7 +256,8 @@ Explorer: left a searchable catalog list (name, type chip, unit, series count); 
 - Numbers: durations with 1 decimal under 100 ms, 0 decimals above, `s` above 10 s; counts with thousands separators; rates with 2 decimals; percentages with 1 decimal. A count axis only ever shows whole numbers (uPlot `incrs` of 1, 2, 5, 10, ...), so a series that stays at 0 or 1 does not print the same tick three times.
 - Times: `HH:mm:ss` within today, `MMM d HH:mm:ss` otherwise; relative ("12 s ago") in feeds, absolute in tables, both in tooltips.
 - Keyboard: `/` focuses the query bar, `Esc` closes a drawer or clears a scatter selection, `L` toggles Live, `[`/`]` step the time range, `M` opens the Mark dialog.
-- The mock (`?mock=1`, `assets/js/dev/mock.js`) answers every endpoint in api.md including `/api/map`, `/api/scatter`, `/api/findings`, `/api/marks` (`GET` and `POST`), `/api/compare`, `/api/source` (every frame resolves, under a made-up project directory), the histograms and the connection pools, so every page can be developed without a server.
+- The mock (`?mock=1`, `assets/js/dev/mock.js`) answers every endpoint in api.md including `/api/map`, `/api/scatter`, `/api/findings`, `/api/findings/{id}`, `/api/marks` (`GET` and `POST`), `/api/compare`, `/api/source` (every frame resolves, under a made-up project directory), `ErrorGroup.series`, `/api/status.codeFrames` and `jar`, the histograms and the connection pools, so every page can be developed without a server.
+  It has no text renderer: a `format=text` request answers a stand-in naming the path, with the JSON in a fenced block.
 - The recording (`assets/js/dev/replay.js`, loaded when `<html data-dolthub="owner/database@ref">` or `?dolthub=…` names the DoltHub database of design.md's published demo) answers every `GET /api/…` from that database through DoltHub's SQL API, from the browser. The traces (`/api/traces`, with `service`, `endpointId`, `minMs`, `maxMs`, `status`, `q`, `before` and `limit` as the API applies them), one trace (`/api/traces/{id}`: its spans in the waterfall's order, each with the server's `summary` line, and its logs), the logs (with `service`, `severity`, `q`, `traceId`, `before`), the marks and the acknowledgements are queried from the tables of storage.md and shaped as api.md says (a trace of more than 1,000 spans is cut at DoltHub's row limit); everything else is read from the `answer` table by path and query without `from`/`to`, and a request whose filters were not recorded falls back to the nearest recorded answer, dropping one filter at a time, and logs the substitution. It freezes `Date.now()` at the end of the window, makes the default top-bar range the length of the recording (the `15m` preset becomes "The recording (5 min)", so every chart covers the recorded minutes and none before them), answers `POST` and `DELETE` with 405, answers `/api/source` with 404 (the files are not in the recording), replaces `EventSource` with one that never emits, and puts one line above the top bar saying when the recording was made, with a link to the database. It is the one page of the UI that makes external requests, since the database is what it shows. `scripts/demo-site.mjs assemble` copies `public/` into one directory with `data-dolthub` set on `index.html`, which is the static demo the manual publishes at `/demo` (design.md).
 - The page works at 360 px wide: tables scroll horizontally inside their panel, charts shrink, the drawer becomes a full-screen sheet.
 - Accessibility: every icon-only control has an `aria-label`; colour is never the only carrier of meaning (errors also get a bolt, slow also gets a ring or a turtle).

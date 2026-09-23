@@ -46,6 +46,12 @@ final class EmbeddedServer {
             Class<?> server = Class.forName(SERVER_CLASS, true, loader);
             Method main = server.getMethod("main", String[].class);
             List<String> args = config.toServerArgs();
+            // The distributable's own path, which the UI's "Copy CLI line" names (docs/api.md,
+            // /api/status.jar): the server runs out of the nested jar and cannot find it itself.
+            Path own = NestedJar.ownJar();
+            if (own != null) {
+                args.add("--jar=" + own.toAbsolutePath());
+            }
             main.invoke(null, (Object) args.toArray(new String[0]));
         } catch (InvocationTargetException e) {
             started = null;

@@ -478,6 +478,9 @@ pre.stack {
 .st-cause { color: var(--warn); }
 .st-frame { color: var(--text-muted); }
 .st-own { color: var(--text); }
+.st-fold { color: var(--text-muted); opacity: 0.75; cursor: pointer; font-style: italic; }
+.st-fold:hover, .st-fold:focus-visible { opacity: 1; color: var(--text); outline: none; text-decoration: underline; }
+.st-run[hidden] { display: none; }
 
 /* ---------- tabs ---------- */
 
@@ -753,6 +756,7 @@ details.collapsible > summary:hover { color: var(--text); }
 .f-schema-line { white-space: pre-wrap; word-break: break-word; }
 .f-links { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .f-links .btn { margin-left: auto; }
+.f-links .copy-as .btn { margin-left: 0; }
 
 /* An acknowledged finding is still listed, last and dimmed, never hidden. */
 tr.is-acked > td { opacity: 0.55; }

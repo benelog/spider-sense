@@ -99,6 +99,20 @@ export function getJSON(path, query) {
   return promise;
 }
 
+/** GET a text rendering (docs/api.md, "Text rendering"): format=text, the body as it came. */
+export function getText(path, query) {
+  return fetch(path + qs({ ...query, format: 'text' }), { headers: { accept: 'text/markdown' } })
+    .then(async (res) => {
+      const body = await res.text();
+      if (!res.ok) {
+        let message = res.status + ' ' + res.statusText;
+        try { message = JSON.parse(body).error || message; } catch (e) { /* the text is the message */ }
+        throw new ApiError(message, res.status);
+      }
+      return body;
+    });
+}
+
 // --- status and control -------------------------------------------------
 
 /** POST with a JSON body; the agent-facing endpoints are the only writers. */

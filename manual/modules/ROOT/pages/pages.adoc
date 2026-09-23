@@ -60,7 +60,8 @@ It has one line per table with the indexes it carries, `none` for a table that h
 The columns no index leads with are named after `unindexed`, in the accent colour.
 A finding without the block shows nothing for it.
 `callers` and `endpoints` appear as a short list, and `hotSpan` as one line.
-The row also carries a *Go to* link to the subject's page, the same destination as a row click on the Overview.
+The row also carries a *Go to* link to the subject's page, the same destination as a row click on the Overview, and the <<copy-as-markdown,*Copy as Markdown* and *Copy CLI line*>> buttons.
+The code frames are never folded, because a finding's code is already its application frames only.
 An expanded row stays expanded across a Live refresh while the finding is still in the list.
 
 The state chip says what the last restart changed (xref:findings.adoc#state[State]).
@@ -264,18 +265,18 @@ The table gives the statement in monospace on one line, with the full text in it
 *Unindexed* is the xref:findings.adoc#schema[schema block]'s `unindexed`, the columns the statement filters on that no index leads with: `none` when every one of them is served, and `—` when the statement has no block.
 A row click opens the statement.
 
-`+#/queries/{queryId}+` is one statement: the full text pretty-printed, the schema block under it as the Findings page shows it, the stat tiles, a chart of calls and p95, the callers as endpoints with their counts, and the slowest traces.
+`+#/queries/{queryId}+` is one statement: the full text pretty-printed, the schema block under it as the Findings page shows it, the <<copy-as-markdown,*Copy as Markdown* and *Copy CLI line*>> buttons, the stat tiles, a chart of calls and p95, the callers as endpoints with their counts, and the slowest traces.
 
 [#errors]
 == Errors
 
 `#/errors` groups the exceptions by root cause and the application line that threw it (xref:design.adoc#errors[Errors]).
-A row gives the type in monospace with the package dimmed, the message, the service chip, the count, when it was first and last seen, and the endpoints as chips, the first two and then `+n`.
+A row gives the type in monospace with the package dimmed, the message, the service chip, the count, the endpoints as chips, the first two and then `+n`, a red sparkline of the occurrences over the window, and when it was first and last seen.
 A row click opens the error.
 
-`+#/errors/{errorId}+` gives the header, a chart of the count, the sample's exception chain, the endpoints, and the recent traces.
+`+#/errors/{errorId}+` gives the header with the <<copy-as-markdown,*Copy as Markdown* and *Copy CLI line*>> buttons, a chart of the count, the sample's exception chain, the endpoints, and the recent traces.
 The chain has one section per cause, innermost first: the *Root cause*, then each exception it is *Wrapped by*, out to the outer one.
-Each section shows its type, its message, its frames and its `... n more` line, and highlights the application's own frames: the frames whose package matches the top-level package of the section's first frame.
+Each section shows its type, its message, its frames and its `... n more` line, folded as <<stack-traces,Stack traces>> describes.
 Above the chain, a *Code* list names the sample's application frames, the ones a finding would carry, the root cause's first, as <<code-frames,code frames>>.
 
 [#code-frames]
@@ -289,6 +290,29 @@ The lines come from `GET /api/source` (xref:api.adoc#source[Source]), which read
 They are therefore the file as it is now, which after an edit may no longer be the lines the frame meant.
 xref:configuration.adoc#source-dirs[Source roots] says where Spider Sense looks for the files.
 The Overview's one frame per finding stays text, because the whole row is already a link.
+
+[#stack-traces]
+=== Stack traces
+
+The error page's sample stack trace folds the framework frames out of the way.
+A frame is the application's by the rules of a finding's code (xref:findings.adoc#code[Code locations]): it starts with one of `spidersense.app.packages` when that is set, and otherwise it starts with none of the framework prefixes.
+The page reads those rules from `/api/status` (xref:api.adoc#status[Status]), so it never disagrees with the server.
+
+Application frames are in the text colour and the others are dimmed.
+The panel head has a toggle, *App frames* or *All*, and the choice is kept in the URL as `frames=all`.
+Under *App frames*, the default, every run of two or more framework frames becomes one dimmed line such as `⋯ 12 frames from org.springframework, org.apache`.
+A click on that line, or Enter, expands the run in place, and it stays expanded across a Live refresh.
+Under *All* nothing is folded.
+
+[#copy-as-markdown]
+=== Copy as Markdown
+
+The expanded row of the Findings page, the error page and the query page carry two buttons that hand what is on the screen to an agent.
+
+*Copy as Markdown* copies the text rendering of that one finding, error group or query group over the page's window, the bytes the CLI prints for it (xref:cli.adoc#one-finding[One finding]).
+*Copy CLI line* copies the command that answers the same window, such as `java -jar /home/me/tools/spider-sense-0.1.0.jar findings --since=1758000000000 --until=1758000900000`.
+The window is written as epoch milliseconds, the jar is the one the server was started from, and `--service` is added when the page is about one service.
+The Findings page uses `findings`, the error page `errors`, and the query page `queries`.
 
 [#logs]
 == Logs

@@ -57,6 +57,18 @@ final class Text {
     /** A run of identical siblings longer than this collapses into one line. */
     private static final int COLLAPSE_AFTER = 3;
 
+    /** The columns of the findings table, one finding's included. */
+    private static final List<String> FINDING_COLUMNS =
+            List.of("#", "severity", "state", "kind", "id", "service", "title");
+
+    /** The columns of the queries table, one query group's included. */
+    private static final List<String> QUERY_COLUMNS = List.of("id", "service", "calls", "slow", "p50",
+            "p95", "max", "total", "callers", "unindexed", "statement");
+
+    /** The columns of the errors table, one error group's included. */
+    private static final List<String> ERROR_COLUMNS =
+            List.of("id", "service", "type", "message", "count", "first", "last", "endpoints");
+
     private static final int OFFSET_WIDTH = 11;
     private static final int DURATION_WIDTH = 10;
 
@@ -204,37 +216,63 @@ final class Text {
         StringBuilder text =
                 new StringBuilder(heading("findings", window, service, requests, acked, resolved));
         text.append('\n');
-        table(text, List.of("#", "severity", "state", "kind", "id", "service", "title"));
+        table(text, FINDING_COLUMNS);
         int n = 0;
         for (Findings.Finding finding : findings) {
             n++;
-            row(text, List.of(String.valueOf(n), severity(finding), finding.state(),
-                    finding.kind(), finding.id(),
-                    finding.service(), oneLine(finding.title())));
+            findingRow(text, n, finding);
         }
         n = 0;
         for (Findings.Finding finding : findings) {
             n++;
-            text.append('\n').append(n).append(". ").append(finding.id()).append(" — ")
-                    .append(finding.why()).append('\n');
-            text.append("   ").append(numbers(finding.numbers())).append('\n');
-            String hot = hotSpan(finding.numbers());
-            if (hot != null) {
-                text.append("   ").append(hot).append('\n');
-            }
-            whereTheTimeWent(text, finding.numbers());
-            if (finding.statement() != null) {
-                text.append("   ").append(statement(finding.statement(), full)).append('\n');
-            }
-            schema(text, finding.schema());
-            for (String frame : finding.code()) {
-                text.append("   ").append(frame).append('\n');
-            }
-            if (!finding.traces().isEmpty()) {
-                text.append("   traces: ").append(String.join(" ", finding.traces())).append('\n');
-            }
+            findingEvidence(text, n, finding, full);
         }
         return text.toString();
+    }
+
+    /**
+     * One finding as the list renders it: the list's heading with the id in place
+     * of the word, the table with its one row, and its evidence block, numbered by
+     * its rank in the list (agent.md, "One finding"). Both parts are written by the
+     * code that writes them for the list, so they are the list's bytes.
+     */
+    static String finding(Window window, @Nullable String service, long requests, int rank,
+            Findings.Finding finding, boolean full) {
+        StringBuilder text = new StringBuilder(heading("finding " + finding.id(), window, service,
+                requests));
+        text.append('\n');
+        table(text, FINDING_COLUMNS);
+        findingRow(text, rank, finding);
+        findingEvidence(text, rank, finding, full);
+        return text.toString();
+    }
+
+    private static void findingRow(StringBuilder text, int n, Findings.Finding finding) {
+        row(text, List.of(String.valueOf(n), severity(finding), finding.state(),
+                finding.kind(), finding.id(),
+                finding.service(), oneLine(finding.title())));
+    }
+
+    private static void findingEvidence(StringBuilder text, int n, Findings.Finding finding,
+            boolean full) {
+        text.append('\n').append(n).append(". ").append(finding.id()).append(" — ")
+                .append(finding.why()).append('\n');
+        text.append("   ").append(numbers(finding.numbers())).append('\n');
+        String hot = hotSpan(finding.numbers());
+        if (hot != null) {
+            text.append("   ").append(hot).append('\n');
+        }
+        whereTheTimeWent(text, finding.numbers());
+        if (finding.statement() != null) {
+            text.append("   ").append(statement(finding.statement(), full)).append('\n');
+        }
+        schema(text, finding.schema());
+        for (String frame : finding.code()) {
+            text.append("   ").append(frame).append('\n');
+        }
+        if (!finding.traces().isEmpty()) {
+            text.append("   traces: ").append(String.join(" ", finding.traces())).append('\n');
+        }
     }
 
     /** {@code acked}, {@code resolved} for one set aside because it has not come back, or the severity. */
@@ -668,22 +706,36 @@ final class Text {
         }
         StringBuilder text = new StringBuilder(heading("queries", window, service, requests));
         text.append('\n');
-        table(text, List.of("id", "service", "calls", "slow", "p50", "p95", "max", "total", "callers",
-                "unindexed", "statement"));
+        table(text, QUERY_COLUMNS);
         for (Stats.QueryStats query : queries) {
-            List<String> callers = new ArrayList<>();
-            for (Stats.Caller caller : query.callers()) {
-                callers.add(caller.endpoint() + " ×" + caller.calls());
-            }
-            row(text, List.of(query.queryId(), query.service(), Numbers.count(query.calls()),
-                    Numbers.count(query.slowCalls()), Numbers.millis(query.p50Ms()),
-                    Numbers.millis(query.p95Ms()), Numbers.millis(query.maxMs()),
-                    Numbers.millis(query.totalMs()),
-                    callers.isEmpty() ? "—" : String.join("; ", callers),
-                    unindexed(query.schema()),
-                    statement(query.statement(), full)));
+            queryRow(text, query, full);
         }
         return text.toString();
+    }
+
+    /** One query group as the list renders it, headed by its id (agent.md, "One finding"). */
+    static String query(Window window, @Nullable String service, Stats.QueryStats query, long requests,
+            boolean full) {
+        StringBuilder text = new StringBuilder(heading("query " + query.queryId(), window, service,
+                requests));
+        text.append('\n');
+        table(text, QUERY_COLUMNS);
+        queryRow(text, query, full);
+        return text.toString();
+    }
+
+    private static void queryRow(StringBuilder text, Stats.QueryStats query, boolean full) {
+        List<String> callers = new ArrayList<>();
+        for (Stats.Caller caller : query.callers()) {
+            callers.add(caller.endpoint() + " ×" + caller.calls());
+        }
+        row(text, List.of(query.queryId(), query.service(), Numbers.count(query.calls()),
+                Numbers.count(query.slowCalls()), Numbers.millis(query.p50Ms()),
+                Numbers.millis(query.p95Ms()), Numbers.millis(query.maxMs()),
+                Numbers.millis(query.totalMs()),
+                callers.isEmpty() ? "—" : String.join("; ", callers),
+                unindexed(query.schema()),
+                statement(query.statement(), full)));
     }
 
     static String errors(Window window, @Nullable String service, List<Stats.ErrorGroup> errors, long requests,
@@ -694,32 +746,55 @@ final class Text {
         }
         StringBuilder text = new StringBuilder(heading("errors", window, service, requests));
         text.append('\n');
-        table(text, List.of("id", "service", "type", "message", "count", "first", "last", "endpoints"));
+        table(text, ERROR_COLUMNS);
         for (Stats.ErrorGroup group : errors) {
-            List<String> endpoints = new ArrayList<>();
-            for (Stats.EndpointCount endpoint : group.endpoints()) {
-                endpoints.add(endpoint.name() + " ×" + endpoint.count());
-            }
-            row(text, List.of(group.errorId(), group.service(), or(group.type()), or(group.message()),
-                    Numbers.count(group.count()), clockMillis(group.firstSeen()),
-                    clockMillis(group.lastSeen()),
-                    endpoints.isEmpty() ? "—" : String.join("; ", endpoints)));
+            errorRow(text, group);
         }
         for (Stats.ErrorGroup group : errors) {
-            if (group.sample() == null) {
-                continue;
-            }
-            List<String> code = frames.ofStacktrace(group.sample().stacktrace());
-            if (code.isEmpty() && !full) {
-                continue;
-            }
-            text.append('\n').append(group.errorId()).append(" — trace ")
-                    .append(group.sample().traceId()).append('\n');
-            for (String frame : code) {
-                text.append("   ").append(frame).append('\n');
-            }
+            errorFrames(text, group, full, frames);
         }
         return text.toString();
+    }
+
+    /** One error group as the list renders it, headed by its id (agent.md, "One finding"). */
+    static String error(Window window, @Nullable String service, Stats.ErrorGroup group, long requests,
+            boolean full, CodeFrames frames) {
+        StringBuilder text = new StringBuilder(heading("error " + group.errorId(), window, service,
+                requests));
+        text.append('\n');
+        table(text, ERROR_COLUMNS);
+        errorRow(text, group);
+        errorFrames(text, group, full, frames);
+        return text.toString();
+    }
+
+    private static void errorRow(StringBuilder text, Stats.ErrorGroup group) {
+        List<String> endpoints = new ArrayList<>();
+        for (Stats.EndpointCount endpoint : group.endpoints()) {
+            endpoints.add(endpoint.name() + " ×" + endpoint.count());
+        }
+        row(text, List.of(group.errorId(), group.service(), or(group.type()), or(group.message()),
+                Numbers.count(group.count()), clockMillis(group.firstSeen()),
+                clockMillis(group.lastSeen()),
+                endpoints.isEmpty() ? "—" : String.join("; ", endpoints)));
+    }
+
+    /** The sample's application frames under the table, when there are any or {@code full} was asked. */
+    private static void errorFrames(StringBuilder text, Stats.ErrorGroup group, boolean full,
+            CodeFrames frames) {
+        Stats.ErrorSample sample = group.sample();
+        if (sample == null) {
+            return;
+        }
+        List<String> code = frames.ofStacktrace(sample.stacktrace());
+        if (code.isEmpty() && !full) {
+            return;
+        }
+        text.append('\n').append(group.errorId()).append(" — trace ")
+                .append(sample.traceId()).append('\n');
+        for (String frame : code) {
+            text.append("   ").append(frame).append('\n');
+        }
     }
 
     static String logs(Window window, @Nullable String service, List<LogRecord> logs, long total,

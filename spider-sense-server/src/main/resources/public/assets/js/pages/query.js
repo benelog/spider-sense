@@ -7,12 +7,14 @@ import { timeSeries, legend } from '../charts.js';
 import { formatSql } from '../sql.js';
 import { traceTable } from './traces.js';
 import { schemaLines } from './findings.js';
+import { copyButtons, cliLine } from '../copyas.js';
 import { dur, count, rel, bothTimes } from '../format.js';
 
 export function render(root, ctx) {
   const id = ctx.params.id;
   let destroyed = false;
   let chart = null;
+  let loaded = null;
 
   const head = h('div', { style: { padding: '14px', display: 'grid', gap: '10px' } });
   const headPanel = panel({ title: 'Statement' }, head);
@@ -38,9 +40,11 @@ export function render(root, ctx) {
 
   async function load() {
     try {
-      const data = await api.query(id);
+      const win = api.windowFor();
+      const data = await api.query(id, { window: win });
       if (destroyed) return;
       const q = data.query || {};
+      loaded = { window: win, service: q.service };
       build();
       ctx.setTitle((q.operation || 'Query') + (q.table ? ' ' + q.table : ''));
       fill(head,
@@ -52,7 +56,11 @@ export function render(root, ctx) {
           serviceChip(q.service),
           h('span.muted', { style: { marginLeft: 'auto', fontSize: '11px' }, title: bothTimes(q.lastSeen) }, 'last seen ' + rel(q.lastSeen))),
         copyBlock(formatSql(q.statement || '')),
-        schemaLines(q.schema));
+        schemaLines(q.schema),
+        h('div.row', copyButtons({
+          markdown: () => ({ path: '/api/queries/' + encodeURIComponent(id), query: api.params({}, { window: loaded.window, service: null }) }),
+          cli: () => cliLine('queries', loaded.window, loaded.service),
+        })));
 
       fill(statsRow,
         stat(count(q.calls), '', 'calls'),

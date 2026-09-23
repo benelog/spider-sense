@@ -52,6 +52,14 @@ public final class CodeFrames {
     }
 
     /**
+     * The allowlist, each prefix ending in a dot; empty when the framework prefixes decide.
+     * {@code /api/status.codeFrames} carries it so the UI folds a stack trace by these rules.
+     */
+    public List<String> appPackages() {
+        return appPackages;
+    }
+
+    /**
      * The application frames of a stack trace, at most {@value #MAX_FRAMES}: the
      * root cause's first, then those of each exception wrapping it out to the outer
      * one, each cause's top first ({@link ExceptionChain#framesInnermostFirst()}).

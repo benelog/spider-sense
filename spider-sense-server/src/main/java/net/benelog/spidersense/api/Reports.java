@@ -1,6 +1,7 @@
 package net.benelog.spidersense.api;
 
 import java.io.OutputStream;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -204,6 +205,10 @@ public final class Reports implements AutoCloseable {
                         .put("responseBucketsMs", Codecs.longs(queries.responseBuckets().bounds())))
                 .put("ignore", Json.obj()
                         .put("endpoints", Codecs.strings(tingles.ignored().patterns())))
+                .put("codeFrames", Json.obj()
+                        .put("appPackages", Codecs.strings(frames.appPackages()))
+                        .put("frameworkPrefixes", Codecs.strings(CodeFrames.FRAMEWORK_PREFIXES)))
+                .put("jar", config.jar())
                 .put("retention", Json.obj()
                         .put("hours", config.retentionHours())
                         .put("spans", config.retentionSpans()))
@@ -299,6 +304,32 @@ public final class Reports implements AutoCloseable {
                 .put("findings", Codecs.findings(found));
         return new Report(json, Text.findings(window, service, requests, answer.acked(),
                 answer.resolved(), found, full, endpoint()));
+    }
+
+    /**
+     * One finding, as the list renders it: its row of the table and its evidence
+     * block, numbered by its rank among every finding of the window, so the bytes
+     * are those {@code findings} prints for it (agent.md, "One finding").
+     *
+     * @return null when the rules do not produce that id over the window
+     */
+    public @Nullable Report finding(Window window, @Nullable String service, String id,
+            boolean full) {
+        List<Findings.Finding> ranked =
+                findings.answer(window, service, Integer.MAX_VALUE, false).findings();
+        for (int i = 0; i < ranked.size(); i++) {
+            Findings.Finding finding = ranked.get(i);
+            if (finding.id().equals(id)) {
+                long requests = queries.totals(window, service).requests();
+                Json.JsonObject json = Json.obj()
+                        .put("window", Codecs.window(window))
+                        .put("requests", requests)
+                        .put("rank", i + 1)
+                        .put("finding", Codecs.finding(finding));
+                return new Report(json, Text.finding(window, service, requests, i + 1, finding, full));
+            }
+        }
+        return null;
     }
 
     public Report marks(int limit) {
@@ -449,11 +480,52 @@ public final class Reports implements AutoCloseable {
                 Text.queries(window, service, list, requests, full, endpoint()));
     }
 
+    /**
+     * The error groups of the window, each with its occurrences per bucket as the
+     * {@code series} the errors page draws as a sparkline (api.md); the text
+     * rendering has no use for a sparkline and does not carry it.
+     */
     public Report errors(Window window, @Nullable String service, int limit, boolean full) {
         List<Stats.ErrorGroup> list = queries.errors(window, service, limit, null);
         long requests = queries.totals(window, service).requests();
-        return new Report(Json.obj().put("errors", Codecs.errorGroups(list)),
+        List<String> ids = new ArrayList<>(list.size());
+        list.forEach(group -> ids.add(group.errorId()));
+        Map<String, long[]> series = queries.errorSeries(window, ids);
+        return new Report(Json.obj().put("errors", Codecs.errorGroups(list, series)),
                 Text.errors(window, service, list, requests, full, frames, endpoint()));
+    }
+
+    /**
+     * One error group, as the list renders it: its row and its frames (agent.md,
+     * "One finding"). Text only: the JSON of {@code /api/errors/{errorId}} is the
+     * page's, with its series and traces, and stays where it is.
+     *
+     * @return null when the group has no occurrence in the window
+     */
+    public @Nullable String errorText(Window window, @Nullable String service, String errorId,
+            boolean full) {
+        List<Stats.ErrorGroup> found = queries.errors(window, null, 1, errorId);
+        if (found.isEmpty()) {
+            return null;
+        }
+        long requests = queries.totals(window, service).requests();
+        return Text.error(window, service, found.get(0), requests, full, frames);
+    }
+
+    /**
+     * One query group, as the list renders it: its row (agent.md, "One finding").
+     * Text only, for the reason {@link #errorText} is.
+     *
+     * @return null when the group has no call in the window
+     */
+    public @Nullable String queryText(Window window, @Nullable String service, String queryId,
+            boolean full) {
+        List<Stats.QueryStats> found = queries.queries(window, null, "total", 1, queryId);
+        if (found.isEmpty()) {
+            return null;
+        }
+        long requests = queries.totals(window, service).requests();
+        return Text.query(window, service, found.get(0), requests, full);
     }
 
     public Report logs(Queries.LogFilter filter) {

@@ -1,7 +1,8 @@
 // Code frames as links into the editor, with the lines around them (docs/ui.md, "Code frames").
 // Each frame asks GET /api/source once; a frame that does not resolve stays plain text.
+// A whole stack trace folds its framework frames by the same rules (docs/ui.md, "Stack traces").
 
-import { getJSON } from './api.js';
+import { getJSON, state } from './api.js';
 import { h } from './ui.js';
 
 const EDITOR_KEY = 'spidersense.editor';
@@ -79,4 +80,133 @@ export function codeFrame(frame) {
     if (lines) node.appendChild(lines);
   });
   return node;
+}
+
+// --- folding a stack trace (docs/ui.md, "Stack traces") -------------------------------------
+
+/** The rules of a finding's `code` (docs/agent.md, "Code locations"), from /api/status.codeFrames. */
+function rules() {
+  const frames = (state.status || {}).codeFrames;
+  if (!frames) return null;
+  return { app: frames.appPackages || [], framework: frames.frameworkPrefixes || [] };
+}
+
+/**
+ * `package.Class.method(File.java:41)` from a stack trace line, without the module or class
+ * loader in front of it and the jar a logging framework adds behind it, as CodeFrames does.
+ */
+function frameOf(line) {
+  const at = /^\s*at\s+(.+)$/.exec(line);
+  if (!at) return null;
+  let value = at[1].trim();
+  const marker = value.indexOf('~');
+  if (marker > 0) value = value.slice(0, marker).trim();
+  const paren = value.indexOf('(');
+  const slash = value.lastIndexOf('/', paren < 0 ? value.length : paren);
+  return slash >= 0 ? value.slice(slash + 1) : value;
+}
+
+/**
+ * The package a framework frame is folded under: the framework prefix it matched, or, with an
+ * allowlist, its first two segments. Null for an application frame.
+ */
+function frameworkOf(frame, r) {
+  if (r.app.length) {
+    if (r.app.some((p) => frame.startsWith(p))) return null;
+    return frame.split('.').slice(0, 2).join('.');
+  }
+  const lower = frame.toLowerCase();
+  const prefix = r.framework.find((p) => lower.startsWith(p));
+  return prefix ? prefix.replace(/\.$/, '') : null;
+}
+
+/** `app` (the default) or `all`, from the hash query's `frames`. */
+export function framesMode(query) {
+  return (query || {}).frames === 'all' ? 'all' : 'app';
+}
+
+/** The panel-head toggle, **App frames** | **All**; onChange gets 'app' or 'all'. */
+export function framesToggle(mode, onChange) {
+  const node = h('div.row', { style: { gap: '2px' }, role: 'group', 'aria-label': 'Stack frames' });
+  const make = (id, label) => h('button.btn', {
+    type: 'button', 'aria-pressed': String(mode === id),
+    onclick: () => { if (mode !== id) onChange(id); },
+  }, label);
+  node.appendChild(make('app', 'App frames'));
+  node.appendChild(make('all', 'All'));
+  return node;
+}
+
+function lineSpan(cls, text) {
+  const span = document.createElement('span');
+  span.className = cls;
+  span.textContent = text + '\n';
+  return span;
+}
+
+/** `12 frames from org.springframework, org.apache`: the fold line's words. */
+function foldLabel(run) {
+  const packages = [];
+  for (const item of run) if (!packages.includes(item.pkg)) packages.push(item.pkg);
+  const named = packages.slice(0, 3).join(', ') + (packages.length > 3 ? ' +' + (packages.length - 3) : '');
+  return run.length + ' frames from ' + named;
+}
+
+/**
+ * A stack trace in a <pre>, its application frames highlighted by the rules a finding's `code`
+ * follows. In `app` mode every run of two or more framework frames is one dimmed line with the
+ * count and the packages, which expands in place on a click or Enter; in `all` mode nothing is
+ * folded. Without the rules (a server or a recording that does not send them) nothing is folded
+ * or highlighted.
+ */
+export function foldedStack(text, mode = 'app') {
+  const pre = document.createElement('pre');
+  pre.className = 'stack';
+  if (!text) return pre;
+  const r = rules();
+  let run = [];
+
+  function flush() {
+    if (!run.length) return;
+    if (mode === 'all' || run.length < 2) {
+      for (const item of run) pre.appendChild(lineSpan('st-frame', item.line));
+    } else {
+      const hidden = document.createElement('span');
+      hidden.className = 'st-run';
+      hidden.hidden = true;
+      for (const item of run) hidden.appendChild(lineSpan('st-frame', item.line));
+      const indent = /^\s*/.exec(run[0].line)[0];
+      const fold = lineSpan('st-fold', indent + '⋯ ' + foldLabel(run));
+      fold.setAttribute('role', 'button');
+      fold.setAttribute('tabindex', '0');
+      fold.setAttribute('aria-expanded', 'false');
+      fold.title = 'Show these ' + run.length + ' frames';
+      const open = () => { fold.remove(); hidden.hidden = false; };
+      fold.addEventListener('click', open);
+      fold.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); }
+      });
+      pre.appendChild(fold);
+      pre.appendChild(hidden);
+    }
+    run = [];
+  }
+
+  for (const line of String(text).split('\n')) {
+    const frame = frameOf(line);
+    if (frame && r) {
+      const pkg = frameworkOf(frame, r);
+      if (pkg) { run.push({ line, pkg }); continue; }
+      flush();
+      pre.appendChild(lineSpan('st-own', line));
+      continue;
+    }
+    flush();
+    if (frame) pre.appendChild(lineSpan('st-frame', line));
+    else if (/^\s*(Caused by|Suppressed):/.test(line)) pre.appendChild(lineSpan('st-cause', line));
+    else if (/^\s*\.\.\. \d+ more/.test(line)) pre.appendChild(lineSpan('st-frame', line));
+    else pre.appendChild(lineSpan('st-head', line));
+  }
+  flush();
+  return pre;
 }

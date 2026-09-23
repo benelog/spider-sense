@@ -1,14 +1,17 @@
-// Error groups.
+// Error groups, each with a sparkline of its occurrences over the window.
 
 import * as api from '../api.js';
 import * as router from '../router.js';
 import { h, fill, panel, table, fillRows, chip, serviceChip, spinner, errorBox } from '../ui.js';
+import { sparkline, themeColors } from '../charts.js';
 import { count, rel, bothTimes, truncate, splitType } from '../format.js';
 
 export function render(root, ctx) {
   let destroyed = false;
   let rows = [];
   let node = null;
+  // Read at each paint, so a theme flip gives the next refresh its colour.
+  let errColor = themeColors().err;
 
   const body = h('div', spinner());
   root.appendChild(panel({ title: 'Errors' }, body));
@@ -33,6 +36,10 @@ export function render(root, ctx) {
           list.length > 2 ? h('span.muted', '+' + (list.length - 2)) : null);
       },
     },
+    {
+      key: 'series', label: 'Occurrences', sortable: false, width: '130px',
+      render: (e) => sparkline(e.series || [], { color: errColor, label: (e.type || 'error') + ' occurrences over the window' }),
+    },
     { key: 'firstSeen', label: 'First seen', align: 'right', sortable: false, width: '92px', render: (e) => h('span', { title: bothTimes(e.firstSeen) }, rel(e.firstSeen)) },
     { key: 'lastSeen', label: 'Last seen', align: 'right', sortable: false, width: '92px', render: (e) => h('span', { title: bothTimes(e.lastSeen) }, rel(e.lastSeen)) },
   ];
@@ -44,6 +51,7 @@ export function render(root, ctx) {
   };
 
   function paint() {
+    errColor = themeColors().err;
     if (!node) {
       node = table(columns, { ...opts, rows });
       fill(body, node);
