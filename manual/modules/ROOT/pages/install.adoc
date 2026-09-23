@@ -88,7 +88,7 @@ It names the mode, the port, the database file, the thresholds in force, the ser
 
 | Standalone
 | `java -jar spider-sense.jar`
-| xref:modes.adoc#standalone[Standalone mode], for anything that already speaks OTLP/HTTP
+| xref:modes.adoc#standalone[Standalone mode], for anything that already speaks OTLP/HTTP, including a Java application under the stock OpenTelemetry Java agent
 |===
 
 `bootRun` and `spring-boot:run` fork the JVM themselves, so the agent has to be handed to the build tool rather than typed on your own command line.

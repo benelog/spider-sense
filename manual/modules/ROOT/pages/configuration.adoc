@@ -255,6 +255,16 @@ export OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4000
 export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 ----
 
+The same two variables point a Java application under the stock OpenTelemetry Java agent, or any compatible agent, at it:
+
+[source,bash]
+----
+OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4000 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
+    java -javaagent:opentelemetry-javaagent.jar -Dotel.service.name=my-app -jar app.jar
+----
+
+It lacks the defaults and the extension the Spider Sense jar adds, as xref:modes.adoc#standalone[Standalone] describes.
+
 Anything that can post JSON, over OTLP/JSON:
 
 [source,bash]

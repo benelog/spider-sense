@@ -24,7 +24,7 @@ The examples below assume the jar's absolute path is in `$SENSE`, as xref:instal
 
 | Standalone
 | `java -jar "$SENSE"`
-| The collector and the UI only, for anything that already speaks OTLP/HTTP.
+| The collector and the UI only, for anything that already speaks OTLP/HTTP, including a Java application under the stock OpenTelemetry Java agent.
 |===
 
 [#agent]

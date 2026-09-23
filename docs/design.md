@@ -22,8 +22,11 @@ The UI is a Spider Silk application (`net.benelog.spidersilk`), and the product 
 |---|---|---|
 | **Agent** (Glowroot-style) | `java -javaagent:spider-sense.jar -jar app.jar` | The OpenTelemetry Java agent instruments the app. An embedded collector + UI starts inside the same JVM on port 4000 and receives the agent's OTLP export over loopback. |
 | **Agent, forwarding** | `java -javaagent:spider-sense.jar -Dspidersense.collector=http://localhost:4000 -jar app.jar` | Same instrumentation, no embedded UI: the agent exports to a Spider Sense running elsewhere. Several apps share one UI this way. |
-| **Standalone** (SigNoz/OpenObserve-style) | `java -jar spider-sense.jar` | Collector + UI only, on port 4000. Anything that speaks OTLP/HTTP can send to it: the modes above, another language's SDK, a Collector. |
+| **Standalone** (SigNoz/OpenObserve-style) | `java -jar spider-sense.jar` | Collector + UI only, on port 4000. Anything that speaks OTLP/HTTP can send to it: the modes above, another language's SDK, a Collector, or a Java application under the stock OpenTelemetry Java agent (or any compatible agent) in place of the Spider Sense jar. |
 | **CLI** | `java -jar spider-sense.jar findings --since=start` | No server: a command that asks the running Spider Sense over HTTP, or reads the H2 file directly when none is running, and prints text. For people in a terminal and for AI agents; see [agent.md](agent.md). |
+
+A Java application under the stock `opentelemetry-javaagent.jar` reaches a standalone Spider Sense with `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4000` and `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf`, at an agent version of its own choosing.
+It gets the pages, the findings and the CLI over the same data, and lacks what the Spider Sense jar adds around that agent: the defaults set in `premain` (below) and [the extension](#the-extension), so no `code.stacktrace` on a slow query and no index catalog.
 
 The jar is Java 21+ (Spider Silk's floor). The monitored application can be any JVM the OpenTelemetry agent supports, but the embedded UI needs 21+, so agent mode requires 21+.
 
