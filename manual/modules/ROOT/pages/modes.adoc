@@ -85,6 +85,15 @@ The protocol has to be `http/protobuf`, because there is no gRPC receiver.
 
 The same two variables make a Java application send to Spider Sense from any OpenTelemetry-compatible agent, not only the Spider Sense jar: the stock `opentelemetry-javaagent.jar` at a version of your own choosing, a vendor's distribution of it, or an agent already on the command line for another reason.
 
+The stock agent is one jar, published on the project's https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases[GitHub releases] and on Maven Central as `io.opentelemetry.javaagent:opentelemetry-javaagent`.
+The first line below fetches the latest release, and the second the version the Spider Sense jar bundles:
+
+[source,bash,subs="attributes+"]
+----
+curl -LO https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/latest/download/opentelemetry-javaagent.jar
+curl -L -o opentelemetry-javaagent.jar https://repo1.maven.org/maven2/io/opentelemetry/javaagent/opentelemetry-javaagent/{otel-agent-version}/opentelemetry-javaagent-{otel-agent-version}.jar
+----
+
 [source,bash]
 ----
 java -jar "$SENSE" &
