@@ -8,8 +8,10 @@ import java.io.UncheckedIOException;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
+import java.net.http.HttpConnectTimeoutException;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Map;
@@ -30,15 +32,53 @@ import org.jspecify.annotations.Nullable;
  */
 final class Remote {
 
-    /** Nothing answered at the URL: a connection refused or a timeout, never a 4xx. */
+    /** Nothing answered at the URL: a connection refused or not made in time, never a 4xx. */
     static final class Unreachable extends RuntimeException {
         Unreachable(String reason) {
             super(reason);
         }
     }
 
+    /**
+     * A Spider Sense took the connection and did not answer in {@link #READ}.
+     *
+     * <p>It is running, so the file is not the better answer: reading it in process
+     * would take longer still, and the CLI says so instead (agent.md, "CLI").
+     */
+    static final class Busy extends RuntimeException {
+
+        private final String said;
+
+        Busy(String base) {
+            super(line(base));
+            this.said = line(base);
+        }
+
+        private static String line(String base) {
+            return "the Spider Sense at " + base + " did not answer within " + READ.toMinutes() + " minutes";
+        }
+
+        /** The one line the CLI prints and an MCP tool call fails with. */
+        String said() {
+            return said;
+        }
+    }
+
     private static final Duration CONNECT = Duration.ofSeconds(2);
-    private static final Duration READ = Duration.ofSeconds(30);
+    private static final Duration READ = Duration.ofMinutes(2);
+
+    /**
+     * What a failed exchange means: {@link Busy} when the connection was made and
+     * the answer did not come, {@link Unreachable} for everything else, a
+     * connection that was not made in {@link #CONNECT} included.
+     */
+    static RuntimeException failure(IOException e, String base) {
+        if (e instanceof HttpTimeoutException && !(e instanceof HttpConnectTimeoutException)) {
+            return new Busy(trimSlash(base));
+        }
+        return new Unreachable(e.getClass().getSimpleName()
+                + (e.getMessage() == null ? "" : ": " + e.getMessage()));
+    }
 
     private Remote() {
     }
@@ -66,8 +106,7 @@ final class Remote {
         try (HttpClient client = HttpClient.newBuilder().connectTimeout(CONNECT).build()) {
             response = client.send(request.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
         } catch (IOException e) {
-            throw new Unreachable(e.getClass().getSimpleName()
-                    + (e.getMessage() == null ? "" : ": " + e.getMessage()));
+            throw failure(e, base);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new Unreachable("interrupted");
@@ -105,8 +144,7 @@ final class Remote {
             try {
                 response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
             } catch (IOException e) {
-                throw new Unreachable(e.getClass().getSimpleName()
-                        + (e.getMessage() == null ? "" : ": " + e.getMessage()));
+                throw failure(e, base);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw new Unreachable("interrupted");
@@ -154,8 +192,7 @@ final class Remote {
             response = client.send(request.build(),
                     HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
         } catch (IOException e) {
-            throw new Unreachable(e.getClass().getSimpleName()
-                    + (e.getMessage() == null ? "" : ": " + e.getMessage()));
+            throw failure(e, base);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new Unreachable("interrupted");
@@ -192,8 +229,7 @@ final class Remote {
         try (HttpClient client = HttpClient.newBuilder().connectTimeout(CONNECT).build()) {
             response = client.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
         } catch (IOException e) {
-            throw new Unreachable(e.getClass().getSimpleName()
-                    + (e.getMessage() == null ? "" : ": " + e.getMessage()));
+            throw failure(e, base);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new Unreachable("interrupted");

@@ -105,6 +105,10 @@ final class Mcp {
         if (forwardTo != null && "tools/call".equals(method(line))) {
             try {
                 return Remote.post(forwardTo, "/mcp", line);
+            } catch (Remote.Busy e) {
+                // Running, only slow: this call fails and the next one asks it again.
+                String said = e.said();
+                return server.handle(line, (name, arguments) -> McpServer.ToolResult.failed(said));
             } catch (Remote.Unreachable e) {
                 if (named) {
                     String said = "no Spider Sense at " + forwardTo + " (" + e.getMessage() + ")";

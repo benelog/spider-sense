@@ -331,6 +331,9 @@ Every finding carries `state`, which says on its own what the last restart chang
 The **previous run** of a service is the time between its two newest `start` marks at or before the end of the window ([Marks](#marks)): from the older of the two, up to the newest one.
 With one `start` mark it reaches back to the oldest data; with none (an imported session without marks, a sender that reports no `process.pid`) there is no previous run, and every finding of the service is `new`.
 The rules run over the previous run once per service of the answered page, with the same thresholds as the window's.
+Only the rules of the kinds that service has on the page run, and they produce ids alone: no evidence traces, no code frames, no `hotSpans`, no schema block, since the state asks only whether an id is there.
+A previous run no longer changes once a newer `start` mark closes it, so a running Spider Sense keeps the ids it found for `(service, previous run, kind)` in memory, and every later answer over the same run reads them from there instead of running the rules again.
+The first answer after a restart pays for the previous run; the answers after it cost what the window costs.
 `check` does not read the state.
 
 In the text rendering `state` is a column between `severity` and `kind`.
@@ -556,7 +559,7 @@ The server speaks the Model Context Protocol in two transports, and both are the
 **Transports.**
 
 - **Streamable HTTP**: `POST /mcp` on the server's own port, one JSON-RPC 2.0 message per request, `Content-Type: application/json` both ways. A request is answered with `200` and the JSON-RPC response; a notification with `202` and no body. The server is stateless: no session id is issued or required, `GET /mcp` is `405`, and a JSON array (the batch of older revisions) is refused with `-32600`.
-- **stdio**: `java -jar spider-sense.jar mcp [--url=<base>] [--db=<path>]`, newline-delimited JSON-RPC on stdin and stdout, nothing else on stdout, diagnostics on stderr; it ends at end of input. `initialize`, `ping` and `tools/list` are answered in process. A `tools/call` goes to the Spider Sense at `--url` (the CLI's default and `SPIDERSENSE_URL` apply) when one answers, else the H2 file is opened in process exactly as the CLI does, with the same stderr line saying so; `--db` reads the file without asking. This is the transport for a host on the same machine, and the one that still answers after the application has crashed.
+- **stdio**: `java -jar spider-sense.jar mcp [--url=<base>] [--db=<path>]`, newline-delimited JSON-RPC on stdin and stdout, nothing else on stdout, diagnostics on stderr; it ends at end of input. `initialize`, `ping` and `tools/list` are answered in process. A `tools/call` goes to the Spider Sense at `--url` (the CLI's default and `SPIDERSENSE_URL` apply) when one answers, else the H2 file is opened in process exactly as the CLI does, with the same stderr line saying so; `--db` reads the file without asking. A Spider Sense that is busy past the CLI's 2 minutes answers that call with a failed tool result saying so, and the next call asks it again. This is the transport for a host on the same machine, and the one that still answers after the application has crashed.
 
 **Methods.** `initialize` answers the client's `protocolVersion` when it is one the server knows (`2025-06-18`, `2025-03-26`, `2024-11-05`) and `2025-06-18` otherwise, `capabilities: { "tools": {} }`, `serverInfo: { "name": "spider-sense", "version": "<version>" }`, and `instructions`, the loop in one paragraph: start the application under the agent, `mark`, exercise, `findings`, fix, `mark`, `compare`, `check`, and `resolve` once the fix holds. `notifications/initialized` is accepted and ignored. `ping` answers `{}`. `tools/list` is the seven tools below; `tools/call` runs one. Anything else is `-32601`.
 
@@ -686,6 +689,8 @@ The CLI does not render anything itself: when a Spider Sense is running it fetch
 ```
 
 That is what `AUTO_SERVER=TRUE` buys: the application has crashed, the UI went with it, and `findings --since=start` still answers.
+"None answers" means the connection was refused or not made within 2 seconds.
+A Spider Sense that accepted the connection and has not answered within 2 minutes is busy, not gone: the CLI says so on stderr, `spider-sense: the Spider Sense at http://127.0.0.1:4000 did not answer within 2 minutes`, exits with `2`, and does not read the file, since reading it in process would be slower still.
 The one exception to printing what was rendered is the suspect-change line `findings` adds under each code frame ([Source lines and the suspect change](#source-lines-and-the-suspect-change)): it is read from the repository the CLI runs in, added to the text after the server or the in-process renderer produced it, and left out by `--no-git` and by `--json`.
 In that path the thresholds are the defaults or `--slow.request.ms`/`--slow.query.ms`, and the application packages `--app.packages`, since no server is there to ask.
 The file must exist and carry this version's schema: the CLI never creates a database and never upgrades one, because `AUTO_SERVER=TRUE` may have joined the database of an older Spider Sense that is still running, and the server's own open would drop its tables (storage.md).

@@ -329,6 +329,17 @@ public final class Queries {
 
     public List<Stats.QueryStats> queries(Window window, @Nullable String service,
             @Nullable String sort, int limit, @Nullable String queryId) {
+        return withSchema(withCallers(queryGroups(window, service, sort, limit, queryId), window));
+    }
+
+    /**
+     * The query groups alone: the aggregate, with no callers and no schema block.
+     *
+     * <p>What a finding's state needs from the previous run, where only which groups
+     * crossed a threshold matters (agent.md, "State").
+     */
+    List<Stats.QueryStats> queryGroups(Window window, @Nullable String service,
+            @Nullable String sort, int limit, @Nullable String queryId) {
         Clause where = window(window, service).and("query_id IS NOT NULL");
         if (queryId != null) {
             where = where.and("query_id = ?", queryId);
@@ -349,7 +360,7 @@ public final class Queries {
                 + PERCENTILES + " FROM span WHERE " + where.sql()
                 + " GROUP BY query_id, service ORDER BY " + order + " LIMIT " + Math.max(1, limit);
 
-        List<Stats.QueryStats> stats = sql.query(query, where.params(), rs -> {
+        return sql.query(query, where.params(), rs -> {
             long calls = rs.getLong("calls");
             double totalMs = Rows.ms(rs, "total_ns");
             return new Stats.QueryStats(rs.getString("query_id"), rs.getString("service"),
@@ -359,7 +370,6 @@ public final class Queries {
                     Rows.ms(rs, "max_ns"), totalMs, rs.getLong("slow_calls"), List.of(),
                     rs.getLong("last_seen"), null);
         });
-        return withSchema(withCallers(stats, window));
     }
 
     /**
@@ -503,20 +513,7 @@ public final class Queries {
 
     public List<Stats.ErrorGroup> errors(Window window, @Nullable String service, int limit,
             @Nullable String errorId) {
-        Clause where = window(window, service).and("error").and("error_id IS NOT NULL");
-        if (errorId != null) {
-            where = where.and("error_id = ?", errorId);
-        }
-        String query = "SELECT error_id, service, MAX(error_type) AS type, MAX(error_message) AS message,"
-                + " COUNT(*) AS count, MIN(start_ms) AS first_seen, MAX(start_ms) AS last_seen"
-                + " FROM span WHERE " + where.sql()
-                + " GROUP BY error_id, service ORDER BY count DESC LIMIT " + Math.max(1, limit);
-
-        List<Stats.ErrorGroup> groups = sql.query(query, where.params(), rs ->
-                new Stats.ErrorGroup(rs.getString("error_id"), rs.getString("service"),
-                        rs.getString("type"), Ids.normaliseMessage(rs.getString("message")),
-                        rs.getLong("count"), rs.getLong("first_seen"), rs.getLong("last_seen"),
-                        List.of(), null));
+        List<Stats.ErrorGroup> groups = errorGroups(window, service, limit, errorId);
         if (groups.isEmpty()) {
             return groups;
         }
@@ -534,6 +531,28 @@ public final class Queries {
                     endpoints.getOrDefault(group.errorId(), List.of()), samples.get(group.errorId())));
         }
         return complete;
+    }
+
+    /**
+     * The error groups alone: the aggregate, with no sample and no endpoints, which
+     * is what a finding's state needs from the previous run (agent.md, "State").
+     */
+    List<Stats.ErrorGroup> errorGroups(Window window, @Nullable String service, int limit,
+            @Nullable String errorId) {
+        Clause where = window(window, service).and("error").and("error_id IS NOT NULL");
+        if (errorId != null) {
+            where = where.and("error_id = ?", errorId);
+        }
+        String query = "SELECT error_id, service, MAX(error_type) AS type, MAX(error_message) AS message,"
+                + " COUNT(*) AS count, MIN(start_ms) AS first_seen, MAX(start_ms) AS last_seen"
+                + " FROM span WHERE " + where.sql()
+                + " GROUP BY error_id, service ORDER BY count DESC LIMIT " + Math.max(1, limit);
+
+        return sql.query(query, where.params(), rs ->
+                new Stats.ErrorGroup(rs.getString("error_id"), rs.getString("service"),
+                        rs.getString("type"), Ids.normaliseMessage(rs.getString("message")),
+                        rs.getLong("count"), rs.getLong("first_seen"), rs.getLong("last_seen"),
+                        List.of(), null));
     }
 
     private Map<String, Stats.ErrorSample> errorSamples(Window window, Set<String> ids) {
@@ -692,11 +711,16 @@ public final class Queries {
     /** The same, for a predicate that binds more than one value (a job's service and name). */
     public List<Stats.TraceSummary> tracesContaining(Window window, String predicate,
             List<Object> values, int limit, boolean slowest) {
+        List<Object> params = new ArrayList<>(values);
+        params.add(window.from());
+        params.add(window.to());
         Clause where = new Clause("t.start_ms BETWEEN ? AND ?", window.from(), window.to())
                 // An IN over the matching spans rather than an EXISTS per trace: H2 reads
                 // the spans by the predicate's index once instead of probing every trace.
-                .and("t.trace_id IN (SELECT s.trace_id FROM span s WHERE s." + predicate + ")",
-                        values.toArray());
+                // The span's own window makes that read a range of the (…, start_ms) index,
+                // the window's share of the group rather than its whole history (storage.md).
+                .and("t.trace_id IN (SELECT s.trace_id FROM span s WHERE s." + predicate
+                        + " AND s.start_ms BETWEEN ? AND ?)", params.toArray());
         String order = slowest ? "t.duration_ns DESC" : "t.start_ms DESC";
         return sql.query("SELECT * FROM trace t WHERE " + where.sql() + " ORDER BY " + order
                 + " LIMIT " + Math.max(1, limit), where.params(), Rows::trace);
@@ -1311,10 +1335,30 @@ public final class Queries {
         }
 
         static Ancestry of(Sql sql, Window window) {
+            return of(sql, window, null);
+        }
+
+        /**
+         * The walk over the traces of the window that have a span of {@code service}
+         * in it, or over every trace when it is null.
+         *
+         * <p>A walk never leaves its trace, so the traces without a span of the
+         * service hold nothing a span of the service can reach: leaving them out
+         * changes no answer, and on a store shared by several applications it is
+         * most of the rows (storage.md).
+         */
+        static Ancestry of(Sql sql, Window window, @Nullable String service) {
             Map<String, Entry> entries = new HashMap<>();
             Map<String, String> parents = new HashMap<>();
+            String where = "start_ms BETWEEN ? AND ?";
+            List<Object> params = new ArrayList<>(List.of(window.from(), window.to()));
+            if (service != null) {
+                where = where + " AND trace_id IN (SELECT trace_id FROM span WHERE service = ?"
+                        + " AND start_ms BETWEEN ? AND ?)";
+                params.addAll(List.of(service, window.from(), window.to()));
+            }
             sql.forEach("SELECT span_id, parent_span_id, entry, endpoint, service, name FROM span"
-                    + " WHERE start_ms BETWEEN ? AND ?", List.of(window.from(), window.to()), rs -> {
+                    + " WHERE " + where, params, rs -> {
                         String spanId = rs.getString("span_id");
                         String parent = rs.getString("parent_span_id");
                         if (parent != null) {

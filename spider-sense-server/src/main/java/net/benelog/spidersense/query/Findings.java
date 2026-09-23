@@ -2,6 +2,7 @@ package net.benelog.spidersense.query;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -84,6 +85,9 @@ public final class Findings {
     private static final int SAMPLE_TRACES = 20;
     private static final int CANDIDATES = 500;
     private static final int GROUPS = 100;
+
+    /** How many {@code (service, previous run, kind)} id sets a server keeps (agent.md, "State"). */
+    private static final int PREVIOUS_RUNS = 256;
 
     /** The OTLP severity number of {@code ERROR}; a {@code log-error} counts it and worse. */
     private static final int ERROR_SEVERITY = 17;
@@ -214,6 +218,22 @@ public final class Findings {
     private final Tingles tingles;
     private final CodeFrames frames;
 
+    /**
+     * The ids the rules found over a closed previous run, by
+     * {@code service\0from\0newest\0kind}.
+     *
+     * <p>A newer {@code start} mark closes a run, so what the rules find in it no
+     * longer changes, and the answers after a restart ask about the same run over
+     * and over; the oldest set is dropped once there are {@link #PREVIOUS_RUNS}.
+     */
+    private final Map<String, Set<String>> previousRuns = Collections.synchronizedMap(
+            new LinkedHashMap<>(16, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<String, Set<String>> eldest) {
+                    return size() > PREVIOUS_RUNS;
+                }
+            });
+
     public Findings(Sql sql, Queries queries, MetricQueries metrics, ServiceRegistry services,
             Tingles tingles, CodeFrames frames) {
         this.sql = sql;
@@ -329,20 +349,67 @@ public final class Findings {
         return new Answer(page, acked, resolved);
     }
 
+    /**
+     * Which rules run, and whether they gather what a reader is shown beyond the id.
+     *
+     * @param evidence false when only the ids matter: no evidence traces, no code
+     *        frames, no sample, no schema block, no database work (agent.md, "State")
+     */
+    private record Scope(Set<String> kinds, boolean evidence) {
+
+        static final Scope ALL = new Scope(Set.copyOf(Ranked.KINDS), true);
+
+        boolean runs(String... any) {
+            for (String kind : any) {
+                if (kinds.contains(kind)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+
     /** Every rule over the window, ranked, before anything a reader decided is applied. */
     private List<Ranked> rules(Window window, @Nullable String service) {
-        Ancestors ancestors = new Ancestors(sql, window);
+        return rules(window, service, Scope.ALL);
+    }
+
+    private List<Ranked> rules(Window window, @Nullable String service, Scope scope) {
+        Ancestors ancestors = new Ancestors(sql, window, service);
+        boolean evidence = scope.evidence();
         List<Ranked> found = new ArrayList<>();
-        found.addAll(errors(window, service));
-        found.addAll(logErrors(window, service, ancestors));
-        found.addAll(nPlusOne(window, service, ancestors));
-        found.addAll(nPlusOneHttp(window, service, ancestors));
-        found.addAll(slowQueries(window, service));
-        found.addAll(slowEndpoints(window, service));
-        found.addAll(slowJobs(window, service));
-        found.addAll(slowExternal(window, service, ancestors));
-        found.addAll(poolExhausted(window, service));
-        found.addAll(jvm(window, service));
+        if (scope.runs(ERROR)) {
+            found.addAll(errors(window, service, evidence));
+        }
+        if (scope.runs(LOG_ERROR)) {
+            found.addAll(logErrors(window, service, ancestors, evidence));
+        }
+        if (scope.runs(N_PLUS_ONE)) {
+            found.addAll(nPlusOne(window, service, ancestors, evidence));
+        }
+        if (scope.runs(N_PLUS_ONE_HTTP)) {
+            found.addAll(nPlusOneHttp(window, service, ancestors, evidence));
+        }
+        if (scope.runs(SLOW_QUERY)) {
+            found.addAll(slowQueries(window, service, evidence));
+        }
+        if (scope.runs(SLOW_ENDPOINT)) {
+            found.addAll(slowEndpoints(window, service, evidence));
+        }
+        if (scope.runs(SLOW_JOB)) {
+            found.addAll(slowJobs(window, service, evidence));
+        }
+        if (scope.runs(SLOW_EXTERNAL)) {
+            found.addAll(slowExternal(window, service, ancestors, evidence));
+        }
+        if (scope.runs(POOL_EXHAUSTED)) {
+            found.addAll(poolExhausted(window, service));
+        }
+        if (scope.runs(GC_PAUSE, HEAP_PRESSURE, THREAD_GROWTH)) {
+            found.addAll(jvm(window, service));
+        }
+        // The JVM rules come as one; a kind the scope did not ask for is dropped.
+        found.removeIf(each -> !scope.kinds().contains(each.finding().kind()));
         found.sort(Ranked.ORDER);
         return found;
     }
@@ -413,24 +480,38 @@ public final class Findings {
      * {@code start} marks at or before the end of the window: {@code [the one
      * before, the newest)}, from the beginning of the data when there is only one,
      * and nothing at all when there is none, so every finding of a service that
-     * never restarted is {@code new}. The rules run once per service of the page.
+     * never restarted is {@code new}. The rules run once per service of the page,
+     * only those of the kinds it has there, and for the ids alone.
      */
     private List<Finding> states(List<Finding> page, Window window) {
+        Map<String, Set<String>> kinds = new LinkedHashMap<>();
+        for (Finding finding : page) {
+            if (!REGRESSION.equals(finding.kind())) {
+                kinds.computeIfAbsent(finding.service(), service -> new HashSet<>()).add(finding.kind());
+            }
+        }
         Map<String, Set<String>> before = new HashMap<>();
+        kinds.forEach((service, asked) -> before.put(service, previousRun(service, asked, window)));
+
         List<Finding> labelled = new ArrayList<>(page.size());
         for (Finding finding : page) {
             if (REGRESSION.equals(finding.kind())) {
                 labelled.add(finding.withState(REGRESSED));
                 continue;
             }
-            Set<String> previous = before.computeIfAbsent(finding.service(),
-                    service -> previousRun(service, window));
+            Set<String> previous = before.getOrDefault(finding.service(), Set.of());
             labelled.add(finding.withState(previous.contains(finding.id()) ? ONGOING : NEW));
         }
         return labelled;
     }
 
-    private Set<String> previousRun(String service, Window window) {
+    /**
+     * The ids the rules of {@code asked} find over the previous run of a service.
+     *
+     * <p>A kind this server already asked about for the same run is read from
+     * {@link #previousRuns}; the others run together, once, and are kept.
+     */
+    private Set<String> previousRun(String service, Set<String> asked, Window window) {
         List<Long> starts = sql.query("SELECT at_ms FROM mark WHERE name = ? AND service = ?"
                         + " AND at_ms <= ? ORDER BY at_ms DESC, id DESC LIMIT 2",
                 List.of(Marks.START, service, window.to()), rs -> rs.getLong(1));
@@ -439,7 +520,35 @@ public final class Findings {
         }
         long newest = starts.get(0);
         long from = starts.size() > 1 ? starts.get(1) : 0;
-        return new HashSet<>(byId(Window.of(from, newest - 1), service).keySet());
+        String run = service + "\0" + from + "\0" + newest + "\0";
+
+        Set<String> ids = new HashSet<>();
+        Set<String> missing = new HashSet<>();
+        for (String kind : asked) {
+            Set<String> known = previousRuns.get(run + kind);
+            if (known == null) {
+                missing.add(kind);
+            } else {
+                ids.addAll(known);
+            }
+        }
+        if (!missing.isEmpty()) {
+            Map<String, Set<String>> byKind = new HashMap<>();
+            for (String kind : missing) {
+                byKind.put(kind, new HashSet<>());
+            }
+            for (Ranked each : rules(Window.of(from, newest - 1), service, new Scope(missing, false))) {
+                Set<String> ofKind = byKind.get(each.finding().kind());
+                if (ofKind != null) {
+                    ofKind.add(each.finding().id());
+                }
+            }
+            byKind.forEach((kind, found) -> {
+                previousRuns.put(run + kind, Set.copyOf(found));
+                ids.addAll(found);
+            });
+        }
+        return ids;
     }
 
     /** A finding with the impact it is ranked by inside its kind. */
@@ -469,9 +578,12 @@ public final class Findings {
 
     // --- error ---------------------------------------------------------------
 
-    private List<Ranked> errors(Window window, @Nullable String service) {
+    private List<Ranked> errors(Window window, @Nullable String service, boolean evidence) {
         List<Ranked> found = new ArrayList<>();
-        for (Stats.ErrorGroup group : queries.errors(window, service, GROUPS, null)) {
+        List<Stats.ErrorGroup> groups = evidence
+                ? queries.errors(window, service, GROUPS, null)
+                : queries.errorGroups(window, service, GROUPS, null);
+        for (Stats.ErrorGroup group : groups) {
             if (group.count() <= 0) {
                 continue;
             }
@@ -493,8 +605,8 @@ public final class Findings {
                     new Subject(null, null, group.errorId(), null, null, null, null, null),
                     numbers, null,
                     frames.ofStacktrace(stacktrace),
-                    traceIds(queries.tracesContaining(window, "error_id = ?", group.errorId(),
-                            EVIDENCE_TRACES, false)));
+                    evidence ? traceIds(queries.tracesContaining(window, "error_id = ?",
+                            group.errorId(), EVIDENCE_TRACES, false)) : List.of());
             found.add(new Ranked(finding, group.count()));
         }
         return found;
@@ -520,7 +632,8 @@ public final class Findings {
      * Java regular expression rather than SQL, so the rows are read and grouped
      * here; the cap is the same order as the dependency scan's.
      */
-    private List<Ranked> logErrors(Window window, @Nullable String service, Ancestors ancestors) {
+    private List<Ranked> logErrors(Window window, @Nullable String service, Ancestors ancestors,
+            boolean evidence) {
         List<Object> params = new ArrayList<>(List.of(window.from(), window.to()));
         String where = "l.at_ms BETWEEN ? AND ? AND l.severity_number >= " + ERROR_SEVERITY
                 + " AND (t.trace_id IS NULL OR t.error_count = 0)";
@@ -541,9 +654,11 @@ public final class Findings {
                     named.putIfAbsent(key, new String[]{rs.getString("service"), logger, message});
                     byGroup.computeIfAbsent(key, k -> new ArrayList<>())
                             .add(new LogLine(rs.getLong("at_ms"), rs.getString("trace_id"),
-                                    endpointOf(ancestors, rs.getString("span_id"),
-                                            rs.getString("root_name")),
-                                    AttrJson.decode(rs.getString("attributes"))));
+                                    evidence
+                                            ? endpointOf(ancestors, rs.getString("span_id"),
+                                                    rs.getString("root_name"))
+                                            : endpointOf(null, null, rs.getString("root_name")),
+                                    evidence ? AttrJson.decode(rs.getString("attributes")) : Map.of()));
                 });
 
         List<Ranked> found = new ArrayList<>();
@@ -592,9 +707,9 @@ public final class Findings {
     }
 
     /** The endpoint a log record belongs to, as an {@code error} finding's endpoints are found. */
-    private static String endpointOf(Ancestors ancestors, @Nullable String spanId,
+    private static String endpointOf(@Nullable Ancestors ancestors, @Nullable String spanId,
             @Nullable String rootName) {
-        if (spanId != null && !spanId.isBlank()) {
+        if (ancestors != null && spanId != null && !spanId.isBlank()) {
             Queries.Ancestry.Entry entry = ancestors.get().entryOf(spanId);
             if (entry != null) {
                 return entry.endpoint();
@@ -630,7 +745,8 @@ public final class Findings {
      * callers already use, because two endpoints of one trace each running the
      * statement four times is not an N+1 and grouping by trace alone cannot tell.
      */
-    private List<Ranked> nPlusOne(Window window, @Nullable String service, Ancestors ancestors) {
+    private List<Ranked> nPlusOne(Window window, @Nullable String service, Ancestors ancestors,
+            boolean evidence) {
         List<String[]> candidates = candidates(window, service);
         if (candidates.isEmpty()) {
             return List.of();
@@ -675,7 +791,7 @@ public final class Findings {
                                     queryName(rs.getString("db_operation"), rs.getString("db_table"),
                                             rs.getString("db_statement")),
                                     1, rs.getLong("duration_ns") / 1_000_000.0, rs.getLong("start_ms"),
-                                    AttrJson.decode(rs.getString("attributes"))));
+                                    evidence ? AttrJson.decode(rs.getString("attributes")) : Map.of()));
                 });
 
         Map<String, List<Repeat>> byEndpointAndQuery = new LinkedHashMap<>();
@@ -712,8 +828,8 @@ public final class Findings {
         List<Ranked> found = new ArrayList<>();
         byEndpointAndQuery.values().forEach(affected -> {
             Repeat first = affected.get(0);
-            long requests = requestsByEndpoint.computeIfAbsent(first.endpointId(),
-                    id -> requests(window, service, id));
+            long requests = evidence ? requestsByEndpoint.computeIfAbsent(first.endpointId(),
+                    id -> requests(window, service, id)) : 0;
             int[] repeats = new int[affected.size()];
             double totalMs = 0;
             for (int i = 0; i < affected.size(); i++) {
@@ -742,7 +858,7 @@ public final class Findings {
                 if (traces.size() < EVIDENCE_TRACES && !traces.contains(repeat.traceId())) {
                     traces.add(repeat.traceId());
                 }
-                if (code.isEmpty()) {
+                if (evidence && code.isEmpty()) {
                     // The newest request that has a code location wins; none has one when the
                     // application ran without the extension, and then the finding names no line.
                     code = frames.ofAttributes(repeat.attributes());
@@ -759,8 +875,8 @@ public final class Findings {
                     numbers, first.statement(),
                     code,
                     List.copyOf(traces))
-                    .withSchema(SchemaBlock.of(first.statement(),
-                            catalogs.computeIfAbsent(first.service(), catalog::forService)));
+                    .withSchema(evidence ? SchemaBlock.of(first.statement(),
+                            catalogs.computeIfAbsent(first.service(), catalog::forService)) : null);
             found.add(new Ranked(finding, affected.size() * (double) median));
         });
         return found;
@@ -806,7 +922,8 @@ public final class Findings {
      * spans and the parent-chain walk — because the call's target lives in the
      * attributes rather than in a column.
      */
-    private List<Ranked> nPlusOneHttp(Window window, @Nullable String service, Ancestors ancestors) {
+    private List<Ranked> nPlusOneHttp(Window window, @Nullable String service, Ancestors ancestors,
+            boolean evidence) {
         Queries.Ancestry ancestry = ancestors.get();
         Map<String, List<CallRepeat>> byEntry = new LinkedHashMap<>();
         for (SpanRecord span : queries.outboundHttp(window, service)) {
@@ -853,8 +970,8 @@ public final class Findings {
         List<Ranked> found = new ArrayList<>();
         byEndpointAndCall.values().forEach(affected -> {
             CallRepeat first = affected.get(0);
-            long requests = requestsByEndpoint.computeIfAbsent(first.endpointId(),
-                    id -> requests(window, service, id));
+            long requests = evidence ? requestsByEndpoint.computeIfAbsent(first.endpointId(),
+                    id -> requests(window, service, id)) : 0;
             int[] repeats = new int[affected.size()];
             double totalMs = 0;
             for (int i = 0; i < affected.size(); i++) {
@@ -883,7 +1000,7 @@ public final class Findings {
                 if (traces.size() < EVIDENCE_TRACES && !traces.contains(repeat.traceId())) {
                     traces.add(repeat.traceId());
                 }
-                if (code.isEmpty()) {
+                if (evidence && code.isEmpty()) {
                     code = frames.ofAttributes(repeat.attributes());
                 }
             }
@@ -903,9 +1020,12 @@ public final class Findings {
 
     // --- slow query ----------------------------------------------------------
 
-    private List<Ranked> slowQueries(Window window, @Nullable String service) {
+    private List<Ranked> slowQueries(Window window, @Nullable String service, boolean evidence) {
         List<Stats.QueryStats> slow = new ArrayList<>();
-        for (Stats.QueryStats query : queries.queries(window, service, "total", GROUPS, null)) {
+        List<Stats.QueryStats> groups = evidence
+                ? queries.queries(window, service, "total", GROUPS, null)
+                : queries.queryGroups(window, service, "total", GROUPS, null);
+        for (Stats.QueryStats query : groups) {
             if (query.p95Ms() > tingles.slowQueryMs()) {
                 slow.add(query);
             }
@@ -917,7 +1037,8 @@ public final class Findings {
         for (Stats.QueryStats query : slow) {
             ids.add(query.queryId());
         }
-        Map<String, Map<String, Object>> samples = sampleAttributes(window, "query_id", ids);
+        Map<String, Map<String, Object>> samples = evidence
+                ? sampleAttributes(window, "query_id", ids) : Map.of();
 
         List<Ranked> found = new ArrayList<>();
         for (Stats.QueryStats query : slow) {
@@ -943,8 +1064,8 @@ public final class Findings {
                     new Subject(null, query.queryId(), null, null, null, null, null, null),
                     numbers, query.statement(),
                     frames.ofAttributes(samples.get(query.queryId())),
-                    traceIds(queries.tracesContaining(window, "query_id = ?", query.queryId(),
-                            EVIDENCE_TRACES, true)))
+                    evidence ? traceIds(queries.tracesContaining(window, "query_id = ?",
+                            query.queryId(), EVIDENCE_TRACES, true)) : List.of())
                     // The group already carries the block /api/queries shows; a finding
                     // and a query row never disagree about the same statement.
                     .withSchema(query.schema());
@@ -955,7 +1076,7 @@ public final class Findings {
 
     // --- slow endpoint -------------------------------------------------------
 
-    private List<Ranked> slowEndpoints(Window window, @Nullable String service) {
+    private List<Ranked> slowEndpoints(Window window, @Nullable String service, boolean evidence) {
         List<Stats.EndpointStats> slow = new ArrayList<>();
         for (Stats.EndpointStats endpoint : queries.endpoints(window, service, null)) {
             if (endpoint.p95Ms() > tingles.slowRequestMs()) {
@@ -965,7 +1086,8 @@ public final class Findings {
         if (slow.isEmpty()) {
             return List.of();
         }
-        Map<String, Queries.DbWork> databaseWork = queries.databaseWork(window, service);
+        Map<String, Queries.DbWork> databaseWork = evidence
+                ? queries.databaseWork(window, service) : Map.of();
 
         List<Ranked> found = new ArrayList<>();
         for (Stats.EndpointStats endpoint : slow) {
@@ -975,9 +1097,9 @@ public final class Findings {
             double share = endpoint.totalMs() <= 0 ? 0
                     : Math.min(1, work.totalMs() / endpoint.totalMs());
 
-            List<String> sample = traceIds(queries.tracesContaining(window, "endpoint_id = ?",
-                    endpoint.endpointId(), SAMPLE_TRACES, true));
-            List<String> traces = evidence(sample);
+            List<String> sample = evidence ? traceIds(queries.tracesContaining(window,
+                    "endpoint_id = ?", endpoint.endpointId(), SAMPLE_TRACES, true)) : List.of();
+            List<String> traces = evidenceOf(sample);
             Queries.TimeSplit split = queries.timeSplit(window, endpoint.service(), sample);
 
             Map<String, Object> numbers = new LinkedHashMap<>();
@@ -1027,7 +1149,7 @@ public final class Findings {
      * or batch step is reported, and it measures over the runs of a job exactly what
      * {@code slow-endpoint} measures over the requests of an endpoint.
      */
-    private List<Ranked> slowJobs(Window window, @Nullable String service) {
+    private List<Ranked> slowJobs(Window window, @Nullable String service, boolean evidence) {
         List<Job> slow = new ArrayList<>();
         for (Job job : jobs(window, service)) {
             if (job.p95Ms() > tingles.slowRequestMs()) {
@@ -1037,8 +1159,10 @@ public final class Findings {
         if (slow.isEmpty()) {
             return List.of();
         }
-        Map<String, Queries.DbWork> databaseWork = queries.jobDatabaseWork(window, service);
-        Map<String, Map<String, Object>> samples = jobSampleAttributes(window, service);
+        Map<String, Queries.DbWork> databaseWork = evidence
+                ? queries.jobDatabaseWork(window, service) : Map.of();
+        Map<String, Map<String, Object>> samples = evidence
+                ? jobSampleAttributes(window, service) : Map.of();
 
         List<Ranked> found = new ArrayList<>();
         for (Job job : slow) {
@@ -1048,10 +1172,10 @@ public final class Findings {
             double msPerRun = job.runs() == 0 ? 0 : work.totalMs() / job.runs();
             double share = job.totalMs() <= 0 ? 0 : Math.min(1, work.totalMs() / job.totalMs());
 
-            List<String> sample = traceIds(queries.tracesContaining(window,
+            List<String> sample = evidence ? traceIds(queries.tracesContaining(window,
                     "parent_span_id IS NULL AND s.kind = 'INTERNAL' AND s.service = ? AND s.name = ?",
-                    List.of(job.service(), job.name()), SAMPLE_TRACES, true));
-            List<String> traces = evidence(sample);
+                    List.of(job.service(), job.name()), SAMPLE_TRACES, true)) : List.of();
+            List<String> traces = evidenceOf(sample);
             Queries.TimeSplit split = queries.timeSplit(window, job.service(), sample);
 
             Map<String, Object> numbers = new LinkedHashMap<>();
@@ -1140,7 +1264,8 @@ public final class Findings {
      * than by a {@code GROUP BY}; the percentiles are the nearest-rank ones
      * {@code PERCENTILE_DISC} gives the other rules.
      */
-    private List<Ranked> slowExternal(Window window, @Nullable String service, Ancestors ancestors) {
+    private List<Ranked> slowExternal(Window window, @Nullable String service, Ancestors ancestors,
+            boolean evidence) {
         Map<String, List<SpanRecord>> byGroup = new LinkedHashMap<>();
         for (SpanRecord span : queries.outboundHttp(window, service)) {
             byGroup.computeIfAbsent(
@@ -1150,7 +1275,8 @@ public final class Findings {
         List<Ranked> found = new ArrayList<>();
         byGroup.forEach((key, calls) -> {
             String[] parts = key.split("\0", 3);
-            Ranked ranked = external(window, ancestors, parts[0], parts[1], parts[2], calls);
+            Ranked ranked = external(window, evidence ? ancestors : null, parts[0], parts[1], parts[2],
+                    calls);
             if (ranked != null) {
                 found.add(ranked);
             }
@@ -1158,8 +1284,9 @@ public final class Findings {
         return found;
     }
 
-    private @Nullable Ranked external(Window window, Ancestors ancestors, String service, String target,
-            String name, List<SpanRecord> calls) {
+    /** One group; with no {@code ancestors} it is the id alone, with no callers and no evidence. */
+    private @Nullable Ranked external(Window window, @Nullable Ancestors ancestors, String service,
+            String target, String name, List<SpanRecord> calls) {
         double[] durations = new double[calls.size()];
         double totalMs = 0;
         long errors = 0;
@@ -1188,7 +1315,8 @@ public final class Findings {
         numbers.put("p95Ms", p95Ms);
         numbers.put("maxMs", durations[durations.length - 1]);
         numbers.put("totalMs", totalMs);
-        numbers.put("callers", callers(externalCallers(ancestors, calls, service)));
+        numbers.put("callers", ancestors == null ? List.of()
+                : callers(externalCallers(ancestors, calls, service)));
 
         String severity = p95Ms > 4 * tingles.slowRequestMs() ? HIGH : MEDIUM;
         Finding finding = new Finding(
@@ -1201,8 +1329,9 @@ public final class Findings {
                         + Numbers.millis(totalMs) + " in total",
                 new Subject(null, null, null, null, null, target, null, null),
                 numbers, null,
-                frames.ofAttributes(newest == null ? null : newest.attributes()),
-                externalTraces(window, calls));
+                ancestors == null ? List.of()
+                        : frames.ofAttributes(newest == null ? null : newest.attributes()),
+                ancestors == null ? List.of() : externalTraces(window, calls));
         return new Ranked(finding, totalMs);
     }
 
@@ -1543,17 +1672,19 @@ public final class Findings {
 
         private final Sql sql;
         private final Window window;
+        private final @Nullable String service;
         private Queries.@Nullable Ancestry ancestry;
 
-        private Ancestors(Sql sql, Window window) {
+        private Ancestors(Sql sql, Window window, @Nullable String service) {
             this.sql = sql;
             this.window = window;
+            this.service = service;
         }
 
         Queries.Ancestry get() {
             Queries.Ancestry loaded = ancestry;
             if (loaded == null) {
-                loaded = Queries.Ancestry.of(sql, window);
+                loaded = Queries.Ancestry.of(sql, window, service);
                 ancestry = loaded;
             }
             return loaded;
@@ -1613,7 +1744,7 @@ public final class Findings {
     }
 
     /** The evidence a finding carries, which is the head of the sample it read. */
-    private static List<String> evidence(List<String> sample) {
+    private static List<String> evidenceOf(List<String> sample) {
         return List.copyOf(sample.subList(0, Math.min(EVIDENCE_TRACES, sample.size())));
     }
 

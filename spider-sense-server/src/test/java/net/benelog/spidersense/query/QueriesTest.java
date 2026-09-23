@@ -422,4 +422,22 @@ class QueriesTest {
         // Services survive: the picker should not empty itself because a window was cleared.
         assertThat(store.services().count()).isEqualTo(1);
     }
+
+    @Test
+    void aTraceContainsAGroupOnlyThroughASpanThatStartsInTheWindow() {
+        Span.Builder late = Otlp.span(traceId(1), spanId(1), "GET /late", Span.SpanKind.SPAN_KIND_SERVER,
+                NOW + 50_000, 20_000);
+        Span.Builder early = Otlp.span(traceId(2), spanId(2), "GET /early", Span.SpanKind.SPAN_KIND_SERVER,
+                NOW, 2_000);
+        decoder.accept(Otlp.traces(Otlp.service("orders"),
+                late, Otlp.child(late, spanId(11), "lookup", Span.SpanKind.SPAN_KIND_INTERNAL, NOW + 65_000, 5),
+                early, Otlp.child(early, spanId(12), "lookup", Span.SpanKind.SPAN_KIND_INTERNAL, NOW + 1_000, 5)));
+        flush();
+
+        assertThat(queries.tracesContaining(window, "name = ?", "lookup", 10, false))
+                .as("the span of the first trace starts after the window ends")
+                .extracting(Stats.TraceSummary::traceId).containsExactly(traceId(2));
+        assertThat(queries.tracesContaining(Window.of(NOW - 60_000, NOW + 70_000), "name = ?", "lookup", 10, false))
+                .extracting(Stats.TraceSummary::traceId).containsExactly(traceId(1), traceId(2));
+    }
 }

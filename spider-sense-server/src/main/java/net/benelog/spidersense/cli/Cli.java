@@ -150,6 +150,9 @@ public final class Cli {
         String base = named == null ? defaultUrl : named;
         try {
             return Remote.run(options, base, out, err);
+        } catch (Remote.Busy e) {
+            err.println("spider-sense: " + e.said());
+            return USAGE;
         } catch (Remote.Unreachable e) {
             if (named != null) {
                 err.println("spider-sense: no Spider Sense at " + base + " (" + e.getMessage() + ")");

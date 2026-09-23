@@ -593,6 +593,10 @@ When nothing answers at the default URL, the CLI opens the H2 database in proces
 `AUTO_SERVER=TRUE` makes this possible (xref:storage.adoc[Storage]).
 After the application has crashed and taken the UI with it, `findings --since=start` still answers.
 
+"Nothing answers" means the connection was refused or not made within 2 seconds.
+A Spider Sense that accepted the connection and has not answered within 2 minutes is busy, not gone.
+The CLI then prints `spider-sense: the Spider Sense at <url> did not answer within 2 minutes` and exits `2` without reading the file, since reading it in process would be slower still.
+
 Naming `--url` states that a server is there.
 When nothing answers it, the CLI prints `spider-sense: no Spider Sense at <url> (…)` and exits `2`, rather than silently falling back to a file that may hold a different application.
 `--db=<path or jdbc url>` states the opposite, where to read, and the CLI goes straight to that file without asking any server.

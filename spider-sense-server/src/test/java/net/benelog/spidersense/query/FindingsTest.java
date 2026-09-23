@@ -1088,4 +1088,73 @@ class FindingsTest {
         assertThat(findings.findings(window, null, 20)).extracting(Findings.Finding::state)
                 .containsOnly(Findings.NEW);
     }
+
+    @Test
+    void anNPlusOneIsTheSameFindingWhenItsServiceIsNamed() {
+        Span.Builder root = entry(1, "/orders/{id}", 60);
+        List<Span.Builder> spans = new ArrayList<>();
+        spans.add(root);
+        for (int i = 0; i < 6; i++) {
+            spans.add(query(root, 100 + i, "select * from order_line where order_id = ?", "order_line",
+                    NOW + i, 2));
+        }
+        decoder.accept(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
+        decoder.accept(Otlp.traces(Otlp.service("stock"), entry(2, "/stock", 5)));
+        flush();
+
+        List<Findings.Finding> named = findings.findings(window, "orders", 20);
+
+        assertThat(named).extracting(Findings.Finding::id).containsExactlyElementsOf(
+                of(Findings.N_PLUS_ONE).stream().map(Findings.Finding::id).toList());
+        assertThat(named.get(0).title()).isEqualTo("GET /orders/{id} runs SELECT order_line 6 times per request");
+    }
+
+    @Test
+    void anNPlusOneOfThePreviousRunIsOngoing() {
+        nPlusOneAt(1, NOW - 50_000);
+        store.marks().create("start", "orders", "pid 2", NOW - 30_000);
+        nPlusOneAt(2, NOW);
+
+        List<Findings.Finding> ranked = findings.findings(Window.of(NOW - 30_000, NOW + 60_000), null, 20);
+
+        assertThat(ranked).extracting(Findings.Finding::kind).containsExactly(Findings.N_PLUS_ONE);
+        assertThat(ranked.get(0).state()).isEqualTo(Findings.ONGOING);
+    }
+
+    @Test
+    void whatThePreviousRunHadIsAskedOnceAndKept() {
+        decoder.accept(Otlp.traces(Otlp.service("orders"), entryAt(1, "/a", NOW - 50_000, 2000)));
+        flush();
+        store.marks().create("start", "orders", "pid 2", NOW - 30_000);
+        decoder.accept(Otlp.traces(Otlp.service("orders"),
+                entryAt(2, "/a", NOW, 2000), entryAt(3, "/b", NOW, 1500)));
+        flush();
+        Window afterRestart = Window.of(NOW - 30_000, NOW + 60_000);
+        assertThat(findings.findings(afterRestart, null, 20)).extracting(Findings.Finding::state)
+                .containsExactly(Findings.ONGOING, Findings.NEW);
+
+        // A span of the closed run arriving late changes nothing the server already knows.
+        decoder.accept(Otlp.traces(Otlp.service("orders"), entryAt(4, "/b", NOW - 45_000, 1500)));
+        flush();
+
+        assertThat(findings.findings(afterRestart, null, 20)).extracting(Findings.Finding::state)
+                .containsExactly(Findings.ONGOING, Findings.NEW);
+        Findings fresh = new Findings(store.sql(), queries, metrics, store.services(), store.tingles(),
+                new CodeFrames(""));
+        assertThat(fresh.findings(afterRestart, null, 20)).extracting(Findings.Finding::state)
+                .as("a server that never asked reads the run as it is now")
+                .containsExactly(Findings.ONGOING, Findings.ONGOING);
+    }
+
+    private void nPlusOneAt(int n, long at) {
+        Span.Builder root = entryAt(n, "/orders/{id}", at, 60);
+        List<Span.Builder> spans = new ArrayList<>();
+        spans.add(root);
+        for (int i = 0; i < 6; i++) {
+            spans.add(query(root, n * 100 + i, "select * from order_line where order_id = ?", "order_line",
+                    at + i, 2));
+        }
+        decoder.accept(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
+        flush();
+    }
 }

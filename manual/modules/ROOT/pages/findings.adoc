@@ -663,3 +663,5 @@ The previous run of a service is the time between its two newest `start` marks a
 With one `start` mark the previous run reaches back to the oldest data.
 With none, such as an imported session without marks, every finding of the service is `new`.
 The rules run over the previous run with the same thresholds as over the window.
+Only the rules of the kinds the service has on the page run there, and they look for ids alone, without evidence traces or code frames.
+A running Spider Sense remembers what it found in a previous run, so only the first answer after a restart pays for reading that run.
