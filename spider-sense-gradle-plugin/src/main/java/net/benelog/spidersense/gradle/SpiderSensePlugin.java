@@ -282,6 +282,9 @@ public class SpiderSensePlugin implements Plugin<Project> {
                 .orElse(List.of()));
         arguments.addAll(option("retention.spans", extension.getRetentionSpans()));
         arguments.addAll(option("ingest.max-spans-per-second", extension.getMaxSpansPerSecond()));
+        arguments.addAll(extension.getSourceDirs().map(dirs -> dirs.isEmpty()
+                ? List.<String>of()
+                : List.of("-Dspidersense.source.dirs=" + String.join(",", dirs))));
         return arguments;
     }
 

@@ -17,7 +17,10 @@ final class Help {
 
             Commands:
               status                       what is running, where the database is, how much it holds
-              findings [--hide-acked]      the findings of the window
+              findings [--hide-acked] [--no-git]
+                                           the findings of the window; under each code frame,
+                                           the suspect change git names (uncommitted, or the
+                                           commit that last changed the line)
               ack <finding id> [--note=<text>]
                                            accepts a known finding, so it is ranked last
               unack <finding id>           withdraws that acknowledgement
@@ -67,6 +70,7 @@ final class Help {
               --json               the JSON of api.md instead of the text
               --full               whole statements, every repeated span
               --hide-acked         findings only: leave acknowledged findings out
+              --no-git             findings only: no suspect-change line under the code frames
 
             A selector is a duration (30s, 5m, 2h, 1d), epoch milliseconds, a mark name,
             start (the newest automatic start mark) or now.

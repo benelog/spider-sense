@@ -235,9 +235,16 @@ public final class TraceApi {
         if (found.isEmpty()) {
             throw new HttpException(HttpStatus.NOT_FOUND, "No such error in this window: " + errorId);
         }
+        Stats.ErrorGroup group = found.get(0);
         Stats.Buckets buckets = queries.errorBuckets(window, errorId);
+        // The sample's application frames, the ones a finding's code would carry, so
+        // the page can show their source without a framework list of its own (ui.md).
+        Stats.ErrorSample sample = group.sample();
+        List<String> code = sample == null ? List.of()
+                : reports.codeFrames().ofStacktrace(sample.stacktrace());
         return WebResponse.json(Json.obj()
-                .put("error", Codecs.errorGroup(found.get(0)))
+                .put("error", Codecs.errorGroup(group))
+                .put("code", Codecs.strings(code))
                 .put("series", Json.obj()
                         .put("t", Codecs.longs(buckets.t()))
                         .put("count", Codecs.longs(buckets.requests())))

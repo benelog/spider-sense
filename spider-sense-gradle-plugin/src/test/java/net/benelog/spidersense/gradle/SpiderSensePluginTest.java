@@ -186,6 +186,7 @@ class SpiderSensePluginTest {
                 ignoreEndpoints = ['/actuator/**', '/ping']
                 retentionSpans = 500000
                 maxSpansPerSecond = 2000
+                sourceDirs = ['core/src/main/java', 'web/src/main/kotlin']
                 """.replace("%JAR%", stubJar.toAbsolutePath().toString()));
 
         String output = probe();
@@ -205,6 +206,7 @@ class SpiderSensePluginTest {
         assertThat(output).contains("-Dspidersense.ignore.endpoints=/actuator/**,/ping");
         assertThat(output).contains("-Dspidersense.retention.spans=500000");
         assertThat(output).contains("-Dspidersense.ingest.max-spans-per-second=2000");
+        assertThat(output).contains("-Dspidersense.source.dirs=core/src/main/java,web/src/main/kotlin");
     }
 
     @Test

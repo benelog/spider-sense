@@ -111,7 +111,8 @@ class ConfigFileTest {
                 "spidersense.service", "spidersense.db", "spidersense.retention.hours",
                 "spidersense.retention.spans", "spidersense.ingest.max-spans-per-second",
                 "spidersense.slow.request.ms", "spidersense.slow.query.ms", "spidersense.open",
-                "spidersense.app.packages", "spidersense.ignore.endpoints");
+                "spidersense.app.packages", "spidersense.ignore.endpoints",
+                "spidersense.source.dirs");
     }
 
     private static String capturingStderr(Runnable body) {

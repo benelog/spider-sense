@@ -5,6 +5,7 @@ import { RANGES, state } from './api.js';
 import * as router from './router.js';
 import * as ui from './ui.js';
 import { h, fill, dialog, copyBlock, closeDrawer, drawerOpen } from './ui.js';
+import { EDITORS, editor, setEditor } from './frames.js';
 import { retheme, redrawAll, seedServiceColors } from './charts.js';
 import { rate as fmtRate, count as fmtCount, bytes } from './format.js';
 
@@ -342,6 +343,10 @@ async function boot() {
   });
 
   fill(el.rangeSelect, RANGES.map((r) => h('option', { value: r.id }, r.label)));
+  const editorSelect = document.getElementById('editor-select');
+  fill(editorSelect, EDITORS.map((x) => h('option', { value: x.id }, x.label)));
+  editorSelect.value = editor();
+  editorSelect.addEventListener('change', () => setEditor(editorSelect.value));
   applyTheme(localStorage.getItem(THEME_KEY) || '');
 
   el.themeToggle.addEventListener('click', toggleTheme);

@@ -12,7 +12,7 @@ The launcher treats a first argument that does not start with `-` as a command a
 | Command | Does |
 |---|---|
 | `status` | what is running, where the database is, how much it holds |
-| `findings [--hide-acked]` | the findings of the window |
+| `findings [--hide-acked] [--no-git]` | the findings of the window, with the suspect change under each code frame |
 | `ack <finding id> [--note=…]` | accepts a known finding, which is then ranked after every other one, its severity reading `acked` |
 | `unack <finding id>` | withdraws that acknowledgement; exit code `4` when there was none |
 | `trace <traceId> [--full]` | one trace as a tree |
@@ -43,6 +43,7 @@ The launcher treats a first argument that does not start with `-` as a command a
 | `--json` | off | print the JSON of api.md instead of the text |
 | `--full` | off | keep statements whole and expand collapsed spans |
 | `--hide-acked` | off | `findings` only: leave the acknowledged findings out instead of ranking them last |
+| `--no-git` | off | `findings` only: no suspect-change line under the code frames |
 
 `compare` takes no `--since`: its windows are the two selectors, and `--until` closes the second one.
 `init` takes none of these: it reads nothing, and its own options are `--dir=<project dir>` (the working directory by default), `--jar=<path>` (the jar it was started from by default), `--no-skill` and `--mcp`.
@@ -240,6 +241,18 @@ $ java -jar spider-sense.jar findings --since=before
 ```
 
 The table is the answer and the blocks under it are the evidence, one per row in the same order: the `why` sentence after the id, then the `numbers`, then the statement when the finding has one, then the application frames when any are known, then the trace ids.
+
+The run above was made outside the example's repository, so its frame carries no suspect-change line.
+Run where the frame's file is, inside a repository, the CLI adds one under each frame that resolves:
+
+```
+   orders.web.MiscController.flaky(MiscController.java:24)
+     changed in 4743e1d (2 hours ago): Add a flaky endpoint to the example
+```
+
+`uncommitted` in its place means the file is in `git diff`, staged or not, or is untracked; `changed in` names the commit `git blame` gives for that line, its age and its subject.
+The frame resolves under `spidersense.source.dirs`, by default `src/main/java` and `src/main/kotlin` of the working directory and of each immediate subdirectory.
+It is the one line of any answer the CLI adds itself, so the HTTP API and MCP never carry it; `--no-git` and `--json` leave it out.
 
 ### `trace <traceId>`
 

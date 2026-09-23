@@ -35,6 +35,9 @@ import org.jspecify.annotations.Nullable;
  *                         of them is written with {@code entry} false and is therefore not a
  *                         request (design.md, "Ignored endpoints"). An empty value ignores
  *                         nothing, which is why {@link #string} only falls back on {@code null}.
+ * @param sourceDirs       comma-separated source roots a code frame is resolved under, or null
+ *                         for the default: {@code src/main/java} and {@code src/main/kotlin} of
+ *                         the working directory and of each immediate subdirectory (design.md)
  */
 public record Config(
         String host,
@@ -48,7 +51,8 @@ public record Config(
         long slowQueryMs,
         @Nullable String embeddedService,
         String appPackages,
-        String ignoreEndpoints) {
+        String ignoreEndpoints,
+        @Nullable String sourceDirs) {
 
     public static final String AGENT = "agent";
     public static final String STANDALONE = "standalone";
@@ -80,7 +84,8 @@ public record Config(
                 number(values, "slow.query.ms", 100L),
                 embeddedService(values),
                 string(values, "app.packages", ""),
-                string(values, "ignore.endpoints", IgnoredEndpoints.DEFAULT));
+                string(values, "ignore.endpoints", IgnoredEndpoints.DEFAULT),
+                stringOrNull(values, "source.dirs"));
     }
 
     public boolean agentMode() {

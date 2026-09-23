@@ -316,6 +316,8 @@ globalThis.fetch = async (input, init) => {
       return body ? reply(body) : reply({ error: 'No trace ' + one[1] + ' in the recording' }, 404);
     }
     if (path === '/api/logs') return reply(await logs(params));
+    // The source files are on the machine the recording was made on, not in it.
+    if (path === '/api/source') return reply({ error: 'No source in the recording' }, 404);
     const found = resolve(u);
     if (!found.key) {
       console.warn('[demo] not recorded: ' + found.asked);

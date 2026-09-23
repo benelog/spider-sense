@@ -185,6 +185,36 @@ Those frames are the truest of the three, because they are the span's own thread
 An `n-plus-one` or `n-plus-one-http` finding takes its `code` from the span of the repeated group that carries `code.stacktrace`, which is the fifth repeat, and falls back to the group's newest span when none does (an application run without the extension).
 A `slow-job` finding takes its `code` from the `code.function` and `code.namespace` attributes the scheduling instrumentations set on the job's span.
 
+### Source lines and the suspect change
+
+Spider Sense runs on the machine the source is on, so a frame is one file read away from the line it names, and two `git` commands away from the change that last touched it.
+A frame `orders.OrderService.load(OrderService.java:41)` resolves to the first `<root>/orders/OrderService.java` that exists under the roots of `spidersense.source.dirs` ([design.md](design.md#configuration)): by default `src/main/java` and `src/main/kotlin` of the working directory and of each of its immediate subdirectories, which covers a single-module build and a multi-module one.
+A frame without a file and a line (`Unknown Source`, `Native Method`, a `code.function` frame) does not resolve, and neither does one whose path would leave its root: the path is built only from dotted Java identifiers and a plain file name with a source extension, and the file, symbolic links followed, must lie under its root.
+
+**In the UI.** The findings page and the error page show the five lines around the frame's line under each frame that resolves, read on request by `GET /api/source?frame=…` ([api.md](api.md#source)) and never stored, and make the frame a link that opens the file at that line in IntelliJ IDEA or VS Code ([ui.md](ui.md#code-frames)).
+A frame that does not resolve shows nothing more than itself.
+The text rendering does not carry the lines: an agent opens the file itself.
+
+**Suspect change.** The question an agent has about a frame is whether its line is in the change it just made, so the CLI's `findings` adds one line under each `code` frame that resolves to a file of the repository the CLI runs in:
+
+```
+   orders.OrderService.load(OrderService.java:41)
+     changed in 4743e1d (2 hours ago): Run Error Prone and NullAway in every javac
+   orders.web.OrderController.show(OrderController.java:28)
+     uncommitted
+```
+
+- `uncommitted` when the file is in `git diff --name-only` or `git diff --cached --name-only`, or is untracked (`git ls-files --others --exclude-standard`), because a file the agent has just created is the most likely suspect of all; also when `git blame` says the line itself is not committed yet.
+- Otherwise `changed in <hash> (<age>): <subject>`: the first seven characters of the commit `git blame -L <n>,<n> --porcelain` names, its author date as an age in the largest whole unit (`45 seconds ago`, `2 hours ago`, `3 days ago`, `3 weeks ago`, `4 months ago`, `2 years ago`), and its subject.
+- Nothing when the frame does not resolve, when the file lies outside the repository, or when `git blame` has nothing to say about the line (a file edited to be shorter than the frame's line).
+
+It is indented two spaces past the frame, so a reader of the block sees it as the frame's.
+It is off when the working directory is not in a repository or `git` cannot be run, and `--no-git` turns it off; `--json` prints the server's JSON, which never carries it.
+
+This is the one thing the CLI adds to an answer rather than printing what the server or the in-process renderer produced ([CLI](#cli)), and it has to be: the CLI runs in the project directory, where the repository is, and the server may run somewhere else or not at all.
+It is therefore also the one part of a findings answer that is not a function of the window alone: the age depends on when it was asked, and the verdict on the working tree.
+The HTTP API and the MCP `findings` tool answer without it, since neither knows which repository the caller is working in.
+
 ### The schema block
 
 A `slow-query` or `n-plus-one` finding of a service that ran under the agent also says, as a fact read from the database rather than a guess from the statement, which of the columns the statement filters on carry no index:
@@ -549,7 +579,7 @@ The launcher stays dependency-free.
 | Command | Does |
 |---|---|
 | `status` | what is running, where the database is, how much it holds |
-| `findings [--hide-acked]` | the findings of the window |
+| `findings [--hide-acked] [--no-git]` | the findings of the window, with the suspect change under each code frame ([Source lines and the suspect change](#source-lines-and-the-suspect-change)) unless `--no-git` |
 | `ack <finding id> [--note=…]`, `unack <finding id>` | acknowledges a finding, or withdraws that ([Acknowledgements](#acknowledgements)) |
 | `trace <traceId> [--full] [--diff=<traceId>]` | one trace as a tree, or two aligned ([Trace diff](#trace-diff)) |
 | `tail [--kind=] [--until-traces=] [--timeout=]` | tingles as they arrive ([Tail](#tail)) |
@@ -578,6 +608,7 @@ The CLI does not render anything itself: when a Spider Sense is running it fetch
 ```
 
 That is what `AUTO_SERVER=TRUE` buys: the application has crashed, the UI went with it, and `findings --since=start` still answers.
+The one exception to printing what was rendered is the suspect-change line `findings` adds under each code frame ([Source lines and the suspect change](#source-lines-and-the-suspect-change)): it is read from the repository the CLI runs in, added to the text after the server or the in-process renderer produced it, and left out by `--no-git` and by `--json`.
 In that path the thresholds are the defaults or `--slow.request.ms`/`--slow.query.ms`, and the application packages `--app.packages`, since no server is there to ask.
 The file must exist and carry this version's schema: the CLI never creates a database and never upgrades one, because `AUTO_SERVER=TRUE` may have joined the database of an older Spider Sense that is still running, and the server's own open would drop its tables (storage.md).
 A missing file or another schema version is a message on stderr and exit code 2.
@@ -594,7 +625,7 @@ It is what an agent reads to run it without being told how:
 
 1. Start the application under the agent (`-javaagent`, or `JAVA_TOOL_OPTIONS` when the start command is not the agent's to change), and confirm with `status`.
 2. `mark before`, exercise the endpoints in question (or run the tests, or the load generator).
-3. `findings --since=before`; read the top finding, open its trace, locate the code.
+3. `findings --since=before`; read the top finding, its suspect-change lines first (is the frame's line in the change just made?), then open its trace and the code.
 4. Fix; restart if needed (`since=start` then covers the new run).
 5. `mark after`, exercise the same way, `compare --before=before --after=after`, `check`.
 

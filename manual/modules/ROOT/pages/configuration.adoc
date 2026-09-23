@@ -64,6 +64,10 @@ The sources in order of precedence, highest first, are the `--key=value` argumen
 | `spidersense.ignore.endpoints`
 | `/actuator/**,/health,/healthz,/livez,/readyz`
 | Comma-separated glob patterns. An entry span whose endpoint matches one of them is not a request. See <<ignored-endpoints,Ignored endpoints>>.
+
+| `spidersense.source.dirs`
+| `src/main/java` and `src/main/kotlin` of the working directory and of each of its immediate subdirectories
+| Comma-separated source roots, relative ones against the working directory. A code frame resolves to the first file under them that matches its package and file name, which gives the UI its source lines and editor links and the CLI its suspect-change line. An empty value names no root and turns all three off. See <<source-dirs,Source roots>>.
 |===
 
 === On the command line
@@ -210,6 +214,26 @@ A pattern is matched against the endpoint name, which is `GET /actuator/health` 
 `**` matches anything including `/`, `*` matches anything but `/`, and `?` matches one character that is not `/`.
 The match is case-sensitive and covers the whole name.
 `/api/status` shows the list in force as `ignore.endpoints`, and so does the `status` command.
+
+[#source-dirs]
+== Source roots
+
+Spider Sense runs where the source is, so it can show the lines a code frame points at.
+A frame `orders.OrderService.load(OrderService.java:41)` resolves to the first `<root>/orders/OrderService.java` that exists under the roots of `spidersense.source.dirs`.
+
+The default covers a single-module build and a multi-module one: `src/main/java` and `src/main/kotlin` of the working directory, then the same two under each of its immediate subdirectories.
+Under the Gradle plugin, Maven or `java -jar` from the project directory, the working directory is the project's, so the default usually fits.
+Name the roots when the sources live elsewhere, or deeper:
+
+[source,bash]
+----
+java -javaagent:"$SENSE" -Dspidersense.source.dirs=services/orders/src/main/java,shared/src/main/java -jar app.jar
+----
+
+A root that does not exist is left out.
+A frame without a file and a line, such as `Unknown Source`, does not resolve.
+Neither does a frame whose path would leave its root: only dotted Java identifiers and a plain file name with a `.java`, `.kt`, `.groovy` or `.scala` extension make a path, and the file, symbolic links followed, must lie under its root.
+The CLI reads the same property, as `-Dspidersense.source.dirs` before `-jar` or from `spider-sense.properties`, to find a frame's file for its xref:cli.adoc#suspect-change[suspect-change line].
 
 == How to send data
 

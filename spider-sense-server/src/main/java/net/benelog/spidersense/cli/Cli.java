@@ -1,11 +1,15 @@
 package net.benelog.spidersense.cli;
 
+import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 
 import net.benelog.spidersense.api.Reports;
 import net.benelog.spidersense.query.Selectors;
 import net.benelog.spidersense.server.Config;
+import net.benelog.spidersense.source.SourceRoots;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -108,6 +112,37 @@ public final class Cli {
         if (Options.TAIL.equals(options.command())) {
             return Tail.run(options, defaultUrl, out, err);
         }
+        if (Options.FINDINGS.equals(options.command()) && !options.has("json")
+                && !options.has("no-git")) {
+            return findingsWithSuspects(options, defaultUrl, out, err);
+        }
+        return answer(options, defaultUrl, out, err);
+    }
+
+    /**
+     * {@code findings} as the renderer produced it, with the suspect change under each code
+     * frame (agent.md, "Suspect change"): the one addition the CLI makes to an answer, because
+     * the repository is where the CLI runs and not necessarily where the server does.
+     */
+    private static int findingsWithSuspects(Options options, String defaultUrl, PrintStream out,
+            PrintStream err) {
+        ByteArrayOutputStream captured = new ByteArrayOutputStream();
+        int code;
+        try (PrintStream capture = new PrintStream(captured, true, StandardCharsets.UTF_8)) {
+            code = answer(options, defaultUrl, capture, err);
+        }
+        String text = captured.toString(StandardCharsets.UTF_8);
+        SuspectChange suspects = code == OK
+                ? SuspectChange.in(Path.of(""), SourceRoots.fromSystemProperties(),
+                        System.currentTimeMillis())
+                : null;
+        out.print(suspects == null ? text : suspects.annotate(text));
+        out.flush();
+        return code;
+    }
+
+    /** HTTP first, the file second, as {@link #dispatch} describes. */
+    private static int answer(Options options, String defaultUrl, PrintStream out, PrintStream err) {
         if (options.has("db")) {
             return Local.run(options, out, err);
         }

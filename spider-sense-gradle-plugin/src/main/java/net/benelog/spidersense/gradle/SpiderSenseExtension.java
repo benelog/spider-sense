@@ -100,6 +100,13 @@ public abstract class SpiderSenseExtension {
     public abstract Property<Long> getMaxSpansPerSecond();
 
     /**
+     * {@code -Dspidersense.source.dirs}, joined with commas: the source roots a code frame is
+     * resolved under. Unset leaves the jar's default, {@code src/main/java} and
+     * {@code src/main/kotlin} of the working directory and of each immediate subdirectory.
+     */
+    public abstract ListProperty<String> getSourceDirs();
+
+    /**
      * The {@code check { }} block: the rules of the {@code spiderSenseCheck}
      * task. It is a nested block rather than properties of this one because
      * they are not {@code -Dspidersense.*} options of the application, they are

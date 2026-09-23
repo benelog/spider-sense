@@ -160,6 +160,11 @@ xref:configuration.adoc#properties[Configuration] lists the jar's defaults.
 | unset
 | `-Dspidersense.ingest.max-spans-per-second=`
 
+| `sourceDirs`
+| `List<String>`
+| unset (the jar's default roots)
+| `-Dspidersense.source.dirs=`, the list joined with commas; relative paths are against the task's working directory, the project's
+
 | `check { }`
 | a nested block
 | see <<check-task,Check as a build step>>

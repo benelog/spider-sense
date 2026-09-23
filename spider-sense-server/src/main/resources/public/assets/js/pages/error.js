@@ -5,6 +5,7 @@ import * as router from '../router.js';
 import { h, fill, panel, stat, table, serviceChip, idButton, spinner, errorBox } from '../ui.js';
 import { timeSeries, legend } from '../charts.js';
 import { stackTrace } from '../sql.js';
+import { codeFrame } from '../frames.js';
 import { traceTable } from './traces.js';
 import { count, rel, bothTimes, full, splitType } from '../format.js';
 
@@ -72,9 +73,15 @@ export function render(root, ctx) {
       fill(chartLegend, legend([{ label: 'Occurrences per bucket', color: 'err' }]));
       if (chart) chart.update(spec); else chart = timeSeries(chartBody, spec);
 
-      fill(stackBody, e.sample && e.sample.stacktrace
-        ? stackTrace(e.sample.stacktrace)
-        : h('span.muted', 'This error carried no stack trace.'));
+      const code = data.code || [];
+      fill(stackBody,
+        code.length
+          ? h('div.f-code', { style: { marginBottom: '12px' } }, h('div.sub-head', 'Code'),
+            code.map((frame) => codeFrame(frame)))
+          : null,
+        e.sample && e.sample.stacktrace
+          ? stackTrace(e.sample.stacktrace)
+          : h('span.muted', 'This error carried no stack trace.'));
 
       fill(endpointsBody, table([
         { key: 'name', label: 'Endpoint', sortable: false, cls: 'wide', render: (x) => h('span.cell-ellipsis', { title: x.name }, x.name) },

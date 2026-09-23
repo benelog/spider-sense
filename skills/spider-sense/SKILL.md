@@ -46,7 +46,7 @@ java -javaagent:"$SENSE" -jar build/libs/app.jar &   # 1. start the application 
 java -jar "$SENSE" status                            # confirm it is collecting
 java -jar "$SENSE" mark before                       # 2. name the moment
 curl -s http://localhost:8080/orders/42 >/dev/null   #    exercise: the endpoints in question, the tests, or the load generator
-java -jar "$SENSE" findings --since=before           # 3. read the top finding
+java -jar "$SENSE" findings --since=before           # 3. read the top finding, its suspect-change lines first
 java -jar "$SENSE" trace 4bf92f3577b34da6a3ce929d0e0e4736   #    open its evidence, locate the code
 #                                                    # 4. fix, rebuild, restart
 java -jar "$SENSE" mark after                        # 5. exercise the same way
@@ -77,6 +77,7 @@ Useful properties, all after `-javaagent:` on the same command line:
 - `-Dotel.service.name=spring-orders` so the service has a name instead of `unknown_service:java`; `-Dspidersense.service=` does the same.
 - `-Dspidersense.collector=http://127.0.0.1:4000` to forward to a Spider Sense running elsewhere instead of hosting one, which is how two applications share a UI and how a trace that crosses them shows up in one place.
 - `-Dspidersense.app.packages=com.acme` when a finding's `code` frames come out empty or full of framework classes.
+- `-Dspidersense.source.dirs=core/src/main/java,web/src/main/java` when the sources are not under `src/main/java` or `src/main/kotlin` of the working directory or of one of its immediate subdirectories; the frames then resolve for the suspect-change lines and the UI's source view.
 - `-Dspidersense.ignore.endpoints=` takes endpoints out of the request count; health checks are ignored already (`/actuator/**,/health,/healthz,/livez,/readyz`), so set it only to add a pattern of your own, and set it to the empty value to ignore nothing.
 
 Confirm with `java -jar "$SENSE" status`: it names the mode, the port, the database and how much it holds.
@@ -88,6 +89,20 @@ The UI is at <http://127.0.0.1:4000> for the user, not for you.
 `findings` ranks by severity, then by impact, then by id, so the list is stable between two calls over the same data.
 Each finding carries `why` (the numbers in a sentence), `numbers` (kind-specific), `statement` (when the finding is about one), `code` (application frames, innermost first, empty when none is known), and `traces` (at most three, the evidence).
 The table is the ranked answer and the numbered blocks under it are that evidence, one per row, in the same order.
+
+**Read the suspect-change line first.** Under each `code` frame whose file is in the repository you run in, the CLI prints the change that last touched that line:
+
+```
+   orders.OrderService.load(OrderService.java:41)
+     uncommitted
+   orders.web.OrderController.show(OrderController.java:28)
+     changed in 4743e1d (2 hours ago): Run Error Prone and NullAway in every javac
+```
+
+`uncommitted` means the file is in your working tree's diff, staged or not, or is new: the finding most likely comes from the change you just made, so start there, at that line.
+`changed in <hash> (<age>): <subject>` names the commit behind the line; a recent one is the next suspect, an old one says the problem was there before you started.
+No line under a frame means it does not resolve to a source file here (a library, another module outside `spidersense.source.dirs`) or the directory is not a repository.
+`--no-git` leaves the lines out.
 When a finding is known and accepted — the user says it is slow by design, or the fix waits on something else — `ack <finding id> --note=<why>` moves it to the bottom of every later list, its severity reading `acked`, so the top of the list stays about what is new; `unack <finding id>` puts it back, and `findings --hide-acked` leaves the acknowledged ones out altogether.
 `check` ignores acknowledgements: its rules are explicit thresholds, so an acknowledged `n-plus-one` still counts against `--max-n-plus-one`.
 

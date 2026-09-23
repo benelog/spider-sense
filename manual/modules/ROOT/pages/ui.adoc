@@ -27,7 +27,7 @@ The line stays for a minute after the last increase, so a load test reads as par
 [#top-bar]
 == The top bar
 
-The top bar carries the page title on the left, and on the right the Mark button, the service filter, the time range, and the Live toggle.
+The top bar carries the page title on the left, and on the right the Mark button, the service filter, the time range, the editor setting, and the Live toggle.
 
 Mark::
 Opens a small dialog with a name, an optional note, and OK.
@@ -45,6 +45,11 @@ It applies to every page that takes a service.
 Time range::
 `5m`, `15m`, `1h`, `6h`, or `all`.
 `all` starts at the oldest span in storage.
+
+Editor::
+*IntelliJ IDEA* or *VS Code*: what a code frame link opens, on the Findings page and the error page.
+IntelliJ IDEA is the default, and the choice is remembered in the browser.
+xref:pages.adoc#code-frames[Code frames] describes the links.
 
 Live::
 The page refreshes every 5 seconds, and the end of the window moves with the clock.

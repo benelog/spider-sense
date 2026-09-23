@@ -1559,6 +1559,20 @@ const ROUTES = [
     };
   }],
 
+  // Every frame resolves, under a project directory the mock makes up; the lines say where they are.
+  [/^\/api\/source$/, (m, q) => {
+    const f = /^([\w$.]+)\.[^.()\s]+\(([\w$-]+\.(?:java|kt|groovy|scala)):(\d+)\)$/.exec(q.frame || '');
+    if (!f) return { status: 404, body: { error: 'No source for frame: ' + (q.frame || '') } };
+    const pkg = f[1].split('.').slice(0, -1).join('/');
+    const line = +f[3];
+    const start = Math.max(1, line - 2);
+    const lines = [];
+    for (let n = start; n <= line + 2; n++) {
+      lines.push(n === line ? '        return load(id); // ' + f[2] + ':' + n : '        // ' + f[2] + ':' + n);
+    }
+    return { frame: q.frame, file: '/home/me/project/src/main/java/' + (pkg ? pkg + '/' : '') + f[2], line, start, lines };
+  }],
+
   [/^\/api\/errors$/, (m, q) => ({ errors: errorGroups(windowOf(q), q.service).slice(0, +(q.limit || 100)).map(strip) })],
 
   [/^\/api\/errors\/([^/]+)$/, (m, q) => {
@@ -1574,6 +1588,7 @@ const ROUTES = [
     }
     return {
       error: strip(group),
+      code: appFrames(group.sample && group.sample.stacktrace),
       series: { t, count: counts },
       traces: group._traces.slice().sort((a, b) => b.start - a.start).slice(0, 20).map(summary),
     };

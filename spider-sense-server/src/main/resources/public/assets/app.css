@@ -731,6 +731,13 @@ details.collapsible > summary:hover { color: var(--text); }
 .f-list-count { font-family: var(--font-mono); color: var(--text-muted); }
 .f-code { display: grid; gap: 2px; }
 .f-code .f-frame { color: var(--text); white-space: pre-wrap; word-break: break-word; }
+.src-frame { display: grid; gap: 2px; }
+.src-link { color: var(--text); text-decoration: underline; text-decoration-color: var(--text-muted); text-underline-offset: 2px; }
+.src-link:hover { color: var(--accent); text-decoration-color: var(--accent); }
+.src-lines { margin: 0 0 6px; padding: 4px 0; font-size: 11px; line-height: 1.5; background: var(--bg-raised); border-radius: 4px; overflow-x: auto; }
+.src-line { display: block; padding: 0 8px 0 0; color: var(--text-muted); white-space: pre; }
+.src-hit { color: var(--text); background: var(--accent-soft); }
+.src-no { display: inline-block; min-width: 4ch; padding: 0 10px 0 8px; text-align: right; color: var(--text-muted); user-select: none; }
 .f-schema { display: grid; gap: 2px; font-size: 11px; }
 .f-numbers .f-wide { grid-column: 1 / -1; }
 .f-hot { display: grid; gap: 1px; }

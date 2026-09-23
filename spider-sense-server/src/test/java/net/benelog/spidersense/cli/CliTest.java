@@ -175,6 +175,8 @@ class CliTest {
         assertThat(path("findings", "--json")).isEqualTo("/api/findings?since=15m&limit=20&format=json");
         assertThat(path("findings", "--hide-acked"))
                 .isEqualTo("/api/findings?since=15m&limit=20&hideAcked=true&format=text");
+        assertThat(path("findings", "--no-git")).as("the suspect change is the CLI's own")
+                .isEqualTo("/api/findings?since=15m&limit=20&format=text");
         assertThat(path("ack", "slow-endpoint:1a2b3c4d5e6f", "--note=known"))
                 .isEqualTo("/api/findings/slow-endpoint%3A1a2b3c4d5e6f/ack?format=text");
         assertThat(path("unack", "slow-endpoint:1a2b3c4d5e6f"))
@@ -213,6 +215,8 @@ class CliTest {
         serve(true, (server, base) -> {
             assertThat(runAt(base, "status", "--url=" + base).out()).startsWith("# status");
             assertThat(runAt(base, "findings", "--url=" + base).out()).startsWith("# findings  ");
+            assertThat(runAt(base, "findings", "--no-git", "--url=" + base).out())
+                    .startsWith("# findings  ");
             assertThat(runAt(base, "traces", "--url=" + base).out()).startsWith("# traces  ");
             assertThat(runAt(base, "endpoints", "--url=" + base).out()).startsWith("# endpoints  ");
             assertThat(runAt(base, "queries", "--url=" + base).out()).startsWith("# queries  ");

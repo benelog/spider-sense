@@ -290,7 +290,24 @@ Arrays rather than objects: 5,000 points must stay small on the wire.
   "sample": { "traceId": "…", "spanId": "…", "at": ..., "message": "Order 42 is already shipped", "stacktrace": "…" } | null }
 ```
 
-`GET /api/errors/{errorId}?from&to` → `{ "error": <ErrorGroup>, "series": { "t": [...], "count": [...] }, "traces": [<TraceSummary> x 20 newest] }`.
+`GET /api/errors/{errorId}?from&to` → `{ "error": <ErrorGroup>, "code": [ "orders.OrderService.load(OrderService.java:41)" ], "series": { "t": [...], "count": [...] }, "traces": [<TraceSummary> x 20 newest] }`.
+`code` is the sample stack trace's application frames, reduced by the rules a finding's `code` follows (agent.md, "Code locations"), and empty when there is no sample or no application frame.
+
+## Source
+
+`GET /api/source?frame=<code frame>` → the lines around a code frame's line, read from the file when asked and never stored:
+
+```json
+{ "frame": "orders.OrderService.load(OrderService.java:41)",
+  "file": "/home/me/project/src/main/java/orders/OrderService.java",
+  "line": 41, "start": 39,
+  "lines": [ "…line 39…", "…line 40…", "…line 41…", "…line 42…", "…line 43…" ] }
+```
+
+`frame` is a frame as a finding's `code` carries it; it resolves to the first `<root>/<package as directories>/<file>` under the roots of `spidersense.source.dirs` (design.md) that exists.
+`file` is that file's absolute path with symbolic links resolved, `line` the frame's line, and `lines` the lines from `start` up to two past `line`, cut at the start and the end of the file, so a file edited since the frame was recorded may answer fewer lines, or none.
+A frame that does not resolve, one without a file and a line (`Unknown Source`, `Native Method`, a `code.function` frame), and one whose path would leave its root is `404`; a missing `frame` is `400`.
+The path is built from the frame only when it parses as dotted Java identifiers, a method, and a plain file name with a `.java`, `.kt`, `.groovy` or `.scala` extension, and the resolved file, symbolic links followed, must lie under its root; nothing else is read.
 
 ## Logs
 

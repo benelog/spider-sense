@@ -68,7 +68,8 @@ public record Config(
      * table without the {@code spidersense.} prefix, e.g. {@code --port=4001}.
      * Unknown keys and bare flags are ignored so {@code --help} and {@code --version} can be
      * handled by the caller. {@code --app.packages}, {@code --ignore.endpoints},
-     * {@code --retention.spans} and {@code --ingest.max-spans-per-second} belong to the server
+     * {@code --retention.spans}, {@code --ingest.max-spans-per-second} and
+     * {@code --source.dirs} belong to the server
      * alone and are forwarded as the {@code spidersense.*} system property of the same name,
      * which the server reads from this JVM.
      */
@@ -114,7 +115,7 @@ public record Config(
                 // property. The value is kept as written, because an empty
                 // spidersense.ignore.endpoints means "ignore nothing" (design.md).
                 case "app.packages", "ignore.endpoints", "retention.spans",
-                        "ingest.max-spans-per-second" ->
+                        "ingest.max-spans-per-second", "source.dirs" ->
                         System.setProperty("spidersense." + key, value);
                 default -> { /* unknown keys are ignored */ }
             }

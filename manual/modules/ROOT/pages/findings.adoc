@@ -95,6 +95,10 @@ When it is empty, open a trace from `traces` and read the tree, which names the 
 A stack trace is reduced to its application frames by dropping known framework prefixes: `java.`, `javax.`, `jdk.`, `sun.`, `com.sun.`, `jakarta.`, `org.springframework.`, `org.hibernate.`, `org.eclipse.jetty.`, `org.apache.`, `io.opentelemetry.`, `com.zaxxer.`, `org.h2.`, `net.benelog.spidersilk.`, `kotlin.`, `scala.`, `reactor.`, `io.netty.`, `ch.qos.logback.`, `org.slf4j.`, `org.junit.` and `gg.jte.`.
 When that heuristic guesses wrong, `spidersense.app.packages=com.acme,org.acme` replaces it with an allowlist.
 
+A frame whose file is under the xref:configuration.adoc#source-dirs[source roots] is worth more than its name.
+The UI shows its five source lines and links it into your editor (xref:pages.adoc#code-frames[Code frames]), and the CLI's `findings` names the change that last touched its line (xref:cli.adoc#suspect-change[Suspect change]).
+The text rendering itself carries neither: an agent opens the file on its own.
+
 [#schema]
 === The schema block
 

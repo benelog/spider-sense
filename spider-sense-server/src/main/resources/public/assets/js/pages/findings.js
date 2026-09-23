@@ -7,6 +7,7 @@ import { h, fill, panel, table, chip, serviceChip, renderList, copyBlock, spinne
 import { formatSql } from '../sql.js';
 import { fmtApdex } from '../buckets.js';
 import { count, dur, rate, pct, bytes, time, bothTimes, truncate, shortId } from '../format.js';
+import { codeFrame } from '../frames.js';
 
 const KIND_LABEL = {
   error: 'error',
@@ -301,7 +302,7 @@ export function evidence(finding, onChange) {
     schemaLines(finding.schema),
     (finding.code || []).length
       ? h('div.f-code', h('div.sub-head', 'Code'),
-        (finding.code || []).map((frame) => h('div.mono.f-frame', frame)))
+        (finding.code || []).map((frame) => codeFrame(frame)))
       : null,
     h('div.f-links',
       traces.length

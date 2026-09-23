@@ -34,6 +34,7 @@ final class Options {
     static final String INIT = "init";
     static final String MCP = "mcp";
     static final String CHECK = "check";
+    static final String FINDINGS = "findings";
     static final String COMPARE = "compare";
     static final String MARK = "mark";
     static final String ACK = "ack";
@@ -53,7 +54,7 @@ final class Options {
 
     private static final Map<String, Set<String>> COMMANDS = Map.ofEntries(
             Map.entry("status", with()),
-            Map.entry("findings", with("since", "until", "limit", "full", "hide-acked")),
+            Map.entry(FINDINGS, with("since", "until", "limit", "full", "hide-acked", "no-git")),
             Map.entry(ACK, with("note")),
             Map.entry(UNACK, with()),
             Map.entry(TRACE, with("full", "diff")),

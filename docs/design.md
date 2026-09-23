@@ -96,6 +96,7 @@ Under a build tool the file is read as well, because the launcher runs in the fo
 | `spidersense.open` | `false` | agent mode: open the browser at startup (`java.awt.Desktop`), best effort |
 | `spidersense.app.packages` | unset | comma-separated package prefixes that count as application code in a finding's `code` frames; unset means "everything that is not a known framework" ([agent.md](agent.md)) |
 | `spidersense.ignore.endpoints` | `/actuator/**,/health,/healthz,/livez,/readyz` | comma-separated glob patterns; an entry span whose endpoint matches is not a request ([Ignored endpoints](#ignored-endpoints)); an empty value ignores nothing |
+| `spidersense.source.dirs` | `src/main/java` and `src/main/kotlin` of the working directory and of each of its immediate subdirectories | comma-separated source roots, relative ones against the working directory; a code frame resolves to the first `<root>/<package as directories>/<file of the frame>` that exists, which gives the UI its source lines and editor links and the CLI its suspect change ([agent.md](agent.md#source-lines-and-the-suspect-change)); an empty value names no root and turns all three off |
 
 Every `otel.*` property still works as documented by the OpenTelemetry agent; Spider Sense only fills in defaults.
 

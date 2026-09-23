@@ -44,8 +44,8 @@ The launcher reads xref:configuration.adoc#properties-file[the properties file] 
 | `status`
 | what is running, where the database is, how much it holds
 
-| `findings [--hide-acked]`
-| the findings of the window
+| `findings [--hide-acked] [--no-git]`
+| the findings of the window, with the suspect change under each code frame
 
 | `ack <finding id> [--note=]`
 | accepts a known finding, which is then ranked after every other one
@@ -166,6 +166,31 @@ It is then ranked after every other finding, and its severity column reads `acke
 `unack <finding id>` withdraws the acknowledgement, and exits `4` when there was none.
 `findings --hide-acked` leaves the acknowledged findings out altogether.
 The finding id is the one `findings` printed in its `id` column, and it is stable across windows (xref:findings.adoc#acknowledgements[Acknowledgements]).
+
+[#suspect-change]
+==== The suspect change
+
+Under each code frame whose file is in the repository the CLI runs in, `findings` adds one line naming the change that last touched that line:
+
+[source]
+----
+   orders.OrderService.load(OrderService.java:41)
+     changed in 4743e1d (2 hours ago): Run Error Prone and NullAway in every javac
+   orders.web.OrderController.show(OrderController.java:28)
+     uncommitted
+----
+
+`uncommitted` means the file is in `git diff --name-only` or `git diff --cached --name-only`, or is untracked, or `git blame` says the line is not committed yet.
+Otherwise the line names the commit `git blame -L <n>,<n> --porcelain` gives for the frame's line: its short hash, its author date as an age, and its subject.
+A frame that does not resolve under xref:configuration.adoc#source-dirs[the source roots], or whose file is outside the repository, gets no line.
+
+The line answers the question an agent has first: is the line this finding points at in the change I just made.
+It is off when the working directory is not in a repository or `git` cannot be run, and `--no-git` turns it off.
+`--json` prints the server's JSON, which never carries it.
+
+This line is the one thing the CLI adds to an answer instead of printing what was rendered.
+The CLI runs in the project directory, where the repository is, and the server may run elsewhere or not at all.
+The HTTP API and the xref:mcp.adoc[MCP] `findings` tool therefore answer without it.
 
 === trace and traces
 
@@ -419,7 +444,10 @@ Spider Sense: ask a running Spider Sense, or the database file, from the termina
 
 Commands:
   status                       what is running, where the database is, how much it holds
-  findings [--hide-acked]      the findings of the window
+  findings [--hide-acked] [--no-git]
+                               the findings of the window; under each code frame,
+                               the suspect change git names (uncommitted, or the
+                               commit that last changed the line)
   ...
 
 Common options:
@@ -434,6 +462,7 @@ Common options:
   --json               the JSON of api.md instead of the text
   --full               whole statements, every repeated span
   --hide-acked         findings only: leave acknowledged findings out
+  --no-git             findings only: no suspect-change line under the code frames
 
 A selector is a duration (30s, 5m, 2h, 1d), epoch milliseconds, a mark name,
 start (the newest automatic start mark) or now.
@@ -487,6 +516,10 @@ a finding id to unack).
 | `--hide-acked`
 | off
 | `findings` only: leave the acknowledged findings out instead of ranking them last
+
+| `--no-git`
+| off
+| `findings` only: no <<suspect-change,suspect-change line>> under the code frames
 |===
 
 `--since` and `--until` take a time selector: a duration, epoch milliseconds, a mark name, `start` or `now`.

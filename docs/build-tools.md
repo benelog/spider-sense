@@ -62,6 +62,7 @@ Every property is a lazy Gradle `Property`; unset means "leave the jar's own def
 | `ignoreEndpoints` | `List<String>` | unset (the jar's default list) | `-Dspidersense.ignore.endpoints=`, the list joined with commas; an empty list set explicitly (`ignoreEndpoints = []`) passes an empty value, which ignores nothing |
 | `retentionSpans` | `Long` | unset (`1000000`) | `-Dspidersense.retention.spans=` |
 | `maxSpansPerSecond` | `Long` | unset | `-Dspidersense.ingest.max-spans-per-second=` |
+| `sourceDirs` | `List<String>` | unset (the jar's default roots) | `-Dspidersense.source.dirs=`, the list joined with commas; relative paths are against the task's working directory, the project's |
 | `check { }` | a nested block | see [Check as a build step](#check-as-a-build-step) | the rules of the `spiderSenseCheck` task |
 
 Where the jar comes from, in order: the project property `spiderSense.jar`, then the block's `jar`, then the single file of the `spiderSense` configuration.

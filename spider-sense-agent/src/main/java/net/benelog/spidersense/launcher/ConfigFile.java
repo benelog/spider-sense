@@ -48,7 +48,8 @@ final class ConfigFile {
             "spidersense.slow.query.ms",
             "spidersense.open",
             "spidersense.app.packages",
-            "spidersense.ignore.endpoints");
+            "spidersense.ignore.endpoints",
+            "spidersense.source.dirs");
 
     private ConfigFile() {
     }

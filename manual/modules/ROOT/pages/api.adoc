@@ -346,7 +346,25 @@ It is `null` when there is no catalog to read.
   "sample": { "traceId": "…", "spanId": "…", "at": ..., "message": "Order 42 is already shipped", "stacktrace": "…" } | null }
 ----
 
-*`+GET /api/errors/{errorId}?from&to+`* answers `{ "error": <ErrorGroup>, "series": { "t": [...], "count": [...] }, "traces": [<TraceSummary> x 20 newest] }`.
+*`+GET /api/errors/{errorId}?from&to+`* answers `{ "error": <ErrorGroup>, "code": [ "orders.OrderService.load(OrderService.java:41)" ], "series": { "t": [...], "count": [...] }, "traces": [<TraceSummary> x 20 newest] }`.
+`code` is the sample stack trace's application frames, reduced as a finding's `code` is (xref:findings.adoc#code[Code locations]), and empty when there are none.
+
+[#source]
+== Source
+
+*`GET /api/source?frame=<code frame>`* answers the lines around a code frame's line, read from the file when asked and never stored:
+
+[source,json]
+----
+{ "frame": "orders.OrderService.load(OrderService.java:41)",
+  "file": "/home/me/project/src/main/java/orders/OrderService.java",
+  "line": 41, "start": 39,
+  "lines": [ "…line 39…", "…line 40…", "…line 41…", "…line 42…", "…line 43…" ] }
+----
+
+The frame resolves to the first matching file under the roots of `spidersense.source.dirs` (xref:configuration.adoc#source-dirs[Source roots]).
+`file` is that file's absolute path with symbolic links resolved, `line` is the frame's line, and `lines` runs from `start` to two lines past `line`, cut at the start and the end of the file.
+A frame that does not resolve, including one whose path would leave its root, is `404`, and a missing `frame` is `400`.
 
 == Logs
 

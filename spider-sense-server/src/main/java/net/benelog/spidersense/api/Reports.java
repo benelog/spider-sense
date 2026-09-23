@@ -149,6 +149,11 @@ public final class Reports implements AutoCloseable {
         return selectors;
     }
 
+    /** The application frames of a stack trace, by the rules a finding's {@code code} follows. */
+    public CodeFrames codeFrames() {
+        return frames;
+    }
+
     public Tingles thresholds() {
         return tingles;
     }
