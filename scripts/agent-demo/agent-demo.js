@@ -55,7 +55,7 @@ function agentName(agent) {
 }
 
 function day(ms) {
-  return new Date(Number(ms)).toISOString().slice(0, 10);
+  return new Date(Number(ms)).toLocaleDateString('sv');   // YYYY-MM-DD, in the viewer's time zone
 }
 
 function duration(ms, lang = 'en') {

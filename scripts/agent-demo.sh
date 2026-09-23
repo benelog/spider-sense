@@ -79,7 +79,9 @@ record() {
             # settings stay out so the answer is what the project gives any user, except the
             # language a Korean user would have set. `-p` ends with the turn, so a wait left
             # in the background would end the session.
-            env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT claude -p "$prompt" \
+            # The account's claude.ai connectors stay out too: they are not the project's.
+            env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT ENABLE_CLAUDEAI_MCP_SERVERS=false claude -p "$prompt" \
+                --strict-mcp-config \
                 --output-format stream-json --verbose \
                 --setting-sources project,local \
                 --append-system-prompt "$FOREGROUND" \
