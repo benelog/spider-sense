@@ -197,8 +197,10 @@ Detail: the full statement pretty-printed, the schema block under it as the find
 ### Errors `#/errors` and `#/errors/{errorId}`
 
 List: type (monospace, package dimmed), message, service chip, count, first seen, last seen, endpoints (chips, first two + "+n"). Row click → detail.
-Detail: header, count chart, the sample stack trace (`<pre>`, the app's own frames highlighted: frames whose package matches the first frame's top-level package), endpoints, recent traces.
-Above the stack trace, in the same panel, a **Code** list: the application frames of the sample (`code` of `GET /api/errors/{errorId}`, the frames a finding would carry) as [code frames](#code-frames); nothing when there are none.
+Detail: header, count chart, the sample's exception chain, endpoints, recent traces.
+The chain is `chain` of `GET /api/errors/{errorId}`, one section per cause, innermost first: the root cause headed **Root cause**, then each exception wrapping it headed **Wrapped by**, out to the outer one (no heading when there is only one); each section is a `<pre>` with its type and message, its frames and its `... n more` line, the app's own frames highlighted (frames whose package matches the section's first frame's top-level package).
+Above the chain, in the same panel, a **Code** list: the application frames of the sample (`code` of `GET /api/errors/{errorId}`, the frames a finding would carry, the root cause's first) as [code frames](#code-frames); nothing when there are none.
+With no chain the panel says `This error carried no stack trace.`
 
 ### Code frames
 

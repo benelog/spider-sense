@@ -3,10 +3,10 @@ package net.benelog.spidersense.query;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
+import net.benelog.spidersense.store.ExceptionChain;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -33,11 +33,7 @@ public final class CodeFrames {
     public static final int MAX_FRAMES = 5;
 
     /** What is framework rather than application when no allowlist is given. */
-    public static final List<String> FRAMEWORK_PREFIXES = List.of(
-            "java.", "javax.", "jdk.", "sun.", "com.sun.", "jakarta.", "org.springframework.",
-            "org.hibernate.", "org.eclipse.jetty.", "org.apache.", "io.opentelemetry.", "com.zaxxer.",
-            "org.h2.", "net.benelog.spidersilk.", "kotlin.", "scala.", "reactor.", "io.netty.",
-            "ch.qos.logback.", "org.slf4j.", "org.junit.", "gg.jte.");
+    public static final List<String> FRAMEWORK_PREFIXES = ExceptionChain.FRAMEWORK_PREFIXES;
 
     private final List<String> appPackages;
 
@@ -55,18 +51,14 @@ public final class CodeFrames {
         this.appPackages = List.copyOf(prefixes);
     }
 
-    /** The application frames of a stack trace, innermost first, at most {@value #MAX_FRAMES}. */
+    /**
+     * The application frames of a stack trace, at most {@value #MAX_FRAMES}: the
+     * root cause's first, then those of each exception wrapping it out to the outer
+     * one, each cause's top first ({@link ExceptionChain#framesInnermostFirst()}).
+     */
     public List<String> ofStacktrace(@Nullable String stacktrace) {
-        if (stacktrace == null || stacktrace.isBlank()) {
-            return List.of();
-        }
         Set<String> frames = new LinkedHashSet<>();
-        for (String raw : stacktrace.split("\\R", -1)) {
-            String line = raw.trim();
-            if (!line.startsWith("at ")) {
-                continue;
-            }
-            String frame = normalise(line.substring(3).trim());
+        for (String frame : ExceptionChain.parse(stacktrace).framesInnermostFirst()) {
             if (isApplication(frame)) {
                 frames.add(frame);
                 if (frames.size() >= MAX_FRAMES) {
@@ -129,35 +121,6 @@ public final class CodeFrames {
             }
             return false;
         }
-        String lower = frame.toLowerCase(Locale.ROOT);
-        for (String prefix : FRAMEWORK_PREFIXES) {
-            if (lower.startsWith(prefix)) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    /**
-     * A frame as {@code package.Class.method(File.java:41)}.
-     *
-     * <p>A JVM writes the module or class loader in front of the class
-     * ({@code java.base/java.util.List.of(...)}, {@code app//com.acme.Orders.load(...)}),
-     * and a logging framework adds {@code ~[jar:version]} behind it. Neither is part
-     * of the location a person opens.
-     */
-    private static String normalise(String frame) {
-        String value = frame;
-        int marker = value.indexOf('~');
-        if (marker > 0) {
-            value = value.substring(0, marker).trim();
-        }
-        int parenthesis = value.indexOf('(');
-        int limit = parenthesis < 0 ? value.length() : parenthesis;
-        int slash = value.lastIndexOf('/', limit);
-        if (slash >= 0) {
-            value = value.substring(slash + 1);
-        }
-        return value;
+        return ExceptionChain.notFramework(frame);
     }
 }

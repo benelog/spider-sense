@@ -265,6 +265,80 @@ class QueriesTest {
         assertThat(group.sample().message()).isEqualTo("Order 43 is already shipped");
     }
 
+    private static String wrapped(String outerMessage, String rootType, String rootFrame) {
+        return """
+                org.springframework.dao.DataIntegrityViolationException: %s
+                \tat org.springframework.orm.jpa.EntityManagerFactoryUtils.convert(EntityManagerFactoryUtils.java:360)
+                \tat orders.OrderService.place(OrderService.java:30)
+                \tat org.springframework.web.servlet.DispatcherServlet.doService(DispatcherServlet.java:1089)
+                Caused by: %s: constraint violated
+                \tat org.h2.message.DbException.get(DbException.java:223)
+                \tat %s
+                \t... 2 more""".formatted(outerMessage, rootType, rootFrame);
+    }
+
+    private void fail(int n, String type, String message, String stacktrace) {
+        decoder.accept(Otlp.traces(Otlp.service("orders"), Otlp.failing(
+                Otlp.span(traceId(n), spanId(n), "POST /orders", Span.SpanKind.SPAN_KIND_SERVER, NOW, 5,
+                        Otlp.attr("http.request.method", "POST"), Otlp.attr("http.route", "/orders")),
+                type, message, stacktrace)));
+    }
+
+    @Test
+    void wrappedExceptionsWithTheSameRootCauseAndLineAreOneGroupWhateverTheirMessage() {
+        fail(1, "org.springframework.dao.DataIntegrityViolationException",
+                "could not execute statement [insert into orders (id, customer) values (?, ?)]",
+                wrapped("could not execute statement [insert into orders (id, customer) values (?, ?)]",
+                        "org.h2.jdbc.JdbcSQLIntegrityConstraintViolationException",
+                        "orders.OrderRepository.save(OrderRepository.java:41)"));
+        fail(2, "org.springframework.dao.DataIntegrityViolationException",
+                "could not execute statement [update orders set status=? where id=?]",
+                wrapped("could not execute statement [update orders set status=? where id=?]",
+                        "org.h2.jdbc.JdbcSQLIntegrityConstraintViolationException",
+                        "orders.OrderRepository.save(OrderRepository.java:44)"));
+        flush();
+
+        List<Stats.ErrorGroup> groups = queries.errors(window, null, 100, null);
+
+        assertThat(groups).hasSize(1);
+        assertThat(groups.get(0).count()).isEqualTo(2);
+        assertThat(groups.get(0).type()).isEqualTo("org.springframework.dao.DataIntegrityViolationException");
+    }
+
+    @Test
+    void theSameWrapperOverUnrelatedCausesIsTwoGroups() {
+        String message = "could not execute statement";
+        fail(1, "org.springframework.dao.DataIntegrityViolationException", message,
+                wrapped(message, "org.h2.jdbc.JdbcSQLIntegrityConstraintViolationException",
+                        "orders.OrderRepository.save(OrderRepository.java:41)"));
+        fail(2, "org.springframework.dao.DataIntegrityViolationException", message,
+                wrapped(message, "org.h2.jdbc.JdbcSQLIntegrityConstraintViolationException",
+                        "orders.CustomerRepository.save(CustomerRepository.java:18)"));
+        fail(3, "org.springframework.dao.DataIntegrityViolationException", message,
+                wrapped(message, "org.h2.jdbc.JdbcSQLDataException",
+                        "orders.OrderRepository.save(OrderRepository.java:41)"));
+        flush();
+
+        assertThat(queries.errors(window, null, 100, null)).hasSize(3);
+    }
+
+    @Test
+    void withoutAnApplicationFrameTheGroupIsTheTypeAndTheNormalisedMessage() {
+        String trace = """
+                java.lang.IllegalStateException: Order %d is already shipped
+                \tat org.springframework.web.servlet.DispatcherServlet.doService(DispatcherServlet.java:1089)""";
+        fail(1, "java.lang.IllegalStateException", "Order 41 is already shipped", trace.formatted(41));
+        fail(2, "java.lang.IllegalStateException", "Order 42 is already shipped", trace.formatted(42));
+        fail(3, "java.lang.IllegalStateException", "No stock for 'ABC'", trace.formatted(0));
+        flush();
+
+        List<Stats.ErrorGroup> groups = queries.errors(window, null, 100, null);
+
+        assertThat(groups).extracting(Stats.ErrorGroup::count).containsExactly(2L, 1L);
+        assertThat(groups.get(0).errorId()).isEqualTo(Ids.errorId("orders", "java.lang.IllegalStateException",
+                "Order ? is already shipped"));
+    }
+
     @Test
     void theWriterMaintainsOneTraceRowPerTraceAcrossSeveralExports() {
         Span.Builder root = Otlp.span(traceId(1), spanId(1), "GET /orders/{id}",

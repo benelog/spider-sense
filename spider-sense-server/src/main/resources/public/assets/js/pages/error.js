@@ -9,6 +9,18 @@ import { codeFrame } from '../frames.js';
 import { traceTable } from './traces.js';
 import { count, rel, bothTimes, full, splitType } from '../format.js';
 
+/** One section per cause, the root cause first (ui.md). */
+function exceptionChain(chain) {
+  return chain.map((cause, i) => {
+    const lines = [cause.type ? cause.type + (cause.message ? ': ' + cause.message : '') : cause.message]
+      .concat(cause.frames.map((frame) => '\tat ' + frame))
+      .concat(cause.more ? ['\t... ' + cause.more + ' more'] : []);
+    return h('div', { style: { marginTop: i ? '12px' : '0' } },
+      chain.length > 1 ? h('div.sub-head', i === 0 ? 'Root cause' : 'Wrapped by') : null,
+      stackTrace(lines.filter((line) => line).join('\n')));
+  });
+}
+
 export function render(root, ctx) {
   const id = ctx.params.id;
   let destroyed = false;
@@ -79,8 +91,8 @@ export function render(root, ctx) {
           ? h('div.f-code', { style: { marginBottom: '12px' } }, h('div.sub-head', 'Code'),
             code.map((frame) => codeFrame(frame)))
           : null,
-        e.sample && e.sample.stacktrace
-          ? stackTrace(e.sample.stacktrace)
+        (data.chain || []).length
+          ? exceptionChain(data.chain)
           : h('span.muted', 'This error carried no stack trace.'));
 
       fill(endpointsBody, table([

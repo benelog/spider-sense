@@ -308,8 +308,12 @@ class ApiTest {
             assertThat(error.getString("message")).isEqualTo("Order ? is already shipped");
             assertThat(error.getLong("count")).isEqualTo(1);
             assertThat(error.getObject("sample").getString("stacktrace")).isEqualTo("at Orders.ship(..)");
-            assertThat(json(client.get("/api/errors/" + error.getString("errorId") + windowQuery()))
-                    .getObject("series").has("count")).isTrue();
+            Json.JsonObject errorDetail =
+                    json(client.get("/api/errors/" + error.getString("errorId") + windowQuery()));
+            assertThat(errorDetail.getObject("series").has("count")).isTrue();
+            Json.JsonObject cause = errorDetail.getArray("chain").get(0).asObject();
+            assertThat(cause.getString("type")).isEmpty();
+            assertThat(cause.getArray("frames").get(0).asString()).isEqualTo("Orders.ship(..)");
         });
     }
 

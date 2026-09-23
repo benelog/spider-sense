@@ -134,8 +134,17 @@ By default, the OpenTelemetry Java agent still emits the older database attribut
 With `otel.semconv-stability.opt-in=database` it emits `db.system.name`, `db.query.text`, `db.namespace`, `db.operation.name` and `db.collection.name`.
 The decoder normalises both generations into `SpanRecord`'s accessors, and also the pre-stable HTTP names (`http.method`, `http.target`, `http.status_code`) for other SDKs.
 
+[#errors]
 Errors come from three places and are merged: the span status `ERROR`, the `exception` span event (`exception.type`, `exception.message`, `exception.stacktrace`), and the `error.type` attribute.
-An error group is the service, the exception type or `error.type`, and the message with digits and quoted strings replaced by `?`.
+An error group is the service, the root cause's type, and the innermost application frame.
+The root cause is the last `Caused by:` section of `exception.stacktrace`, or the outer exception when there is none.
+The frame is the first application frame met reading the chain from the root cause outwards, each cause's frames top first.
+The same line throwing the same exception is then one error whatever wraps it.
+Spring's `DataAccessException` subclasses and `ServletException` carry one outer type for every cause and a message that embeds the SQL or the request, so grouping on the outer type and message spread one bug over several groups and merged unrelated ones.
+The frame is keyed without its `(File.java:41)` and with every `$<digits>` of a synthetic name (`lambda$load$0`, `Orders$1`) made `$?`, so moving the line or adding a lambda above it keeps the group.
+It is judged by the default framework prefixes, never by `spidersense.app.packages`, so the id does not depend on a setting of the process that wrote the span.
+A trace without an application frame, and an error without a trace, fall back to the service, the exception type or `error.type`, and the message with digits and quoted strings replaced by `?`.
+The normalised message stays in the group as its `message` either way.
 
 [#endpoint-identity]
 == Endpoint identity

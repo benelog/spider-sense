@@ -6,6 +6,7 @@ import java.util.List;
 import net.benelog.spidersense.query.Queries;
 import net.benelog.spidersense.query.Stats;
 import net.benelog.spidersense.query.Window;
+import net.benelog.spidersense.store.ExceptionChain;
 import net.benelog.spidersilk.App;
 import net.benelog.spidersilk.HttpException;
 import net.benelog.spidersilk.HttpStatus;
@@ -242,9 +243,11 @@ public final class TraceApi {
         Stats.ErrorSample sample = group.sample();
         List<String> code = sample == null ? List.of()
                 : reports.codeFrames().ofStacktrace(sample.stacktrace());
+        ExceptionChain chain = ExceptionChain.parse(sample == null ? null : sample.stacktrace());
         return WebResponse.json(Json.obj()
                 .put("error", Codecs.errorGroup(group))
                 .put("code", Codecs.strings(code))
+                .put("chain", Codecs.chain(chain))
                 .put("series", Json.obj()
                         .put("t", Codecs.longs(buckets.t()))
                         .put("count", Codecs.longs(buckets.requests())))

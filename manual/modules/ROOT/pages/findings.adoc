@@ -102,6 +102,10 @@ When it is empty, open a trace from `traces` and read the tree, which names the 
 
 A stack trace is reduced to its application frames by dropping known framework prefixes: `java.`, `javax.`, `jdk.`, `sun.`, `com.sun.`, `jakarta.`, `org.springframework.`, `org.hibernate.`, `org.eclipse.jetty.`, `org.apache.`, `io.opentelemetry.`, `com.zaxxer.`, `org.h2.`, `net.benelog.spidersilk.`, `kotlin.`, `scala.`, `reactor.`, `io.netty.`, `ch.qos.logback.`, `org.slf4j.`, `org.junit.` and `gg.jte.`.
 When that heuristic guesses wrong, `spidersense.app.packages=com.acme,org.acme` replaces it with an allowlist.
+At most five frames are kept, the root cause's first.
+The frames of the last `Caused by:` section come before those of the exception that wraps it, and so on out to the outer exception, because the line that went wrong is usually under `Caused by:`.
+A `Suppressed:` block is left out, and a frame that repeats is counted once.
+The same order holds for `error`, for `log-error` and for the *Code* list of the xref:pages.adoc#errors[error page].
 
 A frame whose file is under the xref:configuration.adoc#source-dirs[source roots] is worth more than its name.
 The UI shows its five source lines and links it into your editor (xref:pages.adoc#code-frames[Code frames]), and the CLI's `findings` names the change that last touched its line (xref:cli.adoc#suspect-change[Suspect change]).
@@ -429,8 +433,11 @@ It is always `high`, and the impact it is ranked by is the occurrence count.
 
 `numbers`: `count`, `firstSeen`, `lastSeen`, `type`, `message` (normalised, digits replaced by `?`), `endpoints` (name and count).
 
-The group is the service, the exception type and the normalised message, so one row is one failure mode rather than one occurrence.
-`code` is most reliable for this kind, so look at the top application frame first.
+The group is the service, the root cause's type and the innermost application frame, so one row is one line throwing one exception rather than one occurrence.
+A wrapper such as Spring's `DataAccessException` or `ServletException` does not split a bug by the SQL or request its message embeds, and does not merge unrelated causes under its one type.
+When the stack trace has no application frame, or there is none, the group falls back to the exception type and the normalised message.
+`type` and `message` are the outer exception's, as the span recorded it.
+`code` is most reliable for this kind, and its top frame is the root cause's line, so look at it first.
 `traces` are the three newest occurrences, and `trace <id>` shows the exception span with its message and frames and the trace's log lines underneath.
 `logs --trace=<traceId>` gives the full log for that request.
 

@@ -254,7 +254,7 @@ public final class Writer implements AutoCloseable {
         statement.setString(i++, cut(errorType, 512));
         statement.setString(i++, cut(errorMessage, 4096));
         statement.setString(i++, error
-                ? Ids.errorId(span.service(), String.valueOf(errorType), Ids.normaliseMessage(errorMessage))
+                ? Ids.errorId(span.service(), String.valueOf(errorType), errorMessage, span.stacktrace())
                 : null);
         statement.setString(i++, cut(span.scope(), 255));
         statement.setString(i++, AttrJson.encode(span.attributes()));

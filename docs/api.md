@@ -290,8 +290,18 @@ Arrays rather than objects: 5,000 points must stay small on the wire.
   "sample": { "traceId": "…", "spanId": "…", "at": ..., "message": "Order 42 is already shipped", "stacktrace": "…" } | null }
 ```
 
-`GET /api/errors/{errorId}?from&to` → `{ "error": <ErrorGroup>, "code": [ "orders.OrderService.load(OrderService.java:41)" ], "series": { "t": [...], "count": [...] }, "traces": [<TraceSummary> x 20 newest] }`.
-`code` is the sample stack trace's application frames, reduced by the rules a finding's `code` follows (agent.md, "Code locations"), and empty when there is no sample or no application frame.
+`GET /api/errors/{errorId}?from&to` → `{ "error": <ErrorGroup>, "code": [ "orders.OrderService.load(OrderService.java:41)" ], "chain": [ <Cause> ], "series": { "t": [...], "count": [...] }, "traces": [<TraceSummary> x 20 newest] }`.
+`code` is the sample stack trace's application frames, reduced by the rules a finding's `code` follows (agent.md, "Code locations"): the root cause's first, then those of each exception wrapping it; empty when there is no sample or no application frame.
+`chain` is the sample stack trace read as its exceptions, innermost first: the root cause, then each exception that wraps it, out to the outer one; empty when there is no sample or no stack trace.
+
+```json
+{ "type": "org.h2.jdbc.JdbcSQLIntegrityConstraintViolationException", "message": "Unique index or primary key violation: …",
+  "frames": [ "org.h2.message.DbException.get(DbException.java:223)", "orders.OrderRepository.save(OrderRepository.java:41)" ],
+  "more": 42 }
+```
+
+`frames` are every frame the section prints, top first, written as `code` writes a frame (no module or class-loader prefix); `more` is the count of the `... n more` line, the frames the cause shares with the exception wrapping it, `0` when there is none.
+A `Suppressed:` block is not a cause and is left out; a trace without a header (no `Type: message` line) is one cause whose `type` is `""`, and a message that spans lines keeps its line breaks.
 
 ## Source
 
@@ -489,7 +499,7 @@ Decisions the server made where this document left room, recorded so the UI can 
 An entry span's endpoint name is `METHOD route` when `http.route` is present **and is not a servlet-mapping wildcard** (`/`, `/*`, or anything ending in `/*`); otherwise it is the span name.
 A wildcard mapping says "everything", so honouring it would collapse every endpoint of a Spring Boot application into `GET /*`, and OpenTelemetry already names a server span `METHOD route` or just `METHOD`.
 A span whose endpoint name matches `spidersense.ignore.endpoints` (design.md) is stored with `entry` false and no endpoint: it is in its trace and in `/api/traces`, and in nothing that counts requests.
-`endpointId` is the first 12 hex characters of the SHA-256 of `service + " " + name`; `queryId` hashes `service\0system\0statement` and `errorId` hashes `service\0type\0normalisedMessage` the same way.
+`endpointId` is the first 12 hex characters of the SHA-256 of `service + " " + name`; `queryId` hashes `service\0system\0statement` the same way, and `errorId` hashes `service\0rootCauseType\0frame` (the frame without its file position and with `$<digits>` made `$?`), or `service\0type\0normalisedMessage` when the trace has no application frame (design.md).
 
 ### Callers and error endpoints
 
@@ -524,8 +534,10 @@ An exponential histogram is stored as a histogram with count, sum, min and max o
 
 ### Errors
 
+An error group is the root-cause type and the innermost application frame of the stack trace, or the type and the normalised message when there is no application frame (design.md).
 `ErrorGroup.message` is the normalised message (digits become `?`, quoted strings become `'?'`); `sample.message` is one real message as received.
 `ErrorGroup.type` is the exception type, else `error.type`, else the literal `error`.
+Both are the outer exception's, as the span recorded it; the members of a group grouped by frame may differ in them, and the group shows the greatest of each.
 
 ### Status and ingest
 

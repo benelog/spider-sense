@@ -71,7 +71,7 @@ CREATE TABLE IF NOT EXISTS span (
     query_id       CHAR(12),
     error_type     VARCHAR(512),
     error_message  VARCHAR(4096),            -- as received
-    error_id       CHAR(12),                 -- hash over the normalised message
+    error_id       CHAR(12),                 -- hash over the root cause and its frame, or the normalised message
     scope          VARCHAR(255),
     attributes     VARCHAR(65535) NOT NULL,  -- JSON object
     events         VARCHAR(65535) NOT NULL   -- JSON array
@@ -195,9 +195,11 @@ CREATE TABLE IF NOT EXISTS meta (
 ----
 
 The schema is created with `IF NOT EXISTS` at startup.
-`meta.schema_version` is `6`, the version that added the `resolved` column of `ack`.
-Version 5 added `db_table`, version 4 added `ack`, and version 3 added `mark`.
-A version that changes a table drops and recreates every table, because the data is a cache of a development session and not a record.
+`meta.schema_version` is `7`, the version that moved the error group key to the root cause and its frame.
+Version 6 added the `resolved` column of `ack`, version 5 added `db_table`, version 4 added `ack`, and version 3 added `mark`.
+A version that changes a table or the meaning of a stored id drops and recreates every table, because the data is a cache of a development session and not a record.
+Version 7 changed every `error_id`, and so the id of every `error` finding.
+Acknowledgements and resolutions recorded before the upgrade are therefore lost with the rest of the tables, rather than kept as rows nothing can reach.
 An `ack` row is an acknowledged finding (xref:findings.adoc#acknowledgements[Acknowledgements]), or, with `resolved` true, a resolved one (xref:findings.adoc#resolutions[Resolutions]).
 The two share a table because a finding has one decision recorded at a time, and the newer one replaces the older.
 The retention sweeper does not delete an `ack` row by age, since a known finding stays known and a fixed one stays fixed.

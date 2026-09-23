@@ -11,7 +11,7 @@ package net.benelog.spidersense.store;
  */
 public final class Schema {
 
-    public static final int VERSION = 6;
+    public static final int VERSION = 7;
 
     /**
      * The H2 user {@code POST /api/sql} runs on: {@code SELECT} on {@code PUBLIC}

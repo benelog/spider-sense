@@ -43,10 +43,44 @@ public final class Ids {
         return shortHash(service + "\0" + system + "\0" + statement);
     }
 
-    /** The id of one error group: a type and a message with its literals removed. */
+    /** The id of an error group without an application frame: a type and a message with its literals removed. */
     public static String errorId(String service, String type, String normalisedMessage) {
         return shortHash(service + "\0" + type + "\0" + normalisedMessage);
     }
+
+    /**
+     * The id of the error group a failed span belongs to (design.md).
+     *
+     * <p>The key is the root cause's type and the innermost application frame of
+     * the chain, read from the root cause outwards: the same line throwing the same
+     * exception is one error, whatever the wrapper around it says. The frame is the
+     * default heuristic's, never {@code spidersense.app.packages}, so the id does not
+     * change with a setting of whichever process wrote the span, and it loses its
+     * file position and the numbers of synthetic names ({@code lambda$load$0},
+     * {@code Orders$1}), so moving a line or adding a lambda above it keeps the
+     * group. A trace without an application frame, or no trace at all, falls back
+     * to {@link #errorId(String, String, String)} over the outer type and the
+     * normalised message.
+     */
+    public static String errorId(String service, String type, @Nullable String message,
+            @Nullable String stacktrace) {
+        ExceptionChain chain = ExceptionChain.parse(stacktrace);
+        String frame = chain.innermost(ExceptionChain::notFramework);
+        if (frame == null) {
+            return errorId(service, type, normaliseMessage(message));
+        }
+        String rootType = chain.rootType();
+        return shortHash(service + "\0" + (rootType == null ? type : rootType) + "\0" + frameKey(frame));
+    }
+
+    /** A frame without its {@code (File.java:41)} and with {@code $<digits>} made {@code $?}. */
+    static String frameKey(String frame) {
+        int parenthesis = frame.indexOf('(');
+        String method = parenthesis < 0 ? frame : frame.substring(0, parenthesis);
+        return SYNTHETIC.matcher(method).replaceAll("\\$?");
+    }
+
+    private static final Pattern SYNTHETIC = Pattern.compile("\\$\\d+");
 
     /**
      * A message with its literals removed, so {@code Order 42 is already shipped}

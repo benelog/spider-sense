@@ -13,6 +13,7 @@ import net.benelog.spidersense.query.SchemaBlock;
 import net.benelog.spidersense.query.Stats;
 import net.benelog.spidersense.query.Window;
 import net.benelog.spidersense.store.Acks;
+import net.benelog.spidersense.store.ExceptionChain;
 import net.benelog.spidersense.store.LogRecord;
 import net.benelog.spidersense.store.Marks;
 import net.benelog.spidersense.store.MetricPoint;
@@ -323,6 +324,17 @@ public final class Codecs {
     static Json.JsonArray queries(List<Stats.QueryStats> queries) {
         Json.JsonArray array = Json.arr();
         queries.forEach(query -> array.add(query(query)));
+        return array;
+    }
+
+    /** The exception chain of an error's sample, innermost first (api.md). */
+    static Json.JsonArray chain(ExceptionChain chain) {
+        Json.JsonArray array = Json.arr();
+        chain.causes().forEach(cause -> array.add(Json.obj()
+                .put("type", cause.type())
+                .put("message", cause.message())
+                .put("frames", strings(cause.frames()))
+                .put("more", cause.more())));
         return array;
     }
 

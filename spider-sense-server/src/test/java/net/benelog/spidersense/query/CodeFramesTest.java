@@ -49,6 +49,27 @@ class CodeFramesTest {
     }
 
     @Test
+    void theRootCausesFramesComeFirstThenEachWrappersOutToTheOuterOne() {
+        String chain = """
+                jakarta.servlet.ServletException: Request processing failed
+                \tat orders.web.OrderController.ship(OrderController.java:28)
+                \tat org.springframework.web.servlet.FrameworkServlet.service(FrameworkServlet.java:885)
+                Caused by: orders.ShippingException: cannot ship
+                \tat orders.ShipmentService.ship(ShipmentService.java:74)
+                \tat orders.web.OrderController.ship(OrderController.java:28)
+                \t... 1 more
+                Caused by: java.lang.IllegalStateException: Order 42 is already shipped
+                \tat java.base/java.util.Objects.requireNonNull(Objects.java:220)
+                \tat orders.Order.markShipped(Order.java:51)
+                \t... 2 more""";
+
+        assertThat(new CodeFrames(null).ofStacktrace(chain)).containsExactly(
+                "orders.Order.markShipped(Order.java:51)",
+                "orders.ShipmentService.ship(ShipmentService.java:74)",
+                "orders.web.OrderController.ship(OrderController.java:28)");
+    }
+
+    @Test
     void nothingToReadIsAnEmptyList() {
         CodeFrames frames = new CodeFrames("");
 

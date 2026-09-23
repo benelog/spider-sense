@@ -1000,13 +1000,32 @@ const FRAMEWORK = ['java.', 'javax.', 'jdk.', 'sun.', 'com.sun.', 'jakarta.', 'o
   'org.hibernate.', 'org.eclipse.jetty.', 'org.apache.', 'io.opentelemetry.', 'com.zaxxer.', 'org.h2.',
   'net.benelog.spidersilk.'];
 
-/** The application frames of a stack trace, as docs/agent.md reduces them. */
+/** A stack trace as its exception chain, innermost first, as docs/api.md answers it. */
+function chainOf(stack) {
+  const causes = [];
+  for (const line of (stack || '').split('\n')) {
+    const text = line.trim();
+    if (!text) continue;
+    const more = /^\.\.\. (\d+) more/.exec(text);
+    if (text.startsWith('at ')) {
+      if (!causes.length) causes.push({ type: '', message: '', frames: [], more: 0 });
+      causes[causes.length - 1].frames.push(text.slice(3).replace(/^.*\/(?=[^/]*\()/, ''));
+    } else if (more && causes.length) {
+      causes[causes.length - 1].more = +more[1];
+    } else {
+      const header = text.replace(/^Caused by: /, '');
+      const colon = header.indexOf(': ');
+      causes.push({ type: colon < 0 ? header : header.slice(0, colon), message: colon < 0 ? '' : header.slice(colon + 2), frames: [], more: 0 });
+    }
+  }
+  return causes.reverse();
+}
+
+/** The application frames of a stack trace, root cause first, as docs/agent.md reduces them. */
 function appFrames(stack) {
-  return (stack || '').split('\n')
-    .filter((line) => line.startsWith('\tat '))
-    .map((line) => line.slice(4).trim())
-    .filter((frame) => !FRAMEWORK.some((prefix) => frame.startsWith(prefix)))
-    .slice(0, 5);
+  const frames = chainOf(stack).flatMap((cause) => cause.frames)
+    .filter((frame) => !FRAMEWORK.some((prefix) => frame.startsWith(prefix)));
+  return [...new Set(frames)].slice(0, 5);
 }
 
 const SEVERITY_RANK = { high: 0, medium: 1, low: 2 };
@@ -1602,6 +1621,7 @@ const ROUTES = [
     return {
       error: strip(group),
       code: appFrames(group.sample && group.sample.stacktrace),
+      chain: chainOf(group.sample && group.sample.stacktrace),
       series: { t, count: counts },
       traces: group._traces.slice().sort((a, b) => b.start - a.start).slice(0, 20).map(summary),
     };

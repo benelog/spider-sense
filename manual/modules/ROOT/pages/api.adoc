@@ -346,8 +346,22 @@ It is `null` when there is no catalog to read.
   "sample": { "traceId": "…", "spanId": "…", "at": ..., "message": "Order 42 is already shipped", "stacktrace": "…" } | null }
 ----
 
-*`+GET /api/errors/{errorId}?from&to+`* answers `{ "error": <ErrorGroup>, "code": [ "orders.OrderService.load(OrderService.java:41)" ], "series": { "t": [...], "count": [...] }, "traces": [<TraceSummary> x 20 newest] }`.
-`code` is the sample stack trace's application frames, reduced as a finding's `code` is (xref:findings.adoc#code[Code locations]), and empty when there are none.
+*`+GET /api/errors/{errorId}?from&to+`* answers `{ "error": <ErrorGroup>, "code": [ "orders.OrderService.load(OrderService.java:41)" ], "chain": [ <Cause> ], "series": { "t": [...], "count": [...] }, "traces": [<TraceSummary> x 20 newest] }`.
+`code` is the sample stack trace's application frames, reduced as a finding's `code` is (xref:findings.adoc#code[Code locations]), the root cause's first, and empty when there are none.
+`chain` is the sample stack trace read as its exceptions, innermost first: the root cause, then each exception that wraps it, out to the outer one.
+It is empty when there is no sample or no stack trace.
+
+[source,json]
+----
+{ "type": "org.h2.jdbc.JdbcSQLIntegrityConstraintViolationException", "message": "Unique index or primary key violation: …",
+  "frames": [ "org.h2.message.DbException.get(DbException.java:223)", "orders.OrderRepository.save(OrderRepository.java:41)" ],
+  "more": 42 }
+----
+
+`frames` are every frame the section prints, top first, written as `code` writes a frame.
+`more` is the count of the `... n more` line, the frames the cause shares with the exception wrapping it, and `0` when there is none.
+A `Suppressed:` block is not a cause and is left out.
+A trace without a `Type: message` header is one cause whose `type` is `""`.
 
 [#source]
 == Source
@@ -589,7 +603,8 @@ OpenTelemetry already names a server span `METHOD route` or just `METHOD`.
 A span whose endpoint name matches `spidersense.ignore.endpoints` (xref:configuration.adoc#ignored-endpoints[Ignored endpoints]) is stored with `entry` false and no endpoint.
 Such a span still appears in its trace and in `/api/traces`, but in nothing that counts requests.
 `endpointId` is the first 12 hex characters of the SHA-256 of `service + " " + name`.
-`queryId` hashes `service\0system\0statement` and `errorId` hashes `service\0type\0normalisedMessage` the same way.
+`queryId` hashes `service\0system\0statement` the same way.
+`errorId` hashes `service\0rootCauseType\0frame`, the frame without its file position and with `$<digits>` made `$?`, or `service\0type\0normalisedMessage` when the trace has no application frame (xref:design.adoc#errors[Errors]).
 
 === Callers and error endpoints
 
@@ -632,6 +647,8 @@ An exponential histogram is stored as a histogram with count, sum, min and max o
 `ErrorGroup.message` is the normalised message, where digits become `?` and quoted strings become `'?'`.
 `sample.message` is one real message as received.
 `ErrorGroup.type` is the exception type, else `error.type`, else the literal `error`.
+Both are the outer exception's, as the span recorded it.
+The members of a group keyed by its frame may differ in them, and the group shows the greatest of each.
 
 === Status and ingest
 

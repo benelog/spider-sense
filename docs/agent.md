@@ -179,6 +179,9 @@ An endpoint that `spidersense.ignore.endpoints` excludes (design.md) is not an e
 
 **Code locations.** The OpenTelemetry Java agent does not record where a span was started from, so `code` comes from what it does record: the `exception.stacktrace` of an error, and the `code.function`/`code.namespace` attributes of the few instrumentations that set them.
 A stack trace is reduced to its application frames: frames whose package is not one of the framework prefixes below, at most 5, innermost first.
+Innermost means the root cause first: the frames of the last `Caused by:` section come before those of the exception wrapping it, and so on out to the outer exception, each section read top down, a frame that repeats counted once, and a `Suppressed:` block left out.
+The line that went wrong is usually under `Caused by:`, and reading the trace top to bottom put the wrapper's frames first and cut the root cause's at the fifth.
+The same order holds for `error`, for `log-error` and for the error page's **Code** list ([ui.md](ui.md#errors-errors-and-errorserrorid)), and its first frame is the one an error group is keyed on ([design.md](design.md)) when no `spidersense.app.packages` narrows it.
 `spidersense.app.packages=com.acme,org.acme` (a comma-separated list) replaces the heuristic with an allowlist.
 
 Framework prefixes dropped by default: `java.`, `javax.`, `jdk.`, `sun.`, `com.sun.`, `jakarta.`, `org.springframework.`, `org.hibernate.`, `org.eclipse.jetty.`, `org.apache.`, `io.opentelemetry.`, `com.zaxxer.`, `org.h2.`, `net.benelog.spidersilk.`, `kotlin.`, `scala.`, `reactor.`, `io.netty.`, `ch.qos.logback.`, `org.slf4j.`, `org.junit.`, `gg.jte.`.

@@ -369,8 +369,9 @@ A call with no timeout turns the callee's bad minute into this service's bad min
 
 `numbers`: `count`, `firstSeen`, `lastSeen`, `type`, `message` (normalised, digits replaced by `?`), `endpoints` (name and count).
 
-The group is `(service, exception type or `error.type`, normalised message)`, so one row is one failure mode, not one occurrence.
-`code` is at its best here: the application frames of the sample stack trace, innermost first, so the **top frame is where to look**.
+The group is `(service, root-cause type, innermost application frame)`, so one row is one line throwing one exception, not one occurrence, whatever wrapper and message surround it; a trace without an application frame falls back to `(service, exception type or `error.type`, normalised message)`.
+`type` and `message` are the outer exception's.
+`code` is at its best here: the application frames of the sample stack trace, the root cause's first, so the **top frame is where to look**.
 `traces` are the three newest occurrences; `trace <id>` shows the exception span with its message and frames, and the trace's log lines underneath, which usually carry the context the message leaves out.
 `logs --trace=<traceId>` on its own gives the full log for that request.
 

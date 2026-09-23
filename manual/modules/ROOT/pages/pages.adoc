@@ -269,13 +269,14 @@ A row click opens the statement.
 [#errors]
 == Errors
 
-`#/errors` groups the exceptions by type and message.
+`#/errors` groups the exceptions by root cause and the application line that threw it (xref:design.adoc#errors[Errors]).
 A row gives the type in monospace with the package dimmed, the message, the service chip, the count, when it was first and last seen, and the endpoints as chips, the first two and then `+n`.
 A row click opens the error.
 
-`+#/errors/{errorId}+` gives the header, a chart of the count, a sample stack trace, the endpoints, and the recent traces.
-Above the stack trace, a *Code* list names the sample's application frames, the ones a finding would carry, as <<code-frames,code frames>>.
-The stack trace highlights the application's own frames: the frames whose package matches the top-level package of the first frame.
+`+#/errors/{errorId}+` gives the header, a chart of the count, the sample's exception chain, the endpoints, and the recent traces.
+The chain has one section per cause, innermost first: the *Root cause*, then each exception it is *Wrapped by*, out to the outer one.
+Each section shows its type, its message, its frames and its `... n more` line, and highlights the application's own frames: the frames whose package matches the top-level package of the section's first frame.
+Above the chain, a *Code* list names the sample's application frames, the ones a finding would carry, the root cause's first, as <<code-frames,code frames>>.
 
 [#code-frames]
 === Code frames

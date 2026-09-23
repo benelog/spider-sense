@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS span (
     query_id       CHAR(12),
     error_type     VARCHAR(512),
     error_message  VARCHAR(4096),            -- as received
-    error_id       CHAR(12),                 -- hash over the normalised message
+    error_id       CHAR(12),                 -- hash over the root cause and its frame, or the normalised message
     scope          VARCHAR(255),
     attributes     VARCHAR(65535) NOT NULL,  -- JSON object
     events         VARCHAR(65535) NOT NULL   -- JSON array
@@ -185,7 +185,8 @@ CREATE TABLE IF NOT EXISTS meta (
 );
 ```
 
-The schema is created with `IF NOT EXISTS` at startup; `meta.schema_version` is `6` (the `ack.resolved` column arrived with it, `db_table` with 5, `ack` with 4, `mark` with 3), and a version that changes a table drops and recreates every table (the data is a cache of a development session, not a record).
+The schema is created with `IF NOT EXISTS` at startup; `meta.schema_version` is `7` (the error group key moved to the root cause and its frame with it, the `ack.resolved` column arrived with 6, `db_table` with 5, `ack` with 4, `mark` with 3), and a version that changes a table or the meaning of a stored id drops and recreates every table (the data is a cache of a development session, not a record).
+Version 7 changed every `error_id` and so every `error` finding's id, and an `ack` row keyed by an old id would never match again; the drop removes those rows with the rest, so acknowledgements and resolutions recorded before the upgrade are lost, rather than kept as rows nothing can reach.
 An `ack` row is an acknowledged finding ([agent.md](agent.md#acknowledgements)), or, with `resolved` true, a resolved one ([agent.md](agent.md#resolutions)): one table because a finding has one decision recorded at a time, and the newer replaces the older through the same `MERGE INTO ack … KEY (finding_id)`.
 It is not swept by time, since a known finding stays known and a fixed one stays fixed, and `DELETE /api/data` removes it with everything else.
 A `db_table` row is the index catalog of one table of one service, as the extension read it through JDBC metadata ([design.md](design.md#the-extension)): it arrives as a log record whose attributes are `spidersense.schema.table`, `spidersense.schema.schema`, `spidersense.schema.product` and `spidersense.schema.indexes`, and the decoder turns that record into a catalog row instead of a log line, merged on its key (`MERGE INTO db_table … KEY (service, schema_name, table_name)`) so a table looked up again after a restart replaces its row.
