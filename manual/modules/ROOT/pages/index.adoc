@@ -40,7 +40,7 @@ The UI is served from the monitored JVM.
 The instrumentation is the stock https://github.com/open-telemetry/opentelemetry-java-instrumentation[OpenTelemetry Java agent], and the collector speaks OTLP/HTTP.
 Anything that emits OpenTelemetry can send to the collector, and a Spring Boot application's Actuator metrics arrive the same way.
 In xref:modes.adoc#standalone[standalone mode] the same jar is a collector and dashboard for every other platform.
-A Node.js, Python, Go or .NET application with the OpenTelemetry SDK, or an OpenTelemetry Collector, sends over OTLP/HTTP with `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf`.
+A Node.js, Python, Go or .NET application with the OpenTelemetry SDK, or an OpenTelemetry Collector, sends over OTLP/HTTP with `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf`, as xref:modes.adoc#other-languages[the Python, Node.js and Go examples] show.
 A Java application can send from the stock `opentelemetry-javaagent.jar`, or any OpenTelemetry-compatible agent, instead of the Spider Sense jar.
 
 Nothing to install, and the data outlives the application.::

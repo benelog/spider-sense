@@ -83,6 +83,103 @@ export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 
 The protocol has to be `http/protobuf`, because there is no gRPC receiver.
 
+[#other-languages]
+=== Python, Node.js and Go
+
+Python and Node.js have zero-code instrumentation, like the Java agent: a package installed beside the application instruments its web framework, HTTP clients and database drivers when the process starts.
+Go has no such agent, so the application sets up the SDK in `main` and wraps its handler.
+Each example below sends to a standalone Spider Sense on port 4000 under the service name `my-app`.
+
+Python, with `opentelemetry-instrument` wrapping the usual command:
+
+[source,bash]
+----
+pip install opentelemetry-distro opentelemetry-exporter-otlp
+opentelemetry-bootstrap -a install     # the instrumentation for every library installed
+
+export OTEL_SERVICE_NAME=my-app
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4000
+export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+export OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED=true
+opentelemetry-instrument --logs_exporter otlp python app.py
+----
+
+`opentelemetry-bootstrap` reads the packages already installed, so run it after the application's own dependencies.
+The last variable and `--logs_exporter otlp` send the `logging` records as well; without them only traces and metrics arrive.
+
+Node.js, with the instrumentation loaded by `--require`:
+
+[source,bash]
+----
+npm install @opentelemetry/api @opentelemetry/auto-instrumentations-node
+
+export OTEL_SERVICE_NAME=my-app
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4000
+export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+export OTEL_METRICS_EXPORTER=otlp
+export OTEL_LOGS_EXPORTER=otlp
+export OTEL_NODE_RESOURCE_DETECTORS=env,host,os,process
+node --require @opentelemetry/auto-instrumentations-node/register app.js
+----
+
+Traces are exported by default, and the metrics and logs only when their exporter variable says `otlp`.
+The last variable leaves out the cloud detectors, which otherwise probe a metadata server and print `MetadataLookupWarning` on a laptop.
+
+Go, with the SDK set up in `main`:
+
+[source,bash]
+----
+go get go.opentelemetry.io/otel \
+       go.opentelemetry.io/otel/sdk \
+       go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp \
+       go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp
+----
+
+[source,go]
+----
+package main
+
+import (
+	"context"
+	"log"
+	"net/http"
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+)
+
+func main() {
+	ctx := context.Background()
+	exporter, err := otlptracehttp.New(ctx) // reads OTEL_EXPORTER_OTLP_ENDPOINT
+	if err != nil {
+		log.Fatal(err)
+	}
+	tp := sdktrace.NewTracerProvider(sdktrace.WithBatcher(exporter)) // reads OTEL_SERVICE_NAME
+	defer tp.Shutdown(ctx)
+	otel.SetTracerProvider(tp)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /hello", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("hello"))
+	})
+	log.Fatal(http.ListenAndServe(":8080", otelhttp.NewHandler(mux, "server")))
+}
+----
+
+[source,bash]
+----
+OTEL_SERVICE_NAME=my-app OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4000 go run .
+----
+
+The exporter is the OTLP/HTTP one by construction, so Go needs no protocol variable.
+`otelhttp` names each server span after the `ServeMux` pattern, so the Endpoints page shows `GET /hello` rather than one row for the whole server.
+The queries appear only when the database calls make spans too, which in Go means wrapping `database/sql` with an instrumentation library, and in Python and Node.js happens for the drivers the packages above cover.
+
+The receiver is the same for all three, so the pages, the findings and the CLI treat them as they treat a Java service.
+The Java-only parts do not apply: the `code.stacktrace` of a slow query and the index catalog come from the Spider Sense jar's extension.
+
 The same two variables make a Java application send to Spider Sense from any OpenTelemetry-compatible agent, not only the Spider Sense jar: the stock `opentelemetry-javaagent.jar` at a version of your own choosing, a vendor's distribution of it, or an agent already on the command line for another reason.
 
 The stock agent is one jar, published on the project's https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases[GitHub releases] and on Maven Central as `io.opentelemetry.javaagent:opentelemetry-javaagent`.

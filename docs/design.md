@@ -28,6 +28,8 @@ The UI is a Spider Silk application (`net.benelog.spidersilk`), and the product 
 A Java application under the stock `opentelemetry-javaagent.jar` reaches a standalone Spider Sense with `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4000` and `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf`, at an agent version of its own choosing; the agent is one jar on the project's [GitHub releases](https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases) and on Maven Central as `io.opentelemetry.javaagent:opentelemetry-javaagent`.
 It gets the pages, the findings and the CLI over the same data, and lacks what the Spider Sense jar adds around that agent: the defaults set in `premain` (below) and [the extension](#the-extension), so no `code.stacktrace` on a slow query and no index catalog.
 
+Another language reaches it the same way: Python through `opentelemetry-instrument` and Node.js through `--require @opentelemetry/auto-instrumentations-node/register`, both zero-code, and Go through the SDK set up in `main` with the `otlptracehttp` exporter and `otelhttp` around the handler; the manual's modes chapter carries each as an example.
+
 The jar is Java 21+ (Spider Silk's floor). The monitored application can be any JVM the OpenTelemetry agent supports, but the embedded UI needs 21+, so agent mode requires 21+.
 
 ## How the jar is put together

@@ -247,7 +247,7 @@ A JVM under the OpenTelemetry Java agent that Spider Sense carries:
 java -javaagent:"$SENSE" -Dotel.service.name=my-app -jar app.jar
 ----
 
-Any OpenTelemetry SDK, pointed at a standalone Spider Sense:
+Any OpenTelemetry SDK, pointed at a standalone Spider Sense (xref:modes.adoc#other-languages[Python, Node.js and Go]):
 
 [source,bash]
 ----
