@@ -61,6 +61,14 @@ record() {
     # What the agent reads of the tree is the commit, not work in progress.
     [[ -z "$(git status --porcelain)" ]] || { echo "commit or stash first: the agent would see the changes" >&2; exit 1; }
     stop_demo
+    # A database of the session's own, so its findings cover this run and nothing that
+    # earlier runs left in ~/db/spider-sense/sense; every JVM of the demo and the CLI
+    # read it from the properties file SPIDERSENSE_CONFIG names.
+    local db
+    db="$PWD/$OUT/db/$agent-$lang-$(date +%s)/sense"
+    mkdir -p "$(dirname "$db")"
+    printf 'spidersense.db=%s\n' "$db" >"$OUT/$agent-$lang.properties"
+    export SPIDERSENSE_CONFIG="$PWD/$OUT/$agent-$lang.properties"
     file="$OUT/$agent-$lang.jsonl"
     printf '%s\n' "$prompt" >"$OUT/$agent-$lang.prompt"
     echo "agent-demo: $agent ($lang) -> $file"
