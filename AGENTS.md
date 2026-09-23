@@ -16,7 +16,7 @@ Read `docs/design.md` (architecture and decisions), `docs/storage.md` (the H2 sc
 | `examples/batch-worker` | A worker with no HTTP server: `@WithSpan` scheduled jobs over HikariCP + Logback + H2, for `slow-job`, `log-error`, `pool-exhausted`, `thread-growth`. |
 | `examples/silk-bookstore` | Spider Silk + spring-jdbc + H2 example app with deliberately slow queries and endpoints (port 8081). |
 | `examples/load-gen` | Traffic generator for the three web apps. |
-| `skills/spider-sense` | The agent skill: how to run the loop (start under the agent, mark, exercise, findings, fix, compare, check) with references beside it. |
+| `skills/spider-sense` | The agent skill: how to run the loop (start under the agent, mark, exercise, findings, fix, compare, check) with references beside it. Both skills are linked from `.claude/skills/` and `.agents/skills/`, so Claude Code (`/spider-sense`) and Codex (`$spider-sense`) find them in this checkout. |
 | `skills/spider-sense-sql-tuning` | The query-tuning agent skill: an index, a rewrite, a fetch join, a batch, each verified with `compare` and `check`. |
 
 ## Rules

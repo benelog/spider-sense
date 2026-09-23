@@ -132,19 +132,21 @@ xref:agent-loop.adoc#the-loop[The Loop] walks the whole cycle on them.
 [#hand-it-to-an-agent]
 == Handing the demo to an agent
 
-The repository carries the skill at `skills/spider-sense/`, so an AI coding agent started in the checkout needs no `init` step.
-This prompt runs the loop end to end in Claude Code, or in any agent with a shell:
+The repository carries the skills at `skills/`, linked from `.claude/skills/` and `.agents/skills/`, so Claude Code and Codex started in the checkout find them without an `init` step.
+Start `scripts/demo-shared.sh`, let the load generator run for a few minutes, and then ask in Claude Code:
 
 [source,text]
 ----
-Read skills/spider-sense/SKILL.md, then start the demo with `scripts/demo-shared.sh --no-build`
-in the background and wait until it prints the URLs. Run `mark demo`, let the load generator
-run for two minutes, then run `findings --since=demo`. For each of the top three findings open
-one of its traces and tell me which line under examples/ causes it. Do not fix anything.
+/spider-sense The example apps have been running under Spider Sense with some traffic for a few minutes.
+What are the three biggest problems, and which lines under examples/ cause them?
+Do not change the code yet; propose how to fix them first.
 ----
 
-The agent answers with the findings as the tool printed them, a trace id for each as evidence, and the file and line each fault comes from, because the finding carries the code location and the README beside each example says what is wrong on purpose.
-A second prompt of "fix the N+1 in spring-orders and show me before and after" has it fix, restart the application, exercise the same endpoints, and run `compare --before=demo --after=…` (xref:marks-and-compare.adoc[Marks and Compare]).
+In Codex the skill is called `$spider-sense` instead of `/spider-sense`.
+The prompt names no command, because the skill says how to read the findings, open a trace for each, and locate the code.
+The agent answers with the findings as the tool printed them, a trace id for each as evidence, the file and line each fault comes from, and a proposed fix for each.
+It can find the line because the finding carries the code location, and the README beside each example says what is wrong on purpose.
+A second prompt such as "apply the first fix and show me before and after" has it fix, restart the application, exercise the same endpoints, and run `compare` (xref:marks-and-compare.adoc[Marks and Compare]).
 In a project of your own, `java -jar spider-sense.jar init` installs the same skill and writes the jar's path into `CLAUDE.md`.
 
 The prompt can be watched before it is tried.

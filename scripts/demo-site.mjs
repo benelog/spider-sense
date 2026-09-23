@@ -942,8 +942,10 @@ function agentRows(dir, id) {
   if (!lines.length) throw new Error(id + ': the stream is empty; see ' + join(dir, id + '.err'));
   const { session, events } = agent === 'claude' ? claudeSession(lines, started) : codexSession(lines, started);
   if (agent === 'codex') {
-    session.agent_version = agentVersion('codex');
-    session.model = codexModel();
+    // What agent-demo.sh wrote down when it ran the session, else what is installed now.
+    const noted = (ext) => (existsSync(join(dir, id + ext)) ? readFileSync(join(dir, id + ext), 'utf8').trim() : '');
+    session.agent_version = noted('.version') || agentVersion('codex');
+    session.model = noted('.model') || codexModel();
   }
   if (!session.duration_ms) session.duration_ms = lines[lines.length - 1].t - started;
   events.unshift({ at_ms: 0, kind: 'user', output: prompt });

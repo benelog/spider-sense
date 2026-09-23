@@ -115,19 +115,20 @@ After Ctrl-C the H2 file under `~/db/spider-sense/` still has everything, and `j
 
 ### Hand it to an agent
 
-The repository carries the agent skill at `skills/spider-sense/`, so an AI coding agent started in this checkout can run the whole loop.
-Paste this into Claude Code, or any agent with a shell:
+The repository carries the agent skills at `skills/`, linked from `.claude/skills/` and `.agents/skills/`, so Claude Code and Codex started in this checkout find them without an `init` step.
+Start the demo with `scripts/demo-shared.sh`, let the load generator run for a few minutes, and then ask in Claude Code:
 
 ```text
-Read skills/spider-sense/SKILL.md, then start the demo with `scripts/demo-shared.sh --no-build`
-in the background and wait until it prints the URLs. Run `mark demo`, let the load generator
-run for two minutes, then run `findings --since=demo`. For each of the top three findings open
-one of its traces and tell me which line under examples/ causes it. Do not fix anything.
+/spider-sense The example apps have been running under Spider Sense with some traffic for a few minutes.
+What are the three biggest problems, and which lines under examples/ cause them?
+Do not change the code yet; propose how to fix them first.
 ```
 
-The agent answers with the findings as the tool printed them, the trace ids as evidence, and the file and line each fault comes from.
+In Codex the skill is called `$spider-sense` instead of `/spider-sense`.
+The prompt names no command: the skill tells the agent to read the findings, open a trace for each, and find the line in the code.
+The agent answers with the findings as the tool printed them, the trace ids as evidence, the file and line each fault comes from, and a fix for each to decide on.
 **Watch it first:** real runs of this prompt, replayed from the agents' event streams, in [Claude Code](https://spider-sense.benelog.net/agent-demo/claude-code/) ([한국어](https://spider-sense.benelog.net/agent-demo/claude-code/ko/)) and [Codex CLI](https://spider-sense.benelog.net/agent-demo/codex/) ([한국어](https://spider-sense.benelog.net/agent-demo/codex/ko/)).
-A follow-up of "fix the N+1 in spring-orders and show me before and after" makes it fix, restart, exercise the same endpoints, and run `compare`.
+A follow-up such as "apply the first fix and show me before and after" makes it fix, restart, exercise the same endpoints, and run `compare`.
 In your own project, `java -jar spider-sense.jar init` installs the same skills into `.claude/skills/` and writes the jar's path into `CLAUDE.md`, so the prompt starts at "start the app under Spider Sense".
 
 ## For AI agents
