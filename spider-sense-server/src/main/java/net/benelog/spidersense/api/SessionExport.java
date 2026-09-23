@@ -23,7 +23,8 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * The whole window as one JSON document: every service, span, log record,
- * metric, series, point, tingle and mark (agent.md, "Export and import").
+ * metric, series, point, tingle and mark, and the index catalog of its services
+ * (agent.md, "Export and import").
  *
  * <p>It is written straight to the response — or to the file the CLI named —
  * rather than built as a tree first. A session worth exporting is the one that
@@ -86,6 +87,7 @@ final class SessionExport {
         section(text, "metricPoints", connection, points(window, service), SessionExport::point);
         section(text, "tingles", connection, tingles(window, service), SessionExport::tingle);
         section(text, "marks", connection, marks(window, service), SessionExport::mark);
+        section(text, "dbTables", connection, catalog(service), SessionExport::catalogRow);
         text.write("}");
     }
 
@@ -299,6 +301,40 @@ final class SessionExport {
                 .put("name", rs.getString("name"))
                 .put("service", rs.getString("service"))
                 .put("note", rs.getString("note"));
+    }
+
+    /**
+     * The index catalog of the services the document carries, windowed by service
+     * and not by time: the extension reads a table's indexes once per process, so
+     * the row that describes the window's statements was usually written before
+     * the window began.
+     */
+    private static Select catalog(@Nullable String service) {
+        return service == null
+                ? new Select("SELECT * FROM db_table ORDER BY service, schema_name, table_name",
+                        List.of())
+                : new Select("SELECT * FROM db_table WHERE service = ?"
+                        + " ORDER BY service, schema_name, table_name", List.of(service));
+    }
+
+    /**
+     * {@code indexes} travels as the array it is; a stored text that does not
+     * parse travels as that text, since the export repairs nothing (the reader
+     * drops such a row, storage.md).
+     */
+    private static Json.JsonObject catalogRow(ResultSet rs) throws SQLException {
+        String indexes = orEmptyArray(rs.getString("indexes"));
+        Json.JsonObject row = Json.obj()
+                .put("service", rs.getString("service"))
+                .put("schemaName", rs.getString("schema_name"))
+                .put("tableName", rs.getString("table_name"))
+                .put("product", rs.getString("product"));
+        try {
+            row.put("indexes", Json.parse(indexes));
+        } catch (RuntimeException notJson) {
+            row.put("indexes", indexes);
+        }
+        return row.put("seenMs", rs.getLong("seen_ms"));
     }
 
     // --- the plumbing --------------------------------------------------------------

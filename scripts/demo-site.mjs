@@ -34,7 +34,7 @@ const DOLTHUB = { owner: 'benelog', database: 'spider-sense-demo', branch: 'main
 // which load reads as '' when a cell is empty; `window` says which column the
 // recording's window cuts on (`trace`: the spans of the traces that started in it;
 // `series`: the series that have a point in it; `meta`: every row, plus the
-// recording's own rows). `ddl` is the same schema in MySQL
+// recording's own rows; null: every row, in `order`, or by name). `ddl` is the same schema in MySQL
 // types: VARCHAR(65535) and the 4096-wide columns are TEXT, which is what Dolt's
 // row size allows, and the JSON columns stay text so a row reads back byte for byte.
 
@@ -92,6 +92,16 @@ const TABLES = [
   { name: 'ack', key: ['finding_id'], window: 'at_ms',
     columns: 'finding_id at_ms note', required: 'finding_id',
     ddl: 'finding_id VARCHAR(64) NOT NULL, at_ms BIGINT NOT NULL, note VARCHAR(1024)' },
+  // The index catalog, every row: the extension reads a table's indexes once per
+  // process, so the row behind a window's schema blocks was usually written before
+  // the window began. Loaded with the rest, it gives capture's slow-query and
+  // n-plus-one answers their schema block (docs/agent.md). A recording pushed before
+  // the table travelled has none, which pull reads as no rows (`optional`).
+  { name: 'db_table', key: ['service', 'schema_name', 'table_name'], window: null, optional: true,
+    order: 'service, schema_name, table_name',
+    columns: 'service schema_name table_name product indexes seen_ms', required: 'service schema_name table_name indexes',
+    ddl: `service VARCHAR(255) NOT NULL, schema_name VARCHAR(255) NOT NULL, table_name VARCHAR(255) NOT NULL,
+          product VARCHAR(64), indexes TEXT NOT NULL, seen_ms BIGINT NOT NULL` },
   // schema_version and created_at as H2 wrote them, plus the recording's own rows:
   // recording.from and recording.to (the window the page shows), recording.at and
   // recording.version. meta is pushed last, so a push that broke off has no new one.
@@ -199,7 +209,7 @@ function exportTables(opts) {
     } else if (table.window) {
       query = 'SELECT ' + select + ' FROM ' + table.name + ' WHERE ' + table.window + ' BETWEEN ' + since + ' AND ' + until + ' ORDER BY ' + table.window;
     } else {
-      query = 'SELECT ' + select + ' FROM ' + table.name + ' ORDER BY name';
+      query = 'SELECT ' + select + ' FROM ' + table.name + ' ORDER BY ' + (table.order || 'name');
     }
     statements.push('CALL CSVWRITE(' + sqlString(join(dir, table.name + '.csv')) + ', ' + sqlString(query) + ", 'charset=UTF-8')");
   }
@@ -518,6 +528,11 @@ async function pull(opts) {
   console.log('pulling ' + dolt.page() + ' (' + ref + ') into ' + dir);
   for (const table of TABLES) {
     const res = await fetchRetry(dolt.csv(ref, table.name));
+    if (!res.ok && table.optional) {
+      writeFileSync(csvOf(opts, table), table.columns.join(',') + '\n');
+      console.log('  ' + table.name + ': not in ' + ref + ' (' + res.status + '), no rows');
+      continue;
+    }
     if (!res.ok) throw new Error(dolt.csv(ref, table.name) + ': ' + res.status);
     const text = await res.text();
     writeFileSync(csvOf(opts, table), text);

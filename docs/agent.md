@@ -300,7 +300,7 @@ The CLI's window on `GET /api/events`: one line per `tingle` event as it arrives
 
 ## Export and import
 
-`GET /api/export?since&until&service` (and `from`/`to`) without `traceId` exports the window: every service, span, log record, metric, metric series, metric point, tingle and mark, as one JSON document, streamed as it is read, with `Content-Disposition: attachment; filename="spider-sense-<from>-<to>.json"`.
+`GET /api/export?since&until&service` (and `from`/`to`) without `traceId` exports the window: every service, span, log record, metric, metric series, metric point, tingle and mark, and the index catalog (`db_table`, [storage.md](storage.md)) of its services, as one JSON document, streamed as it is read, with `Content-Disposition: attachment; filename="spider-sense-<from>-<to>.json"`.
 With `traceId` the answer is the single-trace export of api.md as before.
 
 ```json
@@ -312,15 +312,19 @@ With `traceId` the answer is the single-trace export of api.md as before.
   "metricSeries": [ { "id": 7, "service", "name", "attributes": { … } } ],
   "metricPoints": [ { "seriesId": 7, "atMs", "value", "count", "sum", "min", "max", "buckets": { … } | null } ],
   "tingles": [ { …every column except id… } ],
-  "marks": [ { "atMs", "name", "service", "note" } ] }
+  "marks": [ { "atMs", "name", "service", "note" } ],
+  "dbTables": [ { "service", "schemaName", "tableName", "product", "indexes": [ { "name", "unique", "columns": [ … ] } ], "seenMs" } ] }
 ```
 
 Every key is its column's name in camelCase, so a section is the table it came from and an import binds it straight back: `at_ms` is `atMs`, `start_ms` is `startMs`, `parent_span_id` is `parentSpanId`.
 Nothing is derived on the way out or recomputed on the way in — `entry`, `slow`, `queryId` and the rest travel as they were stored, because a document exported from one session must not change meaning under another machine's thresholds.
+`dbTables` is cut by service and not by time: the extension reads a table's indexes once per process, so the row behind the window's statements was usually written before the window began, and every catalog row of the exported services travels (all of them without `service`).
+Its `indexes` is the stored array as an array, or the stored text as a string when that text is not JSON.
+With it, a `slow-query` or `n-plus-one` finding computed over the imported session has the [schema block](#the-schema-block) it had where it was recorded.
 
-`POST /api/import` takes that document (`Content-Encoding: gzip` accepted) and answers `200` `{ "spans": n, "logs": n, "metricPoints": n, "tingles": n, "marks": n, "skippedTraces": n, "window": { "from": …, "to": … } }`.
+`POST /api/import` takes that document (`Content-Encoding: gzip` accepted) and answers `200` `{ "spans": n, "logs": n, "metricPoints": n, "tingles": n, "marks": n, "dbTables": n, "skippedTraces": n, "window": { "from": …, "to": … } }`.
 Import keeps every timestamp as exported, so the reader sets the time range to the answer's `window` (or `all`).
-It is idempotent enough for a file imported twice: a trace whose id already has rows in the store is skipped whole (its spans, logs and tingles; `skippedTraces` counts it), a metric point is merged on its `(series, at)` key with the series looked up or created by `(service, name, attributes)`, a service row is merged, and a mark is skipped when one with the same name and instant exists.
+It is idempotent enough for a file imported twice: a trace whose id already has rows in the store is skipped whole (its spans, logs and tingles; `skippedTraces` counts it), a metric point is merged on its `(series, at)` key with the series looked up or created by `(service, name, attributes)`, a service row is merged, a mark is skipped when one with the same name and instant exists, and a catalog row is merged on its key `(service, schema_name, table_name)` as the writer merges it ([storage.md](storage.md)), so the table the file describes replaces the row the store had for it.
 A document whose `schema` is not this version's is a `400` naming both versions.
 Acknowledgements are not exported: they are the reader's, not the session's.
 

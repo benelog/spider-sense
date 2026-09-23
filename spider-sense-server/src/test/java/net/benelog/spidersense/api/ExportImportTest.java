@@ -91,7 +91,10 @@ class ExportImportTest {
                 .get(0).asLong();
     }
 
-    /** A slow database child, a failing request, a log, a metric series and a mark. */
+    /**
+     * A slow database child, a failing request, a log, a metric series, a mark,
+     * and the index catalog of the table the slow statement reads.
+     */
     private static void fill(TestClient client) {
         Span.Builder root = Otlp.span(TRACE, ROOT, "GET /orders/{id}", Span.SpanKind.SPAN_KIND_SERVER,
                 NOW, 152,
@@ -126,6 +129,14 @@ class ExportImportTest {
                 "jvm.memory.used", "By", NOW + 1000, 2048,
                 Otlp.attr("jvm.memory.type", "heap"),
                 Otlp.attr("jvm.memory.pool.name", "G1 Eden Space")).toByteArray());
+        postProtobuf(client, "/v1/logs", Otlp.logs(Otlp.service("spring-orders"), "spider-sense",
+                Otlp.log(NOW - 30_000, 9, "index catalog of ORDERS", null, null,
+                        Otlp.attr("spidersense.schema.table", "ORDERS"),
+                        Otlp.attr("spidersense.schema.schema", "PUBLIC"),
+                        Otlp.attr("spidersense.schema.product", "H2"),
+                        Otlp.attr("spidersense.schema.indexes",
+                                "[{\"name\":\"PRIMARY_KEY_8\",\"unique\":true,\"columns\":[\"ID\"]}]")))
+                .toByteArray());
         assertThat(postJson(client, "/api/marks",
                 Json.obj().put("name", "before").put("at", NOW + 20).toJson()).statusCode())
                 .isEqualTo(201);
@@ -157,6 +168,16 @@ class ExportImportTest {
             assertThat(document.getArray("metricPoints")).hasSize(2);
             assertThat(document.getArray("tingles")).isNotEmpty();
             assertThat(document.getArray("marks")).hasSize(1);
+            assertThat(document.getArray("dbTables")).hasSize(1);
+
+            Json.JsonObject table = document.getArray("dbTables").get(0).asObject();
+            assertThat(table.getString("service")).isEqualTo("spring-orders");
+            assertThat(table.getString("schemaName")).isEqualTo("PUBLIC");
+            assertThat(table.getString("tableName")).isEqualTo("ORDERS");
+            assertThat(table.getString("product")).isEqualTo("H2");
+            assertThat(table.getLong("seenMs")).isEqualTo(NOW - 30_000);
+            assertThat(table.getArray("indexes").get(0).asObject().getString("name"))
+                    .isEqualTo("PRIMARY_KEY_8");
 
             Json.JsonObject span = document.getArray("spans").get(1).asObject();
             assertThat(span.getString("spanId")).isEqualTo(CHILD);
@@ -193,6 +214,7 @@ class ExportImportTest {
             assertThat(counts.getLong("metricPoints")).isEqualTo(2);
             assertThat(counts.getLong("tingles")).isPositive();
             assertThat(counts.getLong("marks")).isEqualTo(1);
+            assertThat(counts.getLong("dbTables")).isEqualTo(1);
             assertThat(counts.getLong("skippedTraces")).isZero();
             assertThat(counts.getObject("window").getLong("from")).isEqualTo(NOW);
 
@@ -216,6 +238,9 @@ class ExportImportTest {
             assertThat(second.getLong("tingles")).isZero();
             assertThat(second.getLong("marks")).isZero();
             assertThat(second.getLong("metricPoints")).isEqualTo(2);
+            assertThat(second.getLong("dbTables")).isEqualTo(1);
+            assertThat(rows(client, "SELECT COUNT(*) FROM db_table"))
+                    .as("merged on its key, not added again").isEqualTo(1);
 
             Json.JsonObject after = Json.parse(client.get("/api/status").body()).asObject();
             assertThat(after.getObject("counts").getLong("spans")).isEqualTo(3);
@@ -226,6 +251,45 @@ class ExportImportTest {
             assertThat(rows(client, "SELECT COUNT(*) FROM metric_point")).isEqualTo(2);
             assertThat(client.get("/api/traces/" + TRACE).body()).isEqualTo(trace[0]);
         });
+    }
+
+    /**
+     * The point of carrying the catalog: a slow-query finding computed over the
+     * imported session has the schema block the original one had (agent.md).
+     */
+    @Test
+    void aSlowQueryOfTheImportedSessionHasItsSchemaBlock() {
+        String[] document = new String[1];
+        String[] original = new String[1];
+        serve(client -> {
+            fill(client);
+            document[0] = client.get("/api/export" + window()).body();
+            original[0] = slowQuerySchema(client).toJson();
+        });
+
+        serve(client -> {
+            assertThat(postJson(client, "/api/import", document[0]).statusCode()).isEqualTo(200);
+
+            Json.JsonObject schema = slowQuerySchema(client);
+            assertThat(schema.toJson()).isEqualTo(original[0]);
+            Json.JsonObject table = schema.getArray("tables").get(0).asObject();
+            assertThat(table.getString("table")).isEqualTo("ORDERS");
+            assertThat(table.getArray("indexes")).hasSize(1);
+            assertThat(schema.getArray("unindexed").get(0).asString()).isEqualTo("orders.name");
+            assertThat(client.get("/api/findings" + window() + "&format=text").body())
+                    .contains("   indexes ORDERS: PRIMARY_KEY_8 (ID) unique\n");
+        });
+    }
+
+    private static Json.JsonObject slowQuerySchema(TestClient client) {
+        for (Json.JsonValue value : Json.parse(client.get("/api/findings" + window()).body())
+                .asObject().getArray("findings")) {
+            Json.JsonObject finding = value.asObject();
+            if ("slow-query".equals(finding.getString("kind"))) {
+                return finding.getObject("schema");
+            }
+        }
+        throw new AssertionError("no slow-query finding in the window");
     }
 
     @Test

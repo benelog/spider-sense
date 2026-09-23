@@ -30,7 +30,9 @@ import org.jspecify.annotations.Nullable;
  * has an identity: a trace whose id already has a span is skipped whole, a
  * metric point merges on {@code (series, at)}, a series is looked up by
  * {@code (service, name, attributes)}, a service row is merged, and a mark is
- * skipped when one with the same name and instant exists. The one thing an
+ * skipped when one with the same name and instant exists, and a catalog row is
+ * merged on {@code (service, schema_name, table_name)} as the writer merges it.
+ * The one thing an
  * import never writes is a {@code start} mark: the application it would claim to
  * have started is not running here.
  */
@@ -38,7 +40,7 @@ public final class Importer {
 
     /** What {@code POST /api/import} answers with. */
     public record Result(long spans, long logs, long metricPoints, long tingles, long marks,
-            long skippedTraces, long from, long to) {
+            long dbTables, long skippedTraces, long from, long to) {
     }
 
     /** A document of another schema version: there is nothing safe to do with it. */
@@ -111,10 +113,12 @@ public final class Importer {
         long logs = insertLogs(connection, array(document, "logs"), present);
         long tingles = insertTingles(connection, array(document, "tingles"), present);
         long marks = insertMarks(connection, array(document, "marks"));
+        long tables = mergeCatalog(connection, array(document, "dbTables"));
 
         long from = imported.count() > 0 ? imported.from() : windowFrom(document);
         long to = imported.count() > 0 ? imported.to() : windowTo(document);
-        return new Result(imported.count(), logs, points, tingles, marks, present.size(), from, to);
+        return new Result(imported.count(), logs, points, tingles, marks, tables, present.size(),
+                from, to);
     }
 
     // --- spans ----------------------------------------------------------------
@@ -326,6 +330,50 @@ public final class Importer {
             count++;
         }
         return count;
+    }
+
+    // --- the index catalog ----------------------------------------------------------
+
+    /**
+     * The writer's own merge on {@code (service, schema_name, table_name)}: a
+     * table the file describes replaces the row this store has for it, as a table
+     * looked up again after a restart does (storage.md), so a second import of the
+     * same file leaves the one row it wrote.
+     */
+    private static long mergeCatalog(Connection connection, Json.JsonArray tables)
+            throws SQLException {
+        long count = 0;
+        try (PreparedStatement statement = connection.prepareStatement(Writer.MERGE_CATALOG)) {
+            for (Json.JsonValue value : tables) {
+                Json.JsonObject table = value.asObject();
+                String service = string(table, "service");
+                String name = string(table, "tableName");
+                if (service == null || name == null) {
+                    continue;
+                }
+                int i = 1;
+                statement.setString(i++, Writer.cut(service, 255));
+                statement.setString(i++, Writer.cut(or(string(table, "schemaName"), ""), 255));
+                statement.setString(i++, Writer.cut(name, 255));
+                statement.setString(i++, Writer.cut(string(table, "product"), 64));
+                statement.setString(i++, Writer.cut(indexes(table), 65535));
+                statement.setLong(i, longOr(table, "seenMs", 0));
+                statement.addBatch();
+                count++;
+            }
+            if (count > 0) {
+                statement.executeBatch();
+            }
+        }
+        return count;
+    }
+
+    /** The array as its text, or the text the export carried when the stored one did not parse. */
+    private static String indexes(Json.JsonObject table) {
+        if (table.has("indexes") && table.get("indexes").isString()) {
+            return table.get("indexes").asString();
+        }
+        return nested(table, "indexes", AttrJson.EMPTY_ARRAY);
     }
 
     // --- services ----------------------------------------------------------------

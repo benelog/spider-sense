@@ -664,6 +664,8 @@ java -jar spider-sense.jar import session.json.gz
 `export` writes to stdout, or to the file `--out` names, gzipped when that name ends in `.gz`.
 It takes `--since`, `--until` and `--service` like every other command.
 The document carries every service, span, log record, metric, metric series, metric point, live event and mark of the window.
+It also carries the index catalog of those services, whatever its age, because the agent reads a table's indexes once per process and usually before the window.
+A slow-query or N+1 finding over the imported session therefore has the same xref:findings.adoc#schema[schema block] it had where it was recorded.
 Every key is its column's name in camelCase, so a section is the table it came from.
 Nothing is derived on the way out or recomputed on the way in, because a document exported from one session must not change meaning under another machine's thresholds.
 
@@ -676,7 +678,7 @@ imported 12,345 spans, 456 logs, 7,890 metric points, 12 tingles, 3 marks (2 tra
 ----
 
 Import keeps every timestamp as exported, so set the time range to that window, or to `all`, to see the data.
-A file imported twice adds nothing: a trace whose id already has rows is skipped whole, a metric point is merged on its series and instant, a service row is merged, and a mark is skipped when one with the same name and instant exists.
+A file imported twice adds nothing: a trace whose id already has rows is skipped whole, a metric point is merged on its series and instant, a service row is merged, a mark is skipped when one with the same name and instant exists, and a table of the index catalog replaces the row the store had for it.
 A document whose schema is not this version's is refused, naming both versions.
 Acknowledgements are not exported, because they are the reader's rather than the session's.
 
