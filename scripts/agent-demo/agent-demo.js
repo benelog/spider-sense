@@ -124,10 +124,25 @@ function inline(text) {
     if (m[1]) out += '<code>' + esc(m[2]) + '</code>';
     else if (m[3] || m[4]) out += '<strong>' + inline(m[3] || m[4]) + '</strong>';
     else if (m[5]) out += '<em>' + inline(m[5]) + '</em>';
-    else if (m[6]) out += '<a href="' + esc(/^https?:/.test(m[7]) ? m[7] : REPO + '/blob/main/' + m[7].replace(/^\.?\//, '')) + '" target="_blank" rel="noopener">' + inline(m[6]) + '</a>';
+    else if (m[6]) {
+      const href = linkOf(m[7]);
+      out += href ? '<a href="' + esc(href) + '" target="_blank" rel="noopener">' + inline(m[6]) + '</a>' : '<span class="link">' + inline(m[6]) + '</span>';
+    }
     at = re.lastIndex;
   }
   return out + esc(text.slice(at));
+}
+
+/**
+ * Where a link the agent printed leads on the web: a file of the checkout (with a
+ * `:line`) to that line on GitHub, a page elsewhere to itself, and the demo's own
+ * localhost, which was only there while it ran, nowhere.
+ */
+function linkOf(url) {
+  if (/^https?:\/\/(127\.0\.0\.1|localhost)[:/]/.test(url)) return null;
+  if (/^https?:/.test(url)) return url;
+  const m = /^(?:.*?\/spider-sense\/)?\.?\/?([^:#]+)(?::(\d+))?/.exec(url);
+  return m ? REPO + '/blob/main/' + m[1] + (m[2] ? '#L' + m[2] : '') : null;
 }
 
 function cells(line) {
