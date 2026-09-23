@@ -82,6 +82,15 @@ final class Local {
             print(out, options.flag("json") ? withdrawn.json().toJson() : withdrawn.text());
             return Cli.OK;
         }
+        if (Options.UNRESOLVE.equals(options.command())) {
+            if (!reports.ackStore().unresolve(options.requiredArgument())) {
+                err.println("spider-sense: No such resolution: " + options.requiredArgument());
+                return Cli.NOT_FOUND;
+            }
+            Reports.Report withdrawn = Reports.unresolve(options.requiredArgument());
+            print(out, options.flag("json") ? withdrawn.json().toJson() : withdrawn.text());
+            return Cli.OK;
+        }
         Reports.Report report = switch (options.command()) {
             case "status" -> reports.status("file", null, 0);
             case "findings" -> reports.findings(window(options, reports, service), service,
@@ -89,6 +98,8 @@ final class Local {
                     options.flag("hide-acked"));
             case Options.ACK -> reports.ack(
                     reports.ack(options.requiredArgument(), options.valueOrNull("note")));
+            case Options.RESOLVE -> reports.resolve(
+                    reports.resolve(options.requiredArgument(), options.valueOrNull("note")));
             case Options.TRACE -> options.has("diff")
                     ? reports.traceDiff(options.requiredArgument(), options.value("diff", ""),
                             options.flag("full"))

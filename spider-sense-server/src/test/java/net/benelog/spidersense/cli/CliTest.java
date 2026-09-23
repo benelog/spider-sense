@@ -181,6 +181,10 @@ class CliTest {
                 .isEqualTo("/api/findings/slow-endpoint%3A1a2b3c4d5e6f/ack?format=text");
         assertThat(path("unack", "slow-endpoint:1a2b3c4d5e6f"))
                 .isEqualTo("/api/findings/slow-endpoint%3A1a2b3c4d5e6f/ack?format=text");
+        assertThat(path("resolve", "slow-endpoint:1a2b3c4d5e6f", "--note=index"))
+                .isEqualTo("/api/findings/slow-endpoint%3A1a2b3c4d5e6f/resolve?format=text");
+        assertThat(path("unresolve", "slow-endpoint:1a2b3c4d5e6f"))
+                .isEqualTo("/api/findings/slow-endpoint%3A1a2b3c4d5e6f/resolve?format=text");
         assertThat(path("trace", TRACE, "--full"))
                 .isEqualTo("/api/traces/" + TRACE + "?full=true&format=text");
         assertThat(path("traces", "--status=error", "--min-ms=100", "--q=orders"))
@@ -304,6 +308,29 @@ class CliTest {
         });
     }
 
+    /** {@code resolve} and {@code unresolve}, over HTTP as {@code ack} and {@code unack} are. */
+    @Test
+    void aFindingIsResolvedOverHttpAndWithdrawnAgain() {
+        serve(true, (server, base) -> {
+            String id = Json.parse(runAt(base, "findings", "--json", "--url=" + base).out())
+                    .asObject().getArray("findings").get(0).asObject().getString("id");
+
+            Run resolved = runAt(base, "resolve", id, "--note=fixed", "--url=" + base);
+            assertThat(resolved.exit()).isZero();
+            assertThat(resolved.out()).isEqualTo("resolved " + id + " — fixed\n");
+
+            assertThat(runAt(base, "findings", "--url=" + base).out()).contains("1 resolved)");
+
+            Run withdrawn = runAt(base, "unresolve", id, "--url=" + base);
+            assertThat(withdrawn.exit()).isZero();
+            assertThat(withdrawn.out()).isEqualTo("unresolved " + id + "\n");
+
+            Run twice = runAt(base, "unresolve", id, "--url=" + base);
+            assertThat(twice.exit()).isEqualTo(4);
+            assertThat(twice.err()).contains("No such resolution: " + id);
+        });
+    }
+
     @Test
     void anExplicitUrlThatAnswersNothingIsAConnectionErrorAndNeverTheFile() {
         String closed = closedUrl();
@@ -390,6 +417,16 @@ class CliTest {
         assertThat(twice.out()).isEmpty();
 
         assertThat(run("unack", db).exit()).as("the id is the argument").isEqualTo(2);
+
+        Run resolved = run("resolve", id, "--note=fetch join", db);
+        assertThat(resolved.exit()).isZero();
+        assertThat(resolved.out()).isEqualTo("resolved " + id + " — fetch join\n");
+        assertThat(run("findings", db).out()).contains("1 resolved)").contains("| resolved | ");
+        assertThat(run("findings", "--hide-acked", db).out()).doesNotContain(id);
+        assertThat(run("unresolve", id, db).out()).isEqualTo("unresolved " + id + "\n");
+        Run none = run("unresolve", id, db);
+        assertThat(none.exit()).isEqualTo(4);
+        assertThat(none.err()).contains("No such resolution: " + id);
     }
 
     @Test

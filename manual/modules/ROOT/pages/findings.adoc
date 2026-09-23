@@ -19,8 +19,9 @@ xref:marks-and-compare.adoc#time-selectors[Time selectors] define the window, wh
 Findings are ranked by severity (`high` before `medium` before `low`), then by kind, then by impact within a kind, then by id, so the list is stable between two calls over the same data.
 No rule produces `low` today.
 The `low` severity is reserved for gentler kinds.
-The kind order is `error`, `n-plus-one`, `n-plus-one-http`, `slow-query`, `slow-endpoint`, `slow-job`, `slow-external`, `log-error`, `pool-exhausted`, `gc-pause`, `heap-pressure`, `thread-growth`.
+The kind order is `regression`, `error`, `n-plus-one`, `n-plus-one-http`, `slow-query`, `slow-endpoint`, `slow-job`, `slow-external`, `log-error`, `pool-exhausted`, `gc-pause`, `heap-pressure`, `thread-growth`.
 Each kind below names the impact number it is ranked by.
+A `regression` is always `high`, so regressions come first, ranked among themselves by the order of their original kinds.
 
 The list is bounded.
 `limit` defaults to 20 and is at most 100.
@@ -37,13 +38,16 @@ An endpoint that `spidersense.ignore.endpoints` excludes is not an entry span an
 | How to read it
 
 | `id`
-| The kind plus 12 hex characters over the kind, the service and the subject. It is stable across windows, so the same problem keeps its id between runs, and it is what `ack` takes.
+| The kind plus 12 hex characters over the kind, the service and the subject. It is stable across windows, so the same problem keeps its id between runs, and it is what `ack` and `resolve` take. A `regression` keeps the id of the finding it is.
 
 | `kind`
-| One of the twelve kinds below.
+| One of the thirteen kinds below.
 
 | `severity`
-| `high`, `medium` or `low`, and `acked` in the text rendering for an acknowledged finding.
+| `high`, `medium` or `low`. In the text rendering it reads `acked` for an acknowledged finding and `resolved` for a resolved one that has not come back.
+
+| `state`
+| `new`, `ongoing` or `regressed`: what the last restart of the service changed (<<state,State>>).
 
 | `title`
 | One line, the claim.
@@ -71,9 +75,13 @@ An endpoint that `spidersense.ignore.endpoints` excludes is not an entry span an
 
 | `ack`
 | The acknowledgement, `{ "at": …, "note": … }`, or `null` when the finding is not acknowledged.
+
+| `resolution`
+| The resolution, `{ "at": …, "note": … }`, or `null` when the finding is not resolved.
 |===
 
 `traces` are the three slowest traces for the `slow-*` kinds, the three newest for `error` and `log-error`, the three most recent affected for `n-plus-one`, and none for `pool-exhausted` and the three JVM kinds.
+A `regression` carries the traces of its original kind, taken after the resolution.
 
 `slow-endpoint` and `slow-job` findings carry `hotSpan`, which names where the time went in the finding's first evidence trace.
 `hotSpan` holds the span with the largest self time, that self time, and its share of the trace's duration.
@@ -192,6 +200,7 @@ In the text rendering, `hotSpans` and `breakdown` come after the numbers and bef
 == The text rendering
 
 The ranked table comes first, and the fields follow as one numbered block per row, in the same order.
+The table's `state` column is the finding's <<state,state>>.
 A block is `<n>. <id> — <why>`, then the `numbers` on one line, then the hot span line when the kind has one, then the <<time,hot spans and the breakdown>> when it has those, then the statement when there is one, then the <<schema,schema lines>> when the finding has that block, then the `code` frames one per line, then the trace ids.
 
 [source]
@@ -199,14 +208,14 @@ A block is `<n>. <id> — <why>`, then the `numbers` on one line, then the hot s
 $ java -jar spider-sense.jar findings --since=before
 # findings  2026-09-17T08:19:28+09:00 → 08:19:34  (6s, all services, 21 requests)
 
-| # | severity | kind | id | service | title |
-| --- | --- | --- | --- | --- | --- |
-| 1 | high | error | error:eecf9878a68f | spring-orders | IllegalStateException in GET /api/flaky |
-| 2 | medium | n-plus-one | n-plus-one:4c5f46be8bc5 | spring-orders | GET /api/orders/{id}/enriched runs SELECT product 5 times per request |
-| 3 | medium | n-plus-one | n-plus-one:e6d97708ab26 | spring-orders | GET /api/orders/{id} runs SELECT product 5 times per request |
-| 4 | medium | slow-query | slow-query:6b3aae6f9bef | spring-orders | SELECT p.id AS product_id, p.sku AS sku, p.name AS name, SUM… is slow |
-| 5 | medium | slow-query | slow-query:aae3ff87821a | spring-orders | SELECT o.status AS status, CAST(o.created_at AS DATE) AS ord… is slow |
-| 6 | medium | slow-endpoint | slow-endpoint:786b594455d0 | spring-orders | GET /api/reports/revenue is slow |
+| # | severity | state | kind | id | service | title |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | high | new | error | error:eecf9878a68f | spring-orders | IllegalStateException in GET /api/flaky |
+| 2 | medium | new | n-plus-one | n-plus-one:4c5f46be8bc5 | spring-orders | GET /api/orders/{id}/enriched runs SELECT product 5 times per request |
+| 3 | medium | new | n-plus-one | n-plus-one:e6d97708ab26 | spring-orders | GET /api/orders/{id} runs SELECT product 5 times per request |
+| 4 | medium | new | slow-query | slow-query:6b3aae6f9bef | spring-orders | SELECT p.id AS product_id, p.sku AS sku, p.name AS name, SUM… is slow |
+| 5 | medium | new | slow-query | slow-query:aae3ff87821a | spring-orders | SELECT o.status AS status, CAST(o.created_at AS DATE) AS ord… is slow |
+| 6 | medium | new | slow-endpoint | slow-endpoint:786b594455d0 | spring-orders | GET /api/reports/revenue is slow |
 
 1. error:eecf9878a68f — 1 occurrence in GET /api/flaky; Payment gateway timeout
    count 1, firstSeen 2026-09-17T08:19:28.962+09:00, lastSeen 2026-09-17T08:19:28.962+09:00, type java.lang.IllegalStateException, message Payment gateway timeout, endpoints [name GET /api/flaky count 1]
@@ -240,6 +249,20 @@ $ java -jar spider-sense.jar findings --since=before
 
 [#kinds]
 == The kinds
+
+[#regression]
+=== regression
+
+A finding of any other kind that was resolved and has come back since.
+<<resolutions,Resolutions>> says when a finding counts as back.
+It is always `high` and always first, so a fix that did not hold is the first thing the list says.
+
+The id, `subject`, `title`, `statement`, `code`, `traces` and `schema` are those of the finding it is, and the impact it is ranked by is its original kind's.
+`numbers` starts with `resolvedAt`, the instant of the resolution, `note`, the resolution's note or `null`, and `originalKind`, followed by the original kind's own numbers.
+`why` starts with `came back after it was resolved`, the note in parentheses when there is one, and continues with the original `why`.
+
+What to do: read `originalKind` and the note, open a trace from `traces`, and find which change undid the fix.
+The fix itself is the one the original kind's section below describes.
 
 [#n-plus-one]
 === n-plus-one
@@ -566,6 +589,70 @@ Acknowledging again replaces the row.
 Over HTTP it is `POST /api/findings/\{id}/ack` with `{ "note": "…" }`, `DELETE /api/findings/\{id}/ack`, and `GET /api/acks` for the list, newest first.
 Acknowledgements are the reader's rather than the session's, so they are not exported.
 
+An acknowledged finding that recurs stays acknowledged, because a recurrence is exactly what was accepted.
+To be told when a finding comes back, resolve it instead.
+
 WARNING: `check` does not look at acknowledgements.
 Its rules are explicit thresholds, so an acknowledged `n-plus-one` is still an N+1 to `maxNPlusOne`.
 Never acknowledge a finding to make `check` pass.
+
+[#resolutions]
+== Resolutions
+
+A resolution says "I fixed this; tell me if it comes back".
+It differs from an acknowledgement in one thing only: a resolved finding that recurs becomes a `regression`, ranked above everything else, while an acknowledged one stays acknowledged and dimmed.
+
+[source,bash]
+----
+java -jar spider-sense.jar resolve n-plus-one:4c5f46be8bc5 --note="fetch join"
+java -jar spider-sense.jar unresolve n-plus-one:4c5f46be8bc5
+----
+
+Resolve a finding once `check` over the run after the fix passes, with what the fix was as the note.
+`unresolve` with no such resolution exits `4`.
+
+A resolved finding in a later window is one of two things:
+
+* *Back*, when the resolution is older than the window's first occurrence of the finding.
+It is reported as a `regression` (<<regression,regression>>).
+A resolution older than the window makes every occurrence in the window a recurrence.
+A resolution inside the window runs the rules again over the part of the window after it, for the finding's service, and the finding is back when they find it there.
+The numbers and traces the regression carries are those of that part, so the traffic from before the fix does not count.
+* *Not back*, when every occurrence in the window precedes the resolution.
+The finding keeps its kind and carries its `resolution`, and it is ranked after every other finding, with the acknowledged ones.
+In the text rendering its severity column reads `resolved`, and the heading counts it, as in `(… 12 requests, 2 acked, 1 resolved)`.
+`--hide-acked` leaves it out as well.
+
+A resolution is the same row as an acknowledgement, with its `resolved` flag set, so a finding has one decision recorded at a time.
+Resolving an acknowledged finding, or acknowledging a resolved one, replaces the row.
+Over HTTP it is `POST /api/findings/\{id}/resolve` with `{ "note": "…" }` and `DELETE /api/findings/\{id}/resolve`, and MCP has the `resolve` tool.
+Resolutions are not exported, as acknowledgements are not.
+
+`check` counts regressions with `--max-regressions`, which is `0` in the default rule set (xref:check.adoc#rules[Check]).
+A regressed `n-plus-one` still counts to `--max-n-plus-one` as well.
+
+[#state]
+== State
+
+Every finding carries a `state`, so `findings --since=start` says on its own which findings the last change introduced.
+It is the automatic counterpart of xref:marks-and-compare.adoc[compare], which needs two marks.
+
+[cols="1,3",options="header"]
+|===
+| State
+| When
+
+| `regressed`
+| The finding is a `regression`.
+
+| `new`
+| The rules do not find it in the previous run of its service.
+
+| `ongoing`
+| The rules find it in the previous run of its service too.
+|===
+
+The previous run of a service is the time between its two newest `start` marks at or before the end of the window, which Spider Sense writes each time the service starts with a new process id (xref:marks-and-compare.adoc[Marks]).
+With one `start` mark the previous run reaches back to the oldest data.
+With none, such as an imported session without marks, every finding of the service is `new`.
+The rules run over the previous run with the same thresholds as over the window.

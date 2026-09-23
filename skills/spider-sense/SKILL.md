@@ -20,7 +20,7 @@ metadata:
 Spider Sense is an observability tool for the local development loop: one jar attached with `-javaagent`, the stock OpenTelemetry Java agent for instrumentation, and a collector, a UI and a CLI inside the same JVM.
 Everything it collects lands in an H2 file under `~/db/spider-sense/`, opened with `AUTO_SERVER=TRUE`, so the data is shared between processes and outlives the application that produced it.
 For an agent the CLI is the interface, not the dashboard: it prints deterministic Markdown, so two answers over the same window render to the same bytes and can be diffed.
-The same six answers are also an MCP server, for a host that has no shell at all; you have one, so the CLI is your interface, and [references/cli.md](references/cli.md) says how to wire MCP up for a host that does not.
+The same seven answers are also an MCP server, for a host that has no shell at all; you have one, so the CLI is your interface, and [references/cli.md](references/cli.md) says how to wire MCP up for a host that does not.
 
 What it gives you that a dashboard does not:
 
@@ -52,6 +52,7 @@ java -jar "$SENSE" trace 4bf92f3577b34da6a3ce929d0e0e4736   #    open its eviden
 java -jar "$SENSE" mark after                        # 5. exercise the same way
 java -jar "$SENSE" compare --before=before --after=after
 java -jar "$SENSE" check --since=after --max-p95-ms=300 --max-n-plus-one=0
+java -jar "$SENSE" resolve n-plus-one:4c5f46be8bc5 --note="fetch join"   # 6. once check passes: guard the fix
 ```
 
 After a restart there is a fresh `start` mark, so `--since=start` covers the new run without marking anything.
@@ -86,7 +87,8 @@ The UI is at <http://127.0.0.1:4000> for the user, not for you.
 
 ## Reading findings
 
-`findings` ranks by severity, then by impact, then by id, so the list is stable between two calls over the same data.
+`findings` ranks by severity, then by kind, then by impact, then by id, so the list is stable between two calls over the same data.
+The `state` column says what the last restart changed: `new` for a finding the run before the restart did not have, which is usually what your change introduced, `ongoing` for one it had, `regressed` for a regression.
 Each finding carries `why` (the numbers in a sentence), `numbers` (kind-specific), `statement` (when the finding is about one), `code` (application frames, innermost first, empty when none is known), and `traces` (at most three, the evidence).
 The table is the ranked answer and the numbered blocks under it are that evidence, one per row, in the same order.
 
@@ -105,9 +107,12 @@ No line under a frame means it does not resolve to a source file here (a library
 `--no-git` leaves the lines out.
 When a finding is known and accepted — the user says it is slow by design, or the fix waits on something else — `ack <finding id> --note=<why>` moves it to the bottom of every later list, its severity reading `acked`, so the top of the list stays about what is new; `unack <finding id>` puts it back, and `findings --hide-acked` leaves the acknowledged ones out altogether.
 `check` ignores acknowledgements: its rules are explicit thresholds, so an acknowledged `n-plus-one` still counts against `--max-n-plus-one`.
+When a fix has passed `check`, `resolve <finding id> --note=<the fix>` records it: the finding is set aside like an acknowledged one, its severity reading `resolved`, until it occurs again, and then it is a `regression`, severity `high`, first in the list, and `check` fails on it by default (`--max-regressions=0`); `unresolve <finding id>` withdraws it.
+The difference from `ack` is only that: an acknowledged finding that recurs stays acknowledged.
 
 | Kind | What it means | What it usually wants |
 |---|---|---|
+| `regression` | a resolved finding of `originalKind` came back after its resolution | find the change that undid the fix; the fix is the original kind's |
 | `n-plus-one` | the same query group ran 5 or more times under one entry span | a fetch join, batch loading, or one query with `IN (…)` |
 | `n-plus-one-http` | the same outbound HTTP call ran 5 or more times under one entry span | a batch endpoint on the callee, or a cache; `check --max-n-plus-one=` counts it with the query kind |
 | `slow-query` | a query group whose p95 is over `slow.query.ms` | an index, a rewrite, or not selecting what is not needed |
@@ -141,7 +146,7 @@ The verdict is the first column and the worst rows come first, so the top of eac
 `check` prints the verdict in its heading (`# check  fail  <window>`) and then one row per rule, with its `limit`, its `actual` value, its own `pass` or `fail` and a detail naming what decided it.
 `check` exits `0` when it passed, `1` when it failed, `2` on a usage or connection error, `3` when there was no request to judge, and `4` when something named was not found.
 Exit code `3` means the exercise step did not reach the application, not that the fix worked.
-With no rule given the defaults are `--max-errors=0`, `--max-n-plus-one=0` and `--max-p95-ms=<slow.request.ms>`.
+With no rule given the defaults are `--max-errors=0`, `--max-n-plus-one=0`, `--max-regressions=0` and `--max-p95-ms=<slow.request.ms>`.
 
 ## Rules
 
@@ -151,6 +156,7 @@ With no rule given the defaults are `--max-errors=0`, `--max-n-plus-one=0` and `
 - **Quote the trace id as evidence.** A claim about an endpoint that names no trace cannot be checked by the user.
 - **Acknowledge a finding the user has accepted**, with the reason as its note, so the list stays about what is new; never acknowledge one to make `check` pass, because `check` does not look at acknowledgements.
 - **Run `check` before calling a fix done**, and say which rules it passed with which limits.
+- **Resolve a finding once its fix passes `check`**, with the fix as the note, so a later change that undoes it is reported as a `regression`; a `regression` at the top of `findings` is the first thing to fix.
 - **`sql` is the last resort, not the first.** `findings` and the tables come with the thresholds, the ranking and the evidence already applied; reach for [references/sql.md](references/sql.md) when the question is genuinely one none of them has a column for, and say that a capped answer was capped.
 - **Do not change the monitored application's Spider Sense configuration unless asked.** Adding `-javaagent` to start it is the loop; editing the project's ports, thresholds or `spidersense.*` properties is a change to the project.
 - Nothing in Spider Sense may keep the application from starting; if the agent fails it logs and gets out of the way, so an application that starts but sends nothing is a configuration question, answered by `status`.

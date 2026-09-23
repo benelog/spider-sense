@@ -165,7 +165,8 @@ CREATE INDEX IF NOT EXISTS mark_at ON mark (at_ms);
 CREATE TABLE IF NOT EXISTS ack (
     finding_id VARCHAR(64) PRIMARY KEY,     -- agent.md's finding id, kind + ':' + 12 hex
     at_ms      BIGINT NOT NULL,
-    note       VARCHAR(1024)
+    note       VARCHAR(1024),
+    resolved   BOOLEAN NOT NULL DEFAULT FALSE  -- a resolution rather than an acknowledgement
 );
 
 CREATE TABLE IF NOT EXISTS db_table (
@@ -184,8 +185,9 @@ CREATE TABLE IF NOT EXISTS meta (
 );
 ```
 
-The schema is created with `IF NOT EXISTS` at startup; `meta.schema_version` is `5` (the `db_table` table arrived with it, `ack` with 4, `mark` with 3), and a version that changes a table drops and recreates every table (the data is a cache of a development session, not a record).
-An `ack` row is an acknowledged finding ([agent.md](agent.md#acknowledgements)); it is not swept by time, since a known finding stays known, and `DELETE /api/data` removes it with everything else.
+The schema is created with `IF NOT EXISTS` at startup; `meta.schema_version` is `6` (the `ack.resolved` column arrived with it, `db_table` with 5, `ack` with 4, `mark` with 3), and a version that changes a table drops and recreates every table (the data is a cache of a development session, not a record).
+An `ack` row is an acknowledged finding ([agent.md](agent.md#acknowledgements)), or, with `resolved` true, a resolved one ([agent.md](agent.md#resolutions)): one table because a finding has one decision recorded at a time, and the newer replaces the older through the same `MERGE INTO ack … KEY (finding_id)`.
+It is not swept by time, since a known finding stays known and a fixed one stays fixed, and `DELETE /api/data` removes it with everything else.
 A `db_table` row is the index catalog of one table of one service, as the extension read it through JDBC metadata ([design.md](design.md#the-extension)): it arrives as a log record whose attributes are `spidersense.schema.table`, `spidersense.schema.schema`, `spidersense.schema.product` and `spidersense.schema.indexes`, and the decoder turns that record into a catalog row instead of a log line, merged on its key (`MERGE INTO db_table … KEY (service, schema_name, table_name)`) so a table looked up again after a restart replaces its row.
 The `indexes` text is stored as received, and the findings read it back ([agent.md](agent.md#the-schema-block)).
 `entry` is decided once, when the row is written, so rows written by an older Spider Sense keep the flag they were written with — a root `INTERNAL` or database span from before the rule narrowed still counts as a request until the retention sweeper removes it.
@@ -226,6 +228,7 @@ Every API answer is one or a few SQL statements over the window:
 - Findings (agent.md): `n-plus-one` is `GROUP BY trace_id, query_id HAVING COUNT(*) >= 5` over the database spans of the window, attributed to the entry span by the same parent-chain walk the query callers use; `dbCallsPerRequest` and `dbMsPerRequest` of an endpoint join the endpoint's entry spans with the database spans of the same trace and service; `slow-job` is the same aggregation over `span WHERE parent_span_id IS NULL AND kind = 'INTERNAL'` grouped by `(service, name)`, with the database work joined the same way; the other kinds are the endpoint, query and error aggregations above, filtered by the thresholds.
 - The schema block of a query group (agent.md): `SELECT schema_name, table_name, indexes FROM db_table WHERE service = ?`, read once per answer and matched against each statement's tables in Java, case-insensitively.
 - A time selector that names a mark: `SELECT at_ms FROM mark WHERE name = ? [AND service = ?] ORDER BY at_ms DESC LIMIT 1`.
+- The acknowledgements and resolutions of a page of findings: `SELECT * FROM ack WHERE finding_id IN (…)`, one statement for the page. A finding's state (agent.md) reads the two newest `start` marks of its service, `SELECT at_ms FROM mark WHERE name = 'start' AND service = ? AND at_ms <= ? ORDER BY at_ms DESC LIMIT 2`, and runs the finding rules again over the run between them.
 - Free-text search (`q`): `LOWER(name) LIKE ? OR LOWER(attributes) LIKE ?` within the window; a scan of the window is acceptable at local-development volumes.
 - JVM and metrics: `metric_point` joined with `metric_series`, resampled in Java where the API asks for it.
 
@@ -234,13 +237,13 @@ Reads are plain JDBC through one small helper (`Sql.query(sql, params, rowMapper
 
 The CLI (agent.md) reads the same way when no server answers: it opens the same URL, so it joins a running auto-server or, when none is running, opens the file itself for the length of the command, and runs the same `Queries` without a writer or a sweeper.
 Its open refuses a missing file and refuses another `schema_version` instead of dropping the tables, since the database it joined may belong to an older server that is still writing to it.
-The three commands that write (`mark`, `ack` and `unack`, `import`) write through the same connection with plain statements; `import` is the one that inserts spans, and it does so through the `Writer`'s own insert and `trace` merge so an imported trace is stored exactly as a received one ([agent.md](agent.md#export-and-import)).
+The commands that write (`mark`, `ack` and `unack`, `resolve` and `unresolve`, `import`) write through the same connection with plain statements; `import` is the one that inserts spans, and it does so through the `Writer`'s own insert and `trace` merge so an imported trace is stored exactly as a received one ([agent.md](agent.md#export-and-import)).
 
 ## Retention
 
 `spidersense.retention.hours` (default `24`).
 A daemon sweeper runs a minute after start and every five minutes after that: `DELETE FROM span|trace|log|metric_point|tingle|mark|db_table WHERE <time> < now - retention`, then `metric_series` rows with no points; a catalog row goes by its `seen_ms`, because a catalog older than the retention describes a run no window can show any more.
-`DELETE /api/data` runs the same deletes without the time bound, and empties `ack`.
+`DELETE /api/data` runs the same deletes without the time bound, and empties `ack`, acknowledgements and resolutions alike.
 At 24 hours of a few requests per second the file stays in the low hundreds of megabytes; H2 reclaims space on the next compaction when the database closes.
 
 Time is the retention, and one row cap guards it: `spidersense.retention.spans` (default 1,000,000; `0` for none).

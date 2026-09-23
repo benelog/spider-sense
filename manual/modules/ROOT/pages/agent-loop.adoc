@@ -50,10 +50,10 @@ Every answer is served by the same queries the UI uses, so the numbers an agent 
 | The question nobody anticipated. The schema is already the documentation.
 
 | MCP, `POST /mcp` and the `mcp` command
-| Hosts without a shell. Six tools over the same handlers, answering the same text.
+| Hosts without a shell. Seven tools over the same handlers, answering the same text.
 |===
 
-xref:cli.adoc[The CLI] documents every command, xref:mcp.adoc[MCP] the two transports and the six tools, xref:agent-skill.adoc[The Agent Skill] the skill and its installation, and xref:api.adoc#agent-endpoints[The HTTP API] the wire shapes.
+xref:cli.adoc[The CLI] documents every command, xref:mcp.adoc[MCP] the two transports and the seven tools, xref:agent-skill.adoc[The Agent Skill] the skill and its installation, and xref:api.adoc#agent-endpoints[The HTTP API] the wire shapes.
 
 === Choosing an interface
 
@@ -171,6 +171,9 @@ xref:findings.adoc[Findings] documents every kind, its numbers and the fix it us
 When a finding is known and accepted, `ack <finding id> --note=<why>` moves it to the bottom of every later list, so the top of the list shows what is new.
 xref:findings.adoc#acknowledgements[Acknowledgements] covers `ack`, `unack` and `--hide-acked`.
 
+The `state` column says what the last restart changed: `new` for a finding the run before it did not have, `ongoing` for one it had.
+`findings --since=start` therefore names the findings the last change introduced without a second mark (xref:findings.adoc#state[State]).
+
 == Verifying a change
 
 [source,bash]
@@ -190,6 +193,15 @@ xref:marks-and-compare.adoc#compare[Compare] documents the windows, the rows and
 Exit code `3` means the exercise step did not reach the application, not that the fix worked.
 xref:check.adoc[Check] documents every rule and every exit code.
 
+Once `check` passes, record the fix:
+
+[source,bash]
+----
+java -jar "$SENSE" resolve n-plus-one:4c5f46be8bc5 --note="fetch join"
+----
+
+If a later change brings the finding back, `findings` reports it as a `regression`, first in the list, and `check` fails on it by default (xref:findings.adoc#resolutions[Resolutions]).
+
 == Rules
 
 * *Prefer the CLI's text output.*
@@ -205,6 +217,8 @@ xref:check.adoc[Check] documents every rule and every exit code.
 * *Acknowledge a finding the user has accepted*, with the reason as its note, so the list stays about what is new.
   Never acknowledge one to make `check` pass, because `check` does not look at acknowledgements.
 * *Run `check` before calling a fix done*, and say which rules it passed with which limits.
+* *Resolve a finding once its fix passes `check`*, with the fix as its note, so the fix is guarded from then on.
+  Treat a `regression` at the top of `findings` as the first thing to fix: a change undid an earlier fix.
 * *`sql` is the last resort, not the first.*
   `findings` and the tables come with the thresholds, the ranking and the evidence already applied.
   Reach for xref:cli.adoc#sql[`sql`] only when none of them has a column for the question, and say so when its answer was capped.

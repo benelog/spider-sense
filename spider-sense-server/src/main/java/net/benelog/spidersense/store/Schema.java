@@ -11,7 +11,7 @@ package net.benelog.spidersense.store;
  */
 public final class Schema {
 
-    public static final int VERSION = 5;
+    public static final int VERSION = 6;
 
     /**
      * The H2 user {@code POST /api/sql} runs on: {@code SELECT} on {@code PUBLIC}
@@ -181,7 +181,8 @@ public final class Schema {
             CREATE TABLE IF NOT EXISTS ack (
                 finding_id VARCHAR(64) PRIMARY KEY,
                 at_ms      BIGINT NOT NULL,
-                note       VARCHAR(1024)
+                note       VARCHAR(1024),
+                resolved   BOOLEAN NOT NULL DEFAULT FALSE
             )""",
             """
             CREATE TABLE IF NOT EXISTS db_table (

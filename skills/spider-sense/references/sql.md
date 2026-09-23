@@ -48,7 +48,7 @@ The three flags are the shortcuts worth remembering: **`entry` counts requests, 
 | `log` | log record | `at_ms`, `service`, `severity`, `severity_number` (9 INFO, 13 WARN, 17 ERROR), `body`, `logger`, `trace_id`, `span_id` |
 | `service` | service | `name`, `language`, `pid`, `first_seen`, `last_seen`, `resource` (JSON) |
 | `mark` | named moment | `at_ms`, `name`, `service`, `note`; `start` marks are written on every restart |
-| `ack` | acknowledged finding | `finding_id`, `at_ms`, `note`; never swept by the retention |
+| `ack` | acknowledged or resolved finding | `finding_id`, `at_ms`, `note`, `resolved` (true for a resolution); never swept by the retention |
 | `db_table` | table of a service the extension read the index catalog of | `service`, `schema_name`, `table_name`, `product`, `indexes` (JSON array of `{name, unique, columns}`), `seen_ms` |
 | `metric_series` | series | `id`, `service`, `name`, `attributes` (JSON, keys sorted) |
 | `metric_point` | point | `series_id`, `at_ms`, `value`, `count`, `sum`, `min`, `max`, `buckets` |

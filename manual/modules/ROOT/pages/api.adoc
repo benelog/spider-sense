@@ -67,7 +67,7 @@ It is stored as a `db_table` row rather than as a log (xref:storage.adoc#schema[
 `ignore.endpoints` is the configured value of `spidersense.ignore.endpoints`, which xref:configuration.adoc#ignored-endpoints[Ignored endpoints] describes.
 
 *`DELETE /api/data`* answers `204`.
-It deletes every span, trace, log, metric point, tingle, mark and acknowledgement.
+It deletes every span, trace, log, metric point, tingle, mark, acknowledgement and resolution.
 Services and metric metadata stay.
 
 *`GET /api/export?traceId`* answers one trace as an `application/json` download (`Content-Disposition: attachment`) of `+{ "traces": [<trace as in GET /api/traces/{id}>] }+`.
@@ -469,9 +469,9 @@ The writer inserts a mark named `start` when a service reports a `process.pid` i
 
 === Findings
 
-*`GET /api/findings?since&until&service&limit=20&hideAcked=false`* answers `{ "window": {...}, "requests": 120, "acked": 2, "findings": [ <Finding> ] }`.
-The findings are ranked as xref:findings.adoc[Findings] specifies, with acknowledged findings last.
-`hideAcked=true` leaves the acknowledged findings out.
+*`GET /api/findings?since&until&service&limit=20&hideAcked=false`* answers `{ "window": {...}, "requests": 120, "acked": 2, "resolved": 1, "findings": [ <Finding> ] }`.
+The findings are ranked as xref:findings.adoc[Findings] specifies, with regressions first and acknowledged findings and resolved findings that have not come back last.
+`hideAcked=true` leaves the acknowledged and the resolved findings out.
 `limit` is at most 100.
 
 *`+POST /api/findings/{id}/ack+`* with `{ "note": "…" | null }` answers `201` and `{ "findingId": "…", "at": …, "note": … }`.
@@ -479,13 +479,17 @@ The findings are ranked as xref:findings.adoc[Findings] specifies, with acknowle
 *`GET /api/acks`* answers `{ "acks": [ { "findingId", "at", "note" } ] }`, newest first.
 xref:findings.adoc#acknowledgements[Acknowledgements] describes what an acknowledgement means.
 
+*`+POST /api/findings/{id}/resolve+`* with `{ "note": "…" | null }` answers `201` and `{ "findingId": "…", "at": …, "note": … }`.
+*`+DELETE /api/findings/{id}/resolve+`* answers `204` or `404`.
+xref:findings.adoc#resolutions[Resolutions] describes what a resolution means.
+
 `Finding`:
 
 [source,json]
 ----
 { "id": "n-plus-one:1a2b3c4d5e6f",
-  "kind": "error" | "log-error" | "n-plus-one" | "n-plus-one-http" | "slow-query" | "slow-endpoint" | "slow-job" | "slow-external" | "pool-exhausted" | "gc-pause" | "heap-pressure" | "thread-growth",
-  "severity": "high" | "medium" | "low", "service": "…", "title": "…", "why": "…",
+  "kind": "regression" | "error" | "log-error" | "n-plus-one" | "n-plus-one-http" | "slow-query" | "slow-endpoint" | "slow-job" | "slow-external" | "pool-exhausted" | "gc-pause" | "heap-pressure" | "thread-growth",
+  "severity": "high" | "medium" | "low", "state": "new" | "ongoing" | "regressed", "service": "…", "title": "…", "why": "…",
   "subject": { "endpointId": "…" | null, "queryId": "…" | null, "errorId": "…" | null, "pool": "…" | null, "job": "…" | null,
                "target": "…" | null, "logger": "…" | null, "jvm": "…" | null },
   "numbers": { ...kind-specific... },
@@ -493,7 +497,8 @@ xref:findings.adoc#acknowledgements[Acknowledgements] describes what an acknowle
   "schema": { "tables": [ { "table": "ITEMS", "schema": "PUBLIC" | null,
                             "indexes": [ { "name": "PRIMARY_KEY_8", "unique": true, "columns": [ "ID" ] } ] } ],
               "predicates": [ "items.name" ], "unindexed": [ "items.name" ] } | null,   // slow-query and n-plus-one
-  "ack": { "at": …, "note": "…" | null } | null }
+  "ack": { "at": …, "note": "…" | null } | null,
+  "resolution": { "at": …, "note": "…" | null } | null }
 ----
 
 `numbers` carries the fields of the finding's kind, listed with each kind in xref:findings.adoc#kinds[Findings].
@@ -518,7 +523,7 @@ xref:findings.adoc#acknowledgements[Acknowledgements] describes what an acknowle
 
 === Check
 
-*`GET /api/check?since&until&service&endpoint&maxP95Ms&maxErrors&maxErrorRate&maxQueriesPerRequest&maxSlowQueries&maxNPlusOne&maxLogErrors&minApdex`*
+*`GET /api/check?since&until&service&endpoint&maxP95Ms&maxErrors&maxErrorRate&maxQueriesPerRequest&maxSlowQueries&maxNPlusOne&maxLogErrors&maxRegressions&minApdex`*
 
 [source,json]
 ----
@@ -552,7 +557,7 @@ A refused statement and a statement H2 would not run are both `400`: `{ "error":
 === MCP
 
 *`POST /mcp`* takes one JSON-RPC 2.0 message as `application/json`.
-xref:mcp.adoc[MCP] specifies the semantics, the six tools and their arguments.
+xref:mcp.adoc[MCP] specifies the semantics, the seven tools and their arguments.
 
 * A request (`id` present) is answered `200` with the JSON-RPC response as `application/json`.
 A notification is answered `202` with no body.

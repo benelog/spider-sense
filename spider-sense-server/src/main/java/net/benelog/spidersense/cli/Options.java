@@ -39,6 +39,8 @@ final class Options {
     static final String MARK = "mark";
     static final String ACK = "ack";
     static final String UNACK = "unack";
+    static final String RESOLVE = "resolve";
+    static final String UNRESOLVE = "unresolve";
     static final String TRACE = "trace";
     static final String SQL = "sql";
     static final String TAIL = "tail";
@@ -57,6 +59,8 @@ final class Options {
             Map.entry(FINDINGS, with("since", "until", "limit", "full", "hide-acked", "no-git")),
             Map.entry(ACK, with("note")),
             Map.entry(UNACK, with()),
+            Map.entry(RESOLVE, with("note")),
+            Map.entry(UNRESOLVE, with()),
             Map.entry(TRACE, with("full", "diff")),
             Map.entry("traces", with("since", "until", "limit", "full", "status", "min-ms", "q")),
             Map.entry("endpoints", with("since", "until")),
@@ -89,6 +93,8 @@ final class Options {
             MARK, "a mark name",
             ACK, "a finding id",
             UNACK, "a finding id",
+            RESOLVE, "a finding id",
+            UNRESOLVE, "a finding id",
             SQL, "a statement",
             IMPORT, "a file to read");
 

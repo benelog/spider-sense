@@ -1268,21 +1268,34 @@ function findingsFor(w, service, limit, hideAcked) {
     || (b.impact - a.impact) || a.id.localeCompare(b.id));
 
   // Acknowledged findings last, in the same order among themselves (docs/agent.md).
+  // The generated traffic never stops, so a resolved finding here is always back:
+  // a regression, ranked first. Every other finding is ongoing, since the mock has
+  // no previous run to compare with.
+  const regressions = [];
   const open = [];
   const accepted = [];
   let acked = 0;
   for (const finding of found) {
     const row = acks.get(finding.id);
     if (!row) {
-      open.push({ ...finding, ack: null });
+      open.push({ ...finding, state: 'ongoing', ack: null, resolution: null });
+      continue;
+    }
+    if (row.resolved) {
+      const resolution = { at: row.at, note: row.note };
+      regressions.push({
+        ...finding, kind: 'regression', severity: 'high', state: 'regressed', ack: null, resolution,
+        why: 'came back after it was resolved' + (row.note ? ' (' + row.note + ')' : '') + '; ' + finding.why,
+        numbers: { resolvedAt: row.at, note: row.note, originalKind: finding.kind, ...finding.numbers },
+      });
       continue;
     }
     acked++;
-    if (!hideAcked) accepted.push({ ...finding, ack: { at: row.at, note: row.note } });
+    if (!hideAcked) accepted.push({ ...finding, state: 'ongoing', ack: { at: row.at, note: row.note }, resolution: null });
   }
-  const ranked = open.concat(accepted);
+  const ranked = regressions.concat(open, accepted);
   // `schema` is on every finding, null on the kinds that never carry one (api.md).
-  return { requests, acked, findings: ranked.slice(0, limit).map(({ impact, ...rest }) => ({ schema: null, ...rest })) };
+  return { requests, acked, resolved: 0, findings: ranked.slice(0, limit).map(({ impact, ...rest }) => ({ schema: null, ...rest })) };
 }
 
 /** api.md's Totals over one window. */
@@ -1601,12 +1614,13 @@ const ROUTES = [
   [/^\/api\/findings$/, (m, q) => {
     const w = windowOf(q);
     const limit = Math.min(100, +(q.limit || 20));
-    const { requests, acked, findings } = findingsFor(w, q.service, limit, q.hideAcked === 'true');
-    return { window: w, requests, acked, findings };
+    const { requests, acked, resolved, findings } = findingsFor(w, q.service, limit, q.hideAcked === 'true');
+    return { window: w, requests, acked, resolved, findings };
   }],
 
   [/^\/api\/acks$/, (m, q) => ({
-    acks: Array.from(acks, ([findingId, ack]) => ({ findingId, at: ack.at, note: ack.note }))
+    acks: Array.from(acks).filter(([, ack]) => !ack.resolved)
+      .map(([findingId, ack]) => ({ findingId, at: ack.at, note: ack.note }))
       .sort((a, b) => b.at - a.at)
       .slice(0, +(q.limit || 200)),
   })],
@@ -1677,6 +1691,27 @@ globalThis.fetch = async function mockFetch(input, init) {
     return new Response(null, { status: 204 });
   }
 
+  const resolvePath = /^\/api\/findings\/([^/]+)\/resolve$/.exec(url.pathname);
+  if (resolvePath && method === 'POST') {
+    let body = {};
+    try { body = JSON.parse((init && init.body) || '{}') || {}; } catch (e) { body = {}; }
+    const findingId = decodeURIComponent(resolvePath[1]);
+    const resolution = { at: Date.now(), note: body.note ? String(body.note) : null, resolved: true };
+    acks.set(findingId, resolution);
+    return new Response(JSON.stringify({ findingId, at: resolution.at, note: resolution.note }), {
+      status: 201, headers: { 'content-type': 'application/json; charset=utf-8' },
+    });
+  }
+  if (resolvePath && method === 'DELETE') {
+    const findingId = decodeURIComponent(resolvePath[1]);
+    if (!(acks.get(findingId) || {}).resolved) {
+      return new Response(JSON.stringify({ error: 'No such resolution: ' + findingId }),
+        { status: 404, headers: { 'content-type': 'application/json; charset=utf-8' } });
+    }
+    acks.delete(findingId);
+    return new Response(null, { status: 204 });
+  }
+
   const ackPath = /^\/api\/findings\/([^/]+)\/ack$/.exec(url.pathname);
   if (ackPath && method === 'POST') {
     let body = {};
@@ -1690,7 +1725,7 @@ globalThis.fetch = async function mockFetch(input, init) {
   }
   if (ackPath && method === 'DELETE') {
     const findingId = decodeURIComponent(ackPath[1]);
-    if (!acks.delete(findingId)) {
+    if ((acks.get(findingId) || {}).resolved || !acks.delete(findingId)) {
       return new Response(JSON.stringify({ error: 'No such acknowledgement: ' + findingId }),
         { status: 404, headers: { 'content-type': 'application/json; charset=utf-8' } });
     }

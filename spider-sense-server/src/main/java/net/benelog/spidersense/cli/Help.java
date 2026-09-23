@@ -24,6 +24,10 @@ final class Help {
               ack <finding id> [--note=<text>]
                                            accepts a known finding, so it is ranked last
               unack <finding id>           withdraws that acknowledgement
+              resolve <finding id> [--note=<text>]
+                                           marks a finding fixed; if it comes back it is a
+                                           regression, ranked first
+              unresolve <finding id>       withdraws that resolution
               trace <traceId> [--full] [--diff=<traceId>]
                                            one trace as a tree, or two aligned
               tail [--kind=slow-request|slow-query|error] [--service=<name>]
@@ -42,7 +46,8 @@ final class Help {
                                            the two windows side by side
               check [--max-p95-ms=] [--max-errors=] [--max-error-rate=]
                     [--max-queries-per-request=] [--max-slow-queries=]
-                    [--max-n-plus-one=] [--max-log-errors=] [--min-apdex=] [--endpoint=]
+                    [--max-n-plus-one=] [--max-log-errors=] [--max-regressions=]
+                    [--min-apdex=] [--endpoint=]
                                            pass or fail, in the exit code
               sql "<statement>" [--limit=200]
                                            read-only SQL over the store (SELECT only)
@@ -81,7 +86,7 @@ final class Help {
 
             Exit codes: 0 success, 1 check failed, 2 usage or connection error,
             3 check had no request to judge, 4 not found (a trace id, a mark name,
-            a finding id to unack).""";
+            a finding id to unack or unresolve).""";
 
     private Help() {
     }

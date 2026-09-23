@@ -345,6 +345,50 @@ class AgentApiTest {
         });
     }
 
+    /**
+     * A resolution over HTTP: the traffic precedes it, so the finding has not come
+     * back, and it is set aside with the acknowledged ones (agent.md, "Resolutions").
+     */
+    @Test
+    void aFindingIsResolvedSetAsideAndWithdrawnAgain() {
+        serve((client, assembly) -> {
+            postProtobuf(client, "/v1/traces", sample());
+            Json.JsonObject before = json(client.get("/api/findings?since=5m"));
+            assertThat(before.getLong("resolved")).isZero();
+            Json.JsonObject top = before.getArray("findings").get(0).asObject();
+            String first = top.getString("id");
+            assertThat(top.getString("state")).isEqualTo("new");
+            assertThat(top.get("resolution").isNull()).isTrue();
+
+            HttpResponse<String> created = postJson(client,
+                    "/api/findings/" + first + "/resolve", "{\"note\":\"fixed\"}");
+            assertThat(created.statusCode()).isEqualTo(201);
+            assertThat(Json.parse(created.body()).asObject().getString("findingId")).isEqualTo(first);
+
+            Json.JsonObject after = json(client.get("/api/findings?since=5m"));
+            assertThat(after.getLong("resolved")).isEqualTo(1);
+            assertThat(after.getLong("acked")).isZero();
+            Json.JsonArray ranked = after.getArray("findings");
+            Json.JsonObject last = ranked.get(ranked.size() - 1).asObject();
+            assertThat(last.getString("id")).isEqualTo(first);
+            assertThat(last.getObject("resolution").getString("note")).isEqualTo("fixed");
+
+            String text = client.get("/api/findings?since=5m&format=text").body();
+            assertThat(text).contains(", 1 request, 1 resolved)");
+            assertThat(text).contains("| resolved | new | ");
+            assertThat(postJson(client, "/api/findings/" + first + "/resolve?format=text", "{}").body())
+                    .isEqualTo("resolved " + first + "\n");
+
+            assertThat(client.delete("/api/findings/" + first + "/ack").statusCode())
+                    .as("a resolution is not an acknowledgement").isEqualTo(404);
+            assertThat(client.delete("/api/findings/" + first + "/resolve").statusCode()).isEqualTo(204);
+            HttpResponse<String> again = client.delete("/api/findings/" + first + "/resolve");
+            assertThat(again.statusCode()).isEqualTo(404);
+            assertThat(Json.parse(again.body()).asObject().getString("error"))
+                    .isEqualTo("No such resolution: " + first);
+        });
+    }
+
     @Test
     void anAcknowledgementTakesNoBodyAndAnEmptyDatabaseTakesItBack() {
         serve((client, assembly) -> {
@@ -378,7 +422,7 @@ class AgentApiTest {
             assertThat(byParam.headers().firstValue("content-type"))
                     .hasValue("text/markdown; charset=utf-8");
             assertThat(byParam.body()).startsWith("# findings  ");
-            assertThat(byParam.body()).contains("| severity | kind | id | service | title |");
+            assertThat(byParam.body()).contains("| severity | state | kind | id | service | title |");
             assertThat(byParam.body()).contains("traces: " + TRACE);
 
             HttpResponse<String> byAccept = get(client, "/api/findings?since=5m", "text/markdown");

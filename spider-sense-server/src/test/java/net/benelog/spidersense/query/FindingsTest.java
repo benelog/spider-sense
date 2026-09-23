@@ -939,4 +939,153 @@ class FindingsTest {
         assertThat(answer.findings()).hasSize(1);
         assertThat(answer.acked()).isEqualTo(3);
     }
+
+    // --- resolutions and states (agent.md) -------------------------------------
+
+    /** A resolution at a chosen instant: the store stamps its own with the clock. */
+    private void resolveAt(String findingId, long at, @org.jspecify.annotations.Nullable String note) {
+        store.sql().update("MERGE INTO ack (finding_id, at_ms, note, resolved) KEY(finding_id)"
+                + " VALUES (?, ?, ?, TRUE)", java.util.Arrays.asList(findingId, at, note));
+    }
+
+    private Span.Builder entryAt(int n, String route, long at, long durationMs) {
+        return Otlp.span(traceId(n), spanId(n), "GET " + route, Span.SpanKind.SPAN_KIND_SERVER,
+                at, durationMs,
+                Otlp.attr("http.request.method", "GET"),
+                Otlp.attr("http.route", route),
+                Otlp.attr("http.response.status_code", 200));
+    }
+
+    @Test
+    void aResolvedFindingThatCameBackIsARegressionRankedFirst() {
+        threeSlowEndpoints();
+        List<Findings.Finding> before = findings.findings(window, null, 20);
+        Findings.Finding last = before.get(before.size() - 1);
+        resolveAt(last.id(), NOW - 30_000, "added the index");
+
+        List<Findings.Finding> ranked = findings.findings(window, null, 20);
+
+        assertThat(ranked).hasSize(3);
+        Findings.Finding regression = ranked.get(0);
+        assertThat(regression.id()).as("the id stays the finding's own").isEqualTo(last.id());
+        assertThat(regression.kind()).isEqualTo(Findings.REGRESSION);
+        assertThat(regression.baseKind()).isEqualTo(Findings.SLOW_ENDPOINT);
+        assertThat(regression.severity()).isEqualTo(Findings.HIGH);
+        assertThat(regression.state()).isEqualTo(Findings.REGRESSED);
+        assertThat(regression.numbers()).containsEntry("resolvedAt", NOW - 30_000)
+                .containsEntry("note", "added the index")
+                .containsEntry("originalKind", Findings.SLOW_ENDPOINT)
+                .containsKey("p95Ms");
+        assertThat(regression.subject()).isEqualTo(last.subject());
+        assertThat(regression.traces()).isEqualTo(last.traces());
+        assertThat(regression.resolution()).isNotNull();
+        assertThat(regression.why()).startsWith("came back after it was resolved (added the index); ");
+        assertThat(ranked.subList(1, 3)).noneMatch(f -> f.kind().equals(Findings.REGRESSION));
+    }
+
+    @Test
+    void aResolutionOlderThanTheWindowMakesAnyOccurrenceInItARegression() {
+        threeSlowEndpoints();
+        String id = findings.findings(window, null, 20).get(1).id();
+        resolveAt(id, NOW - 3_600_000, "fixed");
+
+        assertThat(findings.findings(window, null, 20).get(0).id()).isEqualTo(id);
+        assertThat(of(Findings.REGRESSION)).hasSize(1);
+    }
+
+    @Test
+    void aResolvedFindingThatHasNotComeBackIsSetAsideAndCounted() {
+        threeSlowEndpoints();
+        String first = findings.findings(window, null, 20).get(0).id();
+        resolveAt(first, NOW + 1_000, "fixed in this run");
+
+        Findings.Answer shown = findings.answer(window, null, 20, false);
+        assertThat(shown.findings()).hasSize(3);
+        assertThat(shown.resolved()).isEqualTo(1);
+        assertThat(shown.acked()).isZero();
+        Findings.Finding aside = shown.findings().get(2);
+        assertThat(aside.id()).as("its occurrences all precede the fix").isEqualTo(first);
+        assertThat(aside.kind()).isEqualTo(Findings.SLOW_ENDPOINT);
+        assertThat(aside.resolution()).isNotNull();
+        assertThat(aside.ack()).isNull();
+        assertThat(aside.setAside()).isTrue();
+
+        Findings.Answer hidden = findings.answer(window, null, 20, true);
+        assertThat(hidden.findings()).noneMatch(f -> f.id().equals(first));
+        assertThat(hidden.resolved()).isEqualTo(1);
+    }
+
+    @Test
+    void anOccurrenceAfterAResolutionInsideTheWindowIsTheRegressionsEvidence() {
+        decoder.accept(Otlp.traces(Otlp.service("orders"),
+                entryAt(1, "/a", NOW - 20_000, 2000), entryAt(2, "/a", NOW + 20_000, 3000)));
+        flush();
+        String id = findings.findings(window, null, 20).get(0).id();
+        resolveAt(id, NOW, null);
+
+        Findings.Finding regression = findings.findings(window, null, 20).get(0);
+
+        assertThat(regression.kind()).isEqualTo(Findings.REGRESSION);
+        assertThat(regression.traces()).as("only the traffic after the fix").containsExactly(traceId(2));
+        assertThat(regression.numbers()).containsEntry("calls", 1L).containsEntry("note", null);
+        assertThat(regression.why()).startsWith("came back after it was resolved; ");
+    }
+
+    @Test
+    void anAcknowledgedFindingThatRecursStaysAcknowledged() {
+        threeSlowEndpoints();
+        String first = findings.findings(window, null, 20).get(0).id();
+        resolveAt(first, NOW - 30_000, "fixed");
+        store.acks().ack(first, "accepted after all");
+
+        List<Findings.Finding> ranked = findings.findings(window, null, 20);
+
+        assertThat(of(Findings.REGRESSION)).as("the newer decision replaced the resolution").isEmpty();
+        assertThat(ranked.get(2).id()).isEqualTo(first);
+        assertThat(ranked.get(2).ack()).isNotNull();
+        assertThat(ranked.get(2).resolution()).isNull();
+    }
+
+    @Test
+    void aFindingIsNewUnlessThePreviousRunOfItsServiceHadItToo() {
+        decoder.accept(Otlp.traces(Otlp.service("orders"),
+                entryAt(1, "/a", NOW - 50_000, 2000)));
+        flush();
+        store.marks().create("start", "orders", "pid 2", NOW - 30_000);
+        decoder.accept(Otlp.traces(Otlp.service("orders"),
+                entryAt(2, "/a", NOW, 2000), entryAt(3, "/b", NOW, 1500)));
+        flush();
+
+        List<Findings.Finding> ranked = findings.findings(Window.of(NOW - 30_000, NOW + 60_000), null, 20);
+
+        assertThat(ranked).hasSize(2);
+        assertThat(ranked.get(0).title()).contains("/a");
+        assertThat(ranked.get(0).state()).isEqualTo(Findings.ONGOING);
+        assertThat(ranked.get(1).title()).contains("/b");
+        assertThat(ranked.get(1).state()).isEqualTo(Findings.NEW);
+    }
+
+    @Test
+    void theRunBeforeTheOneBeforeDoesNotCount() {
+        decoder.accept(Otlp.traces(Otlp.service("orders"),
+                entryAt(1, "/a", NOW - 50_000, 2000)));
+        flush();
+        store.marks().create("start", "orders", "pid 2", NOW - 40_000);
+        store.marks().create("start", "orders", "pid 3", NOW - 30_000);
+        decoder.accept(Otlp.traces(Otlp.service("orders"), entryAt(2, "/a", NOW, 2000)));
+        flush();
+
+        List<Findings.Finding> ranked = findings.findings(Window.of(NOW - 30_000, NOW + 60_000), null, 20);
+
+        assertThat(ranked).hasSize(1);
+        assertThat(ranked.get(0).state()).as("the run between the two marks had nothing").isEqualTo(Findings.NEW);
+    }
+
+    @Test
+    void aServiceThatNeverRestartedHasOnlyNewFindings() {
+        threeSlowEndpoints();
+
+        assertThat(findings.findings(window, null, 20)).extracting(Findings.Finding::state)
+                .containsOnly(Findings.NEW);
+    }
 }

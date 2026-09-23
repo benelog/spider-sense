@@ -10,6 +10,7 @@ import { count, dur, rate, pct, bytes, time, bothTimes, truncate, shortId } from
 import { codeFrame } from '../frames.js';
 
 const KIND_LABEL = {
+  regression: 'regression',
   error: 'error',
   'log-error': 'log error',
   'n-plus-one': 'n+1',
@@ -31,13 +32,40 @@ export function severityMark(severity) {
 }
 
 /**
+ * Whether a finding is listed last and dimmed: acknowledged, or resolved and not
+ * back since (docs/agent.md).
+ */
+export function setAside(finding) {
+  return !!finding.ack || (!!finding.resolution && finding.kind !== 'regression');
+}
+
+/**
  * The severity cell of a row: `acked` in place of the word for an acknowledged
- * finding, with the note as its title (docs/ui.md).
+ * finding, `resolved` for a resolved one that has not come back, with the note
+ * as its title (docs/ui.md).
  */
 function severityCell(finding) {
-  if (!finding.ack) return severityMark(finding.severity);
-  return h('span.sev-mark', { title: finding.ack.note || finding.severity + ' severity, acknowledged' },
-    severityDot(finding.severity), h('span.sev-word', 'acked'));
+  if (finding.ack) {
+    return h('span.sev-mark', { title: finding.ack.note || finding.severity + ' severity, acknowledged' },
+      severityDot(finding.severity), h('span.sev-word', 'acked'));
+  }
+  if (setAside(finding)) {
+    return h('span.sev-mark', { title: finding.resolution.note || finding.severity + ' severity, resolved' },
+      severityDot(finding.severity), h('span.sev-word', 'resolved'));
+  }
+  return severityMark(finding.severity);
+}
+
+const STATE_TITLE = {
+  new: 'not in the run before the last restart of its service',
+  ongoing: 'also in the run before the last restart of its service',
+  regressed: 'resolved, and back since',
+};
+
+/** `new`, `ongoing` or `regressed`, as a chip (docs/ui.md). */
+export function stateChip(state) {
+  if (!state) return null;
+  return chip(state, { class: 'chip-state state-' + state, title: STATE_TITLE[state] || state });
 }
 
 export function severityDot(severity) {
@@ -79,6 +107,8 @@ export function goToFinding(finding) {
 /** The number the kind is ranked by, as docs/ui.md spells the column out. */
 export function impactOf(finding) {
   const n = finding.numbers || {};
+  // A regression is ranked by the number its original kind is ranked by.
+  if (finding.kind === 'regression' && n.originalKind) return impactOf({ ...finding, kind: n.originalKind });
   switch (finding.kind) {
     case 'error': return h('span.bad', count(n.count));
     case 'log-error': return h('span.bad', count(n.count));
@@ -101,6 +131,7 @@ const NUMBER_LABEL = {
   firstSeen: 'first seen', lastSeen: 'last seen', usedMax: 'used max', pendingMax: 'pending max',
   at: 'worst at', worstMs: 'longest', shareMax: 'worst share', ratioMax: 'worst ratio',
   gc: 'collector', hotSpan: 'hot span',
+  resolvedAt: 'resolved at', originalKind: 'was',
 };
 
 /**
@@ -128,7 +159,7 @@ function numberValue(key, value, kind) {
         : null)));
   }
   if (typeof value === 'string') return h('span.mono', truncate(value, 200));
-  if (key === 'at' || key === 'firstSeen' || key === 'lastSeen') {
+  if (key === 'at' || key === 'firstSeen' || key === 'lastSeen' || key === 'resolvedAt') {
     return h('span', { title: bothTimes(value) }, time(value));
   }
   if (key === 'apdex') return h('span', fmtApdex(value));
@@ -242,29 +273,90 @@ function ackDialog(finding, onDone) {
   return dlg;
 }
 
-/** The last line of the evidence: acknowledge it, or the note and a way back. */
+/**
+ * The Resolve dialog (docs/ui.md): one optional note, then the POST; the finding
+ * is reported as a regression if it comes back.
+ */
+function resolveDialog(finding, onDone) {
+  const noteInput = h('input', {
+    type: 'text', placeholder: 'optional, such as what the fix was', autocomplete: 'off',
+    'aria-label': 'Note', style: { width: '100%' },
+  });
+  const problem = h('div.form-error', { role: 'alert' });
+  problem.hidden = true;
+
+  const ok = h('button.btn.btn-primary', { type: 'button' }, 'Resolve');
+  const dlg = dialog({
+    title: 'Resolve this finding',
+    body: h('div.mark-form',
+      h('p.muted', finding.title || finding.id),
+      h('label', h('span', 'Note'), noteInput),
+      h('p.muted', 'If it occurs again it is reported as a regression, ranked above everything else.'),
+      problem),
+    actions: [h('button.btn', { type: 'button', onclick: () => dlg.close() }, 'Cancel'), ok],
+  });
+
+  async function submit() {
+    ok.disabled = true;
+    try {
+      await api.resolveFinding(finding.id, noteInput.value.trim());
+      dlg.close();
+      toast('Resolved ' + finding.id);
+      if (onDone) onDone();
+    } catch (e) {
+      ok.disabled = false;
+      problem.hidden = false;
+      problem.textContent = String(e && e.message ? e.message : e);
+    }
+  }
+
+  ok.addEventListener('click', submit);
+  noteInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } });
+  requestAnimationFrame(() => noteInput.focus());
+  return dlg;
+}
+
+/** A button that withdraws something and reloads the page. */
+function withdrawButton(label, done, call, onChange) {
+  const button = h('button.btn.btn-ghost', {
+    type: 'button',
+    onclick: async () => {
+      button.disabled = true;
+      try {
+        await call();
+        toast(done);
+        if (onChange) onChange();
+      } catch (e) {
+        button.disabled = false;
+        toast(String(e && e.message ? e.message : e));
+      }
+    },
+  }, label);
+  return button;
+}
+
+/**
+ * The last line of the evidence: acknowledge or resolve it, or the note of what
+ * was decided and a way back.
+ */
 function ackLine(finding, onChange) {
+  if (finding.resolution) {
+    return h('div.f-ack',
+      h('span.muted', (finding.kind === 'regression' ? 'Resolved ' : 'Resolved, not back since ')
+        + time(finding.resolution.at)),
+      finding.resolution.note ? h('span.f-ack-note', finding.resolution.note) : null,
+      withdrawButton('Reopen', 'Reopened ' + finding.id, () => api.unresolveFinding(finding.id), onChange));
+  }
   if (finding.ack) {
-    const button = h('button.btn.btn-ghost', {
-      type: 'button',
-      onclick: async () => {
-        button.disabled = true;
-        try {
-          await api.unackFinding(finding.id);
-          toast('Unacknowledged ' + finding.id);
-          if (onChange) onChange();
-        } catch (e) {
-          button.disabled = false;
-          toast(String(e && e.message ? e.message : e));
-        }
-      },
-    }, 'Unacknowledge');
     return h('div.f-ack',
       h('span.muted', 'Acknowledged ' + time(finding.ack.at)),
       finding.ack.note ? h('span.f-ack-note', finding.ack.note) : null,
-      button);
+      withdrawButton('Unacknowledge', 'Unacknowledged ' + finding.id, () => api.unackFinding(finding.id), onChange));
   }
   return h('div.f-ack',
+    h('button.btn.btn-ghost', {
+      type: 'button', onclick: () => resolveDialog(finding, onChange),
+    }, 'Resolve'),
     h('button.btn.btn-ghost', {
       type: 'button', onclick: () => ackDialog(finding, onChange),
     }, 'Acknowledge'));
@@ -273,7 +365,7 @@ function ackLine(finding, onChange) {
 /**
  * The expanded row: why, the numbers, the statement, the code and the evidence.
  *
- * @param onChange called after an acknowledgement changed, so the page reloads;
+ * @param onChange called after an acknowledgement or a resolution changed, so the page reloads;
  *        with none, the evidence carries no buttons
  */
 export function evidence(finding, onChange) {
@@ -296,7 +388,7 @@ export function evidence(finding, onChange) {
         class: key === 'hotSpans' || key === 'breakdown' ? 'f-wide' : null,
       },
         h('dt', numberLabel(key)),
-        h('dd', numberValue(key, value, finding.kind)))))
+        h('dd', numberValue(key, value, finding.kind === 'regression' ? (finding.numbers || {}).originalKind : finding.kind)))))
       : null,
     finding.statement ? copyBlock(formatSql(finding.statement)) : null,
     schemaLines(finding.schema),
@@ -337,6 +429,7 @@ export function render(root, ctx) {
   const columns = [
     { key: 'n', label: '#', sortable: false, width: '36px', render: (f, i) => h('span.muted', String(i + 1)) },
     { key: 'severity', label: 'Severity', sortable: false, width: '96px', render: (f) => severityCell(f) },
+    { key: 'state', label: 'State', sortable: false, width: '96px', render: (f) => stateChip(f.state) },
     { key: 'kind', label: 'Kind', sortable: false, width: '112px', render: (f) => kindChip(f.kind) },
     { key: 'service', label: 'Service', sortable: false, width: '150px', render: (f) => serviceChip(f.service) },
     { key: 'title', label: 'Title', sortable: false, cls: 'wide', render: (f) => h('span.cell-ellipsis', { title: f.title }, f.title) },
@@ -361,13 +454,14 @@ export function render(root, ctx) {
 
   /** What has to change before an open evidence row is rebuilt. */
   function ackSignature(finding) {
-    return finding.ack ? finding.ack.at + '|' + (finding.ack.note || '') : '';
+    const decided = finding.ack || finding.resolution;
+    return decided ? (finding.ack ? 'a' : 'r') + decided.at + '|' + (decided.note || '') : '';
   }
 
   function buildRow(finding, index) {
     const tr = h('tr.clickable', {
       tabindex: 0,
-      class: finding.ack ? 'clickable is-acked' : 'clickable',
+      class: setAside(finding) ? 'clickable is-acked' : 'clickable',
       'aria-expanded': String(expanded.has(finding.id)),
       onclick: (e) => { if (!e.target.closest('a, button')) toggle(finding); },
       onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(finding); } },

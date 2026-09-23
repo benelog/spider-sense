@@ -703,6 +703,7 @@ public final class Codecs {
                 .put("id", finding.id())
                 .put("kind", finding.kind())
                 .put("severity", finding.severity())
+                .put("state", finding.state())
                 .put("service", finding.service())
                 .put("title", finding.title())
                 .put("why", finding.why())
@@ -721,7 +722,10 @@ public final class Codecs {
                 .put("traces", strings(finding.traces()))
                 .put("schema", schema(finding.schema()))
                 .put("ack", finding.ack() == null ? null
-                        : Json.obj().put("at", finding.ack().at()).put("note", finding.ack().note()));
+                        : Json.obj().put("at", finding.ack().at()).put("note", finding.ack().note()))
+                .put("resolution", finding.resolution() == null ? null
+                        : Json.obj().put("at", finding.resolution().at())
+                                .put("note", finding.resolution().note()));
     }
 
     static Json.JsonArray findings(List<Findings.Finding> findings) {

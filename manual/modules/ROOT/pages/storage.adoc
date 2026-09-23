@@ -174,7 +174,8 @@ CREATE INDEX IF NOT EXISTS mark_at ON mark (at_ms);
 CREATE TABLE IF NOT EXISTS ack (
     finding_id VARCHAR(64) PRIMARY KEY,     -- agent.md's finding id, kind + ':' + 12 hex
     at_ms      BIGINT NOT NULL,
-    note       VARCHAR(1024)
+    note       VARCHAR(1024),
+    resolved   BOOLEAN NOT NULL DEFAULT FALSE  -- a resolution rather than an acknowledgement
 );
 
 CREATE TABLE IF NOT EXISTS db_table (
@@ -194,11 +195,12 @@ CREATE TABLE IF NOT EXISTS meta (
 ----
 
 The schema is created with `IF NOT EXISTS` at startup.
-`meta.schema_version` is `5`, the version that added the `db_table` table.
-Version 4 added `ack`, and version 3 added `mark`.
+`meta.schema_version` is `6`, the version that added the `resolved` column of `ack`.
+Version 5 added `db_table`, version 4 added `ack`, and version 3 added `mark`.
 A version that changes a table drops and recreates every table, because the data is a cache of a development session and not a record.
-An `ack` row is an acknowledged finding (xref:findings.adoc#acknowledgements[Acknowledgements]).
-The retention sweeper does not delete an `ack` row by age, since a known finding stays known.
+An `ack` row is an acknowledged finding (xref:findings.adoc#acknowledgements[Acknowledgements]), or, with `resolved` true, a resolved one (xref:findings.adoc#resolutions[Resolutions]).
+The two share a table because a finding has one decision recorded at a time, and the newer one replaces the older.
+The retention sweeper does not delete an `ack` row by age, since a known finding stays known and a fixed one stays fixed.
 `DELETE /api/data` removes it with everything else.
 A `db_table` row is the index catalog of one table of one service, as the extension read it through JDBC metadata (xref:design.adoc#extension[The extension]).
 It arrives as a log record whose attributes are `spidersense.schema.table`, `spidersense.schema.schema`, `spidersense.schema.product` and `spidersense.schema.indexes`.
@@ -295,7 +297,7 @@ The three commands that write are `mark`, `ack` and `unack`, and `import`, and t
 `spidersense.retention.hours` defaults to `24`.
 A daemon sweeper runs a minute after start and every five minutes after that, deleting with `DELETE FROM span|trace|log|metric_point|tingle|mark|db_table WHERE <time> < now - retention`, then `metric_series` rows with no points.
 A catalog row goes by its `seen_ms`, because a catalog older than the retention describes a run no window can show any more.
-`DELETE /api/data` runs the same deletes without the time bound, and empties `ack`.
+`DELETE /api/data` runs the same deletes without the time bound, and empties `ack`, acknowledgements and resolutions alike.
 At 24 hours of a few requests per second the file stays in the low hundreds of megabytes.
 H2 reclaims space on the next compaction, when the database closes.
 

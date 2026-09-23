@@ -12,13 +12,20 @@ import java.util.Map;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Findings a reader has seen and accepted (agent.md, "Acknowledgements").
+ * What a reader has decided about a finding: accepted it, or fixed it (agent.md,
+ * "Acknowledgements" and "Resolutions").
  *
  * <p>A report endpoint that is slow by design sits at the top of every
  * {@code findings} answer and hides the new problem under it. An acknowledgement
  * takes it out of the way without hiding it: a finding id is stable across
  * windows, so one row is enough, and the ranking puts the acknowledged findings
  * last instead of dropping them.
+ *
+ * <p>A resolution is the same row with {@code resolved} set: "I fixed this; tell
+ * me if it comes back". The two differ in one thing only, what a recurrence does
+ * — an acknowledged finding that recurs stays acknowledged, a resolved one that
+ * recurs is a {@code regression} — so they share the table, and the newer
+ * decision about a finding replaces the older one.
  *
  * <p>The rows outlive the data they are about. The retention sweeper never
  * touches this table — a known finding stays known, and the spans that proved it
@@ -27,8 +34,17 @@ import org.jspecify.annotations.Nullable;
  */
 public final class Acks {
 
-    /** One acknowledged finding. {@code note} is optional. */
-    public record Ack(String findingId, long at, @Nullable String note) {
+    /**
+     * One decision about a finding. {@code note} is optional.
+     *
+     * @param resolved whether this is a resolution rather than an acknowledgement
+     */
+    public record Ack(String findingId, long at, @Nullable String note, boolean resolved) {
+
+        /** An acknowledgement. */
+        public Ack(String findingId, long at, @Nullable String note) {
+            this(findingId, at, note, false);
+        }
     }
 
     /**
@@ -50,39 +66,65 @@ public final class Acks {
     }
 
     /**
-     * Acknowledges a finding; acknowledging again replaces the row.
+     * Acknowledges a finding; acknowledging again, or acknowledging a resolved
+     * finding, replaces the row.
      *
      * @throws IllegalArgumentException when the id is blank or too long
      */
     public Ack ack(@Nullable String findingId, @Nullable String note) {
+        return decide(findingId, note, false);
+    }
+
+    /**
+     * Resolves a finding: its next occurrence is a {@code regression}. Resolving
+     * again, or resolving an acknowledged finding, replaces the row.
+     *
+     * @throws IllegalArgumentException when the id is blank or too long
+     */
+    public Ack resolve(@Nullable String findingId, @Nullable String note) {
+        return decide(findingId, note, true);
+    }
+
+    private Ack decide(@Nullable String findingId, @Nullable String note, boolean resolved) {
         String id = checked(findingId);
         long at = System.currentTimeMillis();
         String cutNote = note != null && note.length() > MAX_NOTE ? note.substring(0, MAX_NOTE) : note;
-        sql.update("MERGE INTO ack (finding_id, at_ms, note) KEY(finding_id) VALUES (?, ?, ?)",
-                Arrays.asList(id, at, cutNote));
-        return new Ack(id, at, cutNote);
+        sql.update("MERGE INTO ack (finding_id, at_ms, note, resolved) KEY(finding_id) VALUES (?, ?, ?, ?)",
+                Arrays.asList(id, at, cutNote, resolved));
+        return new Ack(id, at, cutNote, resolved);
     }
 
     /**
      * Withdraws an acknowledgement.
      *
      * @return whether there was one to withdraw, which is the difference between
-     *         {@code 204} and {@code 404} (api.md)
+     *         {@code 204} and {@code 404} (api.md); a resolution is not one
      */
     public boolean unack(@Nullable String findingId) {
-        return sql.update("DELETE FROM ack WHERE finding_id = ?",
+        return sql.update("DELETE FROM ack WHERE finding_id = ? AND NOT resolved",
                 List.of(checked(findingId))) > 0;
     }
 
-    /** Every acknowledgement, newest first. */
+    /**
+     * Withdraws a resolution.
+     *
+     * @return whether there was one to withdraw; an acknowledgement is not one
+     */
+    public boolean unresolve(@Nullable String findingId) {
+        return sql.update("DELETE FROM ack WHERE finding_id = ? AND resolved",
+                List.of(checked(findingId))) > 0;
+    }
+
+    /** Every acknowledgement, newest first; resolutions are not listed. */
     public List<Ack> all(int limit) {
         return new ArrayList<>(sql.query(
-                "SELECT * FROM ack ORDER BY at_ms DESC, finding_id LIMIT " + Math.max(1, limit),
+                "SELECT * FROM ack WHERE NOT resolved ORDER BY at_ms DESC, finding_id LIMIT "
+                        + Math.max(1, limit),
                 List.of(), Acks::map));
     }
 
     /**
-     * The acknowledgements of these findings, by id.
+     * The acknowledgements and resolutions of these findings, by id.
      *
      * <p>One statement for the whole page of findings rather than one per row:
      * the ranking has the ids already, and the attachment must not turn a ranked
@@ -111,6 +153,7 @@ public final class Acks {
     }
 
     private static Ack map(ResultSet rs) throws SQLException {
-        return new Ack(rs.getString("finding_id"), rs.getLong("at_ms"), rs.getString("note"));
+        return new Ack(rs.getString("finding_id"), rs.getLong("at_ms"), rs.getString("note"),
+                rs.getBoolean("resolved"));
     }
 }

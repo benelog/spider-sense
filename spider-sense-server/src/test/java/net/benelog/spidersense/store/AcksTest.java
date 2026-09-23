@@ -118,4 +118,27 @@ class AcksTest {
 
         assertThat(store.acks().all(50)).isEmpty();
     }
+
+    /** A resolution is the same row with the flag set, and the newer decision wins (agent.md). */
+    @Test
+    void aResolutionReplacesAnAcknowledgementAndIsNotListedAsOne() {
+        Acks acks = store.acks();
+        acks.ack(SLOW, "accepted");
+
+        Acks.Ack resolved = acks.resolve(SLOW, "added the index");
+
+        assertThat(resolved.resolved()).isTrue();
+        assertThat(acks.all(50)).as("the list is of acknowledgements").isEmpty();
+        assertThat(acks.byId(Set.of(SLOW)).get(SLOW).resolved()).isTrue();
+        assertThat(acks.byId(Set.of(SLOW)).get(SLOW).note()).isEqualTo("added the index");
+        assertThat(acks.unack(SLOW)).as("a resolution is not an acknowledgement").isFalse();
+
+        assertThat(acks.ack(SLOW, null).resolved()).isFalse();
+        assertThat(acks.unresolve(SLOW)).as("an acknowledgement is not a resolution").isFalse();
+        assertThat(acks.all(50)).hasSize(1);
+
+        acks.resolve(SLOW, null);
+        assertThat(acks.unresolve(SLOW)).isTrue();
+        assertThat(acks.byId(Set.of(SLOW))).isEmpty();
+    }
 }

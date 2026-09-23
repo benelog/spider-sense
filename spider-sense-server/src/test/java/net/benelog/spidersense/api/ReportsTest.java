@@ -74,6 +74,52 @@ class ReportsTest {
         }
     }
 
+    /**
+     * A regression, as the text and the JSON render it: first, severity high, the
+     * state column reading regressed, and the resolution's instant as a time
+     * (agent.md, "Resolutions").
+     */
+    @Test
+    void aRegressionRendersFirstWithItsResolutionInTheNumbers() {
+        Config config = TestStore.config();
+        try (Store store = new Store(config.jdbcUrl(), config.databaseFile(), config.retentionHours(),
+                config.slowRequestMs(), config.slowQueryMs(), null)) {
+            OtlpDecoder decoder = new OtlpDecoder(store, () -> 4000);
+            decoder.accept(Otlp.traces(Otlp.service("orders"),
+                    Otlp.span("%032x".formatted(1), "%016x".formatted(1), "GET /orders/report",
+                            Span.SpanKind.SPAN_KIND_SERVER, NOW, 900,
+                            Otlp.attr("http.request.method", "GET"),
+                            Otlp.attr("http.route", "/orders/report"),
+                            Otlp.attr("http.response.status_code", 200))));
+            store.writer().awaitIdle(5_000);
+
+            try (Reports reports = Reports.readOnly(config)) {
+                Window window = Window.of(NOW - 60_000, NOW + 60_000);
+                String id = reports.findings(window, null, 20, false).json().asObject()
+                        .getArray("findings").get(0).asObject().getString("id");
+                store.sql().update("MERGE INTO ack (finding_id, at_ms, note, resolved) KEY(finding_id)"
+                        + " VALUES (?, ?, ?, TRUE)", java.util.List.of(id, NOW - 30_000, "precomputed"));
+
+                Reports.Report report = reports.findings(window, null, 20, false);
+                Json.JsonObject regression = report.json().asObject().getArray("findings").get(0).asObject();
+                assertThat(regression.getString("kind")).isEqualTo("regression");
+                assertThat(regression.getString("state")).isEqualTo("regressed");
+                assertThat(regression.getObject("resolution").getString("note")).isEqualTo("precomputed");
+                assertThat(regression.getObject("numbers").getString("originalKind"))
+                        .isEqualTo("slow-endpoint");
+
+                assertThat(report.text())
+                        .contains("| # | severity | state | kind | id | service | title |")
+                        .contains("| 1 | high | regressed | regression | " + id + " | orders | ")
+                        .contains("1. " + id + " — came back after it was resolved (precomputed); ")
+                        .contains("   resolvedAt " + Text.instantMillis(NOW - 30_000)
+                                + ", note precomputed, originalKind slow-endpoint, calls 1");
+                assertThat(reports.check(window, null, null, java.util.Map.of()).text())
+                        .contains("| maxRegressions | 0 | 1 | fail | 1 finding: slow-endpoint GET /orders/report is slow |");
+            }
+        }
+    }
+
     @Test
     void statusReportsTheRetentionCapTheIngestCapAndWhatTheCapDropped() {
         Config config = TestStore.config("--retention.spans=250000",

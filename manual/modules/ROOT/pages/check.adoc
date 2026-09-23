@@ -6,7 +6,7 @@
 [source,bash]
 ----
 java -jar spider-sense.jar check [--since=] [--until=] [--service=] [--endpoint=] [--max-p95-ms=] [--max-errors=] \
-    [--max-error-rate=] [--max-queries-per-request=] [--max-slow-queries=] [--max-n-plus-one=] [--max-log-errors=] [--min-apdex=]
+    [--max-error-rate=] [--max-queries-per-request=] [--max-slow-queries=] [--max-n-plus-one=] [--max-log-errors=] [--max-regressions=] [--min-apdex=]
 ----
 
 Over HTTP, the endpoint is `GET /api/check?since&until&service&endpoint&…rules…&format=`.
@@ -46,21 +46,26 @@ Every rule given is evaluated, and each one is a limit compared against a value 
 
 | `--max-n-plus-one`
 | `0`
-| The number of `n-plus-one` and `n-plus-one-http` findings.
+| The number of `n-plus-one` and `n-plus-one-http` findings, regressed ones included.
 
 | `--max-log-errors`
 | none
-| `log-error` findings' uncovered records, summed.
+| `log-error` findings' uncovered records, summed, regressed ones included.
+
+| `--max-regressions`
+| `0`
+| The number of `regression` findings: resolved findings that came back (xref:findings.adoc#resolutions[Resolutions]).
 
 | `--min-apdex`
 | none
 | The Apdex over the scope.
 |===
 
-When no rule is given the default set is `--max-errors=0`, `--max-n-plus-one=0` and `--max-p95-ms=<slow.request.ms>`.
+When no rule is given the default set is `--max-errors=0`, `--max-n-plus-one=0`, `--max-regressions=0` and `--max-p95-ms=<slow.request.ms>`.
 Naming a rule replaces that set, and only the rules named are then evaluated.
 
 `--endpoint=` narrows the scope to one endpoint, by `endpointId` or by name (`GET /api/orders/\{id}`), and the heading names it.
+`--max-n-plus-one` and `--max-regressions` then count only the findings about that endpoint.
 `--service=` narrows the scope to one service.
 `requests` counts the entry spans in scope, so a seeder's or a scheduler's root spans never make a verdict of their own.
 A job is never a request, so `check` says nothing about one.
@@ -115,6 +120,7 @@ $ java -jar spider-sense.jar check --since=before
 | maxP95Ms | 500 | 1,202.5 | fail | GET /api/slow p95 1,202.5 ms over 3 calls |
 | maxErrors | 0 | 2 | fail | 2 occurrences over the window |
 | maxNPlusOne | 0 | 2 | fail | 2 findings: GET /api/orders/{id} runs SELECT product 5 times per request |
+| maxRegressions | 0 | 0 | pass | no resolved finding came back |
 
 $ echo $?
 1

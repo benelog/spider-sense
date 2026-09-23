@@ -21,7 +21,7 @@ A row carries a severity dot (red for high, amber for medium, grey for low), the
 The first code frame follows in monospace when the finding has one.
 A row click goes where the finding points: the endpoint page, the query page, the error page, the JVM page for a pool or for the JVM itself, the Logs page filtered to `ERROR` and the finding's logger, and otherwise the first trace of its evidence.
 The panel head links to *All findings*.
-Acknowledged findings are left out here, so the five are always ones nobody has dismissed.
+Acknowledged findings, and resolved ones that have not come back, are left out here, so the five are always ones nobody has dismissed.
 With no finding in the window the panel says `Nothing worth fixing in this window.`
 
 . *Throughput and latency*: a chart with a *Requests* | *Load* toggle in the panel head, remembered in the hash query as `chart=load`.
@@ -49,8 +49,8 @@ Before any service has sent anything, the page shows the logo, one sentence, and
 `#/findings` is the ranked list of what is worth fixing in the window, up to 100 rows.
 It shows what xref:findings.adoc[findings] gives an agent, in the same order.
 
-The table has the position, the severity as a dot and a word, the kind chip, the service chip, the title, and in a right-aligned column the number the kind is ranked by.
-That number is the count for `error` and `log-error`, the median repeats times the endpoints affected (`42 × 3`) for `n-plus-one` and `n-plus-one-http`, the total time for `slow-query`, `slow-endpoint`, `slow-job` and `slow-external`, the peak pending requests for `pool-exhausted`, the worst pause for `gc-pause`, the peak ratio as a percentage for `heap-pressure`, and the growth for `thread-growth`.
+The table has the position, the severity as a dot and a word, the state chip, the kind chip, the service chip, the title, and in a right-aligned column the number the kind is ranked by.
+That number is the original kind's for a `regression`, the count for `error` and `log-error`, the median repeats times the endpoints affected (`42 × 3`) for `n-plus-one` and `n-plus-one-http`, the total time for `slow-query`, `slow-endpoint`, `slow-job` and `slow-external`, the peak pending requests for `pool-exhausted`, the worst pause for `gc-pause`, the peak ratio as a percentage for `heap-pressure`, and the growth for `thread-growth`.
 
 A row click expands the row in place to show the evidence: the `why` sentence, the kind's numbers as a grid of keys and values, the statement pretty-printed when there is one, the code frames as a monospace list, and the traces as links to the trace page.
 Each code frame that resolves to a source file is a link into your editor, with its five source lines under it (<<code-frames,Code frames>>).
@@ -63,9 +63,14 @@ A finding without the block shows nothing for it.
 The row also carries a *Go to* link to the subject's page, the same destination as a row click on the Overview.
 An expanded row stays expanded across a Live refresh while the finding is still in the list.
 
+The state chip says what the last restart changed (xref:findings.adoc#state[State]).
+`new` is in the accent colour, `ongoing` is muted, and `regressed` is red.
+
 An acknowledged finding is listed after the others, dimmed, with `acked` in its severity cell and the note as its title.
-The expanded evidence of any finding ends with an *Acknowledge* button, which asks for an optional note.
+A resolved finding that has not come back is listed and dimmed the same way, with `resolved` in its severity cell.
+The expanded evidence of any finding ends with a *Resolve* button and an *Acknowledge* button, each of which asks for an optional note.
 An acknowledged finding shows the note and an *Unacknowledge* button instead.
+A resolved finding, a regression included, shows when it was resolved, the note and a *Reopen* button, which withdraws the resolution.
 
 The empty state says `Nothing worth fixing in this window.` and names the window, or shows the snippet when there was no request at all.
 

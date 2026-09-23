@@ -69,7 +69,8 @@ class CheckTest {
         assertThat(result.requests()).isEqualTo(1);
         assertThat(result.reason()).isNull();
         assertThat(result.checks()).extracting(Check.RuleCheck::rule)
-                .containsExactly(Check.MAX_P95_MS, Check.MAX_ERRORS, Check.MAX_N_PLUS_ONE);
+                .containsExactly(Check.MAX_P95_MS, Check.MAX_ERRORS, Check.MAX_N_PLUS_ONE,
+                        Check.MAX_REGRESSIONS);
         assertThat(rule(result, Check.MAX_P95_MS).limit()).isEqualTo(500.0);
         assertThat(rule(result, Check.MAX_P95_MS).actual()).isEqualTo(10.0);
     }
@@ -246,5 +247,45 @@ class CheckTest {
         assertThat(rule(result, Check.MAX_N_PLUS_ONE).detail()).contains("6 times per request");
         assertThat(rule(result, Check.MAX_QUERIES_PER_REQUEST).actual()).isEqualTo(6.0);
         assertThat(rule(result, Check.MAX_QUERIES_PER_REQUEST).pass()).isFalse();
+    }
+
+    @Test
+    void aResolvedNPlusOneThatCameBackFailsMaxRegressionsAndStillCountsAsAnNPlusOne() {
+        Span.Builder root = entry("/orders/{id}", 60);
+        List<Span.Builder> spans = new java.util.ArrayList<>();
+        spans.add(root);
+        for (int i = 0; i < 6; i++) {
+            int n = ids++;
+            spans.add(Otlp.child(root, "%016x".formatted(n), "SELECT order_line",
+                    Span.SpanKind.SPAN_KIND_CLIENT, NOW + i, 2,
+                    Otlp.attr("db.system", "h2"),
+                    Otlp.attr("db.statement", "select * from order_line where order_id = ?"),
+                    Otlp.attr("db.operation", "SELECT"),
+                    Otlp.attr("db.sql.table", "order_line")));
+        }
+        decoder.accept(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
+        flush();
+        assertThat(rule(check.check(window, null, null, Map.of()), Check.MAX_REGRESSIONS).detail())
+                .isEqualTo("no resolved finding came back");
+
+        String id = findings.findings(window, null, 20).get(0).id();
+        store.sql().update("MERGE INTO ack (finding_id, at_ms, note, resolved) KEY(finding_id)"
+                + " VALUES (?, ?, ?, TRUE)", List.of(id, NOW - 30_000, "fetch join"));
+
+        Check.CheckResult result = check.check(window, null, null, Map.of());
+
+        assertThat(result.pass()).isFalse();
+        assertThat(rule(result, Check.MAX_REGRESSIONS).limit()).isZero();
+        assertThat(rule(result, Check.MAX_REGRESSIONS).actual()).isEqualTo(1.0);
+        assertThat(rule(result, Check.MAX_REGRESSIONS).pass()).isFalse();
+        assertThat(rule(result, Check.MAX_REGRESSIONS).detail())
+                .startsWith("1 finding: n-plus-one GET /orders/{id} runs SELECT order_line");
+        assertThat(rule(result, Check.MAX_N_PLUS_ONE).actual())
+                .as("a regressed N+1 is still an N+1").isEqualTo(1.0);
+
+        Check.CheckResult allowed = check.check(window, null, null, Map.of(Check.MAX_REGRESSIONS, 1.0));
+        assertThat(allowed.checks()).extracting(Check.RuleCheck::rule)
+                .containsExactly(Check.MAX_REGRESSIONS);
+        assertThat(allowed.pass()).isTrue();
     }
 }

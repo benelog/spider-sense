@@ -25,7 +25,7 @@ Everything is served by the same `Queries` the UI uses, so the numbers an agent 
 | CLI, `java -jar spider-sense.jar <command>` | this version | Claude Code and every agent with a shell; also works when no Spider Sense is running, straight from the H2 file |
 | Skills, `skills/spider-sense/` and `skills/spider-sense-sql-tuning/` | this version | the first teaches an agent the loop itself: how to start the app under the agent, mark, exercise, read findings, fix, compare, check; the second teaches query tuning: indexes, rewrites, fetch joins, batching, verified with `compare` and `check` |
 | Read-only SQL, `POST /api/sql` and `sql` | this version | the question nobody anticipated; the schema in storage.md is already the documentation |
-| MCP, `POST /mcp` and `mcp` | this version | hosts without a shell; six tools over the same handlers, answering the same text ([MCP](#mcp)) |
+| MCP, `POST /mcp` and `mcp` | this version | hosts without a shell; seven tools over the same handlers, answering the same text ([MCP](#mcp)) |
 
 ### Choosing an interface
 
@@ -77,10 +77,12 @@ So `since=start` means "since the application was last restarted", which is what
 
 A finding is one thing worth fixing, found by rules over the window.
 Findings are ranked by severity (`high` before `medium` before `low`; no rule produces `low` today, the value is reserved for gentler kinds), then by kind in the order of the table below, then by impact within a kind, then by id, so the list is stable between two calls over the same data.
+Regressions among themselves are ranked by the order of their original kinds before their impact.
 `limit` defaults to 20 and is at most 100.
 
 | Kind | Rule | Severity | Impact |
 |---|---|---|---|
+| `regression` | a finding of any other kind whose id has a resolution older than its first occurrence in the window ([Resolutions](#resolutions)) | `high` | the underlying finding's |
 | `error` | an error group (api.md) with at least one occurrence in the window | `high` | count |
 | `n-plus-one` | in one trace, the same query group runs 5 or more times under the same entry span; aggregated per (endpoint, query group) over the window | `high` when the repeats reach 20 or their summed time exceeds `slow.request.ms`, else `medium` | affected requests × median repeats |
 | `n-plus-one-http` | in one trace, the same outbound HTTP call runs 5 or more times under the same entry span; aggregated per (endpoint, call) over the window | as `n-plus-one` | affected requests × median repeats |
@@ -105,6 +107,7 @@ Each finding carries:
   "id": "n-plus-one:1a2b3c4d5e6f",          // kind + 12 hex of SHA-256 over (kind, service, subject); stable across windows
   "kind": "n-plus-one",
   "severity": "high",
+  "state": "new" | "ongoing" | "regressed", // below, "State"
   "service": "spring-orders",
   "title": "GET /orders/{id} runs SELECT order_line 42 times per request",   // one line, no numbers a person would not say aloud
   "why": "3 of 3 requests repeated it; 42, 42 and 41 times; 38.2 ms per request in that statement",
@@ -120,6 +123,7 @@ Each finding carries:
 
 `numbers` per kind:
 
+- `regression`: `resolvedAt` (the resolution's instant), `note` (the resolution's note, or `null`), `originalKind`, then the underlying finding's own numbers; `subject`, `title`, `statement`, `code`, `traces` and `schema` are the underlying finding's, and `why` is `came back after it was resolved (<note>); ` followed by the underlying `why`.
 - `error`: `count`, `firstSeen`, `lastSeen`, `type`, `message` (normalised), `endpoints` (name and count, as api.md's `ErrorGroup.endpoints`).
 - `n-plus-one`: `requests` (entry spans of the endpoint in the window, as design.md defines an entry span), `affected` (of them, how many repeated), `medianRepeats`, `maxRepeats`, `msPerRequest` (summed time of the repeated statement, per affected request).
 - `n-plus-one-http`: the same five as `n-plus-one`, over the repeated call rather than the repeated statement; `subject.endpointId` is the endpoint, `subject.target` is the host it called and the title is `<endpoint> calls <call> <medianRepeats> times per request`.
@@ -169,7 +173,7 @@ In the text rendering they come after the numbers and before the statement:
    breakdown: db 44.0% · http 21.0% · internal 7.0% · self 28.0%
 ```
 
-`traces` are the three slowest traces for `slow-*`, the three newest for `error` and `log-error` (records with a trace id), the three most recent affected for `n-plus-one` and `n-plus-one-http`, none for `pool-exhausted` and the JVM kinds.
+`traces` are the three slowest traces for `slow-*`, the three newest for `error` and `log-error` (records with a trace id), the three most recent affected for `n-plus-one` and `n-plus-one-http`, none for `pool-exhausted` and the JVM kinds, and for a `regression` those of its original kind, taken after the resolution.
 A job is never a request: it is not in `requests`, not in the Apdex and not in `check`; `slow-job` is the one place a slow scheduler tick or batch step is reported.
 An endpoint that `spidersense.ignore.endpoints` excludes (design.md) is not an entry span and produces no finding of any kind.
 
@@ -274,17 +278,59 @@ The rule then is `n-plus-one`'s with the call in place of the statement: five or
 A finding that is known and accepted — a report endpoint that is slow by design, a query that will stay slow until the schema changes — sits at the top of every `findings` answer and hides the new problem under it.
 An acknowledgement takes it out of the way without hiding it: finding ids are stable across windows ([Findings](#findings)), so it is one row, `(finding_id, at, note)` in the `ack` table (storage.md), kept until it is withdrawn or the data is cleared.
 
-- `POST /api/findings/{id}/ack` with `{ "note": "…" | null }` → `201` `{ "findingId": "…", "at": …, "note": … }`; acknowledging again replaces the row.
-- `DELETE /api/findings/{id}/ack` → `204`, or `404` when there is no such acknowledgement.
-- `GET /api/acks` → `{ "acks": [ … ] }`, newest first.
+- `POST /api/findings/{id}/ack` with `{ "note": "…" | null }` → `201` `{ "findingId": "…", "at": …, "note": … }`; acknowledging again replaces the row, and so does acknowledging a resolved finding.
+- `DELETE /api/findings/{id}/ack` → `204`, or `404` when there is no such acknowledgement (a resolution is not one).
+- `GET /api/acks` → `{ "acks": [ … ] }`, newest first; resolutions are not listed.
 
 Every finding carries `"ack": { "at": …, "note": "…" | null } | null`.
 Acknowledged findings are ranked after every other finding, in the same order among themselves; `hideAcked=true` on `/api/findings` (and on the MCP `findings` tool) leaves them out.
+An acknowledged finding that recurs stays acknowledged: acknowledging says "known, keep it out of the way", and a recurrence is exactly what was accepted.
 In the text rendering the severity column reads `acked` for an acknowledged finding, and the heading counts them: `(… 12 requests, 2 acked)`.
 `check` does not look at acknowledgements: its rules are explicit thresholds, and an acknowledged `n-plus-one` is still an N+1 to `maxNPlusOne`.
 
 The CLI commands are `ack <finding id> [--note=…]`, `unack <finding id>`, and `findings --hide-acked`; the id is what `findings` printed.
 Both write in the direct-file path as `mark` does.
+
+## Resolutions
+
+A resolution says "I fixed this; tell me if it comes back".
+It differs from an acknowledgement in one thing only: an acknowledged finding that recurs stays acknowledged and dimmed, a resolved one that recurs becomes a `regression`, ranked above everything else.
+It is the same row in the `ack` table with `resolved` set (storage.md), so a finding has at most one decision recorded, and the newer one replaces the older: resolving an acknowledged finding, or acknowledging a resolved one, replaces the row.
+
+- `POST /api/findings/{id}/resolve` with `{ "note": "…" | null }` → `201` `{ "findingId": "…", "at": …, "note": … }`; resolving again replaces the row.
+- `DELETE /api/findings/{id}/resolve` → `204`, or `404` when there is no such resolution (an acknowledgement is not one).
+
+Every finding carries `"resolution": { "at": …, "note": "…" | null } | null`.
+A finding the rules produce whose id has a resolution is one of two things:
+
+- **Back.** When the resolution is older than the window's first occurrence of the finding, it is reported as kind `regression` instead of its own kind: severity `high`, first in the ranking, the same id, `numbers` carrying the resolution's `resolvedAt` and `note` and the `originalKind` before the finding's own numbers (Findings, above).
+  A resolution older than the window makes every occurrence in it a recurrence; a resolution inside the window runs the rules again over the part of the window after it, for the finding's service, and the finding is back when they produce its id there.
+  That run's finding is the one reported, so the `numbers` and `traces` of a regression are those of its return, and the traffic before the fix does not count.
+- **Not back.** When every occurrence in the window precedes the resolution, the finding keeps its kind, carries its `resolution`, and is ranked with the acknowledged findings, after every other one; `hideAcked=true` leaves it out as well, and in the text rendering its severity column reads `resolved`.
+
+The heading of the text rendering counts the second kind: `(… 12 requests, 2 acked, 1 resolved)`, and the JSON carries the count as `resolved` beside `acked`.
+`check` counts regressions with `maxRegressions` ([Check](#check)); a regressed `n-plus-one` still counts to `maxNPlusOne` as well, and a regressed `log-error` to `maxLogErrors`.
+Resolutions are not exported, as acknowledgements are not.
+
+The CLI commands are `resolve <finding id> [--note=…]` and `unresolve <finding id>`, and the MCP tool is `resolve`; both CLI commands write in the direct-file path as `mark` does.
+The loop resolves a finding once `check` over the run after the fix passes, with what the fix was as the note ([Skills](#skills)).
+
+## State
+
+Every finding carries `state`, which says on its own what the last restart changed, so `findings --since=start` names the findings the last change introduced without a second window; it is the automatic counterpart of [Compare](#compare), which needs two marks.
+
+| State | When |
+|---|---|
+| `regressed` | the finding is a `regression` |
+| `new` | the rules do not produce its id over the previous run of its service |
+| `ongoing` | they do |
+
+The **previous run** of a service is the time between its two newest `start` marks at or before the end of the window ([Marks](#marks)): from the older of the two, up to the newest one.
+With one `start` mark it reaches back to the oldest data; with none (an imported session without marks, a sender that reports no `process.pid`) there is no previous run, and every finding of the service is `new`.
+The rules run over the previous run once per service of the answered page, with the same thresholds as the window's.
+`check` does not read the state.
+
+In the text rendering `state` is a column between `severity` and `kind`.
 
 ## Trace diff
 
@@ -356,7 +402,7 @@ With it, a `slow-query` or `n-plus-one` finding computed over the imported sessi
 Import keeps every timestamp as exported, so the reader sets the time range to the answer's `window` (or `all`).
 It is idempotent enough for a file imported twice: a trace whose id already has rows in the store is skipped whole (its spans, logs and tingles; `skippedTraces` counts it), a metric point is merged on its `(series, at)` key with the series looked up or created by `(service, name, attributes)`, a service row is merged, a mark is skipped when one with the same name and instant exists, and a catalog row is merged on its key `(service, schema_name, table_name)` as the writer merges it ([storage.md](storage.md)), so the table the file describes replaces the row the store had for it.
 A document whose `schema` is not this version's is a `400` naming both versions.
-Acknowledgements are not exported: they are the reader's, not the session's.
+Acknowledgements and resolutions are not exported: they are the reader's, not the session's.
 
 The CLI commands are `export [--since=… --until=… --service=…] [--out=<file>]` and `import <file> [--url=… | --db=…]`: `export` writes to stdout or to `--out`, gzipped when the name ends in `.gz`; `import` posts to the running Spider Sense, or, when none answers or `--db` names a file, writes into the file in process through the same code as the server, and prints one line, `imported 12,345 spans, 456 logs, 7,890 metric points, 12 tingles, 3 marks (2 traces already present) from 2026-09-18T12:37:06+09:00 → 12:41:08`.
 
@@ -395,7 +441,7 @@ Queries and errors the same way.
 
 `GET /api/check?since&until&service&endpoint&…rules…&format=`
 
-Rules are query parameters; every rule given is evaluated, and when none is given the default set is `maxErrors=0`, `maxNPlusOne=0` and `maxP95Ms=<slow.request.ms>`.
+Rules are query parameters; every rule given is evaluated, and when none is given the default set is `maxErrors=0`, `maxNPlusOne=0`, `maxRegressions=0` and `maxP95Ms=<slow.request.ms>`.
 
 | Rule | Actual value |
 |---|---|
@@ -404,11 +450,12 @@ Rules are query parameters; every rule given is evaluated, and when none is give
 | `maxErrorRate` | failed entry spans over entry spans |
 | `maxQueriesPerRequest` | database spans per entry span, the highest of any endpoint |
 | `maxSlowQueries` | query calls over `slow.query.ms` |
-| `maxNPlusOne` | `n-plus-one` and `n-plus-one-http` findings |
-| `maxLogErrors` | `log-error` findings' uncovered records summed |
+| `maxNPlusOne` | `n-plus-one` and `n-plus-one-http` findings, regressed ones included |
+| `maxLogErrors` | `log-error` findings' uncovered records summed, regressed ones included |
+| `maxRegressions` | `regression` findings: resolved findings that came back ([Resolutions](#resolutions)) |
 | `minApdex` | the Apdex over the scope |
 
-`endpoint` narrows the scope to one endpoint, by `endpointId` or by name (`GET /orders/{id}`).
+`endpoint` narrows the scope to one endpoint, by `endpointId` or by name (`GET /orders/{id}`); `maxNPlusOne` and `maxRegressions` then count the findings whose `subject.endpointId` is that endpoint.
 `requests` counts the entry spans in scope, as design.md defines an entry span, so a seeder's or a scheduler's root spans never make a verdict of their own.
 
 ```json
@@ -482,7 +529,7 @@ The server speaks the Model Context Protocol in two transports, and both are the
 - **Streamable HTTP**: `POST /mcp` on the server's own port, one JSON-RPC 2.0 message per request, `Content-Type: application/json` both ways. A request is answered with `200` and the JSON-RPC response; a notification with `202` and no body. The server is stateless: no session id is issued or required, `GET /mcp` is `405`, and a JSON array (the batch of older revisions) is refused with `-32600`.
 - **stdio**: `java -jar spider-sense.jar mcp [--url=<base>] [--db=<path>]`, newline-delimited JSON-RPC on stdin and stdout, nothing else on stdout, diagnostics on stderr; it ends at end of input. `initialize`, `ping` and `tools/list` are answered in process. A `tools/call` goes to the Spider Sense at `--url` (the CLI's default and `SPIDERSENSE_URL` apply) when one answers, else the H2 file is opened in process exactly as the CLI does, with the same stderr line saying so; `--db` reads the file without asking. This is the transport for a host on the same machine, and the one that still answers after the application has crashed.
 
-**Methods.** `initialize` answers the client's `protocolVersion` when it is one the server knows (`2025-06-18`, `2025-03-26`, `2024-11-05`) and `2025-06-18` otherwise, `capabilities: { "tools": {} }`, `serverInfo: { "name": "spider-sense", "version": "<version>" }`, and `instructions`, the loop in one paragraph: start the application under the agent, `mark`, exercise, `findings`, fix, `mark`, `compare`, `check`. `notifications/initialized` is accepted and ignored. `ping` answers `{}`. `tools/list` is the six tools below; `tools/call` runs one. Anything else is `-32601`.
+**Methods.** `initialize` answers the client's `protocolVersion` when it is one the server knows (`2025-06-18`, `2025-03-26`, `2024-11-05`) and `2025-06-18` otherwise, `capabilities: { "tools": {} }`, `serverInfo: { "name": "spider-sense", "version": "<version>" }`, and `instructions`, the loop in one paragraph: start the application under the agent, `mark`, exercise, `findings`, fix, `mark`, `compare`, `check`, and `resolve` once the fix holds. `notifications/initialized` is accepted and ignored. `ping` answers `{}`. `tools/list` is the seven tools below; `tools/call` runs one. Anything else is `-32601`.
 
 **Tools.** Every argument is the CLI option of the same meaning; a selector is a string as in [Time selectors](#time-selectors).
 
@@ -491,8 +538,9 @@ The server speaks the Model Context Protocol in two transports, and both are the
 | `findings` | `since`, `until`, `service`, `limit` (1–100), `full`, `hideAcked` | the findings text |
 | `trace` | `traceId` (required), `full`, `diff` | the trace tree, or the two traces aligned when `diff` names a second one ([Trace diff](#trace-diff)) |
 | `mark` | `name` (required, `[A-Za-z0-9._-]{1,64}`), `note`, `service` | the mark, as the CLI prints it |
+| `resolve` | `findingId` (required), `note` | the resolution, as the CLI prints it ([Resolutions](#resolutions)) |
 | `compare` | `before`, `after` (both required), `until`, `service` | the compare text |
-| `check` | `since`, `until`, `service`, `endpoint`, `maxP95Ms`, `maxErrors`, `maxErrorRate`, `maxQueriesPerRequest`, `maxSlowQueries`, `maxNPlusOne`, `maxLogErrors`, `minApdex` | the check text; `structuredContent` carries `{ "pass": true \| false \| null, "requests": n }` so a host need not read the heading for the verdict |
+| `check` | `since`, `until`, `service`, `endpoint`, `maxP95Ms`, `maxErrors`, `maxErrorRate`, `maxQueriesPerRequest`, `maxSlowQueries`, `maxNPlusOne`, `maxLogErrors`, `maxRegressions`, `minApdex` | the check text; `structuredContent` carries `{ "pass": true \| false \| null, "requests": n }` so a host need not read the heading for the verdict |
 | `sql` | `sql` (required), `limit` (1–5000) | the sql text |
 
 A result is `{ "content": [ { "type": "text", "text": "<the Markdown>" } ] }`.
@@ -581,6 +629,7 @@ The launcher stays dependency-free.
 | `status` | what is running, where the database is, how much it holds |
 | `findings [--hide-acked] [--no-git]` | the findings of the window, with the suspect change under each code frame ([Source lines and the suspect change](#source-lines-and-the-suspect-change)) unless `--no-git` |
 | `ack <finding id> [--note=…]`, `unack <finding id>` | acknowledges a finding, or withdraws that ([Acknowledgements](#acknowledgements)) |
+| `resolve <finding id> [--note=…]`, `unresolve <finding id>` | resolves a finding, so it is a `regression` if it comes back, or withdraws that ([Resolutions](#resolutions)) |
 | `trace <traceId> [--full] [--diff=<traceId>]` | one trace as a tree, or two aligned ([Trace diff](#trace-diff)) |
 | `tail [--kind=] [--until-traces=] [--timeout=]` | tingles as they arrive ([Tail](#tail)) |
 | `export [--out=<file>]`, `import <file>` | the window as one JSON document, and back ([Export and import](#export-and-import)) |
@@ -590,7 +639,7 @@ The launcher stays dependency-free.
 | `mark <name> [--note=…]` | records a mark now |
 | `marks` | lists marks |
 | `compare --before=<selector> --after=<selector> [--until=<selector>]` | the two windows side by side |
-| `check [--max-p95-ms=] [--max-errors=] [--max-error-rate=] [--max-queries-per-request=] [--max-slow-queries=] [--max-n-plus-one=] [--max-log-errors=] [--min-apdex=] [--endpoint=]` | pass or fail, in the exit code |
+| `check [--max-p95-ms=] [--max-errors=] [--max-error-rate=] [--max-queries-per-request=] [--max-slow-queries=] [--max-n-plus-one=] [--max-log-errors=] [--max-regressions=] [--min-apdex=] [--endpoint=]` | pass or fail, in the exit code |
 | `sql "<statement>" [--limit=200]` | one read-only statement over the schema of storage.md |
 | `init [--dir=<project dir>] [--jar=<path>] [--no-skill] [--mcp]` | writes the Spider Sense block into the project's `CLAUDE.md` and installs the skills into its `.claude/skills/`; `--mcp` also writes the stdio MCP server into its `.mcp.json` |
 | `mcp` | the MCP server over stdio ([MCP](#mcp)); takes `--url` and `--db` and nothing else |
@@ -613,7 +662,7 @@ In that path the thresholds are the defaults or `--slow.request.ms`/`--slow.quer
 The file must exist and carry this version's schema: the CLI never creates a database and never upgrades one, because `AUTO_SERVER=TRUE` may have joined the database of an older Spider Sense that is still running, and the server's own open would drop its tables (storage.md).
 A missing file or another schema version is a message on stderr and exit code 2.
 
-Exit codes: `0` success (and `check` passed), `1` `check` failed, `2` usage or connection error, `3` `check` had no request to judge, `4` not found (a trace id, a mark name, a finding id to `unack`).
+Exit codes: `0` success (and `check` passed), `1` `check` failed, `2` usage or connection error, `3` `check` had no request to judge, `4` not found (a trace id, a mark name, a finding id to `unack` or `unresolve`).
 
 ## Skills
 
@@ -628,6 +677,7 @@ It is what an agent reads to run it without being told how:
 3. `findings --since=before`; read the top finding, its suspect-change lines first (is the frame's line in the change just made?), then open its trace and the code.
 4. Fix; restart if needed (`since=start` then covers the new run).
 5. `mark after`, exercise the same way, `compare --before=before --after=after`, `check`.
+6. Once `check` passes, `resolve <finding id> --note=<the fix>`, so the finding is a `regression`, ranked first, if a later change brings it back.
 
 The references list the finding kinds with the fix each usually wants (a fetch join or a batch for `n-plus-one`, an index or a rewrite for `slow-query`, and so on), the CLI table above, and how to start each kind of application under the agent (Gradle `run`, Spring Boot `bootRun`, a plain `java -jar`, a test task).
 The query-tuning skill beside it, `skills/spider-sense-sql-tuning`, reads the finding's schema block for the indexes a table already has and the predicate columns none leads with, and designs the index from that rather than asking the database.

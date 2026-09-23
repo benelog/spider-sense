@@ -13,7 +13,7 @@ import net.benelog.spidersilk.json.Json;
 import org.jspecify.annotations.Nullable;
 
 /**
- * The six tools, as the six {@link Reports} calls the CLI makes.
+ * The seven tools, as the seven {@link Reports} calls the CLI makes.
  *
  * <p>This is the whole of the MCP adapter's behaviour, and it is deliberately the
  * same switch as {@code cli/Local.answer}: the same defaults, the same caps, the
@@ -51,6 +51,8 @@ public final class McpTools implements McpServer.ToolRunner {
                     flag(arguments, "hideAcked")));
             case "trace" -> trace(arguments);
             case "mark" -> mark(arguments, service);
+            case "resolve" -> text(reports.resolve(
+                    reports.resolve(string(arguments, "findingId"), string(arguments, "note"))));
             case "compare" -> compare(arguments, service);
             case "check" -> check(arguments, service);
             case "sql" -> text(reports.sql(string(arguments, "sql"),

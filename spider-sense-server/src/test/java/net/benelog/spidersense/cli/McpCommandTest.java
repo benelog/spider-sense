@@ -86,7 +86,7 @@ class McpCommandTest {
 
         Json.JsonObject tools = Json.parse(lines.get(1)).asObject();
         assertThat(tools.getLong("id")).isEqualTo(2);
-        assertThat(tools.getObject("result").getArray("tools").size()).isEqualTo(6);
+        assertThat(tools.getObject("result").getArray("tools").size()).isEqualTo(7);
 
         Json.JsonObject answered = Json.parse(lines.get(2)).asObject();
         assertThat(answered.getLong("id")).isEqualTo(3);
@@ -118,6 +118,25 @@ class McpCommandTest {
         assertThat(text(lines.get(1))).startsWith("# findings  ");
     }
 
+    /** The {@code resolve} tool writes to the file as the CLI's {@code resolve} does. */
+    @Test
+    void aResolutionIsRecordedInTheFileJustAsTheCliRecordsItThere() {
+        String db = "--db=" + TestStore.memoryUrl();
+        String resolve = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":"
+                + "{\"name\":\"resolve\",\"arguments\":{\"findingId\":\"n-plus-one:0011223344ff\","
+                + "\"note\":\"fetch join\"}}}";
+        String missing = "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":"
+                + "{\"name\":\"resolve\",\"arguments\":{}}}";
+
+        Run run = run(resolve + "\n" + missing + "\n", "mcp", db);
+
+        List<String> lines = run.out().lines().toList();
+        assertThat(lines).hasSize(2);
+        assertThat(text(lines.get(0))).isEqualTo("resolved n-plus-one:0011223344ff — fetch join\n");
+        assertThat(Json.parse(lines.get(1)).asObject().getObject("error").getLong("code"))
+                .as("findingId is required").isEqualTo(-32602);
+    }
+
     /**
      * A named {@code --url} is a statement that there is a server there, so the file
      * is never quietly answered instead — the same rule the other commands follow.
@@ -134,7 +153,7 @@ class McpCommandTest {
         List<String> lines = run.out().lines().toList();
         assertThat(lines).hasSize(2);
         assertThat(Json.parse(lines.get(0)).asObject().getObject("result").getArray("tools").size())
-                .as("tools/list is answered in process either way").isEqualTo(6);
+                .as("tools/list is answered in process either way").isEqualTo(7);
         Json.JsonObject failed = Json.parse(lines.get(1)).asObject().getObject("result");
         assertThat(failed.getBoolean("isError")).isTrue();
         assertThat(failed.getArray("content").get(0).asObject().getString("text"))

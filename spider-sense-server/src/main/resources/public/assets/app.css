@@ -699,6 +699,11 @@ details.collapsible > summary:hover { color: var(--text); }
 .sev-mark { display: inline-flex; align-items: center; gap: 6px; }
 .sev-word { font-size: 11px; color: var(--text-muted); }
 .chip-kind { font-family: var(--font-mono); font-size: 10.5px; }
+/* The state of a finding: new is the accent, since it is what the last change introduced. */
+.chip-state { font-size: 10.5px; }
+.chip-state.state-new { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.chip-state.state-ongoing { color: var(--text-muted); }
+.chip-state.state-regressed { border-color: color-mix(in srgb, var(--err) 55%, var(--line)); color: var(--err); background: color-mix(in srgb, var(--err) 12%, transparent); }
 
 .findings { display: grid; }
 .finding {
@@ -757,7 +762,7 @@ tr.is-acked:hover > td { opacity: 1; }
   padding-top: 8px; border-top: 1px solid var(--line); font-size: 11.5px;
 }
 .f-ack-note { color: var(--text); }
-.f-ack .btn { margin-left: auto; }
+.f-ack .btn:first-of-type { margin-left: auto; }
 
 /* ---------- compare ---------- */
 

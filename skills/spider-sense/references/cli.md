@@ -15,6 +15,8 @@ The launcher treats a first argument that does not start with `-` as a command a
 | `findings [--hide-acked] [--no-git]` | the findings of the window, with the suspect change under each code frame |
 | `ack <finding id> [--note=…]` | accepts a known finding, which is then ranked after every other one, its severity reading `acked` |
 | `unack <finding id>` | withdraws that acknowledgement; exit code `4` when there was none |
+| `resolve <finding id> [--note=…]` | marks a finding fixed: it is set aside, its severity reading `resolved`, until it occurs again, and then it is a `regression`, first in the list |
+| `unresolve <finding id>` | withdraws that resolution; exit code `4` when there was none |
 | `trace <traceId> [--full]` | one trace as a tree |
 | `traces [--status=error\|ok] [--min-ms=] [--q=] [--limit=20]` | the newest traces |
 | `endpoints`, `queries`, `errors` | the tables of the window |
@@ -22,7 +24,7 @@ The launcher treats a first argument that does not start with `-` as a command a
 | `mark <name> [--note=…]` | records a mark now |
 | `marks` | lists marks |
 | `compare --before=<selector> --after=<selector> [--until=<selector>]` | the two windows side by side |
-| `check [--max-p95-ms=] [--max-errors=] [--max-error-rate=] [--max-queries-per-request=] [--max-slow-queries=] [--max-n-plus-one=] [--max-log-errors=] [--min-apdex=] [--endpoint=]` | pass or fail, in the exit code |
+| `check [--max-p95-ms=] [--max-errors=] [--max-error-rate=] [--max-queries-per-request=] [--max-slow-queries=] [--max-n-plus-one=] [--max-log-errors=] [--max-regressions=] [--min-apdex=] [--endpoint=]` | pass or fail, in the exit code |
 | `sql "<statement>" [--limit=200]` | one read-only statement over the store, for a question no other command answers ([sql.md](sql.md)) |
 | `export [--out=<file>]` | the window as one JSON document, to the file or to stdout; a name ending in `.gz` is gzipped |
 | `import <file>` | that document back into the store, and one line saying what arrived |
@@ -74,9 +76,9 @@ A `since` that resolves to a moment after `until` is an error, and a mark name t
 | `1` | `check` failed |
 | `2` | usage or connection error |
 | `3` | `check` had no request to judge |
-| `4` | not found: a trace id, a mark name, a finding id to `unack` |
+| `4` | not found: a trace id, a mark name, a finding id to `unack` or `unresolve` |
 
-A trace id that matches nothing prints `spider-sense: No such trace: <id>` on stderr and exits `4`, whether the answer came over HTTP or from the file; a mark name that matches no mark does the same, naming the mark, and so does `unack` with `spider-sense: No such acknowledgement: <id>`.
+A trace id that matches nothing prints `spider-sense: No such trace: <id>` on stderr and exits `4`, whether the answer came over HTTP or from the file; a mark name that matches no mark does the same, naming the mark, and so does `unack` with `spider-sense: No such acknowledgement: <id>`, and `unresolve` with `spider-sense: No such resolution: <id>`.
 
 ## The direct-file fallback
 
@@ -103,7 +105,7 @@ A file of another schema version is refused the same way, with exit `2` and a me
 
 ## MCP over stdio
 
-`mcp` is the same six answers spoken as the Model Context Protocol, for a host that cannot run a command at all.
+`mcp` is the same seven answers spoken as the Model Context Protocol, for a host that cannot run a command at all.
 You have a shell, so this is not your interface: use the commands above, and reach for `mcp` only when the user asks how to wire Spider Sense into Claude Desktop, an IDE chat panel or another host without one.
 
 ```
@@ -201,14 +203,14 @@ The newest 50, newest first; a `start` mark with a `pid` note is the one the wri
 $ java -jar spider-sense.jar findings --since=before
 # findings  2026-09-17T08:19:28+09:00 → 08:19:34  (6s, all services, 21 requests)
 
-| # | severity | kind | id | service | title |
-| --- | --- | --- | --- | --- | --- |
-| 1 | high | error | error:eecf9878a68f | spring-orders | IllegalStateException in GET /api/flaky |
-| 2 | medium | n-plus-one | n-plus-one:4c5f46be8bc5 | spring-orders | GET /api/orders/{id}/enriched runs SELECT product 5 times per request |
-| 3 | medium | n-plus-one | n-plus-one:e6d97708ab26 | spring-orders | GET /api/orders/{id} runs SELECT product 5 times per request |
-| 4 | medium | slow-query | slow-query:6b3aae6f9bef | spring-orders | SELECT p.id AS product_id, p.sku AS sku, p.name AS name, SUM… is slow |
-| 5 | medium | slow-query | slow-query:aae3ff87821a | spring-orders | SELECT o.status AS status, CAST(o.created_at AS DATE) AS ord… is slow |
-| 6 | medium | slow-endpoint | slow-endpoint:786b594455d0 | spring-orders | GET /api/reports/revenue is slow |
+| # | severity | state | kind | id | service | title |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | high | new | error | error:eecf9878a68f | spring-orders | IllegalStateException in GET /api/flaky |
+| 2 | medium | new | n-plus-one | n-plus-one:4c5f46be8bc5 | spring-orders | GET /api/orders/{id}/enriched runs SELECT product 5 times per request |
+| 3 | medium | new | n-plus-one | n-plus-one:e6d97708ab26 | spring-orders | GET /api/orders/{id} runs SELECT product 5 times per request |
+| 4 | medium | new | slow-query | slow-query:6b3aae6f9bef | spring-orders | SELECT p.id AS product_id, p.sku AS sku, p.name AS name, SUM… is slow |
+| 5 | medium | new | slow-query | slow-query:aae3ff87821a | spring-orders | SELECT o.status AS status, CAST(o.created_at AS DATE) AS ord… is slow |
+| 6 | medium | new | slow-endpoint | slow-endpoint:786b594455d0 | spring-orders | GET /api/reports/revenue is slow |
 
 1. error:eecf9878a68f — 1 occurrence in GET /api/flaky; Payment gateway timeout
    count 1, firstSeen 2026-09-17T08:19:28.962+09:00, lastSeen 2026-09-17T08:19:28.962+09:00, type java.lang.IllegalStateException, message Payment gateway timeout, endpoints [name GET /api/flaky count 1]
@@ -436,6 +438,7 @@ $ java -jar spider-sense.jar check --since=before
 | maxP95Ms | 500 | 1,202.5 | fail | GET /api/slow p95 1,202.5 ms over 3 calls |
 | maxErrors | 0 | 2 | fail | 2 occurrences over the window |
 | maxNPlusOne | 0 | 2 | fail | 2 findings: GET /api/orders/{id} runs SELECT product 5 times per request |
+| maxRegressions | 0 | 0 | pass | no resolved finding came back |
 
 $ echo $?
 1
@@ -468,6 +471,7 @@ Rules and the value each one measures:
 | `--max-slow-queries` | query calls over `slow.query.ms` |
 | `--max-n-plus-one` | `n-plus-one` and `n-plus-one-http` findings |
 | `--max-log-errors` | `log-error` findings' uncovered records summed |
+| `--max-regressions` | `regression` findings: resolved findings that came back; `0` in the default set |
 | `--min-apdex` | the Apdex over the scope |
 
 `--endpoint=` narrows the scope to one endpoint, by `endpointId` or by name (`GET /api/orders/{id}`), and the heading names it.
@@ -486,6 +490,10 @@ Commands:
   ack <finding id> [--note=<text>]
                                accepts a known finding, so it is ranked last
   unack <finding id>           withdraws that acknowledgement
+  resolve <finding id> [--note=<text>]
+                               marks a finding fixed; if it comes back it is a
+                               regression, ranked first
+  unresolve <finding id>       withdraws that resolution
   trace <traceId> [--full] [--diff=<traceId>]
                                one trace as a tree, or two aligned
   tail [--kind=slow-request|slow-query|error] [--service=<name>]
@@ -504,7 +512,8 @@ Commands:
                                the two windows side by side
   check [--max-p95-ms=] [--max-errors=] [--max-error-rate=]
         [--max-queries-per-request=] [--max-slow-queries=]
-        [--max-n-plus-one=] [--max-log-errors=] [--min-apdex=] [--endpoint=]
+        [--max-n-plus-one=] [--max-log-errors=] [--max-regressions=]
+        [--min-apdex=] [--endpoint=]
                                pass or fail, in the exit code
   sql "<statement>" [--limit=200]
                                read-only SQL over the store (SELECT only)
@@ -542,5 +551,5 @@ no server is there to ask.
 
 Exit codes: 0 success, 1 check failed, 2 usage or connection error,
 3 check had no request to judge, 4 not found (a trace id, a mark name,
-a finding id to unack).
+a finding id to unack or unresolve).
 ```

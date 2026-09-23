@@ -53,7 +53,7 @@ final class Remote {
         URI uri = URI.create(trimSlash(base) + path(options));
         HttpRequest.Builder request = HttpRequest.newBuilder(uri).timeout(READ);
         String body = body(options);
-        if (Options.UNACK.equals(options.command())) {
+        if (Options.UNACK.equals(options.command()) || Options.UNRESOLVE.equals(options.command())) {
             request.DELETE();
         } else if (body == null) {
             request.GET();
@@ -77,8 +77,10 @@ final class Remote {
             err.println("spider-sense: " + message(response));
             return response.statusCode() == 404 ? Cli.NOT_FOUND : Cli.USAGE;
         }
-        if (Options.UNACK.equals(options.command())) {
-            Reports.Report report = Reports.unack(options.requiredArgument());
+        if (Options.UNACK.equals(options.command()) || Options.UNRESOLVE.equals(options.command())) {
+            Reports.Report report = Options.UNACK.equals(options.command())
+                    ? Reports.unack(options.requiredArgument())
+                    : Reports.unresolve(options.requiredArgument());
             print(out, options.flag("json") ? report.json().toJson() : report.text());
             return Cli.OK;
         }
@@ -219,6 +221,8 @@ final class Remote {
                     .add("hideAcked", options.flag("hide-acked") ? "true" : null);
             case Options.ACK, Options.UNACK ->
                     new Query("/api/findings/" + encode(options.requiredArgument()) + "/ack");
+            case Options.RESOLVE, Options.UNRESOLVE ->
+                    new Query("/api/findings/" + encode(options.requiredArgument()) + "/resolve");
             case Options.TRACE -> new Query("/api/traces/" + encode(options.requiredArgument()))
                     .add("diff", options.valueOrNull("diff"));
             case "traces" -> window(options, new Query("/api/traces"))
@@ -283,7 +287,7 @@ final class Remote {
                     .put("note", options.valueOrNull("note"))
                     .put("service", options.valueOrNull("service"))
                     .toJson();
-            case Options.ACK -> Json.obj()
+            case Options.ACK, Options.RESOLVE -> Json.obj()
                     .put("note", options.valueOrNull("note"))
                     .toJson();
             case Options.SQL -> Json.obj()

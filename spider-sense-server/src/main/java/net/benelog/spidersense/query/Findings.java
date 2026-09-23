@@ -15,6 +15,7 @@ import java.util.Set;
 import net.benelog.spidersense.store.Acks;
 import net.benelog.spidersense.store.AttrJson;
 import net.benelog.spidersense.store.Ids;
+import net.benelog.spidersense.store.Marks;
 import net.benelog.spidersense.store.MetricPoint;
 import net.benelog.spidersense.store.MetricSeriesNames;
 import net.benelog.spidersense.store.ServiceInfo;
@@ -49,6 +50,19 @@ public final class Findings {
     public static final String GC_PAUSE = "gc-pause";
     public static final String HEAP_PRESSURE = "heap-pressure";
     public static final String THREAD_GROWTH = "thread-growth";
+    public static final String REGRESSION = "regression";
+
+    /** A finding's state: absent from its service's previous run (agent.md, "State"). */
+    public static final String NEW = "new";
+    /** A finding's state: present in its service's previous run too. */
+    public static final String ONGOING = "ongoing";
+    /** A finding's state: resolved, and back. */
+    public static final String REGRESSED = "regressed";
+
+    /** The {@code numbers} a regression puts before the underlying finding's own. */
+    public static final String RESOLVED_AT = "resolvedAt";
+    public static final String NOTE = "note";
+    public static final String ORIGINAL_KIND = "originalKind";
 
     public static final String HIGH = "high";
     public static final String MEDIUM = "medium";
@@ -103,50 +117,92 @@ public final class Findings {
     public record Ack(long at, @Nullable String note) {
     }
 
+    /** When a finding was resolved, and how (agent.md, "Resolutions"). */
+    public record Resolution(long at, @Nullable String note) {
+    }
+
     /**
      * One thing worth fixing.
      *
-     * @param numbers the kind-specific numbers agent.md lists, in the order it
+     * @param numbers    the kind-specific numbers agent.md lists, in the order it
      *        lists them; values are numbers, strings, or lists of small maps
-     * @param ack     null unless a reader has accepted this finding, in which case
+     * @param ack        null unless a reader has accepted this finding, in which case
      *        it is ranked after every other one
-     * @param schema  the indexes of the statement's tables and the predicates none
+     * @param schema     the indexes of the statement's tables and the predicates none
      *        serves; only {@code slow-query} and {@code n-plus-one} have one, and
      *        only when the catalog knows every table (agent.md)
+     * @param resolution null unless a reader has resolved this finding; a resolved
+     *        finding that came back after it is a {@code regression}, one that did
+     *        not is ranked with the acknowledged ones
+     * @param state      {@code new}, {@code ongoing} or {@code regressed} (agent.md,
+     *        "State")
      */
     public record Finding(String id, String kind, String severity, String service, String title,
             String why, Subject subject, Map<String, Object> numbers, @Nullable String statement,
-            List<String> code, List<String> traces, @Nullable Ack ack, @Nullable SchemaBlock schema) {
+            List<String> code, List<String> traces, @Nullable Ack ack, @Nullable SchemaBlock schema,
+            @Nullable Resolution resolution, String state) {
 
         /** A finding as a rule makes one: nothing has acknowledged it yet. */
         public Finding(String id, String kind, String severity, String service, String title,
                 String why, Subject subject, Map<String, Object> numbers, @Nullable String statement,
                 List<String> code, List<String> traces) {
             this(id, kind, severity, service, title, why, subject, numbers, statement, code,
-                    traces, null, null);
+                    traces, null, null, null, ONGOING);
         }
 
         /** The same finding, with the acknowledgement the store had for its id. */
         public Finding withAck(Ack acknowledged) {
             return new Finding(id, kind, severity, service, title, why, subject, numbers,
-                    statement, code, traces, acknowledged, schema);
+                    statement, code, traces, acknowledged, schema, resolution, state);
         }
 
         /** The same finding, with the block its statement and the catalog produced. */
         public Finding withSchema(@Nullable SchemaBlock block) {
             return new Finding(id, kind, severity, service, title, why, subject, numbers,
-                    statement, code, traces, ack, block);
+                    statement, code, traces, ack, block, resolution, state);
+        }
+
+        /** The same finding, with the resolution the store had for its id. */
+        public Finding withResolution(Resolution resolved) {
+            return new Finding(id, kind, severity, service, title, why, subject, numbers,
+                    statement, code, traces, ack, schema, resolved, state);
+        }
+
+        /** The same finding, labelled {@code new}, {@code ongoing} or {@code regressed}. */
+        public Finding withState(String labelled) {
+            return new Finding(id, kind, severity, service, title, why, subject, numbers,
+                    statement, code, traces, ack, schema, resolution, labelled);
+        }
+
+        /**
+         * The kind the rules found: the kind itself, or, for a {@code regression},
+         * the kind it was before it was resolved ({@code numbers.originalKind}).
+         */
+        public String baseKind() {
+            if (REGRESSION.equals(kind) && numbers.get(ORIGINAL_KIND) instanceof String original) {
+                return original;
+            }
+            return kind;
+        }
+
+        /**
+         * Whether the finding is ranked last, with the acknowledged ones: it is
+         * acknowledged, or it is resolved and has not come back.
+         */
+        public boolean setAside() {
+            return ack != null || (resolution != null && !REGRESSION.equals(kind));
         }
     }
 
     /**
-     * The findings of one window and how many of them were acknowledged.
+     * The findings of one window, how many of them were acknowledged, and how
+     * many were resolved and have not come back.
      *
-     * <p>The count is taken before the limit, because it answers "how much is
+     * <p>The counts are taken before the limit, because they answer "how much is
      * being kept out of the way" rather than "how much of this page is dimmed"
      * (api.md).
      */
-    public record Answer(List<Finding> findings, int acked) {
+    public record Answer(List<Finding> findings, int acked, int resolved) {
     }
 
     private final Sql sql;
@@ -193,13 +249,88 @@ public final class Findings {
     }
 
     /**
-     * The same ranking, with the acknowledgements attached and counted.
+     * The ranking with the regressions found and nothing else attached: what
+     * {@code check} counts. The states are left at {@code ongoing}, because
+     * labelling them costs one more run of the rules per service and no rule of
+     * {@code check} reads them.
+     */
+    public List<Finding> ranked(Window window, @Nullable String service, int limit) {
+        return answer(window, service, limit, false, false).findings();
+    }
+
+    /**
+     * The same ranking, with the acknowledgements and resolutions attached and
+     * counted, and every finding labelled with its state.
      *
      * <p>An acknowledged finding keeps its place among the acknowledged ones: the
      * partition is stable, so the list a reader saw yesterday has not been
      * reshuffled, only pushed down (agent.md, "Acknowledgements").
      */
     public Answer answer(Window window, @Nullable String service, int limit, boolean hideAcked) {
+        return answer(window, service, limit, hideAcked, true);
+    }
+
+    private Answer answer(Window window, @Nullable String service, int limit, boolean hideAcked,
+            boolean labelled) {
+        List<Ranked> found = rules(window, service);
+
+        Set<String> ids = new LinkedHashSet<>();
+        for (Ranked each : found) {
+            ids.add(each.finding().id());
+        }
+        Map<String, Acks.Ack> decided = acks.byId(ids);
+
+        // A resolved finding that occurred again after its resolution is a
+        // regression, ranked above everything; one that did not stays itself, with
+        // the resolution attached, and is set aside with the acknowledged ones.
+        Map<String, Map<String, Ranked>> since = new HashMap<>();
+        List<Ranked> ranked = new ArrayList<>();
+        int acked = 0;
+        int resolved = 0;
+        for (Ranked each : found) {
+            Acks.Ack row = decided.get(each.finding().id());
+            if (row == null) {
+                ranked.add(each);
+            } else if (!row.resolved()) {
+                acked++;
+                ranked.add(new Ranked(each.finding().withAck(new Ack(row.at(), row.note())),
+                        each.impact()));
+            } else {
+                Resolution resolution = new Resolution(row.at(), row.note());
+                Ranked back = recurrence(each, row.at(), window, since);
+                if (back == null) {
+                    resolved++;
+                    ranked.add(new Ranked(each.finding().withResolution(resolution), each.impact()));
+                } else {
+                    ranked.add(new Ranked(regression(back.finding(), resolution), back.impact()));
+                }
+            }
+        }
+        ranked.sort(Ranked.ORDER);
+
+        List<Finding> open = new ArrayList<>();
+        List<Finding> aside = new ArrayList<>();
+        for (Ranked each : ranked) {
+            if (!each.finding().setAside()) {
+                open.add(each.finding());
+            } else if (!hideAcked) {
+                aside.add(each.finding());
+            }
+        }
+
+        List<Finding> page = new ArrayList<>(open);
+        page.addAll(aside);
+        if (page.size() > limit) {
+            page = new ArrayList<>(page.subList(0, Math.max(0, limit)));
+        }
+        if (labelled) {
+            page = states(page, window);
+        }
+        return new Answer(page, acked, resolved);
+    }
+
+    /** Every rule over the window, ranked, before anything a reader decided is applied. */
+    private List<Ranked> rules(Window window, @Nullable String service) {
         Ancestors ancestors = new Ancestors(sql, window);
         List<Ranked> found = new ArrayList<>();
         found.addAll(errors(window, service));
@@ -213,36 +344,108 @@ public final class Findings {
         found.addAll(poolExhausted(window, service));
         found.addAll(jvm(window, service));
         found.sort(Ranked.ORDER);
+        return found;
+    }
 
-        Set<String> ids = new LinkedHashSet<>();
-        for (Ranked each : found) {
-            ids.add(each.finding().id());
+    /** The findings the rules produce over a window for one service, by id. */
+    private Map<String, Ranked> byId(Window window, String service) {
+        Map<String, Ranked> byId = new LinkedHashMap<>();
+        for (Ranked each : rules(window, service)) {
+            byId.put(each.finding().id(), each);
         }
-        Map<String, Acks.Ack> acknowledged = acks.byId(ids);
+        return byId;
+    }
 
-        List<Finding> open = new ArrayList<>();
-        List<Finding> accepted = new ArrayList<>();
-        for (Ranked each : found) {
-            Acks.Ack ack = acknowledged.get(each.finding().id());
-            if (ack == null) {
-                open.add(each.finding());
-            } else if (!hideAcked) {
-                accepted.add(each.finding().withAck(new Ack(ack.at(), ack.note())));
+    // --- resolutions and states ------------------------------------------------
+
+    /**
+     * The finding as it occurred after its resolution, or null when it has not.
+     *
+     * <p>A resolution older than the window means every occurrence in it is a
+     * recurrence, and the finding is the window's own. A resolution inside the
+     * window asks the rules again over the part of the window after it, for the
+     * finding's service, so that the traffic before the fix does not count and
+     * the evidence a regression carries is the evidence of its return. The part
+     * is asked once per resolution instant and service, however many findings
+     * share them.
+     */
+    private @Nullable Ranked recurrence(Ranked finding, long resolvedAt, Window window,
+            Map<String, Map<String, Ranked>> since) {
+        if (resolvedAt < window.from()) {
+            return finding;
+        }
+        if (resolvedAt >= window.to()) {
+            return null;
+        }
+        String service = finding.finding().service();
+        Map<String, Ranked> after = since.computeIfAbsent(resolvedAt + " " + service,
+                key -> byId(Window.of(resolvedAt + 1, window.to()), service));
+        return after.get(finding.finding().id());
+    }
+
+    /**
+     * A resolved finding that came back: severity {@code high}, the resolution's
+     * instant and note and the original kind first in {@code numbers}, and the
+     * rest as the rules found it after the resolution (agent.md, "Resolutions").
+     *
+     * <p>The id stays the finding's own, so resolving it again, or acknowledging
+     * it, is the same command with the same id.
+     */
+    private static Finding regression(Finding back, Resolution resolution) {
+        Map<String, Object> numbers = new LinkedHashMap<>();
+        numbers.put(RESOLVED_AT, resolution.at());
+        numbers.put(NOTE, resolution.note());
+        numbers.put(ORIGINAL_KIND, back.kind());
+        numbers.putAll(back.numbers());
+        String why = "came back after it was resolved"
+                + (resolution.note() == null ? "" : " (" + resolution.note() + ")") + "; " + back.why();
+        return new Finding(back.id(), REGRESSION, HIGH, back.service(), back.title(), why,
+                back.subject(), numbers, back.statement(), back.code(), back.traces(), null,
+                back.schema(), resolution, REGRESSED);
+    }
+
+    /**
+     * Every finding labelled: {@code regressed} for a regression, {@code new} when
+     * the rules do not find it in its service's previous run, {@code ongoing} when
+     * they do (agent.md, "State").
+     *
+     * <p>The previous run of a service is the time between its two newest
+     * {@code start} marks at or before the end of the window: {@code [the one
+     * before, the newest)}, from the beginning of the data when there is only one,
+     * and nothing at all when there is none, so every finding of a service that
+     * never restarted is {@code new}. The rules run once per service of the page.
+     */
+    private List<Finding> states(List<Finding> page, Window window) {
+        Map<String, Set<String>> before = new HashMap<>();
+        List<Finding> labelled = new ArrayList<>(page.size());
+        for (Finding finding : page) {
+            if (REGRESSION.equals(finding.kind())) {
+                labelled.add(finding.withState(REGRESSED));
+                continue;
             }
+            Set<String> previous = before.computeIfAbsent(finding.service(),
+                    service -> previousRun(service, window));
+            labelled.add(finding.withState(previous.contains(finding.id()) ? ONGOING : NEW));
         }
+        return labelled;
+    }
 
-        List<Finding> ranked = new ArrayList<>(open);
-        ranked.addAll(accepted);
-        if (ranked.size() > limit) {
-            ranked = new ArrayList<>(ranked.subList(0, Math.max(0, limit)));
+    private Set<String> previousRun(String service, Window window) {
+        List<Long> starts = sql.query("SELECT at_ms FROM mark WHERE name = ? AND service = ?"
+                        + " AND at_ms <= ? ORDER BY at_ms DESC, id DESC LIMIT 2",
+                List.of(Marks.START, service, window.to()), rs -> rs.getLong(1));
+        if (starts.isEmpty() || starts.get(0) <= 0) {
+            return Set.of();
         }
-        return new Answer(ranked, acknowledged.size());
+        long newest = starts.get(0);
+        long from = starts.size() > 1 ? starts.get(1) : 0;
+        return new HashSet<>(byId(Window.of(from, newest - 1), service).keySet());
     }
 
     /** A finding with the impact it is ranked by inside its kind. */
     private record Ranked(Finding finding, double impact) {
 
-        private static final List<String> KINDS = List.of(ERROR, LOG_ERROR, N_PLUS_ONE,
+        private static final List<String> KINDS = List.of(REGRESSION, ERROR, LOG_ERROR, N_PLUS_ONE,
                 N_PLUS_ONE_HTTP, SLOW_QUERY,
                 SLOW_ENDPOINT, SLOW_JOB, SLOW_EXTERNAL, POOL_EXHAUSTED, GC_PAUSE, HEAP_PRESSURE,
                 THREAD_GROWTH);
@@ -250,6 +453,8 @@ public final class Findings {
         static final Comparator<Ranked> ORDER = Comparator
                 .comparingInt((Ranked r) -> severityRank(r.finding().severity()))
                 .thenComparingInt(r -> KINDS.indexOf(r.finding().kind()))
+                // Regressions among themselves keep the order their kinds had.
+                .thenComparingInt(r -> KINDS.indexOf(r.finding().baseKind()))
                 .thenComparing(Comparator.comparingDouble(Ranked::impact).reversed())
                 .thenComparing(r -> r.finding().id());
 

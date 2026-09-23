@@ -82,7 +82,7 @@ class McpServerTest {
     }
 
     @Test
-    void toolsListIsTheSixToolsOfAgentMdWithTheirSchemas() {
+    void toolsListIsTheSevenToolsOfAgentMdWithTheirSchemas() {
         Json.JsonArray tools = answer(server.handle(request(4, "tools/list", null)))
                 .getObject("result").getArray("tools");
 
@@ -91,7 +91,7 @@ class McpServerTest {
             byName.put(tool.asObject().getString("name"), tool.asObject());
         }
         assertThat(byName.keySet())
-                .containsExactly("findings", "trace", "mark", "compare", "check", "sql");
+                .containsExactly("findings", "trace", "mark", "resolve", "compare", "check", "sql");
 
         for (Json.JsonObject tool : byName.values()) {
             assertThat(tool.getString("description")).isNotBlank();
@@ -101,6 +101,7 @@ class McpServerTest {
         assertThat(required(byName.get("findings"))).isEmpty();
         assertThat(required(byName.get("trace"))).containsExactly("traceId");
         assertThat(required(byName.get("mark"))).containsExactly("name");
+        assertThat(required(byName.get("resolve"))).containsExactly("findingId");
         assertThat(required(byName.get("compare"))).containsExactly("before", "after");
         assertThat(required(byName.get("check"))).isEmpty();
         assertThat(required(byName.get("sql"))).containsExactly("sql");

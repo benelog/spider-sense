@@ -53,6 +53,12 @@ The launcher reads xref:configuration.adoc#properties-file[the properties file] 
 | `unack <finding id>`
 | withdraws that acknowledgement
 
+| `resolve <finding id> [--note=]`
+| marks a finding fixed, so it is a `regression`, ranked first, if it comes back
+
+| `unresolve <finding id>`
+| withdraws that resolution
+
 | `trace <traceId> [--full] [--diff=<traceId>]`
 | one trace as a tree, or two aligned
 
@@ -74,7 +80,7 @@ The launcher reads xref:configuration.adoc#properties-file[the properties file] 
 | `compare --before=<selector> --after=<selector> [--until=<selector>]`
 | the two windows side by side
 
-| `check [--max-p95-ms=] [--max-errors=] [--max-error-rate=] [--max-queries-per-request=] [--max-slow-queries=] [--max-n-plus-one=] [--max-log-errors=] [--min-apdex=] [--endpoint=]`
+| `check [--max-p95-ms=] [--max-errors=] [--max-error-rate=] [--max-queries-per-request=] [--max-slow-queries=] [--max-n-plus-one=] [--max-log-errors=] [--max-regressions=] [--min-apdex=] [--endpoint=]`
 | pass or fail, in the exit code
 
 | `tail [--kind=] [--service=] [--until-traces=] [--timeout=]`
@@ -133,7 +139,8 @@ $ java -jar spider-sense.jar status
 | oldest span | 2026-09-17T08:14:07.250+09:00 |
 ----
 
-=== findings, ack and unack
+[#findings-ack-resolve]
+=== findings, ack and resolve
 
 `findings` is the primary answer: a ranked, bounded list of things worth fixing over the window.
 The table is the answer, and the numbered blocks under it are the evidence, one per row in the same order.
@@ -144,11 +151,11 @@ xref:findings.adoc[Findings] has every kind with its rule and its numbers.
 $ java -jar spider-sense.jar findings --since=before
 # findings  2026-09-17T08:19:28+09:00 → 08:19:34  (6s, all services, 21 requests)
 
-| # | severity | kind | id | service | title |
-| --- | --- | --- | --- | --- | --- |
-| 1 | high | error | error:eecf9878a68f | spring-orders | IllegalStateException in GET /api/flaky |
-| 2 | medium | n-plus-one | n-plus-one:4c5f46be8bc5 | spring-orders | GET /api/orders/{id}/enriched runs SELECT product 5 times per request |
-| 3 | medium | slow-query | slow-query:6b3aae6f9bef | spring-orders | SELECT p.id AS product_id, p.sku AS sku, p.name AS name, SUM… is slow |
+| # | severity | state | kind | id | service | title |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | high | new | error | error:eecf9878a68f | spring-orders | IllegalStateException in GET /api/flaky |
+| 2 | medium | new | n-plus-one | n-plus-one:4c5f46be8bc5 | spring-orders | GET /api/orders/{id}/enriched runs SELECT product 5 times per request |
+| 3 | medium | new | slow-query | slow-query:6b3aae6f9bef | spring-orders | SELECT p.id AS product_id, p.sku AS sku, p.name AS name, SUM… is slow |
 
 1. error:eecf9878a68f — 1 occurrence in GET /api/flaky; Payment gateway timeout
    count 1, firstSeen 2026-09-17T08:19:28.962+09:00, lastSeen 2026-09-17T08:19:28.962+09:00, type java.lang.IllegalStateException, message Payment gateway timeout, endpoints [name GET /api/flaky count 1]
@@ -166,6 +173,14 @@ It is then ranked after every other finding, and its severity column reads `acke
 `unack <finding id>` withdraws the acknowledgement, and exits `4` when there was none.
 `findings --hide-acked` leaves the acknowledged findings out altogether.
 The finding id is the one `findings` printed in its `id` column, and it is stable across windows (xref:findings.adoc#acknowledgements[Acknowledgements]).
+
+`resolve <finding id> [--note=<text>]` records that a finding is fixed.
+If it occurs again after that, `findings` reports it as a `regression`, severity `high`, first in the list, and `check` fails on it by default.
+Until then it is ranked after every other finding, and its severity column reads `resolved`.
+`unresolve <finding id>` withdraws the resolution, and exits `4` when there was none.
+xref:findings.adoc#resolutions[Resolutions] says when a finding counts as back.
+
+The `state` column says what the last restart changed: `new` for a finding the run before the restart did not have, `ongoing` for one it had, and `regressed` for a regression (xref:findings.adoc#state[State]).
 
 [#suspect-change]
 ==== The suspect change
@@ -395,6 +410,7 @@ $ java -jar spider-sense.jar check --since=before
 | maxP95Ms | 500 | 1,202.5 | fail | GET /api/slow p95 1,202.5 ms over 3 calls |
 | maxErrors | 0 | 2 | fail | 2 occurrences over the window |
 | maxNPlusOne | 0 | 2 | fail | 2 findings: GET /api/orders/{id} runs SELECT product 5 times per request |
+| maxRegressions | 0 | 0 | pass | no resolved finding came back |
 
 $ echo $?
 1
@@ -469,7 +485,7 @@ start (the newest automatic start mark) or now.
 
 Exit codes: 0 success, 1 check failed, 2 usage or connection error,
 3 check had no request to judge, 4 not found (a trace id, a mark name,
-a finding id to unack).
+a finding id to unack or unresolve).
 ----
 
 [#options]
@@ -554,12 +570,13 @@ An option a command does not take is a usage error rather than a silently ignore
 | `check` had no request to judge
 
 | `4`
-| not found: a trace id, a mark name, a finding id to `unack`
+| not found: a trace id, a mark name, a finding id to `unack` or `unresolve`
 |===
 
 A trace id that matches nothing prints `spider-sense: No such trace: <id>` on stderr and exits `4`, whether the answer came over HTTP or from the file.
 A mark name that matches no mark also exits `4`, with a message naming the mark.
 `unack` of a finding that has no acknowledgement prints `spider-sense: No such acknowledgement: <id>` and exits `4` as well.
+`unresolve` of a finding that has no resolution prints `spider-sense: No such resolution: <id>` and exits `4`.
 
 Exit code `3` means the exercise step did not reach the application, not that a fix worked.
 
@@ -593,7 +610,7 @@ spider-sense: no Spider Sense database at /home/me/db/spider-sense/sense.mv.db; 
 
 A file of another schema version is refused the same way, with exit `2` and a message naming both versions.
 
-Four commands write rather than read, and they write in this path too: `mark`, `ack`, `unack` and `import`.
+Six commands write rather than read, and they write in this path too: `mark`, `ack`, `unack`, `resolve`, `unresolve` and `import`.
 `tail` is the one command that has no direct-file path, because there is no file to tail.
 
 [#text-rendering]
@@ -713,7 +730,7 @@ imported 12,345 spans, 456 logs, 7,890 metric points, 12 tingles, 3 marks (2 tra
 Import keeps every timestamp as exported, so set the time range to that window, or to `all`, to see the data.
 A file imported twice adds nothing: a trace whose id already has rows is skipped whole, a metric point is merged on its series and instant, a service row is merged, a mark is skipped when one with the same name and instant exists, and a table of the index catalog replaces the row the store had for it.
 A document whose schema is not this version's is refused, naming both versions.
-Acknowledgements are not exported, because they are the reader's rather than the session's.
+Acknowledgements and resolutions are not exported, because they are the reader's rather than the session's.
 
 [#sql]
 == SQL

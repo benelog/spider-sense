@@ -75,18 +75,19 @@ final class Text {
     /** {@code # findings  2026-09-17T10:00:00+09:00 → 10:15:00  (15m, all services, 120 requests)}. */
     static String heading(String what, Window window, @Nullable String service,
             @Nullable Long requests) {
-        return heading(what, window, service, requests, 0);
+        return heading(what, window, service, requests, 0, 0);
     }
 
     /**
-     * The same line with {@code , 2 acked} after the request count.
+     * The same line with {@code , 2 acked, 1 resolved} after the request count.
      *
-     * <p>Only {@code findings} has acknowledgements, and only when there are any:
+     * <p>Only {@code findings} has acknowledgements and resolutions, and only when
+     * there are any:
      * a heading that always said {@code 0 acked} would spend a phrase on nothing
      * (agent.md, "Acknowledgements").
      */
     static String heading(String what, Window window, @Nullable String service,
-            @Nullable Long requests, int acked) {
+            @Nullable Long requests, int acked, int resolved) {
         StringBuilder line = new StringBuilder("# ").append(what).append("  ")
                 .append(instant(window.from())).append(" → ").append(clock(window.to()))
                 .append("  (").append(range(window)).append(", ")
@@ -96,6 +97,9 @@ final class Text {
         }
         if (acked > 0) {
             line.append(", ").append(acked).append(" acked");
+        }
+        if (resolved > 0) {
+            line.append(", ").append(resolved).append(" resolved");
         }
         return line.append(")\n").toString();
     }
@@ -178,31 +182,33 @@ final class Text {
 
     static String findings(Window window, @Nullable String service, long requests,
             List<Findings.Finding> findings, boolean full, @Nullable String otlpEndpoint) {
-        return findings(window, service, requests, 0, findings, full, otlpEndpoint);
+        return findings(window, service, requests, 0, 0, findings, full, otlpEndpoint);
     }
 
     /**
      * The ranked table and its evidence, with the acknowledged rows named as such.
      *
      * <p>The severity column reads {@code acked} rather than {@code high} for an
-     * acknowledged finding: it is still last in the table, and the one word says
-     * why without a column of its own (agent.md, "Acknowledgements").
+     * acknowledged finding, and {@code resolved} for a resolved one that has not
+     * come back: it is still last in the table, and the one word says why without
+     * a column of its own (agent.md, "Acknowledgements"). The state column says
+     * what the last restart changed (agent.md, "State").
      */
     static String findings(Window window, @Nullable String service, long requests, int acked,
-            List<Findings.Finding> findings, boolean full, @Nullable String otlpEndpoint) {
+            int resolved, List<Findings.Finding> findings, boolean full,
+            @Nullable String otlpEndpoint) {
         if (findings.isEmpty()) {
-            return heading("findings", window, service, requests, acked) + "\n"
+            return heading("findings", window, service, requests, acked, resolved) + "\n"
                     + empty("findings", window, requests, otlpEndpoint);
         }
         StringBuilder text =
-                new StringBuilder(heading("findings", window, service, requests, acked));
+                new StringBuilder(heading("findings", window, service, requests, acked, resolved));
         text.append('\n');
-        table(text, List.of("#", "severity", "kind", "id", "service", "title"));
+        table(text, List.of("#", "severity", "state", "kind", "id", "service", "title"));
         int n = 0;
         for (Findings.Finding finding : findings) {
             n++;
-            row(text, List.of(String.valueOf(n),
-                    finding.ack() == null ? finding.severity() : "acked",
+            row(text, List.of(String.valueOf(n), severity(finding), finding.state(),
                     finding.kind(), finding.id(),
                     finding.service(), oneLine(finding.title())));
         }
@@ -229,6 +235,14 @@ final class Text {
             }
         }
         return text.toString();
+    }
+
+    /** {@code acked}, {@code resolved} for one set aside because it has not come back, or the severity. */
+    private static String severity(Findings.Finding finding) {
+        if (finding.ack() != null) {
+            return "acked";
+        }
+        return finding.setAside() ? "resolved" : finding.severity();
     }
 
     /**
@@ -361,7 +375,7 @@ final class Text {
      */
     private static String scalar(String key, @Nullable Object value) {
         if (value instanceof Number number) {
-            if ("at".equals(key) || key.endsWith("Seen")) {
+            if ("at".equals(key) || key.endsWith("Seen") || key.endsWith("At")) {
                 return instantMillis(number.longValue());
             }
             if ("apdex".equals(key)) {
@@ -452,6 +466,15 @@ final class Text {
 
     static String unack(String findingId) {
         return "unacked " + findingId + "\n";
+    }
+
+    static String resolve(Acks.Ack resolution) {
+        return "resolved " + resolution.findingId()
+                + (resolution.note() == null ? "" : " — " + oneLine(resolution.note())) + "\n";
+    }
+
+    static String unresolve(String findingId) {
+        return "unresolved " + findingId + "\n";
     }
 
     static String acks(List<Acks.Ack> acks) {

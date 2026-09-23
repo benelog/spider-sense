@@ -19,8 +19,8 @@ import net.benelog.spidersilk.json.Json;
 import org.jspecify.annotations.Nullable;
 
 /**
- * The endpoints that exist for an agent rather than for the UI: findings and
- * their acknowledgements, marks, compare and check.
+ * The endpoints that exist for an agent rather than for the UI: findings, their
+ * acknowledgements and resolutions, marks, compare and check.
  *
  * <p>The handlers are thin on purpose. Everything they answer comes from
  * {@link Reports}, because the CLI answers the same questions from the same
@@ -58,6 +58,8 @@ public final class AgentApi {
         app.get("/api/findings", "What is worth fixing in this window", this::findings);
         app.post("/api/findings/{id}/ack", "Accept a known finding", this::ack);
         app.delete("/api/findings/{id}/ack", "Withdraw an acknowledgement", this::unack);
+        app.post("/api/findings/{id}/resolve", "Mark a finding fixed", this::resolve);
+        app.delete("/api/findings/{id}/resolve", "Withdraw a resolution", this::unresolve);
         app.get("/api/acks", "Acknowledged findings", this::acks);
         app.get("/api/marks", "Named moments", this::marks);
         app.post("/api/marks", "Record a named moment", this::mark);
@@ -88,12 +90,7 @@ public final class AgentApi {
      * not valid JSON (agent.md, "Acknowledgements").
      */
     public WebResponse ack(WebRequest req) {
-        String body = req.body();
-        String note = null;
-        if (body != null && !body.isBlank()) {
-            Json.JsonObject object = req.bodyJson().asObject();
-            note = AttrJson.optionalString(object, "note");
-        }
+        String note = note(req);
         Acks.Ack ack;
         try {
             ack = reports.ackStore().ack(req.pathParam("id"), note);
@@ -116,6 +113,45 @@ public final class AgentApi {
             throw new HttpException(HttpStatus.NOT_FOUND, "No such acknowledgement: " + id);
         }
         return WebResponse.noContent();
+    }
+
+    /**
+     * Resolves a finding: "I fixed this; tell me if it comes back" (agent.md,
+     * "Resolutions"). The body is optional, as an acknowledgement's is.
+     */
+    public WebResponse resolve(WebRequest req) {
+        String note = note(req);
+        Acks.Ack resolution;
+        try {
+            resolution = reports.ackStore().resolve(req.pathParam("id"), note);
+        } catch (IllegalArgumentException e) {
+            throw badRequest(e);
+        }
+        return Params.answer(req, reports.resolve(resolution)).status(HttpStatus.CREATED);
+    }
+
+    /** {@code 204} when there was one to withdraw, {@code 404} when there was not. */
+    public WebResponse unresolve(WebRequest req) {
+        String id = req.pathParam("id");
+        boolean removed;
+        try {
+            removed = reports.ackStore().unresolve(id);
+        } catch (IllegalArgumentException e) {
+            throw badRequest(e);
+        }
+        if (!removed) {
+            throw new HttpException(HttpStatus.NOT_FOUND, "No such resolution: " + id);
+        }
+        return WebResponse.noContent();
+    }
+
+    /** The optional {@code note} of an acknowledgement's or a resolution's body. */
+    private static @Nullable String note(WebRequest req) {
+        String body = req.body();
+        if (body == null || body.isBlank()) {
+            return null;
+        }
+        return AttrJson.optionalString(req.bodyJson().asObject(), "note");
     }
 
     public WebResponse acks(WebRequest req) {

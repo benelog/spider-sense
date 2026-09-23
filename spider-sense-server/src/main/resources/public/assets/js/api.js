@@ -189,6 +189,20 @@ export function unackFinding(id) {
     });
 }
 
+/** Marks a finding fixed; if it comes back it is a regression (docs/agent.md). */
+export function resolveFinding(id, note) {
+  return postJSON('/api/findings/' + encodeURIComponent(id) + '/resolve', { note: note || null });
+}
+
+/** Withdraws that; 404 means there was nothing to withdraw. */
+export function unresolveFinding(id) {
+  return fetch('/api/findings/' + encodeURIComponent(id) + '/resolve', { method: 'DELETE' })
+    .then((res) => {
+      if (!res.ok) throw new ApiError(res.status + ' ' + res.statusText, res.status);
+      return null;
+    });
+}
+
 export function acks(limit = 200) { return getJSON('/api/acks', { limit }); }
 
 export function marks(limit = 50) { return getJSON('/api/marks', { limit }); }

@@ -12,6 +12,7 @@ The list is bounded: 20 by default, 100 at most.
 
 | Kind | Rule | Severity | Impact |
 |---|---|---|---|
+| `regression` | a finding of any other kind that was resolved (`resolve <finding id>`) and occurred again after the resolution | `high`, and first | the original kind's |
 | `error` | an error group with at least one occurrence in the window | `high` | count |
 | `n-plus-one` | in one trace, the same query group runs 5 or more times under the same entry span; aggregated per (endpoint, query group) over the window | `high` when the repeats reach 20 or their summed time exceeds `slow.request.ms`, else `medium` | affected requests × median repeats |
 | `n-plus-one-http` | in one trace, the same outbound HTTP call runs 5 or more times under the same entry span; aggregated per (endpoint, call) over the window | as `n-plus-one` | affected requests × median repeats |
@@ -32,7 +33,8 @@ The thresholds are the server's: `slow.request.ms` is 500 by default and `slow.q
 
 | Field | How to read it |
 |---|---|
-| `id` | kind plus 12 hex characters over (kind, service, subject); stable across windows, so the same problem keeps its id between runs |
+| `id` | kind plus 12 hex characters over (kind, service, subject); stable across windows, so the same problem keeps its id between runs; a `regression` keeps the id of the finding it is |
+| `state` | `new` when the run before the last restart of the service did not have it, `ongoing` when it did, `regressed` for a `regression` |
 | `title` | one line, the claim |
 | `why` | the numbers that justify it, in a sentence: quote this rather than restating it |
 | `subject` | the `endpointId`, `queryId`, `errorId`, `pool`, `job`, `target`, `logger` or `jvm` to pass to `endpoints`, `queries`, `errors`, `logs` or the API |
@@ -82,6 +84,18 @@ In the text output it is one line per table, then one line for the columns:
 
 `predicates: none` stands alone when the statement has no predicate, `unindexed: none` when every predicate is served, and a finding without the block prints nothing for it.
 The `queries` table carries the same block as an `unindexed` column between `callers` and `statement`.
+
+---
+
+## `regression`
+
+`numbers`: `resolvedAt` (when it was resolved), `note` (the resolution's note), `originalKind`, then the original kind's own numbers, taken over the traffic after the resolution; `subject`, `statement`, `code` and `traces` are the original finding's.
+
+### What to do
+
+A change undid a fix.
+Read `originalKind` and the note, open a trace, and find what changed since `resolvedAt`: a query that lost its fetch join, a loop that went back to calling per item, an index a migration dropped.
+The fix is the one the original kind's section below describes; `resolve` the id again once `check` passes.
 
 ---
 

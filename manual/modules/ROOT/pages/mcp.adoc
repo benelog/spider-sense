@@ -3,7 +3,7 @@
 
 Spider Sense speaks the Model Context Protocol, so a host that cannot run a command still gets the answers the CLI gives.
 
-Six tools cover the loop: `findings`, `trace`, `mark`, `compare`, `check` and `sql`.
+Seven tools cover the loop: `findings`, `trace`, `mark`, `resolve`, `compare`, `check` and `sql`.
 Each one is the thinnest possible adapter over the agent-facing endpoints (xref:api.adoc#agent-endpoints[Agent-facing endpoints]).
 A tool call is one call into the same handlers the CLI and the UI use, and its result is the same text rendering the matching command prints, so an MCP answer and a CLI answer over the same window are the same bytes.
 
@@ -88,12 +88,16 @@ Every argument is the CLI option of the same meaning, and a selector is a string
 | `name` (required), `note`, `service`
 | the mark, as the CLI prints it
 
+| `resolve`
+| `findingId` (required), `note`
+| the resolution, as the CLI prints it (xref:findings.adoc#resolutions[Resolutions])
+
 | `compare`
 | `before`, `after` (both required), `until`, `service`
 | the compare text (xref:marks-and-compare.adoc#compare[Compare])
 
 | `check`
-| `since`, `until`, `service`, `endpoint`, `maxP95Ms`, `maxErrors`, `maxErrorRate`, `maxQueriesPerRequest`, `maxSlowQueries`, `maxNPlusOne`, `maxLogErrors`, `minApdex`
+| `since`, `until`, `service`, `endpoint`, `maxP95Ms`, `maxErrors`, `maxErrorRate`, `maxQueriesPerRequest`, `maxSlowQueries`, `maxNPlusOne`, `maxLogErrors`, `maxRegressions`, `minApdex`
 | the check text (xref:check.adoc[Check])
 
 | `sql`
@@ -117,7 +121,7 @@ Tool descriptions are one sentence each and say when to use the tool, not how th
 `initialize` answers the client's `protocolVersion` when it is one the server knows (`2025-06-18`, `2025-03-26`, `2024-11-05`), and `2025-06-18` otherwise.
 It also answers `capabilities` with `tools`, a `serverInfo` naming `spider-sense` and its version, and `instructions`, which is the loop in one paragraph: start the application under the agent, `mark`, exercise, `findings`, fix, `mark`, `compare`, `check`.
 
-`notifications/initialized` is accepted and ignored, `ping` answers an empty object, `tools/list` is the six tools, and `tools/call` runs one.
+`notifications/initialized` is accepted and ignored, `ping` answers an empty object, `tools/list` is the seven tools, and `tools/call` runs one.
 Anything else is `-32601`.
 
 == Configuring a host

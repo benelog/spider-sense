@@ -116,6 +116,9 @@ These are its kinds (xref:findings.adoc#kinds[Findings]).
 
 | `gc-pause`, `heap-pressure`, `thread-growth`
 | A long or frequent collection, heap at 90% of its limit, or a thread count that keeps climbing.
+
+| `regression`
+| A finding of any other kind that was resolved with `resolve` and has come back since.
 |===
 
 Around the findings, three more commands close the loop.

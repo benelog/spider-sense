@@ -123,7 +123,7 @@ class McpApiTest {
             Json.JsonArray tools = Json.parse(post(client, "/mcp",
                     "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}").body())
                     .asObject().getObject("result").getArray("tools");
-            assertThat(tools.size()).isEqualTo(6);
+            assertThat(tools.size()).isEqualTo(7);
         });
     }
 

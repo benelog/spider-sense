@@ -50,7 +50,7 @@ A log record carrying the attribute `spidersense.schema.table` is the index cata
 }
 ```
 
-`DELETE /api/data` → `204`. Deletes every span, trace, log, metric point, tingle, mark and acknowledgement (services and metric metadata stay).
+`DELETE /api/data` → `204`. Deletes every span, trace, log, metric point, tingle, mark, acknowledgement and resolution (services and metric metadata stay).
 
 `GET /api/export?traceId` → `application/json` download (`Content-Disposition: attachment`) of `{ "traces": [<trace as in GET /api/traces/{id}>] }`, one trace.
 `GET /api/export?from&to&since&until&service` without `traceId` → the session document of [agent.md](agent.md#export-and-import), streamed; `POST /api/import` takes it back and answers the counts (`Content-Encoding: gzip` accepted).
@@ -400,16 +400,18 @@ A mark named `start` is inserted by the writer when a service reports a `process
 
 ### Findings
 
-`GET /api/findings?since&until&service&limit=20&hideAcked=false` → `{ "window": {...}, "requests": 120, "acked": 2, "findings": [ <Finding> ] }`, ranked as agent.md says, acknowledged findings last and left out with `hideAcked=true`; `limit` is at most 100.
+`GET /api/findings?since&until&service&limit=20&hideAcked=false` → `{ "window": {...}, "requests": 120, "acked": 2, "resolved": 1, "findings": [ <Finding> ] }`, ranked as agent.md says, regressions first, acknowledged findings and resolved findings that have not come back last and left out with `hideAcked=true`; `limit` is at most 100.
 
 `POST /api/findings/{id}/ack` with `{ "note": "…" | null }` → `201` `{ "findingId": "…", "at": …, "note": … }`; `DELETE /api/findings/{id}/ack` → `204` or `404`; `GET /api/acks` → `{ "acks": [ { "findingId", "at", "note" } ] }` newest first (agent.md, Acknowledgements).
+
+`POST /api/findings/{id}/resolve` with `{ "note": "…" | null }` → `201` `{ "findingId": "…", "at": …, "note": … }`; `DELETE /api/findings/{id}/resolve` → `204` or `404` (agent.md, Resolutions).
 
 `Finding`:
 
 ```json
 { "id": "n-plus-one:1a2b3c4d5e6f",
-  "kind": "error" | "log-error" | "n-plus-one" | "n-plus-one-http" | "slow-query" | "slow-endpoint" | "slow-job" | "slow-external" | "pool-exhausted" | "gc-pause" | "heap-pressure" | "thread-growth",
-  "severity": "high" | "medium" | "low", "service": "…", "title": "…", "why": "…",
+  "kind": "regression" | "error" | "log-error" | "n-plus-one" | "n-plus-one-http" | "slow-query" | "slow-endpoint" | "slow-job" | "slow-external" | "pool-exhausted" | "gc-pause" | "heap-pressure" | "thread-growth",
+  "severity": "high" | "medium" | "low", "state": "new" | "ongoing" | "regressed", "service": "…", "title": "…", "why": "…",
   "subject": { "endpointId": "…" | null, "queryId": "…" | null, "errorId": "…" | null, "pool": "…" | null, "job": "…" | null,
                "target": "…" | null, "logger": "…" | null, "jvm": "…" | null },
   "numbers": { ...kind-specific, see agent.md... },
@@ -417,7 +419,8 @@ A mark named `start` is inserted by the writer when a service reports a `process
   "schema": { "tables": [ { "table": "ITEMS", "schema": "PUBLIC" | null,
                             "indexes": [ { "name": "PRIMARY_KEY_8", "unique": true, "columns": [ "ID" ] } ] } ],
               "predicates": [ "items.name" ], "unindexed": [ "items.name" ] } | null,   // slow-query and n-plus-one; agent.md, "The schema block"
-  "ack": { "at": …, "note": "…" | null } | null }
+  "ack": { "at": …, "note": "…" | null } | null,
+  "resolution": { "at": …, "note": "…" | null } | null }
 ```
 
 ### Compare
@@ -437,7 +440,7 @@ A mark named `start` is inserted by the writer when a service reports a `process
 
 ### Check
 
-`GET /api/check?since&until&service&endpoint&maxP95Ms&maxErrors&maxErrorRate&maxQueriesPerRequest&maxSlowQueries&maxNPlusOne&maxLogErrors&minApdex`
+`GET /api/check?since&until&service&endpoint&maxP95Ms&maxErrors&maxErrorRate&maxQueriesPerRequest&maxSlowQueries&maxNPlusOne&maxLogErrors&maxRegressions&minApdex`
 
 ```json
 { "pass": true | false | null, "requests": 12, "reason": "no requests in the window" | null,
@@ -464,7 +467,7 @@ A refused statement and a statement H2 would not run are both `400`: `{ "error":
 
 ### MCP
 
-`POST /mcp` with one JSON-RPC 2.0 message as `application/json`; the semantics, the six tools and their arguments are in [agent.md](agent.md#mcp).
+`POST /mcp` with one JSON-RPC 2.0 message as `application/json`; the semantics, the seven tools and their arguments are in [agent.md](agent.md#mcp).
 
 - A request (`id` present) is answered `200` with the JSON-RPC response as `application/json`; a notification is answered `202` with no body.
 - No session: no `Mcp-Session-Id` header is issued or read. `GET /mcp` and `DELETE /mcp` are `405`.

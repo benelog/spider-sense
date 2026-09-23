@@ -295,9 +295,10 @@ public final class Reports implements AutoCloseable {
                 .put("window", Codecs.window(window))
                 .put("requests", requests)
                 .put("acked", answer.acked())
+                .put("resolved", answer.resolved())
                 .put("findings", Codecs.findings(found));
-        return new Report(json, Text.findings(window, service, requests, answer.acked(), found,
-                full, endpoint()));
+        return new Report(json, Text.findings(window, service, requests, answer.acked(),
+                answer.resolved(), found, full, endpoint()));
     }
 
     public Report marks(int limit) {
@@ -334,6 +335,20 @@ public final class Reports implements AutoCloseable {
      */
     public static Report unack(String findingId) {
         return new Report(Json.obj().put("findingId", findingId), Text.unack(findingId));
+    }
+
+    /** Resolves a finding, which the CLI must be able to do with no server running. */
+    public Acks.Ack resolve(@Nullable String findingId, @Nullable String note) {
+        return acks.resolve(findingId, note);
+    }
+
+    public Report resolve(Acks.Ack resolution) {
+        return new Report(Codecs.ack(resolution), Text.resolve(resolution));
+    }
+
+    /** What a withdrawn resolution reads as; static for the reason {@link #unack} is. */
+    public static Report unresolve(String findingId) {
+        return new Report(Json.obj().put("findingId", findingId), Text.unresolve(findingId));
     }
 
     public Report acks(int limit) {

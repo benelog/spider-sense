@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 
 import net.benelog.spidersense.store.Tingles;
 import org.jspecify.annotations.Nullable;
@@ -27,11 +28,13 @@ public final class Check {
     public static final String MAX_SLOW_QUERIES = "maxSlowQueries";
     public static final String MAX_N_PLUS_ONE = "maxNPlusOne";
     public static final String MAX_LOG_ERRORS = "maxLogErrors";
+    public static final String MAX_REGRESSIONS = "maxRegressions";
     public static final String MIN_APDEX = "minApdex";
 
     /** The rules in the order agent.md lists them, which is the order they are answered in. */
     public static final List<String> RULES = List.of(MAX_P95_MS, MAX_ERRORS, MAX_ERROR_RATE,
-            MAX_QUERIES_PER_REQUEST, MAX_SLOW_QUERIES, MAX_N_PLUS_ONE, MAX_LOG_ERRORS, MIN_APDEX);
+            MAX_QUERIES_PER_REQUEST, MAX_SLOW_QUERIES, MAX_N_PLUS_ONE, MAX_LOG_ERRORS, MAX_REGRESSIONS,
+            MIN_APDEX);
 
     public static final String NO_REQUESTS = "no requests in the window";
 
@@ -57,11 +60,15 @@ public final class Check {
         this.tingles = tingles;
     }
 
-    /** The default rule set: no error, no N+1, and no endpoint slower than the threshold. */
+    /**
+     * The default rule set: no error, no N+1, no resolved finding back, and no
+     * endpoint slower than the threshold.
+     */
     public Map<String, Double> defaults() {
         Map<String, Double> rules = new LinkedHashMap<>();
         rules.put(MAX_ERRORS, 0.0);
         rules.put(MAX_N_PLUS_ONE, 0.0);
+        rules.put(MAX_REGRESSIONS, 0.0);
         rules.put(MAX_P95_MS, (double) tingles.slowRequestMs());
         return rules;
     }
@@ -90,12 +97,20 @@ public final class Check {
             errors = totals.errors();
         }
 
+        // Three rules read the findings; the rules run once for all of them.
+        List<List<Findings.Finding>> found = new ArrayList<>(1);
+        Supplier<List<Findings.Finding>> ranked = () -> {
+            if (found.isEmpty()) {
+                found.add(findings.ranked(window, service, FINDINGS));
+            }
+            return found.get(0);
+        };
         List<RuleCheck> checks = new ArrayList<>();
         for (String rule : RULES) {
             Double limit = asked.get(rule);
             if (limit != null) {
                 checks.add(evaluate(rule, limit, window, service, endpoint, endpoints, requests, errors,
-                        totals));
+                        totals, ranked));
             }
         }
         if (requests == 0) {
@@ -110,7 +125,7 @@ public final class Check {
 
     private RuleCheck evaluate(String rule, double limit, Window window, @Nullable String service,
             @Nullable String endpoint, List<Stats.EndpointStats> endpoints, long requests, long errors,
-            Stats.Totals totals) {
+            Stats.Totals totals, Supplier<List<Findings.Finding>> ranked) {
         return switch (rule) {
             case MAX_P95_MS -> {
                 Stats.EndpointStats worst = null;
@@ -164,11 +179,12 @@ public final class Check {
             }
             case MAX_N_PLUS_ONE -> {
                 List<Findings.Finding> found = new ArrayList<>();
-                for (Findings.Finding finding : findings.findings(window, service, FINDINGS)) {
+                for (Findings.Finding finding : ranked.get()) {
                     // A loop of queries and a loop of outbound calls are one mistake to
-                    // the caller, so one rule counts both (agent.md).
-                    if ((Findings.N_PLUS_ONE.equals(finding.kind())
-                            || Findings.N_PLUS_ONE_HTTP.equals(finding.kind()))
+                    // the caller, so one rule counts both (agent.md); a regressed N+1 is
+                    // still an N+1.
+                    if ((Findings.N_PLUS_ONE.equals(finding.baseKind())
+                            || Findings.N_PLUS_ONE_HTTP.equals(finding.baseKind()))
                             && (endpoint == null || inScope(finding, endpoints))) {
                         found.add(finding);
                     }
@@ -182,8 +198,8 @@ public final class Check {
                 // same thing 200 times is 200 failures nothing else reports (agent.md).
                 long records = 0;
                 Findings.Finding worst = null;
-                for (Findings.Finding finding : findings.findings(window, service, FINDINGS)) {
-                    if (!Findings.LOG_ERROR.equals(finding.kind())) {
+                for (Findings.Finding finding : ranked.get()) {
+                    if (!Findings.LOG_ERROR.equals(finding.baseKind())) {
                         continue;
                     }
                     Object count = finding.numbers().get("count");
@@ -195,6 +211,20 @@ public final class Check {
                 String detail = worst == null ? "no ERROR log outside a failed trace"
                         : Numbers.plural(records, "record") + ": " + worst.title();
                 yield max(rule, limit, (double) records, detail);
+            }
+            case MAX_REGRESSIONS -> {
+                // A resolved finding that came back: the fix did not hold (agent.md).
+                List<Findings.Finding> back = new ArrayList<>();
+                for (Findings.Finding finding : ranked.get()) {
+                    if (Findings.REGRESSION.equals(finding.kind())
+                            && (endpoint == null || inScope(finding, endpoints))) {
+                        back.add(finding);
+                    }
+                }
+                String detail = back.isEmpty() ? "no resolved finding came back"
+                        : Numbers.plural(back.size(), "finding") + ": " + back.get(0).numbers()
+                                .get(Findings.ORIGINAL_KIND) + " " + back.get(0).title();
+                yield max(rule, limit, back.size(), detail);
             }
             default -> {
                 Double apdex = apdex(endpoints, endpoint, totals);

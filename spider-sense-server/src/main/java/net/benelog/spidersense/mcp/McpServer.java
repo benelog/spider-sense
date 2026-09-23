@@ -16,7 +16,7 @@ import org.jspecify.annotations.Nullable;
  * {@link #handle(String)} and send back what it returns, so the protocol is
  * written once and neither transport can drift from the other.
  *
- * <p>Nothing here computes an answer. The six tools are calls on
+ * <p>Nothing here computes an answer. The seven tools are calls on
  * {@link net.benelog.spidersense.api.Reports} through a {@link ToolRunner}, which
  * is also what lets the stdio transport put a proxy behind them, and their text is
  * the same Markdown the CLI prints over the same window.
@@ -50,7 +50,8 @@ public final class McpServer {
             call mark to name the moment, exercise the endpoints in question, call findings to read \
             the ranked list of what is worth fixing and trace to open the evidence behind the top one, \
             fix the code and restart if it needs one, call mark again, exercise exactly the same way, \
-            then compare the two marks and run check to turn thresholds into a verdict. \
+            then compare the two marks and run check to turn thresholds into a verdict, \
+            and once it passes call resolve on the finding you fixed, so it is a regression if it comes back. \
             Keep the window small — since=start covers the run since the application was last \
             restarted and since=<mark> covers what you just exercised, where the default 15m drags in \
             whatever ran before — and never quote a number these tools did not print.""";
@@ -245,7 +246,7 @@ public final class McpServer {
         return object;
     }
 
-    /** The catalogue: the six tools of agent.md, their schemas and their descriptions. */
+    /** The catalogue: the seven tools of agent.md, their schemas and their descriptions. */
     static final class Tools {
 
         /** One argument, with the JSON Schema it is published as. */
@@ -401,6 +402,16 @@ public final class McpServer {
                                 Arg.string("note", "A sentence recorded with the moment."),
                                 Arg.string("service", "The service the moment belongs to.")),
                         List.of("name")),
+                new Tool("resolve",
+                        "Use this after a fix is confirmed: it records that the finding is fixed, "
+                                + "so if it ever comes back it is reported as a regression, ranked "
+                                + "above everything else.",
+                        List.of(Arg.string("findingId",
+                                        "The finding id a findings answer printed, such as "
+                                                + "n-plus-one:1a2b3c4d5e6f."),
+                                Arg.string("note", "A sentence recorded with the resolution, such "
+                                        + "as what the fix was.")),
+                        List.of("findingId")),
                 new Tool("compare",
                         "Use this after a change to answer whether it helped: the window between two "
                                 + "marks placed beside the window after the second, endpoint by "
@@ -416,8 +427,8 @@ public final class McpServer {
                 new Tool("check",
                         "Use this to decide whether a fix is done: the thresholds you name turned "
                                 + "into one pass or fail verdict over the window, the way a test is "
-                                + "used; with no rule the defaults are maxErrors 0, maxNPlusOne 0 and "
-                                + "maxP95Ms the slow-request threshold.",
+                                + "used; with no rule the defaults are maxErrors 0, maxNPlusOne 0, "
+                                + "maxRegressions 0 and maxP95Ms the slow-request threshold.",
                         List.of(SINCE, UNTIL, SERVICE,
                                 Arg.string("endpoint", "Narrow the verdict to one endpoint, by id or "
                                         + "by name (GET /orders/{id})."),
@@ -432,6 +443,10 @@ public final class McpServer {
                                         + "ran over the slow-query threshold."),
                                 Arg.number("maxNPlusOne", "Fail when more n-plus-one and "
                                         + "n-plus-one-http findings than this were found."),
+                                Arg.number("maxLogErrors", "Fail when more ERROR log records than "
+                                        + "this were found outside a failed trace."),
+                                Arg.number("maxRegressions", "Fail when more resolved findings "
+                                        + "than this came back."),
                                 Arg.number("minApdex", "Fail when the Apdex over the scope is below "
                                         + "this.")),
                         List.of()),
