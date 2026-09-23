@@ -4,11 +4,12 @@ import java.util.Map;
 
 import javax.sql.DataSource;
 
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcOperations;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 
 public class AuthorRepository {
 
-    private final NamedParameterJdbcTemplate jdbc;
+    private final NamedParameterJdbcOperations jdbc;
 
     public AuthorRepository(DataSource dataSource) {
         this.jdbc = new NamedParameterJdbcTemplate(dataSource);

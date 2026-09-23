@@ -1,6 +1,6 @@
 package bookstore.domain;
 
-/** One row of {@code books}. Mapped by column name, so {@code published_year} lands on {@code publishedYear}. */
+/** One row of {@code books}. */
 public record Book(
         Long id,
         String isbn,

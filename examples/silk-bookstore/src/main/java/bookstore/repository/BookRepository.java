@@ -7,8 +7,8 @@ import java.util.Optional;
 
 import javax.sql.DataSource;
 
-import org.springframework.jdbc.core.DataClassRowMapper;
 import org.springframework.jdbc.core.RowMapper;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcOperations;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 
 import bookstore.domain.AuthorStat;
@@ -25,20 +25,29 @@ import bookstore.domain.Book;
  */
 public class BookRepository {
 
-    private static final RowMapper<Book> BOOK = DataClassRowMapper.newInstance(Book.class);
-    private static final RowMapper<AuthorStat> AUTHOR_STAT =
-            DataClassRowMapper.newInstance(AuthorStat.class);
+    // Written by hand rather than with DataClassRowMapper. That one asks the
+    // ResultSet for "publishedyear" first and only falls back to
+    // "published_year" when the lookup fails — and a failed lookup is an
+    // exception H2 both raises and writes to its trace file, once per row.
+    // Naming each column here keeps that off the hot path and out of
+    // ~/db/spider-sense/bookstore.trace.db.
+    private static final RowMapper<Book> BOOK = (rs, row) -> new Book(
+            rs.getLong("id"),
+            rs.getString("isbn"),
+            rs.getString("title"),
+            rs.getString("author"),
+            rs.getDouble("price"),
+            rs.getInt("published_year"),
+            rs.getString("description"));
+    private static final RowMapper<AuthorStat> AUTHOR_STAT = (rs, row) -> new AuthorStat(
+            rs.getString("author"),
+            rs.getLong("book_count"),
+            rs.getDouble("avg_price"));
 
-    // The columns are aliased to the record component names on purpose.
-    // DataClassRowMapper asks the ResultSet for "publishedYear" first and only
-    // falls back to "published_year" when that lookup fails — and a failed
-    // lookup is an exception H2 both raises and writes to its trace file, once
-    // per row. Naming the column what the record calls it keeps that off the
-    // hot path and out of ~/db/spider-sense/bookstore.trace.db.
     private static final String COLUMNS =
-            "id, isbn, title, author, price, published_year as publishedYear, description";
+            "id, isbn, title, author, price, published_year, description";
 
-    private final NamedParameterJdbcTemplate jdbc;
+    private final NamedParameterJdbcOperations jdbc;
 
     public BookRepository(DataSource dataSource) {
         this.jdbc = new NamedParameterJdbcTemplate(dataSource);
@@ -91,8 +100,7 @@ public class BookRepository {
      */
     public List<Book> search(String query, int limit, int offset) {
         return jdbc.query("""
-                select id, isbn, title, author, price, published_year as publishedYear,
-                       description
+                select id, isbn, title, author, price, published_year, description
                 from books
                 where lower(title) like :pattern
                    or lower(description) like :pattern
@@ -111,8 +119,8 @@ public class BookRepository {
     public List<AuthorStat> authorStats(int limit) {
         return jdbc.query("""
                 select author,
-                       count(*)   as bookCount,
-                       avg(price) as avgPrice
+                       count(*)   as book_count,
+                       avg(price) as avg_price
                 from books
                 group by author
                 order by count(*) desc, author
