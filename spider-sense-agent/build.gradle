@@ -42,10 +42,19 @@ dependencies {
     extension project(':spider-sense-extension')
 
     sampleApp "com.h2database:h2:${rootProject.ext.h2Version}"
+    // DatabaseCatalogIT runs the sample against PostgreSQL and MySQL in containers.
+    sampleApp "org.postgresql:postgresql:${rootProject.ext.postgresqlVersion}"
+    sampleApp "com.mysql:mysql-connector-j:${rootProject.ext.mysqlConnectorVersion}"
 
     testImplementation "org.junit.jupiter:junit-jupiter:${rootProject.ext.junitVersion}"
     testImplementation "org.assertj:assertj-core:${rootProject.ext.assertjVersion}"
     testImplementation "com.h2database:h2:${rootProject.ext.h2Version}"
+    testImplementation "org.testcontainers:testcontainers-junit-jupiter:${rootProject.ext.testcontainersVersion}"
+    testImplementation "org.testcontainers:testcontainers-postgresql:${rootProject.ext.testcontainersVersion}"
+    testImplementation "org.testcontainers:testcontainers-mysql:${rootProject.ext.testcontainersVersion}"
+    // The containers' readiness check opens a JDBC connection from the test JVM.
+    testRuntimeOnly "org.postgresql:postgresql:${rootProject.ext.postgresqlVersion}"
+    testRuntimeOnly "com.mysql:mysql-connector-j:${rootProject.ext.mysqlConnectorVersion}"
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
@@ -181,7 +190,7 @@ test {
 
 tasks.register('integrationTest', Test) {
     group = 'verification'
-    description = 'Runs SingleJarIT against the packaged spider-sense jar'
+    description = 'Runs SingleJarIT and DatabaseCatalogIT against the packaged spider-sense jar'
     testClassesDirs = sourceSets.test.output.classesDirs
     classpath = sourceSets.test.runtimeClasspath
     useJUnitPlatform { includeTags 'integration' }
@@ -189,7 +198,8 @@ tasks.register('integrationTest', Test) {
     systemProperty 'spidersense.it.jar', senseJar.get().archiveFile.get().asFile.absolutePath
     systemProperty 'spidersense.it.testClasses', sourceSets.test.output.classesDirs.asPath
     // SampleApp runs an H2 statement when asked to, so the packaged extension has a database span
-    // to hang a stack trace on; H2 is not on the test classes directory.
+    // to hang a stack trace on, and DatabaseSampleApp the same statement against PostgreSQL or
+    // MySQL; the drivers are not on the test classes directory.
     systemProperty 'spidersense.it.sampleClasspath',
             (sourceSets.test.output.classesDirs + configurations.sampleApp).asPath
     testLogging {

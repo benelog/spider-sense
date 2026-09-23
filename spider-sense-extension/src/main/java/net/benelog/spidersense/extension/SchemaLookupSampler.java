@@ -12,11 +12,13 @@ import java.util.List;
 /**
  * Keeps the extension's own catalog queries out of the application's trace.
  *
- * <p>Reading the index catalog is a database call like any other: on PostgreSQL and MySQL
+ * <p>Reading the index catalog is a database call like any other: on PostgreSQL
  * {@code DatabaseMetaData.getIndexInfo} is a statement against the catalog tables, and the agent's
  * JDBC instrumentation would make it a database span of the very request the lookup was triggered
  * by — a trace that shows one slow query would show ours beside it, and the N+1 counter would count
- * it.
+ * it. Under the packaged agent the instrumentation's own guard against nested statements already
+ * stops it, because the lookup runs inside the slow statement's call; this sampler is what keeps
+ * that true whatever order the advice ends up in ({@code DatabaseCatalogIT} checks the result).
  *
  * <p>{@link net.benelog.spidersense.extension.schema.IndexCatalog} marks the thread for the length
  * of the lookup with the baggage entry {@value #LOOKUP_KEY}, which this sampler is the only reader

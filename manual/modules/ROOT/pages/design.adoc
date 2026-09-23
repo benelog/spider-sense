@@ -242,8 +242,10 @@ A second connection borrowed from the pool for the lookup would itself be the po
 The connection the statement used cannot be handed to another thread, because the application returns it to the pool the moment the statement is done.
 The cost is the driver's catalog query, once per table, on a request that has already spent `slow.query.ms` in the database.
 
-On PostgreSQL and MySQL that catalog query is a statement of its own and would become a database span in the application's trace.
-The extension therefore marks the thread with the baggage entry `spidersense.schema.lookup` for the length of the lookup.
+On PostgreSQL that catalog query is a statement of its own, which is a database span of the application's trace when the application itself calls `getIndexInfo`.
+MySQL's Connector/J answers the same call without an instrumented statement, so it is no span there even then.
+Under the packaged agent the lookup runs inside the slow statement's own `execute` call, where the JDBC instrumentation's guard against nested statements already keeps the catalog query from becoming a span.
+The extension does not rely on that ordering, and marks the thread with the baggage entry `spidersense.schema.lookup` for the length of the lookup.
 A sampler it wraps around the configured one (`addSamplerCustomizer`) drops every span started under that entry and delegates everything else.
 The trace therefore shows the application's statements and none of the lookup's.
 A thread already inside a lookup does nothing, because a driver's catalog queries pass through the same advice.
