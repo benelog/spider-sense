@@ -85,7 +85,6 @@ public class BookstoreApp {
                 Objects.requireNonNullElse(req.errorMessage(), "Internal server error")));
 
         registerRoutes(app, context);
-        Tracing.install(app);
 
         app.requestLogger((req, completion) -> {
             Tracing.record(completion);

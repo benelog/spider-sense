@@ -238,8 +238,11 @@ public final class Queries {
             long errors = rs.getLong("errors");
             double totalMs = Rows.ms(rs, "total_ns");
             long[] histogram = ResponseBuckets.histogram(rs, errors);
-            return new Stats.EndpointStats(id, rs.getString("service"), rs.getString("method"),
-                    rs.getString("route"), rs.getString("name"), rs.getString("kind"), calls, errors,
+            String method = rs.getString("method");
+            String name = rs.getString("name");
+            return new Stats.EndpointStats(id, rs.getString("service"), method,
+                    SpanRecord.endpointRoute(method, rs.getString("route"), name), name,
+                    rs.getString("kind"), calls, errors,
                     calls == 0 ? 0 : (double) errors / calls, calls / seconds,
                     calls == 0 ? 0 : totalMs / calls,
                     Rows.ms(rs, "p50_ns"), Rows.ms(rs, "p95_ns"), Rows.ms(rs, "p99_ns"),

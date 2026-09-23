@@ -19,6 +19,10 @@ dependencies {
     compileOnly "io.opentelemetry.javaagent:opentelemetry-javaagent-extension-api:${rootProject.ext.otelAgentVersion}-alpha"
     compileOnly "io.opentelemetry.instrumentation:opentelemetry-instrumentation-api:${rootProject.ext.otelAgentVersion}"
 
+    // The route instrumentation names Spider Silk's Route in its advice, which is inlined into the
+    // application's WebRequest and resolves there; the extension ships none of it.
+    compileOnly "net.benelog.spidersilk:spider-silk-core:${rootProject.ext.spiderSilkVersion}"
+
     testImplementation "io.opentelemetry:opentelemetry-sdk-trace:${rootProject.ext.otelSdkVersion}"
     testImplementation "io.opentelemetry:opentelemetry-sdk-logs:${rootProject.ext.otelSdkVersion}"
     testImplementation "io.opentelemetry:opentelemetry-sdk-testing:${rootProject.ext.otelSdkVersion}"

@@ -26,7 +26,7 @@ The UI is a Spider Silk application (`net.benelog.spidersilk`), and the product 
 | **CLI** | `java -jar spider-sense.jar findings --since=start` | No server: a command that asks the running Spider Sense over HTTP, or reads the H2 file directly when none is running, and prints text. For people in a terminal and for AI agents; see [agent.md](agent.md). |
 
 A Java application under the stock `opentelemetry-javaagent.jar` reaches a standalone Spider Sense with `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4000` and `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf`, at an agent version of its own choosing; the agent is one jar on the project's [GitHub releases](https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases) and on Maven Central as `io.opentelemetry.javaagent:opentelemetry-javaagent`.
-It gets the pages, the findings and the CLI over the same data, and lacks what the Spider Sense jar adds around that agent: the defaults set in `premain` (below) and [the extension](#the-extension), so no `code.stacktrace` on a slow query and no index catalog.
+It gets the pages, the findings and the CLI over the same data, and lacks what the Spider Sense jar adds around that agent: the defaults set in `premain` (below) and [the extension](#the-extension), so no `code.stacktrace` on a slow query, no index catalog, and a Spider Silk application's requests all under the servlet mapping `/*`.
 
 Another language reaches it the same way: Python through `opentelemetry-instrument` and Node.js through `--require @opentelemetry/auto-instrumentations-node/register`, both zero-code, and Go through the SDK set up in `main` with the `otlptracehttp` exporter and `otelhttp` around the handler; the manual's modes chapter carries each as an example.
 
@@ -153,7 +153,7 @@ Query identity is `(service, db system, statement as the agent sanitised it)`; t
 ## The extension
 
 Gradle module `spider-sense-extension`, packaged as `spider-sense/extension.jar` and the only piece of Spider Sense that is not the stock OpenTelemetry agent.
-It exists for two things the agent cannot do: say where a slow query was issued from, and say which indexes the table it read carries.
+It exists for three things the agent cannot do: say where a slow query was issued from, say which indexes the table it read carries, and say which route of a Spider Silk application a request matched.
 
 It registers, through `META-INF/services/io.opentelemetry.sdk.autoconfigure.spi.AutoConfigurationCustomizerProvider`, a span processor that implements `io.opentelemetry.sdk.trace.internal.ExtendedSpanProcessor` and does its work in `onEnding(ReadWriteSpan)`.
 That callback runs on the thread that is ending the span, before the span becomes immutable: the duration is already known and an attribute can still be set, which no ordinary `SpanProcessor` callback allows.
@@ -204,6 +204,15 @@ The extension does not rely on that ordering: it marks the thread with the bagga
 A thread already inside a lookup does nothing (a driver's catalog queries pass through the same advice), and every exception is swallowed: a missing catalog is never worth a slow or a broken statement.
 The module is compiled `compileOnly` against `io.opentelemetry.javaagent:opentelemetry-javaagent-extension-api` and `io.opentelemetry.instrumentation:opentelemetry-instrumentation-api` at the packaged agent's version (`otelAgentVersion`) beside the SDK artifacts below, and still ships nothing: the agent's ByteBuddy and its shaded API are what the advice and the helper run on.
 Standalone mode has none of this: it has no connection to the application's database, and the spans carry no credentials, so the catalog exists only for a service that ran under the agent.
+
+The third is a second `InstrumentationModule`, `spider-sense-spider-silk`, in the same services file.
+A Spider Silk application is one servlet mapped at `/*` with Spider Silk's own router above it, so the servlet instrumentation reports `/*` as the `http.route` of every request, and the agent has no instrumentation for the router the way it has one for Spring MVC.
+The module applies only where `net.benelog.spidersilk.WebRequest` is on the class path, and advises one method: `WebRequest.withRoute(Route, Map)`, which Spider Silk calls on the request thread once the router has matched a route and before any filter or handler of the route runs.
+On its exit the advice calls `HttpServerRoute.update(Context.current(), HttpServerRouteSource.CONTROLLER, route.path())`, the call the agent's own framework instrumentations make: the controller source outranks the servlet's, so the span's `http.route` becomes the route as registered (`/books/{id}`, group prefixes resolved, which is already OpenTelemetry's path-template syntax) and the agent renames the span `GET /books/{id}`.
+A request no route matched (a static file, a 404, a 405) never reaches the method and keeps `/*`.
+The advice names Spider Silk's `Route`, which resolves in the application's class loader it is inlined into, so the module is compiled `compileOnly` against `spider-silk-core` and ships none of it; `Route.path()` is the only member it calls, and every Spider Silk release has it.
+`SingleJarIT` runs a Spider Silk sample under the packaged jar and checks that two ids of one route are one endpoint whose spans carry the route.
+`-Dotel.instrumentation.spider-sense-spider-silk.enabled=false` switches the module off, as it does any agent instrumentation.
 
 The module is compiled against `io.opentelemetry:opentelemetry-sdk-trace` and `io.opentelemetry:opentelemetry-sdk-extension-autoconfigure-spi` at the SDK version the packaged agent bundles (`otelSdkVersion` in the root `build.gradle`), `compileOnly` and nothing else: the agent's `ExtensionClassLoader` rewrites the unshaded `io.opentelemetry` references to the agent's own shaded classes as it loads them, so the extension must not ship a copy of the SDK.
 

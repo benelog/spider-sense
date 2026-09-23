@@ -3,7 +3,7 @@
 A warehouse on a plain Jakarta Servlet stack: embedded Tomcat 11, servlets registered by hand, plain JDBC over Tomcat's own connection pool, an H2 file database.
 There is no Spring, no Spider Silk and no router of any kind — nothing sits between the servlet and the OpenTelemetry agent.
 That is the point of it.
-The other two examples both name their own spans, one through a Spring Boot resource detector and one through a `beforeRoute` filter; this one names nothing, so what Spider Sense shows is what the agent makes of a Servlet application on its own.
+The other two web examples get their routes from a framework instrumentation, Spring MVC's in the OpenTelemetry agent and Spider Silk's in the Spider Sense extension; this one has no framework, so what Spider Sense shows is what the agent makes of a Servlet application on its own.
 Service name `servlet-warehouse`, port 8083, its own Spider Sense on port 4002.
 
 Like the others it misbehaves deliberately, because an observability tool with nothing to show is not worth looking at.

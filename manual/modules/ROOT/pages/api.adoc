@@ -616,6 +616,8 @@ An entry span's endpoint name is `METHOD route` when `http.route` is present *an
 Otherwise it is the span name.
 A wildcard mapping says "everything", so honouring it would collapse every endpoint of a Spring Boot application into `GET /*`.
 OpenTelemetry already names a server span `METHOD route` or just `METHOD`.
+An endpoint's `route` follows the same rule: its `http.route` when that is a real route, and otherwise the path of its name, so `+GET /books/{id}+` gives `+/books/{id}+`.
+It is `null` when the name is not a path.
 A span whose endpoint name matches `spidersense.ignore.endpoints` (xref:configuration.adoc#ignored-endpoints[Ignored endpoints]) is stored with `entry` false and no endpoint.
 Such a span still appears in its trace and in `/api/traces`, but in nothing that counts requests.
 `endpointId` is the first 12 hex characters of the SHA-256 of `service + " " + name`.

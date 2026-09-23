@@ -42,6 +42,8 @@ dependencies {
     extension project(':spider-sense-extension')
 
     sampleApp "com.h2database:h2:${rootProject.ext.h2Version}"
+    // SilkSampleApp is a Spider Silk application, for the extension's route instrumentation.
+    sampleApp "net.benelog.spidersilk:spider-silk-core:${rootProject.ext.spiderSilkVersion}"
     // DatabaseCatalogIT runs the sample against PostgreSQL and MySQL in containers.
     sampleApp "org.postgresql:postgresql:${rootProject.ext.postgresqlVersion}"
     sampleApp "com.mysql:mysql-connector-j:${rootProject.ext.mysqlConnectorVersion}"
@@ -49,6 +51,7 @@ dependencies {
     testImplementation "org.junit.jupiter:junit-jupiter:${rootProject.ext.junitVersion}"
     testImplementation "org.assertj:assertj-core:${rootProject.ext.assertjVersion}"
     testImplementation "com.h2database:h2:${rootProject.ext.h2Version}"
+    testImplementation "net.benelog.spidersilk:spider-silk-core:${rootProject.ext.spiderSilkVersion}"
     testImplementation "org.testcontainers:testcontainers-junit-jupiter:${rootProject.ext.testcontainersVersion}"
     testImplementation "org.testcontainers:testcontainers-postgresql:${rootProject.ext.testcontainersVersion}"
     testImplementation "org.testcontainers:testcontainers-mysql:${rootProject.ext.testcontainersVersion}"

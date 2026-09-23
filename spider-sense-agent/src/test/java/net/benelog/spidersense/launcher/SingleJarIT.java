@@ -222,6 +222,66 @@ class SingleJarIT {
                 .doesNotContain("NoClassDefFoundError");
     }
 
+    /**
+     * The extension's other instrumentation, from the packaged jar: a Spider Silk application is
+     * one servlet mapped at {@code /*}, and the route its router matched becomes the span's
+     * {@code http.route} and the endpoint's name (design.md, "The extension"). Two ids of one
+     * route are one endpoint, and a path no route matched keeps the servlet's mapping.
+     */
+    @Test
+    void aSpiderSilkRequestIsTheEndpointOfTheRouteThatMatchedIt() throws Exception {
+        int port = freePort();
+        Path log = work.resolve("silk.log");
+        String base = "http://127.0.0.1:" + port;
+
+        Process app = start(log,
+                javaBinary.toString(),
+                "-javaagent:" + senseJar,
+                "-Dspidersense.port=" + port,
+                "-Dspidersense.db=" + throwawayDatabase(),
+                "-Dotel.service.name=silk-sample",
+                "-cp", sampleClasspath,
+                "net.benelog.spidersense.launcher.SilkSampleApp");
+
+        String endpoints;
+        List<String> details = new ArrayList<>();
+        try {
+            // compact() takes the spaces out, so an endpoint name reads GET/books/{id} below.
+            endpoints = await("the sample's three endpoints", log, app,
+                    () -> get(base + "/api/endpoints?service=silk-sample"),
+                    body -> compact(body).contains("\"name\":\"GET/books/{id}\"")
+                            && compact(body).contains("\"name\":\"GET/books\"")
+                            && compact(body).contains("\"name\":\"GET/*\""));
+            // The UI lives in the sample's JVM, so the traces are read before it goes.
+            for (String summary : traceSummaries(get(base + "/api/traces?service=silk-sample&limit=50"))) {
+                details.add(compact(get(base + "/api/traces/" + traceId(summary))));
+            }
+        } catch (AssertionError e) {
+            app.destroyForcibly();
+            throw new AssertionError(e.getMessage() + "\n--- application output ---\n" + read(log), e);
+        } finally {
+            app.destroy();
+            if (!app.waitFor(30, TimeUnit.SECONDS)) {
+                app.destroyForcibly();
+            }
+        }
+
+        String book = objects(endpoints, "endpoints").stream()
+                .filter(e -> e.contains("\"name\":\"GET/books/{id}\""))
+                .findFirst()
+                .orElseThrow();
+        assertThat(book).as("both ids are one endpoint").contains("\"calls\":2")
+                .contains("\"route\":\"/books/{id}\"");
+        assertThat(compact(endpoints)).as("no endpoint per id").doesNotContain("/books/1");
+
+        // The route is the server span's own attribute, not only the server's reading of its name;
+        // each trace's root is the sample's client span, so the server span is looked for inside.
+        assertThat(details)
+                .as("a server span carrying the route")
+                .anyMatch(trace -> trace.contains("\"http.route\":\"/books/{id}\""));
+        assertThat(read(log)).doesNotContain("NoClassDefFoundError");
+    }
+
     /** What separates two frames of the compact {@code code} array. */
     private static final Pattern BETWEEN_FRAMES = Pattern.compile("\",\"");
 

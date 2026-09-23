@@ -40,6 +40,18 @@ class SpanRecordTest {
     }
 
     @Test
+    void anEndpointShowsItsRouteAndNeverTheServletMapping() {
+        assertThat(SpanRecord.endpointRoute("GET", "/orders/{id}", "GET /orders/{id}"))
+                .isEqualTo("/orders/{id}");
+        // A framework above the servlet (Spider Silk) named the span, the servlet mapping stayed.
+        assertThat(SpanRecord.endpointRoute("GET", "/*", "GET /books/{id}")).isEqualTo("/books/{id}");
+        assertThat(SpanRecord.endpointRoute(null, null, "/books/{id}")).isEqualTo("/books/{id}");
+        // Nothing that is a path: no route rather than a made-up one.
+        assertThat(SpanRecord.endpointRoute("GET", "/*", "GET")).isNull();
+        assertThat(SpanRecord.endpointRoute(null, null, "nightly-report")).isNull();
+    }
+
+    @Test
     void withoutARouteTheSpanNameIsAlreadyTheEndpoint() {
         SpanRecord span = span("GET", "SERVER", Map.of("http.request.method", "GET"));
 

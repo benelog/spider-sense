@@ -274,6 +274,26 @@ public record SpanRecord(
         return name;
     }
 
+    /**
+     * The route an endpoint shows, from what its spans carried.
+     *
+     * <p>A real {@code http.route} is the route. A servlet mapping is not, for
+     * the reason {@link #endpointName()} gives, and showing it would put
+     * {@code /*} beside every endpoint the name already tells apart; the path
+     * of the endpoint name ({@code GET /books/{id}} without its method) is the
+     * route then, and there is none when the name is not a path at all.
+     */
+    public static @Nullable String endpointRoute(
+            @Nullable String method, @Nullable String httpRoute, String endpointName) {
+        if (httpRoute != null && !isWildcardRoute(httpRoute)) {
+            return httpRoute;
+        }
+        String path = method != null && endpointName.startsWith(method + " ")
+                ? endpointName.substring(method.length() + 1)
+                : endpointName;
+        return path.startsWith("/") ? path : null;
+    }
+
     private static boolean isWildcardRoute(String route) {
         return route.equals("/") || route.equals("/*") || route.endsWith("/*");
     }

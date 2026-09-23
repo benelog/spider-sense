@@ -69,8 +69,8 @@ From Gradle, with jte reading templates from the source tree so an edit shows on
 
 The OpenTelemetry agent instruments Jetty and the Servlet API, where one servlet is mapped at `/*` and Spider Silk's own router does the routing above it.
 Left alone the agent names every server span `GET /*`, and an observability tool that groups by endpoint then has exactly one endpoint.
-`bookstore/web/Tracing.java` installs a `beforeRoute` filter that renames the current span to `METHOD /route/{template}` and sets `http.route`, where the template is `req.route().path()`: the entry of `app.routes()` the router chose for this request.
-The same class records the exception behind a 500 on the span from the request logger, where `completion.exception()` is what the handler threw; a 400 for a bad rating stays off the span, and a 404 thrown as `HttpException` never appears there, since it is a status rather than a failure.
+The application does nothing about it: the Spider Sense extension instruments Spider Silk's router and reports the route that matched, so a request for `/books/7` is the endpoint `GET /books/{id}` with `http.route` `/books/{id}`.
+`bookstore/web/Tracing.java` records the exception behind a 500 on the span from the request logger, where `completion.exception()` is what the handler threw; a 400 for a bad rating stays off the span, and a 404 thrown as `HttpException` never appears there, since it is a status rather than a failure.
 With no agent attached `Span.current()` is the API's no-op span, so both cost a few field reads and do nothing.
 
 A `requestLogger` prints one line per request — method, path with query string, status, elapsed ms — so watching the terminal shows what the load generator is doing.
