@@ -33,6 +33,8 @@ PROMPT_KO='skills/spider-sense/SKILL.md를 읽고, `scripts/demo-shared.sh --no-
 2분 동안 돌게 둔 다음 `findings --since=demo`를 실행해 줘. 상위 세 개의 finding마다 trace를
 하나씩 열어서, examples/ 아래 어느 줄이 원인인지 알려 줘. 아무것도 고치지는 마.'
 
+FOREGROUND='This session is non-interactive: it ends when your turn ends, and no background notification will arrive. Wait in the foreground (a Bash call may run for up to ten minutes) and finish the whole task in this turn.'
+
 # Every line of the stream with the time it arrived, since neither stream carries one.
 stamp() {
     node -e 'require("readline").createInterface({ input: process.stdin })
@@ -66,10 +68,12 @@ record() {
     case "$agent" in
         claude)
             # A nested session must not think it runs inside another one; the user's own
-            # settings stay out so the answer is what the project gives any user.
+            # settings stay out so the answer is what the project gives any user. `-p` ends
+            # with the turn, so a wait left in the background would end the session.
             env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT claude -p "$prompt" \
                 --output-format stream-json --verbose \
                 --setting-sources project,local \
+                --append-system-prompt "$FOREGROUND" \
                 --allowedTools 'Bash,Read,Grep,Glob,BashOutput,KillShell,Monitor,TaskOutput,TaskStop' \
                 --disallowedTools 'Edit,Write,NotebookEdit,MultiEdit' \
                 </dev/null 2>"$OUT/$agent-$lang.err" | stamp >"$file" || true
