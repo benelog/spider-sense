@@ -39,12 +39,17 @@ const realFetch = globalThis.fetch.bind(globalThis);
 
 const answers = new Map();
 
-async function answer(key) {
+/** The answer's body as it was captured: the text, or null when it was not. */
+async function answerText(key) {
   if (answers.has(key)) return answers.get(key);
   const rows = await sql('SELECT body FROM answer WHERE `key` = ' + lit(key));
-  const value = rows.length ? json(rows[0].body, null) : null;
+  const value = rows.length ? rows[0].body : null;
   answers.set(key, value);
   return value;
+}
+
+async function answer(key) {
+  return json(await answerText(key), null);
 }
 
 const manifest = await answer('/manifest');
@@ -109,7 +114,7 @@ async function marks(params) {
 }
 
 async function acks(params) {
-  const rows = await sql('SELECT finding_id, at_ms, note FROM ack ORDER BY at_ms DESC LIMIT ' + limitOf(params, 200));
+  const rows = await sql('SELECT finding_id, at_ms, note FROM ack WHERE NOT resolved ORDER BY at_ms DESC LIMIT ' + limitOf(params, 200));
   return { acks: rows.map((r) => ({ findingId: r.finding_id, at: num(r.at_ms), note: r.note })) };
 }
 
@@ -322,6 +327,13 @@ globalThis.fetch = async (input, init) => {
     if (!found.key) {
       console.warn('[demo] not recorded: ' + found.asked);
       return reply({ error: 'Not in the recording: ' + found.asked }, 404);
+    }
+    // A text rendering (format=text, what Copy as Markdown asks for) is replied as it was captured.
+    if (params.get('format') === 'text') {
+      const text = await answerText(found.key);
+      return text === null
+        ? reply({ error: 'Not in the recording: ' + found.asked }, 404)
+        : new Response(text, { status: 200, headers: { 'content-type': 'text/markdown; charset=utf-8' } });
     }
     const body = await answer(found.key);
     return body === null ? reply({ error: 'Not in the recording: ' + found.asked }, 404) : reply(body);

@@ -90,8 +90,8 @@ const TABLES = [
     columns: 'id at_ms name service note', required: 'name',
     ddl: `id BIGINT NOT NULL, at_ms BIGINT NOT NULL, name VARCHAR(64) NOT NULL, service VARCHAR(255), note VARCHAR(1024)` },
   { name: 'ack', key: ['finding_id'], window: 'at_ms',
-    columns: 'finding_id at_ms note', required: 'finding_id',
-    ddl: 'finding_id VARCHAR(64) NOT NULL, at_ms BIGINT NOT NULL, note VARCHAR(1024)' },
+    columns: 'finding_id at_ms note resolved', bool: 'resolved', required: 'finding_id',
+    ddl: 'finding_id VARCHAR(64) NOT NULL, at_ms BIGINT NOT NULL, note VARCHAR(1024), resolved BOOLEAN NOT NULL' },
   // The index catalog, every row: the extension reads a table's indexes once per
   // process, so the row behind a window's schema blocks was usually written before
   // the window began. Loaded with the rest, it gives capture's slow-query and
@@ -423,7 +423,37 @@ async function doltHead(ref) {
   return branch ? branch.head_commit_sha : null;
 }
 
-/** Creates the tables that are not there yet, one statement each. */
+/** The column definitions of a table's DDL, by name, split on the commas outside parentheses. */
+function columnsOf(ddl) {
+  const out = new Map();
+  let depth = 0;
+  let from = 0;
+  const text = ddl.replace(/\s+/g, ' ').trim();
+  for (let i = 0; i <= text.length; i++) {
+    const c = text[i];
+    if (c === '(') depth++;
+    else if (c === ')') depth--;
+    else if ((c === ',' && depth === 0) || i === text.length) {
+      const def = text.slice(from, i).trim();
+      if (def) out.set(def.split(' ')[0].replace(/`/g, ''), def);
+      from = i + 1;
+    }
+  }
+  return out;
+}
+
+/**
+ * A column the schema gained since the table was created, as ALTER TABLE adds it:
+ * a NOT NULL column gets the default the rows already there need.
+ */
+function addedColumn(def) {
+  if (!/NOT NULL/i.test(def) || /DEFAULT/i.test(def)) return def;
+  if (/^\S+ (BOOLEAN|INT|BIGINT|DOUBLE)/i.test(def)) return def + ' DEFAULT 0';
+  if (/^\S+ (VARCHAR|CHAR)/i.test(def)) return def + " DEFAULT ''";
+  return def.replace(/ NOT NULL/i, '');
+}
+
+/** Creates the tables that are not there yet and adds the columns a table lacks, one statement each. */
 async function doltEnsureTables() {
   let existing = [];
   try {
@@ -432,7 +462,16 @@ async function doltEnsureTables() {
     existing = [];   // an empty database has no branch yet; the first write creates it
   }
   for (const table of TABLES) {
-    if (existing.includes(table.name)) continue;
+    if (existing.includes(table.name)) {
+      const have = new Set((await doltQuery(DOLTHUB.branch, 'SHOW COLUMNS FROM `' + table.name + '`'))
+        .map((row) => String(row.Field || Object.values(row)[0])));
+      for (const [name, def] of columnsOf(table.ddl)) {
+        if (have.has(name)) continue;
+        console.log('alter ' + table.name + ': add ' + name);
+        await doltWrite('ALTER TABLE `' + table.name + '` ADD COLUMN ' + addedColumn(def), 'ALTER TABLE ' + table.name + ' ADD ' + name);
+      }
+      continue;
+    }
     const ddl = 'CREATE TABLE `' + table.name + '` (' + table.ddl.replace(/\s+/g, ' ').trim()
       + ', PRIMARY KEY (' + table.key.map((k) => '`' + k + '`').join(', ') + '))';
     console.log('create ' + table.name);
@@ -586,7 +625,8 @@ async function load(opts) {
 //
 // What the page cannot make from the tables by itself: every aggregation, over the
 // window, unfiltered and per service, plus every endpoint, query, error and metric
-// series they mention, and every pair of marks for compare. The lists the page makes
+// series they mention, every pair of marks for compare, and the text rendering of
+// every finding, query and error of the unfiltered lists. The lists the page makes
 // from the tables (traces, one trace, logs, marks, acks) are not asked.
 
 const QUERY_SORTS = ['total', 'calls', 'avg', 'p95', 'max'];
@@ -654,9 +694,11 @@ async function capture(opts) {
   const queries = new Set();
   const errors = new Set();
   const metrics = new Map();
+  const findings = new Set();
   for (const service of scopes) {
     const s = { service };
-    await get('/api/findings', { ...s, limit: 100 });
+    const listed = await get('/api/findings', { ...s, limit: 100 });
+    if (!service) for (const f of (listed && listed.findings) || []) findings.add(f.id);
     await get('/api/findings', { ...s, limit: 5, hideAcked: 'true' });
     const eps = await get('/api/endpoints', s);
     for (const e of (eps && eps.endpoints) || []) endpoints.add(e.endpointId);
@@ -675,6 +717,11 @@ async function capture(opts) {
   await each([...endpoints], (id) => get('/api/endpoints/' + encodeURIComponent(id)));
   await each([...queries], (id) => get('/api/queries/' + encodeURIComponent(id)));
   await each([...errors], (id) => get('/api/errors/' + encodeURIComponent(id)));
+  // The text renderings Copy as Markdown asks for (docs/ui.md), over the whole window.
+  const TEXT = { format: 'text' };
+  await each([...findings], (id) => get('/api/findings/' + encodeURIComponent(id), TEXT));
+  await each([...queries], (id) => get('/api/queries/' + encodeURIComponent(id), TEXT));
+  await each([...errors], (id) => get('/api/errors/' + encodeURIComponent(id), TEXT));
 
   const series = [];
   for (const [service, names] of metrics) {
