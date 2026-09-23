@@ -131,8 +131,11 @@ Go, with the SDK set up in `main`:
 ----
 go get go.opentelemetry.io/otel \
        go.opentelemetry.io/otel/sdk \
+       go.opentelemetry.io/otel/sdk/metric \
        go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp \
-       go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp
+       go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp \
+       go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp \
+       go.opentelemetry.io/contrib/instrumentation/runtime
 ----
 
 [source,go]
@@ -143,22 +146,39 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"time"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/contrib/instrumentation/runtime"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
 func main() {
 	ctx := context.Background()
-	exporter, err := otlptracehttp.New(ctx) // reads OTEL_EXPORTER_OTLP_ENDPOINT
+
+	traceExporter, err := otlptracehttp.New(ctx) // reads OTEL_EXPORTER_OTLP_ENDPOINT
 	if err != nil {
 		log.Fatal(err)
 	}
-	tp := sdktrace.NewTracerProvider(sdktrace.WithBatcher(exporter)) // reads OTEL_SERVICE_NAME
+	tp := sdktrace.NewTracerProvider(sdktrace.WithBatcher(traceExporter)) // reads OTEL_SERVICE_NAME
 	defer tp.Shutdown(ctx)
 	otel.SetTracerProvider(tp)
+
+	metricExporter, err := otlpmetrichttp.New(ctx) // reads OTEL_EXPORTER_OTLP_ENDPOINT
+	if err != nil {
+		log.Fatal(err)
+	}
+	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(
+		sdkmetric.NewPeriodicReader(metricExporter, sdkmetric.WithInterval(10*time.Second))))
+	defer mp.Shutdown(ctx)
+	otel.SetMeterProvider(mp)
+	if err := runtime.Start(); err != nil { // goroutines, heap, GC
+		log.Fatal(err)
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /hello", func(w http.ResponseWriter, r *http.Request) {
@@ -174,6 +194,8 @@ OTEL_SERVICE_NAME=my-app OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4000 go ru
 ----
 
 The exporter is the OTLP/HTTP one by construction, so Go needs no protocol variable.
+The meter provider is what `otelhttp` records `http.server.request.duration` to, and `runtime.Start` adds the goroutine count, the heap and the GC to it; both appear on the Metrics page.
+The reader exports every ten seconds instead of the SDK's default of sixty, so a chart moves while you watch it.
 `otelhttp` names each server span after the `ServeMux` pattern, so the Endpoints page shows `GET /hello` rather than one row for the whole server.
 The queries appear only when the database calls make spans too, which in Go means wrapping `database/sql` with an instrumentation library, and in Python and Node.js happens for the drivers the packages above cover.
 
