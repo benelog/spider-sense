@@ -76,12 +76,14 @@ record() {
     case "$agent" in
         claude)
             # A nested session must not think it runs inside another one; the user's own
-            # settings stay out so the answer is what the project gives any user. `-p` ends
-            # with the turn, so a wait left in the background would end the session.
+            # settings stay out so the answer is what the project gives any user, except the
+            # language a Korean user would have set. `-p` ends with the turn, so a wait left
+            # in the background would end the session.
             env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT claude -p "$prompt" \
                 --output-format stream-json --verbose \
                 --setting-sources project,local \
                 --append-system-prompt "$FOREGROUND" \
+                --settings "$([[ "$lang" == ko ]] && echo '{"language":"korean"}' || echo '{}')" \
                 --allowedTools 'Bash,Read,Grep,Glob,BashOutput,KillShell,Monitor,TaskOutput,TaskStop' \
                 --disallowedTools 'Edit,Write,NotebookEdit,MultiEdit' \
                 </dev/null 2>"$OUT/$agent-$lang.err" | stamp >"$file" || true
