@@ -506,12 +506,14 @@ export function tabs(items, opts = {}) {
   const list = h('div.tabs', { role: 'tablist' });
   const panelNode = h('div.tab-panel', { role: 'tabpanel' });
   let activeId = opts.active || (items[0] && items[0].id);
-  function select(id) {
+  // onSelect hears the viewer's choice, not the first paint: a page that writes the tab
+  // to the URL would otherwise re-render itself, paint the tabs again, and loop.
+  function select(id, notify = true) {
     activeId = id;
     for (const btn of list.children) btn.setAttribute('aria-selected', String(btn.dataset.tab === id));
     const item = items.find((t) => t.id === id);
     fill(panelNode, item ? item.render() : null);
-    if (opts.onSelect) opts.onSelect(id);
+    if (notify && opts.onSelect) opts.onSelect(id);
   }
   for (const item of items) {
     list.appendChild(h('button.tab', {
@@ -520,7 +522,7 @@ export function tabs(items, opts = {}) {
       onclick: () => select(item.id),
     }, item.label, item.count != null ? h('span.tab-count', String(item.count)) : null));
   }
-  select(activeId);
+  select(activeId, false);
   const node = h('div.tabs-wrap', list, panelNode);
   node.select = select;
   return node;

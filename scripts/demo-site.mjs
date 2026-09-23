@@ -10,7 +10,10 @@
 //             window, into answer.csv beside the tables
 //   push      the CSV files into the DoltHub database, one commit per table
 //   pull      the DoltHub tables back into CSV files
-//   assemble  the UI as one static directory that reads the DoltHub database
+//   assemble  the UI as one static directory that reads the DoltHub database, and the
+//             agent demo's pages beside it
+//   agent-push  the agent demo's recorded sessions (scripts/agent-demo.sh) into the same
+//             database, as the rows the agent demo's page replays
 //
 // scripts/demo-site.sh runs them in order. H2 is driven through org.h2.tools.Shell from
 // the server jar nested in the Spider Sense jar, so nothing here needs Java beyond it.
@@ -454,14 +457,14 @@ function addedColumn(def) {
 }
 
 /** Creates the tables that are not there yet and adds the columns a table lacks, one statement each. */
-async function doltEnsureTables() {
+async function doltEnsureTables(tables = TABLES) {
   let existing = [];
   try {
     existing = (await doltQuery(DOLTHUB.branch, 'SHOW TABLES')).map((row) => Object.values(row)[0]);
   } catch (e) {
     existing = [];   // an empty database has no branch yet; the first write creates it
   }
-  for (const table of TABLES) {
+  for (const table of tables) {
     if (existing.includes(table.name)) {
       const have = new Set((await doltQuery(DOLTHUB.branch, 'SHOW COLUMNS FROM `' + table.name + '`'))
         .map((row) => String(row.Field || Object.values(row)[0])));
