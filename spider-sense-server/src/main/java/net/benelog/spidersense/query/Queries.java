@@ -740,11 +740,23 @@ public final class Queries {
                     + " AND s.endpoint_id = ?)", filter.endpointId());
         }
         if (filter.q() != null && !filter.q().isBlank()) {
-            String like = "%" + filter.q().toLowerCase(Locale.ROOT) + "%";
+            String like = contains(filter.q());
             where = where.and("EXISTS (SELECT 1 FROM span s WHERE s.trace_id = t.trace_id"
-                    + " AND (LOWER(s.name) LIKE ? OR LOWER(s.attributes) LIKE ?))", like, like);
+                    + " AND (LOWER(s.name) LIKE ? ESCAPE '\\' OR LOWER(s.attributes) LIKE ? ESCAPE '\\'))",
+                    like, like);
         }
         return where;
+    }
+
+    /**
+     * A LIKE pattern for "contains {@code text}", case-insensitively: its own
+     * {@code %}, {@code _} and {@code \\} match themselves, so {@code 100%} is a
+     * substring and not a prefix (api.adoc#free-text-search).
+     */
+    static String contains(String text) {
+        String escaped = text.toLowerCase(Locale.ROOT)
+                .replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+        return "%" + escaped + "%";
     }
 
     public @Nullable TraceDetail trace(String traceId) {
@@ -937,10 +949,10 @@ public final class Queries {
                     (long) LogRecord.severityFloor(filter.severity()));
         }
         if (filter.q() != null && !filter.q().isBlank()) {
-            String like = "%" + filter.q().toLowerCase(Locale.ROOT) + "%";
+            String like = contains(filter.q());
             // The logger too: a log-error finding's link names its logger in q (pages.adoc#findings).
-            where = where.and("(LOWER(body) LIKE ? OR LOWER(logger) LIKE ? OR LOWER(attributes) LIKE ?)",
-                    like, like, like);
+            where = where.and("(LOWER(body) LIKE ? ESCAPE '\\' OR LOWER(logger) LIKE ? ESCAPE '\\'"
+                    + " OR LOWER(attributes) LIKE ? ESCAPE '\\')", like, like, like);
         }
         return where;
     }

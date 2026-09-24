@@ -459,6 +459,22 @@ class QueriesTest {
         assertThat(seen).containsExactly("line 4", "line 3", "line 2", "line 1", "line 0");
     }
 
+    /** q is a substring: its % and _ match themselves, not any text. */
+    @Test
+    void freeTextIsASubstringNotALikePattern() {
+        decoder.accept(Otlp.logs(Otlp.service("orders"), "orders.Job",
+                Otlp.log(NOW, 9, "100% done", null, null),
+                Otlp.log(NOW + 1, 9, "1000 done", null, null),
+                Otlp.log(NOW + 2, 9, "a_b", null, null),
+                Otlp.log(NOW + 3, 9, "axb", null, null)));
+        flush();
+
+        assertThat(queries.logs(new Queries.LogFilter(window, null, null, "100%", null, null, 50)))
+                .extracting(LogRecord::body).containsExactly("100% done");
+        assertThat(queries.logs(new Queries.LogFilter(window, null, null, "a_b", null, null, 50)))
+                .extracting(LogRecord::body).containsExactly("a_b");
+    }
+
     /** A log-error finding's link searches for its logger, which is a column of its own. */
     @Test
     void freeTextOverLogsMatchesTheLogger() {
