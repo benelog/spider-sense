@@ -224,12 +224,14 @@ It is `{}` when those traces add up to nothing.
 [#traces]
 == Traces
 
-*`GET /api/traces?from&to&service&endpointId&minMs&maxMs&status=error|ok|all&q&limit=50&before=<epoch ms>`*
+*`GET /api/traces?from&to&service&endpointId&minMs&maxMs&status=error|ok|all&q&limit=50&before=<epoch ms>&beforeId=<traceId>`*
 
 `q`::
 A case-insensitive substring match over the root span name, every span name, and every string attribute value of the trace.
-`before`::
-Pages backwards, to the traces that start strictly before the given epoch ms.
+`before` and `beforeId`::
+Page backwards from the last row of the previous page, its `start` and its `traceId`.
+With both, the next page holds the traces that start before `before`, and those that start in the same millisecond with a smaller `traceId`.
+With `before` alone, it holds the traces that start strictly before it.
 
 [source,json]
 ----
@@ -458,9 +460,10 @@ Nothing else is read.
 [#logs]
 == Logs
 
-*`GET /api/logs?from&to&service&severity=TRACE|DEBUG|INFO|WARN|ERROR&q&traceId&limit=200&before=<epoch ms>`*
+*`GET /api/logs?from&to&service&severity=TRACE|DEBUG|INFO|WARN|ERROR&q&traceId&limit=200&before=<epoch ms>&beforeId=<id>`*
 
 `severity` is a minimum, so `WARN` shows `WARN` and `ERROR`.
+`before` and `beforeId` are the last row's `at` and `id`, and page backwards as they do on `/api/traces`.
 
 [source,json]
 ----
@@ -725,7 +728,8 @@ That covers a percentile in a bucket with no requests, the first point of a `rat
 `GET /api/metrics` is sorted by metric name.
 `GET /api/endpoints` and the `endpoints` of `+GET /api/services/{name}+` are sorted by total time descending.
 `queries` defaults to `sort=total`, and `errors` is sorted by count descending.
-Lists paged with `before` are newest first, with the row id breaking a tie inside the same millisecond.
+Lists paged with `before` are newest first, with the row id breaking a tie inside the same millisecond: a log's `id`, a trace's `traceId`.
+`beforeId` carries that id into the next page, so a burst of rows in one millisecond is never cut at a page boundary.
 
 [#free-text-search]
 === Free-text search

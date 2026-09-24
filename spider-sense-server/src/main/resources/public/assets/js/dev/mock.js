@@ -1518,9 +1518,9 @@ const ROUTES = [
       list = list.filter((t) => t.spans.some((s) => s.name.toLowerCase().includes(needle)
         || Object.values(s.attributes).some((v) => typeof v === 'string' && v.toLowerCase().includes(needle))));
     }
-    list = list.slice().sort((a, b) => b.start - a.start);
+    list = list.slice().sort((a, b) => b.start - a.start || (a.traceId < b.traceId ? 1 : a.traceId > b.traceId ? -1 : 0));
     const total = list.length;
-    if (q.before) list = list.filter((t) => t.start < +q.before);
+    if (q.before) list = list.filter((t) => t.start < +q.before || (q.beforeId && t.start === +q.before && t.traceId < q.beforeId));
     return { traces: list.slice(0, +(q.limit || 50)).map(summary), total, window: w };
   }],
 
@@ -1678,9 +1678,9 @@ const ROUTES = [
       && (!q.traceId || l.traceId === q.traceId)
       && l.severityNumber >= min
       && (!q.q || l.body.toLowerCase().includes(q.q.toLowerCase()) || (l.logger || '').toLowerCase().includes(q.q.toLowerCase())));
-    list = list.slice().sort((a, b) => b.at - a.at);
+    list = list.slice().sort((a, b) => b.at - a.at || b.id - a.id);
     const total = list.length;
-    if (q.before) list = list.filter((l) => l.at < +q.before);
+    if (q.before) list = list.filter((l) => l.at < +q.before || (q.beforeId && l.at === +q.before && l.id < +q.beforeId));
     return { logs: list.slice(0, +(q.limit || 200)), total };
   }],
 

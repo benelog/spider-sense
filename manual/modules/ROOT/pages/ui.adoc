@@ -289,9 +289,9 @@ It is loaded when `<html data-dolthub="owner/database@ref">` or `?dolthub=…` n
 
 Some answers are queried from the tables of xref:storage.adoc#schema[Storage] and shaped as xref:api.adoc[the HTTP API] says:
 
-* the traces, `/api/traces`, with `service`, `endpointId`, `minMs`, `maxMs`, `status`, `q`, `before` and `limit` applied as the API applies them;
+* the traces, `/api/traces`, with `service`, `endpointId`, `minMs`, `maxMs`, `status`, `q`, `before`, `beforeId` and `limit` applied as the API applies them;
 * one trace, `+/api/traces/{id}+`: its spans in the waterfall's order, each with the server's `summary` line, and its logs, a trace of more than 1,000 spans being cut at DoltHub's row limit;
-* the logs, with `service`, `severity`, `q`, `traceId` and `before`;
+* the logs, with `service`, `severity`, `q`, `traceId`, `before` and `beforeId`;
 * the marks;
 * the acknowledgements, the `ack` rows that are not resolutions.
 

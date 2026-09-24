@@ -270,7 +270,7 @@ With Live on, points stream in from the right every 2 seconds, from a refetch of
 The query bar takes free text (`q`), a duration range (`minMs` and `maxMs`, two small number fields joined by "–"), a status of `all`, `error` or `ok`, and an endpoint from the current service's endpoints when a service is selected.
 Enter applies the query, and so does a 400 ms pause in typing.
 The table gives the time, the root name in bold with the service chips, the duration with a bar proportional to the slowest row and coloured by slow or error, the span count, the DB calls, the status code, and the error and slow markers.
-The rows are newest first, with *Load more* under the table, which pages with `before`.
+The rows are newest first, with *Load more* under the table, which pages with the last row's `before` and `beforeId`.
 
 [#trace-header]
 === The header
@@ -433,7 +433,7 @@ The window is the one the page last loaded, so both answer for what is on the sc
 The query bar takes free text (`q`), a minimum severity, and a `traceId` field, which is prefilled when you arrive from a trace.
 The table is dense: the time to the millisecond, a severity chip coloured by level, the service chip, the logger dimmed, the body wrapped with its newlines kept, and a link to the trace when the record carries one.
 A row click expands its attributes and its stack trace.
-*Load more* pages further back with `before`.
+*Load more* pages further back with the last row's `before` and `beforeId`.
 With Live on the page tails: new lines arrive at the top, and the scroll position is kept unless you are already at the top.
 
 [#jvm]

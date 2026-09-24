@@ -67,7 +67,7 @@ if (preset) {
   preset.label = 'The recording (' + minutes + ' min)';
 }
 
-const FALLBACK = ['before', 'q', 'minMs', 'maxMs', 'traceId', 'severity', 'status', 'endpointId',
+const FALLBACK = ['beforeId', 'before', 'q', 'minMs', 'maxMs', 'traceId', 'severity', 'status', 'endpointId',
   'step', 'rate', 'until', 'hideAcked', 'sort', 'limit', 'service'];
 
 function keyOf(path, params) {
@@ -122,7 +122,12 @@ function traceWhere(params, paging) {
   const w = windowOf(params);
   const where = ['t.start_ms BETWEEN ' + w.from + ' AND ' + w.to];
   const before = num(params.get('before'));
-  if (paging && before !== null) where.push('t.start_ms < ' + before);
+  const beforeId = params.get('beforeId');
+  if (paging && before !== null) {
+    where.push(beforeId
+      ? '(t.start_ms < ' + before + ' OR (t.start_ms = ' + before + ' AND t.trace_id < ' + lit(beforeId) + '))'
+      : 't.start_ms < ' + before);
+  }
   const minMs = num(params.get('minMs'));
   if (minMs !== null) where.push('t.duration_ns >= ' + minMs + ' * 1000000');
   const maxMs = num(params.get('maxMs'));
@@ -163,7 +168,7 @@ function traceSummary(r) {
 
 async function traces(params) {
   const [rows, count] = await Promise.all([
-    sql('SELECT * FROM trace t WHERE ' + traceWhere(params, true) + ' ORDER BY t.start_ms DESC LIMIT ' + limitOf(params, 50)),
+    sql('SELECT * FROM trace t WHERE ' + traceWhere(params, true) + ' ORDER BY t.start_ms DESC, t.trace_id DESC LIMIT ' + limitOf(params, 50)),
     sql('SELECT COUNT(*) AS n FROM trace t WHERE ' + traceWhere(params, false)),
   ]);
   return { traces: rows.map(traceSummary), total: num(count[0] && count[0].n) || 0, window: windowOf(params) };
@@ -273,7 +278,12 @@ function logWhere(params, paging) {
   const w = windowOf(params);
   const where = ['at_ms BETWEEN ' + w.from + ' AND ' + w.to];
   const before = num(params.get('before'));
-  if (paging && before !== null) where.push('at_ms < ' + before);
+  const beforeId = num(params.get('beforeId'));
+  if (paging && before !== null) {
+    where.push(beforeId !== null
+      ? '(at_ms < ' + before + ' OR (at_ms = ' + before + ' AND id < ' + beforeId + '))'
+      : 'at_ms < ' + before);
+  }
   if (params.get('service')) where.push('service = ' + lit(params.get('service')));
   if (params.get('traceId')) where.push('trace_id = ' + lit(params.get('traceId')));
   const floor = SEVERITY_FLOOR[(params.get('severity') || '').toUpperCase()];

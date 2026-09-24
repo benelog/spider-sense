@@ -165,6 +165,7 @@ public final class TraceApi {
                 req.queryParamOrNull("status"),
                 req.queryParamOrNull("q"),
                 Params.optionalLong(req, "before"),
+                req.queryParamOrNull("beforeId"),
                 Params.limit(req, 50, 1000));
         return Params.answer(req, reports.traces(filter, Params.full(req)));
     }
@@ -283,6 +284,7 @@ public final class TraceApi {
                 req.queryParamOrNull("q"),
                 req.queryParamOrNull("traceId"),
                 Params.optionalLong(req, "before"),
+                Params.optionalLong(req, "beforeId"),
                 Params.limit(req, 200, 5000));
         return Params.answer(req, reports.logs(filter));
     }

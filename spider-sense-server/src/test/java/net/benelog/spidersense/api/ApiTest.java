@@ -576,6 +576,14 @@ class ApiTest {
             assertThat(json(client.get("/api/logs" + windowQuery() + "&traceId=" + TRACE))
                     .getArray("logs")).hasSize(1);
 
+            // The cursor of the next page is the last row's time and id.
+            Json.JsonObject page = json(client.get("/api/logs" + windowQuery() + "&limit=1"));
+            Json.JsonObject last = page.getArray("logs").get(0).asObject();
+            Json.JsonArray next = json(client.get("/api/logs" + windowQuery() + "&limit=1&before="
+                    + last.getLong("at") + "&beforeId=" + last.getLong("id"))).getArray("logs");
+            assertThat(next.get(0).asObject().getString("body"))
+                    .isEqualTo("Started OrdersApplication in 2.1 seconds");
+
             Json.JsonObject trace = json(client.get("/api/traces/" + TRACE));
             assertThat(trace.getArray("logs")).hasSize(1);
             assertThat(trace.getArray("logs").get(0).asObject().getString("traceId")).isEqualTo(TRACE);

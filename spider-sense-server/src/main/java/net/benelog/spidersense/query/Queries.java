@@ -77,15 +77,40 @@ public final class Queries {
 
     // --- filters -------------------------------------------------------------
 
-    /** Everything {@code GET /api/traces} can be narrowed by. */
+    /**
+     * Everything {@code GET /api/traces} can be narrowed by.
+     *
+     * <p>{@code before} and {@code beforeId} are the cursor of the next page, the last row's start
+     * and trace id: with both, a trace that starts in the same millisecond as the last one and
+     * sorts after it is still listed.
+     */
     public record TraceFilter(Window window, @Nullable String service, @Nullable String endpointId,
             @Nullable Long minMs, @Nullable Long maxMs, @Nullable String status, @Nullable String q,
-            @Nullable Long before, int limit) {
+            @Nullable Long before, @Nullable String beforeId, int limit) {
+
+        /** A filter with no tie-breaking id: {@code before} alone pages strictly before it. */
+        public TraceFilter(Window window, @Nullable String service, @Nullable String endpointId,
+                @Nullable Long minMs, @Nullable Long maxMs, @Nullable String status,
+                @Nullable String q, @Nullable Long before, int limit) {
+            this(window, service, endpointId, minMs, maxMs, status, q, before, null, limit);
+        }
     }
 
-    /** Everything {@code GET /api/logs} can be narrowed by. */
+    /**
+     * Everything {@code GET /api/logs} can be narrowed by.
+     *
+     * <p>{@code before} and {@code beforeId} are the cursor of the next page, the last row's time
+     * and id, as for {@link TraceFilter}.
+     */
     public record LogFilter(Window window, @Nullable String service, @Nullable String severity,
-            @Nullable String q, @Nullable String traceId, @Nullable Long before, int limit) {
+            @Nullable String q, @Nullable String traceId, @Nullable Long before,
+            @Nullable Long beforeId, int limit) {
+
+        /** A filter with no tie-breaking id: {@code before} alone pages strictly before it. */
+        public LogFilter(Window window, @Nullable String service, @Nullable String severity,
+                @Nullable String q, @Nullable String traceId, @Nullable Long before, int limit) {
+            this(window, service, severity, q, traceId, before, null, limit);
+        }
     }
 
     /** One trace, as {@code GET /api/traces/{traceId}} answers it. */
@@ -665,7 +690,7 @@ public final class Queries {
     public List<Stats.TraceSummary> traces(TraceFilter filter) {
         Clause where = traceWhere(filter, true);
         return sql.query("SELECT * FROM trace t WHERE " + where.sql()
-                + " ORDER BY t.start_ms DESC LIMIT " + Math.max(1, filter.limit()),
+                + " ORDER BY t.start_ms DESC, t.trace_id DESC LIMIT " + Math.max(1, filter.limit()),
                 where.params(), Rows::trace);
     }
 
@@ -677,8 +702,12 @@ public final class Queries {
     private Clause traceWhere(TraceFilter filter, boolean paging) {
         Window window = filter.window();
         Clause where = new Clause("t.start_ms BETWEEN ? AND ?", window.from(), window.to());
-        if (paging && filter.before() != null) {
-            where = where.and("t.start_ms < ?", filter.before());
+        Long before = filter.before();
+        if (paging && before != null) {
+            where = filter.beforeId() == null
+                    ? where.and("t.start_ms < ?", before)
+                    : where.and("(t.start_ms < ? OR (t.start_ms = ? AND t.trace_id < ?))",
+                            before, before, filter.beforeId());
         }
         if (filter.minMs() != null) {
             where = where.and("t.duration_ns >= ? * 1000000", filter.minMs());
@@ -877,8 +906,12 @@ public final class Queries {
     private Clause logWhere(LogFilter filter, boolean paging) {
         Window window = filter.window();
         Clause where = new Clause("at_ms BETWEEN ? AND ?", window.from(), window.to());
-        if (paging && filter.before() != null) {
-            where = where.and("at_ms < ?", filter.before());
+        Long before = filter.before();
+        if (paging && before != null) {
+            where = filter.beforeId() == null
+                    ? where.and("at_ms < ?", before)
+                    : where.and("(at_ms < ? OR (at_ms = ? AND id < ?))",
+                            before, before, filter.beforeId());
         }
         if (filter.service() != null) {
             where = where.and("service = ?", filter.service());

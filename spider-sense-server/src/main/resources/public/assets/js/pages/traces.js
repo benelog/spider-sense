@@ -1,4 +1,4 @@
-// Traces list: a query bar and a table that pages backwards with `before`.
+// Traces list: a query bar and a table that pages backwards with `before` and `beforeId`.
 
 import * as api from '../api.js';
 import * as router from '../router.js';
@@ -146,7 +146,8 @@ export function render(root, ctx) {
     } catch (e) { endpointSelect.hidden = true; }
   }
 
-  async function load(before) {
+  /** `cursor` is the last row's `{ before: start, beforeId: traceId }` when loading more. */
+  async function load(cursor) {
     loading = true;
     try {
       const res = await api.traces({
@@ -156,12 +157,13 @@ export function render(root, ctx) {
         status: filter.status === 'all' ? '' : filter.status,
         endpointId: filter.endpointId,
         limit: 50,
-        before,
+        before: cursor && cursor.before,
+        beforeId: cursor && cursor.beforeId,
       });
       if (destroyed) return;
       const incoming = res.traces || [];
       total = res.total || incoming.length;
-      if (before) {
+      if (cursor) {
         const seen = new Set(rows.map((r) => r.traceId));
         rows = rows.concat(incoming.filter((r) => !seen.has(r.traceId)));
       } else {
@@ -177,7 +179,7 @@ export function render(root, ctx) {
 
   function loadMore() {
     const last = rows[rows.length - 1];
-    if (last) load(last.start);
+    if (last) load({ before: last.start, beforeId: last.traceId });
   }
 
   loadEndpoints();

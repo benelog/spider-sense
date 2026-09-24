@@ -128,13 +128,17 @@ export function render(root, ctx) {
         stack ? stackTrace(stack) : null)));
   }
 
-  async function load(before) {
+  /** `cursor` is the last row's `{ before: at, beforeId: id }` when loading more. */
+  async function load(cursor) {
     try {
-      const res = await api.logs({ q: filter.q, severity: filter.severity, traceId: filter.traceId, limit: 200, before });
+      const res = await api.logs({
+        q: filter.q, severity: filter.severity, traceId: filter.traceId, limit: 200,
+        before: cursor && cursor.before, beforeId: cursor && cursor.beforeId,
+      });
       if (destroyed) return;
       const incoming = res.logs || [];
       total = res.total || incoming.length;
-      if (before) {
+      if (cursor) {
         const seen = new Set(rows.map((l) => l.id));
         rows = rows.concat(incoming.filter((l) => !seen.has(l.id)));
       } else {
@@ -156,7 +160,7 @@ export function render(root, ctx) {
 
   function loadMore() {
     const last = rows[rows.length - 1];
-    if (last) load(last.at);
+    if (last) load({ before: last.at, beforeId: last.id });
   }
 
   load();

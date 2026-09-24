@@ -2,6 +2,7 @@ package net.benelog.spidersense.query;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import io.opentelemetry.proto.trace.v1.Span;
@@ -13,6 +14,7 @@ import net.benelog.spidersense.Otlp;
 import net.benelog.spidersense.TestStore;
 import net.benelog.spidersense.ingest.OtlpDecoder;
 import net.benelog.spidersense.store.Ids;
+import net.benelog.spidersense.store.LogRecord;
 import net.benelog.spidersense.store.Store;
 import net.benelog.spidersense.store.Sweeper;
 
@@ -382,6 +384,62 @@ class QueriesTest {
 
     private Queries.TraceFilter filterWithQuery(String q) {
         return new Queries.TraceFilter(window, null, null, null, null, null, q, null, 50);
+    }
+
+    @Test
+    void tracesThatStartInTheSameMillisecondPageByTheirTraceId() {
+        for (int i = 1; i <= 5; i++) {
+            decoder.accept(Otlp.traces(Otlp.service("orders"),
+                    Otlp.span(traceId(i), spanId(i), "GET /orders", Span.SpanKind.SPAN_KIND_SERVER, NOW, 5)));
+        }
+        flush();
+
+        List<String> seen = new ArrayList<>();
+        Long before = null;
+        String beforeId = null;
+        for (int page = 0; page < 5; page++) {
+            List<Stats.TraceSummary> rows = queries.traces(new Queries.TraceFilter(
+                    window, null, null, null, null, null, null, before, beforeId, 2));
+            if (rows.isEmpty()) {
+                break;
+            }
+            rows.forEach(row -> seen.add(row.traceId()));
+            Stats.TraceSummary last = rows.get(rows.size() - 1);
+            before = last.start();
+            beforeId = last.traceId();
+        }
+
+        assertThat(seen).containsExactly(traceId(5), traceId(4), traceId(3), traceId(2), traceId(1));
+        // The time alone still pages strictly before it.
+        assertThat(queries.traces(new Queries.TraceFilter(
+                window, null, null, null, null, null, null, NOW, 50))).isEmpty();
+    }
+
+    @Test
+    void logsWrittenInTheSameMillisecondPageByTheirId() {
+        io.opentelemetry.proto.logs.v1.LogRecord[] burst = new io.opentelemetry.proto.logs.v1.LogRecord[5];
+        for (int i = 0; i < burst.length; i++) {
+            burst[i] = Otlp.log(NOW, 17, "line " + i, null, null);
+        }
+        decoder.accept(Otlp.logs(Otlp.service("orders"), "o.e.Orders", burst));
+        flush();
+
+        List<String> seen = new ArrayList<>();
+        Long before = null;
+        Long beforeId = null;
+        for (int page = 0; page < 5; page++) {
+            List<LogRecord> rows = queries.logs(new Queries.LogFilter(
+                    window, null, null, null, null, before, beforeId, 2));
+            if (rows.isEmpty()) {
+                break;
+            }
+            rows.forEach(row -> seen.add(row.body()));
+            LogRecord last = rows.get(rows.size() - 1);
+            before = last.at();
+            beforeId = last.id();
+        }
+
+        assertThat(seen).containsExactly("line 4", "line 3", "line 2", "line 1", "line 0");
     }
 
     @Test
