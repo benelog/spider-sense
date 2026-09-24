@@ -190,11 +190,16 @@ public final class TraceApi {
     public WebResponse scatter(WebRequest req) {
         Window window = params.window(req);
         int limit = Params.limit(req, 5000, 50_000);
+        // One point past the limit tells a list that was cut from one that was exactly full.
         List<Stats.ScatterPoint> points = queries.scatter(window, Params.service(req),
-                req.queryParamOrNull("endpointId"), limit);
+                req.queryParamOrNull("endpointId"), limit + 1);
+        boolean truncated = points.size() > limit;
+        if (truncated) {
+            points = points.subList(0, limit);
+        }
         return WebResponse.json(Json.obj()
                 .put("window", Codecs.window(window))
-                .put("truncated", points.size() >= limit)
+                .put("truncated", truncated)
                 .put("points", Codecs.scatter(points)));
     }
 

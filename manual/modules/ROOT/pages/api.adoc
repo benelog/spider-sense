@@ -336,7 +336,7 @@ A parent that was traced but starts before the window still counts as a traced c
 *`GET /api/scatter?from&to&service&endpointId&limit=5000`*
 
 The answer is one point per entry span in the window, newest first, cut at `limit`.
-`truncated` says whether the list was cut, so the UI can shrink the window.
+`truncated` says whether the list was cut, so the UI can shrink the window: it is `true` only when the window holds more than `limit` entry spans, never when it holds exactly `limit`.
 
 [source,json]
 ----

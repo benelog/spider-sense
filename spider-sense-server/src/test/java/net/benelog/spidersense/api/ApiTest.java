@@ -352,6 +352,14 @@ class ApiTest {
             assertThat(point.size()).isEqualTo(6);
             assertThat(point.get(2).asString()).isEqualTo("spring-orders");
             assertThat(point.get(3).asString()).isIn("GET /orders/{id}", "POST /orders/{id}/ship");
+
+            // Exactly as many points as the limit is a full list, not a cut one.
+            Json.JsonObject full = json(client.get("/api/scatter" + windowQuery() + "&limit=2"));
+            assertThat(full.getBoolean("truncated")).isFalse();
+            assertThat(full.getArray("points")).hasSize(2);
+            Json.JsonObject cut = json(client.get("/api/scatter" + windowQuery() + "&limit=1"));
+            assertThat(cut.getBoolean("truncated")).isTrue();
+            assertThat(cut.getArray("points")).hasSize(1);
         });
     }
 
