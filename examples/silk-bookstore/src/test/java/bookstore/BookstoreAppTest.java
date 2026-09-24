@@ -28,8 +28,7 @@ class BookstoreAppTest {
         DataSource dataSource = JdbcConnectionPool.create(
                 "jdbc:h2:mem:test;DB_CLOSE_DELAY=-1", "sa", "");
         new Seeder(dataSource, SEEDED_BOOKS).seed();
-        app = BookstoreApp.createApp(dataSource)
-                .templates(BookstoreApp.templates(new String[0]));
+        app = new BookstoreContext(dataSource).createApp();
     }
 
     @Test
@@ -132,6 +131,20 @@ class BookstoreAppTest {
             var response = client.get("/api/books/1/missing");
             assertThat(response.statusCode()).isEqualTo(404);
             assertThat(response.body()).contains("\"error\"");
+        });
+    }
+
+    @Test
+    void anUnknownBookAnswers404() {
+        WebTest.test(app, client -> {
+            var response = client.get("/api/books/999999");
+            assertThat(response.statusCode()).isEqualTo(404);
+            assertThat(response.body()).contains("No book 999999");
+
+            var review = client.postJson("/api/reviews",
+                    "{\"bookId\":999999,\"authorId\":3,\"rating\":4,\"body\":\"Where?\"}");
+            assertThat(review.statusCode()).isEqualTo(404);
+            assertThat(review.body()).contains("No book 999999");
         });
     }
 

@@ -3,11 +3,10 @@ package bookstore.service;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 
+import bookstore.domain.BookNotFoundException;
 import bookstore.domain.Review;
 import bookstore.repository.BookRepository;
 import bookstore.repository.ReviewRepository;
-import net.benelog.spidersilk.HttpException;
-import net.benelog.spidersilk.HttpStatus;
 
 /** The one write path: posting a review, inside a transaction. */
 public class ReviewService {
@@ -33,7 +32,7 @@ public class ReviewService {
         }
         return tx.write(() -> {
             if (books.findById(bookId).isEmpty()) {
-                throw new HttpException(HttpStatus.NOT_FOUND, "No book " + bookId);
+                throw new BookNotFoundException(bookId);
             }
             return reviews.insert(new Review(null, bookId, authorId, rating, body,
                     LocalDateTime.now(ZoneId.systemDefault())));

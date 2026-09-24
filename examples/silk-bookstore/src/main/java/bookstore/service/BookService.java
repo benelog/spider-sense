@@ -7,14 +7,13 @@ import java.util.Objects;
 import bookstore.domain.AuthorStat;
 import bookstore.domain.Book;
 import bookstore.domain.BookDetail;
+import bookstore.domain.BookNotFoundException;
 import bookstore.domain.BookPage;
 import bookstore.domain.Review;
 import bookstore.domain.ReviewView;
 import bookstore.repository.AuthorRepository;
 import bookstore.repository.BookRepository;
 import bookstore.repository.ReviewRepository;
-import net.benelog.spidersilk.HttpException;
-import net.benelog.spidersilk.HttpStatus;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -60,7 +59,7 @@ public class BookService {
     /** Fast: a primary key lookup. This is the one spring-orders calls over HTTP. */
     public Book book(long id) {
         return books.findById(id)
-                .orElseThrow(() -> new HttpException(HttpStatus.NOT_FOUND, "No book " + id));
+                .orElseThrow(() -> new BookNotFoundException(id));
     }
 
     /**

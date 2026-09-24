@@ -13,6 +13,7 @@ import org.springframework.jdbc.core.namedparam.SimplePropertySqlParameterSource
 import org.springframework.jdbc.core.simple.SimpleJdbcInsert;
 
 import bookstore.domain.Review;
+import org.springframework.jdbc.core.simple.SimpleJdbcInsertOperations;
 
 public class ReviewRepository {
 
@@ -27,7 +28,7 @@ public class ReviewRepository {
             rs.getObject("created_at", LocalDateTime.class));
 
     private final NamedParameterJdbcOperations jdbc;
-    private final SimpleJdbcInsert insert;
+    private final SimpleJdbcInsertOperations insert;
 
     public ReviewRepository(DataSource dataSource) {
         this.jdbc = new NamedParameterJdbcTemplate(dataSource);
