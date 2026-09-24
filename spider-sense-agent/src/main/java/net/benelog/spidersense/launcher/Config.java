@@ -234,19 +234,54 @@ public record Config(
         return v != null ? v : fallback;
     }
 
+    /*
+     * A malformed number costs its own key and no other: the key falls back to its default with
+     * a warning on stderr, so a typo in spidersense.slow.query.ms does not also drop
+     * spidersense.collector and start an embedded UI where the user asked to forward.
+     */
+
     private static int intProperty(Function<String, @Nullable String> read, String name, int fallback) {
         String v = read.apply(name);
-        return v != null ? Integer.parseInt(v.trim()) : fallback;
+        if (v == null) {
+            return fallback;
+        }
+        try {
+            return Integer.parseInt(v.trim());
+        } catch (NumberFormatException e) {
+            warnMalformed(name, v, String.valueOf(fallback));
+            return fallback;
+        }
     }
 
     private static @Nullable Integer integerProperty(Function<String, @Nullable String> read, String name) {
         String v = read.apply(name);
-        return v != null ? Integer.valueOf(v.trim()) : null;
+        if (v == null) {
+            return null;
+        }
+        try {
+            return Integer.valueOf(v.trim());
+        } catch (NumberFormatException e) {
+            warnMalformed(name, v, String.valueOf(DEFAULT_RETENTION_HOURS));
+            return null;
+        }
     }
 
     private static long longProperty(Function<String, @Nullable String> read, String name, long fallback) {
         String v = read.apply(name);
-        return v != null ? Long.parseLong(v.trim()) : fallback;
+        if (v == null) {
+            return fallback;
+        }
+        try {
+            return Long.parseLong(v.trim());
+        } catch (NumberFormatException e) {
+            warnMalformed(name, v, String.valueOf(fallback));
+            return fallback;
+        }
+    }
+
+    private static void warnMalformed(String name, String value, String fallback) {
+        System.err.println(SpiderSenseAgent.PREFIX + name + "=" + value + " is not a number; using "
+                + fallback);
     }
 
     private static boolean booleanProperty(Function<String, @Nullable String> read, String name, boolean fallback) {

@@ -207,6 +207,25 @@ class ConfigTest {
     }
 
     @Test
+    void aMalformedNumberFallsBackAloneAndKeepsEveryOtherKey() {
+        set("spidersense.collector", "http://127.0.0.1:4000");
+        set("spidersense.service", "orders");
+        set("spidersense.slow.query.ms", "1x");
+        set("spidersense.port", "abc");
+        set("spidersense.retention.hours", "a day");
+        set("spidersense.slow.request.ms", "250");
+
+        Config c = Config.fromSystemProperties();
+
+        assertThat(c.collector()).as("still forwarding").isEqualTo("http://127.0.0.1:4000");
+        assertThat(c.service()).isEqualTo("orders");
+        assertThat(c.slowQueryMs()).as("the bad key alone takes its default").isEqualTo(100);
+        assertThat(c.port()).isEqualTo(4000);
+        assertThat(c.retentionHours()).as("left to the server's default").isNull();
+        assertThat(c.slowRequestMs()).isEqualTo(250);
+    }
+
+    @Test
     void theSystemPropertyWinsOverTheEnvironmentVariable() {
         set("otel.exporter.otlp.protocol", "grpc");
         assertThat(Config.propertyOrEnv("otel.exporter.otlp.protocol")).isEqualTo("grpc");
