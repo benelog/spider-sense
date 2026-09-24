@@ -94,6 +94,36 @@ class DatabaseTest {
         }
     }
 
+    /**
+     * A corrupt file fails the same way on every try, and the open runs on the
+     * monitored application's premain thread: it falls back at once, saying why.
+     */
+    @Test
+    void aCorruptFileFallsBackAtOnceNamingTheCorruption() throws Exception {
+        Path file = dir.resolve("junk.mv.db");
+        byte[] junk = new byte[20_000];
+        new java.util.Random(7).nextBytes(junk);
+        java.nio.file.Files.write(file, junk);
+
+        long started = System.nanoTime();
+        try (Database database = Database.open("jdbc:h2:" + dir.resolve("junk") + ";AUTO_SERVER=TRUE", file)) {
+            long elapsedMs = (System.nanoTime() - started) / 1_000_000;
+
+            assertThat(database.storage().fallback()).isTrue();
+            assertThat(database.storage().fallbackReason()).containsIgnoringCase("corrupted");
+            assertThat(elapsedMs).as("no retry for a failure that cannot pass").isLessThan(5_000);
+        }
+    }
+
+    @Test
+    void theRaceOfTwoProcessesOpeningOneFileIsWhatIsRetried() {
+        assertThat(Database.raced(new SQLException("Lock file recently modified", "HY000", 8000))).isTrue();
+        assertThat(Database.raced(new Sql.SqlException("create",
+                new SQLException("Table already exists", "42S01", 42101)))).isTrue();
+        assertThat(Database.raced(new SQLException("File corrupted", "90030", 90030))).isFalse();
+        assertThat(Database.raced(new IllegalStateException("no code"))).isFalse();
+    }
+
     @Test
     void thePageCacheIsASixteenthOfTheHeapBetweenSixteenAndTwoHundredFiftySixMib() {
         long mib = 1024 * 1024;

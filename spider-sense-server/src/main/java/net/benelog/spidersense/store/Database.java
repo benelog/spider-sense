@@ -10,10 +10,12 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
+import org.h2.api.ErrorCode;
 import org.h2.engine.SessionLocal;
 import org.h2.jdbc.JdbcConnection;
 import org.h2.jdbcx.JdbcConnectionPool;
 import org.h2.jdbcx.JdbcDataSource;
+import org.h2.message.DbException;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -101,7 +103,7 @@ public final class Database implements AutoCloseable {
             }
             return openWithRetry(url, file);
         } catch (IOException | RuntimeException e) {
-            String reason = e.getClass().getSimpleName() + ": " + e.getMessage();
+            String reason = reason(e);
             LOG.log(System.Logger.Level.WARNING,
                     "Spider Sense could not open " + url + " (" + reason + "); keeping this session in memory");
             String memory = "jdbc:h2:mem:spidersense-" + ProcessHandle.current().pid()
@@ -141,6 +143,10 @@ public final class Database implements AutoCloseable {
      * carries the server's address, is refused with "Lock file recently modified" (or
      * races the first one's CREATE TABLE). H2 does not wait for that itself, so this does:
      * a file-backed URL is retried for a few seconds before the caller gives up on it.
+     *
+     * <p>Only that race is retried. A corrupt file, a path that cannot be created or a
+     * setting H2 refuses fails the same way every time, and this runs on the monitored
+     * application's premain thread, so it falls back at once.
      */
     private static Database openWithRetry(String url, @Nullable Path file) {
         long deadline = System.currentTimeMillis() + OPEN_RETRY_MS;
@@ -150,7 +156,7 @@ public final class Database implements AutoCloseable {
                 return new Database(url, file, null);
             } catch (RuntimeException e) {
                 last = e;
-                if (file == null || System.currentTimeMillis() >= deadline) {
+                if (file == null || !raced(e) || System.currentTimeMillis() >= deadline) {
                     throw last;
                 }
                 LOG.log(System.Logger.Level.DEBUG, "Spider Sense retrying to open " + url + ": " + e.getMessage());
@@ -162,6 +168,41 @@ public final class Database implements AutoCloseable {
                 }
             }
         }
+    }
+
+    /**
+     * The H2 error codes of a second process opening the file while the first one
+     * does: the lock file taken or recently modified, an auto-server not yet
+     * answering, and the first one's CREATE TABLE or its locks.
+     */
+    private static final Set<Integer> RACE_CODES = Set.of(ErrorCode.ERROR_OPENING_DATABASE_1,
+            ErrorCode.DATABASE_ALREADY_OPEN_1, ErrorCode.CONNECTION_BROKEN_1,
+            ErrorCode.TABLE_OR_VIEW_ALREADY_EXISTS_1, ErrorCode.DUPLICATE_KEY_1, ErrorCode.LOCK_TIMEOUT_1);
+
+    /**
+     * What H2 said, rather than the statement it said it about: a failure wrapped by
+     * {@link Sql} names only the query, and the corruption or the missing permission
+     * is in its cause.
+     */
+    private static String reason(Throwable failure) {
+        for (Throwable t = failure; t != null; t = t.getCause()) {
+            if (t instanceof SQLException && t.getMessage() != null) {
+                return t.getMessage().lines().findFirst().orElse(t.getMessage());
+            }
+        }
+        return failure.getClass().getSimpleName() + ": " + failure.getMessage();
+    }
+
+    /** Whether a failure to open is the race with another process that a retry outlasts. */
+    static boolean raced(Throwable failure) {
+        for (Throwable t = failure; t != null; t = t.getCause()) {
+            int code = t instanceof SQLException sql ? sql.getErrorCode()
+                    : t instanceof DbException db ? db.getErrorCode() : -1;
+            if (code >= 0) {
+                return RACE_CODES.contains(code);
+            }
+        }
+        return false;
     }
 
     /**
