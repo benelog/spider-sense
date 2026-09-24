@@ -154,6 +154,22 @@ class NestedJarTest {
         assertThat(extracted).exists();
     }
 
+    /** A JVM killed during the copy leaves its temporary file; the next start clears an old one. */
+    @Test
+    void prunesTheTemporaryFileOfAnExtractionThatNeverFinished() throws IOException {
+        Files.createDirectories(out());
+        FileTime old = FileTime.from(Instant.now().minus(NestedJar.STALE_AFTER).minus(Duration.ofMinutes(1)));
+        Path abandoned = Files.writeString(out().resolve("nested-123.jar.tmp"), "half a jar");
+        Files.setLastModifiedTime(abandoned, old);
+        Path inProgress = Files.writeString(out().resolve("nested-456.jar.tmp"), "being copied");
+
+        NestedJar.extractFrom(
+                jarContaining(NestedJar.ENTRY, payload("the server fat jar")), NestedJar.ENTRY, out(), "server-9.9.9");
+
+        assertThat(abandoned).doesNotExist();
+        assertThat(inProgress).as("another JVM may be copying it right now").exists();
+    }
+
     @Test
     void theDirectoryIsOwnerOnly() throws IOException {
         assumeTrue(posix(dir));

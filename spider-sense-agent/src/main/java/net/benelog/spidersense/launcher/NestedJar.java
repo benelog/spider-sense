@@ -188,6 +188,7 @@ final class NestedJar {
             if (isComplete(target, size)) {
                 // Touched, so that another build's prune sees it in use.
                 Files.setLastModifiedTime(target, FileTime.from(Instant.now()));
+                pruneStale(dir, TEMP_GLOB, null);
                 return target;
             }
             Path temp = Files.createTempFile(dir, "nested-", ".jar.tmp");
@@ -208,7 +209,8 @@ final class NestedJar {
                 Files.deleteIfExists(temp);
             }
             int dash = prefix.indexOf('-');
-            pruneOtherBuilds(dir, dash < 0 ? prefix : prefix.substring(0, dash + 1), target);
+            pruneStale(dir, (dash < 0 ? prefix : prefix.substring(0, dash + 1)) + "*.jar", target);
+            pruneStale(dir, TEMP_GLOB, null);
             return target;
         }
     }
@@ -269,13 +271,20 @@ final class NestedJar {
     }
 
     /**
-     * Deletes the jars of other builds of one kind ({@code server-} or {@code extension-}), best
-     * effort, once they have gone {@link #STALE_AFTER} untouched. Every JVM that starts from one
-     * touches it, so what goes is what no JVM has started from lately.
+     * The temporary files an extraction copies into before its atomic rename. One is left behind
+     * only by a JVM killed during the copy, and a copy in progress keeps touching its own.
      */
-    private static void pruneOtherBuilds(Path dir, String kind, Path keep) {
+    private static final String TEMP_GLOB = "nested-*.jar.tmp";
+
+    /**
+     * Deletes the files {@code glob} matches, best effort, once they have gone {@link #STALE_AFTER}
+     * untouched: the jars of other builds of one kind ({@code server-} or {@code extension-}),
+     * which every JVM that starts from one touches, so what goes is what no JVM has started from
+     * lately, and the temporary files of extractions that never finished.
+     */
+    static void pruneStale(Path dir, String glob, @Nullable Path keep) {
         FileTime cutoff = FileTime.from(Instant.now().minus(STALE_AFTER));
-        try (DirectoryStream<Path> files = Files.newDirectoryStream(dir, kind + "*.jar")) {
+        try (DirectoryStream<Path> files = Files.newDirectoryStream(dir, glob)) {
             for (Path file : files) {
                 try {
                     if (!file.equals(keep)
