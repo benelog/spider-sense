@@ -179,6 +179,20 @@ class ApiTest {
         });
     }
 
+    @Test
+    void aGzipBodyThatIsNotGzipIs400() {
+        serve((client, assembly) -> {
+            HttpResponse<String> response = client.send(request -> request
+                    .uri(URI.create(client.url("/v1/traces")))
+                    .header("Content-Type", PROTOBUF)
+                    .header("Content-Encoding", "gzip")
+                    .POST(HttpRequest.BodyPublishers.ofString("plain, not gzip")));
+
+            assertThat(response.statusCode()).isEqualTo(400);
+            assertThat(Json.parse(response.body()).asObject().getString("error")).startsWith("Undecodable");
+        });
+    }
+
     /** A small gzipped body that expands past the cap is refused before it fills the heap. */
     @Test
     void aBodyPastTheCapOnceGunzippedIs413() {

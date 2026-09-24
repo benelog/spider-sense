@@ -1,5 +1,6 @@
 package net.benelog.spidersense.ingest;
 
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import java.util.function.Consumer;
@@ -86,6 +87,9 @@ public final class OtlpReceiver {
             return error(HttpStatus.CONTENT_TOO_LARGE, e.getMessage());
         } catch (InvalidProtocolBufferException e) {
             return undecodable(e);
+        } catch (UncheckedIOException e) {
+            // A gzip body that is not gzip, or is cut short: undecodable as much as bad protobuf.
+            return error(HttpStatus.BAD_REQUEST, "Undecodable OTLP body: " + e.getMessage());
         }
         accept.accept(request);
         flushIfSynchronous();
