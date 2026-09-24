@@ -1,14 +1,15 @@
 package orders.web;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
+import orders.service.Book;
 import org.jspecify.annotations.Nullable;
 
 /** Every JSON shape this service speaks, in one place. */
@@ -23,14 +24,14 @@ public final class Dtos {
 
     public record EnrichedLineView(Long id, Long productId, String productName, int quantity,
                                    BigDecimal unitPrice, BigDecimal lineTotal,
-                                   @Nullable Map<String, Object> book) {
+                                   @Nullable Book book) {
     }
 
-    public record OrderView(Long id, Long customerId, String customerName, String createdAt,
+    public record OrderView(Long id, Long customerId, String customerName, LocalDateTime createdAt,
                             String status, BigDecimal total, List<LineView> lines) {
     }
 
-    public record EnrichedOrderView(Long id, Long customerId, String customerName, String createdAt,
+    public record EnrichedOrderView(Long id, Long customerId, String customerName, LocalDateTime createdAt,
                                     String status, BigDecimal total, List<EnrichedLineView> lines) {
     }
 

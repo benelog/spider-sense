@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 
 import jakarta.validation.Valid;
+import orders.service.Book;
 import orders.service.BookstoreClient;
 import orders.service.OrderService;
 import orders.web.Dtos.CreateOrderRequest;
@@ -57,7 +58,7 @@ public class OrderController {
         OrderView order = service.getWithLazyNPlusOne(id);
         List<EnrichedLineView> lines = new ArrayList<>(order.lines().size());
         for (LineView line : order.lines()) {
-            Map<String, Object> book = bookstore.findBook(line.productId());
+            Book book = bookstore.findBook(line.productId());
             lines.add(new EnrichedLineView(line.id(), line.productId(), line.productName(),
                     line.quantity(), line.unitPrice(), line.lineTotal(), book));
         }
@@ -78,7 +79,7 @@ public class OrderController {
         for (LineView line : order.lines()) {
             productIds.add(line.productId());
         }
-        Map<Long, Map<String, Object>> books = bookstore.findBooks(productIds);
+        Map<Long, Book> books = bookstore.findBooks(productIds);
         List<EnrichedLineView> lines = new ArrayList<>(order.lines().size());
         for (LineView line : order.lines()) {
             lines.add(new EnrichedLineView(line.id(), line.productId(), line.productName(),

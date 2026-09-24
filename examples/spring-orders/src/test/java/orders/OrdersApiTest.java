@@ -94,6 +94,7 @@ class OrdersApiTest {
         assertThat(response.body())
                 .contains("\"id\":" + orderId)
                 .contains("\"customerName\"")
+                .containsPattern("\"createdAt\":\"\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}")
                 .contains("\"status\"")
                 .contains("\"total\"")
                 .contains("\"lines\"")

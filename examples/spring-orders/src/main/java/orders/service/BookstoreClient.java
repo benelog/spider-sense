@@ -28,11 +28,7 @@ public class BookstoreClient {
 
     private static final Logger log = LoggerFactory.getLogger(BookstoreClient.class);
 
-    private static final ParameterizedTypeReference<Map<String, Object>> MAP =
-            new ParameterizedTypeReference<>() {
-            };
-
-    private static final ParameterizedTypeReference<List<Map<String, Object>>> BOOK_LIST =
+    private static final ParameterizedTypeReference<List<Book>> BOOK_LIST =
             new ParameterizedTypeReference<>() {
             };
 
@@ -48,12 +44,12 @@ public class BookstoreClient {
         this.restClient = builder.baseUrl(baseUrl).requestFactory(factory).build();
     }
 
-    public @Nullable Map<String, Object> findBook(long bookId) {
+    public @Nullable Book findBook(long bookId) {
         try {
             return restClient.get()
                     .uri("/api/books/{id}", bookId)
                     .retrieve()
-                    .body(MAP);
+                    .body(Book.class);
         } catch (Exception e) {
             log.debug("bookstore lookup for book {} failed: {}", bookId, e.toString());
             return null;
@@ -66,7 +62,7 @@ public class BookstoreClient {
      * bookstore does not know is simply absent, and a failed call is an empty map, as
      * a failed single lookup is null.
      */
-    public Map<Long, Map<String, Object>> findBooks(List<Long> bookIds) {
+    public Map<Long, Book> findBooks(List<Long> bookIds) {
         if (bookIds.isEmpty()) {
             return Map.of();
         }
@@ -75,7 +71,7 @@ public class BookstoreClient {
             ids.add(String.valueOf(bookId));
         }
         try {
-            List<Map<String, Object>> books = restClient.get()
+            List<Book> books = restClient.get()
                     .uri(builder -> builder.path("/api/books")
                             .queryParam("ids", String.join(",", ids)).build())
                     .retrieve()
@@ -83,11 +79,9 @@ public class BookstoreClient {
             if (books == null) {
                 return Map.of();
             }
-            Map<Long, Map<String, Object>> byId = new LinkedHashMap<>();
-            for (Map<String, Object> book : books) {
-                if (book.get("id") instanceof Number id) {
-                    byId.put(id.longValue(), book);
-                }
+            Map<Long, Book> byId = new LinkedHashMap<>();
+            for (Book book : books) {
+                byId.put(book.id(), book);
             }
             return byId;
         } catch (Exception e) {

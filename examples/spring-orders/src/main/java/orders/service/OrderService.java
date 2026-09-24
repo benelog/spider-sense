@@ -4,7 +4,6 @@ import java.math.BigDecimal;
 import java.sql.Date;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -40,7 +39,6 @@ import org.springframework.transaction.annotation.Transactional;
 public class OrderService {
 
     private static final Logger log = LoggerFactory.getLogger(OrderService.class);
-    private static final DateTimeFormatter ISO = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
 
     private final OrderRepository orders;
     private final CustomerRepository customers;
@@ -82,7 +80,7 @@ public class OrderService {
         }
         Customer customer = order.getCustomer();
         return new OrderView(order.getId(), customer.getId(), customer.getName(),
-                ISO.format(order.getCreatedAt()), order.getStatus().name(), order.getTotal(), lines);
+                order.getCreatedAt(), order.getStatus().name(), order.getTotal(), lines);
     }
 
     @Transactional
@@ -183,7 +181,7 @@ public class OrderService {
                 .toList();
         Customer customer = order.getCustomer();
         return new OrderView(order.getId(), customer.getId(), customer.getName(),
-                ISO.format(order.getCreatedAt()), order.getStatus().name(), order.getTotal(), lines);
+                order.getCreatedAt(), order.getStatus().name(), order.getTotal(), lines);
     }
 
     private static @Nullable String string(@Nullable Object value) {
