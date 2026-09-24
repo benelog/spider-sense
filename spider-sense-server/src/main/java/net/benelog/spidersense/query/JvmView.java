@@ -179,6 +179,9 @@ public record JvmView(@Nullable String service, Runtime runtime, Memory heap, Me
             long[] counts = new long[t.length];
             double[] durations = new double[t.length];
             List<MetricPoint> points = data.points();
+            // jvm.gc.duration is seconds by the semantic conventions; the stored unit wins
+            // when it says otherwise, as in Findings.gcPause.
+            double toMillis = "ms".equals(data.unit()) ? 1 : 1000;
             boolean cumulative = !"DELTA".equals(data.temporality());
             for (int i = 0; i < points.size(); i++) {
                 MetricPoint point = points.get(i);
@@ -194,7 +197,7 @@ public record JvmView(@Nullable String service, Runtime runtime, Memory heap, Me
                 int bucket = window.indexOf(point.at());
                 if (bucket >= 0 && countDelta >= 0) {
                     counts[bucket] += countDelta;
-                    durations[bucket] += Math.max(0, sumDelta);
+                    durations[bucket] += Math.max(0, sumDelta) * toMillis;
                 }
             }
             collectors.add(new Gc(data.attribute(MetricSeriesNames.GC_NAME),

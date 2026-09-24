@@ -1,6 +1,7 @@
 package net.benelog.spidersense.api;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 
 import java.net.URI;
 import java.net.http.HttpRequest;
@@ -501,6 +502,27 @@ class ApiTest {
             assertThat(jvm.getArray("pools")).hasSize(2);
             assertThat(jvm.getArray("gc")).hasSize(1);
             assertThat(jvm.getObject("classes").has("t")).isTrue();
+        });
+    }
+
+    @Test
+    void theJvmViewReportsGcTimeInMillisecondsFromASecondsHistogram() {
+        serve((client, assembly) -> {
+            postProtobuf(client, "/v1/metrics", Otlp.histogram(Otlp.service("spring-orders"),
+                    "jvm.gc.duration", "s", NOW - 1000, 2, 0.05, 0.03,
+                    Otlp.attr("jvm.gc.name", "G1 Young Generation")).toByteArray());
+            postProtobuf(client, "/v1/metrics", Otlp.histogram(Otlp.service("spring-orders"),
+                    "jvm.gc.duration", "s", NOW, 3, 0.062, 0.03,
+                    Otlp.attr("jvm.gc.name", "G1 Young Generation")).toByteArray());
+
+            Json.JsonObject jvm = json(client.get(
+                    "/api/jvm?service=spring-orders" + windowQuery().replace('?', '&')));
+            Json.JsonArray durations = jvm.getArray("gc").get(0).asObject().getArray("durationMs");
+            double total = 0;
+            for (int i = 0; i < durations.size(); i++) {
+                total += durations.get(i).asDouble();
+            }
+            assertThat(total).isCloseTo(12.0, within(1e-6));
         });
     }
 
