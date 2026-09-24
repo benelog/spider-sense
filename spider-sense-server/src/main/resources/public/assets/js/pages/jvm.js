@@ -3,7 +3,7 @@
 import * as api from '../api.js';
 import * as router from '../router.js';
 import { h, fill, panel, chip, spinner, errorBox, emptyState, seriesColor } from '../ui.js';
-import { timeSeries, legend } from '../charts.js';
+import { timeSeries, legend, alignedTimes, alignTo } from '../charts.js';
 import { count } from '../format.js';
 
 const MIB = 1024 * 1024;
@@ -109,9 +109,12 @@ export function render(root, ctx) {
       }, [{ label: 'used', color: 'series5' }, { label: 'committed', color: 'silk' }]);
 
       const pools = data.pools || [];
+      // Each pool has its own timestamps: one that exists only before a restart must not be
+      // drawn over another pool's instants.
+      const poolTimes = alignedTimes(pools);
       chartPanel('pools', 'Memory pools', {
-        height: 170, t: (pools[0] || {}).t || [],
-        series: pools.map((p, i) => ({ label: p.name, values: toMib(p.used), color: seriesColor(i), type: 'line', width: 1.6 })),
+        height: 170, t: poolTimes,
+        series: pools.map((p, i) => ({ label: p.name, values: toMib(alignTo(poolTimes, p, 'used')), color: seriesColor(i), type: 'line', width: 1.6 })),
         axes: [{ scale: 'y', label: 'MiB' }],
       }, pools.map((p, i) => ({ label: p.name, color: seriesColor(i) })));
 

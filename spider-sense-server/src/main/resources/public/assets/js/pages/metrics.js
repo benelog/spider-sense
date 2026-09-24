@@ -3,26 +3,8 @@
 import * as api from '../api.js';
 import * as router from '../router.js';
 import { h, fill, icon, panel, renderList, debounce, spinner, errorBox, emptyState, seriesColor } from '../ui.js';
-import { timeSeries, legend } from '../charts.js';
+import { timeSeries, legend, alignedTimes, alignTo } from '../charts.js';
 import { count } from '../format.js';
-
-/**
- * Every series carries its own `t` (api.adoc#metrics), and two services export at different
- * offsets, so the chart's axis is the union of their timestamps.
- */
-function alignedTimes(series) {
-  const all = new Set();
-  for (const s of series) for (const x of s.t || []) all.add(x);
-  return Array.from(all).sort((a, b) => a - b);
-}
-
-/** One array of the series (`v`, `p95`, `count`) on the shared axis, `null` where it has no point. */
-function alignTo(t, s, key) {
-  const values = s[key] || [];
-  const byTime = new Map();
-  (s.t || []).forEach((x, i) => { byTime.set(x, values[i] == null ? null : values[i]); });
-  return t.map((x) => (byTime.has(x) ? byTime.get(x) : null));
-}
 
 export function render(root, ctx) {
   let destroyed = false;

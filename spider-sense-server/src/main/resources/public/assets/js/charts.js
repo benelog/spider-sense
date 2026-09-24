@@ -205,6 +205,24 @@ function drawMarks(u, colors) {
 }
 
 /**
+ * Series that carry their own `t` (api.adoc#metrics, a JVM memory pool) are sampled at
+ * different instants, so a chart of several of them runs on the union of their timestamps.
+ */
+export function alignedTimes(series) {
+  const all = new Set();
+  for (const s of series) for (const x of s.t || []) all.add(x);
+  return Array.from(all).sort((a, b) => a - b);
+}
+
+/** One array of a series (`v`, `p95`, `count`, `used`) on the shared axis, `null` where it has no point. */
+export function alignTo(t, s, key) {
+  const values = s[key] || [];
+  const byTime = new Map();
+  (s.t || []).forEach((x, i) => { byTime.set(x, values[i] == null ? null : values[i]); });
+  return t.map((x) => (byTime.has(x) ? byTime.get(x) : null));
+}
+
+/**
  * A time series.
  * spec = {
  *   height, t: [msEpoch], short,
