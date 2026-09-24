@@ -138,7 +138,10 @@ export function render(root, ctx) {
       tabindex: 0,
       role: 'link',
       onclick: () => router.go('/services/' + encodeURIComponent(s.name), api.sharedQuery()),
-      onkeydown: (e) => { if (e.key === 'Enter') router.go('/services/' + encodeURIComponent(s.name), api.sharedQuery()); },
+      // Only the card's own Enter: one on the JVM link inside it is the link's.
+      onkeydown: (e) => {
+        if (e.key === 'Enter' && e.target === e.currentTarget) router.go('/services/' + encodeURIComponent(s.name), api.sharedQuery());
+      },
     },
       h('div.sc-head',
         h('span.dot', { style: { background: color, width: '8px', height: '8px', borderRadius: '50%', flex: 'none' } }),

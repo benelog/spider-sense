@@ -137,6 +137,9 @@ export function render(root, ctx) {
           e.stopPropagation();
           if (collapsed.has(span.spanId)) collapsed.delete(span.spanId); else collapsed.add(span.spanId);
           paintWaterfall();
+          // The rows are new: keep a keyboard user on the toggle they pressed.
+          const again = bodyBox.querySelector('[data-key="' + CSS.escape(span.spanId) + '"] .wf-toggle');
+          if (again) again.focus();
         },
       }, icon('chevron'))
       : h('span.wf-spacer');
@@ -145,7 +148,8 @@ export function render(root, ctx) {
       dataset: { key: span.spanId },
       tabindex: 0,
       onclick: () => openSpan(span),
-      onkeydown: (e) => { if (e.key === 'Enter') openSpan(span); },
+      // Only the row's own Enter: one on the toggle inside it is the toggle's.
+      onkeydown: (e) => { if (e.key === 'Enter' && e.target === e.currentTarget) openSpan(span); },
     },
       h('div.wf-name', { style: { paddingLeft: depth * 14 + 'px' } },
         toggle,
