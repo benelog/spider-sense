@@ -198,6 +198,9 @@ public final class IndexCatalog {
         List<Word> found = new ArrayList<>();
         try (ResultSet rows = meta.getTables(catalog, schema, pattern(meta, name), null)) {
             while (rows.next()) {
+                if (!indexed(rows.getString("TABLE_TYPE"))) {
+                    continue;
+                }
                 // Word is the pair this needs twice over: here the schema and the table as the
                 // database spells them, in the scanner a name and whether it was quoted.
                 found.add(new Word(rows.getString("TABLE_NAME"), false, rows.getString("TABLE_SCHEM")));
@@ -206,6 +209,21 @@ public final class IndexCatalog {
         for (Word row : found) {
             emit(meta, catalog, row.schema, row.text);
         }
+    }
+
+    /**
+     * Whether a row of {@code getTables} is something that has indexes of its own: a table
+     * ({@code TABLE} on most drivers, {@code BASE TABLE} on H2 2, {@code PARTITIONED TABLE} on
+     * PostgreSQL) or a materialized view. A view has none, and reporting it as a table without
+     * indexes would name every column its statement filters on as unindexed, when the indexes that
+     * serve them are its base table's; like a misread name, it emits nothing.
+     */
+    private static boolean indexed(@Nullable String type) {
+        if (type == null) {
+            return true;
+        }
+        String upper = type.toUpperCase(Locale.ROOT);
+        return upper.contains("TABLE") || upper.equals("MATERIALIZED VIEW");
     }
 
     /**

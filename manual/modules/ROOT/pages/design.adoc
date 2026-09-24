@@ -268,7 +268,7 @@ A statement with neither is left alone.
 
 The lookup runs once per table per process, keyed by the connection's JDBC URL and the table name, and stops after 200 tables.
 It runs on the thread that ran the statement and on the connection it ran on.
-It asks the standard `DatabaseMetaData` whether the table exists (`getTables`, so a name the scanner misread is silently nothing) and for its indexes (`getIndexInfo(catalog, schema, table, false, true)`, the statistic rows dropped, the columns in ordinal order).
+It asks the standard `DatabaseMetaData` whether the table exists (`getTables`, so a name the scanner misread is silently nothing, and so is a view, whose indexes are its base table's) and for its indexes (`getIndexInfo(catalog, schema, table, false, true)`, the statistic rows dropped, the columns in ordinal order).
 It then emits one log record through the agent's own logger provider (`GlobalOpenTelemetry.get().getLogsBridge()`, scope `spider-sense`) with the body `index catalog of <table>`.
 The record's attributes are `spidersense.schema.table` (the name as the database reports it), `spidersense.schema.schema` (`TABLE_SCHEM`, absent when the database reports none), `spidersense.schema.product` (`DatabaseMetaData.getDatabaseProductName()`) and `spidersense.schema.indexes`, a JSON array of `{ "name", "unique", "columns" }` that is empty for a table without an index.
 The server stores that record as a catalog row and never as a log line (xref:storage.adoc#schema[the `db_table` table]).

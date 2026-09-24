@@ -134,6 +134,18 @@ class IndexCatalogTest {
         assertThat(exporter.getFinishedLogRecordItems()).isEmpty();
     }
 
+    /** A view has no indexes of its own; its base table's serve it, so it is not reported as bare. */
+    @Test
+    void aViewEmitsNothing() throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("create view active_items as select * from items where category = 'active'");
+        }
+
+        slowOnAnyStatement("select * from active_items where name = ?");
+
+        assertThat(exporter.getFinishedLogRecordItems()).isEmpty();
+    }
+
     @Test
     void aQuotedNameIsNotFoldedAndSoDoesNotMatchAnUpperCaseTable() throws SQLException {
         slowOnAnyStatement("select * from \"items\" where name = ?");
