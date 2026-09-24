@@ -751,7 +751,7 @@ Lists paged with `before` are newest first, with the row id breaking a tie insid
 It runs as the `LOWER(name) LIKE ? OR LOWER(attributes) LIKE ?` that xref:storage.adoc[Storage] describes.
 Span *event* attributes, notably `exception.message`, are not searched.
 Search an error's endpoint or type instead, or use `/api/errors`.
-`q` on `/api/logs` matches the body and the attribute JSON.
+`q` on `/api/logs` matches the body, the logger and the attribute JSON, so the logger a `log-error` finding names finds its records.
 
 [#metrics-clarifications]
 === Metrics

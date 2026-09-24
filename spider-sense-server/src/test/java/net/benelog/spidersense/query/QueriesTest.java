@@ -442,6 +442,19 @@ class QueriesTest {
         assertThat(seen).containsExactly("line 4", "line 3", "line 2", "line 1", "line 0");
     }
 
+    /** A log-error finding's link searches for its logger, which is a column of its own. */
+    @Test
+    void freeTextOverLogsMatchesTheLogger() {
+        decoder.accept(Otlp.logs(Otlp.service("orders"), "orders.web.OrderController",
+                Otlp.log(NOW, 17, "Payment gateway timeout", null, null)));
+        flush();
+
+        List<LogRecord> rows = queries.logs(new Queries.LogFilter(
+                window, null, "ERROR", "orders.web.OrderController", null, null, 50));
+
+        assertThat(rows).extracting(LogRecord::body).containsExactly("Payment gateway timeout");
+    }
+
     @Test
     void bucketsLineUpWithTheWindowAndCountWhatFellInThem() {
         decoder.accept(Otlp.traces(Otlp.service("orders"),

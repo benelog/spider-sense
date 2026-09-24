@@ -925,7 +925,9 @@ public final class Queries {
         }
         if (filter.q() != null && !filter.q().isBlank()) {
             String like = "%" + filter.q().toLowerCase(Locale.ROOT) + "%";
-            where = where.and("(LOWER(body) LIKE ? OR LOWER(attributes) LIKE ?)", like, like);
+            // The logger too: a log-error finding's link names its logger in q (pages.adoc#findings).
+            where = where.and("(LOWER(body) LIKE ? OR LOWER(logger) LIKE ? OR LOWER(attributes) LIKE ?)",
+                    like, like, like);
         }
         return where;
     }
