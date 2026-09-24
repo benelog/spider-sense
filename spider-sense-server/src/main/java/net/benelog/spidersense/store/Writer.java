@@ -42,6 +42,9 @@ public final class Writer implements AutoCloseable {
     private static final long FLUSH_INTERVAL_MS = 200;
     private static final int FLUSH_RECORDS = 500;
 
+    /** How often the flush at exit tries before it gives up. */
+    private static final int EXIT_ATTEMPTS = 3;
+
     private static final System.Logger LOG = System.getLogger(Writer.class.getName());
 
     private final BlockingQueue<Batch> queue = new ArrayBlockingQueue<>(QUEUE_CAPACITY);
@@ -57,7 +60,14 @@ public final class Writer implements AutoCloseable {
 
     private final AtomicInteger queuedRecords = new AtomicInteger();
 
+    /** What a flush could not write once the JVM had begun to exit; guarded by {@link #flushLock}. */
+    private final List<Batch> unwritten = new ArrayList<>();
+
     private volatile boolean running = true;
+    private volatile boolean exiting;
+    /** Whether a flush wrote through the pool after the exit began; guarded by {@link #flushLock}. */
+    private boolean wroteWhileExiting;
+    private volatile @Nullable Thread exitHook;
 
     public Writer(Sql sql, EventBus events, Tingles tingles) {
         this.sql = sql;
@@ -68,9 +78,17 @@ public final class Writer implements AutoCloseable {
         this.thread.setDaemon(true);
     }
 
-    public Writer start() {
+    /**
+     * Starts the flush thread and registers the flush at JVM exit.
+     *
+     * @param database the database {@link #sql} pools, which the flush at exit
+     *                 reaches outside the pool and closes, see {@link #exit(Database)}
+     */
+    public Writer start(Database database) {
         thread.start();
-        Runtime.getRuntime().addShutdownHook(new Thread(this::flush, "spider-sense-writer-shutdown"));
+        Thread hook = new Thread(() -> exit(database), "spider-sense-writer-shutdown");
+        Runtime.getRuntime().addShutdownHook(hook);
+        exitHook = hook;
         return this;
     }
 
@@ -121,6 +139,65 @@ public final class Writer implements AutoCloseable {
             wakeUp.notifyAll();
         }
         flush();
+        Thread hook = exitHook;
+        if (hook != null) {
+            try {
+                Runtime.getRuntime().removeShutdownHook(hook);
+            } catch (IllegalStateException e) {
+                // The JVM is exiting already, and the hook is running or about to.
+                LOG.log(System.Logger.Level.DEBUG, "Spider Sense kept its exit flush: " + e.getMessage());
+            }
+            exitHook = null;
+        }
+    }
+
+    /**
+     * The flush at JVM exit, and the close of the database after it
+     * (storage.adoc#writer).
+     *
+     * <p>H2 closes a file database from an exit hook of its own, and the JVM runs
+     * its hooks concurrently in no set order, so the pool's sessions may be closed
+     * under this flush. {@code DB_CLOSE_ON_EXIT=FALSE}, which would turn H2's hook
+     * off, is refused beside {@code AUTO_SERVER=TRUE}, so the race cannot be
+     * avoided; it is survived instead. What is queued, and what a flush the exit
+     * interrupted could not write, goes through a connection of its own. Opened
+     * while H2 is closing the file, it waits for the close to finish and opens the
+     * file again; a write that H2 closed under it is tried again the same way.
+     * Once the rows are in, the engine this process holds is shut down, so the
+     * file is written and closed before the JVM halts, whichever of the two hooks
+     * ran first. Nothing to write and nothing written since the exit began means
+     * nothing to close: H2's own hook does that.
+     */
+    void exit(Database database) {
+        exiting = true;
+        synchronized (flushLock) {
+            List<Batch> batches = new ArrayList<>(unwritten);
+            unwritten.clear();
+            queue.drainTo(batches);
+            queuedRecords.set(0);
+            if (batches.isEmpty() && !wroteWhileExiting) {
+                return;
+            }
+            Exception failure = null;
+            for (int attempt = 0; attempt < EXIT_ATTEMPTS; attempt++) {
+                try (Connection connection = database.connectDirectly()) {
+                    if (!batches.isEmpty()) {
+                        write(connection, batches);
+                        batches = List.of();
+                    }
+                    database.shutdownEngine(connection);
+                    return;
+                } catch (SQLException | RuntimeException e) {
+                    if (failure != null) {
+                        e.addSuppressed(failure);
+                    }
+                    failure = e;
+                }
+            }
+            LOG.log(System.Logger.Level.WARNING, batches.isEmpty()
+                    ? "Spider Sense could not close its database at exit"
+                    : "Spider Sense could not store its last batch at exit", failure);
+        }
     }
 
     private void loop() {
@@ -140,6 +217,11 @@ public final class Writer implements AutoCloseable {
 
     private void flush() {
         synchronized (flushLock) {
+            if (exiting) {
+                // The flush at exit writes what is queued. Through the pool, after H2
+                // closed the file, this would open it again behind that flush's back.
+                return;
+            }
             List<Batch> batches = new ArrayList<>();
             queue.drainTo(batches);
             queuedRecords.set(0);
@@ -149,30 +231,63 @@ public final class Writer implements AutoCloseable {
             try {
                 write(batches);
             } catch (SQLException | RuntimeException e) {
+                if (exiting) {
+                    // Most likely H2's own exit hook closing the database; the flush at exit writes it.
+                    unwritten.addAll(batches);
+                    return;
+                }
                 LOG.log(System.Logger.Level.WARNING, "Spider Sense could not store a batch", e);
                 return;
+            }
+            if (exiting) {
+                // Possibly into a file the pool opened again after H2 closed it; the flush at exit closes it.
+                wroteWhileExiting = true;
             }
             publish(batches);
         }
     }
 
+    /**
+     * One flush through a pooled connection. It returns once the transaction has
+     * committed: a failure to hand the connection back after that loses nothing,
+     * so it is not reported as a failed write.
+     */
     private void write(List<Batch> batches) throws SQLException {
-        try (Connection connection = sql.connection()) {
-            connection.setAutoCommit(false);
+        Connection connection = sql.connection();
+        try {
+            write(connection, batches);
+        } finally {
             try {
-                Set<String> touched = insertSpans(connection, batches);
-                insertLogs(connection, batches);
-                insertTingles(connection, batches);
-                mergeCatalogs(connection, batches);
-                mergeServices(connection, batches);
-                insertMetrics(connection, batches);
-                mergeTraces(connection, touched);
-                connection.commit();
-            } catch (SQLException | RuntimeException e) {
+                connection.close();
+            } catch (SQLException e) {
+                LOG.log(System.Logger.Level.DEBUG, "Spider Sense could not return a connection: " + e.getMessage());
+            }
+        }
+    }
+
+    private void write(Connection connection, List<Batch> batches) throws SQLException {
+        connection.setAutoCommit(false);
+        try {
+            Set<String> touched = insertSpans(connection, batches);
+            insertLogs(connection, batches);
+            insertTingles(connection, batches);
+            mergeCatalogs(connection, batches);
+            mergeServices(connection, batches);
+            insertMetrics(connection, batches);
+            mergeTraces(connection, touched);
+            connection.commit();
+        } catch (SQLException | RuntimeException e) {
+            try {
                 connection.rollback();
-                throw e;
-            } finally {
+            } catch (SQLException rollback) {
+                e.addSuppressed(rollback);
+            }
+            throw e;
+        } finally {
+            try {
                 connection.setAutoCommit(true);
+            } catch (SQLException e) {
+                LOG.log(System.Logger.Level.DEBUG, "Spider Sense could not reset auto-commit: " + e.getMessage());
             }
         }
     }

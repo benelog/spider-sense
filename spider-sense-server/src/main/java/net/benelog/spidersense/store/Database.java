@@ -242,6 +242,38 @@ public final class Database implements AutoCloseable {
         }
     }
 
+    /**
+     * A connection as the administrator outside the pool, for the writer's flush
+     * at JVM exit, when H2's own exit hook may have closed the pool's sessions
+     * (storage.adoc#writer).
+     *
+     * <p>Opened while H2 is closing the file, it waits for the close to finish and
+     * opens the file again. Joined to another process's engine through
+     * {@code AUTO_SERVER}, it is one more remote session.
+     */
+    Connection connectDirectly() throws SQLException {
+        JdbcDataSource source = new JdbcDataSource();
+        source.setURL(url);
+        source.setUser("sa");
+        source.setPassword("");
+        return source.getConnection();
+    }
+
+    /**
+     * Closes the engine {@code connection} is a session of when it runs in this
+     * process, as H2's own exit hook would: the other sessions go, and the file is
+     * written and closed before this returns. A session of another process's
+     * engine, joined through {@code AUTO_SERVER}, leaves that engine alone.
+     */
+    void shutdownEngine(Connection connection) throws SQLException {
+        if (!(connection.unwrap(JdbcConnection.class).getSession() instanceof SessionLocal)) {
+            return;
+        }
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("SHUTDOWN");
+        }
+    }
+
     private boolean hasReader() {
         return sql.count("SELECT COUNT(*) FROM INFORMATION_SCHEMA.USERS WHERE USER_NAME = ?",
                 List.of(Schema.READER.toUpperCase(Locale.ROOT))) > 0;

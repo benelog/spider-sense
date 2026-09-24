@@ -247,7 +247,13 @@ It then publishes the flush's tingles and counts to the SSE stream.
 The `service` row is merged on every flush that carries the service.
 When the sighting carries a `process.pid` that differs from the stored one, or the row is new, the writer also inserts a `mark` named `start` for that service with the note `pid <pid>`.
 `since=start` resolves to that mark.
-A JVM shutdown hook flushes what is queued.
+A JVM shutdown hook flushes what is queued, and then closes the database.
+H2 closes a file database from an exit hook of its own, and the JVM runs its hooks concurrently in no set order, so H2 may close the pool's connections under that flush.
+`DB_CLOSE_ON_EXIT=FALSE`, which turns H2's hook off, is refused beside `AUTO_SERVER=TRUE`, so the flush survives the race instead of avoiding it.
+It writes through a connection of its own outside the pool.
+Opened while H2 is closing the file, that connection waits for the close to finish and opens the file again, and a write that H2 closed under it is tried again the same way.
+Once the rows are in, the flush shuts down the engine this process holds, so the file is written and closed before the JVM halts, whichever hook ran first.
+After the flush at exit has begun, the writer's thread writes nothing more, since writing through the pool after H2 closed the file would open it again behind that flush.
 
 Metric points are written on the same path.
 A series row is looked up by `(service, name, attr_hash)` through a small in-memory cache of ids.

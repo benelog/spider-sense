@@ -57,7 +57,7 @@ public final class Store implements AutoCloseable {
         this.marks = new Marks(sql);
         this.acks = new Acks(sql);
         this.ingestCap = ingestCap;
-        this.writer = new Writer(sql, events, tingles).start();
+        this.writer = new Writer(sql, events, tingles).start(database);
         this.sweeper = new Sweeper(sql, retentionHours, retentionSpans).start();
     }
 
