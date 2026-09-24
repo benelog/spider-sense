@@ -669,6 +669,7 @@ The CLI can therefore ask once for the text rendering and still exit with a code
 
 `columns` are H2's own labels, which upper-case an unquoted name.
 A cell is a JSON number, string, boolean or null, as the store holds it, and an H2 `TIMESTAMP` is an ISO string.
+A whole number is exact up to a long; one past it is the nearest double, and one past a double's range is its decimal string.
 `limit` defaults to 200 and is capped at 5000.
 A `limit` below 1 is a `400`.
 `truncated` says whether the cap cut the rows off.

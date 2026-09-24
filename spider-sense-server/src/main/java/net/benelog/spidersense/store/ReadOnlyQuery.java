@@ -144,8 +144,15 @@ public final class ReadOnlyQuery {
             return value;
         }
         if (value instanceof BigDecimal decimal) {
-            return decimal.scale() <= 0 && decimal.precision() <= 18
-                    ? (Object) decimal.longValue() : (Object) decimal.doubleValue();
+            if (decimal.scale() <= 0) {
+                try {
+                    return decimal.longValueExact();
+                } catch (ArithmeticException pastALong) {
+                    // 1E+20 has one digit of precision and no long holds it: a double does.
+                }
+            }
+            double approximate = decimal.doubleValue();
+            return Double.isFinite(approximate) ? (Object) approximate : decimal.toString();
         }
         if (value instanceof BigInteger integer) {
             return integer.bitLength() < 64 ? (Object) integer.longValue() : integer.toString();
