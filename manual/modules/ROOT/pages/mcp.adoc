@@ -48,6 +48,8 @@ A request is answered with `200` and the JSON-RPC response, and a notification w
 
 The server is stateless.
 No session id is issued or required, `GET /mcp` is `405`, and a JSON array, the batch of older protocol revisions, is refused with `-32600`.
+An `MCP-Protocol-Version` header naming a revision this server does not speak is `400`.
+A parameter of the wrong type, such as a `protocolVersion` that is not a string or `arguments` that are not an object, is `-32602`.
 A request whose `Origin` is not the server's own, or whose `Host` is not a name of this machine, is `403`, as on every endpoint (xref:api.adoc#conventions[API conventions]), which is the `Origin` check the transport asks of a server.
 
 This transport needs the server to be up, so it stops answering when the application stops.

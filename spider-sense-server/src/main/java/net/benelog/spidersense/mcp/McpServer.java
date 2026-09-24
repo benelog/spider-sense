@@ -155,10 +155,18 @@ public final class McpServer {
             };
         } catch (BadArgument e) {
             return error(id, INVALID_PARAMS, e.getMessage());
+        } catch (Json.JsonException e) {
+            // A parameter of the wrong JSON type, such as a protocolVersion that is a number.
+            return error(id, INVALID_PARAMS, e.getMessage());
         } catch (RuntimeException e) {
             String said = e.getMessage();
             return error(id, INTERNAL_ERROR, said == null || said.isBlank() ? e.toString() : said);
         }
+    }
+
+    /** Whether this server speaks a protocol revision, as the HTTP transport's header names one. */
+    public static boolean speaks(String protocolVersion) {
+        return PROTOCOLS.contains(protocolVersion);
     }
 
     // --- the methods ----------------------------------------------------------
@@ -184,8 +192,11 @@ public final class McpServer {
         if (tool == null) {
             return failIfUnknown(name);
         }
-        Map<String, Object> arguments = tool.read(params.has("arguments")
-                && params.get("arguments") instanceof Json.JsonObject given ? given : Json.obj());
+        Json.JsonValue given = params.has("arguments") ? params.get("arguments") : null;
+        if (given != null && !given.isNull() && !(given instanceof Json.JsonObject)) {
+            throw new BadArgument("arguments must be an object");
+        }
+        Map<String, Object> arguments = tool.read(given instanceof Json.JsonObject object ? object : Json.obj());
         ToolResult answer = with.call(tool.name(), arguments);
         Json.JsonObject result = Json.obj()
                 .put("content", Json.arr().add(Json.obj()

@@ -43,6 +43,11 @@ public final class McpApi {
      * expects nothing back, with {@code 202} and no body.
      */
     public WebResponse message(WebRequest req) {
+        String protocol = req.header("MCP-Protocol-Version");
+        if (protocol != null && !McpServer.speaks(protocol.trim())) {
+            // The Streamable HTTP transport: a revision the server does not speak is a 400.
+            throw new HttpException(HttpStatus.BAD_REQUEST, "Unsupported MCP-Protocol-Version: " + protocol);
+        }
         String response = server.handle(req.body());
         return response == null
                 ? WebResponse.empty(HttpStatus.ACCEPTED)

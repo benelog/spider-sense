@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 
 import net.benelog.spidersense.Otlp;
 import net.benelog.spidersense.TestStore;
+import net.benelog.spidersense.mcp.McpServer;
 import net.benelog.spidersense.server.Config;
 import net.benelog.spidersense.server.SpiderSenseServer;
 import net.benelog.spidersilk.json.Json;
@@ -128,6 +129,27 @@ class McpApiTest {
     }
 
     /** The point of the whole adapter: one answer, two interfaces. */
+    /** The Streamable HTTP transport: a revision named in the header that the server does not speak is a 400. */
+    @Test
+    void anUnsupportedProtocolVersionHeaderIs400() {
+        serve(client -> {
+            String ping = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}";
+            HttpResponse<String> unknown = client.send(request -> request
+                    .uri(URI.create(client.url("/mcp")))
+                    .header("Content-Type", "application/json")
+                    .header("MCP-Protocol-Version", "1999-01-01")
+                    .POST(HttpRequest.BodyPublishers.ofString(ping)));
+            assertThat(unknown.statusCode()).isEqualTo(400);
+
+            HttpResponse<String> known = client.send(request -> request
+                    .uri(URI.create(client.url("/mcp")))
+                    .header("Content-Type", "application/json")
+                    .header("MCP-Protocol-Version", McpServer.LATEST_PROTOCOL)
+                    .POST(HttpRequest.BodyPublishers.ofString(ping)));
+            assertThat(known.statusCode()).isEqualTo(200);
+        });
+    }
+
     @Test
     void aToolCallAnswersTheSameBytesAsTheTextEndpointForTheSameWindow() {
         serve(client -> {

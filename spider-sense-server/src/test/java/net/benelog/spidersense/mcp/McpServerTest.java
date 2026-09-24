@@ -205,6 +205,10 @@ class McpServerTest {
         assertThat(code(server.handle(request(4, "tools/call",
                 "{\"name\":\"findings\",\"arguments\":{\"since\":5}}"))))
                 .as("an argument of the wrong type").isEqualTo(-32602);
+        assertThat(code(server.handle(request(6, "tools/call", "{\"name\":\"findings\",\"arguments\":[1]}"))))
+                .as("arguments that are not an object").isEqualTo(-32602);
+        assertThat(code(server.handle(request(7, "initialize", "{\"protocolVersion\":5}"))))
+                .as("a protocol version that is not a string").isEqualTo(-32602);
         assertThat(called).as("nothing reached the tools").isEmpty();
 
         McpServer broken = new McpServer((name, arguments) -> {
