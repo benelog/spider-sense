@@ -293,6 +293,7 @@ Apdex is arithmetic over them in Java.
 The external targets reuse the dependency scan, which is the outbound spans of the window capped at 20,000 rows, minus the spans that self-join found.
 * A trace: `SELECT ... FROM span WHERE trace_id = ? ORDER BY start_ns`, plus its logs.
 * Findings (xref:findings.adoc[Findings]): `n-plus-one` is `GROUP BY trace_id, query_id HAVING COUNT(*) >= 5` over the database spans of the window, attributed to the entry span by the same parent-chain walk the query callers use.
+Every such pair of the window is read, with no limit, so a finding's `affected` counts the same requests its `requests` does.
 `dbCallsPerRequest` and `dbMsPerRequest` of an endpoint join the endpoint's entry spans with the database spans of the same trace and service.
 `slow-job` is the same aggregation over `span WHERE parent_span_id IS NULL AND kind = 'INTERNAL'` grouped by `(service, name)`, with the database work joined the same way.
 Only the endpoints and jobs that crossed the threshold are joined, since only they become findings; a job's runs are read by its service's `(service, start_ms)` index, and so is its newest run, whose attributes give the code frames.

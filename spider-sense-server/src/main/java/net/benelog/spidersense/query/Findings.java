@@ -83,7 +83,8 @@ public final class Findings {
      * are the finding's own {@code traces} (findings.adoc#time).
      */
     private static final int SAMPLE_TRACES = 20;
-    private static final int CANDIDATES = 500;
+    /** How many candidate traces one read of their spans names in its {@code IN} list. */
+    private static final int CANDIDATE_CHUNK = 1_000;
     private static final int GROUPS = 100;
 
     /** How many {@code (service, previous run, kind)} id sets a server keeps (findings.adoc#state). */
@@ -761,39 +762,44 @@ public final class Findings {
             pairs.add(candidate[0] + "\0" + candidate[1]);
         }
 
-        List<Object> params = new ArrayList<>();
-        params.add(window.from());
-        params.add(window.to());
-        params.addAll(traceIds);
-        params.addAll(queryIds);
-        String where = "start_ms BETWEEN ? AND ? AND trace_id IN (" + Sql.placeholders(traceIds.size())
-                + ") AND query_id IN (" + Sql.placeholders(queryIds.size()) + ")";
-        if (service != null) {
-            where = where + " AND service = ?";
-            params.add(service);
-        }
         Queries.Ancestry ancestry = reads.ancestry();
         Map<String, List<Repeat>> byEntry = new LinkedHashMap<>();
-        sql.forEach("SELECT span_id, trace_id, query_id, service, start_ms, duration_ns, db_statement,"
-                + " db_operation, db_table, attributes FROM span WHERE " + where, params, rs -> {
-                    String traceId = rs.getString("trace_id");
-                    String queryId = rs.getString("query_id");
-                    if (!pairs.contains(traceId + "\0" + queryId)) {
-                        return;
-                    }
-                    Queries.Ancestry.Entry entry = ancestry.entryOf(rs.getString("span_id"));
-                    if (entry == null) {
-                        return;
-                    }
-                    String endpointId = Ids.endpointId(entry.service(), entry.endpoint());
-                    byEntry.computeIfAbsent(entry.spanId() + "\0" + queryId, key -> new ArrayList<>())
-                            .add(new Repeat(traceId, endpointId, entry.endpoint(), entry.service(),
-                                    queryId, rs.getString("db_statement"),
-                                    queryName(rs.getString("db_operation"), rs.getString("db_table"),
-                                            rs.getString("db_statement")),
-                                    1, rs.getLong("duration_ns") / 1_000_000.0, rs.getLong("start_ms"),
-                                    evidence ? AttrJson.decode(rs.getString("attributes")) : Map.of()));
-                });
+        List<String> traceList = List.copyOf(traceIds);
+        for (int from = 0; from < traceList.size(); from += CANDIDATE_CHUNK) {
+            List<String> chunk = traceList.subList(from, Math.min(from + CANDIDATE_CHUNK, traceList.size()));
+            List<Object> params = new ArrayList<>();
+            params.add(window.from());
+            params.add(window.to());
+            params.addAll(chunk);
+            params.addAll(queryIds);
+            String where = "start_ms BETWEEN ? AND ? AND trace_id IN (" + Sql.placeholders(chunk.size())
+                    + ") AND query_id IN (" + Sql.placeholders(queryIds.size()) + ")";
+            if (service != null) {
+                where = where + " AND service = ?";
+                params.add(service);
+            }
+            sql.forEach("SELECT span_id, trace_id, query_id, service, start_ms, duration_ns, db_statement,"
+                    + " db_operation, db_table, attributes FROM span WHERE " + where
+                    + " ORDER BY start_ms, span_id", params, rs -> {
+                        String traceId = rs.getString("trace_id");
+                        String queryId = rs.getString("query_id");
+                        if (!pairs.contains(traceId + "\0" + queryId)) {
+                            return;
+                        }
+                        Queries.Ancestry.Entry entry = ancestry.entryOf(rs.getString("span_id"));
+                        if (entry == null) {
+                            return;
+                        }
+                        String endpointId = Ids.endpointId(entry.service(), entry.endpoint());
+                        byEntry.computeIfAbsent(entry.spanId() + "\0" + queryId, key -> new ArrayList<>())
+                                .add(new Repeat(traceId, endpointId, entry.endpoint(), entry.service(),
+                                        queryId, rs.getString("db_statement"),
+                                        queryName(rs.getString("db_operation"), rs.getString("db_table"),
+                                                rs.getString("db_statement")),
+                                        1, rs.getLong("duration_ns") / 1_000_000.0, rs.getLong("start_ms"),
+                                        evidence ? AttrJson.decode(rs.getString("attributes")) : Map.of()));
+                    });
+        }
 
         Map<String, List<Repeat>> byEndpointAndQuery = new LinkedHashMap<>();
         byEntry.values().forEach(spans -> {
@@ -890,9 +896,11 @@ public final class Findings {
             where = where + " AND service = ?";
             params.add(service);
         }
+        // Every pair of the window, not the most repeated few: affected and requests
+        // must count the same population (findings.adoc#n-plus-one).
         return sql.query("SELECT trace_id, query_id FROM span WHERE " + where
                         + " GROUP BY trace_id, query_id HAVING COUNT(*) >= " + REPEATS
-                        + " ORDER BY COUNT(*) DESC LIMIT " + CANDIDATES,
+                        + " ORDER BY trace_id, query_id",
                 params, rs -> new String[]{rs.getString("trace_id"), rs.getString("query_id")});
     }
 

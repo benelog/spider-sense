@@ -184,6 +184,28 @@ class FindingsTest {
         assertThat(finding.traces()).containsExactly(traceId(1));
     }
 
+    /** Past the first few hundred affected requests, affected and requests still count the same ones. */
+    @Test
+    void everyAffectedRequestCountsNotOnlyTheFirstFewHundred() {
+        for (int n = 1; n <= 600; n++) {
+            Span.Builder root = entryAt(n, "/orders/{id}", NOW - n * 10L, 60);
+            List<Span.Builder> spans = new ArrayList<>();
+            spans.add(root);
+            for (int i = 0; i < 5; i++) {
+                spans.add(query(root, 10_000 + n * 10 + i, "select * from order_line where order_id = ?", "order_line",
+                        NOW - n * 10L + i, 2));
+            }
+            decoder.accept(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
+        }
+        flush();
+
+        Findings.Finding finding = of(Findings.N_PLUS_ONE).get(0);
+
+        assertThat(finding.numbers().get("requests")).isEqualTo(600L);
+        assertThat(finding.numbers().get("affected")).isEqualTo(600L);
+        assertThat(finding.why()).startsWith("600 of 600 requests repeated it");
+    }
+
     @Test
     void theNPlusOneTakesItsCodeFromTheRepeatThatCarriesTheStack() {
         Span.Builder root = entry(1, "/orders/{id}", 60);
