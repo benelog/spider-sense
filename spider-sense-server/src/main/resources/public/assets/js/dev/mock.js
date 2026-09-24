@@ -1686,7 +1686,7 @@ const ROUTES = [
 
   [/^\/api\/metrics$/, () => ({ metrics: METRIC_CATALOG })],
 
-  [/^\/api\/metrics\/series$/, (m, q) => metricSeries(q.name, q.service, windowOf(q), q.rate === '1')],
+  [/^\/api\/metrics\/series$/, (m, q) => metricSeries(q.name, q.service, windowOf(q), q.rate === 'true')],
 
   [/^\/api\/jvm$/, (m, q) => {
     const service = q.service || SERVICES[0].name;

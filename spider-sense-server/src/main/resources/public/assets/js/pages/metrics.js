@@ -103,7 +103,7 @@ export function render(root, ctx) {
     }
     try {
       const meta = catalog.find((m) => m.name === selected) || {};
-      const data = await api.metricSeries({ name: selected, rate: rateOn ? '1' : '' });
+      const data = await api.metricSeries({ name: selected, rate: rateOn ? 'true' : '' });
       if (destroyed) return;
       const series = data.series || [];
       detailTitle.textContent = selected + (data.unit ? ' (' + data.unit + ')' : '');
