@@ -43,6 +43,19 @@ class AgentDefaultsTest {
         return jar.toString();
     }
 
+    /**
+     * The Gradle plugin always passes spidersense.service, and a build may set otel.service.name
+     * as well: the exporter names the latter, so the embedded collector must too.
+     */
+    @Test
+    void theEmbeddedServiceIsTheOneTheExporterNames() {
+        Config config = Config.defaults().withService("orders-project");
+        assertThat(SpiderSenseAgent.effectiveServiceName(config)).isEqualTo("orders-project");
+
+        System.setProperty("otel.service.name", "orders-api");
+        assertThat(SpiderSenseAgent.effectiveServiceName(config)).isEqualTo("orders-api");
+    }
+
     @Test
     void fillsInTheDefaultsForALocalTool() {
         SpiderSenseAgent.applyOtelDefaults(Config.defaults().withPort(4010));

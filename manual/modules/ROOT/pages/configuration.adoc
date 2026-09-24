@@ -29,7 +29,7 @@ A numeric key whose value is not a number, such as `spidersense.slow.query.ms=1x
 
 | `spidersense.service`
 | unset
-| Agent mode: sets `otel.service.name`.
+| Agent mode: the default of `otel.service.name`. When both are set, `otel.service.name` names the service, for the exporter and for the embedded Spider Sense alike.
 
 | `spidersense.db`
 | `~/db/spider-sense/sense`

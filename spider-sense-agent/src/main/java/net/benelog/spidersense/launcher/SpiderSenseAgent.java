@@ -81,12 +81,14 @@ public final class SpiderSenseAgent {
     }
 
     /**
-     * What the embedded collector should call itself: {@code spidersense.service} when given, else
-     * whatever the user already told OpenTelemetry. The collector uses it to recognise the service
-     * it is embedded in and drop the UI's own traffic.
+     * What the embedded collector should call itself: the service the exporter will name, which is
+     * {@code otel.service.name} when the user set it, since {@code spidersense.service} is only its
+     * default, and {@code spidersense.service} otherwise. The collector uses it to recognise the
+     * service it is embedded in, drop the UI's own traffic and mark its starts.
      */
-    private static @Nullable String effectiveServiceName(Config config) {
-        return config.service() != null ? config.service() : Config.propertyOrEnv("otel.service.name");
+    static @Nullable String effectiveServiceName(Config config) {
+        String told = Config.propertyOrEnv("otel.service.name");
+        return told != null ? told : config.service();
     }
 
     static void applyOtelDefaults(Config config) {
