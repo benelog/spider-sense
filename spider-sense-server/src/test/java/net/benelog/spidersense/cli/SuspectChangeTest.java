@@ -104,6 +104,25 @@ class SuspectChangeTest {
                 .isEqualTo("uncommitted");
     }
 
+    /**
+     * git quotes a path with non-ASCII letters unless told not to, and a quoted one matches no
+     * file: a new file under such a directory, which blame knows nothing of, went unnoted.
+     */
+    @Test
+    void aNewFileUnderANonAsciiDirectoryIsUncommitted() throws IOException {
+        assumeTrue(git(repo, "init", "-q"), "git is not available");
+        write("README", "a repository\n");
+        assertThat(git(repo, "add", ".")).isTrue();
+        assertThat(git(repo, "commit", "-q", "-m", "First")).isTrue();
+        write("주문/src/main/java/orders/OrderService.java", "class OrderService {\n  void load() {}\n}\n");
+
+        SuspectChange suspects = SuspectChange.in(repo, SourceRoots.of(null, repo),
+                System.currentTimeMillis());
+
+        assertThat(suspects.noteFor("orders.OrderService.load(OrderService.java:2)"))
+                .isEqualTo("uncommitted");
+    }
+
     @Test
     void outsideARepositoryThereIsNothingToSay() {
         assertThat(SuspectChange.in(repo, SourceRoots.of(null, repo), 0L)).isNull();

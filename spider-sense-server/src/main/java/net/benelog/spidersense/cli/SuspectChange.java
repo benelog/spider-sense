@@ -209,6 +209,10 @@ final class SuspectChange {
         command.add("git");
         command.add("-C");
         command.add(dir.toString());
+        // git quotes a path with non-ASCII letters ("src/\303\251t\303\251.java") unless told
+        // not to, and a quoted name never equals the frame's file.
+        command.add("-c");
+        command.add("core.quotePath=false");
         command.addAll(List.of(args));
         Process process;
         try {
