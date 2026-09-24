@@ -6,6 +6,24 @@ import { h, fill, icon, panel, renderList, debounce, spinner, errorBox, emptySta
 import { timeSeries, legend } from '../charts.js';
 import { count } from '../format.js';
 
+/**
+ * Every series carries its own `t` (api.adoc#metrics), and two services export at different
+ * offsets, so the chart's axis is the union of their timestamps.
+ */
+function alignedTimes(series) {
+  const all = new Set();
+  for (const s of series) for (const x of s.t || []) all.add(x);
+  return Array.from(all).sort((a, b) => a - b);
+}
+
+/** One array of the series (`v`, `p95`, `count`) on the shared axis, `null` where it has no point. */
+function alignTo(t, s, key) {
+  const values = s[key] || [];
+  const byTime = new Map();
+  (s.t || []).forEach((x, i) => { byTime.set(x, values[i] == null ? null : values[i]); });
+  return t.map((x) => (byTime.has(x) ? byTime.get(x) : null));
+}
+
 export function render(root, ctx) {
   let destroyed = false;
   let catalog = [];
@@ -116,12 +134,14 @@ export function render(root, ctx) {
       }
       const labels = series.map(labelOf);
       const isHistogram = data.type === 'histogram';
+      const t = alignedTimes(series);
+      const at = (s, key) => alignTo(t, s, key);
       const spec = {
         height: 260,
-        t: series[0].t || [],
+        t,
         series: series.flatMap((s, i) => {
-          const base = [{ label: labels[i], values: s.v || [], color: seriesColor(i), type: 'line', width: 1.8 }];
-          if (isHistogram && s.p95) base.push({ label: labels[i] + ' p95', values: s.p95, color: seriesColor(i), type: 'line', width: 1.2, dash: [4, 3] });
+          const base = [{ label: labels[i], values: at(s, 'v'), color: seriesColor(i), type: 'line', width: 1.8 }];
+          if (isHistogram && s.p95) base.push({ label: labels[i] + ' p95', values: at(s, 'p95'), color: seriesColor(i), type: 'line', width: 1.2, dash: [4, 3] });
           return base;
         }),
         axes: [{ scale: 'y', label: data.unit || '' }],
@@ -134,8 +154,8 @@ export function render(root, ctx) {
         countPanel.hidden = false;
         const countSpec = {
           height: 130,
-          t: series[0].t || [],
-          series: series.map((s, i) => ({ label: labels[i], values: s.count || [], color: seriesColor(i), type: 'bar' })),
+          t,
+          series: series.map((s, i) => ({ label: labels[i], values: at(s, 'count'), color: seriesColor(i), type: 'bar' })),
           axes: [{ scale: 'y', label: 'Count' }],
         };
         if (countChart) countChart.update(countSpec); else countChart = timeSeries(countBody, countSpec);

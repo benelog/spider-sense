@@ -457,5 +457,6 @@ The axes carry their units, `MiB`, `ms`, `%`, and connections.
 `#/metrics` is the explorer for every metric that arrived.
 The catalog on the left is searchable, and lists each metric's name, type chip, unit and series count.
 The chart on the right draws the selected metric over the window, one line per series, with a legend of the series' attributes.
+Each series is drawn at its own timestamps, so two services that export at different offsets share the time axis without one being shifted onto the other's points.
 A `rate` toggle applies to sums.
 A histogram is drawn as its mean and p95, with the count as bars beneath.
