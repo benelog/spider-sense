@@ -5,10 +5,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
+import org.h2.engine.SessionLocal;
+import org.h2.jdbc.JdbcConnection;
 import org.h2.jdbcx.JdbcConnectionPool;
 import org.h2.jdbcx.JdbcDataSource;
 import org.jspecify.annotations.Nullable;
@@ -33,6 +36,15 @@ public final class Database implements AutoCloseable {
     private static final System.Logger LOG = System.getLogger(Database.class.getName());
     private static final int MAX_CONNECTIONS = 8;
 
+    /** H2's own page cache, which this never goes below, in KiB. */
+    private static final long MIN_CACHE_KB = 16 * 1024;
+
+    /** The most page cache this takes of a heap, in KiB, however large the heap is. */
+    private static final long MAX_CACHE_KB = 256 * 1024;
+
+    /** The share of the maximum heap the page cache may take: one sixteenth. */
+    private static final int CACHE_HEAP_DIVISOR = 16;
+
     private final JdbcConnectionPool pool;
     private final Sql sql;
     private final String url;
@@ -56,6 +68,7 @@ public final class Database implements AutoCloseable {
         this.pool.setMaxConnections(MAX_CONNECTIONS);
         this.sql = new Sql(pool);
         try {
+            sizeCache(pool, url);
             Schema.create(sql, upgrade);
         } catch (RuntimeException e) {
             pool.dispose();
@@ -135,6 +148,46 @@ public final class Database implements AutoCloseable {
                     throw last;
                 }
             }
+        }
+    }
+
+    /**
+     * The page cache in KiB for a heap of {@code maxHeapBytes}: a sixteenth of it,
+     * never below H2's own 16 MiB and never above 256 MiB (storage.adoc#reads).
+     */
+    static long cacheKb(long maxHeapBytes) {
+        long share = maxHeapBytes / CACHE_HEAP_DIVISOR / 1024;
+        return Math.max(MIN_CACHE_KB, Math.min(MAX_CACHE_KB, share));
+    }
+
+    /**
+     * Sizes H2's page cache to this process's heap, when this process owns the
+     * database engine.
+     *
+     * <p>Every read of findings and of the lists scans the window's pages, and a
+     * cache smaller than them reads each page from the file again on every scan.
+     * The cache lives in the heap of the process that opened the file, which is the
+     * monitored application in embedded mode, so it is a share of that heap rather
+     * than a fixed size. A process that joined another one's engine through
+     * {@code AUTO_SERVER} leaves it alone, since the cache is not in its heap, and
+     * so does a URL that names {@code CACHE_SIZE} itself.
+     *
+     * <p>Nothing here may stop the database from opening: a failure is logged and
+     * H2's default stays.
+     */
+    private static void sizeCache(JdbcConnectionPool pool, String url) {
+        if (url.startsWith("jdbc:h2:mem:") || url.toUpperCase(Locale.ROOT).contains("CACHE_SIZE")) {
+            return;
+        }
+        try (Connection connection = pool.getConnection()) {
+            if (!(connection.unwrap(JdbcConnection.class).getSession() instanceof SessionLocal)) {
+                return;
+            }
+            try (Statement statement = connection.createStatement()) {
+                statement.execute("SET CACHE_SIZE " + cacheKb(Runtime.getRuntime().maxMemory()));
+            }
+        } catch (SQLException | RuntimeException e) {
+            LOG.log(System.Logger.Level.DEBUG, "Spider Sense kept H2's page cache size: " + e.getMessage());
         }
     }
 

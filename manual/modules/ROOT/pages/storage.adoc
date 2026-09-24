@@ -298,6 +298,10 @@ A scan of the window is acceptable at local-development volumes.
 * JVM and metrics: `metric_point` joined with `metric_series`, resampled in Java where the API asks for it.
 
 Connections come from H2's `JdbcConnectionPool`, at most 8, and the writer holds one of its own.
+The process that opens the file sizes H2's page cache to its own heap: a sixteenth of the maximum heap, never below H2's 16 MiB and never above 256 MiB.
+Every scan of a window reads the window's pages, and a cache smaller than them reads each page from the file again on every scan; findings makes several.
+The cache lives in the heap of the process that owns the engine, which is the monitored application in embedded mode, so it is a share of that heap rather than a fixed size.
+A process that joined another one's engine through `AUTO_SERVER` leaves the size alone, and so does a JDBC URL that names `CACHE_SIZE` itself.
 Reads are plain JDBC through one small helper, `Sql.query(sql, params, rowMapper)`.
 There is no ORM and no spring-jdbc, so the nested server jar carries only H2 beyond what it already has.
 

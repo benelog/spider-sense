@@ -53,6 +53,32 @@ class DatabaseTest {
         }
     }
 
+    @Test
+    void thePageCacheIsASixteenthOfTheHeapBetweenSixteenAndTwoHundredFiftySixMib() {
+        long mib = 1024 * 1024;
+        assertThat(Database.cacheKb(128 * mib)).as("never below H2's own").isEqualTo(16 * 1024);
+        assertThat(Database.cacheKb(1024 * mib)).isEqualTo(64 * 1024);
+        assertThat(Database.cacheKb(16L * 1024 * mib)).as("never above the cap").isEqualTo(256 * 1024);
+    }
+
+    @Test
+    void theProcessThatOwnsAFileSizesItsPageCacheAndAUrlThatNamesOneKeepsIt() {
+        String owned = "jdbc:h2:" + dir.resolve("owned") + ";NON_KEYWORDS=KEY,VALUE";
+        try (Database database = Database.open(owned, null)) {
+            assertThat(cacheSize(database))
+                    .isEqualTo(String.valueOf(Database.cacheKb(Runtime.getRuntime().maxMemory())));
+        }
+        String named = "jdbc:h2:" + dir.resolve("named") + ";CACHE_SIZE=20000;NON_KEYWORDS=KEY,VALUE";
+        try (Database database = Database.open(named, null)) {
+            assertThat(cacheSize(database)).isEqualTo("20000");
+        }
+    }
+
+    private static String cacheSize(Database database) {
+        return database.sql().queryOne("SELECT SETTING_VALUE FROM INFORMATION_SCHEMA.SETTINGS"
+                + " WHERE SETTING_NAME = 'CACHE_SIZE'", List.of(), rs -> rs.getString(1));
+    }
+
     /**
      * The second layer of {@code POST /api/sql}, asserted against H2 rather than
      * assumed: the escape hatch is only as read-only as this user is.
