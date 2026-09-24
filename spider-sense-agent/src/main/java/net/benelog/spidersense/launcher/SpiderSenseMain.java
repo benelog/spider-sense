@@ -42,7 +42,15 @@ public final class SpiderSenseMain {
             }
         }
         Path file = ConfigFile.apply();
-        Config config = Config.fromArgs(args).withMode(Config.STANDALONE);
+        Config config;
+        try {
+            config = Config.fromArgs(args).withMode(Config.STANDALONE);
+        } catch (IllegalArgumentException e) {
+            // A usage error, as the CLI answers one: one line and exit code 2, no stack trace.
+            System.err.println("spider-sense: " + e.getMessage());
+            System.exit(2);
+            return;
+        }
         if (file != null) {
             System.out.println("Configuration: " + file.toAbsolutePath());
         }

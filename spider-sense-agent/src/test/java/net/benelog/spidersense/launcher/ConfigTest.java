@@ -1,6 +1,7 @@
 package net.benelog.spidersense.launcher;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -21,6 +22,16 @@ class ConfigTest {
     private void set(String key, String value) {
         touched.add(key);
         System.setProperty(key, value);
+    }
+
+    /** A malformed number on the command line is one usage line, not a stack trace. */
+    @Test
+    void aMalformedNumberArgumentSaysWhichAndWhat() {
+        assertThatThrownBy(() -> Config.fromArgs(new String[] {"--port=abc"}))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("--port is not a number: abc");
+        assertThatThrownBy(() -> Config.fromArgs(new String[] {"--slow.query.ms=1x"}))
+                .hasMessage("--slow.query.ms is not a number: 1x");
     }
 
     @Test

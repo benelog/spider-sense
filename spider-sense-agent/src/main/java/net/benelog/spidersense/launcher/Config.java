@@ -112,26 +112,30 @@ public record Config(
             }
             String key = arg.substring(2, eq).trim();
             String value = arg.substring(eq + 1).trim();
-            switch (key) {
-                case "port" -> port = Integer.parseInt(value);
-                case "host" -> host = value;
-                case "collector" -> collector = emptyToNull(value);
-                case "service", "embedded-service" -> service = emptyToNull(value);
-                case "db" -> db = emptyToNull(value);
-                // Both spellings: the property is retention.hours, but a dashed flag reads better.
-                case "retention.hours", "retention-hours" -> retentionHours = Integer.valueOf(value);
-                case "slow.request.ms" -> slowRequest = Long.parseLong(value);
-                case "slow.query.ms" -> slowQuery = Long.parseLong(value);
-                case "open" -> open = Boolean.parseBoolean(value);
-                case "mode" -> mode = value;
-                // Server-owned keys the launcher never interprets: the server runs in this JVM
-                // and reads them as spidersense.* properties, so the argument becomes the
-                // property. The value is kept as written, because an empty
-                // spidersense.ignore.endpoints means "ignore nothing" (configuration.adoc#ignored-endpoints).
-                case "app.packages", "ignore.endpoints", "retention.spans",
-                        "ingest.max-spans-per-second", "source.dirs" ->
-                        System.setProperty("spidersense." + key, value);
-                default -> { /* unknown keys are ignored */ }
+            try {
+                switch (key) {
+                    case "port" -> port = Integer.parseInt(value);
+                    case "host" -> host = value;
+                    case "collector" -> collector = emptyToNull(value);
+                    case "service", "embedded-service" -> service = emptyToNull(value);
+                    case "db" -> db = emptyToNull(value);
+                    // Both spellings: the property is retention.hours, but a dashed flag reads better.
+                    case "retention.hours", "retention-hours" -> retentionHours = Integer.valueOf(value);
+                    case "slow.request.ms" -> slowRequest = Long.parseLong(value);
+                    case "slow.query.ms" -> slowQuery = Long.parseLong(value);
+                    case "open" -> open = Boolean.parseBoolean(value);
+                    case "mode" -> mode = value;
+                    // Server-owned keys the launcher never interprets: the server runs in this JVM
+                    // and reads them as spidersense.* properties, so the argument becomes the
+                    // property. The value is kept as written, because an empty
+                    // spidersense.ignore.endpoints means "ignore nothing" (configuration.adoc#ignored-endpoints).
+                    case "app.packages", "ignore.endpoints", "retention.spans",
+                            "ingest.max-spans-per-second", "source.dirs" ->
+                            System.setProperty("spidersense." + key, value);
+                    default -> { /* unknown keys are ignored */ }
+                }
+            } catch (NumberFormatException e) {
+                throw new IllegalArgumentException("--" + key + " is not a number: " + value, e);
             }
         }
         return new Config(port, host, collector, service, db, retentionHours,
