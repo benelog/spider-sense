@@ -442,6 +442,7 @@ class SpiderSensePluginTest {
                     maxSlowQueries = 3
                     maxNPlusOne = 0
                     maxLogErrors = 2
+                    maxRegressions = 0
                     minApdex = 0.9
                 }
                 """.replace("%JAR%", stubJar.toAbsolutePath().toString()));
@@ -449,7 +450,7 @@ class SpiderSensePluginTest {
         assertThat(probe()).contains("check=[check, --since=before, --until=after, --service=orders,"
                 + " --endpoint=GET /orders/{id}, --max-p95-ms=300, --max-errors=0, --max-error-rate=0.01,"
                 + " --max-queries-per-request=5.5, --max-slow-queries=3, --max-n-plus-one=0,"
-                + " --max-log-errors=2, --min-apdex=0.9]");
+                + " --max-log-errors=2, --max-regressions=0, --min-apdex=0.9]");
     }
 
     @Test

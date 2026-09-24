@@ -308,6 +308,10 @@ spiderSense {
 | `Long`
 | `--max-log-errors=`
 
+| `maxRegressions`
+| `Long`
+| `--max-regressions=`
+
 | `minApdex`
 | `Double`
 | `--min-apdex=`
@@ -325,7 +329,8 @@ Exit code `3` fails it with `Spider Sense check had no request to judge`, unless
 Exit code `2` or `4` fails it with `Spider Sense check could not run (exit <n>)`.
 The CLI's own message reaches the build log first in every case.
 
-With no rule set the CLI's defaults apply: `maxErrors=0`, `maxNPlusOne=0`, `maxP95Ms=<slow.request.ms>`.
+With no rule set the CLI's defaults apply: `maxErrors=0`, `maxNPlusOne=0`, `maxRegressions=0`, `maxP95Ms=<slow.request.ms>`.
+Setting any rule replaces that set, so a build that sets `maxP95Ms` and still wants regressions caught sets `maxRegressions = 0` too.
 `-PspiderSense.check.since=before` overrides `since` for one run.
 `spiderSenseCheck` depends on no other task, because producing the traffic it judges is the build's job, as in the setup of <<tests,Tests>>.
 

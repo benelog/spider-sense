@@ -85,6 +85,9 @@ public abstract class SpiderSenseCheckExtension {
     /** {@code --max-log-errors}: {@code log-error} findings' uncovered records summed. */
     public abstract Property<Long> getMaxLogErrors();
 
+    /** {@code --max-regressions}: {@code regression} findings, resolved findings that came back. */
+    public abstract Property<Long> getMaxRegressions();
+
     /** {@code --min-apdex}: the Apdex over the scope. */
     public Property<Double> getMinApdex() {
         return minApdex;

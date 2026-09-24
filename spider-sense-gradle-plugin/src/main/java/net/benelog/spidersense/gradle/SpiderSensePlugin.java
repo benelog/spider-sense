@@ -316,6 +316,7 @@ public class SpiderSensePlugin implements Plugin<Project> {
         arguments.addAll(flag("max-slow-queries", check.getMaxSlowQueries()));
         arguments.addAll(flag("max-n-plus-one", check.getMaxNPlusOne()));
         arguments.addAll(flag("max-log-errors", check.getMaxLogErrors()));
+        arguments.addAll(flag("max-regressions", check.getMaxRegressions()));
         arguments.addAll(flag("min-apdex", check.getMinApdex()));
         return arguments;
     }
