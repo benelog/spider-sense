@@ -863,6 +863,9 @@ Import keeps every timestamp as exported, so set the time range to the answer's 
 Import is idempotent enough for a file imported twice.
 
 * A trace whose id already has rows in the store is skipped whole, its spans, logs and tingles, and `skippedTraces` counts it.
+* Any other log line or tingle is skipped when an identical row is already stored, which is what keeps a line logged outside a span, such as a worker's job log, from being imported again.
+A log line is identified by its service, instant, severity, body, logger and ids, and a tingle by its instant, kind, service, title, detail and ids.
+Two identical rows in the file stay two rows.
 * A metric point is merged on its `(series, at)` key, with the series looked up or created by `(service, name, attributes)`.
 * A service row is merged.
 * A mark is skipped when one with the same name and instant exists.

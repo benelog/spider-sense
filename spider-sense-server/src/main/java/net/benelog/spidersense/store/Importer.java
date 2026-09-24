@@ -5,6 +5,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -27,7 +28,8 @@ import org.jspecify.annotations.Nullable;
  * the session it came from.
  *
  * <p>Importing the same file twice must not double the data, so every section
- * has an identity: a trace whose id already has a span is skipped whole, a
+ * has an identity: a trace whose id already has a span is skipped whole, a log
+ * line or a tingle is skipped when an identical row is already stored, a
  * metric point merges on {@code (series, at)}, a series is looked up by
  * {@code (service, name, attributes)}, a service row is merged, and a mark is
  * skipped when one with the same name and instant exists, and a catalog row is
@@ -235,14 +237,36 @@ public final class Importer {
 
     // --- logs and tingles ------------------------------------------------------
 
+    /** The columns that make two log lines the same line; the attributes are left out. */
+    private static final String SAME_LOG = """
+            SELECT COUNT(*) FROM log WHERE service IS NOT DISTINCT FROM ? AND at_ms = ?
+                AND severity_number = ? AND body = ? AND logger IS NOT DISTINCT FROM ?
+                AND trace_id IS NOT DISTINCT FROM ? AND span_id IS NOT DISTINCT FROM ?""";
+
+    /**
+     * The file's log lines, less those of a skipped trace and those already stored.
+     *
+     * <p>A line outside any span (a worker's job log, a startup line) has no trace
+     * to be skipped with, so it is recognised by its own columns. The check counts:
+     * two identical lines in the file are two lines, and a second import of it
+     * finds both and writes neither.
+     */
     private static long insertLogs(Connection connection, Json.JsonArray logs, Set<String> skip)
             throws SQLException {
         long count = 0;
-        try (PreparedStatement statement = connection.prepareStatement(Writer.INSERT_LOG)) {
+        try (PreparedStatement statement = connection.prepareStatement(Writer.INSERT_LOG);
+                PreparedStatement same = connection.prepareStatement(SAME_LOG)) {
+            Stored stored = new Stored(same);
             for (Json.JsonValue value : logs) {
                 Json.JsonObject log = value.asObject();
                 String traceId = string(log, "traceId");
                 if (traceId != null && skip.contains(traceId)) {
+                    continue;
+                }
+                List<@Nullable Object> row = Arrays.asList(string(log, "service"), longOr(log, "atMs", 0),
+                        longOr(log, "severityNumber", 0), Writer.cut(or(string(log, "body"), ""), 65535),
+                        Writer.cut(string(log, "logger"), 512), traceId, string(log, "spanId"));
+                if (stored.contains(row)) {
                     continue;
                 }
                 int i = 1;
@@ -265,14 +289,29 @@ public final class Importer {
         return count;
     }
 
+    /** The columns that make two tingles the same one. */
+    private static final String SAME_TINGLE = """
+            SELECT COUNT(*) FROM tingle WHERE at_ms = ? AND kind IS NOT DISTINCT FROM ?
+                AND service IS NOT DISTINCT FROM ? AND title = ? AND detail = ?
+                AND trace_id IS NOT DISTINCT FROM ? AND span_id IS NOT DISTINCT FROM ?""";
+
+    /** The file's tingles, less those of a skipped trace and those already stored, as for logs. */
     private static long insertTingles(Connection connection, Json.JsonArray tingles, Set<String> skip)
             throws SQLException {
         long count = 0;
-        try (PreparedStatement statement = connection.prepareStatement(Writer.INSERT_TINGLE)) {
+        try (PreparedStatement statement = connection.prepareStatement(Writer.INSERT_TINGLE);
+                PreparedStatement same = connection.prepareStatement(SAME_TINGLE)) {
+            Stored stored = new Stored(same);
             for (Json.JsonValue value : tingles) {
                 Json.JsonObject tingle = value.asObject();
                 String traceId = string(tingle, "traceId");
                 if (traceId != null && skip.contains(traceId)) {
+                    continue;
+                }
+                List<@Nullable Object> row = Arrays.asList(longOr(tingle, "atMs", 0), string(tingle, "kind"),
+                        string(tingle, "service"), Writer.cut(or(string(tingle, "title"), ""), 1024),
+                        Writer.cut(or(string(tingle, "detail"), ""), 4096), traceId, string(tingle, "spanId"));
+                if (stored.contains(row)) {
                     continue;
                 }
                 int i = 1;
@@ -292,6 +331,47 @@ public final class Importer {
             }
         }
         return count;
+    }
+
+    /**
+     * How many rows identical to a given one the store held before the import,
+     * spent one per identical row of the file.
+     *
+     * <p>The count is read once per distinct row, before any of the file's rows is
+     * written, so the file's own duplicates are matched against the store and not
+     * against each other.
+     */
+    private static final class Stored {
+
+        private final PreparedStatement count;
+        private final Map<List<@Nullable Object>, long[]> remaining = new HashMap<>();
+
+        Stored(PreparedStatement count) {
+            this.count = count;
+        }
+
+        /** Whether one more row equal to {@code row} is already stored, which it then uses up. */
+        boolean contains(List<@Nullable Object> row) throws SQLException {
+            long[] left = remaining.get(row);
+            if (left == null) {
+                left = new long[]{stored(row)};
+                remaining.put(row, left);
+            }
+            if (left[0] > 0) {
+                left[0]--;
+                return true;
+            }
+            return false;
+        }
+
+        private long stored(List<@Nullable Object> row) throws SQLException {
+            for (int i = 0; i < row.size(); i++) {
+                count.setObject(i + 1, row.get(i));
+            }
+            try (ResultSet rs = count.executeQuery()) {
+                return rs.next() ? rs.getLong(1) : 0;
+            }
+        }
     }
 
     // --- marks ------------------------------------------------------------------

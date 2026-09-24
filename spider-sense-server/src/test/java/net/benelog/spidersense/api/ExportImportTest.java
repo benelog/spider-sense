@@ -234,7 +234,7 @@ class ExportImportTest {
             Json.JsonObject second = Json.parse(again.body()).asObject();
             assertThat(second.getLong("skippedTraces")).isEqualTo(2);
             assertThat(second.getLong("spans")).isZero();
-            assertThat(second.getLong("logs")).isEqualTo(1);
+            assertThat(second.getLong("logs")).as("the line outside a span is already stored too").isZero();
             assertThat(second.getLong("tingles")).isZero();
             assertThat(second.getLong("marks")).isZero();
             assertThat(second.getLong("metricPoints")).isEqualTo(2);
@@ -244,12 +244,53 @@ class ExportImportTest {
 
             Json.JsonObject after = Json.parse(client.get("/api/status").body()).asObject();
             assertThat(after.getObject("counts").getLong("spans")).isEqualTo(3);
+            assertThat(after.getObject("counts").getLong("logs")).isEqualTo(2);
             assertThat(after.getObject("counts").getLong("metricSeries")).isEqualTo(1);
             assertThat(Json.parse(client.get("/api/marks").body()).asObject().getArray("marks"))
                     .hasSize(1);
             assertThat(rows(client, "SELECT COUNT(*) FROM tingle")).isEqualTo(tingles);
             assertThat(rows(client, "SELECT COUNT(*) FROM metric_point")).isEqualTo(2);
             assertThat(client.get("/api/traces/" + TRACE).body()).isEqualTo(trace[0]);
+        });
+    }
+
+    /**
+     * A log line outside any span and a tingle without a trace have no trace to be
+     * skipped with, so they are recognised by their own columns, and two identical
+     * lines of the file stay two lines.
+     */
+    @Test
+    void linesAndTinglesWithoutATraceAreNotImportedTwice() {
+        String[] document = new String[1];
+        serve(client -> {
+            fill(client);
+            Json.JsonObject exported = Json.parse(client.get("/api/export" + window()).body()).asObject();
+            Json.JsonArray logs = exported.getArray("logs");
+            for (int i = 0; i < logs.size(); i++) {
+                if (logs.get(i).asObject().get("traceId").isNull()) {
+                    // The same line logged twice in one millisecond.
+                    logs.add(Json.parse(logs.get(i).toJson()));
+                    break;
+                }
+            }
+            exported.getArray("tingles").add(Json.obj()
+                    .put("atMs", NOW + 7).put("kind", "error").put("service", "spring-orders")
+                    .put("title", "Shipping failed").put("detail", "outside any request")
+                    .putNull("traceId").putNull("spanId").put("durationMs", 0));
+            document[0] = exported.toJson();
+        });
+
+        serve(client -> {
+            Json.JsonObject first = Json.parse(postJson(client, "/api/import", document[0]).body()).asObject();
+            assertThat(first.getLong("logs")).isEqualTo(3);
+            long tingles = rows(client, "SELECT COUNT(*) FROM tingle");
+            assertThat(tingles).isEqualTo(first.getLong("tingles"));
+
+            Json.JsonObject second = Json.parse(postJson(client, "/api/import", document[0]).body()).asObject();
+            assertThat(second.getLong("logs")).isZero();
+            assertThat(second.getLong("tingles")).isZero();
+            assertThat(rows(client, "SELECT COUNT(*) FROM log")).isEqualTo(3);
+            assertThat(rows(client, "SELECT COUNT(*) FROM tingle")).isEqualTo(tingles);
         });
     }
 
