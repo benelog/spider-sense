@@ -78,6 +78,12 @@ final class SqlShape {
             "select", "from", "group", "having", "limit", "offset", "fetch", "union", "set",
             "values", "insert", "update", "delete", "join");
 
+    /**
+     * The keywords a {@code ::} cast's type may be spelt with
+     * ({@code ::timestamp with time zone}); any other keyword ends the type.
+     */
+    private static final Set<String> TYPE_WORDS = Set.of("timestamp", "time", "date", "interval", "with");
+
     private enum Region { NONE, PREDICATE, ORDER }
 
     private final List<TableRef> tables = new ArrayList<>();
@@ -137,7 +143,17 @@ final class SqlShape {
                 i++;
                 continue;
             }
+            if (token.is("::")) {
+                i = skipType(tokens, i + 1);     // ?::uuid names a type, not a column
+                continue;
+            }
             String word = token.keyword();
+            if ("on".equals(word) && i + 1 < tokens.size()
+                    && (tokens.get(i + 1).isWord("conflict") || tokens.get(i + 1).isWord("duplicate"))) {
+                i = skipConflictTarget(tokens, i + 1);
+                region = Region.NONE;
+                continue;
+            }
             if (word != null && TABLE_INTRO.contains(word)) {
                 // "insert into" and "delete from" name a table; so does a join.
                 i = tableList(tokens, i + 1, word.equals("from") || word.equals("update"));
@@ -191,6 +207,55 @@ final class SqlShape {
             return Region.ORDER;
         }
         return null;
+    }
+
+    /**
+     * Past the type a {@code ::} cast names: its words, its precision
+     * ({@code ::numeric(10, 2)}) and its array brackets ({@code ::int[]}, which
+     * read as a bracket-quoted name).
+     */
+    private static int skipType(List<Token> tokens, int start) {
+        int i = start;
+        while (i < tokens.size()) {
+            Token token = tokens.get(i);
+            if (token.is("(") && i > start) {
+                i = skipGroup(tokens, i + 1);
+                continue;
+            }
+            String word = token.keyword();
+            if (token.kind() != Token.Kind.NAME || (word != null && !TYPE_WORDS.contains(word))) {
+                return i;
+            }
+            i++;
+        }
+        return i;
+    }
+
+    /**
+     * Past an upsert's conflict clause, to its assignments:
+     * {@code on conflict (id) do [update]}, {@code on conflict on constraint pk do},
+     * {@code on duplicate key [update]}.
+     *
+     * <p>The target names the unique key the write collides on, which already has
+     * its index; it is not a column the statement filters on, and {@code conflict}
+     * and {@code do} are not columns at all.
+     *
+     * @param start the index of {@code conflict} or {@code duplicate}
+     */
+    private static int skipConflictTarget(List<Token> tokens, int start) {
+        String end = tokens.get(start).isWord("conflict") ? "do" : "key";
+        int i = start + 1;
+        while (i < tokens.size()) {
+            Token token = tokens.get(i);
+            i = token.is("(") ? skipGroup(tokens, i + 1) : i + 1;
+            if (token.isWord(end)) {
+                break;
+            }
+        }
+        if (i < tokens.size() && "update".equals(tokens.get(i).keyword())) {
+            i++;     // the assignments that follow name no table
+        }
+        return i;
     }
 
     /**
@@ -319,9 +384,9 @@ final class SqlShape {
     // --- tokens --------------------------------------------------------------
 
     /**
-     * One token: a name (possibly a dotted chain), a punctuation mark, a parameter
-     * or a number. String literals are dropped as they are read — a sanitised
-     * statement has none left worth looking at.
+     * One token: a name (possibly a dotted chain), a punctuation mark ({@code ::}
+     * is one), a parameter or a number. String literals are dropped as they are
+     * read — a sanitised statement has none left worth looking at.
      *
      * @param parts the segments of a name, unquoted and lower-cased; empty otherwise
      */
@@ -335,6 +400,11 @@ final class SqlShape {
 
         boolean isKeyword() {
             return keyword() != null;
+        }
+
+        /** Whether this token is the unquoted word, keyword or not. */
+        boolean isWord(String word) {
+            return kind == Kind.NAME && !quoted && parts.size() == 1 && text.equals(word);
         }
 
         /** The word this token is, when it is one that can never be a name. */
@@ -365,6 +435,9 @@ final class SqlShape {
                     tokens.add(new Token(Kind.NUMBER, statement.substring(start, i), List.of(), false));
                 } else if (starts(statement, i)) {
                     i = name(statement, i, tokens);
+                } else if (statement.startsWith("::", i)) {
+                    tokens.add(new Token(Kind.PUNCTUATION, "::", List.of(), false));
+                    i += 2;
                 } else {
                     tokens.add(new Token(Kind.PUNCTUATION, String.valueOf(c), List.of(), false));
                     i++;

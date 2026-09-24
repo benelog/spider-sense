@@ -129,6 +129,41 @@ class SqlShapeTest {
     }
 
     @Test
+    void theTypeOfADoubleColonCastIsNotAColumn() {
+        assertThat(predicates("select * from items where id = ?::uuid and name = ?"))
+                .containsExactly("items.id", "items.name");
+        assertThat(predicates("select * from items where created_at::date = ?"
+                + " and price > ?::numeric(10, 2) and tags && ?::text[]"
+                + " and updated_at < ?::timestamp with time zone order by name::text"))
+                .containsExactly("items.created_at", "items.price", "items.tags", "items.updated_at",
+                        "items.name");
+    }
+
+    @Test
+    void anUpsertsConflictTargetIsNeitherAPredicateNorAColumnNamedConflict() {
+        String postgres = "insert into items (id, name) values (?, ?)"
+                + " on conflict (id) do update set name = excluded.name";
+        assertThat(SqlShape.of(postgres).readable()).isTrue();
+        assertThat(tables(postgres)).containsExactly("items");
+        assertThat(predicates(postgres)).isEmpty();
+
+        String constraint = "insert into items (id, name) values (?, ?)"
+                + " on conflict on constraint items_pkey do nothing";
+        assertThat(SqlShape.of(constraint).readable()).isTrue();
+        assertThat(predicates(constraint)).isEmpty();
+
+        String guarded = "insert into items (id, stock) values (?, ?)"
+                + " on conflict (id) do update set stock = ? where items.stock < ?";
+        assertThat(predicates(guarded)).containsExactly("items.stock");
+
+        String mysql = "insert into items (id, stock) values (?, ?)"
+                + " on duplicate key update stock = stock + values(stock)";
+        assertThat(SqlShape.of(mysql).readable()).isTrue();
+        assertThat(tables(mysql)).containsExactly("items");
+        assertThat(predicates(mysql)).isEmpty();
+    }
+
+    @Test
     void aQualifiedTableKeepsItsSchemaAndAQuotedColumnIsStillAColumn() {
         String statement = "select * from public.items where \"Name\" = ?";
         SqlShape shape = SqlShape.of(statement);
