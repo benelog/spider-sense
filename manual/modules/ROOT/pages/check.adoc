@@ -43,7 +43,7 @@ A value counts every group and every finding of the window, never the top of a l
 
 | `--max-slow-queries`
 | none
-| Query calls over `slow.query.ms`.
+| Query calls over `slow.query.ms`; with `--endpoint`, the ones that endpoint's own requests made, by the join `--max-queries-per-request` reads.
 
 | `--max-n-plus-one`
 | `0`

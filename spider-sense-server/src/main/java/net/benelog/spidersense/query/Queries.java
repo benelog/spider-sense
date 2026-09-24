@@ -287,10 +287,14 @@ public final class Queries {
         });
     }
 
-    /** The database work the requests of one endpoint did: calls and time, summed. */
-    public record DbWork(long calls, double totalMs) {
+    /**
+     * The database work the requests of one endpoint did: calls and time, summed.
+     *
+     * @param slowCalls the calls over {@code slow.query.ms}
+     */
+    public record DbWork(long calls, double totalMs, long slowCalls) {
 
-        public static final DbWork NONE = new DbWork(0, 0);
+        public static final DbWork NONE = new DbWork(0, 0, 0);
     }
 
     /**
@@ -334,12 +338,13 @@ public final class Queries {
             params.addAll(endpointIds);
         }
         Map<String, DbWork> work = new HashMap<>();
-        sql.forEach("SELECT e.endpoint_id AS id, COUNT(*) AS calls, SUM(d.duration_ns) AS total_ns"
+        sql.forEach("SELECT e.endpoint_id AS id, COUNT(*) AS calls, SUM(d.duration_ns) AS total_ns, "
+                + slowCalls("d") + " AS slow_calls"
                 + " FROM span e JOIN span d USE INDEX (span_trace) ON d.trace_id = e.trace_id AND d.service = e.service"
                 + " AND d.query_id IS NOT NULL WHERE " + where + " GROUP BY e.endpoint_id",
                 params, rs ->
-                        work.put(rs.getString("id"),
-                                new DbWork(rs.getLong("calls"), Rows.ms(rs, "total_ns"))));
+                        work.put(rs.getString("id"), new DbWork(rs.getLong("calls"), Rows.ms(rs, "total_ns"),
+                                rs.getLong("slow_calls"))));
         return work;
     }
 
@@ -368,13 +373,19 @@ public final class Queries {
         params.addAll(names);
         Map<String, DbWork> work = new HashMap<>();
         sql.forEach("SELECT r.service AS service, r.name AS name, COUNT(d.id) AS calls,"
-                + " SUM(d.duration_ns) AS total_ns"
+                + " SUM(d.duration_ns) AS total_ns, " + slowCalls("d") + " AS slow_calls"
                 + " FROM span r JOIN span d USE INDEX (span_trace) ON d.trace_id = r.trace_id AND d.service = r.service"
                 + " AND d.query_id IS NOT NULL WHERE " + where + " GROUP BY r.service, r.name",
                 params, rs ->
                         work.put(rs.getString("service") + "\0" + rs.getString("name"),
-                                new DbWork(rs.getLong("calls"), Rows.ms(rs, "total_ns"))));
+                                new DbWork(rs.getLong("calls"), Rows.ms(rs, "total_ns"), rs.getLong("slow_calls"))));
         return work;
+    }
+
+    /** How many of {@code alias}'s spans ran past {@code slow.query.ms}, as an aggregate. */
+    private String slowCalls(String alias) {
+        return "SUM(CASE WHEN " + alias + ".duration_ns > " + tingles.slowQueryMs() * 1_000_000L
+                + " THEN 1 ELSE 0 END)";
     }
 
     private Map<String, Map<String, Long>> statusCodes(Clause where) {

@@ -2,6 +2,7 @@ package net.benelog.spidersense.query;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -109,6 +110,38 @@ class CheckTest {
         assertThat(rule(result, Check.MIN_APDEX).actual()).isEqualTo(0.0);
         assertThat(rule(result, Check.MIN_APDEX).pass()).isFalse();
         assertThat(result.pass()).isFalse();
+    }
+
+    /** A statement run slow by one endpoint does not count against another that runs it fast. */
+    @Test
+    void anEndpointsSlowQueriesAreTheOnesItsOwnRequestsMade() {
+        Span.Builder a = entry("/a", 400);
+        Span.Builder b = entry("/b", 10);
+        List<Span.Builder> spans = new ArrayList<>(List.of(a, b));
+        for (int i = 0; i < 3; i++) {
+            spans.add(query(a, 200, NOW + i));
+        }
+        spans.add(query(b, 2, NOW));
+        decoder.accept(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
+        flush();
+
+        Check.RuleCheck fromB = rule(check.check(window, null, "GET /b", Map.of(Check.MAX_SLOW_QUERIES, 0.0)),
+                Check.MAX_SLOW_QUERIES);
+        Check.RuleCheck fromA = rule(check.check(window, null, "GET /a", Map.of(Check.MAX_SLOW_QUERIES, 0.0)),
+                Check.MAX_SLOW_QUERIES);
+
+        assertThat(fromB.actual()).isZero();
+        assertThat(fromB.pass()).isTrue();
+        assertThat(fromA.actual()).isEqualTo(3.0);
+    }
+
+    private Span.Builder query(Span.Builder parent, long durationMs, long at) {
+        int n = ids++;
+        return Otlp.child(parent, "%016x".formatted(n), "SELECT items", Span.SpanKind.SPAN_KIND_CLIENT, at, durationMs,
+                Otlp.attr("db.system", "h2"),
+                Otlp.attr("db.statement", "select * from items where id = ?"),
+                Otlp.attr("db.operation", "SELECT"),
+                Otlp.attr("db.sql.table", "items"));
     }
 
     @Test

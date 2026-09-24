@@ -172,13 +172,18 @@ public final class Check {
             }
             case MAX_SLOW_QUERIES -> {
                 long slow = 0;
-                // Only an endpoint scope needs the callers; the whole window needs the aggregate.
-                List<Stats.QueryStats> groups = endpoint == null
-                        ? queries.queryGroups(window, service, "total", EVERY, null)
-                        : queries.queries(window, service, "total", EVERY, null);
-                for (Stats.QueryStats query : groups) {
-                    if (endpoint == null || callsFrom(query, endpoints)) {
+                if (endpoint == null) {
+                    for (Stats.QueryStats query : queries.queryGroups(window, service, "total", EVERY, null)) {
                         slow += query.slowCalls();
+                    }
+                } else {
+                    // The slow calls the endpoint's own requests made, by the join
+                    // --max-queries-per-request reads, not every slow call of a statement
+                    // the endpoint also runs.
+                    Map<String, Queries.DbWork> work = queries.databaseWork(window, service,
+                            endpoints.stream().map(Stats.EndpointStats::endpointId).toList());
+                    for (Stats.EndpointStats each : endpoints) {
+                        slow += work.getOrDefault(each.endpointId(), Queries.DbWork.NONE).slowCalls();
                     }
                 }
                 yield max(rule, limit, (double) slow,
@@ -287,17 +292,6 @@ public final class Check {
     private static boolean matchesName(String endpoint, String name, String service) {
         return endpoint.equals(name)
                 || endpoint.equals(net.benelog.spidersense.store.Ids.endpointId(service, name));
-    }
-
-    private static boolean callsFrom(Stats.QueryStats query, List<Stats.EndpointStats> endpoints) {
-        for (Stats.Caller caller : query.callers()) {
-            for (Stats.EndpointStats each : endpoints) {
-                if (each.name().equals(caller.endpoint())) {
-                    return true;
-                }
-            }
-        }
-        return false;
     }
 
     private static boolean inScope(Findings.Finding finding, List<Stats.EndpointStats> endpoints) {
