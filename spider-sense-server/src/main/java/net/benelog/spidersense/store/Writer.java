@@ -228,23 +228,47 @@ public final class Writer implements AutoCloseable {
             if (batches.isEmpty()) {
                 return;
             }
+            List<Batch> stored;
             try {
                 write(batches);
+                stored = batches;
             } catch (SQLException | RuntimeException e) {
                 if (exiting) {
                     // Most likely H2's own exit hook closing the database; the flush at exit writes it.
                     unwritten.addAll(batches);
                     return;
                 }
-                LOG.log(System.Logger.Level.WARNING, "Spider Sense could not store a batch", e);
-                return;
+                if (batches.size() == 1) {
+                    LOG.log(System.Logger.Level.WARNING, "Spider Sense could not store a batch", e);
+                    return;
+                }
+                // A value the store refuses costs the export that carried it, not every export drained beside it.
+                stored = writeOneByOne(batches);
             }
             if (exiting) {
                 // Possibly into a file the pool opened again after H2 closed it; the flush at exit closes it.
                 wroteWhileExiting = true;
             }
-            publish(batches);
+            publish(stored);
         }
+    }
+
+    /** Each batch of a failed flush in a transaction of its own, returning the ones stored. */
+    private List<Batch> writeOneByOne(List<Batch> batches) {
+        List<Batch> stored = new ArrayList<>(batches.size());
+        for (int b = 0; b < batches.size(); b++) {
+            try {
+                write(List.of(batches.get(b)));
+                stored.add(batches.get(b));
+            } catch (SQLException | RuntimeException e) {
+                if (exiting) {
+                    unwritten.addAll(batches.subList(b, batches.size()));
+                    break;
+                }
+                LOG.log(System.Logger.Level.WARNING, "Spider Sense could not store a batch", e);
+            }
+        }
+        return stored;
     }
 
     /**
@@ -472,7 +496,7 @@ public final class Writer implements AutoCloseable {
         statement.setString(i++, cut(rootName, 1024));
         statement.setString(i++, root.service());
         statement.setString(i++, root.kind());
-        statement.setString(i++, AttrJson.encodeStrings(List.copyOf(services)));
+        statement.setString(i++, AttrJson.encodeStrings(List.copyOf(services), 4096));
         statement.setInt(i++, spans.size());
         statement.setInt(i++, errorCount);
         statement.setInt(i++, dbCount);
@@ -728,8 +752,13 @@ public final class Writer implements AutoCloseable {
         for (int i = 0; i < counts.length; i++) {
             json.append(i == 0 ? "" : ",").append(counts[i]);
         }
-        return json.append("]}").toString();
+        json.append("]}");
+        // Past the column, the point keeps its count, sum, min and max and loses only its buckets.
+        return json.length() <= BUCKETS_MAX ? json.toString() : null;
     }
+
+    /** The width of {@code metric_point.buckets}. */
+    private static final int BUCKETS_MAX = 8192;
 
     /** How many cached ids one statement checks. */
     private static final int SERIES_CHECK_CHUNK = 500;

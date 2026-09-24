@@ -187,7 +187,7 @@ public final class OtlpDecoder {
     }
 
     private void accept(Batch batch, String service, Metric metric) {
-        String name = metric.getName();
+        String name = fit(metric.getName());
         String unit = metric.getUnit();
         String description = metric.getDescription();
         switch (metric.getDataCase()) {
@@ -356,9 +356,17 @@ public final class OtlpDecoder {
 
     // --- shared ---
 
+    /** The service name, cut to the width of every {@code service} column so each one stores the same name. */
     private static String serviceName(Map<String, Object> resource) {
         Object name = resource.get("service.name");
-        return name == null ? UNKNOWN_SERVICE : String.valueOf(name);
+        return name == null ? UNKNOWN_SERVICE : fit(String.valueOf(name));
+    }
+
+    /** The width of the {@code service} columns and of a metric's {@code name}. */
+    private static final int NAME_MAX = 255;
+
+    private static String fit(String name) {
+        return name.length() <= NAME_MAX ? name : name.substring(0, NAME_MAX);
     }
 
     private static long millis(long nanos) {

@@ -80,6 +80,61 @@ class WriterTest {
         assertThat(store.sql().count("SELECT COUNT(*) FROM span", List.of())).isEqualTo(1);
     }
 
+    /** A service or metric name longer than its column is stored cut, the same in every table. */
+    @Test
+    void aNameLongerThanItsColumnIsCutRatherThanLosingTheFlush() {
+        String name = "s".repeat(300);
+        decoder.accept(Otlp.traces(Otlp.service(name), Otlp.span("%032x".formatted(1), "%016x".formatted(1),
+                "GET /orders", Span.SpanKind.SPAN_KIND_SERVER, AT, 5)));
+        decoder.accept(Otlp.gauge(Otlp.service(name), "m".repeat(300), "By", AT, 1));
+        store.writer().awaitIdle(5_000);
+
+        String cut = name.substring(0, 255);
+        assertThat(store.sql().count("SELECT COUNT(*) FROM span WHERE service = ?", List.of(cut))).isEqualTo(1);
+        assertThat(store.sql().count("SELECT COUNT(*) FROM trace WHERE root_service = ?", List.of(cut)))
+                .isEqualTo(1);
+        assertThat(store.sql().count("SELECT COUNT(*) FROM service WHERE name = ?", List.of(cut))).isEqualTo(1);
+        assertThat(store.sql().count("SELECT COUNT(*) FROM metric_series WHERE service = ? AND name = ?",
+                List.of(cut, "m".repeat(255)))).isEqualTo(1);
+        assertThat(pointsWithASeries()).isEqualTo(1);
+    }
+
+    /** Buckets past their column are left out; the point keeps its count and sum. */
+    @Test
+    void aHistogramWithTooManyBucketsIsStoredWithoutThem() {
+        double[] bounds = new double[1_000];
+        long[] counts = new long[1_001];
+        for (int i = 0; i < bounds.length; i++) {
+            bounds[i] = i * 1.5;
+        }
+        counts[0] = 3;
+        decoder.accept(Otlp.histogram(Otlp.service("orders"), "http.server.request.duration", AT, 3, 0.3,
+                bounds, counts));
+        store.writer().awaitIdle(5_000);
+
+        assertThat(store.sql().count("SELECT COUNT(*) FROM metric_point WHERE count = 3 AND buckets IS NULL",
+                List.of())).isEqualTo(1);
+    }
+
+    /** A batch the database refuses costs itself only, not the batches flushed beside it. */
+    @Test
+    void aRefusedBatchDoesNotTakeTheOthersOfItsFlushAlong() {
+        Database database = Database.open(fileUrl(), dir.resolve("sense.mv.db"));
+        Writer writer = writer(database);
+        Batch refused = new Batch();
+        refused.addTingles(List.of(new Tingle("k".repeat(20), AT, "orders", "too long a kind", null, null, null, 0)));
+        writer.submit(spans(1));
+        writer.submit(refused);
+        writer.submit(decoder.accept(Otlp.traces(Otlp.service("orders"), Otlp.span("%032x".formatted(99),
+                "%016x".formatted(99), "GET /orders", Span.SpanKind.SPAN_KIND_SERVER, AT, 5))));
+
+        writer.flushNow();
+
+        assertThat(database.sql().count("SELECT COUNT(*) FROM span", List.of())).isEqualTo(2);
+        assertThat(database.sql().count("SELECT COUNT(*) FROM tingle", List.of())).isZero();
+        database.close();
+    }
+
     // --- the flush at exit -----------------------------------------------------------
 
     @TempDir

@@ -180,6 +180,17 @@ public final class AttrJson {
         return Json.arr().addAll(values).toJson();
     }
 
+    /** As {@link #encodeStrings(List)}, leaving out the values past {@code max} characters of JSON. */
+    public static String encodeStrings(List<String> values, int max) {
+        List<String> kept = new ArrayList<>(values);
+        String json = encodeStrings(kept);
+        while (json.length() > max && !kept.isEmpty()) {
+            kept.remove(kept.size() - 1);
+            json = encodeStrings(kept);
+        }
+        return json;
+    }
+
     public static List<String> decodeStrings(@Nullable String json) {
         if (json == null || json.isEmpty() || EMPTY_ARRAY.equals(json)) {
             return List.of();
