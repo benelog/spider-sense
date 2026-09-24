@@ -64,6 +64,22 @@ class WriterTest {
         assertThat(pointsWithASeries()).isEqualTo(2);
     }
 
+    /**
+     * A sender that sets no severity leaves the proto default 0; its name must fit the
+     * column, or the flush fails and takes every span flushed beside it along.
+     */
+    @Test
+    void aLogWithoutASeverityIsStoredWithTheSpansFlushedBesideIt() {
+        spans(1);
+        decoder.accept(Otlp.logs(Otlp.service("orders"), "orders.Job",
+                Otlp.log(AT, 0, "no severity", null, null)));
+        store.writer().awaitIdle(5_000);
+
+        assertThat(store.sql().count("SELECT COUNT(*) FROM log WHERE severity = 'UNSET'", List.of()))
+                .isEqualTo(1);
+        assertThat(store.sql().count("SELECT COUNT(*) FROM span", List.of())).isEqualTo(1);
+    }
+
     // --- the flush at exit -----------------------------------------------------------
 
     @TempDir

@@ -8,7 +8,7 @@ import org.jspecify.annotations.Nullable;
  * One log line, with the ids that correlate it to a trace.
  *
  * @param id       monotonically increasing, assigned on ingest; the UI pages on it
- * @param severity the OTLP severity number mapped to TRACE/DEBUG/INFO/WARN/ERROR/FATAL
+ * @param severity the OTLP severity number mapped to TRACE/DEBUG/INFO/WARN/ERROR/FATAL, or UNSET
  * @param logger   the instrumentation scope name, which is the logger name for a Java appender
  */
 public record LogRecord(
@@ -23,7 +23,11 @@ public record LogRecord(
         @Nullable String spanId,
         Map<String, Object> attributes) {
 
-    /** The OTLP severity ranges; anything outside them has no text. */
+    /**
+     * The OTLP severity ranges; a number outside them, 0 above all (the proto default a
+     * sender that sets no severity leaves), is {@code UNSET}. Every name fits the
+     * {@code VARCHAR(8)} column.
+     */
     public static String severityText(int number) {
         if (number >= 21) {
             return "FATAL";
@@ -43,7 +47,7 @@ public record LogRecord(
         if (number >= 1) {
             return "TRACE";
         }
-        return "UNSPECIFIED";
+        return "UNSET";
     }
 
     /** The lowest severity number a name covers, so {@code severity=WARN} can mean "WARN and worse". */

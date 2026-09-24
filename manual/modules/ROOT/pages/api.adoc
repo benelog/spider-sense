@@ -466,6 +466,7 @@ Nothing else is read.
 *`GET /api/logs?from&to&service&severity=TRACE|DEBUG|INFO|WARN|ERROR&q&traceId&limit=200&before=<epoch ms>&beforeId=<id>`*
 
 `severity` is a minimum, so `WARN` shows `WARN` and `ERROR`.
+A record's own `severity` is the name of its OTLP severity range, and `UNSET` when the sender gave no severity number.
 `before` and `beforeId` are the last row's `at` and `id`, and page backwards as they do on `/api/traces`.
 
 [source,json]

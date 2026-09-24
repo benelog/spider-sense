@@ -273,7 +273,7 @@ public final class Importer {
                 statement.setLong(i++, longOr(log, "atMs", 0));
                 statement.setString(i++, string(log, "service"));
                 statement.setInt(i++, (int) longOr(log, "severityNumber", 0));
-                statement.setString(i++, string(log, "severity"));
+                statement.setString(i++, Writer.cut(string(log, "severity"), 8));
                 statement.setString(i++, Writer.cut(or(string(log, "body"), ""), 65535));
                 statement.setString(i++, Writer.cut(string(log, "logger"), 512));
                 statement.setString(i++, traceId);

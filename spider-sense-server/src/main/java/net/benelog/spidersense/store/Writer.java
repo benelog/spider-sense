@@ -496,7 +496,7 @@ public final class Writer implements AutoCloseable {
                     statement.setLong(i++, log.at());
                     statement.setString(i++, log.service());
                     statement.setInt(i++, log.severityNumber());
-                    statement.setString(i++, log.severity());
+                    statement.setString(i++, cut(log.severity(), 8));
                     statement.setString(i++, cut(log.body(), 65535));
                     statement.setString(i++, cut(log.logger(), 512));
                     statement.setString(i++, log.traceId());
