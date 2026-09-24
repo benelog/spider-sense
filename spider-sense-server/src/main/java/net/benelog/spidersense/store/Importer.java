@@ -606,8 +606,8 @@ public final class Importer {
                 statement.setDouble(i++, point.optDouble("value", 0));
                 statement.setLong(i++, longOr(point, "count", 0));
                 statement.setDouble(i++, point.optDouble("sum", 0));
-                statement.setDouble(i++, point.optDouble("min", 0));
-                statement.setDouble(i++, point.optDouble("max", 0));
+                Writer.setDouble(statement, i++, point.optDouble("min", Double.NaN));
+                Writer.setDouble(statement, i++, point.optDouble("max", Double.NaN));
                 statement.setString(i, buckets(point));
                 statement.addBatch();
                 count++;

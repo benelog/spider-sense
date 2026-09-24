@@ -244,8 +244,9 @@ public final class OtlpDecoder {
         for (int i = 0; i < bounds.length; i++) {
             bounds[i] = point.getExplicitBounds(i);
         }
+        // Min and max are optional in OTLP; an absent one is unknown (NaN, stored as NULL), not 0.
         return MetricPoint.histogram(millis(point.getTimeUnixNano()), point.getCount(), point.getSum(),
-                point.hasMin() ? point.getMin() : 0, point.hasMax() ? point.getMax() : 0,
+                point.hasMin() ? point.getMin() : Double.NaN, point.hasMax() ? point.getMax() : Double.NaN,
                 counts.length > 0 ? counts : null, counts.length > 0 ? bounds : null);
     }
 
@@ -256,7 +257,8 @@ public final class OtlpDecoder {
      */
     private static MetricPoint exponential(ExponentialHistogramDataPoint point) {
         return MetricPoint.histogram(millis(point.getTimeUnixNano()), point.getCount(), point.getSum(),
-                point.hasMin() ? point.getMin() : 0, point.hasMax() ? point.getMax() : 0, null, null);
+                point.hasMin() ? point.getMin() : Double.NaN, point.hasMax() ? point.getMax() : Double.NaN,
+                null, null);
     }
 
     private static String temporality(AggregationTemporality temporality) {

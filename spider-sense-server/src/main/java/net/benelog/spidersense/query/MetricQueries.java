@@ -193,7 +193,13 @@ public final class MetricQueries {
             }
         }
         return new MetricPoint(rs.getLong("at_ms"), rs.getDouble("value"), rs.getLong("count"),
-                rs.getDouble("sum"), rs.getDouble("min"), rs.getDouble("max"), counts, bounds);
+                rs.getDouble("sum"), doubleOrNaN(rs, "min"), doubleOrNaN(rs, "max"), counts, bounds);
+    }
+
+    /** A histogram's min or max, NaN when the sender did not report it. */
+    private static double doubleOrNaN(java.sql.ResultSet rs, String column) throws java.sql.SQLException {
+        double value = rs.getDouble(column);
+        return rs.wasNull() ? Double.NaN : value;
     }
 
     private static final class SeriesBuilder {

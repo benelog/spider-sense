@@ -115,6 +115,22 @@ class WriterTest {
                 .singleElement().asString().contains("\"ratio\":\"NaN\"");
     }
 
+    /** A histogram without min and max stores neither, rather than a max of 0. */
+    @Test
+    void aHistogramWithoutMinAndMaxStoresNeither() {
+        var point = io.opentelemetry.proto.metrics.v1.HistogramDataPoint.newBuilder()
+                .setTimeUnixNano(AT * 1_000_000L).setCount(4).setSum(2.0)
+                .addExplicitBounds(1).addBucketCounts(3).addBucketCounts(1);
+        decoder.accept(Otlp.metrics(Otlp.service("orders"), io.opentelemetry.proto.metrics.v1.Metric.newBuilder()
+                .setName("http.client.request.duration")
+                .setHistogram(io.opentelemetry.proto.metrics.v1.Histogram.newBuilder().addDataPoints(point))
+                .build()));
+        store.writer().awaitIdle(5_000);
+
+        assertThat(store.sql().count("SELECT COUNT(*) FROM metric_point WHERE min IS NULL AND max IS NULL",
+                List.of())).isEqualTo(1);
+    }
+
     /** Buckets past their column are left out; the point keeps its count and sum. */
     @Test
     void aHistogramWithTooManyBucketsIsStoredWithoutThem() {

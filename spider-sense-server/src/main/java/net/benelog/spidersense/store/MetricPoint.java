@@ -10,6 +10,8 @@ import org.jspecify.annotations.Nullable;
  * and max are what the UI draws, and reconstructing the exponential buckets to
  * throw them away again would be work for nothing.
  *
+ * @param min          a histogram's smallest value, NaN when the sender did not report it
+ * @param max          a histogram's largest value, NaN when the sender did not report it
  * @param bucketCounts null unless this is a histogram with explicit buckets
  * @param bounds       the explicit bucket boundaries, one shorter than {@code bucketCounts}
  */
@@ -61,8 +63,11 @@ public record MetricPoint(
         for (int i = 0; i < counts.length; i++) {
             long inBucket = counts[i];
             if (cumulative + inBucket >= target && inBucket > 0) {
-                double low = i == 0 ? Math.min(min, edges[0]) : edges[i - 1];
-                double high = i == edges.length ? Math.max(max, edges[edges.length - 1]) : edges[i];
+                // An unreported min or max (NaN) leaves the outer buckets at zero and the last bound.
+                double low = i == 0 ? Math.min(Double.isNaN(min) ? 0 : min, edges[0]) : edges[i - 1];
+                double high = i == edges.length
+                        ? Math.max(Double.isNaN(max) ? edges[edges.length - 1] : max, edges[edges.length - 1])
+                        : edges[i];
                 double within = (target - cumulative) / inBucket;
                 return low + (high - low) * Math.min(1.0, Math.max(0.0, within));
             }

@@ -758,8 +758,8 @@ public final class Writer implements AutoCloseable {
                 statement.setDouble(i++, point.value());
                 statement.setLong(i++, point.count());
                 statement.setDouble(i++, point.sum());
-                statement.setDouble(i++, point.min());
-                statement.setDouble(i++, point.max());
+                setDouble(statement, i++, point.min());
+                setDouble(statement, i++, point.max());
                 statement.setString(i, buckets(point));
                 statement.addBatch();
             }
@@ -910,6 +910,15 @@ public final class Writer implements AutoCloseable {
             statement.setNull(index, java.sql.Types.BIGINT);
         } else {
             statement.setLong(index, value);
+        }
+    }
+
+    /** A double, or NULL for NaN, which a histogram's absent min or max is. */
+    static void setDouble(PreparedStatement statement, int index, double value) throws SQLException {
+        if (Double.isNaN(value)) {
+            statement.setNull(index, java.sql.Types.DOUBLE);
+        } else {
+            statement.setDouble(index, value);
         }
     }
 

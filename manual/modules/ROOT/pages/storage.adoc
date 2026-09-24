@@ -144,7 +144,7 @@ CREATE TABLE IF NOT EXISTS metric_point (
     value     DOUBLE,                        -- gauge/sum value, histogram mean
     count     BIGINT,                        -- histogram
     sum       DOUBLE,
-    min       DOUBLE,
+    min       DOUBLE,                        -- NULL when the sender did not report it (optional in OTLP)
     max       DOUBLE,
     buckets   VARCHAR(8192),                 -- JSON {"bounds":[...],"counts":[...]}
     PRIMARY KEY (series_id, at_ms)

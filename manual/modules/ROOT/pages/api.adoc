@@ -760,6 +760,7 @@ Search an error's endpoint or type instead, or use `/api/errors`.
 The exporter's interval already sets the resolution, and resampling a second time blurs the spike the chart is being read for.
 `rate=true` changes `v` only for a monotonic sum, and leaves other types unaffected.
 An exponential histogram is stored as a histogram with count, sum, min and max only, so its `p95` is `null`.
+A histogram point whose sender did not report its max, which OTLP leaves optional, has a `max` of `null` rather than `0`.
 `runtime.jvm` is `process.runtime.name + " " + process.runtime.version`, falling back to `process.runtime.description`.
 `GET /api/jvm` without `service` answers for the first service that sent any `jvm.*` metric, which locally is usually the only one.
 

@@ -30,4 +30,13 @@ class MetricPointTest {
         MetricPoint point = MetricPoint.histogram(0, 0, 0, 0, 0, new long[] {0, 0}, new double[] {1});
         assertTrue(Double.isNaN(point.percentile(0.5)));
     }
+
+    /** Min and max are optional in OTLP; without them the outer buckets run from 0 and to the last bound. */
+    @Test
+    void anUnreportedMinAndMaxLeaveTheOuterBucketsAtZeroAndTheLastBound() {
+        MetricPoint point = MetricPoint.histogram(0, 10, 100, Double.NaN, Double.NaN,
+                new long[] {2, 6, 2}, new double[] {5, 20});
+        assertEquals(20, point.percentile(0.95), 1e-9);
+        assertEquals(5 * 0.5, point.percentile(0.1), 1e-9);
+    }
 }
