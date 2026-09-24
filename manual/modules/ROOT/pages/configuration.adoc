@@ -6,6 +6,7 @@ You set a key as a system property on the command line of the JVM that runs the 
 The standalone jar also takes it as a `--key=value` argument.
 The sources in order of precedence, highest first, are the `--key=value` argument, the `-Dspidersense.key` system property, the environment variable of the same name, the properties file, and the default.
 The environment variable of a key is its name in upper case with every `.` and `-` made `_`, so `spidersense.slow.query.ms` is `SPIDERSENSE_SLOW_QUERY_MS`.
+An environment variable that is set but empty counts as unset, so it hides neither the properties file nor the default.
 A numeric key whose value is not a number, such as `spidersense.slow.query.ms=1x`, is a warning on stderr, and that key alone takes its default; every other key keeps its value.
 
 [#properties]

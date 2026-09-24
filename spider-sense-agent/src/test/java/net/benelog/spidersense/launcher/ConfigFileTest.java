@@ -9,6 +9,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -65,6 +66,22 @@ class ConfigFileTest {
 
         assertThat(System.getProperty("spidersense.port")).isEqualTo("4000");
         assertThat(System.getProperty("spidersense.host")).isEqualTo("0.0.0.0");
+    }
+
+    /** An exported but empty variable is unset to every reader, so the file's value stands. */
+    @Test
+    void anEmptyEnvironmentVariableHidesNothingAndASetOneWins() throws IOException {
+        Path file = file("spidersense.port=4001", "spidersense.host=0.0.0.0");
+        java.util.Properties properties = new java.util.Properties();
+        try (var in = java.nio.file.Files.newBufferedReader(file)) {
+            properties.load(in);
+        }
+
+        ConfigFile.apply(properties, file,
+                name -> Map.of("SPIDERSENSE_PORT", "", "SPIDERSENSE_HOST", "127.0.0.1").get(name));
+
+        assertThat(System.getProperty("spidersense.port")).isEqualTo("4001");
+        assertThat(System.getProperty("spidersense.host")).as("a set variable still wins").isNull();
     }
 
     @Test

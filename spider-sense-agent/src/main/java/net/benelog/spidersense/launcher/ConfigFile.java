@@ -94,6 +94,11 @@ final class ConfigFile {
     }
 
     static void apply(Properties properties, Path file) {
+        apply(properties, file, System::getenv);
+    }
+
+    /** The same, with the environment read through {@code env}, which a test can stand in for. */
+    static void apply(Properties properties, Path file, java.util.function.Function<String, @Nullable String> env) {
         for (String key : properties.stringPropertyNames()) {
             if (!key.startsWith(PREFIX)) {
                 continue;
@@ -102,7 +107,9 @@ final class ConfigFile {
                 System.err.println(SpiderSenseAgent.PREFIX + file + ": " + key
                         + " is not a Spider Sense property; applying it anyway");
             }
-            if (System.getProperty(key) != null || System.getenv(Config.envName(key)) != null) {
+            String variable = env.apply(Config.envName(key));
+            // An empty variable is unset to every reader of it, so it hides nothing here either.
+            if (System.getProperty(key) != null || (variable != null && !variable.isEmpty())) {
                 continue;
             }
             // Trimmed, as a -D value would be typed; an empty value is kept, because an empty
