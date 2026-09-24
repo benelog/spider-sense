@@ -137,12 +137,65 @@ class CompareTest {
         assertThat(diff.verdict()).isEqualTo(Compare.WORSE);
     }
 
+    @Test
+    void aGroupBelowTheTopHundredOfOneSideIsStillJudgedOnBoth() {
+        // A hundred heavier statements push the light one to the 101st place before.
+        Span.Builder heavy = entry("/orders", BEFORE + 1000, 50);
+        Span.Builder[] spans = new Span.Builder[102];
+        spans[0] = heavy;
+        for (int i = 1; i <= 100; i++) {
+            spans[i] = query(heavy, BEFORE + 1000 + i, 5, "select * from t" + (char) ('a' + i % 26)
+                    + (char) ('a' + i / 26));
+        }
+        spans[101] = query(heavy, BEFORE + 1200, 1, "select * from light");
+        send(spans);
+        Span.Builder light = entry("/orders", AFTER + 1000, 50);
+        send(light, query(light, AFTER + 1001, 1, "select * from light"));
+        flush();
+
+        Compare.Comparison comparison = compare.compare(before, after, null);
+
+        assertThat(comparison.queries()).hasSize(101);
+        Compare.QueryDiff diff = comparison.queries().stream()
+                .filter(each -> "select * from light".equals(each.statement())).findFirst().orElseThrow();
+        assertThat(diff.before()).isNotNull();
+        assertThat(diff.verdict()).isEqualTo(Compare.SAME);
+    }
+
+    @Test
+    void anErrorGroupBelowTheTopHundredOfOneSideIsStillJudgedOnBoth() {
+        for (int i = 0; i < 100; i++) {
+            String type = "orders.Failure" + (char) ('A' + i % 26) + (char) ('A' + i / 26);
+            send(Otlp.failing(entry("/ship", BEFORE + 1000 + i, 10), type, "failed",
+                    "at orders.Ship.run(Ship.java:1)"),
+                    Otlp.failing(entry("/ship", BEFORE + 1000 + i, 10), type, "failed",
+                            "at orders.Ship.run(Ship.java:1)"));
+        }
+        send(Otlp.failing(entry("/pay", BEFORE + 2000, 10), "java.lang.ArithmeticException", "/ by zero",
+                "at orders.Pay.run(Pay.java:1)"));
+        send(Otlp.failing(entry("/pay", AFTER + 1000, 10), "java.lang.ArithmeticException", "/ by zero",
+                "at orders.Pay.run(Pay.java:1)"));
+        flush();
+
+        Compare.ErrorDiff diff = compare.compare(before, after, null).errors().stream()
+                .filter(each -> "java.lang.ArithmeticException".equals(each.type()))
+                .findFirst().orElseThrow();
+
+        assertThat(diff.before()).isEqualTo(1);
+        assertThat(diff.after()).isEqualTo(1);
+        assertThat(diff.verdict()).isEqualTo(Compare.SAME);
+    }
+
     private Span.Builder query(Span.Builder parent, long at) {
+        return query(parent, at, 2, "select * from order_line where order_id = ?");
+    }
+
+    private Span.Builder query(Span.Builder parent, long at, long durationMs, String statement) {
         int n = ids++;
         return Otlp.child(parent, "%016x".formatted(n), "SELECT order_line",
-                Span.SpanKind.SPAN_KIND_CLIENT, at, 2,
+                Span.SpanKind.SPAN_KIND_CLIENT, at, durationMs,
                 Otlp.attr("db.system", "h2"),
-                Otlp.attr("db.statement", "select * from order_line where order_id = ?"),
+                Otlp.attr("db.statement", statement),
                 Otlp.attr("db.operation", "SELECT"),
                 Otlp.attr("db.sql.table", "order_line"));
     }

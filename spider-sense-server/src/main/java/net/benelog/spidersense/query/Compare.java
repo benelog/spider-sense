@@ -39,7 +39,11 @@ public final class Compare {
     private static final double ABSOLUTE_MS = 10;
     private static final double ABSOLUTE_CALLS = 0.5;
 
-    private static final int GROUPS = 100;
+    /**
+     * Every group of a window, not the top of it: a group that falls just below a
+     * cut on one side would read as {@code new} or {@code gone}.
+     */
+    private static final int EVERY_GROUP = Integer.MAX_VALUE;
 
     public record Side(long calls, long errors, double p50Ms, double p95Ms, double maxMs,
             double dbCallsPerRequest, double dbMsPerRequest) {
@@ -243,7 +247,8 @@ public final class Compare {
 
     private Map<String, Stats.QueryStats> queries(Window window, @Nullable String service) {
         Map<String, Stats.QueryStats> byId = new LinkedHashMap<>();
-        for (Stats.QueryStats query : queries.queries(window, service, "total", GROUPS, null)) {
+        // The aggregate alone: a verdict reads neither the callers nor the schema block.
+        for (Stats.QueryStats query : queries.queryGroups(window, service, "total", EVERY_GROUP, null)) {
             byId.put(query.queryId(), query);
         }
         return byId;
@@ -251,7 +256,7 @@ public final class Compare {
 
     private Map<String, Stats.ErrorGroup> errors(Window window, @Nullable String service) {
         Map<String, Stats.ErrorGroup> byId = new LinkedHashMap<>();
-        for (Stats.ErrorGroup group : queries.errors(window, service, GROUPS, null)) {
+        for (Stats.ErrorGroup group : queries.errorGroups(window, service, EVERY_GROUP, null)) {
             byId.put(group.errorId(), group);
         }
         return byId;

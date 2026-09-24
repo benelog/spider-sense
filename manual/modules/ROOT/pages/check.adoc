@@ -17,6 +17,7 @@ The response also carries the verdict as the header `X-Spider-Sense-Pass: true|f
 == The rules
 
 Every rule given is evaluated, and each one is a limit compared against a value measured over the window.
+A value counts every group and every finding of the window, never the top of a list, so a long list cannot hide what a rule counts.
 
 [cols="2,1,3",options="header"]
 |===

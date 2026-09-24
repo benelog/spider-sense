@@ -38,8 +38,11 @@ public final class Check {
 
     public static final String NO_REQUESTS = "no requests in the window";
 
-    private static final int GROUPS = 100;
-    private static final int FINDINGS = 100;
+    /**
+     * Every group and every finding of the window, not the top of it: a count
+     * that stops at a cut passes a rule it should fail.
+     */
+    private static final int EVERY = Integer.MAX_VALUE;
 
     public record RuleCheck(String rule, double limit, @Nullable Double actual, boolean pass,
             String detail) {
@@ -101,7 +104,7 @@ public final class Check {
         List<List<Findings.Finding>> found = new ArrayList<>(1);
         Supplier<List<Findings.Finding>> ranked = () -> {
             if (found.isEmpty()) {
-                found.add(findings.ranked(window, service, FINDINGS));
+                found.add(findings.ranked(window, service, EVERY));
             }
             return found.get(0);
         };
@@ -169,7 +172,11 @@ public final class Check {
             }
             case MAX_SLOW_QUERIES -> {
                 long slow = 0;
-                for (Stats.QueryStats query : queries.queries(window, service, "total", GROUPS, null)) {
+                // Only an endpoint scope needs the callers; the whole window needs the aggregate.
+                List<Stats.QueryStats> groups = endpoint == null
+                        ? queries.queryGroups(window, service, "total", EVERY, null)
+                        : queries.queries(window, service, "total", EVERY, null);
+                for (Stats.QueryStats query : groups) {
                     if (endpoint == null || callsFrom(query, endpoints)) {
                         slow += query.slowCalls();
                     }
@@ -259,7 +266,11 @@ public final class Check {
 
     private long errorCount(Window window, @Nullable String service, @Nullable String endpoint) {
         long count = 0;
-        for (Stats.ErrorGroup group : queries.errors(window, service, GROUPS, null)) {
+        // Only an endpoint scope needs where each group occurred.
+        List<Stats.ErrorGroup> groups = endpoint == null
+                ? queries.errorGroups(window, service, EVERY, null)
+                : queries.errors(window, service, EVERY, null);
+        for (Stats.ErrorGroup group : groups) {
             if (endpoint == null) {
                 count += group.count();
                 continue;

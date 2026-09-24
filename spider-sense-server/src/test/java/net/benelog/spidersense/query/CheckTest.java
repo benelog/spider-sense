@@ -250,6 +250,38 @@ class CheckTest {
     }
 
     @Test
+    void theRulesCountPastAHundredErrorGroupsAndFindings() {
+        // A hundred and one error groups: more errors than a top hundred sums, and
+        // more error findings, which rank before an N+1, than a top hundred holds.
+        for (int i = 0; i < 101; i++) {
+            String type = "orders.Failure" + (char) ('A' + i % 26) + (char) ('A' + i / 26);
+            decoder.accept(Otlp.traces(Otlp.service("orders"), Otlp.failing(entry("/ship", 10), type,
+                    "failed", "at orders.Ship.run(Ship.java:1)")));
+        }
+        Span.Builder root = entry("/orders/{id}", 60);
+        List<Span.Builder> spans = new java.util.ArrayList<>();
+        spans.add(root);
+        for (int i = 0; i < 6; i++) {
+            int n = ids++;
+            spans.add(Otlp.child(root, "%016x".formatted(n), "SELECT order_line",
+                    Span.SpanKind.SPAN_KIND_CLIENT, NOW + i, 2,
+                    Otlp.attr("db.system", "h2"),
+                    Otlp.attr("db.statement", "select * from order_line where order_id = ?"),
+                    Otlp.attr("db.operation", "SELECT"),
+                    Otlp.attr("db.sql.table", "order_line")));
+        }
+        decoder.accept(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
+        flush();
+
+        Check.CheckResult result = check.check(window, null, null, Map.of(Check.MAX_ERRORS, 0.0,
+                Check.MAX_N_PLUS_ONE, 0.0));
+
+        assertThat(rule(result, Check.MAX_ERRORS).actual()).isEqualTo(101.0);
+        assertThat(rule(result, Check.MAX_N_PLUS_ONE).actual()).isEqualTo(1.0);
+        assertThat(rule(result, Check.MAX_N_PLUS_ONE).pass()).isFalse();
+    }
+
+    @Test
     void aResolvedNPlusOneThatCameBackFailsMaxRegressionsAndStillCountsAsAnNPlusOne() {
         Span.Builder root = entry("/orders/{id}", 60);
         List<Span.Builder> spans = new java.util.ArrayList<>();

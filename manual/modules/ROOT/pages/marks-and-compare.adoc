@@ -123,6 +123,8 @@ One row per query group, with `calls`, `calls/req`, `p95` and `total` for both w
 Errors::
 One row per error group, with the occurrence count in each window.
 
+Each part has a row for every endpoint, query group and error group of either window, never the top of a list, so a verdict never depends on where a group ranked.
+
 The JSON has the same four parts:
 
 [source,json]
