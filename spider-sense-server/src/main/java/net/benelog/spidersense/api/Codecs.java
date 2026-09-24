@@ -615,7 +615,7 @@ public final class Codecs {
             values[i] = points.get(i).value();
         }
         if (rate && data.monotonic()) {
-            values = MetricQueries.rate(points);
+            values = MetricQueries.rate(points, "DELTA".equals(data.temporality()));
         }
         Json.JsonObject object = Json.obj()
                 .put("service", data.service())

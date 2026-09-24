@@ -505,6 +505,7 @@ Nothing else is read.
 
 For a histogram, `v` is the per-point `sum/count` mean, and each series also carries `"count": [...]`, `"p95": [...]` (estimated from buckets) and `"max": [...]`.
 For a monotonic sum such as `jvm.cpu.time` or the count of `jvm.gc.duration`, `v` is the rate per second between points when `rate=true`, and the cumulative value otherwise.
+A cumulative point is differenced from the one before it, and a point below the one before it, which is the counter resetting when the process restarted, has no rate; a `DELTA` point is already the increment, and is divided by the seconds since the one before it.
 
 [#jvm]
 === JVM
@@ -723,7 +724,7 @@ Both lists are sorted by count descending, then by name, so the endpoint an `err
 === Nulls in series
 
 Every duration that has no value is `null`, never `0`.
-That covers a percentile in a bucket with no requests, the first point of a `rate=true` series, and an estimated `p95` for a histogram point that carries no buckets, or whose one bucket has no bound (a Micrometer timer bridged by the agent).
+That covers a percentile in a bucket with no requests, the first point of a `rate=true` series and a point where its counter reset, and an estimated `p95` for a histogram point that carries no buckets, or whose one bucket has no bound (a Micrometer timer bridged by the agent).
 `jvm.nonHeap` has no `limit` array, and `cpu.systemLoad1m` is an empty array on a platform that reports no load average.
 
 [#ordering]

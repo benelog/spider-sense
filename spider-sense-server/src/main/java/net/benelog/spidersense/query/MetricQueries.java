@@ -137,10 +137,18 @@ public final class MetricQueries {
     }
 
     /**
-     * A cumulative monotonic sum as a rate per second: the first point has no
-     * predecessor, so it is {@link Double#NaN} and the wire writes {@code null}.
+     * A monotonic sum as a rate per second: the first point has no predecessor, so
+     * it is {@link Double#NaN} and the wire writes {@code null}.
+     *
+     * <p>A cumulative point is the difference from the one before it, and a point
+     * below the one before it is a restart of the process that reset the counter:
+     * it has no rate either, rather than one hugely negative value that flattens
+     * the chart. A delta point is already the increment since the one before it,
+     * so it is divided rather than differenced.
+     *
+     * @param delta whether the sum has {@code DELTA} temporality
      */
-    public static double[] rate(List<MetricPoint> points) {
+    public static double[] rate(List<MetricPoint> points, boolean delta) {
         double[] rates = new double[points.size()];
         for (int i = 0; i < points.size(); i++) {
             if (i == 0) {
@@ -148,8 +156,9 @@ public final class MetricQueries {
                 continue;
             }
             double seconds = (points.get(i).at() - points.get(i - 1).at()) / 1000.0;
-            rates[i] = seconds <= 0 ? Double.NaN
-                    : (points.get(i).value() - points.get(i - 1).value()) / seconds;
+            double increment = delta ? points.get(i).value()
+                    : points.get(i).value() - points.get(i - 1).value();
+            rates[i] = seconds <= 0 || increment < 0 ? Double.NaN : increment / seconds;
         }
         return rates;
     }
