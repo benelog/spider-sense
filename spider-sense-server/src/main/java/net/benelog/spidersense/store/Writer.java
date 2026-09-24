@@ -257,8 +257,8 @@ public final class Writer implements AutoCloseable {
                 ? Ids.errorId(span.service(), String.valueOf(errorType), errorMessage, span.stacktrace())
                 : null);
         statement.setString(i++, cut(span.scope(), 255));
-        statement.setString(i++, AttrJson.encode(span.attributes()));
-        statement.setString(i, AttrJson.encodeEvents(span.events()));
+        statement.setString(i++, AttrJson.encode(span.attributes(), 65535));
+        statement.setString(i, AttrJson.encodeEvents(span.events(), 65535));
     }
 
     // --- traces ---
@@ -386,7 +386,7 @@ public final class Writer implements AutoCloseable {
                     statement.setString(i++, cut(log.logger(), 512));
                     statement.setString(i++, log.traceId());
                     statement.setString(i++, log.spanId());
-                    statement.setString(i, AttrJson.encode(log.attributes()));
+                    statement.setString(i, AttrJson.encode(log.attributes(), 65535));
                     statement.addBatch();
                     pending++;
                 }
@@ -479,7 +479,7 @@ public final class Writer implements AutoCloseable {
         for (Batch.Sighting sighting : sightings.values()) {
             Object language = sighting.resource().get("telemetry.sdk.language");
             Object pid = sighting.resource().get("process.pid");
-            String resource = AttrJson.encode(sighting.resource());
+            String resource = AttrJson.encode(sighting.resource(), 65535);
             markRestart(connection, sighting, pid);
             try (PreparedStatement update = connection.prepareStatement(
                     "UPDATE service SET language = ?, pid = ?, last_seen = ?, resource = ? WHERE name = ?")) {

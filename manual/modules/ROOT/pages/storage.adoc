@@ -74,8 +74,8 @@ CREATE TABLE IF NOT EXISTS span (
     error_message  VARCHAR(4096),            -- as received
     error_id       CHAR(12),                 -- hash over the root cause and its frame, or the normalised message
     scope          VARCHAR(255),
-    attributes     VARCHAR(65535) NOT NULL,  -- JSON object
-    events         VARCHAR(65535) NOT NULL   -- JSON array
+    attributes     VARCHAR(65535) NOT NULL,  -- JSON object; the longest string values cut to fit, ending in …
+    events         VARCHAR(65535) NOT NULL   -- JSON array; cut the same way
 );
 CREATE INDEX IF NOT EXISTS span_start   ON span (start_ms);
 CREATE INDEX IF NOT EXISTS span_trace   ON span (trace_id);

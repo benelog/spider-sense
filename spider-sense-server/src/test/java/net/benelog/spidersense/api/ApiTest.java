@@ -506,6 +506,30 @@ class ApiTest {
     }
 
     @Test
+    void aDeepStackTraceIsCutRatherThanLosingTheSpanAndItsBatch() {
+        serve((client, assembly) -> {
+            String deep = "java.lang.StackOverflowError\n"
+                    + "\tat net.example.Orders.recurse(Orders.java:42)\n".repeat(2000);
+            Span.Builder failing = Otlp.failing(
+                    Otlp.span(FAILING_TRACE, "00f067aa0ba902b9", "GET /orders/deep",
+                            Span.SpanKind.SPAN_KIND_SERVER, NOW, 5,
+                            Otlp.attr("http.request.method", "GET"),
+                            Otlp.attr("code.stacktrace", deep)),
+                    "java.lang.StackOverflowError", "deep", deep);
+            Span.Builder healthy = Otlp.span(TRACE, ROOT, "GET /orders/{id}", Span.SpanKind.SPAN_KIND_SERVER,
+                    NOW + 1, 5, Otlp.attr("http.request.method", "GET"));
+            postProtobuf(client, "/v1/traces",
+                    Otlp.traces(Otlp.service("spring-orders"), failing, healthy).toByteArray());
+
+            Json.JsonObject detail = json(client.get("/api/traces/" + FAILING_TRACE));
+            Json.JsonObject span = detail.getArray("spans").get(0).asObject();
+            assertThat(span.getObject("attributes").getString("code.stacktrace"))
+                    .startsWith("java.lang.StackOverflowError").endsWith("…");
+            assertThat(client.get("/api/traces/" + TRACE).statusCode()).isEqualTo(200);
+        });
+    }
+
+    @Test
     void theJvmViewReportsGcTimeInMillisecondsFromASecondsHistogram() {
         serve((client, assembly) -> {
             postProtobuf(client, "/v1/metrics", Otlp.histogram(Otlp.service("spring-orders"),

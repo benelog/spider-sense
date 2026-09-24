@@ -24,6 +24,9 @@ public final class AttrJson {
     public static final String EMPTY_OBJECT = "{}";
     public static final String EMPTY_ARRAY = "[]";
 
+    /** What a cut string value ends with, so the span drawer shows that it was cut. */
+    static final String CUT_MARK = "\u2026";
+
     private AttrJson() {
     }
 
@@ -44,6 +47,27 @@ public final class AttrJson {
         Json.JsonObject object = Json.obj();
         attributes.forEach((key, value) -> object.put(key, toJson(value)));
         return object.toJson();
+    }
+
+    /**
+     * The attributes as JSON of at most {@code max} characters, the width of the
+     * column that holds them: the longest string values are cut, one at a time,
+     * until the text fits, so one huge value (a deep stack trace) costs its own
+     * tail rather than the row, or the whole batch the row is written with.
+     */
+    public static String encode(Map<String, Object> attributes, int max) {
+        String json = encode(attributes);
+        if (json.length() <= max) {
+            return json;
+        }
+        List<Map<String, Object>> maps = List.of(new LinkedHashMap<>(attributes));
+        while (json.length() > max) {
+            if (!cutLongest(maps, json.length() - max)) {
+                return EMPTY_OBJECT;
+            }
+            json = encode(maps.get(0));
+        }
+        return json;
     }
 
     /** The same map with its keys sorted, which is what a series key hashes over. */
@@ -77,6 +101,63 @@ public final class AttrJson {
                     .put("attributes", Json.parse(encode(event.attributes()))));
         }
         return array.toJson();
+    }
+
+    /** The events as JSON of at most {@code max} characters, cut as {@link #encode(Map, int)} cuts. */
+    public static String encodeEvents(List<SpanRecord.SpanEvent> events, int max) {
+        String json = encodeEvents(events);
+        if (json.length() <= max) {
+            return json;
+        }
+        List<Map<String, Object>> maps = new ArrayList<>(events.size());
+        for (SpanRecord.SpanEvent event : events) {
+            maps.add(new LinkedHashMap<>(event.attributes()));
+        }
+        while (json.length() > max) {
+            if (!cutLongest(maps, json.length() - max)) {
+                return EMPTY_ARRAY;
+            }
+            List<SpanRecord.SpanEvent> cut = new ArrayList<>(events.size());
+            for (int i = 0; i < events.size(); i++) {
+                SpanRecord.SpanEvent event = events.get(i);
+                cut.add(new SpanRecord.SpanEvent(event.name(), event.timeNanos(), maps.get(i)));
+            }
+            json = encodeEvents(cut);
+        }
+        return json;
+    }
+
+    /**
+     * Cuts the longest string value among the maps by about {@code excess}
+     * encoded characters, marking it; false when no value is long enough to cut, which
+     * leaves the caller nothing to shrink but the whole document.
+     */
+    private static boolean cutLongest(List<Map<String, Object>> maps, int excess) {
+        @Nullable Map<String, Object> owner = null;
+        @Nullable String key = null;
+        String value = "";
+        for (Map<String, Object> map : maps) {
+            for (Map.Entry<String, Object> entry : map.entrySet()) {
+                if (entry.getValue() instanceof String text && text.length() > value.length()) {
+                    owner = map;
+                    key = entry.getKey();
+                    value = text;
+                }
+            }
+        }
+        if (owner == null || key == null || value.length() <= CUT_MARK.length()) {
+            return false;
+        }
+        // The excess counts encoded characters, and an escaped one (a tab, a newline in a
+        // stack trace) is two of them: cut in proportion, and the caller's loop tops it up.
+        int encoded = Json.obj().put("v", value).toJson().length() - "{\"v\":\"\"}".length();
+        long raw = ((long) excess * value.length() + encoded - 1) / Math.max(1, encoded);
+        int keep = (int) Math.max(0, value.length() - raw - CUT_MARK.length());
+        if (keep > 0 && Character.isHighSurrogate(value.charAt(keep - 1))) {
+            keep--;
+        }
+        owner.put(key, value.substring(0, keep) + CUT_MARK);
+        return true;
     }
 
     public static List<SpanRecord.SpanEvent> decodeEvents(@Nullable String json) {
