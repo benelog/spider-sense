@@ -133,4 +133,31 @@ class SweeperTest {
         store.submit(batch);
         store.writer().awaitIdle(5_000);
     }
+
+    /**
+     * A service that has run for longer than the retention keeps its newest start
+     * mark, the only one the writer will not write again; an older start and a
+     * named mark go by age as before, and so does everything but that start on a
+     * clear.
+     */
+    @Test
+    void eachServicesNewestStartMarkOutlivesTheRetentionAndAClear() {
+        Marks marks = new Marks(store.sql());
+        long old = NOW - 30 * HOUR;
+        marks.create(Marks.START, "orders", "pid 1", old - HOUR);
+        marks.create(Marks.START, "orders", "pid 2", old);
+        marks.create(Marks.START, "billing", "pid 3", old);
+        marks.create("before", null, null, old);
+
+        new Sweeper(store.sql(), 24).sweep();
+
+        assertThat(store.sql().query("SELECT note FROM mark ORDER BY note", List.of(), rs -> rs.getString(1)))
+                .containsExactly("pid 2", "pid 3");
+
+        marks.create("after", null, null, NOW);
+        store.database().deleteAll();
+
+        assertThat(store.sql().query("SELECT note FROM mark ORDER BY note", List.of(), rs -> rs.getString(1)))
+                .containsExactly("pid 2", "pid 3");
+    }
 }

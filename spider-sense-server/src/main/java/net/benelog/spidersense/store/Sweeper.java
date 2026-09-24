@@ -51,8 +51,7 @@ public final class Sweeper implements AutoCloseable {
      */
     private static final String[][] TABLE_AND_COLUMN = {
             {"span", "start_ms"}, {"trace", "start_ms"}, {"log", "at_ms"},
-            {"metric_point", "at_ms"}, {"tingle", "at_ms"}, {"mark", "at_ms"},
-            {"db_table", "seen_ms"}};
+            {"metric_point", "at_ms"}, {"tingle", "at_ms"}, {"db_table", "seen_ms"}};
 
     /**
      * What the span cap deletes: everything the window shows, marks and catalog
@@ -109,6 +108,10 @@ public final class Sweeper implements AutoCloseable {
             deleted += sql.update("DELETE FROM " + table[0] + " WHERE " + table[1] + " < ?",
                     List.of(cutoff));
         }
+        // Every mark by age, except each service's newest start, which since=start
+        // needs for as long as that process runs.
+        deleted += sql.update("DELETE FROM mark o WHERE o.at_ms < ? AND " + Marks.NOT_NEWEST_START,
+                List.of(cutoff));
         deleted += sql.update(ORPHAN_SERIES, List.of());
         deleted += sweepToCap();
         return deleted;

@@ -91,7 +91,7 @@ The UI's *Copy CLI line* names it (xref:pages.adoc#copy-as-markdown[Copy as Mark
 
 *`DELETE /api/data`* answers `204`.
 It deletes every span, trace, log, metric point, tingle, mark, acknowledgement and resolution.
-Services and metric metadata stay.
+Services, metric metadata and each service's newest `start` mark stay, so `since=start` still names the run of a process that keeps running.
 
 *`GET /api/export?traceId`* answers one trace as an `application/json` download (`Content-Disposition: attachment`) of `+{ "traces": [<trace as in GET /api/traces/{id}>] }+`.
 

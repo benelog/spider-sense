@@ -322,10 +322,14 @@ public final class Database implements AutoCloseable {
     /**
      * {@code DELETE /api/data}: everything but the metadata, acknowledgements
      * included — they are the one table the sweeper never touches and this does.
+     * Each service's newest start mark stays, so {@code since=start} still names
+     * the run of a process that keeps running.
      */
     public void deleteAll() {
         for (String table : Schema.DATA_TABLES) {
-            sql.update("DELETE FROM " + table, List.of());
+            sql.update("mark".equals(table)
+                    ? "DELETE FROM mark o WHERE " + Marks.NOT_NEWEST_START
+                    : "DELETE FROM " + table, List.of());
         }
         sql.update("DELETE FROM metric_series WHERE id NOT IN (SELECT series_id FROM metric_point)",
                 List.of());

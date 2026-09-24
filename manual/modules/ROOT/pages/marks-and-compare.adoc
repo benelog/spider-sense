@@ -86,6 +86,7 @@ $ java -jar spider-sense.jar marks
 Spider Sense records a mark by itself whenever a service restarts.
 When the writer sees a service with a `process.pid` it has not stored for that service, it inserts a mark named `start` with that service and the note `pid <pid>`.
 `--since=start` therefore means "since the application was last restarted", which is what an agent that just rebuilt the application wants, and it needs no cooperation from anyone.
+The retention sweeper and `DELETE /api/data` spare each service's newest start mark, so it lasts as long as the process does.
 
 The Mark button on the UI's top bar records a mark the same way.
 The charts draw marks as vertical lines.

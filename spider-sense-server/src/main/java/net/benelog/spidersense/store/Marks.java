@@ -36,6 +36,15 @@ public final class Marks {
     /** The name the writer uses for an automatic mark. */
     public static final String START = "start";
 
+    /**
+     * A condition on {@code mark o} that spares each service's newest start mark,
+     * for the deletes that would otherwise leave a running service without one:
+     * the writer inserts a start mark only when the process id changes, so the
+     * one of the running process is never written again.
+     */
+    static final String NOT_NEWEST_START = "NOT (o.name = '" + START + "' AND o.at_ms = (SELECT MAX(m.at_ms)"
+            + " FROM mark m WHERE m.name = '" + START + "' AND m.service IS NOT DISTINCT FROM o.service))";
+
     private static final int MAX_NOTE = 1024;
 
     private final Sql sql;
