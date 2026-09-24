@@ -2,7 +2,7 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, panel, table, chip, methodChip, statusBar, tabs, spinner, errorBox, serviceChip, breakdownBar, breakdownLead } from '../ui.js';
+import { h, fill, fillRows, panel, table, chip, methodChip, statusBar, tabs, spinner, errorBox, serviceChip, breakdownBar, breakdownLead } from '../ui.js';
 import { redCharts } from './service.js';
 import { histogramBars, apdexClass, fmtApdex } from '../buckets.js';
 import { traceTable } from './traces.js';
@@ -59,51 +59,74 @@ export function render(root, ctx) {
     return h('div.th-item', h('span.k', k), h('span.v', v));
   }
 
+  // The tab strip and each tab's table are built once; a Live refresh gives them new rows,
+  // so the open table keeps its scroll position and focus (ui.adoc#live-refresh).
+  let tabNode = null;
+  const tables = {};
+  const queryOpts = {
+    rowKey: (q) => q.queryId,
+    onRowClick: (q) => router.go('/queries/' + encodeURIComponent(q.queryId), api.sharedQuery()),
+    empty: 'This endpoint made no database call in this window.',
+  };
+  const errorOpts = {
+    rowKey: (e) => e.errorId,
+    onRowClick: (e) => router.go('/errors/' + encodeURIComponent(e.errorId), api.sharedQuery()),
+    empty: 'No error in this window.',
+  };
+  const TAB_ROWS = {
+    slowest: () => data.traces || [],
+    recent: () => data.recent || [],
+    queries: () => data.queries || [],
+    errors: () => data.errors || [],
+  };
+
+  function tableOf(tab) {
+    if (tables[tab]) return tables[tab];
+    const rows = TAB_ROWS[tab]();
+    if (tab === 'slowest' || tab === 'recent') {
+      tables[tab] = traceTable(rows, { empty: 'No trace in this window.' });
+    } else if (tab === 'queries') {
+      tables[tab] = table([
+        { key: 'statement', label: 'Statement', sortable: false, cls: 'wide', render: (q) => h('span.cell-ellipsis.mono', { title: q.statement }, oneLineSql(q.statement, 160)) },
+        { key: 'system', label: 'System', sortable: false, width: '70px', render: (q) => (q.system ? chip(q.system) : h('span.muted', '-')) },
+        { key: 'calls', label: 'Calls', align: 'right', sortable: false, width: '66px', render: (q) => count(q.calls) },
+        { key: 'avgMs', label: 'avg', align: 'right', sortable: false, width: '74px', render: (q) => dur(q.avgMs) },
+        { key: 'p95Ms', label: 'p95', align: 'right', sortable: false, width: '74px', render: (q) => dur(q.p95Ms) },
+        { key: 'totalMs', label: 'Total', align: 'right', sortable: false, width: '82px', render: (q) => dur(q.totalMs) },
+      ], { ...queryOpts, rows });
+    } else {
+      tables[tab] = table([
+        { key: 'type', label: 'Type', sortable: false, cls: 'wide', render: (e) => h('span.cell-ellipsis.mono', { title: e.type }, e.type) },
+        { key: 'message', label: 'Message', sortable: false, cls: 'wide', render: (e) => h('span.cell-ellipsis', { title: e.message }, truncate(e.message, 100)) },
+        { key: 'count', label: 'Count', align: 'right', sortable: false, width: '66px', render: (e) => h('span.bad', count(e.count)) },
+        { key: 'lastSeen', label: 'Last seen', align: 'right', sortable: false, width: '90px', render: (e) => h('span', { title: bothTimes(e.lastSeen) }, rel(e.lastSeen)) },
+      ], { ...errorOpts, rows });
+    }
+    return tables[tab];
+  }
+
   function paintTabs() {
-    const node = tabs([
-      {
-        id: 'slowest', label: 'Slowest traces', count: (data.traces || []).length,
-        render: () => traceTable(data.traces || [], { empty: 'No trace in this window.' }),
-      },
-      {
-        id: 'recent', label: 'Recent traces', count: (data.recent || []).length,
-        render: () => traceTable(data.recent || [], { empty: 'No trace in this window.' }),
-      },
-      {
-        id: 'queries', label: 'Queries', count: (data.queries || []).length,
-        render: () => table([
-          { key: 'statement', label: 'Statement', sortable: false, cls: 'wide', render: (q) => h('span.cell-ellipsis.mono', { title: q.statement }, oneLineSql(q.statement, 160)) },
-          { key: 'system', label: 'System', sortable: false, width: '70px', render: (q) => (q.system ? chip(q.system) : h('span.muted', '-')) },
-          { key: 'calls', label: 'Calls', align: 'right', sortable: false, width: '66px', render: (q) => count(q.calls) },
-          { key: 'avgMs', label: 'avg', align: 'right', sortable: false, width: '74px', render: (q) => dur(q.avgMs) },
-          { key: 'p95Ms', label: 'p95', align: 'right', sortable: false, width: '74px', render: (q) => dur(q.p95Ms) },
-          { key: 'totalMs', label: 'Total', align: 'right', sortable: false, width: '82px', render: (q) => dur(q.totalMs) },
-        ], {
-          rows: data.queries || [],
-          rowKey: (q) => q.queryId,
-          onRowClick: (q) => router.go('/queries/' + encodeURIComponent(q.queryId), api.sharedQuery()),
-          empty: 'This endpoint made no database call in this window.',
-        }),
-      },
-      {
-        id: 'errors', label: 'Errors', count: (data.errors || []).length,
-        render: () => table([
-          { key: 'type', label: 'Type', sortable: false, cls: 'wide', render: (e) => h('span.cell-ellipsis.mono', { title: e.type }, e.type) },
-          { key: 'message', label: 'Message', sortable: false, cls: 'wide', render: (e) => h('span.cell-ellipsis', { title: e.message }, truncate(e.message, 100)) },
-          { key: 'count', label: 'Count', align: 'right', sortable: false, width: '66px', render: (e) => h('span.bad', count(e.count)) },
-          { key: 'lastSeen', label: 'Last seen', align: 'right', sortable: false, width: '90px', render: (e) => h('span', { title: bothTimes(e.lastSeen) }, rel(e.lastSeen)) },
-        ], {
-          rows: data.errors || [],
-          rowKey: (e) => e.errorId,
-          onRowClick: (e) => router.go('/errors/' + encodeURIComponent(e.errorId), api.sharedQuery()),
-          empty: 'No error in this window.',
-        }),
-      },
+    if (tabNode) {
+      for (const [tab, rows] of Object.entries(TAB_ROWS)) {
+        const counter = tabNode.querySelector('[data-tab="' + tab + '"] .tab-count');
+        if (counter) counter.textContent = String(rows().length);
+        const node = tables[tab];
+        if (!node) continue;
+        if (node.setRows) node.setRows(rows());
+        else fillRows(node, rows(), tab === 'queries' ? queryOpts : errorOpts);
+      }
+      return;
+    }
+    tabNode = tabs([
+      { id: 'slowest', label: 'Slowest traces', count: TAB_ROWS.slowest().length, render: () => tableOf('slowest') },
+      { id: 'recent', label: 'Recent traces', count: TAB_ROWS.recent().length, render: () => tableOf('recent') },
+      { id: 'queries', label: 'Queries', count: TAB_ROWS.queries().length, render: () => tableOf('queries') },
+      { id: 'errors', label: 'Errors', count: TAB_ROWS.errors().length, render: () => tableOf('errors') },
     ], {
       active: activeTab,
       onSelect: (tab) => { activeTab = tab; router.setQuery({ tab: tab === 'slowest' ? '' : tab }); },
     });
-    fill(tabsBody, node);
+    fill(tabsBody, tabNode);
   }
 
   async function load() {
