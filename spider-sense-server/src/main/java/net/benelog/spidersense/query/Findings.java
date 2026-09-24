@@ -1240,7 +1240,7 @@ public final class Findings {
                         + " PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY duration_ns) AS p50_ns,"
                         + " PERCENTILE_DISC(0.95) WITHIN GROUP (ORDER BY duration_ns) AS p95_ns,"
                         + " MAX(duration_ns) AS max_ns, SUM(duration_ns) AS total_ns FROM span WHERE "
-                        + where + " GROUP BY service, name ORDER BY total_ns DESC LIMIT " + GROUPS,
+                        + where + " GROUP BY service, name ORDER BY total_ns DESC, service, name LIMIT " + GROUPS,
                 params, rs -> new Job(rs.getString("service"), rs.getString("name"),
                         rs.getLong("runs"), Rows.ms(rs, "p50_ns"), Rows.ms(rs, "p95_ns"),
                         Rows.ms(rs, "max_ns"), Rows.ms(rs, "total_ns")));

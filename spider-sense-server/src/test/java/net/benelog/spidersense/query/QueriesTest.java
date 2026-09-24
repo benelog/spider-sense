@@ -415,6 +415,23 @@ class QueriesTest {
                 window, null, null, null, null, null, null, NOW, 50))).isEmpty();
     }
 
+    /** Traces tied on duration or start come back in trace id order, whatever H2 scanned first. */
+    @Test
+    void tracesTiedOnTheOrderingColumnAreOrderedByTheirId() {
+        for (int n : new int[] {3, 1, 2}) {
+            decoder.accept(Otlp.traces(Otlp.service("orders"),
+                    Otlp.span(traceId(n), spanId(n), "GET /orders", Span.SpanKind.SPAN_KIND_SERVER, NOW, 5)));
+        }
+        flush();
+
+        assertThat(queries.slowestOf(window, List.of(traceId(3), traceId(1), traceId(2)), 2))
+                .extracting(Stats.TraceSummary::traceId).containsExactly(traceId(1), traceId(2));
+        assertThat(queries.tracesContaining(window, "name = ?", List.of("GET /orders"), 2, true))
+                .extracting(Stats.TraceSummary::traceId).containsExactly(traceId(1), traceId(2));
+        assertThat(queries.tracesContaining(window, "name = ?", List.of("GET /orders"), 2, false))
+                .extracting(Stats.TraceSummary::traceId).containsExactly(traceId(1), traceId(2));
+    }
+
     @Test
     void logsWrittenInTheSameMillisecondPageByTheirId() {
         io.opentelemetry.proto.logs.v1.LogRecord[] burst = new io.opentelemetry.proto.logs.v1.LogRecord[5];

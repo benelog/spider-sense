@@ -823,7 +823,8 @@ public final class Queries {
                 // the window's share of the group rather than its whole history (storage.adoc).
                 .and("t.trace_id IN (SELECT s.trace_id FROM span s WHERE s." + predicate
                         + " AND s.start_ms BETWEEN ? AND ?)", params.toArray());
-        String order = slowest ? "t.duration_ns DESC" : "t.start_ms DESC";
+        // The trace id breaks a tie, so the same window names the same evidence (findings.adoc).
+        String order = slowest ? "t.duration_ns DESC, t.trace_id" : "t.start_ms DESC, t.trace_id";
         return sql.query("SELECT * FROM trace t WHERE " + where.sql() + " ORDER BY " + order
                 + " LIMIT " + Math.max(1, limit), where.params(), Rows::trace);
     }
@@ -843,7 +844,8 @@ public final class Queries {
         params.add(window.from());
         params.add(window.to());
         return sql.query("SELECT * FROM trace t WHERE t.trace_id IN (" + Sql.placeholders(traceIds.size())
-                + ") AND t.start_ms BETWEEN ? AND ? ORDER BY t.duration_ns DESC LIMIT " + Math.max(1, limit),
+                + ") AND t.start_ms BETWEEN ? AND ? ORDER BY t.duration_ns DESC, t.trace_id LIMIT "
+                + Math.max(1, limit),
                 params, Rows::trace);
     }
 
@@ -857,7 +859,7 @@ public final class Queries {
         }
         List<Object[]> rows = sql.query(
                 "SELECT start_ms, duration_ns, service, endpoint, name, trace_id, error, slow"
-                        + " FROM span WHERE " + where.sql() + " ORDER BY start_ms DESC LIMIT "
+                        + " FROM span WHERE " + where.sql() + " ORDER BY start_ms DESC, id DESC LIMIT "
                         + Math.max(1, limit),
                 where.params(), rs -> new Object[]{rs.getLong("start_ms"), rs.getLong("duration_ns"),
                         rs.getString("service"),
