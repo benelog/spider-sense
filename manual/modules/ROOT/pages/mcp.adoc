@@ -7,6 +7,7 @@ Seven tools cover the loop: `findings`, `trace`, `mark`, `resolve`, `compare`, `
 Each one is the thinnest possible adapter over the agent-facing endpoints (xref:api.adoc#agent-endpoints[Agent-facing endpoints]).
 A tool call is one call into the same handlers the CLI and the UI use, and its result is the same text rendering the matching command prints, so an MCP answer and a CLI answer over the same window are the same bytes.
 
+[#when]
 == When to use it
 
 MCP is for the host that has no shell.
@@ -35,19 +36,22 @@ Two tools that give the same answer make the model choose between them and cost 
 
 The skill teaches the loop for the CLI (xref:agent-skill.adoc[The Agent Skill]), and the MCP server's `instructions` field carries the same loop in one paragraph, so neither host is taught something the other is not.
 
+[#transports]
 == The transports
 
+[#http]
 === Streamable HTTP
 
 The Streamable HTTP transport is `POST /mcp` on the server's own port, which is the port the UI answers on.
-One JSON-RPC 2.0 message travels per request, as `application/json` both ways.
+One JSON-RPC 2.0 message travels per request, with `Content-Type: application/json` both ways.
 A request is answered with `200` and the JSON-RPC response, and a notification with `202` and no body.
 
 The server is stateless.
-No session id is issued or required, `GET /mcp` is `405`, and a JSON array is refused with `-32600`.
+No session id is issued or required, `GET /mcp` is `405`, and a JSON array, the batch of older protocol revisions, is refused with `-32600`.
 
 This transport needs the server to be up, so it stops answering when the application stops.
 
+[#stdio]
 === stdio
 
 [source,bash]
@@ -63,9 +67,12 @@ A `tools/call` goes to the Spider Sense at `--url` when one answers there.
 Without `--url`, the CLI's default and `SPIDERSENSE_URL` apply.
 When none answers, the `mcp` command opens the H2 file in process exactly as the CLI does, with the same line on stderr saying so.
 `--db` reads a file without asking any server (xref:cli.adoc#fallback[The direct-file fallback]).
+A `--url` named on the command line states that a server is there, so when nothing answers it the call is a failed tool result saying so, rather than a read of a file that may hold a different application.
+A Spider Sense that is busy past the CLI's 2 minutes answers that call with a failed tool result saying so, and the next call asks it again.
 
 stdio is the transport for a host on the same machine, and the one that still answers after the application has crashed.
 
+[#tools]
 == The tools
 
 Every argument is the CLI option of the same meaning, and a selector is a string as in xref:marks-and-compare.adoc#time-selectors[Time selectors].
@@ -116,14 +123,16 @@ A missing required argument or an unknown tool is a JSON-RPC `-32602`.
 
 Tool descriptions are one sentence each and say when to use the tool, not how the output looks, because the output is the text rendering and needs no description.
 
+[#methods]
 == Methods
 
 `initialize` answers the client's `protocolVersion` when it is one the server knows (`2025-06-18`, `2025-03-26`, `2024-11-05`), and `2025-06-18` otherwise.
-It also answers `capabilities` with `tools`, a `serverInfo` naming `spider-sense` and its version, and `instructions`, which is the loop in one paragraph: start the application under the agent, `mark`, exercise, `findings`, fix, `mark`, `compare`, `check`.
+It also answers `capabilities: { "tools": {} }`, `serverInfo: { "name": "spider-sense", "version": "<version>" }`, and `instructions`, which is the loop in one paragraph: start the application under the agent, `mark`, exercise, `findings`, fix, `mark`, `compare`, `check`, and `resolve` once the fix holds.
 
 `notifications/initialized` is accepted and ignored, `ping` answers an empty object, `tools/list` is the seven tools, and `tools/call` runs one.
 Anything else is `-32601`.
 
+[#configuring]
 == Configuring a host
 
 `init --mcp` writes the stdio server into the project's `.mcp.json`:
@@ -145,3 +154,11 @@ A host that reaches a running Spider Sense over HTTP is configured by hand inste
 ----
 { "type": "http", "url": "http://127.0.0.1:4000/mcp" }
 ----
+
+[#deferred]
+== Considered and deferred
+
+MCP over HTTP only::
+The first design served MCP on the existing port and nothing else, which is the least code.
+It was rejected as the only transport, because a host on the same machine then loses the one property that makes the CLI trustworthy after a crash: the H2 file can be read with the server gone.
+The stdio transport reuses the CLI's own decision, a server if one answers and the file otherwise, and adds no third way of answering.

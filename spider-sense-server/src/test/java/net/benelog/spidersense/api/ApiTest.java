@@ -23,7 +23,7 @@ import net.benelog.spidersilk.test.TestClient;
 import net.benelog.spidersilk.test.WebTest;
 
 /**
- * The contract in api.md, exercised through the real request path.
+ * The contract in api.adoc, exercised through the real request path.
  *
  * <p>Ingest is write-behind, so the tests set {@code spidersense.sync} and the
  * OTLP handler flushes before it answers. Without it a POST followed by a GET

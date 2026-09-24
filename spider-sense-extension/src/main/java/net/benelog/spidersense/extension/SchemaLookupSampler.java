@@ -31,7 +31,7 @@ import java.util.List;
  */
 public final class SchemaLookupSampler implements Sampler {
 
-    /** The entry the lookup puts in the baggage; see {@code docs/design.md}, "The extension". */
+    /** The entry the lookup puts in the baggage; see {@code design.adoc#extension}. */
     static final String LOOKUP_KEY = "spidersense.schema.lookup";
 
     private final Sampler delegate;

@@ -37,9 +37,9 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>There are two callers and they must never drift: the HTTP handlers, and the
  * CLI, which answers from the H2 file in process when no server is running
- * (agent.md). So a method here takes plain parameters, asks the same
+ * (agent-loop.adoc#interfaces). So a method here takes plain parameters, asks the same
  * {@link Queries} the UI asks, and hands back both renderings of the one result —
- * the JSON of api.md and the Markdown of {@link Text}. The handler picks; nobody
+ * the JSON of api.adoc and the Markdown of {@link Text}. The handler picks; nobody
  * computes an answer twice.
  *
  * <p>{@link #readOnly(Config)} is the CLI's way in: it opens the database and
@@ -58,7 +58,7 @@ public final class Reports implements AutoCloseable {
      * <p>A single trace that is missing is a {@code null} report, because there is
      * only one id it could have been; a diff has two, and an answer that did not
      * name which one it could not find would leave the caller to guess. It is a
-     * {@code 404} over HTTP and exit code {@code 4} in the CLI (agent.md).
+     * {@code 404} over HTTP and exit code {@code 4} in the CLI (cli.adoc#exit-codes).
      */
     public static final class NoSuchTrace extends RuntimeException {
 
@@ -107,7 +107,7 @@ public final class Reports implements AutoCloseable {
      *
      * <p>No writer and no sweeper. {@code AUTO_SERVER=TRUE} means this either joins
      * the running Spider Sense's H2 or opens the file itself, so the answer is the
-     * same one the server would have given (storage.md).
+     * same one the server would have given (storage.adoc).
      */
     public static Reports readOnly(Config config) {
         Database database = Database.openExisting(config.jdbcUrl(), config.databaseFile());
@@ -309,7 +309,7 @@ public final class Reports implements AutoCloseable {
     /**
      * One finding, as the list renders it: its row of the table and its evidence
      * block, numbered by its rank among every finding of the window, so the bytes
-     * are those {@code findings} prints for it (agent.md, "One finding").
+     * are those {@code findings} prints for it (cli.adoc#one-finding).
      *
      * @return null when the rules do not produce that id over the window
      */
@@ -360,7 +360,7 @@ public final class Reports implements AutoCloseable {
      * What a withdrawn acknowledgement reads as.
      *
      * <p>Static, and the only report here that is: {@code DELETE} answers
-     * {@code 204} with no body (api.md), so the CLI has nothing to print unless it
+     * {@code 204} with no body (api.adoc), so the CLI has nothing to print unless it
      * renders the line itself — and it must render it through this file rather
      * than write one of its own, or the two paths would drift.
      */
@@ -439,7 +439,7 @@ public final class Reports implements AutoCloseable {
 
     /**
      * Two traces aligned: which span went away, and which one got slower
-     * (agent.md, "Trace diff").
+     * (cli.adoc#trace-diff).
      *
      * <p>Both sides are reduced to the lines the single rendering would have
      * printed and aligned by their longest common subsequence, so the diff and the
@@ -482,7 +482,7 @@ public final class Reports implements AutoCloseable {
 
     /**
      * The error groups of the window, each with its occurrences per bucket as the
-     * {@code series} the errors page draws as a sparkline (api.md); the text
+     * {@code series} the errors page draws as a sparkline (api.adoc#error-group); the text
      * rendering has no use for a sparkline and does not carry it.
      */
     public Report errors(Window window, @Nullable String service, int limit, boolean full) {
@@ -496,8 +496,8 @@ public final class Reports implements AutoCloseable {
     }
 
     /**
-     * One error group, as the list renders it: its row and its frames (agent.md,
-     * "One finding"). Text only: the JSON of {@code /api/errors/{errorId}} is the
+     * One error group, as the list renders it: its row and its frames
+     * (cli.adoc#one-finding). Text only: the JSON of {@code /api/errors/{errorId}} is the
      * page's, with its series and traces, and stays where it is.
      *
      * @return null when the group has no occurrence in the window
@@ -513,7 +513,7 @@ public final class Reports implements AutoCloseable {
     }
 
     /**
-     * One query group, as the list renders it: its row (agent.md, "One finding").
+     * One query group, as the list renders it: its row (cli.adoc#one-finding).
      * Text only, for the reason {@link #errorText} is.
      *
      * @return null when the group has no call in the window
@@ -538,8 +538,8 @@ public final class Reports implements AutoCloseable {
     }
 
     /**
-     * One read-only statement over the schema of storage.md: the question findings
-     * cannot answer (agent.md).
+     * One read-only statement over the schema of storage.adoc#schema: the question findings
+     * cannot answer (cli.adoc#sql).
      *
      * <p>It goes through here like every other answer, and for the same reason:
      * the CLI's direct-file path must give the same rows as the HTTP one, down to
@@ -558,7 +558,7 @@ public final class Reports implements AutoCloseable {
 
     /**
      * The window as one JSON document, written to {@code out} as it is read
-     * (agent.md, "Export and import").
+     * (cli.adoc#export-import).
      *
      * <p>Both callers come through here for the same reason every other answer
      * does: the file the CLI writes and the download the browser gets must be the
@@ -588,7 +588,7 @@ public final class Reports implements AutoCloseable {
      * <p>With a store it is the store's, queue and all. Without one — the CLI
      * writing into the file it opened — it is a writer of its own that is never
      * started: an import is one transaction on this thread, so the write-behind
-     * loop would have nothing to do (storage.md).
+     * loop would have nothing to do (storage.adoc).
      */
     private Importer importer() {
         if (store != null) {

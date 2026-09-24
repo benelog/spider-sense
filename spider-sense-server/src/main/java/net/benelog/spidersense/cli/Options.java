@@ -51,7 +51,7 @@ final class Options {
     private static final Set<String> COMMON = Set.of("url", "db", "json", "service",
             "slow.request.ms", "slow.query.ms", "app.packages");
 
-    /** The rule flags of {@code check}, in the order api.md names their parameters. */
+    /** The rule flags of {@code check}, in the order api.adoc#check names their parameters. */
     private static final Map<String, String> RULES = ruleParameters();
 
     private static final Map<String, Set<String>> COMMANDS = Map.ofEntries(
@@ -81,7 +81,7 @@ final class Options {
             Map.entry(INIT, Set.of("dir", "jar", "no-skill", "mcp")),
             // mcp is not one question but a session of them, so a window, a format and
             // a service belong to each message rather than to the command: only where
-            // to read is decided here (agent.md).
+            // to read is decided here (mcp.adoc#stdio).
             Map.entry(MCP, Set.of("url", "db")),
             Map.entry(TAIL, Set.of("url", "json", "service", "kind", "until-traces",
                     "timeout")),
@@ -177,7 +177,7 @@ final class Options {
         return Boolean.parseBoolean(value(key, "false"));
     }
 
-    /** The limit of a list, clamped the way the server clamps it (api.md). */
+    /** The limit of a list, clamped the way the server clamps it (api.adoc). */
     int limit(int fallback, int max) {
         if (!has("limit")) {
             return fallback;
@@ -200,7 +200,7 @@ final class Options {
     }
 
     /**
-     * The rules {@code check} was asked for, as api.md's camelCase parameters.
+     * The rules {@code check} was asked for, as the camelCase parameters of api.adoc#check.
      *
      * <p>An empty map means "no rule given", which both the server and
      * {@code Check} read as the default set; the CLI never fills it in itself, so

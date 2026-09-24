@@ -16,10 +16,10 @@ import org.jspecify.annotations.Nullable;
  * {@code code} comes from the two places it does record: the
  * {@code exception.stacktrace} of an error, and the {@code code.function} /
  * {@code code.namespace} attributes of the few instrumentations that set them
- * (agent.md). A database span slower than {@code slow.query.ms}, and the fifth
+ * (findings.adoc#code). A database span slower than {@code slow.query.ms}, and the fifth
  * repeat of a statement within a trace, have a third and better one,
  * {@code code.stacktrace}, which Spider Sense's own OpenTelemetry extension
- * captures on the thread that ended the span (design.md).
+ * captures on the thread that ended the span (design.adoc#stack-capture).
  *
  * <p>A stack trace is mostly framework, and the frame an agent wants to open is
  * the application's. Two ways to find it: by default everything that is not one of
@@ -83,7 +83,7 @@ public final class CodeFrames {
      * <p>Two kinds, best first. {@code code.stacktrace} is a real stack trace, set
      * by Spider Sense's own OpenTelemetry extension on a database span that ran
      * past {@code slow.query.ms} and on the fifth repeat of a statement within a
-     * trace (design.md), and is reduced exactly like an
+     * trace (design.adoc#stack-capture), and is reduced exactly like an
      * {@code exception.stacktrace}. Failing that, the {@code code.function} /
      * {@code code.namespace} pair a few instrumentations set: no file and no line
      * in those, so the frame is {@code namespace.function}, still enough to open

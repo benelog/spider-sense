@@ -1,4 +1,4 @@
-// Findings: what is worth fixing in this window, the agent's first answer (docs/agent.md),
+// Findings: what is worth fixing in this window, the agent's first answer (findings.adoc),
 // as a table whose rows open into the evidence behind them.
 
 import * as api from '../api.js';
@@ -34,7 +34,7 @@ export function severityMark(severity) {
 
 /**
  * Whether a finding is listed last and dimmed: acknowledged, or resolved and not
- * back since (docs/agent.md).
+ * back since (findings.adoc#resolutions).
  */
 export function setAside(finding) {
   return !!finding.ack || (!!finding.resolution && finding.kind !== 'regression');
@@ -43,7 +43,7 @@ export function setAside(finding) {
 /**
  * The severity cell of a row: `acked` in place of the word for an acknowledged
  * finding, `resolved` for a resolved one that has not come back, with the note
- * as its title (docs/ui.md).
+ * as its title (pages.adoc#findings).
  */
 function severityCell(finding) {
   if (finding.ack) {
@@ -63,7 +63,7 @@ const STATE_TITLE = {
   regressed: 'resolved, and back since',
 };
 
-/** `new`, `ongoing` or `regressed`, as a chip (docs/ui.md). */
+/** `new`, `ongoing` or `regressed`, as a chip (pages.adoc#findings). */
 export function stateChip(state) {
   if (!state) return null;
   return chip(state, { class: 'chip-state state-' + state, title: STATE_TITLE[state] || state });
@@ -80,7 +80,7 @@ export function kindChip(kind) {
 
 /**
  * Where a finding points: its subject's page, and the first evidence trace when the
- * subject has no page of its own (a job) or names nothing (docs/ui.md).
+ * subject has no page of its own (a job) or names nothing (pages.adoc#findings).
  */
 export function findingTarget(finding) {
   const subject = finding.subject || {};
@@ -105,7 +105,7 @@ export function goToFinding(finding) {
   if (target) router.go(target.path, target.query);
 }
 
-/** The number the kind is ranked by, as docs/ui.md spells the column out. */
+/** The number the kind is ranked by, as pages.adoc#findings spells the column out. */
 export function impactOf(finding) {
   const n = finding.numbers || {};
   // A regression is ranked by the number its original kind is ranked by.
@@ -171,7 +171,7 @@ function numberValue(key, value, kind) {
   return h('span', count(value));
 }
 
-/** `SELECT order_line · 312.4 ms self · 62.0%`: where the time went (docs/agent.md). */
+/** `SELECT order_line · 312.4 ms self · 62.0%`: where the time went (findings.adoc#time). */
 function hotSpanLine(hot) {
   if (!hot || typeof hot !== 'object') return h('span.muted', '-');
   return h('span',
@@ -180,7 +180,7 @@ function hotSpanLine(hot) {
 }
 
 /**
- * The schema block under the statement (docs/agent.md, "The schema block"), as the
+ * The schema block under the statement (findings.adoc#schema), as the
  * text rendering has it: one line per table, then one line for the columns.
  *
  * <p>Nothing is computed here. The tables, the predicates and the unindexed columns
@@ -210,8 +210,8 @@ export function schemaLines(schema) {
 }
 
 /**
- * The three summaries the time went to, over the finding's sample (docs/agent.md,
- * "Where the time went"): the name, then its own time, share and count.
+ * The three summaries the time went to, over the finding's sample
+ * (findings.adoc#time): the name, then its own time, share and count.
  */
 function hotSpanList(spans) {
   if (!Array.isArray(spans) || !spans.length) return h('span.muted', 'none');
@@ -230,7 +230,7 @@ function breakdownLine(breakdown) {
 }
 
 /**
- * The Acknowledge dialog (docs/ui.md): one optional note, then the POST.
+ * The Acknowledge dialog (ui.adoc#dialogs): one optional note, then the POST.
  *
  * <p>Small on purpose — an acknowledgement is a sentence about why a finding is
  * accepted, and the finding itself is on the screen behind it.
@@ -275,7 +275,7 @@ function ackDialog(finding, onDone) {
 }
 
 /**
- * The Resolve dialog (docs/ui.md): one optional note, then the POST; the finding
+ * The Resolve dialog (ui.adoc#dialogs): one optional note, then the POST; the finding
  * is reported as a regression if it comes back.
  */
 function resolveDialog(finding, onDone) {

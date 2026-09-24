@@ -18,8 +18,8 @@ import net.benelog.spidersense.server.SpiderSenseServer;
 import net.benelog.spidersilk.json.Json;
 
 /**
- * {@code java -jar spider-sense.jar mcp}: the stdio transport of agent.md's MCP
- * section.
+ * {@code java -jar spider-sense.jar mcp}: the stdio transport of
+ * mcp.adoc#stdio.
  *
  * <p>The contract it has to keep is narrow and total — newline-delimited JSON on
  * stdout and nothing else on it, one line per request, none for a notification —

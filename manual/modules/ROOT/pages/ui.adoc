@@ -6,22 +6,142 @@ The Spider Sense UI is a single browser page: a sidebar that lists the pages, be
 .The Overview, with the request rate, the error rate, the percentiles, the throughput chart, the services, and the tingle feed
 image::overview.jpg[Overview: request rate, error rate, percentiles, the throughput chart, the services, and the tingle feed,900]
 
-== The look
+[#built]
+== How the UI is built
 
-The UI is dark by default, follows your system's light or dark preference, and carries a toggle in the top bar that remembers your choice.
+The UI lives in `spider-sense-server/src/main/resources/public` and is served as Spider Silk static files.
+It has no build step: plain HTML, one CSS file, and ES modules.
+The time-series charts and the scatter are drawn with https://github.com/leeoniya/uPlot[uPlot] (MIT), vendored under `public/assets/vendor/`.
+The service map is hand-drawn SVG.
+All data comes from xref:api.adoc[the HTTP API], and the page never renders server-side.
+
+[#look-and-feel]
+== Look and feel
+
+[#name]
+=== The name
+
+"Spider Sense" is the sibling of "Spider Silk": Silk is the web a spider builds, and Sense is what the spider feels through it, the tingle when something on the web moves.
+The UI leans on that image without being cute about it: the product tells you when something is slow or broken before you go looking.
+
+[#logo]
+=== The logo
+
+The logo is `notes/logo.svg` in the repository, also served as `/assets/logo.svg`.
+It keeps the Spider Silk family motif, a spider, a web and the tingle, in a 200×200 viewBox with a transparent background.
+Four closed, scalloped web rings and eight continuous radial strands in `#8a93a6` extend to the hub behind the larger eight-legged spider in `#e2603f`.
+The web stays complete in every quadrant, with the same geometry as Spider Silk's.
+The strands use a 2.2-unit stroke and the outer ring a 3-unit stroke.
+Three evenly spaced coral sensing arcs overlay the intact north-east quarter.
+The anomaly dot sits at (159.4, 40.6), where the north-east radial meets the outer ring.
+It is outside the animated group, so it stays attached to the web during a pulse.
+
+The sidebar repeats this geometry inline, with the spider in `currentColor`, the web in `--text-muted`, and the sensing arcs and the dot in `--accent`.
+Its `.sense-arcs` group carries the event-driven pulse of <<tingle-badge,the tingle badge>>, centred on the spider's head at (100, 96), and respects a reduced-motion preference.
+A monochrome variant, `logo-mono.svg`, uses `currentColor` throughout, and defaults to black when embedded as an image.
+The 32×32 favicon draws the same complete web, spider and three sensing arcs on a rounded dark tile, with a light spider for contrast.
+
+The README's logo and the served full-colour SVGs are kept identical.
+The inline sidebar logo and the monochrome variant change together with them.
+
+[#palette]
+=== Palette
+
+The palette uses the same tokens as the Spider Silk badges, extended for a dark UI.
+
+[cols="2,2,2,5",options="header"]
+|===
+| Token | Dark | Light | Use
+
+| `--bg` | `#171a21` | `#f6f7f9` | The page
+| `--bg-panel` | `#1f232c` | `#ffffff` | Cards and tables
+| `--bg-raised` | `#2b303b` | `#eef0f4` | Hovers, inputs, the sidebar
+| `--line` | `#343a47` | `#dde1e8` | Borders and grid lines
+| `--text` | `#e6e9ef` | `#1f232c` | Text
+| `--text-muted` | `#8a93a6` | `#5f6878` | Secondary text, the strand grey
+| `--accent` | `#e2603f` | `#d1532f` | The tingle: primary actions, the active nav item, slow markers
+| `--ok` | `#5ec27f` | `#2e9e57` | Healthy
+| `--warn` | `#f0b64b` | `#c98c14` | Slow
+| `--err` | `#e5484d` | `#c9363b` | Errors
+| `--silk` | `#8a93a6` | `#8a93a6` | Strands, neutral chart lines
+| `--spider` | `#5a3a22` | `#5a3a22` | Rarely: the logo only
+|===
+
+Dark is the default.
+`prefers-color-scheme: light` switches to the light palette, and so does a toggle in the top bar, which is persisted in `localStorage`.
 The accent colour marks the primary actions, the active page in the sidebar, and what is slow.
-Each service keeps its own colour, so a service looks the same in every chart.
-Colour is never the only carrier of meaning: an error also gets a bolt, and something slow also gets a ring or a turtle.
 
+Text is set in the system UI font stack.
+Ids, statements and stack traces are set in a monospace stack.
+
+Services and span categories take their series colours from a fixed list of eight derived from the palette: accent, silk, ok, warn, then four muted hues.
+A service is assigned its colour in first-seen order, so it looks the same in every chart.
+
+[#response-buckets]
+=== Response-time buckets and Apdex
+
+The response-time buckets are the four of `/api/status.thresholds.responseBucketsMs` plus errors (xref:api.adoc#status[Status]).
+Each has one fixed colour, used wherever a histogram or a load chart appears.
+
+[cols="1,2,2",options="header"]
+|===
+| Bucket | Token | Label
+
+| 1 | `--bucket-1` = `--ok` | `≤125 ms`
+| 2 | `--bucket-2` = `--series-8` (teal) | `≤500 ms`
+| 3 | `--bucket-3` = `--warn` | `≤2 s`
+| 4 | `--bucket-4` = `--accent` | `>2 s`
+| Errors | `--err` | `error`
+|===
+
+The labels are built from the bounds, so the ones above are those of the default thresholds.
+
+Apdex is shown with one decimal less than the API carries, as in `0.93`.
+It is coloured `--err` below 0.7, `--warn` below 0.85, and plain otherwise.
+The tile's caption says `apdex`, and its title says the T it was computed with.
+
+[#tone]
+=== Tone of the copy
+
+The copy is short and factual, with no exclamation marks.
+An empty state explains how to send data, with the OTLP endpoint from `/api/status` in a copyable snippet, rather than saying "No data".
+
+[#layout]
 == Layout
 
+----
+┌──────────────┬──────────────────────────────────────────────────────────────┐
+│ ◉ Spider     │  ‹page title›     [⚑ Mark] [Service ▾] [Last 15 min ▾] [● Live] │
+│   Sense      ├──────────────────────────────────────────────────────────────┤
+│              │                                                              │
+│ Overview     │                                                              │
+│ Findings     │                                                              │
+│ Compare      │                        page content                          │
+│ Map          │                                                              │
+│ Services     │                                                              │
+│ Scatter      │                                                              │
+│ Traces       │                                                              │
+│ Queries      │                                                              │
+│ Errors       │                                                              │
+│ Logs         │                                                              │
+│ JVM          │                                                              │
+│ Metrics      │                                                              │
+│              │                                                              │
+│ ──────────   │                                                              │
+│ ⚡ tingles    │                                                              │
+│ standalone   │                                                              │
+│ :4000  v0.1  │                                                              │
+└──────────────┴──────────────────────────────────────────────────────────────┘
+----
+
 The sidebar lists the pages: Overview, Findings, Compare, Map, Services, Scatter, Traces, Queries, Errors, Logs, JVM, and Metrics.
-On a narrow window it collapses to icons, and on a phone-sized one it becomes a drawer behind a menu button.
+It is 220 px wide, collapses to icons below 1100 px, and becomes a drawer behind a hamburger button below 720 px.
 The selected page fills the rest of the window, under the top bar.
 
-The sidebar foot shows the mode Spider Sense runs in, its port, its version, and a "how to send data" link that opens the How to send data dialog.
-When spans have been dropped, the foot adds a `dropping spans` line in amber, with the number of dropped spans as its title.
-Spans are dropped when the traffic crosses xref:configuration.adoc#properties[`spidersense.ingest.max-spans-per-second`].
+[#sidebar-foot]
+The sidebar foot shows the mode Spider Sense runs in, its port, its version, and a "how to send data" link that opens the <<dialogs,How to send data>> dialog.
+When `/api/status.storage.droppedSpans` is above zero, or a `stats` event raised it, the foot adds a `dropping spans` line in `--warn`, with the number of dropped spans as its title.
+Spans are dropped when the traffic crosses xref:configuration.adoc#properties[`spidersense.ingest.max-spans-per-second`] (xref:storage.adoc#ingest-cap[The ingest cap]).
 The line stays for a minute after the last increase, so a load test reads as partial data rather than as a quiet application.
 
 [#top-bar]
@@ -31,50 +151,56 @@ The top bar carries the page title on the left, and on the right the Mark button
 
 Mark::
 Opens a small dialog with a name, an optional note, and OK.
-The name takes letters, digits, dots, underscores and hyphens, up to 64 characters.
+The name matches `[A-Za-z0-9._-]{1,64}`: letters, digits, dots, underscores and hyphens, up to 64 characters.
 It is prefilled with `before` when no mark in the window is named `before`, and with `after` otherwise.
-When the service filter names one service, the mark records that service.
-OK creates the mark and shows a toast naming it.
+When the service filter names one service, the mark records that service as its `service`.
+OK sends `POST /api/marks` and shows a toast naming the mark.
 Marking is your half of the loop an agent runs: mark, exercise, compare.
 xref:marks-and-compare.adoc#marks[Marks] covers what a mark is and how the agent's side reads it.
 
 Service filter::
 Selects all services, or one.
-It applies to every page that takes a service.
+It applies to every page that takes a `service`.
 
 Time range::
 `5m`, `15m`, `1h`, `6h`, or `all`.
-`all` starts at the oldest span in storage.
+`all` sets `from` to `/api/status.oldest.span`, the oldest span in storage.
 
 Editor::
-*IntelliJ IDEA* or *VS Code*: what a code frame link opens, on the Findings page and the error page.
-IntelliJ IDEA is the default, and the choice is remembered in the browser.
-xref:pages.adoc#code-frames[Code frames] describes the links.
+A select of *IntelliJ IDEA*, the default, or *VS Code*: what a code frame link opens, on the Findings page and the error page (xref:pages.adoc#code-frames[Code frames]).
+The choice is remembered in `localStorage` and applied at once to every link on the page.
+Every access to the storage is wrapped in `try`, so a browser that refuses storage keeps the default.
 
 Live::
-The page refreshes every 5 seconds, and the end of the window moves with the clock.
-A "spans/s" readout sits beside the toggle.
-Every tingle increments the badge on the sidebar and appears at the top of the Overview feed as it happens.
+The page re-fetches every 5 seconds, and the `to` of the window moves with the clock.
+The server's `stats` event (xref:api.adoc#events[Events]) drives a "spans/s" readout beside the toggle.
+Every `tingle` event increments the badge on the sidebar's `tingles` entry and is prepended to the Overview feed without a refetch.
 
+[#marks-on-charts]
 == Marks on charts
 
 Every time-series chart draws the marks that fall inside its window as a vertical dashed line the full height of the plot, with the name as a small label at the top.
-The automatic `start` marks are grey, and every other mark is in the accent colour.
+The automatic `start` marks are in `--text-muted`, and every other mark is in `--accent`.
 A mark that names a service is drawn only when the service filter is off or is that service.
+The marks come from `GET /api/marks?limit=50`, which the shell fetches on every route change and every Live refresh and keeps in the shared state.
+A page therefore never fetches them itself, and every chart gets them for free.
 
+[#tingle-badge]
 == The tingle badge
 
-The sensing arcs of the logo in the sidebar pulse once when a tingle arrives, and the badge on the sidebar's `tingles` entry counts up.
+When a `tingle` event arrives, the accent-coloured sensing arcs of the logo in the sidebar pulse once, a 600 ms CSS animation, and the badge on the sidebar's `tingles` entry counts up.
+The arcs pulse once, not continuously: the tingle is a signal, not a decoration.
 The pulse respects a reduced-motion preference.
 
+[#dialogs]
 == Dialogs
 
 How to send data::
 Has three tabs: `-javaagent`, environment variables, and `curl`.
-Each tab is a copyable block carrying the endpoint this Spider Sense actually listens on.
+Each tab is a copyable block carrying the actual endpoint from `/api/status`.
 
 Clear data::
-Asks for confirmation, then deletes the stored data.
+Asks for confirmation, then sends `DELETE /api/data`.
 
 [#keyboard]
 == Keyboard
@@ -99,7 +225,85 @@ Asks for confirmation, then deletes the stored data.
 | Opens the Mark dialog
 |===
 
+[#urls]
 == URLs
 
-The address bar carries what you are looking at: the page, the service filter, and the time range, as in `+#/traces?service=x&range=1h+`.
+Routing is hash-based: `#/`, `+#/services/spring-orders+`, `+#/traces/<id>+`, and so on.
+The service filter and the time range live in the hash query, as in `+#/traces?service=x&range=1h+`.
 A URL can therefore be shared as it is, and opens on the same view.
+
+[#behaviour]
+== Behaviour and quality
+
+[#live-refresh]
+=== Live refresh
+
+Every list re-renders in place when Live refreshes it, without losing the scroll position or the selection.
+
+[#numbers-and-times]
+=== Numbers and times
+
+Durations carry one decimal below 100 ms and none above, and are given in seconds (`s`) above 10 s.
+Counts carry thousands separators, rates two decimals, and percentages one.
+A count axis only ever shows whole numbers, with uPlot `incrs` of 1, 2, 5, 10 and so on, so a series that stays at 0 or 1 does not print the same tick three times.
+Times read as `HH:mm:ss` within today, and `MMM d HH:mm:ss` otherwise.
+A feed gives the relative time, "12 s ago", a table the absolute one, and a tooltip both.
+
+[#narrow-screens]
+=== Narrow screens
+
+The whole UI works at 360 px wide: a table scrolls horizontally inside its panel, the charts shrink, and the drawer becomes a full-screen sheet.
+
+[#accessibility]
+=== Accessibility
+
+Every icon-only control has an `aria-label`.
+Colour is never the only carrier of meaning: an error also gets a bolt, and something slow also gets a ring or a turtle.
+
+[#no-external-requests]
+=== No external requests
+
+The UI makes no external request at all: the fonts are the system's, uPlot is vendored, and the logo is inline.
+The one exception is the recording, whose database is what it shows (<<recording,The recording>>).
+
+[#size]
+=== Size
+
+The whole UI is under 400 KB uncompressed, excluding uPlot.
+The mock under `dev/` counts toward that, since it is served too.
+
+[#mock]
+=== The mock
+
+`?mock=1` loads `assets/js/dev/mock.js`, which answers every endpoint of xref:api.adoc[the HTTP API], so every page can be developed without a server.
+That includes `/api/map`, `/api/scatter`, `/api/findings`, `+/api/findings/{id}+`, `/api/marks` (`GET` and `POST`), `/api/compare`, `/api/source`, `ErrorGroup.series`, `/api/status.codeFrames` and `jar`, the histograms, and the connection pools.
+Under the mock every source frame resolves, under a made-up project directory.
+The mock has no text renderer: a `format=text` request answers a stand-in naming the path, with the JSON in a fenced block.
+
+[#recording]
+=== The recording
+
+`assets/js/dev/replay.js` answers the UI from a recording, the DoltHub database of the published demo (xref:examples.adoc#static-demo[The demo without installing anything]).
+It is loaded when `<html data-dolthub="owner/database@ref">` or `?dolthub=…` names the database, and it answers every `GET /api/…` from that database through DoltHub's SQL API, from the browser.
+
+Some answers are queried from the tables of xref:storage.adoc#schema[Storage] and shaped as xref:api.adoc[the HTTP API] says:
+
+* the traces, `/api/traces`, with `service`, `endpointId`, `minMs`, `maxMs`, `status`, `q`, `before` and `limit` applied as the API applies them;
+* one trace, `+/api/traces/{id}+`: its spans in the waterfall's order, each with the server's `summary` line, and its logs, a trace of more than 1,000 spans being cut at DoltHub's row limit;
+* the logs, with `service`, `severity`, `q`, `traceId` and `before`;
+* the marks;
+* the acknowledgements, the `ack` rows that are not resolutions.
+
+Everything else is read from the `answer` table by path and query, without `from` and `to`.
+A request whose filters were not recorded falls back to the nearest recorded answer, dropping one filter at a time, and logs the substitution.
+A `format=text` answer is replied as the text it was captured as.
+
+The recording freezes `Date.now()` at the end of the window.
+It makes the default top-bar range the length of the recording: the `15m` preset becomes "The recording (5 min)", so every chart covers the recorded minutes and none before them.
+It answers `POST` and `DELETE` with 405, and `/api/source` with 404, since the files are not in the recording.
+It replaces `EventSource` with one that never emits.
+It puts one line above the top bar saying when the recording was made, with a link to the database.
+It is the one page of the UI that makes external requests, since the database is what it shows.
+
+`scripts/demo-site.mjs assemble` copies `public/` into one directory with `data-dolthub` set on `index.html`.
+That directory is the static demo the manual publishes at `/demo`.

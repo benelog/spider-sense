@@ -49,7 +49,7 @@ export function render(root, ctx) {
         item('max', dur(e.maxMs)),
         item('errors', e.errors ? h('span.bad', count(e.errors)) : '0'),
         h('div.th-item', h('span.k', 'status'), statusBar(e.statusCodes)),
-        // Where the time went, over the 20 slowest traces (docs/agent.md).
+        // Where the time went, over the 20 slowest traces (findings.adoc#time).
         bar ? h('div.th-item', h('span.k', 'time in ' + lead[0]), bar) : null,
         histogramBars(e.histogram, { compact: true })));
   }

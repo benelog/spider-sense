@@ -20,7 +20,7 @@ import java.util.regex.Pattern;
  *
  * <p>The stock OpenTelemetry agent records where an exception was thrown and nothing about where a
  * query came from, so a {@code slow-query} or {@code n-plus-one} finding could name a statement but
- * never a line ({@code docs/agent.md}). This is the one thing Spider Sense collects itself.
+ * never a line ({@code findings.adoc#code}). This is the one thing Spider Sense collects itself.
  *
  * <p>The work happens in {@link #onEnding(ReadWriteSpan)}, which the SDK calls on the thread that is
  * ending the span while the span is still writable: the duration is already known, so the threshold
@@ -30,7 +30,7 @@ import java.util.regex.Pattern;
  * <p>The individual queries of an N+1 are fast, so the threshold would never fire on them. For
  * those, the processor counts per thread how many database spans of the current trace have ended
  * with the same statement, and captures the stack once, on the fifth repeat: the same number that
- * makes a query group an N+1 on the server ({@code docs/design.md}, "The extension").
+ * makes a query group an N+1 on the server ({@code design.adoc#extension}).
  *
  * <p>The third case is a slow outbound call: a {@code CLIENT} span that is not a database span and
  * took at least {@code spidersense.slow.request.ms}, so a {@code slow-external} finding names the
@@ -100,7 +100,7 @@ public final class SlowQuerySpanProcessor implements ExtendedSpanProcessor {
      * completes its exchange off the calling thread ends every span of a run on a different worker,
      * each of them counts one repeat, and none reaches five. That is most HTTP clients, so a
      * thread-local counter gave an {@code n-plus-one-http} finding no code location at all in the
-     * common case ({@code docs/design.md}, "The extension").
+     * common case ({@code design.adoc#extension}).
      *
      * <p>Not static: the counter belongs to this processor, so a second processor, which is what a
      * test builds, starts from nothing rather than inheriting another one's counts.
@@ -169,7 +169,7 @@ public final class SlowQuerySpanProcessor implements ExtendedSpanProcessor {
      * end is the stack of whichever thread ends it, and for an asynchronous client that is the
      * completion callback of a {@code CompletableFuture} on a worker: every frame of it belongs to
      * the JDK and the finding names no line. At the start the thread is still the one that made the
-     * call, so the stack is the call site ({@code docs/design.md}, "The extension").
+     * call, so the stack is the call site ({@code design.adoc#extension}).
      *
      * <p>The span already carries the attributes the instrumentation sets on the request, which is
      * what the statement and the URL are, so the key is the same one the end would have computed.
@@ -290,8 +290,8 @@ public final class SlowQuerySpanProcessor implements ExtendedSpanProcessor {
      * every run of digits replaced by {@code ?}.
      *
      * <p>The digits are what a loop varies, so replacing them is what makes three calls one call,
-     * and the server groups the finding on the same rule ({@code docs/agent.md}, "The repeated
-     * call"). The key carries a prefix, so a URL is never counted as a statement of the same trace.
+     * and the server groups the finding on the same rule ({@code findings.adoc#repeated-call}).
+     * The key carries a prefix, so a URL is never counted as a statement of the same trace.
      */
     private static String callOf(ReadWriteSpan span) {
         String url = span.getAttribute(URL_FULL);

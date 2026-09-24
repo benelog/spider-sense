@@ -18,7 +18,7 @@ The column headers are H2's own labels, so an unquoted name comes back upper-cas
 ## The schema, in the columns that matter
 
 Every instant is **epoch milliseconds** in a `BIGINT`, and every duration is **nanoseconds** (`duration_ns`); there is no `TIMESTAMP` column anywhere, so arithmetic on times is plain integer arithmetic.
-`docs/storage.md` in the Spider Sense repository has the tables in full; this is what a query normally needs.
+[Storage](https://spider-sense.benelog.net/storage.html#schema) in the manual has the tables in full; this is what a query normally needs.
 
 ### `span` — one row per span
 

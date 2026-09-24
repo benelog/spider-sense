@@ -44,7 +44,7 @@ import org.jspecify.annotations.Nullable;
  * decision to execution time, which is why the block may sit anywhere in the
  * build file and why nothing is resolved for a task that is not attached.
  *
- * <p>The specification is {@code docs/build-tools.md}.
+ * <p>The specification is {@code gradle-plugin.adoc}.
  */
 public class SpiderSensePlugin implements Plugin<Project> {
 

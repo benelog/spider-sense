@@ -1,5 +1,5 @@
 // Compare: two windows side by side, [before, after) and [after, until), named by
-// marks (docs/agent.md "Compare"). The agent's compare, for people.
+// marks (marks-and-compare.adoc#compare). The agent's compare, for people.
 
 import * as api from '../api.js';
 import * as router from '../router.js';
@@ -34,7 +34,7 @@ function value(s, key) {
   return s ? s[key] : null;
 }
 
-/** The API's own rule, as docs/ui.md repeats it for the tiles. */
+/** The API's own rule, as pages.adoc#compare repeats it for the tiles. */
 function verdictOf(kind, before, after) {
   if (before == null || after == null) return 'same';
   if (kind === 'errors') return after > before ? 'worse' : after < before ? 'better' : 'same';

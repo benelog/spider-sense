@@ -107,10 +107,18 @@ This second guard ensures that a misconfiguration never shows the UI monitoring 
 
 The UI server's Jetty thread pool is marked daemon in agent mode (`JettyServer.threadPool(...)` with `QueuedThreadPool.setDaemon(true)`) and with `shutdownHook(false)`, so a short-lived command-line application still exits when its `main` returns.
 
-A build tool that forks the application's JVM needs the `-javaagent` option handed to it.
-xref:gradle-plugin.adoc[The Gradle Plugin] does that for `bootRun` and `run`, and xref:maven.adoc[Maven] does it for `spring-boot:run`.
+xref:configuration.adoc[Configuration] lists every `spidersense.*` key, its precedence, the properties file and the environment variables.
+Every `otel.*` property still works as the OpenTelemetry agent documents it, because Spider Sense only fills in defaults.
+
+[#from-a-build-tool]
+== From a build tool
+
+A build tool that forks the application's JVM (`bootRun`, `run`, `spring-boot:run`) needs the `-javaagent` option handed to it.
+xref:gradle-plugin.adoc[The Gradle Plugin] `net.benelog.spidersense`, an included build in `spider-sense-gradle-plugin`, does that for `bootRun` and `run` with a `jvmArgumentProvider`, and its `spiderSense { }` block has a property for every key of xref:configuration.adoc#properties[the configuration table].
+The Spring Boot Maven plugin's `agents` parameter does it for `spring-boot:run`, as xref:maven.adoc[Maven] describes.
 The jar and the plugin are published together to Maven Central as `net.benelog.spidersense:spider-sense` and `net.benelog.spidersense:spider-sense-gradle-plugin`, one version for both.
 
+[#the-server]
 == The server
 
 The Gradle module `spider-sense-server` is a Spider Silk `App` with four concerns.
@@ -125,6 +133,7 @@ Senders set `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf`.
 Ingest goes through a write-behind queue and one writer thread, and every API answer is SQL over indexed columns.
 The schema, the writer, the queries and the retention sweeper are specified in xref:storage.adoc[Storage].
 The one in-memory piece is the `EventBus`, which sends ingest notifications to SSE subscribers, coalesced to at most 4 messages per second.
+Tingles are rows like everything else, and no in-memory mirror of them is kept (xref:api.adoc#tingles[Tingles]).
 . *JSON API and static UI*: the contract in xref:api.adoc[The HTTP API], and the UI in `src/main/resources/public` as xref:pages.adoc[The Pages] describes it.
 . *The agent interface*: findings, marks, compare, check and a Markdown rendering of every list, over the same `Queries` as the UI.
 The xref:cli.adoc[CLI] fronts them, and an MCP adapter (`POST /mcp`, and `mcp` over stdio) serves hosts without a shell.
@@ -144,7 +153,7 @@ Spring's `DataAccessException` subclasses and `ServletException` carry one outer
 The frame is keyed without its `(File.java:41)` and with every `$<digits>` of a synthetic name (`lambda$load$0`, `Orders$1`) made `$?`, so moving the line or adding a lambda above it keeps the group.
 It is judged by the default framework prefixes, never by `spidersense.app.packages`, so the id does not depend on a setting of the process that wrote the span.
 A trace without an application frame, and an error without a trace, fall back to the service, the exception type or `error.type`, and the message with digits and quoted strings replaced by `?`.
-The normalised message stays in the group as its `message` either way.
+The normalised message stays in the group as its `message` either way (xref:api.adoc#errors[Errors]).
 
 [#endpoint-identity]
 == Endpoint identity
@@ -178,6 +187,11 @@ It exists for three things the agent cannot do: say where a slow query was issue
 It registers, through `META-INF/services/io.opentelemetry.sdk.autoconfigure.spi.AutoConfigurationCustomizerProvider`, a span processor that implements `io.opentelemetry.sdk.trace.internal.ExtendedSpanProcessor` and does its work in `onEnding(ReadWriteSpan)`.
 That callback runs on the thread that is ending the span, before the span becomes immutable: the duration is already known and an attribute can still be set, which no ordinary `SpanProcessor` callback allows.
 
+[#stack-capture]
+=== Where a query or a call was made
+
+The span processor writes the stack of the calling thread into `code.stacktrace` in four cases.
+
 The first case is a slow query.
 When the span carries a `db.system` or `db.system.name` attribute and has taken at least `spidersense.slow.query.ms`, the processor writes `Thread.currentThread().getStackTrace()` into the span attribute `code.stacktrace`.
 The environment variable `SPIDERSENSE_SLOW_QUERY_MS` sets the threshold as well.
@@ -191,29 +205,35 @@ When a statement reaches its fifth repeat, the same number that makes a query gr
 The cost is therefore one capture per repeated statement per trace.
 The server's `n-plus-one` rule prefers the span of the group that carries `code.stacktrace` for the finding's `code`.
 
-Counting the repeats and capturing the fifth are the one thing the processor does when a span starts rather than when it ends, and they have to be.
-The stack at the end is the stack of whichever thread ends the span, and for an asynchronous client that is a completion callback on a worker, every frame of which belongs to the JDK.
-The finding would then carry a code location the server reduces to nothing.
-At the start the thread is still the one that made the call, so the stack is the call site, and the span already carries what the instrumentation set on the request.
-The threshold cases stay at the end, because a duration is the one thing the start does not know.
+*At the start, not at the end.*
+Counting the repeats and capturing the fifth are the one thing the processor does in `onStart` rather than in `onEnding`, and they have to be.
+The stack at the end is the stack of whichever thread ends the span, and for an asynchronous client that is a `CompletableFuture` completion callback on a worker, every frame of which belongs to the JDK.
+The finding would then carry a code location made entirely of framework frames, which the server reduces to nothing.
+At the start the thread is still the one that made the call, so the stack is the call site.
+The span already carries what the instrumentation sets on the request, the statement or the URL, so the key is the one the end would have computed.
+The threshold cases stay in `onEnding`, because a duration is the one thing the start does not know.
 
-The counter is one map from trace id to that trace's counts, read on every database and outbound span that ends.
+*Per trace, not per thread.*
+The counter is one `ConcurrentHashMap` from trace id to that trace's counts, read on every database and outbound span that ends.
 A thread-local counter would be cheaper and need no lifecycle, and the counter used to be one.
 A thread-local counter is wrong for anything asynchronous, because a client that completes its exchange off the calling thread ends every span of a run on a different worker and each of them counts one repeat.
-Most HTTP clients work that way, so the thread-local counter gave an xref:findings.adoc#n-plus-one-http[`n-plus-one-http`] finding no code location at all in the common case.
+Most HTTP clients work that way.
+Spring's `JdkClientHttpRequestFactory` over the JDK `HttpClient` calls `sendAsync` whether or not a timeout is set, and the reactive clients never touch the calling thread.
+A thread-local counter therefore gave an xref:findings.adoc#n-plus-one-http[`n-plus-one-http`] finding no code location at all in the common case, which is the whole of what the capture is for.
 
-The map is bounded twice.
-A trace is forgotten when its local root ends, a span with no parent or with a parent in another process, because this process's work on the trace is then finished.
-A span of that trace that ends later starts the count again.
-The map also holds at most 1 000 traces, so a trace whose local root never ends cannot keep its counts for ever.
+The map is bounded twice, because a map keyed by trace id in a long-running process is a leak waiting to happen.
+A trace is forgotten when its *local root* ends, a span with no parent or with a parent in another process, because this process's work on the trace is then finished.
+A span of that trace that ends later simply starts the count again, which is what a thread-local counter did when a thread moved on.
+The map also holds at most 1,000 traces, because a trace whose local root never ends, which is a crash or a leak in the monitored application, would otherwise keep its counts for ever.
 Inserting past the cap drops other traces until the map is back within it.
+Which traces are dropped is not defined, and under that much load a missing code location is the least of the problems.
 At most 256 distinct statements and calls are counted per trace, and beyond that the counter stops and nothing else changes.
 
 The third case is a slow outbound call.
 A `CLIENT` span that is not a database span (no `db.system` or `db.system.name`) and has taken at least `spidersense.slow.request.ms` (`SPIDERSENSE_SLOW_REQUEST_MS`, default 500, read once like the other threshold) gets the same `code.stacktrace`, so a xref:findings.adoc#slow-external[`slow-external`] finding names the line that made the call.
 
 The fourth case is the N+1 of outbound calls, and it counts exactly as the statements do.
-An outbound `CLIENT` span that carries an HTTP method or a `url.full` is counted under its name and its URL with every run of digits replaced by `?`, in the same per-trace map, and the fifth repeat gets the stack, so an xref:findings.adoc#n-plus-one-http[`n-plus-one-http`] finding names the loop rather than only the host.
+An outbound `CLIENT` span that carries an HTTP method or a `url.full` is counted under the key `<method> <url.full>`, with every run of digits in the URL replaced by `?`, in the same per-trace map, and the fifth repeat gets the stack, so an xref:findings.adoc#n-plus-one-http[`n-plus-one-http`] finding names the loop rather than only the host.
 The key is prefixed, so a URL is never counted as a statement of the same trace.
 The 256 keys a trace counts can be of either kind.
 The same frames are dropped, the same cap applies, and a span that already carries the attribute is left alone.
@@ -223,6 +243,9 @@ The server therefore reduces them to application frames with exactly the code it
 The leading frames of `Thread.getStackTrace`, of the processor itself and of `io.opentelemetry.`, which is the SDK's own `end()` path, are dropped, and the trace is cut at 64 frames.
 `isStartRequired()` and `isOnEndingRequired()` are true and `isEndRequired()` is false, because by `onEnd` the span is immutable and nothing can be set on it.
 Anything thrown inside either callback is swallowed, since a missing code location is never worth a broken span.
+
+[#index-catalog]
+=== The index catalog
 
 The index catalog is the one part of the extension that needs a `Connection`, which no span processor has.
 The extension reads the index catalog of the tables a slow statement touches, so a xref:findings.adoc#slow-query[`slow-query`] or xref:findings.adoc#n-plus-one[`n-plus-one`] finding can say which of the columns the statement filters on no index serves (xref:findings.adoc#schema[The schema block]).
@@ -240,50 +263,148 @@ A statement with neither is left alone.
 `IndexCatalog` scans that SQL for the table names after `from`, `join`, `update`, `into` and `delete from`, reads a comma-separated list after `from`, keeps a `schema.table` qualifier, and unquotes a quoted name.
 
 The lookup runs once per table per process, keyed by the connection's JDBC URL and the table name, and stops after 200 tables.
+It runs on the thread that ran the statement and on the connection it ran on.
 It asks the standard `DatabaseMetaData` whether the table exists (`getTables`, so a name the scanner misread is silently nothing) and for its indexes (`getIndexInfo(catalog, schema, table, false, true)`, the statistic rows dropped, the columns in ordinal order).
 It then emits one log record through the agent's own logger provider (`GlobalOpenTelemetry.get().getLogsBridge()`, scope `spider-sense`) with the body `index catalog of <table>`.
 The record's attributes are `spidersense.schema.table` (the name as the database reports it), `spidersense.schema.schema` (`TABLE_SCHEM`, absent when the database reports none), `spidersense.schema.product` (`DatabaseMetaData.getDatabaseProductName()`) and `spidersense.schema.indexes`, a JSON array of `{ "name", "unique", "columns" }` that is empty for a table without an index.
 The server stores that record as a catalog row and never as a log line (xref:storage.adoc#schema[the `db_table` table]).
 An unquoted table name is folded the way the database stores identifiers (`storesUpperCaseIdentifiers`, `storesLowerCaseIdentifiers`) before it is looked up, and a quoted one is kept as written.
+H2 folds to upper case and PostgreSQL to lower case.
+MySQL on Linux (`lower_case_table_names=0`) folds to neither, so there the name is looked up as the statement wrote it, which is the only spelling the table answers to.
+`DatabaseCatalogIT` runs the lookup against PostgreSQL and MySQL in containers.
 
 The lookup stays on the request thread and on the borrowed connection by design.
-A second connection borrowed from the pool for the lookup would itself be the pool exhaustion that a `pool-exhausted` finding diagnoses.
+A second connection borrowed from the pool for the lookup would itself be the pool exhaustion that a xref:findings.adoc#pool-exhausted[`pool-exhausted`] finding diagnoses.
 The connection the statement used cannot be handed to another thread, because the application returns it to the pool the moment the statement is done.
 The cost is the driver's catalog query, once per table, on a request that has already spent `slow.query.ms` in the database.
 
-On PostgreSQL that catalog query is a statement of its own, which is a database span of the application's trace when the application itself calls `getIndexInfo`.
+On PostgreSQL that catalog query is a statement of its own, since the driver queries `pg_catalog` through an ordinary `Statement`, and it is a database span of the application's trace when the application itself calls `getIndexInfo`.
 MySQL's Connector/J answers the same call without an instrumented statement, so it is no span there even then.
 Under the packaged agent the lookup runs inside the slow statement's own `execute` call, where the JDBC instrumentation's guard against nested statements already keeps the catalog query from becoming a span.
 The extension does not rely on that ordering, and marks the thread with the baggage entry `spidersense.schema.lookup` for the length of the lookup.
 A sampler it wraps around the configured one (`addSamplerCustomizer`) drops every span started under that entry and delegates everything else.
 The trace therefore shows the application's statements and none of the lookup's.
+`DatabaseCatalogIT` checks the result on both databases: the request's trace holds the one slow statement, and no span anywhere reads the catalog.
 A thread already inside a lookup does nothing, because a driver's catalog queries pass through the same advice.
 Every exception is swallowed: a missing catalog is never worth a slow or a broken statement.
 
-The module is compiled `compileOnly` against `io.opentelemetry.javaagent:opentelemetry-javaagent-extension-api` and `io.opentelemetry.instrumentation:opentelemetry-instrumentation-api` at the packaged agent's version (`otelAgentVersion`), beside the SDK artifacts below, and still ships nothing.
+The instrumentation module is compiled `compileOnly` against `io.opentelemetry.javaagent:opentelemetry-javaagent-extension-api` and `io.opentelemetry.instrumentation:opentelemetry-instrumentation-api` at the packaged agent's version (`otelAgentVersion`), beside the SDK artifacts of <<extension-build,How the extension is built>>, and still ships nothing.
 The agent's ByteBuddy and its shaded API are what the advice and the helper run on.
 Standalone mode has none of this: it has no connection to the application's database, and the spans carry no credentials, so the catalog exists only for a service that ran under the agent.
 
 [#spider-silk-routes]
 === Spider Silk routes
 
-The third is a second instrumentation module, `spider-sense-spider-silk`, in the same services file.
+The third thing the extension does is a second `InstrumentationModule`, `spider-sense-spider-silk`, in the same services file.
 A Spider Silk application is one servlet mapped at `/*` with Spider Silk's own router above it.
 The servlet instrumentation therefore reports `/*` as the `http.route` of every request, and the agent has no instrumentation for the router the way it has one for Spring MVC.
 
 The module applies only where `net.benelog.spidersilk.WebRequest` is on the class path, and advises one method, `WebRequest.withRoute(Route, Map)`.
 Spider Silk calls it on the request thread once the router has matched a route, before any filter or handler of the route runs.
 On its exit the advice calls `HttpServerRoute.update(Context.current(), HttpServerRouteSource.CONTROLLER, route.path())`, the call the agent's own framework instrumentations make.
-The controller source outranks the servlet's, so the span's `http.route` becomes the route as registered, such as `+/books/{id}+` with group prefixes resolved, and the agent renames the span `+GET /books/{id}+`.
+The controller source outranks the servlet's, so the span's `http.route` becomes the route as registered, such as `+/books/{id}+` with group prefixes resolved, which is already OpenTelemetry's path-template syntax.
+The agent then renames the span `+GET /books/{id}+`.
 A request no route matched, such as a static file, a 404 or a 405, never reaches the method and keeps `/*`.
 
 The advice names Spider Silk's `Route`, which resolves in the application's class loader it is inlined into.
 The module is therefore compiled `compileOnly` against `spider-silk-core` and ships none of it.
 `Route.path()` is the only member it calls, and every Spider Silk release has it.
+`SingleJarIT` runs a Spider Silk sample under the packaged jar and checks that two ids of one route are one endpoint whose spans carry the route.
 `-Dotel.instrumentation.spider-sense-spider-silk.enabled=false` switches the module off, as it does any agent instrumentation.
 
-The module is compiled against `io.opentelemetry:opentelemetry-sdk-trace` and `io.opentelemetry:opentelemetry-sdk-extension-autoconfigure-spi` at the SDK version the packaged agent bundles (`otelSdkVersion` in the root `build.gradle`), `compileOnly` and nothing else.
+[#extension-build]
+=== How the extension is built
+
+The extension module is compiled against `io.opentelemetry:opentelemetry-sdk-trace` and `io.opentelemetry:opentelemetry-sdk-extension-autoconfigure-spi` at the SDK version the packaged agent bundles (`otelSdkVersion` in the root `build.gradle`), `compileOnly` and nothing else.
 The agent's `ExtensionClassLoader` rewrites the unshaded `io.opentelemetry` references to the agent's own shaded classes as it loads them, so the extension must not ship a copy of the SDK.
+
+[#the-examples]
+== The examples
+
+Five programs under `examples/` give Spider Sense something to see: three web applications on three different stacks, a worker with no web server, and a load generator.
+xref:examples.adoc[The Examples] describes each of them and the two scripts that run them.
+`scripts/demo-shared.sh` builds the jar and starts one standalone Spider Sense on port 4000 that the four applications and the load generator forward to.
+`scripts/demo.sh` is the other layout, each application in agent mode hosting its own Spider Sense (bookstore 4000, orders 4001, warehouse 4002, worker 4003) with no extra process.
+Both take `--no-build` and `RPS`, log every process under `build/demo-logs/`, and print the CLI line to run next.
+The README and xref:examples.adoc#hand-it-to-an-agent[The Examples] carry a prompt that hands the running demo to an AI agent: `/spider-sense` (`$spider-sense` in Codex) and a question, with no command in it.
+It asks for the three biggest problems, the line under `examples/` behind each, and a proposed fix before any change.
+`skills/` is linked from `.claude/skills/` and `.agents/skills/`, where Claude Code and Codex look for a project's skills, so an agent started in the checkout has the skill without `init`.
+
+[#the-published-demo]
+=== The published demo
+
+The demo is also published as a static page, https://spider-sense.benelog.net/demo[spider-sense.benelog.net/demo]: the real UI over a recording of the shared demo, with no server behind it.
+
+The recording is a DoltHub database, https://www.dolthub.com/repositories/benelog/spider-sense-demo[benelog/spider-sense-demo].
+It holds the tables of xref:storage.adoc#schema[Storage] as they are (`service`, `span`, `trace`, `log`, `metric`, `metric_series`, `metric_point`, `tingle`, `mark`, `ack`, `db_table`, `meta`) and one table more, `answer`.
+`answer` holds every answer the UI asks for, keyed by path and query without `from` and `to`, plus `/manifest` with the window, the services and the keys.
+
+The page reads that database through DoltHub's SQL API as it is opened (xref:ui.adoc[The UI]).
+The aggregations come from `answer`.
+The lists that are the rows of one table are queried from the tables: the traces with the API's filters, one trace with its spans and logs, the logs, the marks and the acknowledgements.
+Every trace of the recording therefore opens, and a filter is applied rather than substituted.
+
+The answers exist because the aggregations are the server's `Queries` and `Findings`, which the browser cannot run over Dolt.
+Dolt's SQL has no `PERCENTILE_DISC`, and a second implementation of the aggregations would drift.
+The answers are computed once, when the recording is made, by the same jar that serves the UI.
+
+`scripts/demo-site.sh record` runs `demo-shared.sh` for `MINUTES` (5), and marks `before` and `after` a third and two thirds of the way through, so the compare page has two windows.
+`scripts/demo-site.mjs export` then copies every row since the launch out of the H2 file into one CSV per table.
+The spans are copied by the trace they belong to, so a trace that straddles the end of the window is whole.
+The index catalog `db_table` is copied whole, since a table's indexes are read once per process and usually before the window.
+The copy uses H2's `CSVWRITE`, driven through `org.h2.tools.Shell` from the nested server jar, so it needs nothing but the jar.
+The home directory is anonymised as the agent examples are, and the window the page shows is written into `meta` as `recording.from` and `recording.to`.
+
+The script then starts a fresh standalone Spider Sense on `build/demo-data/sense` with retention switched off.
+`load` inserts the CSVs into it with `CSVREAD`, after checking that the recording's `schema_version` is the server's.
+`capture` asks it every question the page does not answer from the tables, and writes the answers into `answer.csv`.
+Those are the lists unfiltered and per service, every endpoint, query, error and metric series they mention, every pair of marks for `compare`, and the text rendering that Copy as Markdown asks for of every finding, query and error in the unfiltered lists.
+`push` adds to DoltHub's tables any column the schema gained since they were created, uploads each CSV through DoltHub's import API, which lands it on a branch of its own, and merges that branch into `main`.
+
+`scripts/demo-site.sh recapture` is the second half alone, from the rows already on DoltHub: `pull`, then `load`, `capture` and the push of `answer`.
+It is what to run after a change to the server's queries, so the demo answers as the new server would without a new recording.
+
+`scripts/demo-site.mjs assemble`, which `npm run docs` runs, copies the UI into `build/site/demo` and marks `index.html` with `data-dolthub="benelog/spider-sense-demo@main"`.
+That attribute makes `app.js` load `assets/js/dev/replay.js` instead of talking to a server.
+The Docs workflow needs neither Java nor the recording for it, and nothing of the recording is committed to the repository.
+Recording needs `DOLTHUB_TOKEN`, a writer's API token of the database, kept in `.envrc`.
+The page needs nothing, since the database is public.
+
+[#the-agent-demo]
+=== The agent demo
+
+The prompt that hands the demo to an agent is published as it ran, too.
+Four pages replay a real session of Claude Code and of Codex CLI on it, each in English and in Korean, at https://spider-sense.benelog.net/agent-demo/claude-code/[`agent-demo/claude-code/`], `…/claude-code/ko/`, `…/codex/` and `…/codex/ko/`.
+Nothing in them is written by hand.
+
+`scripts/agent-demo.sh record <claude|codex> <en|ko>` does what a user of the prompt does.
+It starts `scripts/demo-shared.sh --no-build` and lets it take traffic for `WARMUP_MINUTES` (3).
+Only then does it run the agent headless in the checkout on that prompt, `claude -p --output-format stream-json` or `codex exec --json`; the Korean prompt is the English one's translation.
+It stamps every line of the stream with the time it arrived, since neither stream carries one, and stops the demo once the agent is done.
+
+Claude Code runs with the project's settings only, and with none of the account's claude.ai connectors or the user's auto memory.
+A Korean session adds `"language": "korean"`, since the user's own setting is what makes Claude Code answer in Korean.
+Claude Code has no edit tool, and gets one appended line of system prompt saying that the session ends with the turn, since `-p` does not wait for a wait it left in the background.
+Codex runs in its `workspace-write` sandbox with the network open, since the CLI asks the running Spider Sense over HTTP, at `model_reasoning_effort` `CODEX_EFFORT` (`medium`).
+The script writes down the agent's version and model for the push.
+
+The tree is clean when a session is recorded, so what the agent reads of it is the commit.
+The session has a database of its own under `build/agent-demo/db/`, named by a file that `SPIDERSENSE_CONFIG` points at with `spidersense.db`.
+Its findings therefore cover that run and not what earlier ones left in `~/db/spider-sense/sense`.
+
+`scripts/agent-demo.sh push` (`scripts/demo-site.mjs agent-push`) turns the streams into two more tables of the same DoltHub database, with the home directory anonymised.
+`agent_session` has one row per session: the `id`, such as `claude-ko`, the agent, its version and model, the working directory, the prompt, when it was recorded, and how long it took.
+`agent_event` has one row per thing the terminal shows.
+Its `kind` is `user`, `text`, `thinking`, `tool`, `plan` or `end`, and it carries the tool's name, its title and input, its output, whether it failed, and when it started and ended, in milliseconds from the start.
+An import replaces a table, so the push keeps the rows of every session it was not given.
+
+The page lives in `scripts/agent-demo/`, which `assemble` copies to `build/site/agent-demo` with the session and the database set on `<html>`.
+It reads the two tables through the same SQL API and draws the session in a terminal after the agent's own.
+A Claude Code session shows `⏺ Bash(…)` with `⎿` under it, and a Codex session shows `• Ran …`, `• Explored` for its reads and searches, and `─ Worked for …`.
+The replay is a function of the play time, so it seeks.
+A pause between two events is capped at 1.6 seconds and an answer is revealed at a readable rate, while the spinner's clock shows the recorded time.
+The agent's two-minute wait therefore passes in two seconds and still says two minutes.
+Long outputs show their first four lines and expand on a click.
 
 [#rejected]
 == What was considered and rejected
@@ -319,7 +440,7 @@ The UI is plain ES modules, one CSS file, and uPlot for charts, served by Spider
 A template engine was not used either: the UI is one page whose data all comes from the JSON API, and Spider Silk's JSON and SSE support is the part of the framework this application exercises.
 
 *A gRPC receiver.*
-gRPC needs Netty or Armeria in the jar for a benefit no local setup has.
+gRPC needs Netty or Armeria in the jar for a benefit no local setup has, as <<the-server,The server>> says.
 
 *Profiling, Glowroot-style stack sampling.*
 It is not part of OpenTelemetry's stable signals in Java, and it is deferred until the profiling signal lands in the agent.

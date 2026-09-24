@@ -55,7 +55,7 @@ final class Params {
      * <p>{@code format=text} says so outright; otherwise the first type of
      * {@code Accept} decides, because that is what a client states when it can only
      * read one thing. JSON stays the default, so every browser and every existing
-     * caller is unaffected (api.md).
+     * caller is unaffected (api.adoc).
      */
     static boolean wantsText(WebRequest req) {
         String format = req.queryParamOrNull("format");
@@ -89,7 +89,7 @@ final class Params {
      * <p>{@code /api/sql} is the one endpoint whose errors an agent reads as part
      * of the answer — a rejected statement is a message it has to act on — so a
      * caller that asked for Markdown gets the message on one line rather than a
-     * JSON object it was not expecting (agent.md).
+     * JSON object it was not expecting (cli.adoc#sql).
      */
     static WebResponse problem(WebRequest req, @Nullable String message) {
         String said = message == null || message.isBlank() ? "Bad request" : message;

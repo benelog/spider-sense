@@ -18,7 +18,7 @@ import org.jspecify.annotations.Nullable;
  * <p>The question an agent asks after a change is "did it help", and a number on
  * its own cannot answer it: 812 ms is only bad beside the 120 ms it used to be.
  * So the usual loop is {@code mark before}, exercise, fix, {@code mark after},
- * exercise, compare (agent.md).
+ * exercise, compare (marks-and-compare.adoc#compare).
  *
  * <p>A verdict is deliberately blunt — {@code worse}, {@code better},
  * {@code same}, {@code new}, {@code gone} — and deliberately deaf to noise: a
@@ -135,8 +135,8 @@ public final class Compare {
     // --- verdicts ------------------------------------------------------------
 
     /**
-     * The order agent.md gives, and it is an order rather than a set of independent
-     * tests: an endpoint that grew slower but stopped failing is {@code worse} only
+     * The order marks-and-compare.adoc#verdicts gives, and it is an order rather than a set
+     * of independent tests: an endpoint that grew slower but stopped failing is {@code worse} only
      * if its errors did not disappear, and the errors are asked about first because
      * a failing endpoint is worse than a slow one whatever the percentile says.
      */

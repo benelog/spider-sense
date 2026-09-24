@@ -9,7 +9,7 @@ import net.benelog.spidersilk.WebResponse;
 
 /**
  * MCP over Streamable HTTP: one JSON-RPC message per request, on the server's own
- * port (api.md, "MCP").
+ * port (api.adoc#mcp).
  *
  * <p>The route is all there is to the transport. {@link McpServer} speaks the
  * protocol and {@link net.benelog.spidersense.mcp.McpTools} answers from the same

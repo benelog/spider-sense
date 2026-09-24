@@ -16,7 +16,7 @@ import org.jspecify.annotations.Nullable;
  * <p>It is what turns a guess about a statement into a fact: the columns a query
  * filters on are in the SQL, the indexes that serve them are only in the
  * database, and the extension is the one part of Spider Sense that has a
- * connection to it (design.md). The rows it sent are read back here and matched
+ * connection to it (design.adoc#index-catalog). The rows it sent are read back here and matched
  * against the statement in {@link SchemaBlock}.
  *
  * <p>One statement per answer: a service has a few dozen tables, and a finding
@@ -32,7 +32,7 @@ public final class Catalog {
      * One table of one service.
      *
      * @param schema null when the database reports none, which is the empty
-     *        string in the row (storage.md)
+     *        string in the row (storage.adoc)
      * @param name   the database's own spelling: {@code ITEMS} on H2,
      *        {@code items} on PostgreSQL
      */
@@ -75,7 +75,7 @@ public final class Catalog {
      *
      * <p>A row whose text does not parse is dropped rather than repaired: the
      * block it would feed says "no index serves this column", and a wrong block is
-     * worse than no block at all (agent.md).
+     * worse than no block at all (findings.adoc#schema).
      */
     private static @Nullable List<Index> indexes(@Nullable String json) {
         if (json == null || json.isBlank()) {

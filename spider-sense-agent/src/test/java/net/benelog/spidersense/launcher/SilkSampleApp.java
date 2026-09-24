@@ -9,7 +9,7 @@ import net.benelog.spidersilk.WebResponse;
 
 /**
  * The Spider Silk application SingleJarIT monitors for the route instrumentation of the extension
- * (design.md, "The extension"): two routes, one with a path variable, called for two different ids
+ * (design.adoc#extension): two routes, one with a path variable, called for two different ids
  * and for a path no route matches, then long enough for the agent to export them.
  *
  * <p>It names nothing itself. The server spans are the servlet instrumentation's, over one servlet

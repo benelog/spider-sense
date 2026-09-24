@@ -31,7 +31,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 
 /**
  * The index catalog and the catalog-query suppression of the extension on PostgreSQL and MySQL
- * (design.md, "The extension").
+ * (design.adoc#extension).
  *
  * <p>SingleJarIT proves the catalog on H2, which stores unquoted names upper-cased and answers the
  * metadata calls without a statement the JDBC instrumentation sees. Here the same slow statement

@@ -9,7 +9,7 @@ import org.jspecify.annotations.Nullable;
 /**
  * The {@code Premain-Class}/{@code Agent-Class} of the distributable jar.
  *
- * <p>It does the four steps of {@code docs/design.md}, in order: read the configuration (the
+ * <p>It does the four steps of {@code design.adoc#premain}, in order: read the configuration (the
  * properties file, then the system properties), start the embedded collector + UI unless we are forwarding, fill in the OpenTelemetry defaults a local tool
  * wants, then hand over to the stock agent's own {@code premain}.
  *
@@ -111,7 +111,7 @@ public final class SpiderSenseAgent {
 
     /**
      * Points the agent at {@code spider-sense/extension.jar}, the one piece of instrumentation that
-     * is ours: it gives a slow database span the stack it was issued from (design.md).
+     * is ours: it gives a slow database span the stack it was issued from (design.adoc#extension).
      *
      * <p>Not having it is a warning and no more. A finding without a code location is still a
      * finding, and nothing here may stand between the application and its {@code main}.

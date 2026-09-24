@@ -169,7 +169,7 @@ class OtlpDecoderTest {
 
     /**
      * The extension's index catalog rides in on a log record and is not one
-     * (storage.md, api.md): it describes the schema, not a moment.
+     * (storage.adoc, api.adoc): it describes the schema, not a moment.
      */
     @Test
     void aSchemaRecordBecomesACatalogRowAndNeverALogLine() {
@@ -260,7 +260,7 @@ class OtlpDecoderTest {
         assertThat(request.getResourceSpansCount()).isEqualTo(1);
     }
 
-    // --- the ingest cap (docs/storage.md) -------------------------------------
+    // --- the ingest cap (storage.adoc#ingest-cap) -------------------------------------
 
     private static Span.Builder capSpan(int n, long at) {
         return Otlp.span("%032x".formatted(n), "%016x".formatted(n), "GET /orders",

@@ -7,7 +7,7 @@ import org.jspecify.annotations.Nullable;
 /**
  * The way a number is said, in one place.
  *
- * <p>agent.md fixes it: durations are milliseconds with one decimal and a
+ * <p>cli.adoc#text-rendering fixes it: durations are milliseconds with one decimal and a
  * thousands separator ({@code 1,532.4 ms}), counts are integers, rates are
  * percentages with one decimal. A finding's {@code why} and the Markdown
  * renderings are read side by side, so they must not each have an opinion —

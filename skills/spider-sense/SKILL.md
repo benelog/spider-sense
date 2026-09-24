@@ -170,4 +170,4 @@ With no rule given the defaults are `--max-errors=0`, `--max-n-plus-one=0`, `--m
 | Starting each kind of application under the agent, ports, forwarding, troubleshooting | [references/running.md](references/running.md) |
 | A question none of the commands answers: the schema, and read-only SQL over it | [references/sql.md](references/sql.md) |
 
-`docs/agent.md` in the Spider Sense repository is the specification these files are distilled from; `docs/api.md` is the wire contract when the HTTP API is wanted instead of the CLI.
+[The Loop](https://spider-sense.benelog.net/agent-loop.html) and the chapters after it in the manual are the specification these files are distilled from; [The HTTP API](https://spider-sense.benelog.net/api.html) is the wire contract when the HTTP API is wanted instead of the CLI.

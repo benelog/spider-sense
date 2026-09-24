@@ -29,7 +29,7 @@ configurations {
     // The single distributable jar, for another project in this build to consume:
     //   spiderSense project(path: ':spider-sense-agent', configuration: 'senseJar')
     // is how the examples attach the jar this build just made instead of one from
-    // Maven Central (docs/build-tools.md).
+    // Maven Central (gradle-plugin.adoc).
     senseJar {
         canBeConsumed = true
         canBeResolved = false
@@ -132,7 +132,7 @@ def senseJar = tasks.register('senseJar', Jar) {
     }
 
     // Our OpenTelemetry agent extension, extracted beside it and named by
-    // otel.javaagent.extensions (design.md, "The extension").
+    // otel.javaagent.extensions (design.adoc#extension).
     from(configurations.extension) {
         into 'spider-sense'
         rename { 'extension.jar' }
@@ -215,7 +215,7 @@ tasks.register('integrationTest', Test) {
 tasks.named('check') { dependsOn tasks.named('integrationTest') }
 
 // Published to Maven Central as net.benelog.spidersense:spider-sense, the
-// coordinates docs/build-tools.md names: the single distributable jar, not the
+// coordinates install.adoc#coordinates names: the single distributable jar, not the
 // launcher-only `jar`, and a POM with no dependencies, because everything the
 // jar needs is already inside it. `from components.java` would publish the
 // wrong artifact and the launcher's (empty) dependency graph with it, so the

@@ -43,8 +43,8 @@ public final class Store implements AutoCloseable {
 
     /**
      * @param retentionSpans the most {@code span} rows the sweeper keeps, {@code 0} for no cap
-     * @param ingestCap      what decides whether a span is written at all (storage.md,
-     *                       "The ingest cap"); {@link IngestCap#none()} accepts everything
+     * @param ingestCap      what decides whether a span is written at all
+     *                       (storage.adoc#ingest-cap); {@link IngestCap#none()} accepts everything
      */
     public Store(String jdbcUrl, @Nullable Path databaseFile, int retentionHours,
             long slowRequestMs, long slowQueryMs, @Nullable String embeddedService,
@@ -81,12 +81,12 @@ public final class Store implements AutoCloseable {
         return services;
     }
 
-    /** Named moments, see agent.md. */
+    /** Named moments, see marks-and-compare.adoc#marks. */
     public Marks marks() {
         return marks;
     }
 
-    /** Findings a reader has accepted, see agent.md. */
+    /** Findings a reader has accepted, see findings.adoc#acknowledgements. */
     public Acks acks() {
         return acks;
     }
@@ -95,7 +95,7 @@ public final class Store implements AutoCloseable {
         return writer;
     }
 
-    /** {@code POST /api/import}: an exported session document, written back (agent.md). */
+    /** {@code POST /api/import}: an exported session document, written back (cli.adoc#export-import). */
     public Importer importer() {
         return writer.importer();
     }

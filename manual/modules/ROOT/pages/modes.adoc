@@ -220,7 +220,7 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4000 OTEL_EXPORTER_OTLP_PROTOCOL=ht
     java -javaagent:opentelemetry-javaagent.jar -jar app.jar
 ----
 
-This setup lacks the defaults and the extension that the Spider Sense jar adds in agent mode: the endpoint and protocol set for you, a one-second export delay, the runtime metrics on, and `code.stacktrace` on slow queries (xref:design.adoc[Design]).
+This setup lacks the defaults and the extension that the Spider Sense jar adds in agent mode: the endpoint and protocol set for you, a one-second export delay, the runtime metrics on, and `code.stacktrace` on slow queries (xref:design.adoc#premain[What premain does] and xref:design.adoc#extension[The extension]).
 Everything else, the pages, the findings and the CLI, is the same, because it is the same data.
 The extension is also what reads the index catalog of the tables a slow statement touches, so a finding's xref:findings.adoc#schema[schema block] exists only for a service that ran under the Spider Sense jar.
 It is also what reports the route of a Spider Silk request, so under the stock agent every request of a Spider Silk application is the one endpoint `GET /*` (xref:design.adoc#spider-silk-routes[Spider Silk routes]).
@@ -247,6 +247,7 @@ java -jar "$SENSE" findings --since=start
 
 An argument that does not start with `-` is a command, and no server starts.
 The command asks the running Spider Sense over HTTP, or reads the H2 file directly when none is running, and prints text.
+It is for people in a terminal and for AI agents.
 xref:cli.adoc[The CLI] documents every command, and xref:agent-loop.adoc[The Loop] is how an AI agent uses them.
 
 == Java versions

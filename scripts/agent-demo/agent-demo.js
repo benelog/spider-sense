@@ -1,4 +1,4 @@
-// The agent demo (docs/design.md, "The agent demo"): a recorded session of Claude Code or
+// The agent demo (design.adoc#the-agent-demo): a recorded session of Claude Code or
 // Codex CLI, read from the DoltHub database of the published demo and replayed in a
 // terminal drawn after the agent's own. The page is a pure function of the play time:
 // every step is shown, running or done according to where the clock is, so seeking is

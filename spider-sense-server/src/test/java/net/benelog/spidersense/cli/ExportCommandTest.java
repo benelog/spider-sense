@@ -28,8 +28,8 @@ import net.benelog.spidersense.server.SpiderSenseServer;
 import net.benelog.spidersilk.json.Json;
 
 /**
- * {@code export} and {@code import} from the terminal (agent.md,
- * "Export and import").
+ * {@code export} and {@code import} from the terminal
+ * (cli.adoc#export-import).
  *
  * <p>Both halves of the promise are exercised: the file a running Spider Sense
  * writes, and the file a database with no server reads back — because the point

@@ -438,7 +438,7 @@ export function dialog({ title, body, actions, onClose }) {
 }
 
 /**
- * The Mark dialog (docs/ui.md): a named moment, the person's half of the agent's
+ * The Mark dialog (ui.adoc#dialogs): a named moment, the person's half of the agent's
  * loop. The name is prefilled `before` until the window already has one, so the
  * usual pair costs two clicks; the top bar's service filter becomes the mark's
  * service, because a mark of one service is what `since=start` of that service means.
@@ -553,7 +553,7 @@ export function durationBar(value, max, klass) {
 
 /** 2xx / 4xx / 5xx mini bar. */
 /**
- * Where an endpoint's or a job's time went, as one stacked bar (docs/ui.md):
+ * Where an endpoint's or a job's time went, as one stacked bar (pages.adoc#time-breakdown):
  * `db`, `http`, `internal` and `self`, each segment sized by its share.
  *
  * <p>The order and the colours are fixed, so two bars can be compared at a

@@ -27,7 +27,7 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>Nothing is rendered here. The server already has the renderer the UI and
  * the H2-file mode use, so asking it for {@code format=text} and printing what
- * comes back is what keeps the three answers identical (agent.md). The only
+ * comes back is what keeps the three answers identical (agent-loop.adoc#interfaces). The only
  * thing this class decides is the exit code.
  */
 final class Remote {
@@ -43,7 +43,7 @@ final class Remote {
      * A Spider Sense took the connection and did not answer in {@link #READ}.
      *
      * <p>It is running, so the file is not the better answer: reading it in process
-     * would take longer still, and the CLI says so instead (agent.md, "CLI").
+     * would take longer still, and the CLI says so instead (cli.adoc).
      */
     static final class Busy extends RuntimeException {
 
@@ -173,7 +173,7 @@ final class Remote {
      * the one line the CLI prints.
      *
      * <p>A {@code .gz} is sent as it lies with {@code Content-Encoding: gzip}
-     * (api.md), so the bytes on the wire are the bytes on disk.
+     * (api.adoc), so the bytes on the wire are the bytes on disk.
      */
     private static int importFile(Options options, String base, PrintStream out, PrintStream err) {
         String name = options.requiredArgument();
@@ -208,7 +208,7 @@ final class Remote {
     /**
      * One {@code POST} of a body that is not a command, for a transport that
      * speaks its own protocol: the {@code mcp} command forwarding a JSON-RPC
-     * message to a running Spider Sense (agent.md, "MCP").
+     * message to a running Spider Sense (mcp.adoc).
      *
      * <p>The client, the timeouts and the {@link Unreachable} rule are the CLI's
      * own, so "is there a Spider Sense there" is answered the same way for every
@@ -314,7 +314,7 @@ final class Remote {
      *
      * <p>A statement and a mark are what the caller says rather than what it asks
      * about, so they travel in a body; everything else is a window and some
-     * filters, which are query parameters (api.md).
+     * filters, which are query parameters (api.adoc).
      */
     private static @Nullable String body(Options options) {
         return switch (options.command()) {
@@ -355,7 +355,7 @@ final class Remote {
      *
      * <p>{@code /api/sql} answers its errors in the format that was asked for, so a
      * refused statement arrives as one line of text rather than as an object
-     * (agent.md); printing that line as it came is what makes the CLI say the same
+     * (cli.adoc#sql); printing that line as it came is what makes the CLI say the same
      * thing whether a server answered or the file did.
      */
     private static String message(HttpResponse<String> response) {

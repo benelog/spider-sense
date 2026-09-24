@@ -8,7 +8,7 @@ import java.net.http.HttpTimeoutException;
 
 import org.junit.jupiter.api.Test;
 
-/** When a Spider Sense is gone and when it is only slow (agent.md, "CLI"). */
+/** When a Spider Sense is gone and when it is only slow (cli.adoc). */
 class RemoteTest {
 
     private static final String BASE = "http://127.0.0.1:4000/";

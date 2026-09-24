@@ -27,7 +27,7 @@ import org.jspecify.annotations.Nullable;
 /**
  * The wire format, written by hand, in one place.
  *
- * <p>api.md is the contract and this file is its implementation: every field name
+ * <p>api.adoc is the contract and this file is its implementation: every field name
  * the UI reads appears here literally, so a change to the contract is a change to
  * one file and a reader can check the two side by side.
  *
@@ -292,7 +292,7 @@ public final class Codecs {
     }
 
     /**
-     * The schema block of agent.md, or JSON null when the statement has none.
+     * The schema block of findings.adoc#schema, or JSON null when the statement has none.
      *
      * <p>Null rather than an empty object, because "no index serves nothing" and
      * "nobody could tell" are different answers and the UI shows them differently.
@@ -327,7 +327,7 @@ public final class Codecs {
         return array;
     }
 
-    /** The exception chain of an error's sample, innermost first (api.md). */
+    /** The exception chain of an error's sample, innermost first (api.adoc#cause). */
     static Json.JsonArray chain(ExceptionChain chain) {
         Json.JsonArray array = Json.arr();
         chain.causes().forEach(cause -> array.add(Json.obj()
@@ -370,7 +370,7 @@ public final class Codecs {
         return array;
     }
 
-    /** The same, each group with its {@code series} for the errors page's sparkline (api.md). */
+    /** The same, each group with its {@code series} for the errors page's sparkline (api.adoc#error-group). */
     static Json.JsonArray errorGroups(List<Stats.ErrorGroup> groups, Map<String, long[]> series) {
         Json.JsonArray array = Json.arr();
         groups.forEach(group -> {
@@ -447,7 +447,7 @@ public final class Codecs {
     }
 
     /**
-     * Two traces aligned, as agent.md's Trace diff writes them.
+     * Two traces aligned, as cli.adoc#trace-diff writes them.
      *
      * <p>A line names only what the alignment worked on — the depth, the category
      * and the summary — because those are the fields the key was built from, and

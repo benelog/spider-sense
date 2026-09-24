@@ -30,7 +30,7 @@ public record JvmView(@Nullable String service, Runtime runtime, Memory heap, Me
         List<Gc> gc, Threads threads, Cpu cpu, Classes classes,
         List<ConnectionPool> connectionPools) {
 
-    // Runtime is the name docs/api.md gives this object and the UI reads; renaming it to
+    // Runtime is the name api.adoc#jvm gives this object and the UI reads; renaming it to
     // avoid the clash with java.lang.Runtime would change the published shape.
     @SuppressWarnings("AvoidCommonTypeNames")
     public record Runtime(@Nullable String jvm, @Nullable Long pid, @Nullable String host,
@@ -39,46 +39,46 @@ public record JvmView(@Nullable String service, Runtime runtime, Memory heap, Me
 
     /** {@code limit} is empty for non-heap, which has none. */
     // Arrays rather than lists: these are one chart's aligned series, written to JSON
-    // as they are, and boxing every sample would buy nothing (docs/api.md).
+    // as they are, and boxing every sample would buy nothing (api.adoc).
     @SuppressWarnings("ArrayRecordComponent")
     public record Memory(long[] t, double[] used, double[] committed, double[] limit) {
     }
 
     // Arrays rather than lists: these are one chart's aligned series, written to JSON
-    // as they are, and boxing every sample would buy nothing (docs/api.md).
+    // as they are, and boxing every sample would buy nothing (api.adoc).
     @SuppressWarnings("ArrayRecordComponent")
     public record Pool(String name, @Nullable String type, long[] t, double[] used) {
     }
 
     /** Per bucket rather than per point: a cumulative histogram's deltas are what a chart shows. */
     // Arrays rather than lists: these are one chart's aligned series, written to JSON
-    // as they are, and boxing every sample would buy nothing (docs/api.md).
+    // as they are, and boxing every sample would buy nothing (api.adoc).
     @SuppressWarnings("ArrayRecordComponent")
     public record Gc(@Nullable String name, @Nullable String action, long[] t, long[] count,
             double[] durationMs) {
     }
 
     // Arrays rather than lists: these are one chart's aligned series, written to JSON
-    // as they are, and boxing every sample would buy nothing (docs/api.md).
+    // as they are, and boxing every sample would buy nothing (api.adoc).
     @SuppressWarnings("ArrayRecordComponent")
     public record Threads(long[] t, double[] count, double[] daemon) {
     }
 
     // Arrays rather than lists: these are one chart's aligned series, written to JSON
-    // as they are, and boxing every sample would buy nothing (docs/api.md).
+    // as they are, and boxing every sample would buy nothing (api.adoc).
     @SuppressWarnings("ArrayRecordComponent")
     public record Cpu(long[] t, double[] utilization, double[] systemLoad1m) {
     }
 
     // Arrays rather than lists: these are one chart's aligned series, written to JSON
-    // as they are, and boxing every sample would buy nothing (docs/api.md).
+    // as they are, and boxing every sample would buy nothing (api.adoc).
     @SuppressWarnings("ArrayRecordComponent")
     public record Classes(long[] t, double[] loaded) {
     }
 
     /** One JDBC pool; {@code max} and {@code pending} are null per point when unreported. */
     // Arrays rather than lists: these are one chart's aligned series, written to JSON
-    // as they are, and boxing every sample would buy nothing (docs/api.md).
+    // as they are, and boxing every sample would buy nothing (api.adoc).
     @SuppressWarnings("ArrayRecordComponent")
     public record ConnectionPool(String name, long[] t, double[] used, double[] idle, double[] max,
             double[] pending) {
@@ -134,7 +134,7 @@ public record JvmView(@Nullable String service, Runtime runtime, Memory heap, Me
      *
      * <p>Public for the same reason {@link #connectionPools} is: a
      * {@code heap-pressure} finding asks the JVM page's question of the JVM page's
-     * series (agent.md), and two readings of "how full is the heap" would be two
+     * series (findings.adoc#heap-pressure), and two readings of "how full is the heap" would be two
      * answers.
      */
     public static Memory heap(MetricQueries metrics, String service, Window window) {
@@ -230,7 +230,7 @@ public record JvmView(@Nullable String service, Runtime runtime, Memory heap, Me
      * lines up with its own timeline.
      *
      * <p>Public because a {@code pool-exhausted} finding asks the same question of
-     * the same series (agent.md), and two readings of "what did the pool do" would
+     * the same series (findings.adoc#pool-exhausted), and two readings of "what did the pool do" would
      * be two answers.
      */
     public static List<ConnectionPool> connectionPools(MetricQueries metrics, String service,

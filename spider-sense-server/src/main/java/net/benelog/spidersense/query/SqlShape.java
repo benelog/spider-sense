@@ -18,7 +18,7 @@ import org.jspecify.annotations.Nullable;
  * one the instrumentation recorded — every literal is already a {@code ?} — and
  * the question it answers is narrow enough that a scan over tokens beats a
  * grammar: which column of which table would an index have to lead with
- * (agent.md, "The schema block").
+ * (findings.adoc#schema).
  *
  * <p>The scan is flat: a subquery is not a scope of its own, so the tables and
  * the predicates of {@code where x in (select id from y where y.a = ?)} are
@@ -102,7 +102,7 @@ final class SqlShape {
         return List.copyOf(predicates);
     }
 
-    /** Whether the parse can vouch for what it found (agent.md). */
+    /** Whether the parse can vouch for what it found (findings.adoc#schema). */
     boolean readable() {
         return readable;
     }

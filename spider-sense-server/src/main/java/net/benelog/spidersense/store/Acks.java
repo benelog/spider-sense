@@ -12,8 +12,8 @@ import java.util.Map;
 import org.jspecify.annotations.Nullable;
 
 /**
- * What a reader has decided about a finding: accepted it, or fixed it (agent.md,
- * "Acknowledgements" and "Resolutions").
+ * What a reader has decided about a finding: accepted it, or fixed it
+ * (findings.adoc#acknowledgements and findings.adoc#resolutions).
  *
  * <p>A report endpoint that is slow by design sits at the top of every
  * {@code findings} answer and hides the new problem under it. An acknowledgement
@@ -30,7 +30,7 @@ import org.jspecify.annotations.Nullable;
  * <p>The rows outlive the data they are about. The retention sweeper never
  * touches this table — a known finding stays known, and the spans that proved it
  * are swept long before the reader changes their mind — while
- * {@code DELETE /api/data} empties it with everything else (storage.md).
+ * {@code DELETE /api/data} empties it with everything else (storage.adoc).
  */
 public final class Acks {
 
@@ -51,7 +51,7 @@ public final class Acks {
      * The most an id may be, which is the column's width.
      *
      * <p>The shape is checked loosely rather than against the {@code kind:hex}
-     * grammar: the kinds are agent.md's to add to, and an id that matches no
+     * grammar: findings.adoc#kinds may add kinds, and an id that matches no
      * finding is an acknowledgement of nothing rather than an error worth
      * refusing.
      */
@@ -98,7 +98,7 @@ public final class Acks {
      * Withdraws an acknowledgement.
      *
      * @return whether there was one to withdraw, which is the difference between
-     *         {@code 204} and {@code 404} (api.md); a resolution is not one
+     *         {@code 204} and {@code 404} (api.adoc); a resolution is not one
      */
     public boolean unack(@Nullable String findingId) {
         return sql.update("DELETE FROM ack WHERE finding_id = ? AND NOT resolved",

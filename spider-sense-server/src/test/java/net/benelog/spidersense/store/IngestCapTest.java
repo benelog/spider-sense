@@ -6,7 +6,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import org.junit.jupiter.api.Test;
 
-/** storage.md, "The ingest cap": whole traces survive a burst, and the rest is counted. */
+/** storage.adoc#ingest-cap: whole traces survive a burst, and the rest is counted. */
 class IngestCapTest {
 
     private final AtomicLong clock = new AtomicLong(1_700_000_000_000L);

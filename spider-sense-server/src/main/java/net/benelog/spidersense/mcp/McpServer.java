@@ -11,7 +11,7 @@ import org.jspecify.annotations.Nullable;
 /**
  * The Model Context Protocol, as one JSON-RPC dispatcher and nothing else.
  *
- * <p>For a host that has no shell (agent.md, "MCP"). Both transports — {@code POST
+ * <p>For a host that has no shell (mcp.adoc). Both transports — {@code POST
  * /mcp} and the {@code mcp} command over stdio — hand a message to
  * {@link #handle(String)} and send back what it returns, so the protocol is
  * written once and neither transport can drift from the other.
@@ -39,8 +39,8 @@ public final class McpServer {
     /**
      * The loop, in one paragraph, for a host that has no skill to read.
      *
-     * <p>The skill teaches the same loop to a host with a shell (agent.md,
-     * "Choosing an interface"), so neither host is taught something the other is
+     * <p>The skill teaches the same loop to a host with a shell
+     * (agent-loop.adoc#choosing-an-interface), so neither host is taught something the other is
      * not; this is the one place it is written for MCP.
      */
     public static final String INSTRUCTIONS = """
@@ -73,7 +73,7 @@ public final class McpServer {
         /**
          * What the CLI reports with exit code 4 or as a 400: the message on one
          * line, as the tool's own content rather than as a protocol error
-         * (agent.md).
+         * (mcp.adoc#tools).
          */
         public static ToolResult failed(String message) {
             return new ToolResult(message, true, null);
@@ -246,7 +246,7 @@ public final class McpServer {
         return object;
     }
 
-    /** The catalogue: the seven tools of agent.md, their schemas and their descriptions. */
+    /** The catalogue: the seven tools of mcp.adoc#tools, their schemas and their descriptions. */
     static final class Tools {
 
         /** One argument, with the JSON Schema it is published as. */
@@ -453,7 +453,7 @@ public final class McpServer {
                 new Tool("sql",
                         "Use this only when no other tool has a column for the question: one "
                                 + "read-only statement over Spider Sense's own H2 schema, which "
-                                + "storage.md documents.",
+                                + "the Storage chapter of the manual documents.",
                         List.of(Arg.string("sql",
                                         "One statement starting with SELECT, WITH, TABLE, VALUES, "
                                                 + "EXPLAIN or SHOW; nothing that writes is allowed."),

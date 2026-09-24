@@ -18,7 +18,7 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>A file under the user's home, shared with {@code AUTO_SERVER=TRUE}, is what
  * lets the UI outlive the monitored application and lets several Spider Sense
- * processes look at the same data (storage.md). The one thing this must never do
+ * processes look at the same data (storage.adoc#where). The one thing this must never do
  * is fail: a corrupt file or a read-only home would otherwise take the monitored
  * application's {@code premain} with it, so an unopenable database falls back to
  * an in-memory one and says so on {@code /api/status}.
@@ -148,7 +148,7 @@ public final class Database implements AutoCloseable {
 
     /**
      * A connection as {@link Schema#READER}, which may only {@code SELECT}: the
-     * second layer of {@code POST /api/sql} (agent.md).
+     * second layer of {@code POST /api/sql} (cli.adoc#read-only).
      *
      * <p>It is not pooled and it is not the writer's: one statement borrows it,
      * rolls back and closes it, and nothing else in Spider Sense ever holds it.

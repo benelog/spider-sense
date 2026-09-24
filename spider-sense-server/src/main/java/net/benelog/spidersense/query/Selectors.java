@@ -12,7 +12,8 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>An agent thinks in "since I changed the code", not in epoch milliseconds, so
  * every agent-facing endpoint takes a selector where the UI takes {@code from} and
- * {@code to} (agent.md). The two kinds of failure are told apart on purpose:
+ * {@code to} (marks-and-compare.adoc#time-selectors). The two kinds of failure are told
+ * apart on purpose:
  * something that is not a selector at all is the caller's mistake ({@code 400}),
  * while a well-formed name that matches no mark is a question about data
  * ({@code 404}), and an agent reacts differently to the two.
@@ -22,7 +23,10 @@ public final class Selectors {
     /** What {@code since} means when nobody said. */
     public static final String DEFAULT_SINCE = "15m";
 
-    /** A selector that is not one of the forms agent.md lists: a {@code 400}. */
+    /**
+     * A selector that is not one of the forms marks-and-compare.adoc#time-selectors lists: a
+     * {@code 400}.
+     */
     public static final class BadSelector extends RuntimeException {
         public BadSelector(String message) {
             super(message);
@@ -84,7 +88,7 @@ public final class Selectors {
     /**
      * A selector duration as a length of time rather than as an instant:
      * {@code tail --timeout=30s} is how long to watch, not when to start
-     * (agent.md).
+     * (marks-and-compare.adoc#time-selectors).
      *
      * <p>Only the duration form is one: a mark or {@code now} names a moment, and
      * a moment is not a timeout.
@@ -103,7 +107,7 @@ public final class Selectors {
      * The window an agent-facing request asks for.
      *
      * <p>{@code from} and {@code to} win when both are given, so every URL the UI
-     * builds keeps working unchanged (api.md).
+     * builds keeps working unchanged (api.adoc#time-selectors).
      */
     public Window window(@Nullable Long from, @Nullable Long to, @Nullable String since,
             @Nullable String until, @Nullable String service) {

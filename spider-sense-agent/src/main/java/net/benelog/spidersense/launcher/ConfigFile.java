@@ -11,8 +11,8 @@ import java.util.Set;
 import org.jspecify.annotations.Nullable;
 
 /**
- * The properties file, the one channel besides the command line ({@code docs/design.md},
- * "Configuration").
+ * The properties file, the one channel besides the command line
+ * ({@code configuration.adoc#properties-file}).
  *
  * <p>{@code spidersense.config} (or {@code SPIDERSENSE_CONFIG}) names the file; without it,
  * {@code spider-sense.properties} in the working directory is read when it exists. Every
@@ -34,7 +34,10 @@ final class ConfigFile {
     static final String DEFAULT_NAME = "spider-sense.properties";
     static final String PREFIX = "spidersense.";
 
-    /** The keys of the table in design.md, and the ones the launcher itself understands. */
+    /**
+     * The keys of the table in configuration.adoc#properties, and the ones the launcher itself
+     * understands.
+     */
     static final Set<String> KNOWN = Set.of(
             "spidersense.port",
             "spidersense.host",

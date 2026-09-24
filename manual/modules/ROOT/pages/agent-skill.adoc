@@ -2,18 +2,22 @@
 :navtitle: The Agent Skill
 
 The repository carries two agent skills under `skills/`, each a `SKILL.md` an agent loads once a task touches it, with reference files it reads only as the task needs them.
+They have the same form as Spider Silk's skill, and <<init,`init`>> installs a copy of every one of them into a project's `.claude/skills/`.
 
 `skills/spider-sense/` teaches the loop itself rather than the commands alone: start the application under the agent, mark a moment, exercise it, read the findings, fix, compare, check (xref:agent-loop.adoc#the-loop[The Loop]).
 An agent that has only the CLI's `help` knows every option and none of the method.
 
 `skills/spider-sense-sql-tuning/` teaches query tuning: the index to add, the rewrite, the fetch join, the batch, each verified with `compare` and `check`.
 An agent reads it when a finding names a statement rather than a request.
+It reads the finding's xref:findings.adoc#schema[schema block] for the indexes a table already has and the predicate columns none of them leads with, and designs the index from that rather than asking the database.
 
 Both are distilled from this manual, and the manual stays the source of truth.
 
+[#contents]
 == What is in it
 
 `skills/spider-sense/SKILL.md` carries what every task needs: what Spider Sense gives an agent that a dashboard does not, the loop as a script of commands, how to start each kind of application under the agent, how to read a finding, and the rules that keep an answer honest.
+The loop is the six steps of xref:agent-loop.adoc#the-loop[The Loop]: start under the agent and confirm with `status`, `mark before` and exercise, read the top finding with its suspect-change lines first, fix and restart, `mark after` with `compare` and `check`, and `resolve` once `check` passes.
 Four reference files carry the rest, and an agent reads only the one its task touches.
 
 [cols="1,3",options="header"]
@@ -25,10 +29,10 @@ Four reference files carry the rest, and an agent reads only the one its task to
 | every command, its flags, its exit codes, and the real output of each one
 
 | `references/findings.md`
-| each finding kind: its rule, its severity, its numbers, and the fix with Java examples
+| each finding kind: its rule, its severity, its numbers, and the fix it usually wants with Java examples, such as a fetch join or a batch for `n-plus-one` and an index or a rewrite for `slow-query`
 
 | `references/running.md`
-| starting each kind of application under the agent, ports, forwarding, troubleshooting
+| starting each kind of application under the agent (Gradle `run`, Spring Boot `bootRun`, a plain `java -jar`, a test task), ports, forwarding, troubleshooting
 
 | `references/sql.md`
 | the schema in the columns that matter, and read-only SQL over it
@@ -57,9 +61,11 @@ It writes a short block into the project's `CLAUDE.md` and copies the skills int
 
 `--jar` is the jar path written into the block.
 Without it, `init` writes the path of the distributable jar the command was started from.
+The launcher sets the system property `spidersense.jar` to its own absolute path before it invokes the CLI, because the CLI itself runs out of the nested server jar extracted to a temporary directory and could never find the distributable on its own.
 The path is written absolute, as given or as discovered, and never made relative to the project.
 When no jar path is known, which happens with exploded classes in an IDE and no `--jar`, `init` says which option it needs and exits `2`.
 
+[#block]
 === The block
 
 The block is delimited by `<!-- spider-sense:start -->` and `<!-- spider-sense:end -->`, each on a line of its own, and reads as follows:
@@ -89,7 +95,8 @@ Query tuning — an index to add, a rewrite, a fetch join, a batch — is in the
 <!-- spider-sense:end -->
 ----
 
-The jar path above is the one `init` resolved, and every other line is written exactly as shown.
+The jar path above, `/home/me/tools/spider-sense.jar`, is the one `init` resolved, and every other line is written exactly as shown.
+The block is generated from one place in the code.
 The block names no port of the project, only the Spider Sense UI's own default, `http://127.0.0.1:4000`.
 When `--no-skill` kept the skills from being installed, the last two lines name `skills/spider-sense/` and `skills/spider-sense-sql-tuning/` of the https://github.com/{project-repo}[Spider Sense repository] instead of the project's own copies.
 
@@ -98,6 +105,7 @@ A second run replaces everything between the markers, including the jar path whe
 Nothing else in the file is parsed or reformatted.
 When `CLAUDE.md` does not exist it is created with the block alone, and when it exists without the markers the block is appended after one blank line.
 
+[#skill-copy]
 === The skill copy
 
 `init` copies every directory under `skills/`, with its `SKILL.md` and `references/*.md`, into `<dir>/.claude/skills/` under the same name.
@@ -106,7 +114,11 @@ It overwrites the files it owns and leaves anything else in those directories al
 
 It is a copy rather than a pointer, because the jar is the distributable and the repository it was built from may not be on the machine at all.
 The files travel inside the jar, so no checkout is needed.
+The server module's build packages the repository's whole `skills/` directory into its resources under `spider-sense/skills/`, together with a generated `spider-sense/skills/index.txt` that lists the paths relative to `skills/` (`spider-sense/SKILL.md`, `spider-sense/references/cli.md`, `spider-sense-sql-tuning/SKILL.md`, and so on), because a class loader cannot list a directory.
+A new skill is therefore a new directory under `skills/` and nothing else.
+The repository's `skills/` stays the single source, and nothing is duplicated under `src/main/resources`.
 
+[#init-output]
 === What it prints
 
 [source]
@@ -116,14 +128,15 @@ installed skill to /home/me/project/.claude/skills/spider-sense (5 files)
 installed skill to /home/me/project/.claude/skills/spider-sense-sql-tuning (4 files)
 ----
 
-`init` prints one line per skill, each with the number of files it wrote.
+`init` prints one line each on stdout: the block, then one line per skill in the index's order, each with the number of files it wrote.
 The first line is `updated CLAUDE.md block (…)` when the markers were already in the file.
 The skill lines become the single line `skipped skills (--no-skill)` when the skills were not installed.
-`--mcp` adds a last line, `wrote .mcp.json (spider-sense over stdio)` or `updated .mcp.json (…)`, and writes the stdio MCP server into the project's `.mcp.json` (xref:mcp.adoc[MCP]).
-Without `--mcp` nothing is written and nothing is printed about it, because a host with a shell is meant to use the CLI.
+`--mcp` adds a last line, `wrote .mcp.json (spider-sense over stdio)` or `updated .mcp.json (…)`, and writes the stdio MCP server into the project's `.mcp.json` (xref:mcp.adoc#configuring[Configuring a host]).
+Without `--mcp` nothing is written and nothing is printed about it, because a host with a shell is meant to use the CLI (xref:agent-loop.adoc#choosing-an-interface[Choosing an interface]), and `init` should not hand it a second tool for the same answers.
 
 The command then exits `0`.
 
+[#gradle-task]
 === The Gradle task
 
 `spiderSenseInit` runs `init` with the project directory and the jar the build resolved (xref:gradle-plugin.adoc#tasks[Tasks]):
@@ -137,6 +150,7 @@ The jar path it writes is wherever Gradle resolved the jar to, which for a Maven
 That path stays valid until the version changes, so run the task again after a version bump.
 Re-running `init` by hand after a bump does the same, because it replaces the block including the jar path.
 
+[#by-hand]
 == Installing the skills by hand
 
 `init` is the normal way to install the skills, and it installs them for Claude Code.
@@ -172,6 +186,7 @@ It also reads the project's `.claude/skills/`, so a project already set up for C
 Copilot reads a project's `.github/skills/`, and `~/.copilot/skills/` for the coding agent and the CLI.
 Copilot also reads the project's `.claude/skills/`.
 
+[#source-of-truth]
 == The manual is the source of truth
 
 Nothing in the skills is new information.

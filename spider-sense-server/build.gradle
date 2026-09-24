@@ -30,7 +30,7 @@ application {
 }
 
 // The agent skills ride inside the jar so that `init` can copy them into a project's
-// .claude/skills/ on a machine that has no checkout of this repository (docs/agent.md).
+// .claude/skills/ on a machine that has no checkout of this repository (agent-skill.adoc#skill-copy).
 // Every directory under skills/ travels, so a new skill is a new directory and nothing
 // else. The repository's skills/ stays the single source: nothing is duplicated under
 // src/main/resources. A class loader cannot list a directory, so the build writes an

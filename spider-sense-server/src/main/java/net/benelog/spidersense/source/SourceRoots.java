@@ -20,7 +20,7 @@ import org.jspecify.annotations.Nullable;
  * {@code orders.OrderService.load(OrderService.java:41)} is a file read away from
  * the line it names: the package as directories, the file name the frame carries,
  * under the first root of {@code spidersense.source.dirs} where that file exists
- * (design.md, "Configuration"; agent.md, "Code locations").
+ * (configuration.adoc#source-dirs; findings.adoc#code).
  *
  * <p>The frame arrives in a query parameter, so it is a path a stranger chose.
  * Three things keep it inside the roots: the frame must parse as Java identifiers

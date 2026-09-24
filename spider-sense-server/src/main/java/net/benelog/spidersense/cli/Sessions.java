@@ -19,7 +19,7 @@ import org.jspecify.annotations.Nullable;
  * modes of {@code export} and {@code import}.
  *
  * <p>One rule decides the encoding and it is the file name: a name ending in
- * {@code .gz} is gzipped, anything else is not (agent.md). A session of a busy
+ * {@code .gz} is gzipped, anything else is not (cli.adoc#export-import). A session of a busy
  * hour compresses to about a tenth, and an agent that types the name has said
  * everything it needs to.
  */

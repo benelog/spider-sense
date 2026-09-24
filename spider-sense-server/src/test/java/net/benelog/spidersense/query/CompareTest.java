@@ -15,7 +15,7 @@ import net.benelog.spidersense.TestStore;
 import net.benelog.spidersense.ingest.OtlpDecoder;
 import net.benelog.spidersense.store.Store;
 
-/** Before and after: the verdicts agent.md defines, over two windows of the same data. */
+/** Before and after: the verdicts marks-and-compare.adoc#verdicts defines, over two windows of the same data. */
 class CompareTest {
 
     private static final long NOW = 1_700_000_000_000L;

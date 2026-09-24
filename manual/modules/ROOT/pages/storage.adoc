@@ -4,6 +4,7 @@
 Spider Sense keeps what it collects in an H2 file database under the user's home directory.
 The UI therefore still answers after the monitored application has stopped, and every Spider Sense process on the machine, embedded or standalone, sees the same data.
 
+[#where]
 == Where
 
 The default JDBC URL is `jdbc:h2:~/db/spider-sense/sense;AUTO_SERVER=TRUE`, which is the file `~/db/spider-sense/sense.mv.db`.
@@ -54,11 +55,11 @@ CREATE TABLE IF NOT EXISTS span (
     duration_ns    BIGINT NOT NULL,
     status         VARCHAR(5) NOT NULL,      -- UNSET OK ERROR
     status_message VARCHAR(4096),
-    entry          BOOLEAN NOT NULL,         -- SERVER/CONSUMER, or a non-db root CLIENT/PRODUCER, unless the endpoint is ignored (design.md)
+    entry          BOOLEAN NOT NULL,         -- SERVER/CONSUMER, or a non-db root CLIENT/PRODUCER, unless the endpoint is ignored (Endpoint identity)
     error          BOOLEAN NOT NULL,
     slow           BOOLEAN NOT NULL,         -- entry over slow.request.ms, or db over slow.query.ms
     category       VARCHAR(10) NOT NULL,     -- http db messaging rpc internal
-    endpoint       VARCHAR(1024),            -- entry spans: the endpoint name (see design.md)
+    endpoint       VARCHAR(1024),            -- entry spans: the endpoint name (see Endpoint identity)
     endpoint_id    CHAR(12),
     http_method    VARCHAR(16),
     http_route     VARCHAR(1024),
@@ -172,7 +173,7 @@ CREATE TABLE IF NOT EXISTS mark (
 CREATE INDEX IF NOT EXISTS mark_at ON mark (at_ms);
 
 CREATE TABLE IF NOT EXISTS ack (
-    finding_id VARCHAR(64) PRIMARY KEY,     -- agent.md's finding id, kind + ':' + 12 hex
+    finding_id VARCHAR(64) PRIMARY KEY,     -- the finding id, kind + ':' + 12 hex (Findings)
     at_ms      BIGINT NOT NULL,
     note       VARCHAR(1024),
     resolved   BOOLEAN NOT NULL DEFAULT FALSE  -- a resolution rather than an acknowledgement
@@ -201,7 +202,7 @@ A version that changes a table or the meaning of a stored id drops and recreates
 Version 7 changed every `error_id`, and so the id of every `error` finding.
 Acknowledgements and resolutions recorded before the upgrade are therefore lost with the rest of the tables, rather than kept as rows nothing can reach.
 An `ack` row is an acknowledged finding (xref:findings.adoc#acknowledgements[Acknowledgements]), or, with `resolved` true, a resolved one (xref:findings.adoc#resolutions[Resolutions]).
-The two share a table because a finding has one decision recorded at a time, and the newer one replaces the older.
+The two share a table because a finding has one decision recorded at a time, and the newer one replaces the older through the same `MERGE INTO ack … KEY (finding_id)`.
 The retention sweeper does not delete an `ack` row by age, since a known finding stays known and a fixed one stays fixed.
 `DELETE /api/data` removes it with everything else.
 A `db_table` row is the index catalog of one table of one service, as the extension read it through JDBC metadata (xref:design.adoc#extension[The extension]).
@@ -212,7 +213,7 @@ The `indexes` text is stored as received, and the findings read it back (xref:fi
 `entry` is decided once, when the row is written, so rows written by an older Spider Sense keep the flag they were written with.
 A root `INTERNAL` or database span from before the `entry` rule narrowed still counts as a request until the retention sweeper removes it.
 
-The `design.md` that the SQL comments name is xref:design.adoc#endpoint-identity[Endpoint identity] in this manual.
+The endpoint name and the ignored endpoints that the `span` comments name are defined in xref:design.adoc#endpoint-identity[Endpoint identity].
 The finding id in the `ack` table is the one xref:findings.adoc[Findings] defines.
 
 [#reader]
@@ -229,6 +230,7 @@ The reader connects with the same JDBC URL minus the settings a non-administrato
 H2 turns most of those settings into a `SET` at connect time.
 `DB_CLOSE_DELAY`, which the in-memory fallback sets, is one an ordinary user is refused.
 
+[#writer]
 == How it is written
 
 Ingest never touches the database on the request thread.
@@ -260,6 +262,7 @@ Logs and metric points are never dropped.
 The dropped spans are counted in `/api/status.storage.droppedSpans` and carried on the SSE `stats` event as `droppedSpans`.
 The UI shows the number in the sidebar foot while it grows (xref:ui.adoc[Layout and Controls]).
 
+[#reads]
 == How it is read
 
 Every API answer is one or a few SQL statements over the window:
@@ -276,8 +279,16 @@ The external targets reuse the dependency scan, which is the outbound spans of t
 `dbCallsPerRequest` and `dbMsPerRequest` of an endpoint join the endpoint's entry spans with the database spans of the same trace and service.
 `slow-job` is the same aggregation over `span WHERE parent_span_id IS NULL AND kind = 'INTERNAL'` grouped by `(service, name)`, with the database work joined the same way.
 The other kinds are the endpoint, query and error aggregations above, filtered by the thresholds.
+The parent-chain walk reads the window's spans once per answer.
+For one service it reads only the traces that have a span of that service in the window, which is where every entry span its spans can reach lies.
+* The traces that contain a group (a finding's evidence and sample, the slowest and newest traces of the endpoint, query and error pages): `SELECT * FROM trace t WHERE t.start_ms BETWEEN ? AND ? AND t.trace_id IN (SELECT s.trace_id FROM span s WHERE s.<group> = ? AND s.start_ms BETWEEN ? AND ?)`.
+The matching span starts in the window too, so the subquery is a range of the group's `(…, start_ms)` index.
+It costs the window's share of the group, never its whole history.
 * The xref:findings.adoc#schema[schema block] of a query group: `SELECT schema_name, table_name, indexes FROM db_table WHERE service = ?`, read once per answer and matched against each statement's tables in Java, case-insensitively.
 * A time selector that names a mark: `SELECT at_ms FROM mark WHERE name = ? [AND service = ?] ORDER BY at_ms DESC LIMIT 1`.
+* The acknowledgements and resolutions of a page of findings: `SELECT * FROM ack WHERE finding_id IN (…)`, one statement for the page.
+A finding's xref:findings.adoc#state[state] reads the two newest `start` marks of its service with `SELECT at_ms FROM mark WHERE name = 'start' AND service = ? AND at_ms <= ? ORDER BY at_ms DESC LIMIT 2`.
+It runs the rules of the page's kinds again over the run between those two marks, for ids alone, and keeps what they found in memory for as long as the server runs.
 * Free-text search (`q`): `LOWER(name) LIKE ? OR LOWER(attributes) LIKE ?` within the window.
 A scan of the window is acceptable at local-development volumes.
 * JVM and metrics: `metric_point` joined with `metric_series`, resampled in Java where the API asks for it.
@@ -290,7 +301,7 @@ The xref:cli.adoc[CLI] reads the same way when no server answers.
 It opens the same URL, so it joins a running auto-server, or opens the file itself for the length of the command when none is running.
 It runs the same `Queries` without a writer or a sweeper.
 Its open refuses a missing file, and refuses another `schema_version` instead of dropping the tables, since the database it joined may belong to an older server that is still writing to it.
-The three commands that write are `mark`, `ack` and `unack`, and `import`, and they write through the same connection with plain statements.
+The commands that write are `mark`, `ack` and `unack`, `resolve` and `unresolve`, and `import`, and they write through the same connection with plain statements.
 `import` alone inserts spans, and it does so through the `Writer`'s own insert and `trace` merge, so an imported trace is stored exactly as a received one (xref:cli.adoc#export-import[Export and import]).
 
 [#retention]
@@ -311,6 +322,7 @@ The cap is by rows rather than by file size because an H2 file does not shrink w
 A size read after a delete would say the same number and ask for the next hour, until nothing was left.
 `/api/status.retention` reports both limits, as `{ "hours": 24, "spans": 1000000 }`.
 
+[#failure]
 == Failure
 
 If the database cannot be opened, because the file is corrupt or a permission is missing, the server logs one line and falls back to `jdbc:h2:mem:spidersense-<pid>` so the UI still works for the session.

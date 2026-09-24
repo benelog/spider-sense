@@ -23,7 +23,7 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>This is what {@code AUTO_SERVER=TRUE} buys — the application has crashed,
  * the UI went with it, and {@code findings --since=start} still answers
- * (agent.md). Every command works here, including {@code mark}, because a mark
+ * (cli.adoc#invocation). Every command works here, including {@code mark}, because a mark
  * is a row and not a message to a server.
  *
  * <p>No answer is computed here: {@link Reports} is the seam the HTTP handlers

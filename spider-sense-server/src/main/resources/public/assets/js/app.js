@@ -110,7 +110,7 @@ function startLive() {
 }
 
 /**
- * The marks belong to the shell, not to a page (docs/ui.md): every chart draws
+ * The marks belong to the shell, not to a page (ui.adoc#marks-on-charts): every chart draws
  * them, so they are fetched once per route change and once per Live tick and kept
  * in the shared state. A change redraws the charts without refetching their data.
  */
@@ -124,7 +124,7 @@ function loadMarks() {
   }).catch(() => state.marks);
 }
 
-/** The Mark button and the `M` key: mark, exercise, compare (docs/agent.md). */
+/** The Mark button and the `M` key: mark, exercise, compare (marks-and-compare.adoc#marks). */
 function markDialog() {
   ui.markDialog({ onDone: () => loadMarks().then(() => refreshPage()) });
 }
@@ -425,7 +425,7 @@ function paintFoot() {
 }
 
 /**
- * The `dropping spans` line (docs/ui.md): shown while the ingest cap is biting, so a
+ * The `dropping spans` line (ui.adoc#sidebar-foot): shown while the ingest cap is biting, so a
  * load test that crossed it reads as partial data rather than as a quiet application.
  * It stays for a minute after the last increase and then goes.
  */

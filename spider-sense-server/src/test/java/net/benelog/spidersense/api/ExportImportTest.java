@@ -23,7 +23,7 @@ import net.benelog.spidersilk.test.WebTest;
 
 /**
  * {@code GET /api/export} and {@code POST /api/import}: a session out of one
- * store and into another (agent.md, "Export and import").
+ * store and into another (cli.adoc#export-import).
  *
  * <p>The test that matters is the round trip — a trace read back out of the
  * second store must be the trace the first one served — and after it the second
@@ -255,7 +255,7 @@ class ExportImportTest {
 
     /**
      * The point of carrying the catalog: a slow-query finding computed over the
-     * imported session has the schema block the original one had (agent.md).
+     * imported session has the schema block the original one had (findings.adoc#schema).
      */
     @Test
     void aSlowQueryOfTheImportedSessionHasItsSchemaBlock() {

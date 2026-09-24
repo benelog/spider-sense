@@ -1,4 +1,4 @@
-// Number, duration and time formatting. Rules live in docs/ui.md "Behaviour and quality".
+// Number, duration and time formatting. Rules live in ui.adoc#numbers-and-times.
 
 const NUM = new Intl.NumberFormat('en-US');
 const NUM1 = new Intl.NumberFormat('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });

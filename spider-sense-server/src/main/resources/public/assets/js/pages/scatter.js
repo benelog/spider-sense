@@ -1,5 +1,5 @@
 // Scatter: every request is a point on time × response time, as dots or as a
-// heatmap. Drag a rectangle to list those traces. docs/ui.md "Scatter".
+// heatmap. Drag a rectangle to list those traces. pages.adoc#scatter.
 
 import * as api from '../api.js';
 import * as router from '../router.js';

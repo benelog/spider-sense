@@ -10,7 +10,7 @@ import net.benelog.spidersilk.json.Json;
 
 /**
  * {@code GET /api/source?frame=…}: the lines around a code frame's line, read from
- * the file on request and never stored (api.md).
+ * the file on request and never stored (api.adoc#source).
  *
  * <p>The UI asks once per frame it shows, and the answer is also what makes the
  * frame a link: the absolute path and the line are what an editor URL needs. A

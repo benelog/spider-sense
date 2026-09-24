@@ -1,4 +1,4 @@
-// Copy as Markdown and Copy CLI line (docs/ui.md, "Copy as Markdown"): what a person hands to
+// Copy as Markdown and Copy CLI line (pages.adoc#copy-as-markdown): what a person hands to
 // an agent from a page, as the bytes the agent would have read itself.
 
 import { getText, state } from './api.js';

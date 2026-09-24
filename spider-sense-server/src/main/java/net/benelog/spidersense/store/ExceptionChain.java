@@ -17,8 +17,8 @@ import org.jspecify.annotations.Nullable;
  * then a {@code Caused by:} section per cause, each cut at the frames it shares
  * with the one before ({@code ... 42 more}). The line that went wrong is in the
  * last section, the root cause, so the chain is kept innermost first: the error
- * group key (design.md), a finding's {@code code} (agent.md) and the error page
- * (ui.md) all read it in that order.
+ * group key (design.adoc#errors), a finding's {@code code} (findings.adoc#code) and the error page
+ * (pages.adoc#stack-traces) all read it in that order.
  *
  * <p>{@code Suppressed:} blocks are not causes and are skipped, with everything
  * indented under them. A trace with no header at all, such as the
@@ -29,7 +29,7 @@ import org.jspecify.annotations.Nullable;
  */
 public record ExceptionChain(List<Cause> causes) {
 
-    /** What is framework rather than application when no allowlist is given (agent.md). */
+    /** What is framework rather than application when no allowlist is given (findings.adoc#code). */
     public static final List<String> FRAMEWORK_PREFIXES = List.of(
             "java.", "javax.", "jdk.", "sun.", "com.sun.", "jakarta.", "org.springframework.",
             "org.hibernate.", "org.eclipse.jetty.", "org.apache.", "io.opentelemetry.", "com.zaxxer.",

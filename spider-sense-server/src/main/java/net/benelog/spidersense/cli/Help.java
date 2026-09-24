@@ -1,7 +1,7 @@
 package net.benelog.spidersense.cli;
 
 /**
- * The table agent.md's CLI section prints, and the same table a usage error
+ * The table cli.adoc#help prints, and the same table a usage error
  * prints after its one line.
  *
  * <p>Plain ASCII on purpose: this is the one output of the CLI that is written
@@ -72,7 +72,7 @@ final class Help {
               --url=<base url>     default http://127.0.0.1:4000, or SPIDERSENSE_URL, or what
                                    spider-sense.properties in the working directory implies
               --db=<path or jdbc url>   read the database directly, without asking any server
-              --json               the JSON of api.md instead of the text
+              --json               the JSON of the HTTP API instead of the text
               --full               whole statements, every repeated span
               --hide-acked         findings only: leave acknowledged findings out
               --no-git             findings only: no suspect-change line under the code frames

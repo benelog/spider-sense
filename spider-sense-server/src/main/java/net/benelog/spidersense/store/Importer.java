@@ -15,13 +15,13 @@ import net.benelog.spidersilk.json.Json;
 import org.jspecify.annotations.Nullable;
 
 /**
- * An exported session document, written back into the store (agent.md,
- * "Export and import").
+ * An exported session document, written back into the store
+ * (cli.adoc#export-import).
  *
  * <p>It is the {@link Writer}'s other caller: the rows come from a file rather
  * than from an OTLP export, but they take the writer's own span insert and its
  * {@code trace} merge, so an imported trace is stored exactly as a received one
- * (storage.md). Nothing is recomputed — {@code entry}, {@code slow},
+ * (storage.adoc). Nothing is recomputed — {@code entry}, {@code slow},
  * {@code query_id} and the rest are columns the file carries, and recomputing
  * them against this machine's thresholds would make a re-import disagree with
  * the session it came from.
@@ -194,7 +194,7 @@ public final class Importer {
      *
      * <p>Every column is bound from the document, not derived: {@code entry} and
      * {@code slow} were decided once, when the row was first written, and the
-     * session that exported them may have run with other thresholds (storage.md).
+     * session that exported them may have run with other thresholds (storage.adoc).
      */
     private static void bindSpan(PreparedStatement statement, Json.JsonObject span)
             throws SQLException {
@@ -337,7 +337,7 @@ public final class Importer {
     /**
      * The writer's own merge on {@code (service, schema_name, table_name)}: a
      * table the file describes replaces the row this store has for it, as a table
-     * looked up again after a restart does (storage.md), so a second import of the
+     * looked up again after a restart does (storage.adoc), so a second import of the
      * same file leaves the one row it wrote.
      */
     private static long mergeCatalog(Connection connection, Json.JsonArray tables)

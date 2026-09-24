@@ -23,9 +23,9 @@ import net.benelog.spidersilk.test.TestClient;
 import net.benelog.spidersilk.test.WebTest;
 
 /**
- * MCP over the real request path (api.md, "MCP").
+ * MCP over the real request path (api.adoc#mcp).
  *
- * <p>The promise this file exists to keep is the one in agent.md: a tool call and
+ * <p>The promise this file exists to keep is the one in mcp.adoc: a tool call and
  * the {@code format=text} endpoint over the same window answer the same bytes, so
  * a host with no shell reads exactly what an agent with one reads.
  */

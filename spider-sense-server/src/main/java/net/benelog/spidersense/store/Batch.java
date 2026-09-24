@@ -26,11 +26,11 @@ public final class Batch {
     }
 
     /**
-     * The index catalog of one table, as the extension read it (design.md).
+     * The index catalog of one table, as the extension read it (design.adoc#index-catalog).
      *
      * <p>It arrives as a log record and is never one: it says nothing about a
      * moment, it describes the schema, so the decoder turns it into this and the
-     * writer merges it on its key instead of appending a line (storage.md).
+     * writer merges it on its key instead of appending a line (storage.adoc#writer).
      *
      * @param schemaName the empty string when the database reports no schema, so
      *        the key of the row can be a primary key rather than a nullable one

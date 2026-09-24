@@ -14,7 +14,7 @@ import net.benelog.spidersilk.json.Json;
 /**
  * The protocol on its own: what {@code initialize} negotiates, what
  * {@code tools/list} publishes, and which mistake is which JSON-RPC error
- * (agent.md, "MCP").
+ * (mcp.adoc).
  *
  * <p>No database and no HTTP here — the tool runner is a stub, because every
  * answer a tool gives is {@link McpTools}' business and is tested where it is
@@ -121,7 +121,7 @@ class McpServerTest {
         assertThat(properties(byName.get("findings")).getObject("full").getString("type"))
                 .isEqualTo("boolean");
         Json.JsonObject hideAcked = properties(byName.get("findings")).getObject("hideAcked");
-        assertThat(hideAcked).as("agent.md's findings tool takes hideAcked").isNotNull();
+        assertThat(hideAcked).as("the findings tool of mcp.adoc#tools takes hideAcked").isNotNull();
         assertThat(hideAcked.getString("type")).isEqualTo("boolean");
         assertThat(hideAcked.getString("description")).contains("acknowledged");
     }

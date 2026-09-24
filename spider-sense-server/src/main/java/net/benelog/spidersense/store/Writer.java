@@ -435,7 +435,7 @@ public final class Writer implements AutoCloseable {
      * <p>A merge rather than an insert because the extension reads a table's
      * indexes once per process: the row of a table looked up again after a restart
      * is the newer truth about the same table, and replaces the older one
-     * (storage.md).
+     * (storage.adoc#writer).
      */
     private void mergeCatalogs(Connection connection, List<Batch> batches) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(MERGE_CATALOG)) {
@@ -466,7 +466,8 @@ public final class Writer implements AutoCloseable {
      * <p>The stored process id is read first, because a sighting whose
      * {@code process.pid} is new to this service means the application was
      * restarted, and that moment is worth a {@code start} mark: it is what
-     * {@code since=start} resolves to, and nobody had to ask for it (agent.md).
+     * {@code since=start} resolves to, and nobody had to ask for it
+     * (marks-and-compare.adoc#start-marks).
      */
     private void mergeServices(Connection connection, List<Batch> batches) throws SQLException {
         Map<String, Batch.Sighting> sightings = new LinkedHashMap<>();
@@ -655,7 +656,7 @@ public final class Writer implements AutoCloseable {
 
     /**
      * The other way rows reach these tables: an exported session document, read
-     * back through this writer's own insert and {@code trace} merge (agent.md).
+     * back through this writer's own insert and {@code trace} merge (cli.adoc#export-import).
      *
      * <p>It is a separate object rather than a method here because an import is
      * not write-behind: it is one transaction on the calling thread, and it must

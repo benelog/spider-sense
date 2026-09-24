@@ -12,7 +12,7 @@ import { dur, count, rate, pct, rel, bothTimes } from '../format.js';
 const KIND_ICON = { 'slow-request': 'turtle', 'slow-query': 'database', error: 'bolt' };
 const KIND_LABEL = { 'slow-request': 'Slow request', 'slow-query': 'Slow query', error: 'Error' };
 
-/** The seven tiles of docs/ui.md Overview item 1; the Service page shows the same row. */
+/** The seven tiles of pages.adoc#overview item 1; the Service page shows the same row. */
 export function statTiles(totals, thresholds) {
   const t = totals || {};
   const slow = (thresholds && thresholds.slowRequestMs) || 500;
@@ -90,7 +90,7 @@ export function render(root, ctx) {
     else chart = timeSeries(chartBody, spec);
   }
 
-  /** The top five findings, each a row that goes where the finding points (docs/ui.md). */
+  /** The top five findings, each a row that goes where the finding points (pages.adoc#overview). */
   function paintFindings(list) {
     renderList(findingsBody, list, {
       key: (f) => f.id,
@@ -190,7 +190,7 @@ export function render(root, ctx) {
     try {
       const [data, found] = await Promise.all([
         api.overview(),
-        // hideAcked: the top five are the unacknowledged ones (docs/ui.md).
+        // hideAcked: the top five are the unacknowledged ones (pages.adoc#overview).
         api.findings({ limit: 5, hideAcked: true }).catch(() => ({ findings: [] })),
       ]);
       if (destroyed) return;

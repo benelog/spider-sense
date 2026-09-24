@@ -16,7 +16,7 @@ import net.benelog.spidersense.store.Tingles;
 import net.benelog.spidersilk.json.Json;
 
 /**
- * Two traces aligned: the text of agent.md's Trace diff, byte for byte, and the
+ * Two traces aligned: the text of cli.adoc#trace-diff, byte for byte, and the
  * JSON beside it.
  *
  * <p>The fixtures are built by hand rather than ingested, because what is under

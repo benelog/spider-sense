@@ -6,7 +6,7 @@ import java.util.Map;
 import org.jspecify.annotations.Nullable;
 
 /**
- * The shapes the JSON API answers with, one record per named object in api.md.
+ * The shapes the JSON API answers with, one record per named object in api.adoc.
  *
  * <p>They live together because they are one vocabulary, not one per file: the
  * endpoint list, the service page and the trace list all speak it, and reading
@@ -29,7 +29,7 @@ public final class Stats {
      * requested.
      */
     // Arrays rather than lists: the histogram is five fixed counts the UI reads
-    // positionally, and the wire format is a JSON array either way (docs/api.md).
+    // positionally, and the wire format is a JSON array either way (api.adoc).
     @SuppressWarnings("ArrayRecordComponent")
     public record Totals(long requests, long errors, double errorRate, double rps,
             double p50Ms, double p95Ms, double p99Ms, double maxMs, long[] histogram,
@@ -45,21 +45,21 @@ public final class Stats {
      * would draw a line down to the axis.
      */
     // Arrays rather than lists: these are one chart's aligned series, written to JSON
-    // as they are, and boxing every sample would buy nothing (docs/api.md).
+    // as they are, and boxing every sample would buy nothing (api.adoc).
     @SuppressWarnings("ArrayRecordComponent")
     public record Buckets(long[] t, long[] requests, long[] errors,
             double[] p50Ms, double[] p95Ms, double[] p99Ms, long[][] histogram) {
     }
 
     // Arrays rather than lists: the sparkline and the histogram are aligned series the
-    // UI reads positionally, and the wire format is a JSON array either way (docs/api.md).
+    // UI reads positionally, and the wire format is a JSON array either way (api.adoc).
     @SuppressWarnings("ArrayRecordComponent")
     public record ServiceSummary(String name, @Nullable String language, boolean embedded,
             long firstSeen, long lastSeen, Totals totals, long[] sparkline, boolean hasJvm) {
     }
 
     // Arrays rather than lists: the histogram is five fixed counts the UI reads
-    // positionally, and the wire format is a JSON array either way (docs/api.md).
+    // positionally, and the wire format is a JSON array either way (api.adoc).
     @SuppressWarnings("ArrayRecordComponent")
     public record EndpointStats(String endpointId, String service, @Nullable String method,
             @Nullable String route, String name, @Nullable String kind, long calls, long errors,
@@ -76,7 +76,7 @@ public final class Stats {
      * One statement over the window, with the endpoints that issued it.
      *
      * @param schema the index catalog of the tables the statement names, or null
-     *        when there is none to vouch for (agent.md, "The schema block")
+     *        when there is none to vouch for (findings.adoc#schema)
      */
     public record QueryStats(String queryId, String service, @Nullable String system,
             @Nullable String namespace, @Nullable String operation, @Nullable String table,

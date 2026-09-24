@@ -85,7 +85,7 @@ public final class ApiRoutes {
     /**
      * The escape hatch from "in memory is fine": one trace as a file that can be
      * attached to a bug report, or — with no {@code traceId} — the whole window as
-     * the session document an import reads back (agent.md).
+     * the session document an import reads back (cli.adoc#export-import).
      *
      * <p>The window form is streamed rather than built: a session is as large as
      * the retention allows, and holding every row of it as objects in order to
@@ -132,7 +132,7 @@ public final class ApiRoutes {
         }
     }
 
-    /** The body, gunzipped when {@code Content-Encoding} says so (api.md). */
+    /** The body, gunzipped when {@code Content-Encoding} says so (api.adoc#ingest). */
     private static String body(WebRequest req) {
         String encoding = req.header("Content-Encoding");
         boolean gzipped = encoding != null && encoding.toLowerCase(Locale.ROOT).contains("gzip");

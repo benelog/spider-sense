@@ -1,4 +1,4 @@
-// Fetch wrappers for docs/api.md, the shared top-bar state, and the window it implies.
+// Fetch wrappers for api.adoc, the shared top-bar state, and the window it implies.
 
 export const RANGES = [
   { id: '5m', label: 'Last 5 min', ms: 5 * 60 * 1000 },
@@ -99,7 +99,7 @@ export function getJSON(path, query) {
   return promise;
 }
 
-/** GET a text rendering (docs/api.md, "Text rendering"): format=text, the body as it came. */
+/** GET a text rendering (api.adoc#text-rendering): format=text, the body as it came. */
 export function getText(path, query) {
   return fetch(path + qs({ ...query, format: 'text' }), { headers: { accept: 'text/markdown' } })
     .then(async (res) => {
@@ -185,11 +185,11 @@ export function metricSeries(extra, opts) { return getJSON('/api/metrics/series'
 
 export function jvm(extra, opts) { return getJSON('/api/jvm', params(extra, opts)); }
 
-// --- the agent-facing endpoints the UI also shows (docs/agent.md) ----------
+// --- the agent-facing endpoints the UI also shows (api.adoc#agent-endpoints) ----------
 
 export function findings(extra, opts) { return getJSON('/api/findings', params({ limit: 100, ...extra }, opts)); }
 
-/** Accepts a known finding, so the list stays about what is new (docs/agent.md). */
+/** Accepts a known finding, so the list stays about what is new (findings.adoc#acknowledgements). */
 export function ackFinding(id, note) {
   return postJSON('/api/findings/' + encodeURIComponent(id) + '/ack', { note: note || null });
 }
@@ -203,7 +203,7 @@ export function unackFinding(id) {
     });
 }
 
-/** Marks a finding fixed; if it comes back it is a regression (docs/agent.md). */
+/** Marks a finding fixed; if it comes back it is a regression (findings.adoc#resolutions). */
 export function resolveFinding(id, note) {
   return postJSON('/api/findings/' + encodeURIComponent(id) + '/resolve', { note: note || null });
 }

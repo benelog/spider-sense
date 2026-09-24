@@ -6,7 +6,9 @@ The HTTP API is the contract between `spider-sense-server` and the UI under `src
 Both sides are built against this page.
 A change here is a change to both.
 
-Conventions:
+[#conventions]
+== Conventions
+
 
 * All times are *epoch milliseconds* (integers) in JSON.
 Durations are *milliseconds as doubles* (`12.34`) unless the field name ends in `Ns`.
@@ -38,8 +40,11 @@ Partial success is never reported, so everything decodable is stored.
 A log record carrying the attribute `spidersense.schema.table` is the index catalog of one table, as read by xref:design.adoc#extension[the extension].
 It is stored as a `db_table` row rather than as a log (xref:storage.adoc#schema[Storage]).
 
-[#status]
+[#status-and-control]
 == Status and control
+
+[#status]
+=== Status
 
 *`GET /api/status`*
 
@@ -56,7 +61,7 @@ It is stored as a `db_table` row rather than as a log (xref:storage.adoc#schema[
   "embeddedService": "silk-bookstore" | null,
   "thresholds": { "slowRequestMs": 500, "slowQueryMs": 100, "responseBucketsMs": [125, 500, 2000] },
   "ignore": { "endpoints": ["/actuator/**", "/health", "/healthz", "/livez", "/readyz"] },
-  "codeFrames": { "appPackages": [], "frameworkPrefixes": ["java.", "javax.", …] },
+  "codeFrames": { "appPackages": [] | ["com.acme."], "frameworkPrefixes": ["java.", "javax.", …] },
   "jar": "/home/me/tools/spider-sense-{project-version}.jar" | null,
   "retention": { "hours": 24, "spans": 1000000 },
   "ingest": { "maxSpansPerSecond": null | 5000 },
@@ -69,7 +74,12 @@ It is stored as a `db_table` row rather than as a log (xref:storage.adoc#schema[
 `ignore.endpoints` is the configured value of `spidersense.ignore.endpoints`, which xref:configuration.adoc#ignored-endpoints[Ignored endpoints] describes.
 `codeFrames` carries the rules that make a frame the application's (xref:findings.adoc#code[Code locations]): `appPackages` is `spidersense.app.packages` as prefixes ending in a dot, empty when unset, and `frameworkPrefixes` the prefixes that count as framework when it is unset.
 The error page folds its stack trace by them (xref:pages.adoc#stack-traces[Stack traces]).
-`jar` is the absolute path of the jar the server was started from, or `null` when it is not known; the UI's *Copy CLI line* names it.
+`jar` is the absolute path of the distributable jar the server was started from, which the launcher passes to the server.
+It is `null` when it is not known, as when the server runs from exploded classes.
+The UI's *Copy CLI line* names it (xref:pages.adoc#copy-as-markdown[Copy as Markdown]).
+
+[#data]
+=== Delete and export
 
 *`DELETE /api/data`* answers `204`.
 It deletes every span, trace, log, metric point, tingle, mark, acknowledgement and resolution.
@@ -102,6 +112,7 @@ data: {"name":"spring-orders","firstSeen":1758000000000}
 `stats` is sent at most every second while data arrives.
 A `: keepalive` comment is sent every 15 s.
 
+[#overview]
 == Overview
 
 *`GET /api/overview?from&to`*
@@ -124,7 +135,10 @@ A `: keepalive` comment is sent every 15 s.
 }
 ----
 
-*Response-time buckets and Apdex* give a response summary, a load chart and an Apdex score.
+[#buckets]
+=== Response-time buckets and Apdex
+
+The response-time buckets and Apdex give a response summary, a load chart and an Apdex score.
 `thresholds.responseBucketsMs` is `[T/4, T, 4T]` with `T = slowRequestMs`, so the default buckets are `≤125 ms`, `≤500 ms`, `≤2 s` and `>2 s`.
 Every `histogram` is five counts: the non-error requests in each of the four buckets, then the error count.
 The five sum to `requests`.
@@ -133,7 +147,9 @@ It is rounded to three decimals, and `null` when there is no request.
 In a `series`, `histogram` is four aligned arrays, one per bucket.
 The errors of a time bucket are already in `series.errors`.
 
-`ServiceSummary`:
+[#service-summary]
+=== ServiceSummary
+
 
 [source,json]
 ----
@@ -151,13 +167,16 @@ The errors of a time bucket are already in `series.errors`.
 }
 ----
 
-`Tingle`:
+[#tingle]
+=== Tingle
+
 
 [source,json]
 ----
 { "kind": "slow-request" | "slow-query" | "error", "at": 1758000000000, "service": "…", "title": "GET /orders/report", "detail": "1,532 ms" | "SELECT … FROM …" | "IllegalStateException: …", "traceId": "…", "spanId": "…", "durationMs": 1532.4 }
 ----
 
+[#services]
 == Services
 
 *`GET /api/services?from&to`* answers `{ "services": [ <ServiceSummary> ] }`.
@@ -179,7 +198,9 @@ It lists every service ever seen, with zeros when nothing falls in the window.
 }
 ----
 
-`EndpointStats`:
+[#endpoint-stats]
+=== EndpointStats
+
 
 [source,json]
 ----
@@ -190,10 +211,17 @@ It lists every service ever seen, with zeros when nothing falls in the window.
   "statusCodes": { "200": 118, "500": 2 } }
 ----
 
+[#endpoints]
+=== Endpoints
+
 *`GET /api/endpoints?from&to&service`* answers `{ "endpoints": [ <EndpointStats> ] }` across services, sorted by total time descending.
 
-*`+GET /api/endpoints/{endpointId}?from&to+`* answers `{ "endpoint": <EndpointStats>, "series": {...as service series...}, "queries": [<QueryStats>], "errors": [<ErrorGroup>], "traces": [<TraceSummary> x 20 slowest], "recent": [<TraceSummary> x 20 newest] }`.
+*`+GET /api/endpoints/{endpointId}?from&to+`* answers `{ "endpoint": <EndpointStats>, "series": {...as service series...}, "queries": [<QueryStats>], "errors": [<ErrorGroup>], "traces": [<TraceSummary> x 20 slowest], "recent": [<TraceSummary> x 20 newest], "breakdown": { "db": 0.44, "http": 0.21, "internal": 0.07, "self": 0.28 } }`.
 
+`breakdown` is where the endpoint's time went over the 20 slowest traces, the same four shares a `slow-endpoint` finding carries (xref:findings.adoc#time[Where the time went]).
+It is `{}` when those traces add up to nothing.
+
+[#traces]
 == Traces
 
 *`GET /api/traces?from&to&service&endpointId&minMs&maxMs&status=error|ok|all&q&limit=50&before=<epoch ms>`*
@@ -208,7 +236,9 @@ Pages backwards, to the traces that start strictly before the given epoch ms.
 { "traces": [ <TraceSummary> ], "total": 2345, "window": {...} }
 ----
 
-`TraceSummary`:
+[#trace-summary]
+=== TraceSummary
+
 
 [source,json]
 ----
@@ -217,6 +247,9 @@ Pages backwards, to the traces that start strictly before the given epoch ms.
   "services": ["spring-orders", "silk-bookstore"], "spanCount": 14, "errorCount": 0, "dbCount": 6, "httpStatus": 200,
   "slow": true, "error": false }
 ----
+
+[#trace]
+=== One trace
 
 *`+GET /api/traces/{traceId}+`*
 
@@ -232,7 +265,9 @@ With `diff=<traceId>` it answers the two traces aligned instead, as xref:cli.ado
 }
 ----
 
-`Span`:
+[#span]
+=== Span
+
 
 [source,json]
 ----
@@ -247,6 +282,7 @@ With `diff=<traceId>` it answers the two traces aligned instead, as xref:cli.ado
   "slow": false, "error": false }
 ----
 
+[#map]
 == Service map
 
 *`GET /api/map?from&to`*
@@ -289,6 +325,7 @@ A call to `localhost:8081` therefore shows as a call to `silk-bookstore` when th
 * A parent is "not stored" only when it is absent from the database, whatever the window.
 A parent that was traced but starts before the window still counts as a traced caller, not as a user.
 
+[#scatter]
 == Scatter (response-time scatter)
 
 *`GET /api/scatter?from&to&service&endpointId&limit=5000`*
@@ -305,6 +342,7 @@ The answer is one point per entry span in the window, newest first, cut at `limi
 A point is `[start, durationMs, service, endpointName, traceId, flags]` with `flags` a bit set: `1` = error, `2` = slow, `4` = contains a slow query.
 The points are arrays rather than objects because 5,000 points must stay small on the wire.
 
+[#queries]
 == Queries
 
 *`GET /api/queries?from&to&service&sort=total|avg|p95|max|calls&limit=100`*
@@ -314,7 +352,9 @@ The points are arrays rather than objects because 5,000 points must stay small o
 { "queries": [ <QueryStats> ] }
 ----
 
-`QueryStats`:
+[#query-stats]
+=== QueryStats
+
 
 [source,json]
 ----
@@ -330,9 +370,13 @@ The points are arrays rather than objects because 5,000 points must stay small o
 `schema` is the index catalog of the statement's tables and the columns it filters on that no index serves, as xref:findings.adoc#schema[the schema block] defines it.
 It is `null` when there is no catalog to read.
 
-*`+GET /api/queries/{queryId}?from&to+`* answers `{ "query": <QueryStats>, "series": { "t": [...], "calls": [...], "p95Ms": [...] }, "traces": [<TraceSummary> x 20 slowest containing it] }`.
-With `format=text` it answers the group as the `queries` rendering prints it (xref:cli.adoc#one-finding[One finding]), and a group with no call in the window is `404`.
+[#query]
+=== One query
 
+*`+GET /api/queries/{queryId}?from&to+`* answers `{ "query": <QueryStats>, "series": { "t": [...], "calls": [...], "p95Ms": [...] }, "traces": [<TraceSummary> x 20 slowest containing it] }`.
+With `format=text` it answers the group as the `queries` rendering prints it (xref:cli.adoc#one-finding[One finding]), and a group with no call in the window is `404` in both JSON and text.
+
+[#errors]
 == Errors
 
 *`GET /api/errors?from&to&service&limit=100`*
@@ -342,7 +386,9 @@ With `format=text` it answers the group as the `queries` rendering prints it (xr
 { "errors": [ <ErrorGroup> ] }
 ----
 
-`ErrorGroup`:
+[#error-group]
+=== ErrorGroup
+
 
 [source,json]
 ----
@@ -354,14 +400,24 @@ With `format=text` it answers the group as the `queries` rendering prints it (xr
 ----
 
 `series` is the group's occurrences per time bucket over the window, oldest first, which the Errors page draws as a sparkline.
-The buckets are the Overview's, merged a few at a time from the oldest so there are at most 30 points, and they sum to `count`.
-Only `GET /api/errors` carries it.
+The buckets are the window's (`window.bucketMs`, the Overview's), merged `⌈n / 30⌉` at a time from the oldest, so there are at most 30 points and they sum to `count`.
+Only `GET /api/errors` carries it; an `ErrorGroup` inside another answer does not.
+
+[#error]
+=== One error group
 
 *`+GET /api/errors/{errorId}?from&to+`* answers `{ "error": <ErrorGroup>, "code": [ "orders.OrderService.load(OrderService.java:41)" ], "chain": [ <Cause> ], "series": { "t": [...], "count": [...] }, "traces": [<TraceSummary> x 20 newest] }`.
-`code` is the sample stack trace's application frames, reduced as a finding's `code` is (xref:findings.adoc#code[Code locations]), the root cause's first, and empty when there are none.
+`code` is the sample stack trace's application frames, reduced by the rules a finding's `code` follows (xref:findings.adoc#code[Code locations]).
+The root cause's frames come first, then those of each exception wrapping it.
+`code` is empty when there is no sample or no application frame.
 `chain` is the sample stack trace read as its exceptions, innermost first: the root cause, then each exception that wraps it, out to the outer one.
 It is empty when there is no sample or no stack trace.
-With `format=text` it answers the group as the `errors` rendering prints it (xref:cli.adoc#one-finding[One finding]), and a group with no occurrence in the window is `404`.
+With `format=text` it answers the group as the `errors` rendering prints it (xref:cli.adoc#one-finding[One finding]), and a group with no occurrence in the window is `404` in both JSON and text.
+
+[#cause]
+=== Cause
+
+A `Cause`, one entry of `chain`:
 
 [source,json]
 ----
@@ -370,10 +426,11 @@ With `format=text` it answers the group as the `errors` rendering prints it (xre
   "more": 42 }
 ----
 
-`frames` are every frame the section prints, top first, written as `code` writes a frame.
+`frames` are every frame the section prints, top first, written as `code` writes a frame, with no module or class-loader prefix.
 `more` is the count of the `... n more` line, the frames the cause shares with the exception wrapping it, and `0` when there is none.
 A `Suppressed:` block is not a cause and is left out.
-A trace without a `Type: message` header is one cause whose `type` is `""`.
+A trace without a header (no `Type: message` line) is one cause whose `type` is `""`.
+A message that spans lines keeps its line breaks.
 
 [#source]
 == Source
@@ -388,10 +445,17 @@ A trace without a `Type: message` header is one cause whose `type` is `""`.
   "lines": [ "…line 39…", "…line 40…", "…line 41…", "…line 42…", "…line 43…" ] }
 ----
 
-The frame resolves to the first matching file under the roots of `spidersense.source.dirs` (xref:configuration.adoc#source-dirs[Source roots]).
+`frame` is a frame as a finding's `code` carries it.
+It resolves to the first `<root>/<package as directories>/<file>` that exists under the roots of `spidersense.source.dirs` (xref:configuration.adoc#source-dirs[Source roots]).
 `file` is that file's absolute path with symbolic links resolved, `line` is the frame's line, and `lines` runs from `start` to two lines past `line`, cut at the start and the end of the file.
-A frame that does not resolve, including one whose path would leave its root, is `404`, and a missing `frame` is `400`.
+A file edited since the frame was recorded may therefore answer fewer lines, or none.
+A frame that does not resolve is `404`, and so is one without a file and a line (`Unknown Source`, `Native Method`, a `code.function` frame) and one whose path would leave its root.
+A missing `frame` is `400`.
+The path is built from the frame only when it parses as dotted Java identifiers, a method, and a plain file name with a `.java`, `.kt`, `.groovy` or `.scala` extension.
+The resolved file, symbolic links followed, must lie under its root.
+Nothing else is read.
 
+[#logs]
 == Logs
 
 *`GET /api/logs?from&to&service&severity=TRACE|DEBUG|INFO|WARN|ERROR&q&traceId&limit=200&before=<epoch ms>`*
@@ -403,7 +467,9 @@ A frame that does not resolve, including one whose path would leave its root, is
 { "logs": [ <LogRecord> ], "total": 456 }
 ----
 
-`LogRecord`:
+[#log-record]
+=== LogRecord
+
 
 [source,json]
 ----
@@ -413,6 +479,7 @@ A frame that does not resolve, including one whose path would leave its root, is
   "attributes": { "thread.name": "main", "exception.stacktrace": "…" } }
 ----
 
+[#metrics]
 == Metrics
 
 *`GET /api/metrics?service`* answers the catalog:
@@ -432,6 +499,9 @@ A frame that does not resolve, including one whose path would leave its root, is
 
 For a histogram, `v` is the per-point `sum/count` mean, and each series also carries `"count": [...]`, `"p95": [...]` (estimated from buckets) and `"max": [...]`.
 For a monotonic sum such as `jvm.cpu.time` or the count of `jvm.gc.duration`, `v` is the rate per second between points when `rate=true`, and the cumulative value otherwise.
+
+[#jvm]
+=== JVM
 
 *`GET /api/jvm?service&from&to`* answers the curated view, with empty arrays when the service sent no JVM metrics:
 
@@ -462,6 +532,7 @@ It is also read from their stable-semconv names `db.client.connection.count` (`d
 This section specifies only the wire shape.
 The semantics are specified elsewhere in this manual: the time selectors and verdicts in xref:marks-and-compare.adoc[Marks and Compare], the finding rules in xref:findings.adoc[Findings], the rules of `check` in xref:check.adoc[Check], and the text renderings in xref:cli.adoc#text-rendering[The CLI].
 
+[#time-selectors]
 === Time selectors
 
 `since` and `until` are accepted by the endpoints below and by every windowed endpoint of this page, as an alternative to `from` and `to`.
@@ -470,6 +541,7 @@ A selector is a duration (`30s`, `5m`, `2h`, `1d`), epoch milliseconds (13 or mo
 `since` defaults to `15m`, and `until` to `now`.
 An unknown mark name is `404`, and a `since` after `until` is `400`.
 
+[#text-rendering]
 === Text rendering
 
 `format=text`, or an `Accept` header whose first type is `text/markdown` or `text/plain`, answers `text/markdown; charset=utf-8` instead of JSON.
@@ -477,6 +549,7 @@ It applies to `/api/status`, `/api/findings`, `+/api/findings/{id}+`, `/api/mark
 `full=true` keeps statements whole and expands collapsed spans.
 The format of each rendering is given in xref:cli.adoc#text-rendering[The CLI].
 
+[#marks]
 === Marks
 
 *`GET /api/marks?limit=50`* answers `{ "marks": [ <Mark> ] }`, newest first.
@@ -493,6 +566,7 @@ The format of each rendering is given in xref:cli.adoc#text-rendering[The CLI].
 
 The writer inserts a mark named `start` when a service reports a `process.pid` it has not stored for that service.
 
+[#findings]
 === Findings
 
 *`GET /api/findings?since&until&service&limit=20&hideAcked=false`* answers `{ "window": {...}, "requests": 120, "acked": 2, "resolved": 1, "findings": [ <Finding> ] }`.
@@ -501,8 +575,8 @@ The findings are ranked as xref:findings.adoc[Findings] specifies, with regressi
 `limit` is at most 100.
 
 *`+GET /api/findings/{id}?since&until&service+`* answers `{ "window": {...}, "requests": 120, "rank": 3, "finding": <Finding> }`, or `404` when the rules do not produce that id over the window.
-`rank` is the finding's place among every finding of the same window and service, acknowledged and resolved ones included.
-Its text rendering is the list's row and evidence for it (xref:cli.adoc#one-finding[One finding]).
+`rank` is the finding's place among every finding the list would answer over the same window and service, acknowledged and resolved ones included, whatever `limit` would have cut.
+Its text rendering is the list's row and evidence block for it (xref:cli.adoc#one-finding[One finding]).
 
 *`+POST /api/findings/{id}/ack+`* with `{ "note": "…" | null }` answers `201` and `{ "findingId": "…", "at": …, "note": … }`.
 *`+DELETE /api/findings/{id}/ack+`* answers `204` or `404`.
@@ -534,6 +608,7 @@ xref:findings.adoc#resolutions[Resolutions] describes what a resolution means.
 `numbers` carries the fields of the finding's kind, listed with each kind in xref:findings.adoc#kinds[Findings].
 `schema` is the xref:findings.adoc#schema[schema block], on a `slow-query` or `n-plus-one` finding and `null` everywhere else.
 
+[#compare]
 === Compare
 
 *`GET /api/compare?before=<selector>&after=<selector>&until=<selector>&service`* answers the two windows `[before, after)` and `[after, until)`:
@@ -551,6 +626,7 @@ xref:findings.adoc#resolutions[Resolutions] describes what a resolution means.
 `QuerySide` is `{ "calls", "callsPerRequest", "p95Ms", "totalMs" }`.
 `before` and `after` are required, and a missing one is `400`.
 
+[#check]
 === Check
 
 *`GET /api/check?since&until&service&endpoint&maxP95Ms&maxErrors&maxErrorRate&maxQueriesPerRequest&maxSlowQueries&maxNPlusOne&maxLogErrors&maxRegressions&minApdex`*
@@ -566,6 +642,7 @@ With no rule given the defaults are `maxErrors=0`, `maxNPlusOne=0` and `maxP95Ms
 The response also carries the verdict as the header `X-Spider-Sense-Pass: true|false|none`.
 The CLI can therefore ask once for the text rendering and still exit with a code, rather than parse prose for a word.
 
+[#sql]
 === SQL
 
 *`POST /api/sql`* with `{ "sql": "SELECT …", "limit": 200 }`, and `format=text` as a query parameter when the Markdown rendering is wanted:
@@ -584,6 +661,7 @@ A `limit` below 1 is a `400`.
 The statement must be a single `SELECT`, `WITH`, `TABLE`, `VALUES`, `EXPLAIN` or `SHOW`, and it runs as an H2 user that has `SELECT` and nothing else (xref:cli.adoc#sql[the CLI's `sql`], xref:storage.adoc#reader[the read-only user]).
 A refused statement and a statement H2 would not run are both `400`: `{ "error": "…" }`, or the message on one line when the text rendering was asked for.
 
+[#mcp]
 === MCP
 
 *`POST /mcp`* takes one JSON-RPC 2.0 message as `application/json`.
@@ -599,6 +677,7 @@ A missing required argument or an unknown tool name is `-32602`.
 * A tool call that the CLI would report with exit code `4`, or with a `400`, is a `200` whose result carries `isError: true` and the message as its one text content.
 * `tools/call` for `check` also carries `structuredContent: { "pass": true | false | null, "requests": 12 }`.
 
+[#static-ui]
 == Static UI
 
 `GET /` and every path without an `/api/` or `/v1/` prefix that has no file answer the UI's `index.html`.
@@ -606,10 +685,12 @@ The UI's router is hash-based, so in practice this path is almost always `/`.
 
 `GET /assets/**` answers files under `public/assets`.
 
+[#clarifications]
 == Clarifications
 
 This section records the decisions the server made where the contract left room, so the UI can rely on them.
 
+[#endpoint-identity]
 === Endpoint identity
 
 An entry span's endpoint name is `METHOD route` when `http.route` is present *and is not a servlet-mapping wildcard* (`/`, `/*`, or anything ending in `/*`).
@@ -624,18 +705,21 @@ Such a span still appears in its trace and in `/api/traces`, but in nothing that
 `queryId` hashes `service\0system\0statement` the same way.
 `errorId` hashes `service\0rootCauseType\0frame`, the frame without its file position and with `$<digits>` made `$?`, or `service\0type\0normalisedMessage` when the trace has no application frame (xref:design.adoc#errors[Errors]).
 
+[#callers]
 === Callers and error endpoints
 
 `QueryStats.callers[].endpoint` and `ErrorGroup.endpoints[].name` are the nearest *entry span up the parent chain within the trace*, not the trace's root.
 A query issued by the second service of a two-service trace is therefore attributed to that service's own endpoint.
 A span whose chain leaves the window is reported as `(no endpoint)`.
 
+[#nulls]
 === Nulls in series
 
 Every duration that has no value is `null`, never `0`.
-That covers a percentile in a bucket with no requests, the first point of a `rate=true` series, and an estimated `p95` for a histogram point that carries no buckets.
+That covers a percentile in a bucket with no requests, the first point of a `rate=true` series, and an estimated `p95` for a histogram point that carries no buckets, or whose one bucket has no bound (a Micrometer timer bridged by the agent).
 `jvm.nonHeap` has no `limit` array, and `cpu.systemLoad1m` is an empty array on a platform that reports no load average.
 
+[#ordering]
 === Ordering and sorting
 
 `GET /api/metrics` is sorted by metric name.
@@ -643,6 +727,7 @@ That covers a percentile in a bucket with no requests, the first point of a `rat
 `queries` defaults to `sort=total`, and `errors` is sorted by count descending.
 Lists paged with `before` are newest first, with the row id breaking a tie inside the same millisecond.
 
+[#free-text-search]
 === Free-text search
 
 `q` on `/api/traces` matches, case-insensitively, any span name or any part of the span's attribute JSON in that trace.
@@ -651,6 +736,7 @@ Span *event* attributes, notably `exception.message`, are not searched.
 Search an error's endpoint or type instead, or use `/api/errors`.
 `q` on `/api/logs` matches the body and the attribute JSON.
 
+[#metrics-clarifications]
 === Metrics
 
 `step` on `/api/metrics/series` is accepted and ignored.
@@ -660,14 +746,17 @@ An exponential histogram is stored as a histogram with count, sum, min and max o
 `runtime.jvm` is `process.runtime.name + " " + process.runtime.version`, falling back to `process.runtime.description`.
 `GET /api/jvm` without `service` answers for the first service that sent any `jvm.*` metric, which locally is usually the only one.
 
+[#error-grouping]
 === Errors
 
+An error group is the root-cause type and the innermost application frame of the stack trace, or the type and the normalised message when there is no application frame (xref:design.adoc#errors[Errors]).
 `ErrorGroup.message` is the normalised message, where digits become `?` and quoted strings become `'?'`.
 `sample.message` is one real message as received.
 `ErrorGroup.type` is the exception type, else `error.type`, else the literal `error`.
 Both are the outer exception's, as the span recorded it.
 The members of a group keyed by its frame may differ in them, and the group shows the greatest of each.
 
+[#status-and-ingest]
 === Status and ingest
 
 For an in-memory database, `/api/status.storage.path` is `null` and `sizeBytes` is `0`.
@@ -680,12 +769,14 @@ An undecodable body of an accepted type is `400`.
 OTLP/JSON ids are accepted as hex, which is what the OTLP specification says, and as base64, which is what protobuf's own JSON mapping produces.
 The two are told apart by length, since only a hex id is exactly 32 or 16 characters of `[0-9a-f]`.
 
+[#apdex]
 === Apdex and the histogram
 
 The bucket bounds come from the server's `slowRequestMs`, not from the client, so every page and every service share one scale and the legend can be built from `/api/status`.
 An error request is counted in the fifth histogram slot only, whatever its duration, so a failing endpoint that answers fast still lowers the Apdex.
 `apdex` is `null`, never `0`, when nothing was requested.
 
+[#tingles]
 === Tingles
 
 Tingles are rows in the `tingle` table, so `/api/overview.tingles` survives a restart and is visible to every Spider Sense process sharing the database.

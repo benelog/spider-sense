@@ -32,7 +32,7 @@ import org.jspecify.annotations.Nullable;
  * <p>A dashboard shows series and lets a person find the cluster; an agent pays
  * for every token and needs a verdict. So every rule here ends in one line with
  * the numbers that justify it, the trace ids that prove it and, where the stock
- * OpenTelemetry agent recorded enough, the code location (agent.md).
+ * OpenTelemetry agent recorded enough, the code location (findings.adoc#code).
  *
  * <p>Nothing is computed twice: the rules run over the same {@link Queries} the UI
  * uses, so a number in a finding is the number on the screen.
@@ -53,7 +53,7 @@ public final class Findings {
     public static final String THREAD_GROWTH = "thread-growth";
     public static final String REGRESSION = "regression";
 
-    /** A finding's state: absent from its service's previous run (agent.md, "State"). */
+    /** A finding's state: absent from its service's previous run (findings.adoc#state). */
     public static final String NEW = "new";
     /** A finding's state: present in its service's previous run too. */
     public static final String ONGOING = "ongoing";
@@ -69,7 +69,7 @@ public final class Findings {
     public static final String MEDIUM = "medium";
     public static final String LOW = "low";
 
-    /** The repeats within one trace that make a query group an N+1 (storage.md). */
+    /** The repeats within one trace that make a query group an N+1 (storage.adoc#reads). */
     private static final int REPEATS = 5;
 
     /** Repeats at which an N+1 stops being a nuisance and becomes the bug. */
@@ -80,13 +80,13 @@ public final class Findings {
     /**
      * The traces a {@code slow-endpoint} or a {@code slow-job} reads the aggregated
      * hot spans and the breakdown from; the first {@link #EVIDENCE_TRACES} of them
-     * are the finding's own {@code traces} (agent.md, "Where the time went").
+     * are the finding's own {@code traces} (findings.adoc#time).
      */
     private static final int SAMPLE_TRACES = 20;
     private static final int CANDIDATES = 500;
     private static final int GROUPS = 100;
 
-    /** How many {@code (service, previous run, kind)} id sets a server keeps (agent.md, "State"). */
+    /** How many {@code (service, previous run, kind)} id sets a server keeps (findings.adoc#state). */
     private static final int PREVIOUS_RUNS = 256;
 
     /** The OTLP severity number of {@code ERROR}; a {@code log-error} counts it and worse. */
@@ -95,7 +95,7 @@ public final class Findings {
     /** A guard on the one rule that reads log rows rather than an aggregate. */
     private static final int MAX_LOG_ROWS = 20_000;
 
-    /** The title of a {@code log-error} carries this much of the message (agent.md). */
+    /** The title of a {@code log-error} carries this much of the message (findings.adoc#log-error). */
     private static final int MESSAGE_IN_TITLE = 80;
 
     /** The traces of a {@code slow-external} group the three slowest are picked from. */
@@ -117,29 +117,29 @@ public final class Findings {
             @Nullable String target, @Nullable String logger, @Nullable String jvm) {
     }
 
-    /** When a finding was acknowledged, and why (agent.md, "Acknowledgements"). */
+    /** When a finding was acknowledged, and why (findings.adoc#acknowledgements). */
     public record Ack(long at, @Nullable String note) {
     }
 
-    /** When a finding was resolved, and how (agent.md, "Resolutions"). */
+    /** When a finding was resolved, and how (findings.adoc#resolutions). */
     public record Resolution(long at, @Nullable String note) {
     }
 
     /**
      * One thing worth fixing.
      *
-     * @param numbers    the kind-specific numbers agent.md lists, in the order it
+     * @param numbers    the kind-specific numbers findings.adoc#kinds lists, in the order it
      *        lists them; values are numbers, strings, or lists of small maps
      * @param ack        null unless a reader has accepted this finding, in which case
      *        it is ranked after every other one
      * @param schema     the indexes of the statement's tables and the predicates none
      *        serves; only {@code slow-query} and {@code n-plus-one} have one, and
-     *        only when the catalog knows every table (agent.md)
+     *        only when the catalog knows every table (findings.adoc#schema)
      * @param resolution null unless a reader has resolved this finding; a resolved
      *        finding that came back after it is a {@code regression}, one that did
      *        not is ranked with the acknowledged ones
-     * @param state      {@code new}, {@code ongoing} or {@code regressed} (agent.md,
-     *        "State")
+     * @param state      {@code new}, {@code ongoing} or {@code regressed}
+     *        (findings.adoc#state)
      */
     public record Finding(String id, String kind, String severity, String service, String title,
             String why, Subject subject, Map<String, Object> numbers, @Nullable String statement,
@@ -204,7 +204,7 @@ public final class Findings {
      *
      * <p>The counts are taken before the limit, because they answer "how much is
      * being kept out of the way" rather than "how much of this page is dimmed"
-     * (api.md).
+     * (api.adoc).
      */
     public record Answer(List<Finding> findings, int acked, int resolved) {
     }
@@ -252,7 +252,7 @@ public final class Findings {
      * <p>Severity first, then the impact within a kind, then the id: two calls over
      * the same data answer in the same order, so an agent can diff them. Impacts of
      * different kinds are different units and are never compared with each other;
-     * the kinds keep the order agent.md's table has.
+     * the kinds keep the order the table of findings.adoc#kinds has.
      */
     public List<Finding> findings(Window window, @Nullable String service, int limit) {
         return findings(window, service, limit, false);
@@ -284,7 +284,7 @@ public final class Findings {
      *
      * <p>An acknowledged finding keeps its place among the acknowledged ones: the
      * partition is stable, so the list a reader saw yesterday has not been
-     * reshuffled, only pushed down (agent.md, "Acknowledgements").
+     * reshuffled, only pushed down (findings.adoc#acknowledgements).
      */
     public Answer answer(Window window, @Nullable String service, int limit, boolean hideAcked) {
         return answer(window, service, limit, hideAcked, true);
@@ -353,7 +353,7 @@ public final class Findings {
      * Which rules run, and whether they gather what a reader is shown beyond the id.
      *
      * @param evidence false when only the ids matter: no evidence traces, no code
-     *        frames, no sample, no schema block, no database work (agent.md, "State")
+     *        frames, no sample, no schema block, no database work (findings.adoc#state)
      */
     private record Scope(Set<String> kinds, boolean evidence) {
 
@@ -453,7 +453,7 @@ public final class Findings {
     /**
      * A resolved finding that came back: severity {@code high}, the resolution's
      * instant and note and the original kind first in {@code numbers}, and the
-     * rest as the rules found it after the resolution (agent.md, "Resolutions").
+     * rest as the rules found it after the resolution (findings.adoc#resolutions).
      *
      * <p>The id stays the finding's own, so resolving it again, or acknowledging
      * it, is the same command with the same id.
@@ -474,7 +474,7 @@ public final class Findings {
     /**
      * Every finding labelled: {@code regressed} for a regression, {@code new} when
      * the rules do not find it in its service's previous run, {@code ongoing} when
-     * they do (agent.md, "State").
+     * they do (findings.adoc#state).
      *
      * <p>The previous run of a service is the time between its two newest
      * {@code start} marks at or before the end of the window: {@code [the one
@@ -626,7 +626,7 @@ public final class Findings {
      * <p>This is what {@code catch (Exception e) { log.error(…, e); return fallback; }}
      * leaves behind: no span error, no exception event, one line in the log. A
      * record whose trace does carry an error span is already an {@code error}
-     * finding, so the join drops it rather than reporting it twice (agent.md).
+     * finding, so the join drops it rather than reporting it twice (findings.adoc#log-error).
      *
      * <p>The grouping is the one {@link Ids#normaliseMessage} defines, which is a
      * Java regular expression rather than SQL, so the rows are read and grouped
@@ -739,7 +739,7 @@ public final class Findings {
     /**
      * The same query group, five or more times under one entry span.
      *
-     * <p>The candidates come from {@code GROUP BY trace_id, query_id} (storage.md),
+     * <p>The candidates come from {@code GROUP BY trace_id, query_id} (storage.adoc),
      * which is one aggregate over the window; the spans of those pairs are then read
      * back and attributed to their entry span by the parent-chain walk the query
      * callers already use, because two endpoints of one trace each running the
@@ -1141,7 +1141,7 @@ public final class Findings {
     }
 
     /**
-     * A job is a root {@code INTERNAL} span (design.md): a scheduled method, an
+     * A job is a root {@code INTERNAL} span (design.adoc#endpoint-identity): a scheduled method, an
      * {@code @Async} call, a batch step.
      *
      * <p>A job is never an entry span, so it is in no request count, in no Apdex and
@@ -1209,7 +1209,7 @@ public final class Findings {
         return found;
     }
 
-    /** The job groups of the window, the heaviest first (storage.md). */
+    /** The job groups of the window, the heaviest first (storage.adoc). */
     private List<Job> jobs(Window window, @Nullable String service) {
         List<Object> params = new ArrayList<>(List.of(window.from(), window.to()));
         String where = jobWhere(service, params);
@@ -1242,7 +1242,7 @@ public final class Findings {
         return samples;
     }
 
-    /** A run of a job: a root {@code INTERNAL} span of the window (design.md). */
+    /** A run of a job: a root {@code INTERNAL} span of the window (design.adoc#endpoint-identity). */
     private static String jobWhere(@Nullable String service, List<Object> params) {
         String where = "start_ms BETWEEN ? AND ? AND parent_span_id IS NULL AND kind = 'INTERNAL'";
         if (service != null) {
@@ -1460,7 +1460,7 @@ public final class Findings {
     // --- the JVM -------------------------------------------------------------
 
     /**
-     * The three rules that read the JVM page's own series (agent.md).
+     * The three rules that read the JVM page's own series (findings.adoc#kinds).
      *
      * <p>A run that is slow because it is collecting or swapping is named for what
      * it is, instead of producing {@code slow-endpoint} findings that point at the
@@ -1750,7 +1750,7 @@ public final class Findings {
 
     /**
      * The aggregated hot spans as {@code numbers} carries them: a list of small maps,
-     * as {@code callers} and {@code endpoints} are (agent.md).
+     * as {@code callers} and {@code endpoints} are (findings.adoc#hot-span).
      */
     private static List<Map<String, Object>> hotSpans(Queries.TimeSplit split) {
         List<Map<String, Object>> list = new ArrayList<>(split.hotSpans().size());
@@ -1773,7 +1773,7 @@ public final class Findings {
     }
 
     /**
-     * The id agent.md promises: stable across windows, because it hashes what the
+     * The id findings.adoc#fields promises: stable across windows, because it hashes what the
      * finding is about and nothing about when it was found.
      */
     private static String id(String kind, String service, String subject) {

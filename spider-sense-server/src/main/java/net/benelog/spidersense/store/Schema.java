@@ -1,7 +1,7 @@
 package net.benelog.spidersense.store;
 
 /**
- * The tables, verbatim from storage.md.
+ * The tables, verbatim from storage.adoc#schema.
  *
  * <p>Created with {@code IF NOT EXISTS} at every start, because several Spider
  * Sense processes open the same database and any of them may be the first. A
@@ -15,7 +15,7 @@ public final class Schema {
 
     /**
      * The H2 user {@code POST /api/sql} runs on: {@code SELECT} on {@code PUBLIC}
-     * and nothing else (storage.md).
+     * and nothing else (storage.adoc#schema).
      *
      * <p>It is the second of the three layers that keep the escape hatch read-only,
      * and the only one that is not a guess: a statement allowlist can be fooled by
@@ -206,7 +206,7 @@ public final class Schema {
      *
      * <p>{@code ack} is in this list and in none of the sweeper's: an
      * acknowledgement is not swept by time, since a known finding stays known, but
-     * {@code DELETE /api/data} empties it with everything else (storage.md).
+     * {@code DELETE /api/data} empties it with everything else (storage.adoc).
      */
     static final String[] DATA_TABLES =
             {"span", "trace", "log", "metric_point", "tingle", "mark", "ack", "db_table"};

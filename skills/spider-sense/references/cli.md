@@ -42,7 +42,7 @@ The launcher treats a first argument that does not start with `-` as a command a
 | `--limit=<n>` | per list | how many rows: findings 20, traces 20, queries 100, errors 100, logs 200, marks 50, sql 200 (at most 5000) |
 | `--url=<base url>` | `http://127.0.0.1:4000`, or `SPIDERSENSE_URL`, or what `spider-sense.properties` in the working directory implies | which Spider Sense to ask |
 | `--db=<path or jdbc url>` | `~/db/spider-sense/sense` | read that database directly, without asking any server |
-| `--json` | off | print the JSON of api.md instead of the text |
+| `--json` | off | print the JSON of the HTTP API instead of the text |
 | `--full` | off | keep statements whole and expand collapsed spans |
 | `--hide-acked` | off | `findings` only: leave the acknowledged findings out instead of ranking them last |
 | `--no-git` | off | `findings` only: no suspect-change line under the code frames |
@@ -538,7 +538,7 @@ Common options:
   --url=<base url>     default http://127.0.0.1:4000, or SPIDERSENSE_URL, or what
                        spider-sense.properties in the working directory implies
   --db=<path or jdbc url>   read the database directly, without asking any server
-  --json               the JSON of api.md instead of the text
+  --json               the JSON of the HTTP API instead of the text
   --full               whole statements, every repeated span
   --hide-acked         findings only: leave acknowledged findings out
 

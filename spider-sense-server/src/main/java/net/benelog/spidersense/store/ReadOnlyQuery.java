@@ -18,12 +18,12 @@ import java.util.Set;
 import org.jspecify.annotations.Nullable;
 
 /**
- * The escape hatch: one read-only statement over the schema storage.md documents.
+ * The escape hatch: one read-only statement over the schema storage.adoc#schema documents.
  *
  * <p>Findings, compare and check answer the questions Spider Sense anticipated.
  * This answers the one it did not, and it is the only place where an agent's own
  * words reach the database — so it is read-only three times over, and each layer
- * catches what the one before it cannot (agent.md):
+ * catches what the one before it cannot (cli.adoc#read-only):
  *
  * <ol>
  * <li>The statement allowlist below. It reads the first keyword after the
@@ -260,7 +260,7 @@ public final class ReadOnlyQuery {
         return end;
     }
 
-    /** H2 says why on several lines; an error is one line here, as agent.md asks. */
+    /** H2 says why on several lines; an error is one line here, as cli.adoc#sql asks. */
     private static String oneLine(@Nullable String message) {
         return message == null ? "the statement failed" : message.replaceAll("\\s+", " ").trim();
     }

@@ -14,8 +14,8 @@ import org.jspecify.annotations.Nullable;
  * <p>The two halves come from different places and that is the point: the
  * predicates are read from the statement ({@link SqlShape}), the indexes are
  * read from the database by the extension ({@link Catalog}), so the answer is a
- * fact rather than a guess about what a schema probably looks like (agent.md,
- * "The schema block").
+ * fact rather than a guess about what a schema probably looks like
+ * (findings.adoc#schema).
  *
  * <p>Everything about it is all-or-nothing. A statement whose tables the scanner
  * cannot vouch for, or one table of which the catalog has never heard, produces
@@ -100,7 +100,7 @@ public record SchemaBlock(List<Table> tables, List<String> predicates, List<Stri
      * Whether an index can seek on the column: one of them has it first.
      *
      * <p>A column an index carries second is served no better by it than a column
-     * no index carries at all, so only the leading column counts (agent.md).
+     * no index carries at all, so only the leading column counts (findings.adoc#schema).
      */
     private static boolean served(Catalog.@Nullable Table table, String column) {
         if (table == null) {

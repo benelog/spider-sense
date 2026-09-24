@@ -2,6 +2,10 @@
 :navtitle: The Gradle Plugin
 
 The `net.benelog.spidersense` plugin puts `-javaagent:` on the JVM that Gradle forks for `bootRun` or `run`, so an application starts under Spider Sense with no path and no JVM argument in the build file.
+Spider Sense is a `-javaagent`, so it has to be on the command line of the JVM that runs the application.
+Gradle forks that JVM itself for `bootRun` and `run`, and the option has to reach the forked JVM, not Gradle's own.
+This page covers only getting the jar onto that command line.
+The jar's own options are in xref:configuration.adoc[Configuration], and the modes it runs in are in xref:modes.adoc[The Three Modes].
 
 [source,groovy,subs="attributes+"]
 ----
@@ -37,6 +41,7 @@ tasks.named('bootRun') {
 }
 ----
 
+[#applying]
 == What applying it does
 
 . Creates the `spiderSense` extension, which is the `spiderSense { }` block.
@@ -171,6 +176,7 @@ xref:configuration.adoc#properties[Configuration] lists the jar's defaults.
 | the rules of the `spiderSenseCheck` task
 |===
 
+[#jar-resolution]
 The plugin looks for the jar in this order: the project property `spiderSense.jar`, then the block's `jar`, then the single file of the `spiderSense` configuration.
 When a task that needs the jar runs, a configuration with more than one file, or none, is an error that names the configuration.
 
@@ -193,6 +199,7 @@ tasks.named('bootRun') {
 }
 ----
 
+[#switching]
 == Switching it off and on
 
 `./gradlew bootRun -PspiderSense.enabled=false` runs the application bare.
@@ -211,7 +218,7 @@ An `enabled` of `false` is the same as not applying the plugin, except that the 
 ./gradlew -q spiderSense --args="check --max-n-plus-one=0"
 ----
 
-The `spiderSense` task is a `JavaExec` with the jar as its only class path and no dependency on compiling the project.
+The `spiderSense` task is a `JavaExec` with the jar as its only class path, `net.benelog.spidersense.launcher.SpiderSenseMain` as its main class, and no dependency on compiling the project.
 The block's `spidersense.*` properties are passed to it as they are to the application, so a standalone started this way listens where the block says.
 When the block names a `collector`, a `host` or a `port`, it also sets the environment variable `SPIDERSENSE_URL` to the base URL they imply, which is `collector` when set and otherwise `http://<host>:<port>` with the defaults filled in.
 A CLI command therefore asks the Spider Sense the application is sending to rather than the default port.
@@ -345,6 +352,7 @@ spiderSense {
 With `collector` set, `bootRun` forwards too.
 That is what you want when the tests and the running application should land in one Spider Sense.
 
+[#multi-project]
 == Two applications, several modules
 
 Each module that applies the plugin gets its own block, so in a multi-project build the applications are configured where they are:
@@ -364,12 +372,14 @@ When one calls the other and the trace should be one trace, run a standalone and
 spiderSense { collector = 'http://127.0.0.1:4000' }
 ----
 
+[#devtools]
 == Spring Boot devtools
 
 A devtools restart replaces the application's classes inside the same JVM.
 The agent stays attached, the embedded UI keeps running, and the restarted classes are instrumented like the first ones.
 There is nothing to configure.
 
+[#local-jar]
 == A jar that is not on Maven Central
 
 A version that is not published yet, or a jar built from a checkout, is attached in one of three ways:
@@ -397,28 +407,14 @@ dependencies {
 `./gradlew publishToMavenLocal` in this repository publishes both the jar and the plugin to `~/.m2`.
 `mavenLocal()` in `repositories` and in `pluginManagement.repositories` then makes an unreleased version resolvable like a released one.
 
+[#configuration-cache]
 == Configuration cache
 
 The plugin is compatible with Gradle's configuration cache.
 Every value is a provider, the argument provider holds no `Project`, and the jar is a `FileCollection` input.
 
+[#coordinates]
 == Coordinates
 
-[cols="1,2,3",options="header"]
-|===
-| Artifact
-| Coordinates
-| What it is
-
-| The jar
-| `{project-group}:spider-sense:<version>`
-| the single distributable jar; its POM declares no dependencies
-
-| The Gradle plugin
-| `{project-group}:spider-sense-gradle-plugin:<version>`, marker `{project-group}:net.benelog.spidersense.gradle.plugin`
-| the plugin above, id `net.benelog.spidersense`
-|===
-
-Both are published from the Spider Sense repository by `./gradlew publishToMavenLocal` into `~/.m2`, and, signed, by `./gradlew centralBundle` into one bundle for the Central Portal.
-Both take their version from `version` in the root `gradle.properties`.
-The plugin's default `version` for the jar is that same value, so a plugin and the jar it resolves are always the same release.
+The plugin is `{project-group}:spider-sense-gradle-plugin`, with the marker `{project-group}:net.benelog.spidersense.gradle.plugin`, and resolves the jar `{project-group}:spider-sense` at its own version.
+xref:install.adoc#coordinates[Installation] lists both artifacts and how they are published.

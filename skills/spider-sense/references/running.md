@@ -66,7 +66,7 @@ plugins {
 ```
 
 `./gradlew bootRun` (or `run`) then starts the application under Spider Sense with the service named after the project, and the jar comes from Maven Central.
-`-PspiderSense.jar=$SENSE` uses a jar that is not published, `-PspiderSense.enabled=false` runs without it, and `spiderSense { port = 4001 }` is where the `spidersense.*` properties go; the block is specified in `docs/build-tools.md` of the Spider Sense repository.
+`-PspiderSense.jar=$SENSE` uses a jar that is not published, `-PspiderSense.enabled=false` runs without it, and `spiderSense { port = 4001 }` is where the `spidersense.*` properties go; the block is specified in [The Gradle Plugin](https://spider-sense.benelog.net/gradle-plugin.html#block) in the manual.
 The plugin also makes the CLI a task, pointed at the port the block names, so `$SENSE` is not needed at all:
 
 ```bash
@@ -132,7 +132,7 @@ The Spring Boot Maven plugin's `agents` parameter puts a jar on the forked JVM a
 mvn spring-boot:run -Dspring-boot.run.agents="$SENSE" -Dspring-boot.run.jvmArguments="-Dspidersense.service=my-app"
 ```
 
-The same two parameters go into the POM as `<agents><agent>…</agent></agents>` and `<systemPropertyVariables>` under the plugin's `<configuration>`, best inside a profile; `docs/build-tools.md` of the Spider Sense repository has the profile that also fetches the jar from Maven Central.
+The same two parameters go into the POM as `<agents><agent>…</agent></agents>` and `<systemPropertyVariables>` under the plugin's `<configuration>`, best inside a profile; [Maven](https://spider-sense.benelog.net/maven.html#pom) in the manual has the profile that also fetches the jar from Maven Central.
 
 Or against the packaged jar, which needs no plugin configuration at all:
 

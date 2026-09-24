@@ -21,13 +21,13 @@ import java.util.concurrent.Executors;
  * the OpenTelemetry agent to export them, then a plain return from main.
  *
  * <p>It deliberately does not call Spider Sense's own port: the collector drops spans whose
- * {@code server.port} is its own and whose service is the one it is embedded in (design.md, "belt
- * and braces"), so such a call would be invisible and prove nothing.
+ * {@code server.port} is its own and whose service is the one it is embedded in (design.adoc#premain),
+ * so such a call would be invisible and prove nothing.
  *
  * <p>With {@code -Dsample.db.sleep.ms=<n>} it also runs one deliberately slow H2 statement, so the
  * packaged extension has a database span to hang a {@code code.stacktrace} on, over a table with one
  * indexed and one unindexed predicate column, so the same extension has an index catalog to read
- * (design.md, "The extension"). It is off by default because the other cases assert that the sample
+ * (design.adoc#extension). It is off by default because the other cases assert that the sample
  * touches no database at all.
  *
  * <p>It is compiled by the test source set but never run by JUnit: SingleJarIT spawns it in a JVM
@@ -47,7 +47,7 @@ public final class SampleApp {
      *
      * <p>The statement filters {@code items} on {@code supplier_id}, which leads an index, and on
      * {@code name}, which no index leads with, so the finding's schema block has one column in each
-     * list (agent.md, "The schema block").
+     * list (findings.adoc#schema).
      */
     static void slowQuery(long millis) throws Exception {
         String url = "jdbc:h2:mem:sample-" + UUID.randomUUID() + ";DB_CLOSE_DELAY=-1";

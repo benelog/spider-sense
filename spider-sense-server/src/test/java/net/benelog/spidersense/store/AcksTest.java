@@ -14,7 +14,7 @@ import net.benelog.spidersense.TestStore;
 
 /**
  * Findings a reader has accepted: written, replaced, withdrawn, and outliving
- * the data they are about (agent.md, "Acknowledgements").
+ * the data they are about (findings.adoc#acknowledgements).
  */
 class AcksTest {
 
@@ -109,7 +109,7 @@ class AcksTest {
         assertThat(store.acks().all(50)).hasSize(1);
     }
 
-    /** The data reset does take them, because it takes everything (storage.md). */
+    /** The data reset does take them, because it takes everything (storage.adoc). */
     @Test
     void theDataResetEmptiesThem() {
         store.acks().ack(SLOW, null);
@@ -119,7 +119,7 @@ class AcksTest {
         assertThat(store.acks().all(50)).isEmpty();
     }
 
-    /** A resolution is the same row with the flag set, and the newer decision wins (agent.md). */
+    /** A resolution is the same row with the flag set, and the newer decision wins (findings.adoc#resolutions). */
     @Test
     void aResolutionReplacesAnAcknowledgementAndIsNotListedAsOne() {
         Acks acks = store.acks();

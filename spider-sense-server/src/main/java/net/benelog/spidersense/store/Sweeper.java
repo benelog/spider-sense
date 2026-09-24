@@ -9,7 +9,7 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Retention: rows older than {@code spidersense.retention.hours} go, and one row
- * cap guards the clock (storage.md, "Retention").
+ * cap guards the clock (storage.adoc#retention).
  *
  * <p>Time is the retention a person reasons about ("what happened this
  * afternoon"), so it decides first. The span cap only stops a load test from
@@ -32,7 +32,7 @@ public final class Sweeper implements AutoCloseable {
     private static final long INTERVAL_SECONDS = 300;
     private static final long HOUR_MS = 3_600_000L;
 
-    /** storage.md: the cap the server keeps the file under when nobody says otherwise. */
+    /** storage.adoc#retention: the cap the server keeps the file under when nobody says otherwise. */
     public static final long DEFAULT_RETENTION_SPANS = 1_000_000L;
 
     /**
@@ -46,7 +46,7 @@ public final class Sweeper implements AutoCloseable {
      * The time column each table is swept by.
      *
      * <p>{@code db_table} is in it because a catalog older than the retention
-     * describes a run no window can show any more (storage.md): its indexes are
+     * describes a run no window can show any more (storage.adoc#retention): its indexes are
      * those of a schema that may since have changed.
      */
     private static final String[][] TABLE_AND_COLUMN = {

@@ -10,7 +10,7 @@ import net.bytebuddy.matcher.ElementMatcher;
 
 /**
  * The extension's second instrumentation module, {@code spider-sense-spider-silk}: the route of a
- * Spider Silk request ({@code docs/design.md}, "The extension").
+ * Spider Silk request ({@code design.adoc#extension}).
  *
  * <p>A Spider Silk application is one servlet mapped to {@code /*}, so the servlet instrumentation
  * can only report that mapping as the request's {@code http.route}, and every request of the

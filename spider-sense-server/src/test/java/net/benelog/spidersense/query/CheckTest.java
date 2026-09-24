@@ -172,7 +172,7 @@ class CheckTest {
 
     @Test
     void aSlowJobIsNotARequestAndIsInNoVerdict() {
-        // A scheduler tick is a root INTERNAL span: a job (design.md), never a request.
+        // A scheduler tick is a root INTERNAL span: a job (design.adoc#endpoint-identity), never a request.
         int n = ids++;
         Span.Builder tick = Otlp.span("%032x".formatted(n), "%016x".formatted(n), "ReportJob.run",
                 Span.SpanKind.SPAN_KIND_INTERNAL, NOW, 900);

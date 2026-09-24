@@ -19,7 +19,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 
 /**
  * {@code java -jar spider-sense.jar mcp}: the MCP server over stdio, for a host
- * that launches its tools as a process (agent.md, "MCP").
+ * that launches its tools as a process (mcp.adoc).
  *
  * <p>Newline-delimited JSON-RPC on stdin and stdout, nothing else on stdout,
  * diagnostics on stderr, and it ends at end of input.

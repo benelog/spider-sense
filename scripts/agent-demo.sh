@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The agent demo (docs/design.md, "The agent demo"): Claude Code or Codex CLI, run for
+# The agent demo (design.adoc#the-agent-demo): Claude Code or Codex CLI, run for
 # real and headless on the prompt of the README's "Hand it to an agent", in English or
 # Korean, with its event stream kept for a page that replays it.
 #

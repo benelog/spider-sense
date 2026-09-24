@@ -77,7 +77,7 @@ class ReportsTest {
     /**
      * A regression, as the text and the JSON render it: first, severity high, the
      * state column reading regressed, and the resolution's instant as a time
-     * (agent.md, "Resolutions").
+     * (findings.adoc#resolutions).
      */
     @Test
     void aRegressionRendersFirstWithItsResolutionInTheNumbers() {

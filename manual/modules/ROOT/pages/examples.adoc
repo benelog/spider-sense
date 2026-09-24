@@ -12,23 +12,24 @@ spring-orders::
 A Spring Boot 4.1 application with Spring Data JPA and H2 over an orders and customers domain, on port 8082.
 It has a slow report endpoint whose JPQL runs over a large table, a lazy-loading N+1 page, a checkout that fails with a business exception, and a flaky endpoint that fails 20% of the time.
 One endpoint calls `silk-bookstore` over HTTP, so a trace spans two services.
-Spring Boot Actuator is on, and its Micrometer meters, from `http.server.requests` and the HikariCP pool to Spring Data repository invocations, Tomcat sessions and Logback events, reach Spider Sense through the agent's Micrometer bridge.
+Spring Boot Actuator is on, and its Micrometer meters, from `http.server.requests` and the HikariCP pool to Spring Data repository invocations, Tomcat sessions, Logback events and Micrometer's own `jvm.*` meters, reach Spider Sense through the agent's Micrometer bridge.
 The xref:pages.adoc#metrics[metrics explorer] therefore shows about ninety metrics for this one service.
 The OpenTelemetry agent has the bridge off by default.
 `-Dotel.instrumentation.micrometer.enabled=true` turns it on, and `bootRun` and the demo scripts pass it.
 
 servlet-warehouse::
-A Jakarta Servlet application on embedded Tomcat 11, with plain JDBC over Tomcat's own pool and H2, on port 8083.
+A Jakarta Servlet application on embedded Tomcat 11, with plain JDBC over Tomcat's own pool and H2 holding about 400,000 rows, on port 8083.
 There is no framework between the servlets and the agent, so it shows what a classic Servlet stack looks like: endpoints are named after servlet mappings, so every item page is `GET /items/*`, a filter runs inside the server span, and the exception behind a 500 is what Tomcat's error page received.
-It has a full-scan search, an N+1 item page, a slow report, a flaky endpoint, and an async servlet whose span lasts until the request completes on another thread, or times out into a 503.
+It has a full-scan search, an N+1 item page, a slow report, a flaky endpoint, and an async servlet (`AsyncContext`) whose span lasts until `complete()` is called on another thread, or until the timeout turns it into a 503.
 
 batch-worker::
 A plain Java program with HikariCP, Logback and H2 that runs scheduled jobs and serves no HTTP at all.
 It exists for the questions the web applications cannot raise: a service with zero requests that still has a JVM, logs and jobs, and the findings the other three never produce.
-A reconciliation job scans 300,000 unindexed rows, which is a slow query inside a job, and a report job streams every row into memory, which is a slow job.
+A reconciliation job scans 300,000 unindexed rows and then runs one `UPDATE` per account, which is a slow query inside a job, and a report job streams every row into memory, which is a slow job.
 A reminder job catches a gateway failure and logs it at `ERROR`, so the span succeeds and only the log records the failure, which is a `log-error`.
 An archive job holds a connection while it sleeps through a slow upload, eight tasks over a pool of three, so the pool runs dry, the last tasks fail on the connection timeout, and the job is slow as well.
-Every reminder starts a thread that waits for an acknowledgement that never comes, so the thread count climbs until a cap.
+Every reminder starts a thread that waits for an acknowledgement that never comes, so the thread count climbs until a cap that keeps the process alive, which is a `thread-growth`.
+The jobs are `@WithSpan` methods called from a `ScheduledExecutorService`, so each run is a root `INTERNAL` span, which is what a xref:design.adoc#endpoint-identity[job] is.
 
 silk-bookstore::
 A Spider Silk application with jte pages and a JSON API, over spring-jdbc and an H2 file database, on port 8081.
@@ -54,12 +55,13 @@ The recording is a https://www.dolthub.com/repositories/benelog/spider-sense-dem
 The page reads it through DoltHub's SQL API as it is opened, so every trace of the recording opens, and the rows can be queried there as SQL too.
 `scripts/demo-site.sh record` makes one: it runs `scripts/demo-shared.sh` for `MINUTES` (five by default), marks `before` and `after` along the way, exports the rows since the launch out of the H2 file, loads them into a fresh Spider Sense to capture the answers, and pushes both to DoltHub.
 `scripts/demo-site.sh recapture` redoes the answers from the rows already there, after a change to the server's queries.
+xref:design.adoc#the-published-demo[The published demo] describes how the recording is made and read.
 
 == The two scripts
 
 Both scripts build what they need, start everything, print where each thing is, and stop it all on Ctrl-C.
 Pass `--no-build` to skip the Gradle build when nothing has changed.
-Every process writes its log to `build/demo-logs/`.
+Every process writes its log to `build/demo-logs/`, and each script prints the CLI line to run next.
 `RPS` sets the load generator's rate, which defaults to 4 requests per second.
 
 [source,bash]
@@ -157,4 +159,5 @@ Real sessions of it are replayed in a terminal, from the event stream each agent
 
 Each session is two tables in the same DoltHub database as the recorded UI.
 `scripts/agent-demo.sh record claude en` records one, and `scripts/agent-demo.sh push` pushes the sessions there.
+xref:design.adoc#the-agent-demo[The agent demo] describes how a session is recorded and replayed.
 xref:agent-quickstart.adoc[Quick Start for Agents] lists the prompts that work from there.

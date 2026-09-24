@@ -1,11 +1,13 @@
 = Maven
 :navtitle: Maven
 
+Spider Sense is a `-javaagent`, and `spring-boot:run` forks the JVM that runs the application, so the option has to reach that forked JVM, not Maven's own.
 There is no Spider Sense Maven plugin, because the Spring Boot Maven plugin already has the two parameters Spider Sense needs.
 `agents` (user property `spring-boot.run.agents`) takes agent jars and puts each on the forked JVM as `-javaagent:`.
 `jvmArguments` (`spring-boot.run.jvmArguments`) or `systemPropertyVariables` carry the `spidersense.*` properties.
 Both parameters belong to `spring-boot:run` and to `spring-boot:start`, the goal that runs the application around integration tests.
 
+[#command-line]
 == Once, from the command line
 
 [source,bash]
@@ -82,6 +84,7 @@ Put both in a profile, so `mvn spring-boot:run -Psense` is the run under Spider 
 A jar that is not on Maven Central goes in as a path.
 Drop the `maven-dependency-plugin` execution and set `spider-sense.jar` to the file, in the profile or on the command line with `-Dspider-sense.jar=/home/me/tools/spider-sense.jar`.
 
+[#surefire]
 == Tests under Surefire
 
 Surefire forks its own JVM and takes its options from `argLine`.
@@ -101,6 +104,7 @@ A test JVM is short-lived and may be forked more than once, and several embedded
 
 Start the standalone once before the tests run, as xref:modes.adoc#forwarding[forwarding] describes.
 
+[#packaged-jar]
 == The packaged jar
 
 Running the packaged jar under the agent needs nothing in the POM at all:
@@ -111,6 +115,7 @@ mvn -q package -DskipTests
 java -javaagent:/home/me/tools/spider-sense.jar -Dspidersense.service=orders -jar target/orders-0.0.1.jar
 ----
 
+[#cli]
 == The CLI from `target/`
 
 The CLI is the same jar, so once the `sense` profile has copied it into `target/`, you run it from there:
@@ -118,7 +123,7 @@ The CLI is the same jar, so once the `sense` profile has copied it into `target/
 [source,bash]
 ----
 java -jar target/spider-sense.jar findings --since=start
-java -jar target/spider-sense.jar init            # the CLAUDE.md block and the skill
+java -jar target/spider-sense.jar init            # the CLAUDE.md block and the skills
 ----
 
 xref:cli.adoc[The CLI] documents every command, and xref:agent-skill.adoc#init[The Agent Skill] documents what `init` writes.

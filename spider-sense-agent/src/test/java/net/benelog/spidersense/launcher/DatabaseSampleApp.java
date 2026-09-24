@@ -22,7 +22,7 @@ import java.util.concurrent.Executors;
  *
  * <p>The statement runs inside an HTTP request, on a connection opened before it, so the trace it
  * belongs to is the request's: a catalog query the extension let through would show up as a second
- * database span of that trace (design.md, "The extension").
+ * database span of that trace (design.adoc#extension).
  *
  * <p>The table is created as {@code Items}, unquoted, and the statement names it that way too.
  * PostgreSQL stores it as {@code items}, MySQL keeps {@code Items}, and the catalog lookup finds it

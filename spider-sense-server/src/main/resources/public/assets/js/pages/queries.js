@@ -15,7 +15,7 @@ const SORTS = [
 ];
 
 /**
- * The `unindexed` cell (docs/ui.md): the columns the statement filters on that no
+ * The `unindexed` cell (pages.adoc#queries): the columns the statement filters on that no
  * index leads with, as the text rendering's column has them — `none` when every
  * predicate is served, `—` when the query group carries no schema block.
  */

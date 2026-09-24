@@ -67,13 +67,14 @@ Naming a rule replaces that set, and only the rules named are then evaluated.
 `--endpoint=` narrows the scope to one endpoint, by `endpointId` or by name (`GET /api/orders/\{id}`), and the heading names it.
 `--max-n-plus-one` and `--max-regressions` then count only the findings about that endpoint.
 `--service=` narrows the scope to one service.
-`requests` counts the entry spans in scope, so a seeder's or a scheduler's root spans never make a verdict of their own.
+`requests` counts the entry spans in scope, as xref:design.adoc#endpoint-identity[Endpoint identity] defines an entry span, so a seeder's or a scheduler's root spans never make a verdict of their own.
 A job is never a request, so `check` says nothing about one.
 xref:findings.adoc#slow-job[`slow-job`] is the one place a slow scheduler tick or batch step is reported.
 
 `check` does not look at acknowledgements.
 Its rules are explicit thresholds, so an acknowledged `n-plus-one` is still an N+1 to `--max-n-plus-one`.
 
+[#window]
 == The window
 
 `check` takes the same window as every other command: `--since` defaults to `15m` and `--until` to `now`.
@@ -105,6 +106,7 @@ A window that reaches back before the change drags the old numbers into the verd
 | Something named was not found, such as a mark name used as a selector.
 |===
 
+[#text-rendering]
 == The text rendering
 
 The heading carries the verdict, then the window.
@@ -144,6 +146,20 @@ $ echo $?
 
 `--json` prints the JSON instead: `pass` (`true`, `false`, or `null` when there was no request in scope), `requests`, `reason`, and one object per rule under `checks` with its `rule`, `limit`, `actual`, `pass` and `detail`.
 
+[source,json]
+----
+{
+  "pass": false,
+  "requests": 12,
+  "reason": null,
+  "checks": [ { "rule": "maxP95Ms", "limit": 500, "actual": 812.4, "pass": false,
+                "detail": "GET /orders/report p95 812.4 ms over 3 calls" } ]
+}
+----
+
+`reason` is `no requests in the window` when `pass` is `null`, and `null` otherwise.
+
+[#in-a-build]
 == In a build
 
 An exit code is what a build understands, so `check` is the step that fails a build when a change made the application slower.

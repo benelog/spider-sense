@@ -9,7 +9,7 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * {@code spidersense.ingest.max-spans-per-second}: what protects the file from a
- * load test (storage.md, "The ingest cap").
+ * load test (storage.adoc#ingest-cap).
  *
  * <p>It counts the spans accepted in the current wall-clock second. Once that
  * count is over the cap, a span is kept only when its trace is one of the last

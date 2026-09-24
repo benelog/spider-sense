@@ -21,16 +21,43 @@ No rule produces `low` today.
 The `low` severity is reserved for gentler kinds.
 The kind order is `regression`, `error`, `n-plus-one`, `n-plus-one-http`, `slow-query`, `slow-endpoint`, `slow-job`, `slow-external`, `log-error`, `pool-exhausted`, `gc-pause`, `heap-pressure`, `thread-growth`.
 Each kind below names the impact number it is ranked by.
-A `regression` is always `high`, so regressions come first, ranked among themselves by the order of their original kinds.
+A `regression` is always `high`, so regressions come first, ranked among themselves by the order of their original kinds before their impact.
 
 The list is bounded.
 `limit` defaults to 20 and is at most 100.
 
 Two thresholds decide the slow kinds: `slow.request.ms` is 500 milliseconds by default and `slow.query.ms` is 100.
 `status` prints the thresholds in force, and xref:configuration.adoc#properties[Configuration] says how to change them.
-An endpoint that `spidersense.ignore.endpoints` excludes is not an entry span and produces no finding of any kind.
+An endpoint that `spidersense.ignore.endpoints` excludes (xref:configuration.adoc#ignored-endpoints[Ignored endpoints]) is not an entry span and produces no finding of any kind.
+An entry span is what xref:design.adoc#endpoint-identity[Endpoint identity] defines, and it is what every count of requests below counts.
 
+The three JVM kinds, `gc-pause`, `heap-pressure` and `thread-growth`, read the same `metric_point` series the xref:pages.adoc#jvm[JVM page] draws.
+A run that is slow because it is collecting or swapping is therefore named for what it is, instead of producing `slow-endpoint` findings that point at the wrong thing.
+
+[#fields]
 == What every finding carries
+
+[source,json]
+----
+{
+  "id": "n-plus-one:1a2b3c4d5e6f",
+  "kind": "n-plus-one",
+  "severity": "high",
+  "state": "new",
+  "service": "spring-orders",
+  "title": "GET /orders/{id} runs SELECT order_line 42 times per request",
+  "why": "3 of 3 requests repeated it; 42, 42 and 41 times; 38.2 ms per request in that statement",
+  "subject": { "endpointId": "…", "queryId": "…", "errorId": null, "pool": null, "job": null,
+               "target": null, "logger": null, "jvm": null },
+  "numbers": { … },
+  "statement": "SELECT … FROM order_line WHERE order_id = ?",
+  "code": [ "orders.OrderService.load(OrderService.java:41)" ],
+  "traces": [ "4bf92f3577b34da6a3ce929d0e0e4736", … ],
+  "schema": { "tables": [ … ], "predicates": [ … ], "unindexed": [ … ] },
+  "ack": null,
+  "resolution": null
+}
+----
 
 [cols="1,3",options="header"]
 |===
@@ -38,7 +65,7 @@ An endpoint that `spidersense.ignore.endpoints` excludes is not an entry span an
 | How to read it
 
 | `id`
-| The kind plus 12 hex characters over the kind, the service and the subject. It is stable across windows, so the same problem keeps its id between runs, and it is what `ack` and `resolve` take. A `regression` keeps the id of the finding it is.
+| The kind, a colon, and 12 hex characters of a SHA-256 over the kind, the service and the subject. It is stable across windows, so the same problem keeps its id between runs, and it is what `ack` and `resolve` take. A `regression` keeps the id of the finding it is.
 
 | `kind`
 | One of the thirteen kinds below.
@@ -49,14 +76,17 @@ An endpoint that `spidersense.ignore.endpoints` excludes is not an entry span an
 | `state`
 | `new`, `ongoing` or `regressed`: what the last restart of the service changed (<<state,State>>).
 
+| `service`
+| The service the finding is about.
+
 | `title`
-| One line, the claim.
+| One line, the claim, with no number a person would not say aloud.
 
 | `why`
 | The numbers that justify the claim, in a sentence. Quote this rather than restating it.
 
 | `subject`
-| The `endpointId`, `queryId`, `errorId`, `pool`, `job`, `target`, `logger` or `jvm` to pass to `endpoints`, `queries`, `errors`, `logs` or the API.
+| The `endpointId`, `queryId`, `errorId`, `pool`, `job`, `target`, `logger` or `jvm` to pass to `endpoints`, `queries`, `errors`, `logs` or the API. Every key is present and the ones that do not apply are `null`. `jvm` is `gc:<collector name>`, `heap` or `threads`.
 
 | `numbers`
 | Kind-specific, listed with each kind below.
@@ -80,12 +110,22 @@ An endpoint that `spidersense.ignore.endpoints` excludes is not an entry span an
 | The resolution, `{ "at": …, "note": … }`, or `null` when the finding is not resolved.
 |===
 
-`traces` are the three slowest traces for the `slow-*` kinds, the three newest for `error` and `log-error`, the three most recent affected for `n-plus-one`, and none for `pool-exhausted` and the three JVM kinds.
+`traces` are the three slowest traces for the `slow-*` kinds, the three newest for `error` and `log-error` (of the records that have a trace id), the three most recent affected for `n-plus-one` and `n-plus-one-http`, and none for `pool-exhausted` and the three JVM kinds.
 A `regression` carries the traces of its original kind, taken after the resolution.
 
-`slow-endpoint` and `slow-job` findings carry `hotSpan`, which names where the time went in the finding's first evidence trace.
-`hotSpan` holds the span with the largest self time, that self time, and its share of the trace's duration.
-It reads as one line: `hot span: SELECT order_line · 312.4 ms self · 62.0%`.
+[#hot-span]
+`slow-endpoint` and `slow-job` findings carry `hotSpan` among their `numbers`, which names where the time went in the finding's first evidence trace:
+
+[source,json]
+----
+"hotSpan": { "name": "SELECT order_line", "category": "db", "selfMs": 312.4, "share": 0.62 }
+----
+
+`hotSpan` is the span with the largest self time, that is its duration minus the durations of its direct children, never below zero, as the xref:pages.adoc#traces[Profile view] computes it.
+`share` is that self time over the trace's duration.
+`category` is `db`, `http`, `internal` or another span category.
+It is the first clue when `dbShare` is low.
+In the text rendering it is one line, `hot span: <name> · <selfMs> self · <share>`, such as `hot span: SELECT order_line · 312.4 ms self · 62.0%`.
 It is `null` only when the finding has no trace.
 
 [#code]
@@ -94,22 +134,53 @@ It is `null` only when the finding has no trace.
 The OpenTelemetry Java agent does not record where a span was started from, so `code` comes from three sources.
 The first is the `exception.stacktrace` of an error.
 The second is the `code.function` and `code.namespace` attributes that a few instrumentations set, which is where a `slow-job` finding's frames come from.
-The third is the `code.stacktrace` that Spider Sense's own agent extension captures, on every database span slower than `slow.query.ms`, on the fifth repeat of a statement within one trace, on every non-database `CLIENT` span slower than `slow.request.ms`, and on the fifth repeat of an HTTP call within one trace.
+The third is the `code.stacktrace` that Spider Sense's own agent extension captures (xref:design.adoc#extension[The extension]), on every database span that ran at least `slow.query.ms`, on the fifth repeat of a statement within one trace, on every non-database `CLIENT` span that ran at least `slow.request.ms`, and on the fifth repeat of an HTTP call within one trace.
+That stack is the one thing Spider Sense collects itself.
 
 Those extension frames are the most accurate of the three, because they are the span's own thread at the moment the span finished rather than a guess from an attribute.
+They are reduced to application frames by the same rules as `exception.stacktrace`, below.
 `code` is therefore reliable for `error`, `slow-query`, `n-plus-one`, `n-plus-one-http` and `slow-external` findings, often present for `log-error`, and often empty for the others.
 When it is empty, open a trace from `traces` and read the tree, which names the endpoint and the statement even when it cannot name the line.
 
+Each kind takes its `code` from one place.
+
+* `error` takes it from the `exception.stacktrace` the error recorded.
+* `log-error` takes it from the `exception.stacktrace` attribute of the group's newest record, when the logging bridge exported one.
+* `slow-query` and `slow-external` take it from the `code.stacktrace` of their slow spans.
+* `n-plus-one` and `n-plus-one-http` take it from the span of the repeated group that carries `code.stacktrace`, which is the fifth repeat, and fall back to the group's newest span when none does, as in an application run without the extension.
+* `slow-job` takes it from the `code.function` and `code.namespace` attributes the scheduling instrumentations set on the job's span.
+
 A stack trace is reduced to its application frames by dropping known framework prefixes: `java.`, `javax.`, `jdk.`, `sun.`, `com.sun.`, `jakarta.`, `org.springframework.`, `org.hibernate.`, `org.eclipse.jetty.`, `org.apache.`, `io.opentelemetry.`, `com.zaxxer.`, `org.h2.`, `net.benelog.spidersilk.`, `kotlin.`, `scala.`, `reactor.`, `io.netty.`, `ch.qos.logback.`, `org.slf4j.`, `org.junit.` and `gg.jte.`.
-When that heuristic guesses wrong, `spidersense.app.packages=com.acme,org.acme` replaces it with an allowlist.
-At most five frames are kept, the root cause's first.
-The frames of the last `Caused by:` section come before those of the exception that wraps it, and so on out to the outer exception, because the line that went wrong is usually under `Caused by:`.
+When that heuristic guesses wrong, `spidersense.app.packages=com.acme,org.acme`, a comma-separated list, replaces it with an allowlist.
+At most five frames are kept, innermost first, which means the root cause's first.
+The frames of the last `Caused by:` section come before those of the exception that wraps it, and so on out to the outer exception, each section read top down.
 A `Suppressed:` block is left out, and a frame that repeats is counted once.
+The line that went wrong is usually under `Caused by:`, and reading the trace top to bottom would put the wrapper's frames first and cut the root cause's at the fifth.
 The same order holds for `error`, for `log-error` and for the *Code* list of the xref:pages.adoc#errors[error page].
+When no `spidersense.app.packages` narrows it, the first frame of that order is the one an error group is keyed on (xref:design.adoc#errors[Errors]).
 
 A frame whose file is under the xref:configuration.adoc#source-dirs[source roots] is worth more than its name.
-The UI shows its five source lines and links it into your editor (xref:pages.adoc#code-frames[Code frames]), and the CLI's `findings` names the change that last touched its line (xref:cli.adoc#suspect-change[Suspect change]).
+The UI shows its five source lines and links it into your editor, and the CLI's `findings` names the change that last touched its line (<<source-lines>>).
 The text rendering itself carries neither: an agent opens the file on its own.
+
+[#source-lines]
+=== Source lines and the suspect change
+
+Spider Sense runs on the machine the source is on, so a frame is one file read away from the line it names, and two `git` commands away from the change that last touched it.
+
+A frame `orders.OrderService.load(OrderService.java:41)` resolves to the first `<root>/orders/OrderService.java` that exists under the roots of `spidersense.source.dirs` (xref:configuration.adoc#source-dirs[Source roots]).
+By default the roots are `src/main/java` and `src/main/kotlin` of the working directory and of each of its immediate subdirectories, which covers a single-module build and a multi-module one.
+A frame without a file and a line (`Unknown Source`, `Native Method`, a `code.function` frame) does not resolve.
+Neither does a frame whose path would leave its root.
+The path is built only from dotted Java identifiers and a plain file name with a source extension, and the file, with symbolic links followed, must lie under its root.
+
+In the UI, the findings page and the error page show the five lines around the frame's line under each frame that resolves, and make the frame a link that opens the file at that line in IntelliJ IDEA or VS Code (xref:pages.adoc#code-frames[Code frames]).
+The lines are read on request by `GET /api/source?frame=…` (xref:api.adoc#source[Source]) and never stored.
+A frame that does not resolve shows nothing more than itself.
+
+The text rendering does not carry the lines, because an agent opens the file itself.
+What it gains instead, in the CLI's `findings`, is the suspect change: one line under each frame that resolves to a file of the repository the CLI runs in, saying whether that line is in the change just made.
+xref:cli.adoc#suspect-change[The suspect change] specifies that line.
 
 [#schema]
 === The schema block
@@ -127,6 +198,8 @@ That is a fact read from the database rather than a guess from the statement.
   "unindexed":  [ "items.name", "items.category" ]
 }
 ----
+
+The block needs the index catalog, so it appears only for a service that ran under the agent with the extension.
 
 `tables` are the tables the statement names, each with its indexes as the extension read them through `DatabaseMetaData.getIndexInfo` on the application's own connection (xref:design.adoc#extension[The extension]).
 The store keeps them per service and table (xref:storage.adoc#schema[the `db_table` table]).
@@ -157,7 +230,9 @@ In the text rendering the block sits between the statement and the code frames, 
 ----
 
 `predicates: none` stands alone when the statement has no predicate, `unindexed: none` when every predicate is served, and a finding without the block prints nothing for it.
-xref:api.adoc[`GET /api/queries`] carries the same block on every query group, and the xref:cli.adoc[CLI]'s `queries` table has an `unindexed` column for it.
+xref:api.adoc#queries[`GET /api/queries`] carries the same block on every query group.
+Its text rendering, and so the xref:cli.adoc[CLI]'s `queries` table, has an `unindexed` column between `callers` and `statement`: the unindexed columns joined by `, `, `none` when every predicate is served, and `—` when there is no block.
+The catalog is also open to xref:cli.adoc#sql[SQL] as the `db_table` table, and it travels with an xref:cli.adoc#export-import[export].
 The xref:pages.adoc#findings[Findings page] shows the block under the statement, and the xref:pages.adoc#queries[Queries page] has the same `unindexed` column.
 
 [#time]
@@ -174,24 +249,27 @@ One trace is an anecdote, so a `slow-endpoint` and a `slow-job` also answer "whe
 ----
 
 Both are computed over the finding's sample: the 20 slowest traces of the endpoint or the job in the window, of which the first three are the `traces` the finding carries.
+The sample is twenty traces rather than every trace because the answer is read out of the spans themselves rather than out of an aggregate, and the slowest twenty are where a slow endpoint's time is.
 A share is therefore a share of those traces' summed duration, while the finding's own `totalMs` stays the window's.
 Only the spans of the finding's own service count, which is the rule `dbShare` already uses.
+The database work of a downstream service belongs to that service's own endpoint.
 Leaving the downstream server span out makes the wait on an outbound call land in `http`, where the caller can see it.
 
 Self time is a span's duration less the durations of its direct children within that set, never below zero, as the xref:pages.adoc#traces[Profile view] computes it.
 A span whose parent is not in the set is a top span: the entry span of a request, or the root span of a job.
 The shares are taken over the top spans.
 
-`hotSpans` groups every span except the top spans by category and name, sums each group, and lists the largest `selfMs` first.
-The name is the span's summary with every run of digits replaced by `?`, and an outbound call is named as <<n-plus-one-http,`n-plus-one-http`>> names it, so one call to 40 items is one row.
-`count` is how many spans went into the row.
+`hotSpans` groups every span except the top spans by category and name, sums each group's self time, and lists the three largest by `selfMs`, largest first.
+The name is the span's summary with every run of digits replaced by `?`, and an outbound call is named as <<repeated-call,the repeated call>> names it (`GET localhost:8081/api/books/?`), so one call to 40 items is one row and reads the same here as it does in an `n-plus-one-http`.
+`count` is how many spans went into the row, and `share` is the row's `selfMs` over the sample's total.
 
 `breakdown` is `db`, `http`, `internal` and `self`, which sum to 1.
-`self` is the top spans' own self time: the request's own code and the framework.
+`self` is the top spans' own self time: the request's own code, the framework, everything not in a child span.
 `internal` absorbs the `messaging` and `rpc` categories.
 The four shares answer whether the time was spent waiting on the database, waiting on the network, or working.
-`breakdown` is the number to read first when `dbShare` is low.
-The xref:pages.adoc#endpoints[endpoint page] draws the same four shares as one bar.
+`breakdown` is the number to read first when `dbShare` is low, because it says whether to look at the queries, at the calls or at the code without opening a trace.
+xref:api.adoc#endpoints[`GET /api/endpoints/\{endpointId}`] carries the same `breakdown` over the same sample, and the xref:pages.adoc#endpoints[endpoint page] draws those four shares as one bar.
+Both are absent, `hotSpans` empty and `breakdown` empty, when the finding has no trace or when the sample's spans add up to nothing.
 
 In the text rendering, `hotSpans` and `breakdown` come after the numbers and before the statement:
 
@@ -275,12 +353,14 @@ The same query group runs 5 or more times under the same entry span in one trace
 It is `high` when the repeats reach 20 or their summed time exceeds `slow.request.ms`, and `medium` otherwise.
 The impact it is ranked by is affected requests multiplied by median repeats.
 
+The title is `<endpoint> runs <statement summary> <medianRepeats> times per request`.
+
 `numbers`: `requests` (entry spans of the endpoint in the window), `affected` (of them, how many repeated), `medianRepeats`, `maxRepeats`, `msPerRequest` (the summed time of the repeated statement, per affected request).
 
 Read it as: this endpoint ran that statement `medianRepeats` times in one request, and that cost `msPerRequest`.
 `affected` well below `requests` means only some inputs trigger it, which usually points at a branch or a lazily loaded collection that is only touched sometimes.
 `code` is the call site of the fifth repeat, so it names the line that issues the repeated statement.
-`code` is empty only when the application ran without the extension.
+When no span of the group carries a stack, as in an application run without the extension, `code` comes from the group's newest span and is usually empty.
 The trace tree then names the loop.
 The <<schema,schema block>> names the tables the repeated statement touches, the indexes they carry, and the columns it filters on that no index serves.
 
@@ -299,19 +379,34 @@ After the fix, `compare` should show the query's `calls/req` down to 1 and the e
 
 The same outbound HTTP call runs 5 or more times under the same entry span in one trace, aggregated per endpoint and call over the window.
 It is the N+1 an ORM cannot cause: a loop that fetches one remote resource per item.
-The severity, the impact and the `numbers` are the same as for `n-plus-one`, measured over the repeated call rather than the repeated statement.
-`statement` is `null`, and `subject.target` names the host that was called.
-
-Two calls are the same call when they agree on their name, their target and their path once every run of digits is replaced by `?`, so the finding names one call:
+The trace shows it as a run of `CLIENT` spans of category `http` under one entry span.
+The severity, the impact, the evidence traces, the text rendering and the five `numbers` are the same as for `n-plus-one`, measured over the repeated call rather than the repeated statement.
+`statement` is `null`, `subject.endpointId` is the endpoint, and `subject.target` names the host that was called, so the callee's own findings are one filter away.
+The title is `<endpoint> calls <call> <medianRepeats> times per request`:
 
 ----
 GET /orders/{id} calls GET localhost:8081/api/books/? 6 times per request
 ----
 
-A loop varies the digits, so replacing them turns three calls into one call.
-The status is not part of the call, because the same call can answer `200` for one item and `404` for the next.
-The host keeps its port, because the digit rule applies to the path alone.
 `code` is the call site of the fifth repeat, so it names the line that issues the call.
+
+[#repeated-call]
+==== The repeated call
+
+Two `CLIENT` spans are the same call when they agree on their name, their target and their path once every run of digits is replaced by `?`.
+The call is written the way it is grouped:
+
+----
+GET localhost:8081/api/books/?
+----
+
+That is the span's name, the dependency target (`localhost:8081`, the host and port the call went to, as the xref:api.adoc#map[service map] names it), and the path and query of `url.full` with the digits replaced.
+A loop varies the digits, so replacing them turns three calls into one call; it is the same key the xref:cli.adoc#trace-diff[trace diff] aligns on.
+The status is not part of the call, because the same call can answer `200` for one item and `404` for the next.
+The host is kept out of the digit rule, so the port stays readable.
+A span with no `url.full` is named `<span name> <target>` and grouped by that.
+
+The rule is then `n-plus-one`'s with the call in place of the statement: five or more of the same call under one entry span make that request affected, and the affected requests of one endpoint and call over the window make the finding.
 
 What to do:
 
@@ -330,7 +425,9 @@ A query group whose p95 exceeds `slow.query.ms`.
 It is `high` when the p95 exceeds ten times the threshold, and `medium` otherwise.
 The impact it is ranked by is total time.
 
-`numbers`: `calls`, `slowCalls`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `callers` (the endpoint, service and call count of the nearest entry span up the parent chain).
+The title is `<statement summary> is slow`.
+
+`numbers`: `calls`, `slowCalls`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `callers` (the endpoint, service and call count of the nearest entry span up the parent chain, as xref:api.adoc#query-stats[`QueryStats.callers`] has them).
 
 A p95 far above p50 is a query that is fast for most inputs and slow for some, which usually means a plan that degrades with the data rather than a statement that is always wrong.
 `callers` says which endpoints pay for it, and the trace ids give the individual calls.
@@ -354,7 +451,9 @@ An endpoint whose p95 exceeds `slow.request.ms`.
 It is `high` when the p95 exceeds four times the threshold, which is the "frustrated" bound of the Apdex, and `medium` otherwise.
 The impact it is ranked by is total time.
 
-`numbers`: `calls`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `apdex`, `dbCallsPerRequest`, `dbMsPerRequest`, `dbShare` (the part of the endpoint's total time spent in database spans of the same trace and service, printed as a percentage), `hotSpan`, `hotSpans`, `breakdown`.
+The title is `<endpoint> is slow`.
+
+`numbers`: `calls`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `apdex`, `dbCallsPerRequest`, `dbMsPerRequest`, `dbShare` (from 0 to 1, the part of the endpoint's total time spent in database spans of the same trace and service, printed as a percentage), <<hot-span,`hotSpan`>>, and <<time,`hotSpans` and `breakdown`>>.
 
 `dbShare` decides where to look next.
 
@@ -380,10 +479,11 @@ What to do:
 === slow-job
 
 A job whose p95 exceeds `slow.request.ms`, grouped by service and span name.
-A job is a root `INTERNAL` span: a scheduled method, an `@Async` call, a batch step.
+A job is a root `INTERNAL` span: a scheduled method, an `@Async` call, a batch step (xref:design.adoc#endpoint-identity[Endpoint identity]).
 Severity and impact are the same as `slow-endpoint`.
+`subject.job` is the span name, and the title is `<job> is slow`.
 
-`numbers`: `runs`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `dbCallsPerRun`, `dbMsPerRun`, `dbShare`, `hotSpan`, `hotSpans`, `breakdown`.
+`numbers`: `runs`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `dbCallsPerRun`, `dbMsPerRun`, `dbShare`, which are the measures of `slow-endpoint` over the job's runs, then `hotSpan`, `hotSpans` and `breakdown`.
 
 A job is work the application did to itself, so it is never an entry span.
 It is in no request count, in no Apdex and in no `check` verdict, and this finding is the one place a slow scheduler tick or batch step is reported.
@@ -406,8 +506,9 @@ What to do:
 An outbound HTTP call whose p95 exceeds `slow.request.ms`: `CLIENT` spans of category `http`, grouped by service, target and span name.
 The target is what the service map calls the dependency, such as `localhost:8081`, so one row is one dependency of this service rather than every outbound call it makes.
 Severity and impact are the same as `slow-endpoint`.
+`subject.target` is the target, and the title is the span name, then the target: `GET localhost:8081 is slow`.
 
-`numbers`: `calls`, `errors`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `callers`.
+`numbers`: `calls`, `errors`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `callers` (as `slow-query` has them: the entry spans up the chain).
 
 Open the slowest trace from `traces` first, to decide whose problem it is.
 When the callee is traced too, its `SERVER` span is in the same tree.
@@ -431,7 +532,7 @@ What to do:
 An error group with at least one occurrence in the window.
 It is always `high`, and the impact it is ranked by is the occurrence count.
 
-`numbers`: `count`, `firstSeen`, `lastSeen`, `type`, `message` (normalised, digits replaced by `?`), `endpoints` (name and count).
+`numbers`: `count`, `firstSeen`, `lastSeen`, `type`, `message` (normalised, digits replaced by `?`), `endpoints` (name and count, as xref:api.adoc#error-group[`ErrorGroup.endpoints`] has them).
 
 The group is the service, the root cause's type and the innermost application frame, so one row is one line throwing one exception rather than one occurrence.
 A wrapper such as Spring's `DataAccessException` or `ServletException` does not split a bug by the SQL or request its message embeds, and does not merge unrelated causes under its one type.
@@ -460,7 +561,10 @@ Log records of severity `ERROR` or above, grouped by service, logger and normali
 A group with at least one uncovered record in the window is a finding.
 It is always `high`, and the impact it is ranked by is the uncovered count.
 
-`numbers`: `count` (the uncovered records), `firstSeen`, `lastSeen`, `logger`, `message` (normalised), `endpoints` (the entry span of each record's trace, and `(no endpoint)` for a record without one).
+The message is normalised as an error message is.
+`subject.logger` is the logger, and the title is `ERROR in <logger short name>: <message cut at 80 characters>`.
+
+`numbers`: `count` (the uncovered records), `firstSeen`, `lastSeen`, `logger`, `message` (normalised), `endpoints` (the entry span of each record's trace, as `error` counts them, and `(no endpoint)` for a record without one).
 
 This is what `catch (Exception e) { log.error(…, e); return fallback; }` leaves behind: no span error, no exception event, one line in the log, and a request that answered 200 with the wrong answer.
 A record whose trace has an error span is already reported by an `error` finding and is not counted twice, so a `log-error` is by construction the failure nothing else tells you about.
@@ -484,6 +588,8 @@ What to do, after reading the top frame:
 A JDBC pool with a point in the window where pending requests are above zero, or used equals max.
 It is always `high`, and it is ranked by pending first and used second.
 
+`subject.pool` is the pool.
+
 `numbers`: `pool`, `max`, `usedMax`, `pendingMax`, `at` (the worst point).
 There are no `traces`, because the finding comes from the pool's metrics rather than from a span.
 
@@ -504,11 +610,13 @@ A pool at its limit also shows as endpoints whose p95 rises while their `dbMsPer
 [#gc-pause]
 === gc-pause
 
-One collector, `jvm.gc.duration` per collector name and action, with a point in the window whose longest single collection is at least `slow.request.ms`, or whose collections summed over the export interval take at least 10% of that interval.
+One collector, `jvm.gc.duration` per `jvm.gc.name` and `jvm.gc.action`, with a point in the window whose longest single collection is at least `slow.request.ms`, or whose collections summed over the export interval take at least 10% of that interval.
 It is `high` for a single collection over the threshold, and `medium` otherwise.
 The impact it is ranked by is the longest collection.
 
-`numbers`: `gc`, `action`, `worstMs` (the longest single collection), `shareMax` (the worst export interval's collection time over its length), `collections` (over the window), `at`.
+`subject.jvm` is `gc:<name>`, and the title is `<gc> paused for <worstMs>`.
+
+`numbers`: `gc`, `action`, `worstMs` (the longest single collection), `shareMax` (from 0 to 1, the worst export interval's collection time over its length), `collections` (over the window), `at`.
 There are no `traces` and no `code`.
 
 A collection over `slow.request.ms` stops every application thread for that long, so a request unlucky enough to be running looks slow for no reason of its own.
@@ -532,7 +640,9 @@ A `heap-pressure` finding beside this one says the heap is the cause rather than
 Heap `jvm.memory.used`, summed over the heap pools, at 90% or more of the heap `jvm.memory.limit` at any point in the window.
 It is always `high`, and the impact it is ranked by is the highest ratio.
 
-`numbers`: `usedMax`, `limit` (both in bytes), `ratioMax`, `at` (the worst point).
+`subject.jvm` is `heap`, and the title is `heap at <ratio>% of its limit`.
+
+`numbers`: `usedMax`, `limit` (both in bytes), `ratioMax` (from 0 to 1), `at` (the worst point).
 There are no `traces`.
 
 A heap at 90% of its limit is a run that is about to spend its time collecting, and it usually arrives with a `gc-pause` finding.
@@ -553,6 +663,8 @@ A sawtooth that returns to the same floor is allocation, and a floor that climbs
 
 `jvm.thread.count` at the last point of the window at least 50 above the first point, or at least twice it when the first point is 20 or more.
 It is always `medium`, and the impact it is ranked by is last minus first.
+
+`subject.jvm` is `threads`, and the title is `threads grew from <first> to <last>`.
 
 `numbers`: `first`, `last`, `max`, `at` (the last point).
 There are no `traces`.
@@ -589,12 +701,20 @@ Finding ids are stable across windows, so one acknowledgement keeps holding as t
 
 An acknowledged finding is ranked after every other finding, in the same order among themselves.
 In the text rendering its severity column reads `acked`, and the heading counts them, as in `(… 12 requests, 2 acked)`.
-`hideAcked=true` on `/api/findings`, and `--hide-acked` on the command, leave them out altogether.
+`hideAcked=true` on `/api/findings` and on the MCP `findings` tool, and `--hide-acked` on the command, leave them out altogether.
 
-An acknowledgement is one row, the finding id with an instant and a note, kept until it is withdrawn or the data is cleared.
-Acknowledging again replaces the row.
-Over HTTP it is `POST /api/findings/\{id}/ack` with `{ "note": "…" }`, `DELETE /api/findings/\{id}/ack`, and `GET /api/acks` for the list, newest first.
+An acknowledgement is one row, `(finding_id, at, note)` in the `ack` table (xref:storage.adoc#schema[Storage]), kept until it is withdrawn or the data is cleared.
+Acknowledging again replaces the row, and so does acknowledging a resolved finding.
+`ack` and `unack` write in the xref:cli.adoc#fallback[direct-file path] as `mark` does.
 Acknowledgements are the reader's rather than the session's, so they are not exported.
+
+Over HTTP:
+
+* `POST /api/findings/\{id}/ack` with `{ "note": "…" | null }` answers `201` with `{ "findingId": "…", "at": …, "note": … }`.
+* `DELETE /api/findings/\{id}/ack` answers `204`, or `404` when there is no such acknowledgement; a resolution is not one.
+* `GET /api/acks` answers `{ "acks": [ … ] }`, newest first; resolutions are not listed.
+
+Every finding carries `"ack": { "at": …, "note": "…" | null } | null`.
 
 An acknowledged finding that recurs stays acknowledged, because a recurrence is exactly what was accepted.
 To be told when a finding comes back, resolve it instead.
@@ -621,22 +741,30 @@ Resolve a finding once `check` over the run after the fix passes, with what the 
 A resolved finding in a later window is one of two things:
 
 * *Back*, when the resolution is older than the window's first occurrence of the finding.
-It is reported as a `regression` (<<regression,regression>>).
+It is reported as a `regression` (<<regression,regression>>) instead of its own kind: severity `high`, first in the ranking, with the same id.
 A resolution older than the window makes every occurrence in the window a recurrence.
 A resolution inside the window runs the rules again over the part of the window after it, for the finding's service, and the finding is back when they find it there.
 The numbers and traces the regression carries are those of that part, so the traffic from before the fix does not count.
 * *Not back*, when every occurrence in the window precedes the resolution.
 The finding keeps its kind and carries its `resolution`, and it is ranked after every other finding, with the acknowledged ones.
 In the text rendering its severity column reads `resolved`, and the heading counts it, as in `(… 12 requests, 2 acked, 1 resolved)`.
-`--hide-acked` leaves it out as well.
+`--hide-acked`, and `hideAcked=true`, leave it out as well.
 
-A resolution is the same row as an acknowledgement, with its `resolved` flag set, so a finding has one decision recorded at a time.
-Resolving an acknowledged finding, or acknowledging a resolved one, replaces the row.
-Over HTTP it is `POST /api/findings/\{id}/resolve` with `{ "note": "…" }` and `DELETE /api/findings/\{id}/resolve`, and MCP has the `resolve` tool.
+A resolution is the same row in the `ack` table as an acknowledgement, with its `resolved` flag set, so a finding has one decision recorded at a time.
+Resolving an acknowledged finding, resolving again, or acknowledging a resolved one, replaces the row.
+`resolve` and `unresolve` write in the xref:cli.adoc#fallback[direct-file path] as `mark` does, and MCP has the `resolve` tool (xref:mcp.adoc#tools[The tools]).
 Resolutions are not exported, as acknowledgements are not.
 
+Over HTTP:
+
+* `POST /api/findings/\{id}/resolve` with `{ "note": "…" | null }` answers `201` with `{ "findingId": "…", "at": …, "note": … }`.
+* `DELETE /api/findings/\{id}/resolve` answers `204`, or `404` when there is no such resolution; an acknowledgement is not one.
+
+Every finding carries `"resolution": { "at": …, "note": "…" | null } | null`.
+The JSON of the list counts the resolved findings that have not come back as `resolved`, beside `acked`.
+
 `check` counts regressions with `--max-regressions`, which is `0` in the default rule set (xref:check.adoc#rules[Check]).
-A regressed `n-plus-one` still counts to `--max-n-plus-one` as well.
+A regressed `n-plus-one` still counts to `--max-n-plus-one` as well, and a regressed `log-error` to `--max-log-errors`.
 
 [#state]
 == State
@@ -659,9 +787,15 @@ It is the automatic counterpart of xref:marks-and-compare.adoc[compare], which n
 | The rules find it in the previous run of its service too.
 |===
 
-The previous run of a service is the time between its two newest `start` marks at or before the end of the window, which Spider Sense writes each time the service starts with a new process id (xref:marks-and-compare.adoc[Marks]).
+The previous run of a service is the time between its two newest `start` marks at or before the end of the window, from the older of the two up to the newest one.
+Spider Sense writes a `start` mark each time the service starts with a new process id (xref:marks-and-compare.adoc#start-marks[Automatic start marks]).
 With one `start` mark the previous run reaches back to the oldest data.
-With none, such as an imported session without marks, every finding of the service is `new`.
-The rules run over the previous run with the same thresholds as over the window.
-Only the rules of the kinds the service has on the page run there, and they look for ids alone, without evidence traces or code frames.
-A running Spider Sense remembers what it found in a previous run, so only the first answer after a restart pays for reading that run.
+With none, as for an imported session without marks or a sender that reports no `process.pid`, there is no previous run, and every finding of the service is `new`.
+
+The rules run over the previous run once per service of the answered page, with the same thresholds as over the window.
+Only the rules of the kinds the service has on the page run there, and they produce ids alone: no evidence traces, no code frames, no `hotSpans` and no schema block, since the state asks only whether an id is there.
+A previous run no longer changes once a newer `start` mark closes it, so a running Spider Sense keeps the ids it found for each service, previous run and kind in memory, and every later answer over the same run reads them from there instead of running the rules again.
+The first answer after a restart pays for the previous run, and the answers after it cost what the window costs.
+
+In the text rendering, `state` is a column between `severity` and `kind`.
+`check` does not read the state.

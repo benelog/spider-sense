@@ -1,13 +1,13 @@
 # Releasing
 
-A release is one version in `gradle.properties`, and it reaches Maven Central as one bundle: the jar (`net.benelog.spidersense:spider-sense`) and the Gradle plugin with its marker, all signed, all at that version ([docs/build-tools.md](docs/build-tools.md#coordinates)).
+A release is one version in `gradle.properties`, and it reaches Maven Central as one bundle: the jar (`net.benelog.spidersense:spider-sense`) and the Gradle plugin with its marker, all signed, all at that version ([Coordinates](manual/modules/ROOT/pages/install.adoc#coordinates) in the manual).
 A version on Central is permanent, so every step before the upload is a check that nothing is left behind.
 
 ## Every release
 
 1. Set `version` in `gradle.properties`.
    It is the one place the build reads the version from; the plugin's included build reads it from there too, and the plugin's default for the jar it resolves is the same value.
-2. Edit by hand every file that writes the version out: `README.md`, `docs/build-tools.md`, `manual/antora.yml` (`project-version`, which every manual page reads), `skills/spider-sense/SKILL.md` (`metadata.version` and the plugin line in the table) and `skills/spider-sense/references/running.md`.
+2. Edit by hand every file that writes the version out: `README.md`, `manual/antora.yml` (`project-version`, which every manual page reads), `skills/spider-sense/SKILL.md` (`metadata.version` and the plugin line in the table) and `skills/spider-sense/references/running.md`.
    `git grep -n '<old version>'` names them.
 3. Run `./gradlew build`, commit, and push to `main`.
 4. Build the bundle, in two commands because nothing orders the plugin build's publish against the clean:

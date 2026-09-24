@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// The published demo's data path (docs/design.md, "The published demo"). The demo's
-// rows live in a DoltHub database with the tables of docs/storage.md, plus one table
+// The published demo's data path (design.adoc#the-published-demo). The demo's
+// rows live in a DoltHub database with the tables of storage.adoc#schema, plus one table
 // of the answers the UI asks for, and this script moves them, one CSV per table,
 // between H2, a running Spider Sense and DoltHub:
 //
@@ -30,7 +30,7 @@ const PUBLIC = join(root, 'spider-sense-server/src/main/resources/public');
 const DATA = join(root, 'build/demo-data');
 const DOLTHUB = { owner: 'benelog', database: 'spider-sense-demo', branch: 'main' };
 
-// --- the tables: storage.md's schema, as DoltHub holds it -----------------------
+// --- the tables: storage.adoc#schema, as DoltHub holds it -----------------------
 //
 // `columns` is the H2 column order; `bool` names the BOOLEAN columns, written as 1
 // and 0 so that both sides read them; `required` names the NOT NULL text columns,
@@ -98,7 +98,7 @@ const TABLES = [
   // The index catalog, every row: the extension reads a table's indexes once per
   // process, so the row behind a window's schema blocks was usually written before
   // the window began. Loaded with the rest, it gives capture's slow-query and
-  // n-plus-one answers their schema block (docs/agent.md). A recording pushed before
+  // n-plus-one answers their schema block (findings.adoc#schema). A recording pushed before
   // the table travelled has none, which pull reads as no rows (`optional`).
   { name: 'db_table', key: ['service', 'schema_name', 'table_name'], window: null, optional: true,
     order: 'service, schema_name, table_name',
@@ -160,7 +160,7 @@ function serverJar(opts) {
   return out;
 }
 
-/** The JDBC URL a --db means, the way docs/design.md's spidersense.db does. */
+/** The JDBC URL a --db means, the way spidersense.db does (configuration.adoc#properties). */
 function jdbcUrl(db) {
   if (!db) throw new Error('--db=<path or jdbc url> is required');
   let url = db.startsWith('jdbc:') ? db : 'jdbc:h2:' + db.replace(/^~(?=\/|$)/, homedir()) + ';AUTO_SERVER=TRUE';
@@ -720,7 +720,7 @@ async function capture(opts) {
   await each([...endpoints], (id) => get('/api/endpoints/' + encodeURIComponent(id)));
   await each([...queries], (id) => get('/api/queries/' + encodeURIComponent(id)));
   await each([...errors], (id) => get('/api/errors/' + encodeURIComponent(id)));
-  // The text renderings Copy as Markdown asks for (docs/ui.md), over the whole window.
+  // The text renderings Copy as Markdown asks for (pages.adoc#copy-as-markdown), over the whole window.
   const TEXT = { format: 'text' };
   await each([...findings], (id) => get('/api/findings/' + encodeURIComponent(id), TEXT));
   await each([...queries], (id) => get('/api/queries/' + encodeURIComponent(id), TEXT));

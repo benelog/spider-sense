@@ -14,7 +14,7 @@ import net.benelog.spidersense.TestStore;
 import net.benelog.spidersense.ingest.OtlpDecoder;
 
 /**
- * The span cap of storage.md, "Retention": while there are more spans than the cap,
+ * The span cap of storage.adoc#retention: while there are more spans than the cap,
  * the oldest hour of everything goes.
  */
 class SweeperTest {
@@ -109,7 +109,7 @@ class SweeperTest {
 
     /**
      * A catalog row goes by the time retention, because a catalog older than the
-     * retention describes a schema no window can show any more (storage.md).
+     * retention describes a schema no window can show any more (storage.adoc#retention).
      */
     @Test
     void aCatalogRowOlderThanTheRetentionGoesAndAFreshOneStays() {

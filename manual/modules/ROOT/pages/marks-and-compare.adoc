@@ -47,7 +47,7 @@ The `from` and `to` parameters of the UI endpoints still work everywhere, and th
 == Marks
 
 A mark is a named moment: `before`, `after-fix`, `v2`.
-A mark is one row in the store, shared like everything else, and swept with the retention.
+A mark is one row in the `mark` table (xref:storage.adoc#schema[Storage]), shared like everything else, and swept with the retention.
 
 [source,bash]
 ----
@@ -80,11 +80,12 @@ $ java -jar spider-sense.jar marks
 | 2026-09-17T08:14:06.284+09:00 | start | spring-orders | pid 170140 |
 ----
 
+[#start-marks]
 === Automatic start marks
 
 Spider Sense records a mark by itself whenever a service restarts.
 When the writer sees a service with a `process.pid` it has not stored for that service, it inserts a mark named `start` with that service and the note `pid <pid>`.
-`--since=start` therefore works without anyone running `mark`, and it covers the current run.
+`--since=start` therefore means "since the application was last restarted", which is what an agent that just rebuilt the application wants, and it needs no cooperation from anyone.
 
 The Mark button on the UI's top bar records a mark the same way.
 The charts draw marks as vertical lines.
@@ -99,6 +100,8 @@ xref:ui.adoc#top-bar[Layout and Controls] covers the button and the lines.
 ----
 java -jar spider-sense.jar compare --before=<selector> --after=<selector> [--until=<selector>] [--service=<name>]
 ----
+
+Over HTTP it is `GET /api/compare?before=<selector>&after=<selector>&until=<selector>&service=&format=`.
 
 It takes no `--since`, because its windows are the two selectors.
 *Before* is the window `[before, after)` and *after* is the window `[after, until)`, with `until` defaulting to now.
@@ -115,11 +118,31 @@ The JSON side of a row is `{ "calls", "errors", "p50Ms", "p95Ms", "maxMs", "dbCa
 
 Queries::
 One row per query group, with `calls`, `calls/req`, `p95` and `total` for both windows.
-`callsPerRequest` divides by the entry spans of the window, of the service when one is given.
+`callsPerRequest` divides by the entry spans of the window, of the service when one is given, where an entry span is what xref:design.adoc#endpoint-identity[Endpoint identity] defines.
 
 Errors::
 One row per error group, with the occurrence count in each window.
 
+The JSON has the same four parts:
+
+[source,json]
+----
+{
+  "before": { "from": …, "to": … }, "after": { "from": …, "to": … },
+  "totals": { "before": <Totals>, "after": <Totals> },
+  "endpoints": [ { "endpointId": "…", "service": "…", "name": "GET /orders/{id}",
+                   "before": <Side> | null, "after": <Side> | null, "verdict": "better" | "worse" | "same" | "new" | "gone" } ],
+  "queries":   [ { "queryId": "…", "service": "…", "statement": "…",
+                   "before": <QuerySide> | null, "after": <QuerySide> | null, "verdict": … } ],
+  "errors":    [ { "errorId": "…", "service": "…", "type": "…", "message": "…", "before": 0, "after": 3, "verdict": … } ]
+}
+----
+
+`Totals` is the shape of the xref:api.adoc#overview[overview] totals.
+`Side` is `{ "calls", "errors", "p50Ms", "p95Ms", "maxMs", "dbCallsPerRequest", "dbMsPerRequest" }`, and `QuerySide` is `{ "calls", "callsPerRequest", "p95Ms", "totalMs" }`.
+A side is `null` when that window has no data for the row.
+
+[#verdicts]
 === Verdicts
 
 Every row carries a verdict, decided in this order.

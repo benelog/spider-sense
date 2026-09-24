@@ -15,7 +15,7 @@ import org.jspecify.annotations.Nullable;
  * fails, and it dilutes the request count, the Apdex, {@code check} and every
  * slow-endpoint judgement. A span that matches is still stored and still renders
  * in its trace; it is simply written with {@code entry} false, exactly as a root
- * {@code INTERNAL} span is (design.md, "Ignored endpoints").
+ * {@code INTERNAL} span is (configuration.adoc#ignored-endpoints).
  *
  * <p>{@code **} matches anything including {@code /}, {@code *} matches anything
  * but {@code /}, {@code ?} matches one character that is not {@code /}; the match

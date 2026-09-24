@@ -18,7 +18,7 @@ import javax.inject.Inject;
  * {@code spiderSense.check.since} overrides for one run, {@code until}, and
  * {@code service}, which follows the outer block's {@code service}.
  *
- * <p>The specification is {@code docs/build-tools.md}, "Check as a build step".
+ * <p>The specification is {@code gradle-plugin.adoc#check-task}.
  */
 public abstract class SpiderSenseCheckExtension {
 

@@ -1,7 +1,7 @@
 # Finding candidates in Spider Sense's own store
 
 `findings` and `queries` answer the usual questions; these `sql` statements answer the ones they have no column for.
-The schema is `docs/storage.md`; what matters here: `span` has one row per span with `start_ms` (epoch milliseconds), `duration_ns`, `service`, `trace_id`, `parent_span_id`, `entry` (true for a request's entry span), `endpoint`, `query_id`, `db_statement`, `db_table`, `db_operation`, `error`, and `attributes` (the span's attributes as one JSON object).
+The schema is [Storage](https://spider-sense.benelog.net/storage.html#schema) in the manual; what matters here: `span` has one row per span with `start_ms` (epoch milliseconds), `duration_ns`, `service`, `trace_id`, `parent_span_id`, `entry` (true for a request's entry span), `endpoint`, `query_id`, `db_statement`, `db_table`, `db_operation`, `error`, and `attributes` (the span's attributes as one JSON object).
 Every answer is capped at 200 rows unless `--limit=<n>` says otherwise, and a truncated answer says so in its heading.
 
 Every statement below takes a window; `$FROM` and `$TO` are epoch milliseconds, and `date +%s%3N` gives now.

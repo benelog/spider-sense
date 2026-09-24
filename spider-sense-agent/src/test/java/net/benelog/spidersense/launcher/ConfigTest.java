@@ -185,7 +185,7 @@ class ConfigTest {
                 "--retention.spans=250000", "--ingest.max-spans-per-second=5000"});
 
         assertThat(System.getProperty("spidersense.app.packages")).isEqualTo("com.acme,org.acme");
-        // Kept empty, not dropped: an empty list means "ignore nothing" (design.md).
+        // Kept empty, not dropped: an empty list means "ignore nothing" (configuration.adoc#ignored-endpoints).
         assertThat(System.getProperty("spidersense.ignore.endpoints")).isEmpty();
         assertThat(System.getProperty("spidersense.retention.spans")).isEqualTo("250000");
         assertThat(System.getProperty("spidersense.ingest.max-spans-per-second")).isEqualTo("5000");

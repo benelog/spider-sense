@@ -8,12 +8,12 @@ import net.benelog.spidersense.store.ReadOnlyQuery;
  * <p>They live in one place because the CLI sends its limit to the server rather
  * than letting the handler's default apply: the same command must print the same
  * rows whether it was answered over HTTP or read from the H2 file. The numbers
- * are the handlers' own (api.md), except {@code traces}, where agent.md's CLI
- * table says 20 — a terminal is not a scrolling list.
+ * are the handlers' own (api.adoc), except {@code traces}, where the CLI
+ * table (cli.adoc#options) says 20 — a terminal is not a scrolling list.
  */
 public final class Limits {
 
-    /** What {@code since} means when nobody said (agent.md). */
+    /** What {@code since} means when nobody said (marks-and-compare.adoc#time-selectors). */
     public static final String SINCE = "15m";
 
     public static final int FINDINGS = 20;

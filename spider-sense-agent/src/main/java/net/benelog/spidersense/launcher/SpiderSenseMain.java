@@ -16,14 +16,14 @@ public final class SpiderSenseMain {
     private SpiderSenseMain() {
     }
 
-    /** The CLI entry point inside the nested server jar; see {@code docs/agent.md}. */
+    /** The CLI entry point inside the nested server jar; see {@code cli.adoc}. */
     static final String CLI_CLASS = "net.benelog.spidersense.cli.Cli";
 
     /**
      * Where the CLI reads this jar's own path. It runs out of the nested server jar,
      * extracted to a temporary directory, so only the launcher can tell it where the
      * distributable it was started from actually is; {@code init} writes that path into
-     * a project's {@code CLAUDE.md} ({@code docs/agent.md}).
+     * a project's {@code CLAUDE.md} ({@code agent-skill.adoc#init}).
      */
     static final String JAR_PROPERTY = "spidersense.jar";
 

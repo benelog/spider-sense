@@ -51,7 +51,7 @@ spiderSense {
 
 // Actuator's metrics are Micrometer meters; the OpenTelemetry agent bridges the
 // global registry to OTLP only when asked, so the demo asks. The scripts under
-// scripts/ pass the same property on the command line (docs/build-tools.md).
+// scripts/ pass the same property on the command line (gradle-plugin.adoc).
 tasks.named('bootRun') {
     jvmArgs '-Dotel.instrumentation.micrometer.enabled=true'
 }

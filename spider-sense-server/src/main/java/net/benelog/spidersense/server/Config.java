@@ -22,26 +22,27 @@ import org.jspecify.annotations.Nullable;
  * @param retentionHours   rows older than this are swept
  * @param retentionSpans   the most {@code span} rows kept; the sweeper deletes the oldest hour of
  *                         everything until the count is under it, {@code 0} for no cap
- *                         (storage.md, "Retention")
+ *                         (storage.adoc#retention)
  * @param maxSpansPerSecond above this many spans accepted in one wall-clock second the receiver
  *                         drops the spans of traces it has not seen yet; null when unset, which is
- *                         no cap at all (storage.md, "The ingest cap")
+ *                         no cap at all (storage.adoc#ingest-cap)
  * @param embeddedService  the {@code service.name} of the JVM the server runs inside, or null
  *                         when nobody knows it yet — see {@code ServiceRegistry}
  * @param appPackages      comma-separated package prefixes that count as application code in a
  *                         finding's code frames; empty means "everything that is not a
- *                         known framework" (agent.md)
+ *                         known framework" (findings.adoc#code)
  * @param ignoreEndpoints  comma-separated glob patterns; an entry span whose endpoint matches one
  *                         of them is written with {@code entry} false and is therefore not a
- *                         request (design.md, "Ignored endpoints"). An empty value ignores
+ *                         request (configuration.adoc#ignored-endpoints). An empty value ignores
  *                         nothing, which is why {@link #string} only falls back on {@code null}.
  * @param sourceDirs       comma-separated source roots a code frame is resolved under, or null
  *                         for the default: {@code src/main/java} and {@code src/main/kotlin} of
- *                         the working directory and of each immediate subdirectory (design.md)
+ *                         the working directory and of each immediate subdirectory
+ *                         (configuration.adoc#source-dirs)
  * @param jar              the absolute path of the distributable jar the server was started
  *                         from, which the launcher passes as {@code --jar} and the CLI finds in
  *                         {@code spidersense.jar}; null when nobody knows it (exploded classes,
- *                         a test), and only ever shown, as {@code /api/status.jar} (api.md)
+ *                         a test), and only ever shown, as {@code /api/status.jar} (api.adoc#status)
  */
 public record Config(
         String host,
@@ -114,7 +115,7 @@ public record Config(
      * share one database.
      *
      * <p>{@code NON_KEYWORDS=KEY,VALUE} is appended to every URL: {@code KEY} and
-     * {@code VALUE} are reserved words in H2 2.x and storage.md uses both as
+     * {@code VALUE} are reserved words in H2 2.x and storage.adoc#schema uses both as
      * column names.
      */
     public String jdbcUrl() {
@@ -155,7 +156,7 @@ public record Config(
             return named;
         }
         String property = System.getProperty("spidersense.embedded-service");
-        // design.md names the launcher's own property spidersense.service; when the
+        // configuration.adoc#properties names the launcher's own property spidersense.service; when the
         // launcher was told the name that way, it is the same answer.
         return property != null ? property : System.getProperty("spidersense.service");
     }

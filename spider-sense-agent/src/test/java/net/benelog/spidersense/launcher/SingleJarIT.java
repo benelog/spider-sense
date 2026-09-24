@@ -153,9 +153,9 @@ class SingleJarIT {
      * The one thing Spider Sense instruments itself, from the packaged jar: the nested
      * {@code extension.jar} is extracted, the agent is pointed at it, and the slow H2 statement the
      * sample runs comes back as a {@code slow-query} finding that names the line it was issued from
-     * (design.md, "The extension"; agent.md, "Code locations") and carries the index catalog of the
-     * table it read, with the one predicate column no index leads with named as such (agent.md,
-     * "The schema block"). The catalog can only be proven here: it needs the agent's advice in the
+     * (design.adoc#extension; findings.adoc#code) and carries the index catalog of the
+     * table it read, with the one predicate column no index leads with named as such
+     * (findings.adoc#schema). The catalog can only be proven here: it needs the agent's advice in the
      * driver's class loader, the JDBC instrumentation's virtual field, and the log exporter.
      */
     @Test
@@ -225,7 +225,7 @@ class SingleJarIT {
     /**
      * The extension's other instrumentation, from the packaged jar: a Spider Silk application is
      * one servlet mapped at {@code /*}, and the route its router matched becomes the span's
-     * {@code http.route} and the endpoint's name (design.md, "The extension"). Two ids of one
+     * {@code http.route} and the endpoint's name (design.adoc#extension). Two ids of one
      * route are one endpoint, and a path no route matched keeps the servlet's mapping.
      */
     @Test
@@ -333,7 +333,7 @@ class SingleJarIT {
     // --- the command line ---------------------------------------------------------------------
 
     /**
-     * The CLI of agent.md from the packaged jar: first against the Spider Sense inside the running
+     * The CLI of cli.adoc from the packaged jar: first against the Spider Sense inside the running
      * application, then against the file it left behind.
      *
      * <p>The second half is the promise that matters: the application is gone, its UI with it, and

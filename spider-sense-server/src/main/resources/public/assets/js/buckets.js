@@ -1,6 +1,6 @@
 // Response-time buckets and Apdex: the bounds from /api/status, the five colours,
 // the labels built from the bounds, and the response-summary bars.
-// docs/ui.md "Identity", docs/api.md "Response-time buckets and Apdex".
+// ui.adoc#response-buckets, api.adoc#buckets.
 
 import * as api from './api.js';
 import { h } from './ui.js';

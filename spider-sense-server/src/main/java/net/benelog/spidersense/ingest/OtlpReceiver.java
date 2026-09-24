@@ -31,7 +31,7 @@ import org.jspecify.annotations.Nullable;
  * <p>Both encodings the OpenTelemetry exporters use are accepted, gzipped or not,
  * and the answer is the empty {@code Export*ServiceResponse} in the request's own
  * encoding — which is what an exporter checks before it considers the batch
- * delivered. There is no gRPC receiver; see design.md.
+ * delivered. There is no gRPC receiver; see design.adoc#rejected.
  */
 public final class OtlpReceiver {
 

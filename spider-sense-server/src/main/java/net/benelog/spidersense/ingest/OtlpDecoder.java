@@ -76,7 +76,7 @@ public final class OtlpDecoder {
                     if (isOurOwnTraffic(record)) {
                         continue;
                     }
-                    // The ingest cap decides before the writer sees anything (storage.md).
+                    // The ingest cap decides before the writer sees anything (storage.adoc#ingest-cap).
                     if (!store.ingestCap().accept(record.traceId())) {
                         continue;
                     }
@@ -283,7 +283,7 @@ public final class OtlpDecoder {
         return batch;
     }
 
-    /** The attribute that makes a log record the index catalog of a table (design.md). */
+    /** The attribute that makes a log record the index catalog of a table (design.adoc#index-catalog). */
     private static final String SCHEMA_TABLE = "spidersense.schema.table";
     private static final String SCHEMA_SCHEMA = "spidersense.schema.schema";
     private static final String SCHEMA_PRODUCT = "spidersense.schema.product";
@@ -295,7 +295,7 @@ public final class OtlpDecoder {
      * <p>The extension has no channel of its own to the server, so it says what it
      * read through the one every OpenTelemetry agent already has: a log record. It
      * is not a log line, though — nothing happened at that moment — so it never
-     * reaches the {@code log} table (storage.md, api.md).
+     * reaches the {@code log} table (storage.adoc, api.adoc).
      *
      * <p>The {@code indexes} text is kept exactly as it arrived: the store is not
      * the place to reformat JSON it will hand back unchanged.

@@ -1,9 +1,40 @@
 = Quick Start for Agents
 :navtitle: Quick Start
 
-This chapter gets an AI coding agent from nothing to its first finding: install the skill, choose the CLI or MCP, start the application under the agent, and ask.
+This chapter gets an AI coding agent from nothing to its first finding: get the jar, install the skill, choose the CLI or MCP, start the application under the agent, and ask.
 The chapters after it document every command, finding, and transport in full.
 
+[#get-the-jar]
+== Get the jar
+
+Everything below runs from one jar, so the first step is to have it.
+Which way depends on the project's build.
+
+[cols="1,3",options="header"]
+|===
+| Build
+| How
+
+| Gradle
+| Apply `id 'net.benelog.spidersense' version '{project-version}'` in `plugins {}`.
+The plugin resolves the jar from Maven Central, and `./gradlew spiderSenseInit` takes the place of `init` below (xref:gradle-plugin.adoc[The Gradle Plugin]).
+
+| Maven, or no build tool
+| Download `{project-group}:spider-sense:{project-version}` from Maven Central into the project, for example `curl -fLo spider-sense.jar \https://repo1.maven.org/maven2/net/benelog/spidersense/spider-sense/{project-version}/spider-sense-{project-version}.jar` (xref:maven.adoc[Maven]).
+
+| A version not on Maven Central yet
+| Build it from a checkout, and `./gradlew publishToMavenLocal` for a Gradle build that resolves it from `mavenLocal()` (xref:install.adoc#from-source[From a checkout]).
+|===
+
+An agent can do this step itself.
+The prompt below hands it the whole chapter:
+
+[source,text]
+----
+Follow https://spider-sense.benelog.net/agent-quickstart.html to set up Spider Sense in this project: get the jar, install the skills with init, and start the application under it.
+----
+
+[#install-the-skill]
 == Install the skill
 
 The skill is the agent's manual: the loop, the commands, and the rules that keep an answer honest, in the form an agent loads into its context (xref:agent-skill.adoc[The Agent Skill]).
@@ -39,7 +70,7 @@ cp -r .claude/skills/spider-sense .claude/skills/spider-sense-sql-tuning .codex/
 
 Codex reads `AGENTS.md` rather than `CLAUDE.md`, so paste the block between `<!-- spider-sense:start -->` and `<!-- spider-sense:end -->` into `AGENTS.md` so that Codex finds it the same way.
 
-Cursor and GitHub Copilot read the project's `.claude/skills/`, so the `init` step alone serves them (xref:agent-skill.adoc[Installing the skills by hand]).
+Cursor and GitHub Copilot read the project's `.claude/skills/`, so the `init` step alone serves them (xref:agent-skill.adoc#by-hand[Installing the skills by hand]).
 
 [#cli-or-mcp]
 == CLI or MCP
@@ -72,6 +103,7 @@ A host that reaches a running Spider Sense over HTTP is configured with `http://
 WARNING: Do not enable both the CLI and MCP in one host.
 Two tools that give the same answer make the model choose between them and cost the schema twice.
 
+[#start]
 == Start the application under the agent
 
 Spider Sense does not attach to a running JVM, so you restart the application with the agent on its command line.
@@ -86,6 +118,7 @@ Under Gradle, the `net.benelog.spidersense` plugin puts the agent on `bootRun` a
 xref:agent-loop.adoc[The Loop] lists every way to start the application under the agent.
 `java -jar spider-sense.jar status` confirms that the application is collecting.
 
+[#what-it-diagnoses]
 == What it diagnoses
 
 `findings` is the primary answer: a ranked, bounded list of things worth fixing, each with the numbers that justify it, the trace ids that prove it, and the code location when one is known.
@@ -126,6 +159,7 @@ Around the findings, three more commands close the loop.
 `compare` puts the window before a mark beside the window after it, with a verdict per endpoint and query.
 `check` turns thresholds into pass or fail in its exit code.
 
+[#what-to-ask]
 == What to ask
 
 The skill teaches the agent the loop, so your prompt names the goal and the agent runs the commands.

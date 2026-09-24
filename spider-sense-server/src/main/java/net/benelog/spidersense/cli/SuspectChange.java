@@ -20,7 +20,7 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * The suspect change under each code frame of {@code findings}: whether the line a
- * finding points at is in the change the agent just made (agent.md, "Suspect change").
+ * finding points at is in the change the agent just made (cli.adoc#suspect-change).
  *
  * <p>This is the one piece of a findings answer the CLI adds itself rather than
  * printing what the renderer produced, and it has to be: the server may run in

@@ -5,7 +5,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Java-21-e2603f?style=flat-square&labelColor=2b303b" alt="Java 21">
   <img src="https://img.shields.io/badge/OpenTelemetry-OTLP%2FHTTP-8a93a6?style=flat-square&labelColor=2b303b" alt="OpenTelemetry">
-  <img src="https://img.shields.io/badge/UI-Spider%20Silk-8a93a6?style=flat-square&labelColor=2b303b" alt="Spider Silk">
+  <img src="https://img.shields.io/badge/UI-spot%20problems%20at%20a%20glance-8a93a6?style=flat-square&labelColor=2b303b" alt="UI: spot problems at a glance">
   <img src="https://img.shields.io/badge/one%20jar-yes-e2603f?style=flat-square&labelColor=2b303b" alt="One jar">
 </p>
 
@@ -18,7 +18,6 @@ One jar, one JVM option, and a browser tab that shows every request, every SQL s
 It takes the three OpenTelemetry signals, traces, metrics and logs, and answers with them what is slow, what failed and why, and what the application was doing at that moment.
 The same jar is a command line whose answers are written for an AI coding agent: what is wrong, ranked, with the trace that proves it.
 
-It is a sibling of [Spider Silk](https://github.com/benelog/spider-silk), the web framework its UI is built with, and it follows the same idea: thin by design.
 The instrumentation is the stock [OpenTelemetry Java agent](https://github.com/open-telemetry/opentelemetry-java-instrumentation), the collector speaks OTLP/HTTP, nothing has to be installed, and the data goes into an H2 file under `~/db/spider-sense/` that outlives the application.
 
 It is for three things:
@@ -39,7 +38,6 @@ Recordings of the demo, with nothing to install and no server behind them:
 
 - UI demo: the UI over five minutes of four deliberately misbehaving example applications under one Spider Sense
   - <https://spider-sense.benelog.net/demo>
-  - <https://www.dolthub.com/repositories/benelog/spider-sense-demo>: the DoltHub database the page reads, with the same tables a running Spider Sense keeps plus the answers captured once, to query as SQL
 - Agent demo: real runs of `/spider-sense` asking for the three biggest problems and the lines that cause them, replayed from the agents' event streams
   - Claude Code
     - <https://spider-sense.benelog.net/agent-demo/claude-code/> (English)
@@ -48,12 +46,23 @@ Recordings of the demo, with nothing to install and no server behind them:
     - <https://spider-sense.benelog.net/agent-demo/codex/> (English)
     - <https://spider-sense.benelog.net/agent-demo/codex/ko/> (한국어)
 
-Every trace opens, but nothing updates.
 [examples/README.md](examples/README.md) describes the example applications and runs the same demo locally, live, with the CLI beside it and an agent to hand it to.
 
 ## Quick start
 
-Requires Java 21 or later.
+The fastest way is to hand it to a coding agent, in the project to monitor:
+
+```text
+Follow https://spider-sense.benelog.net/agent-quickstart.html to set up Spider Sense in this project: get the jar, install the skills with init, and start the application under it.
+```
+
+`init` installs the skills into the project, so from the next session on the agent runs the loop by itself when asked what is slow:
+
+```text
+Run the application under Spider Sense, exercise it, and tell me the three biggest problems and the lines that cause them.
+```
+
+By hand, it requires Java 21 or later.
 
 ```bash
 ./gradlew :spider-sense-agent:senseJar
@@ -109,12 +118,32 @@ java -jar spider-sense.jar check --max-queries-per-request=10       # exit code 
 Every command prints Markdown, takes `--json`, asks the running Spider Sense over HTTP, and reads the H2 file directly when none is running.
 The same answers are an MCP server for a host without a shell, and `check` is a build gate.
 Two skills teach an agent what to do with them: `skills/spider-sense/` runs the loop, and `skills/spider-sense-sql-tuning/` turns a slow query or an N+1 into the index to add, the rewrite or the fetch join, confirmed by the plan and proven by `compare`; `java -jar spider-sense.jar init` installs both into a project.
-[Quick Start for Agents](https://spider-sense.benelog.net/agent-quickstart.html) in the manual chooses between the CLI and MCP and lists what to ask; [docs/agent.md](docs/agent.md) is the specification.
+[Quick Start for Agents](https://spider-sense.benelog.net/agent-quickstart.html) in the manual chooses between the CLI and MCP and lists what to ask.
 
 ## Documentation
 
-The manual at <https://spider-sense.benelog.net> is what to read; the specifications it is written from are in the repository:
-[docs/design.md](docs/design.md) (the single jar, the store, what was rejected and why), [docs/storage.md](docs/storage.md) (the H2 schema), [docs/api.md](docs/api.md) (the JSON contract), [docs/ui.md](docs/ui.md) (the pages), [docs/agent.md](docs/agent.md) (findings, marks, compare, check, the CLI, MCP and the skill) and [docs/build-tools.md](docs/build-tools.md) (the Gradle plugin and Maven).
+The manual at <https://spider-sense.benelog.net> is the one documentation and the specification; its source is AsciiDoc under [manual/](manual/modules/ROOT/pages).
+
+- Getting started
+  - [Introduction](https://spider-sense.benelog.net/) and [Installation](https://spider-sense.benelog.net/install.html)
+- Running
+  - [The Three Modes](https://spider-sense.benelog.net/modes.html): agent, forwarding and standalone
+  - [Configuration](https://spider-sense.benelog.net/configuration.html): every property and environment variable
+  - [The Gradle Plugin](https://spider-sense.benelog.net/gradle-plugin.html) and [Maven](https://spider-sense.benelog.net/maven.html)
+  - [The Examples](https://spider-sense.benelog.net/examples.html): four misbehaving applications and a load generator
+- The UI
+  - [Layout and Controls](https://spider-sense.benelog.net/ui.html): the shell, the time window, the look and feel
+  - [The Pages](https://spider-sense.benelog.net/pages.html): what each page shows
+- For AI agents
+  - [Quick Start](https://spider-sense.benelog.net/agent-quickstart.html): the jar, the skills, the CLI or MCP
+  - [The Loop](https://spider-sense.benelog.net/agent-loop.html): mark, exercise, findings, fix, compare, check
+  - [Findings](https://spider-sense.benelog.net/findings.html): every kind, its numbers and evidence
+  - [Marks and Compare](https://spider-sense.benelog.net/marks-and-compare.html) and [Check](https://spider-sense.benelog.net/check.html)
+  - [The CLI](https://spider-sense.benelog.net/cli.html), [MCP](https://spider-sense.benelog.net/mcp.html) and [The Agent Skill](https://spider-sense.benelog.net/agent-skill.html)
+- Reference
+  - [The HTTP API](https://spider-sense.benelog.net/api.html): the JSON contract between the server and the UI
+  - [Storage](https://spider-sense.benelog.net/storage.html): the H2 schema, the writer, the queries and retention
+  - [Design](https://spider-sense.benelog.net/design.html): the single jar, the extension, what was rejected and why
 
 ## License
 

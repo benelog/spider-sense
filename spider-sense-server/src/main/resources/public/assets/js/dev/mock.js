@@ -1,4 +1,4 @@
-// A fetch and EventSource shim that answers every endpoint in docs/api.md with
+// A fetch and EventSource shim that answers every endpoint in api.adoc with
 // generated data. Loaded only when the page URL carries ?mock=1.
 
 const START = Date.now() - 15 * 60 * 1000;
@@ -79,7 +79,7 @@ const QUERIES = [
 const queryOf = (statement) => QUERIES.find((q) => q.statement === statement);
 
 /**
- * The schema block of docs/agent.md, by index into QUERIES: the tables' indexes as
+ * The schema block of findings.adoc#schema, by index into QUERIES: the tables' indexes as
  * the extension read them, the columns the statement filters on, and the ones no
  * index leads with. A statement the parse cannot vouch for carries none, and so
  * does a query group whose service never ran under the extension.
@@ -463,7 +463,7 @@ function inWindow(w, service) {
 
 const RESPONSE_BUCKETS = [SLOW_REQUEST_MS / 4, SLOW_REQUEST_MS, SLOW_REQUEST_MS * 4];
 
-/** Four response-time buckets and the errors, as docs/api.md defines them. */
+/** Four response-time buckets and the errors, as api.adoc#buckets defines them. */
 function bucketOf(durationMs) {
   if (durationMs <= RESPONSE_BUCKETS[0]) return 0;
   if (durationMs <= RESPONSE_BUCKETS[1]) return 1;
@@ -703,7 +703,7 @@ function dependencies(w, service) {
 
 /**
  * The topology of the window: the user, one node per service, one per database or
- * external host, and the edges between them. docs/api.md "Service map".
+ * external host, and the edges between them. api.adoc#map.
  */
 function mapView(w) {
   const list = inWindow(w);
@@ -922,7 +922,7 @@ function statusBody() {
 
 /**
  * Where a sample of traces spent its time, as the server's `Queries.timeSplit`
- * computes it (docs/agent.md, "Where the time went"): the three hottest
+ * computes it (findings.adoc#time): the three hottest
  * summaries and the four shares, over the spans of one service only.
  */
 function timeSplit(traces, service) {
@@ -971,7 +971,7 @@ function timeSplit(traces, service) {
   return { hotSpans, breakdown };
 }
 
-// --- marks, findings and compare (docs/agent.md) -------------------------
+// --- marks, findings and compare (findings.adoc) -------------------------
 
 /** Two automatic start marks and the pair a person made around a change. */
 const marks = [
@@ -982,7 +982,7 @@ const marks = [
 ];
 let markId = marks.length;
 
-/** The selectors of docs/agent.md: a duration, epoch millis, a mark name, start or now. */
+/** The selectors of marks-and-compare.adoc#time-selectors: a duration, epoch millis, a mark name, start or now. */
 function resolveSelector(selector, fallback, service) {
   if (!selector) return fallback;
   if (selector === 'now') return Date.now();
@@ -1003,7 +1003,7 @@ const FRAMEWORK = ['java.', 'javax.', 'jdk.', 'sun.', 'com.sun.', 'jakarta.', 'o
   'net.benelog.spidersilk.', 'kotlin.', 'scala.', 'reactor.', 'io.netty.', 'ch.qos.logback.', 'org.slf4j.',
   'org.junit.', 'gg.jte.'];
 
-/** A stack trace as its exception chain, innermost first, as docs/api.md answers it. */
+/** A stack trace as its exception chain, innermost first, as api.adoc#cause answers it. */
 function chainOf(stack) {
   const causes = [];
   for (const line of (stack || '').split('\n')) {
@@ -1024,7 +1024,7 @@ function chainOf(stack) {
   return causes.reverse();
 }
 
-/** The application frames of a stack trace, root cause first, as docs/agent.md reduces them. */
+/** The application frames of a stack trace, root cause first, as findings.adoc#code reduces them. */
 function appFrames(stack) {
   const frames = chainOf(stack).flatMap((cause) => cause.frames)
     .filter((frame) => !FRAMEWORK.some((prefix) => frame.startsWith(prefix)));
@@ -1033,7 +1033,7 @@ function appFrames(stack) {
 
 const SEVERITY_RANK = { high: 0, medium: 1, low: 2 };
 
-/** Every field of a finding's subject (docs/api.md); a mock names only the one that applies. */
+/** Every field of a finding's subject (api.adoc#findings); a mock names only the one that applies. */
 const NO_SUBJECT = {
   endpointId: null, queryId: null, errorId: null, pool: null, job: null,
   target: null, logger: null, jvm: null,
@@ -1049,7 +1049,7 @@ function shortType(type) {
 }
 
 /**
- * Acknowledged findings (docs/agent.md), by finding id.
+ * Acknowledged findings (findings.adoc#acknowledgements), by finding id.
  *
  * <p>One is here from the start — the report endpoint everybody knows is slow —
  * so the dimmed row and its Unacknowledge button are on the screen without
@@ -1064,7 +1064,7 @@ const acks = new Map();
   }
 }
 
-/** Every kind of docs/agent.md, over the generated window. */
+/** Every kind of findings.adoc#kinds, over the generated window. */
 function findingsFor(w, service, limit, hideAcked) {
   const found = [];
   const entries = entrySpans(inWindow(w, service), service);
@@ -1289,7 +1289,7 @@ function findingsFor(w, service, limit, hideAcked) {
   found.sort((a, b) => (SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity])
     || (b.impact - a.impact) || a.id.localeCompare(b.id));
 
-  // Acknowledged findings last, in the same order among themselves (docs/agent.md).
+  // Acknowledged findings last, in the same order among themselves (findings.adoc#acknowledgements).
   // The generated traffic never stops, so a resolved finding here is always back:
   // a regression, ranked first. Every other finding is ongoing, since the mock has
   // no previous run to compare with.
@@ -1316,11 +1316,11 @@ function findingsFor(w, service, limit, hideAcked) {
     if (!hideAcked) accepted.push({ ...finding, state: 'ongoing', ack: { at: row.at, note: row.note }, resolution: null });
   }
   const ranked = regressions.concat(open, accepted);
-  // `schema` is on every finding, null on the kinds that never carry one (api.md).
+  // `schema` is on every finding, null on the kinds that never carry one (api.adoc#findings).
   return { requests, acked, resolved: 0, findings: ranked.slice(0, limit).map(({ impact, ...rest }) => ({ schema: null, ...rest })) };
 }
 
-/** api.md's Totals over one window. */
+/** The Totals of api.adoc#compare, over one window. */
 function totalsOf(w, service) {
   const entries = entrySpans(inWindow(w, service), service);
   const durations = entries.map((e) => e.span.durationMs).sort((a, b) => a - b);
@@ -1703,7 +1703,7 @@ const ROUTES = [
   }],
 ];
 
-/** Occurrences per bucket, the window's buckets merged until there are at most 30 (docs/api.md). */
+/** Occurrences per bucket, the window's buckets merged until there are at most 30 (api.adoc#error-group). */
 function errorSeries(group, w) {
   const t = bucketsOf(w);
   const merge = Math.ceil(t.length / 30);
@@ -1720,7 +1720,7 @@ function errorSeries(group, w) {
  * and carries the JSON, so the Copy as Markdown buttons have something to copy.
  */
 function textStandIn(path, body) {
-  return '# ' + path + '  (mock: the server renders this as docs/agent.md says)\n\n```json\n'
+  return '# ' + path + '  (mock: the server renders this as cli.adoc#text-rendering says)\n\n```json\n'
     + JSON.stringify(body, null, 2) + '\n```\n';
 }
 

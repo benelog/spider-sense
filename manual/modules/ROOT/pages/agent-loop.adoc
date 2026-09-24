@@ -3,6 +3,7 @@
 
 The loop is the sequence of steps an AI coding agent runs against Spider Sense: start the application under the agent, mark a moment, exercise it, read the findings, fix, mark again, compare, check.
 
+[#what-an-agent-needs]
 == What an agent needs
 
 A person reads a scatter and sees the cluster.
@@ -27,7 +28,7 @@ Marks name a moment.
 A verdict with an exit code::
 `check` turns thresholds into pass or fail, so the agent can use Spider Sense the way it uses a test.
 
-Every answer is served by the same queries the UI uses, so the numbers an agent quotes are the numbers a person sees on screen.
+Every answer is served by the same `Queries` the UI uses, so the numbers an agent quotes are the numbers a person sees on screen.
 
 [#interfaces]
 == Interfaces
@@ -43,11 +44,11 @@ Every answer is served by the same queries the UI uses, so the numbers an agent 
 | The CLI, `java -jar spider-sense.jar <command>`
 | Claude Code and every agent with a shell. It also works when no Spider Sense is running, straight from the H2 file.
 
-| The skill, `skills/spider-sense/`
-| Teaching an agent the loop itself: how to start the application under the agent, mark, exercise, read findings, fix, compare and check.
+| The skills, `skills/spider-sense/` and `skills/spider-sense-sql-tuning/`
+| The first teaches an agent the loop itself: how to start the application under the agent, mark, exercise, read findings, fix, compare and check. The second teaches query tuning: indexes, rewrites, fetch joins and batching, verified with `compare` and `check`.
 
 | Read-only SQL, `POST /api/sql` and the `sql` command
-| The question nobody anticipated. The schema is already the documentation.
+| The question nobody anticipated. The schema in xref:storage.adoc#schema[Storage] is already the documentation.
 
 | MCP, `POST /mcp` and the `mcp` command
 | Hosts without a shell. Seven tools over the same handlers, answering the same text.
@@ -55,6 +56,7 @@ Every answer is served by the same queries the UI uses, so the numbers an agent 
 
 xref:cli.adoc[The CLI] documents every command, xref:mcp.adoc[MCP] the two transports and the seven tools, xref:agent-skill.adoc[The Agent Skill] the skill and its installation, and xref:api.adoc#agent-endpoints[The HTTP API] the wire shapes.
 
+[#choosing-an-interface]
 === Choosing an interface
 
 The CLI and MCP call the same handlers and print the same bytes, so the choice costs nothing in what is answered.
@@ -115,19 +117,23 @@ java -jar "$SENSE" trace 4bf92f3577b34da6a3ce929d0e0e4736   #    open its eviden
 java -jar "$SENSE" mark after                        # 5. exercise the same way
 java -jar "$SENSE" compare --before=before --after=after
 java -jar "$SENSE" check --since=after --max-p95-ms=300 --max-n-plus-one=0
+java -jar "$SENSE" resolve n-plus-one:4c5f46be8bc5 --note="fetch join"   # 6. once check passes
 ----
 
-. *Start the application under the agent*, and confirm with `status`, which names the mode, the port, the database and how much it holds.
+. *Start the application under the agent*, with `-javaagent`, or with `JAVA_TOOL_OPTIONS` when the start command is not the agent's to change, and confirm with `status`, which names the mode, the port, the database and how much it holds.
 . *Mark the moment* with `mark before`, then exercise the endpoints in question, run the tests, or run the load generator.
-. *Read the findings* with `findings --since=before`, take the top one, and open a trace from its `traces` to locate the code.
+. *Read the findings* with `findings --since=before`, and take the top one.
+Read its suspect-change lines first, which say whether the frame's line is in the change just made (xref:cli.adoc#suspect-change[The suspect change]), then open a trace from its `traces` and the code.
 . *Fix the code*, and rebuild and restart when the fix needs it.
 . *Verify* with `mark after`, the same exercise, then `compare --before=before --after=after` and `check`.
+. *Resolve* the finding once `check` passes, with `resolve <finding id> --note=<the fix>`, so the finding is a `regression`, ranked first, if a later change brings it back.
 
 After a restart there is a fresh `start` mark, so `--since=start` covers the new run without marking anything.
 `--url=<base url>`, or the `SPIDERSENSE_URL` environment variable, points the CLI at a Spider Sense on another port.
 `--db=<path>` reads a database directly.
 xref:agent-skill.adoc#init[`init`] writes the Spider Sense block into the project's `CLAUDE.md` and installs the skills into `.claude/skills/`, so the next session finds both without being told.
 
+[#starting]
 == Starting the application under the agent
 
 You restart the application with the agent on its command line.
@@ -158,6 +164,7 @@ xref:modes.adoc#agent[The Three Modes] covers the agent mode, forwarding to a sh
 xref:gradle-plugin.adoc[The Gradle Plugin] and xref:maven.adoc[Maven] cover each build tool in full, including test tasks.
 xref:configuration.adoc#properties[Configuration] lists every property, including `spidersense.port` when 4000 is taken, `otel.service.name` so the service has a name, and `spidersense.collector` to forward to a Spider Sense running elsewhere.
 
+[#reading-findings]
 == Reading findings
 
 `findings` ranks by severity, then by kind, then by impact, then by id, so the list is stable between two calls over the same data.
@@ -174,6 +181,7 @@ xref:findings.adoc#acknowledgements[Acknowledgements] covers `ack`, `unack` and 
 The `state` column says what the last restart changed: `new` for a finding the run before it did not have, `ongoing` for one it had.
 `findings --since=start` therefore names the findings the last change introduced without a second mark (xref:findings.adoc#state[State]).
 
+[#verifying]
 == Verifying a change
 
 [source,bash]
@@ -202,6 +210,7 @@ java -jar "$SENSE" resolve n-plus-one:4c5f46be8bc5 --note="fetch join"
 
 If a later change brings the finding back, `findings` reports it as a `regression`, first in the list, and `check` fails on it by default (xref:findings.adoc#resolutions[Resolutions]).
 
+[#rules]
 == Rules
 
 * *Prefer the CLI's text output.*

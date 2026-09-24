@@ -27,7 +27,7 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>The OpenTelemetry agent extension is nested and extracted the same way, to
  * {@code extension.jar} in that same directory, for the reason turned around: the agent loads an
- * extension from a path on disk, with a class loader of its own ({@code docs/design.md}).
+ * extension from a path on disk, with a class loader of its own ({@code design.adoc#extension-build}).
  */
 final class NestedJar {
 

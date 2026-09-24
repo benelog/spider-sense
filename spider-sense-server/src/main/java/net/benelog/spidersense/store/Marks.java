@@ -15,7 +15,7 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>A mark is what turns "did my change help" into a question with an answer:
  * {@code compare --before=before --after=after} needs two instants, and an agent
- * thinks in names rather than in epoch milliseconds (agent.md). The rows are
+ * thinks in names rather than in epoch milliseconds (marks-and-compare.adoc#marks). The rows are
  * shared like everything else in the database and swept with the retention, so a
  * mark written by the CLI is visible to the UI and to the next process.
  *
@@ -30,7 +30,7 @@ public final class Marks {
     public record Mark(long id, long at, String name, @Nullable String service, @Nullable String note) {
     }
 
-    /** What a mark may be called; the same expression api.md states. */
+    /** What a mark may be called; the same expression api.adoc#marks states. */
     public static final Pattern NAME = Pattern.compile("[A-Za-z0-9._-]{1,64}");
 
     /** The name the writer uses for an automatic mark. */

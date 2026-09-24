@@ -9,7 +9,7 @@ import { copyButtons, cliLine } from '../copyas.js';
 import { traceTable } from './traces.js';
 import { count, rel, bothTimes, full, splitType } from '../format.js';
 
-/** One section per cause, the root cause first, each folded as a stack trace (ui.md). */
+/** One section per cause, the root cause first, each folded as a stack trace (pages.adoc#error). */
 function exceptionChain(chain, mode) {
   return chain.map((cause, i) => {
     const lines = [cause.type ? cause.type + (cause.message ? ': ' + cause.message : '') : cause.message]
@@ -40,7 +40,7 @@ export function render(root, ctx) {
   const modeBox = h('div.row', { style: { gap: '2px' } });
   const stackPanel = panel({ title: 'Sample stack trace', actions: modeBox }, stackBody);
 
-  // App frames | All, remembered in the hash query (docs/ui.md).
+  // App frames | All, remembered in the hash query (pages.adoc#error).
   // A Live refresh repaints only when the trace or the mode changed, so an expanded run stays open.
   let painted = null;
   function paintStack() {

@@ -29,7 +29,7 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>Every other command asks one question and prints one answer. This one stays
  * open, because an agent that has just sent a request should be able to watch it
- * land rather than sleep and ask {@code findings} again (agent.md, "Tail").
+ * land rather than sleep and ask {@code findings} again (cli.adoc#tail).
  *
  * <p>It is also the one command with no file to fall back to: a tingle is an
  * event, not a row, and the H2 file cannot be followed. Nothing at {@code --url}
@@ -38,11 +38,11 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>The line is rendered here rather than by the server, which is the exception
  * to the CLI's rule of printing what it was given: the stream carries one JSON
- * object per event and no rendering, and agent.md fixes the columns.
+ * object per event and no rendering, and cli.adoc#tail fixes the columns.
  */
 final class Tail {
 
-    /** The kinds a tingle can be; {@code --kind} takes one of them (api.md). */
+    /** The kinds a tingle can be; {@code --kind} takes one of them (api.adoc#tingle). */
     private static final Set<String> KINDS = Set.of("slow-request", "slow-query", "error");
 
     private static final Duration CONNECT = Duration.ofSeconds(2);
@@ -229,7 +229,7 @@ final class Tail {
 
     /**
      * {@code 12:37:28.565  slow-query    spring-orders   SELECT orders  1,532 ms  <trace id>}:
-     * the tingle's own fields, in the order agent.md names them, two spaces apart.
+     * the tingle's own fields, in the order cli.adoc#tail names them, two spaces apart.
      */
     private static String line(Json.JsonObject tingle) {
         StringBuilder text = new StringBuilder(clock(tingle.optLong("at", 0))).append("  ")

@@ -19,7 +19,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 
 /**
  * {@code java -jar spider-sense.jar init}: the few lines a project's {@code CLAUDE.md}
- * needs about Spider Sense, and a copy of the agent skills beside them (agent.md, "init").
+ * needs about Spider Sense, and a copy of the agent skills beside them (agent-skill.adoc#init).
  *
  * <p>The one command that reads nothing: no HTTP, no database, no running Spider
  * Sense, so {@link Cli} answers it before it ever decides between {@link Remote} and
@@ -39,7 +39,7 @@ final class Init {
     /**
      * Where the launcher leaves the distributable jar's absolute path. The CLI runs out
      * of the nested server jar, extracted to a temporary directory, so this is the only
-     * way it can name the jar its user typed (design.md).
+     * way it can name the jar its user typed (design.adoc#premain).
      */
     static final String JAR_PROPERTY = "spidersense.jar";
 
@@ -87,7 +87,7 @@ final class Init {
     private Init() {
     }
 
-    /** The block exactly as agent.md prints it, with the jar path filled in. */
+    /** The block exactly as agent-skill.adoc#block prints it, with the jar path filled in. */
     static String block(String jar, boolean skillInstalled) {
         String body = BODY + (skillInstalled ? SKILL_HERE : SKILL_ELSEWHERE);
         return (START + "\n" + body + END).replace(JAR, jar);
@@ -113,7 +113,7 @@ final class Init {
             }
             // Without --mcp nothing is written and nothing is said: a host with a shell
             // is meant to use the CLI, and init should not hand it a second tool for
-            // the same answers (agent.md, "Choosing an interface").
+            // the same answers (agent-loop.adoc#choosing-an-interface).
             return options.flag("mcp") ? writeMcpServer(dir, jar, out, err) : Cli.OK;
         } catch (IOException e) {
             throw new UncheckedIOException(e);
@@ -122,7 +122,7 @@ final class Init {
 
     /**
      * {@code mcpServers.spider-sense} in the project's {@code .mcp.json}, for a host
-     * that launches its tools as a process (agent.md, "MCP").
+     * that launches its tools as a process (mcp.adoc).
      *
      * <p>Every other entry survives, at both levels, because the file is the
      * project's and Spider Sense is one server in it. It is rewritten in this

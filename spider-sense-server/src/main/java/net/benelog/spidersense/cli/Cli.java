@@ -19,7 +19,7 @@ import org.jspecify.annotations.Nullable;
  * <p>The launcher finds this class in the nested server jar and calls
  * {@link #run(String[])} reflectively, exiting with what it returns, so the whole
  * command line lives on this side of the class loader and the launcher keeps its
- * one rule of having no dependencies (design.md).
+ * one rule of having no dependencies (design.adoc#jar).
  *
  * <p>There are two ways to answer and one set of answers: {@link Remote} asks a
  * running Spider Sense over HTTP, {@link Local} opens the H2 file in process when
@@ -97,7 +97,7 @@ public final class Cli {
      * falling back then would answer a different question from the one asked.
      *
      * <p>{@code init} comes before all of it: it asks nothing and nobody, it only
-     * writes (agent.md). {@code mcp} comes before it too, because it is a session
+     * writes (agent-skill.adoc#init). {@code mcp} comes before it too, because it is a session
      * of messages rather than one question, and it makes the same choice again for
      * each tool call it is asked to answer.
      */
@@ -121,7 +121,7 @@ public final class Cli {
 
     /**
      * {@code findings} as the renderer produced it, with the suspect change under each code
-     * frame (agent.md, "Suspect change"): the one addition the CLI makes to an answer, because
+     * frame (cli.adoc#suspect-change): the one addition the CLI makes to an answer, because
      * the repository is where the CLI runs and not necessarily where the server does.
      */
     private static int findingsWithSuspects(Options options, String defaultUrl, PrintStream out,

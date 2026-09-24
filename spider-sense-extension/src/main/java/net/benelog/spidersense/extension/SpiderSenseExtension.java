@@ -6,7 +6,7 @@ import io.opentelemetry.sdk.autoconfigure.spi.AutoConfigurationCustomizerProvide
 /**
  * The extension's one entry point, found through
  * {@code META-INF/services/io.opentelemetry.sdk.autoconfigure.spi.AutoConfigurationCustomizerProvider}
- * when the agent loads {@code spider-sense/extension.jar} ({@code docs/design.md}).
+ * when the agent loads {@code spider-sense/extension.jar} ({@code design.adoc#extension}).
  *
  * <p>It adds one span processor to the tracer provider and wraps the configured sampler in
  * {@link SchemaLookupSampler}, and changes nothing else: no exporter, no property. The sampler is

@@ -7,6 +7,7 @@ The CLI renders nothing itself.
 When a Spider Sense answers at `--url`, the CLI fetches the `format=text` rendering and prints the body, so its numbers are the ones the UI shows.
 When none answers, the CLI opens the H2 file in process and runs the same queries through the same renderer (<<fallback,the direct-file fallback>>).
 
+[#invocation]
 == Invocation
 
 [source,bash]
@@ -14,7 +15,8 @@ When none answers, the CLI opens the H2 file in process and runs the same querie
 java -jar spider-sense.jar <command> [arguments] [options]
 ----
 
-The launcher treats a first argument that does not start with `-` as a command, and hands the whole line to the CLI inside the nested server jar.
+The launcher treats a first argument that does not start with `-` as a command, and hands the whole line to the CLI inside the nested server jar, through the same `SenseClassLoader` the embedded server uses (xref:design.adoc#jar[The jar]).
+The launcher itself stays dependency-free.
 `--port=` and the other standalone flags still start a server, so `java -jar spider-sense.jar` with no command is the standalone UI rather than a command (xref:modes.adoc#standalone[Standalone]).
 
 Under the Gradle plugin, the `spiderSense` task runs the same CLI, even in a project that never checked out the Spider Sense repository:
@@ -108,6 +110,7 @@ The launcher reads xref:configuration.adoc#properties-file[the properties file] 
 Every example below is the real output of one session against the `spring-orders` example application.
 That Spider Sense listened on port 4100, so each command also carried `--url=http://127.0.0.1:4100`, which the listings leave out.
 
+[#status]
 === status
 
 `status` names the mode, the port, the thresholds, the database and how much it holds.
@@ -195,18 +198,25 @@ Under each code frame whose file is in the repository the CLI runs in, `findings
      uncommitted
 ----
 
-`uncommitted` means the file is in `git diff --name-only` or `git diff --cached --name-only`, or is untracked, or `git blame` says the line is not committed yet.
-Otherwise the line names the commit `git blame -L <n>,<n> --porcelain` gives for the frame's line: its short hash, its author date as an age, and its subject.
-A frame that does not resolve under xref:configuration.adoc#source-dirs[the source roots], or whose file is outside the repository, gets no line.
+The line is indented two spaces past the frame, so a reader of the block sees it as the frame's.
+It is one of three things.
+
+* `uncommitted` when the file is in `git diff --name-only` or `git diff --cached --name-only`, or is untracked (`git ls-files --others --exclude-standard`), because a file the agent has just created is the most likely suspect of all.
+It is also `uncommitted` when `git blame` says the line itself is not committed yet.
+* Otherwise `changed in <hash> (<age>): <subject>`, from the commit `git blame -L <n>,<n> --porcelain` names for the frame's line: the first seven characters of its hash, its author date as an age in the largest whole unit (`45 seconds ago`, `2 hours ago`, `3 days ago`, `3 weeks ago`, `4 months ago`, `2 years ago`), and its subject.
+* Nothing when the frame does not resolve under xref:configuration.adoc#source-dirs[the source roots] (xref:findings.adoc#source-lines[Source lines and the suspect change]), when the file lies outside the repository, or when `git blame` has nothing to say about the line, as for a file edited to be shorter than the frame's line.
 
 The line answers the question an agent has first: is the line this finding points at in the change I just made.
 It is off when the working directory is not in a repository or `git` cannot be run, and `--no-git` turns it off.
 `--json` prints the server's JSON, which never carries it.
 
-This line is the one thing the CLI adds to an answer instead of printing what was rendered.
+This line is the one thing the CLI adds to an answer instead of printing what the server or the in-process renderer produced, and it has to be.
 The CLI runs in the project directory, where the repository is, and the server may run elsewhere or not at all.
-The HTTP API and the xref:mcp.adoc[MCP] `findings` tool therefore answer without it.
+It is added to the text after the rendering, and left out by `--no-git` and by `--json`.
+It is therefore also the one part of a findings answer that is not a function of the window alone: the age depends on when it was asked, and the verdict on the working tree.
+The HTTP API and the xref:mcp.adoc[MCP] `findings` tool answer without it, since neither knows which repository the caller is working in.
 
+[#trace]
 === trace and traces
 
 `trace <traceId>` prints one trace as an indented tree, one span per line with its offset and duration.
@@ -265,6 +275,7 @@ $ java -jar spider-sense.jar traces --since=before --limit=5
 | 08:19:29.939 | 12.6 ms | 739be08737bae7de506fdb0a8da510f8 | GET /api/orders/{id}/enriched | spring-orders | 13 | 6 | 0 | 200 |
 ----
 
+[#tables]
 === endpoints, queries, errors and logs
 
 `endpoints`, `queries`, `errors` and `logs` print the tables of the window, the same data the matching UI pages draw.
@@ -329,6 +340,7 @@ $ java -jar spider-sense.jar logs --since=before --limit=3
 08:19:28.965  ERROR  org.apache.catalina.core.ContainerBase.[Tomcat].[localhost].[/].[dispatcherServlet]  Servlet.service() for servlet [dispatcherServlet] in context with path [] threw exception [Request processing failed: java.lang.IllegalStateException: Payment gateway timeout] with root cause  trace 5e6769395a77c8f192949af91cbdedf2
 ----
 
+[#mark]
 === mark and marks
 
 `mark <name>` records a named moment now, and `--note=<text>` keeps a sentence with it.
@@ -353,6 +365,7 @@ $ java -jar spider-sense.jar marks
 | 2026-09-17T08:19:16.727+09:00 | start | spring-orders | pid 178056 |
 ----
 
+[#compare]
 === compare
 
 `compare --before=<selector> --after=<selector>` puts the window before a mark beside the window after it, endpoint by endpoint and query by query.
@@ -394,6 +407,7 @@ $ java -jar spider-sense.jar compare --before=before --after=after
 | same | 458522ccda9f | java.lang.IllegalStateException | Payment gateway timeout | 1 | 1 |
 ----
 
+[#check]
 === check
 
 `check` turns thresholds into pass or fail, and puts the verdict in the exit code.
@@ -418,22 +432,26 @@ $ echo $?
 
 `--endpoint=` narrows the scope to one endpoint, by its id or by its name, and the heading names that endpoint.
 
+[#tail-command]
 === tail
 
 `tail` prints one line per live event as it arrives, so a request that was just sent can be watched instead of polled for.
 It needs a running Spider Sense.
 See <<tail,Tail>>.
 
+[#export-command]
 === export and import
 
 `export` writes the window as one JSON document, and `import` reads one back into a store.
 See <<export-import,Export and import>>.
 
+[#sql-command]
 === sql
 
 `sql "<statement>"` runs one read-only statement over the schema, for a question no other command answers.
 See <<sql,SQL>>.
 
+[#init]
 === init
 
 `init` writes the Spider Sense block into the project's `CLAUDE.md` and installs the skills into its `.claude/skills/`.
@@ -441,12 +459,14 @@ It is the one command that reads nothing: no HTTP, no database, no running Spide
 It takes none of the common options, and its own are `--dir`, `--jar`, `--no-skill` and `--mcp`.
 See xref:agent-skill.adoc#init[init].
 
+[#mcp]
 === mcp
 
 `mcp` runs the MCP server over stdio, for a host that has no shell.
 It takes `--url` and `--db` and nothing else, because a window, a format and a service belong to each message of the session rather than to the command.
 See xref:mcp.adoc[MCP].
 
+[#help]
 === help
 
 `help` prints every command, every common option, the selector forms and the exit codes.
@@ -475,7 +495,7 @@ Common options:
   --url=<base url>     default http://127.0.0.1:4000, or SPIDERSENSE_URL, or what
                        spider-sense.properties in the working directory implies
   --db=<path or jdbc url>   read the database directly, without asking any server
-  --json               the JSON of api.md instead of the text
+  --json               the JSON of the HTTP API instead of the text
   --full               whole statements, every repeated span
   --hide-acked         findings only: leave acknowledged findings out
   --no-git             findings only: no suspect-change line under the code frames
@@ -550,6 +570,7 @@ Three commands depart from the table.
 
 An option a command does not take is a usage error rather than a silently ignored word, so a mistyped `--sinse` is reported rather than answered for the last 15 minutes.
 
+[#exit-codes]
 == Exit codes
 
 [cols="1,4",options="header"]
@@ -623,6 +644,13 @@ Six commands write rather than read, and they write in this path too: `mark`, `a
 Every answer follows the same rules, so the output is small, stable and diffable.
 The same data renders to the same bytes, so two answers can be diffed.
 
+The CLI prints these renderings, and the HTTP API serves them too.
+An agent-facing endpoint answers Markdown when it is asked with `format=text`, or with an `Accept` header whose first type is `text/markdown` or `text/plain`, and the response is then `text/markdown; charset=utf-8`.
+JSON stays the default, and xref:api.adoc#agent-endpoints[Agent-facing endpoints] has the wire shapes.
+The endpoints with a text rendering are `/api/status`, `/api/findings`, `/api/findings/\{id}`, `/api/marks`, `/api/compare`, `/api/check`, `/api/sql`, `/api/traces`, `/api/traces/\{id}`, `/api/endpoints`, `/api/queries`, `/api/queries/\{queryId}`, `/api/errors`, `/api/errors/\{errorId}`, `/api/logs` and `/api/services`.
+
+The conventions:
+
 * The first line is a heading naming the answer and the window, in ISO-8601 with the local offset: `# findings  2026-09-18T12:37:06+09:00 → 12:41:08  (4m 1s, all services, 2456 requests)`.
 The range is rounded to the second and written in its largest units (`6s`, `2m 30s`, `15m`, `2h`), never in milliseconds.
 * Lists are Markdown tables, and ids are complete: a trace id is 32 hex characters, an endpoint, query or error id 12, because they are passed back.
@@ -632,31 +660,82 @@ The range is rounded to the second and written in its largest units (`6s`, `2m 3
 * A statement is cut at 200 characters with `…`, and `--full` keeps it whole.
 * Nothing in the body depends on when it was rendered, only on the window.
 `now` appears only in the heading.
-* An empty result says what was looked for and where, and, when there was no request at all, how to send some.
+* An empty result says what was looked for and where, as in `no findings since 2026-09-18T12:42:26+09:00 (20s, 16 requests)`, and, when there was no request at all, how to send some: the OTLP endpoint.
+
+[#trace-rendering]
+=== A trace
 
 A trace is an indented tree, one span per line.
+The trace below crosses two example applications, `spring-orders` calling `silk-bookstore`, and the repeated `SELECT product` spans under the entry span are collapsed into one row that carries the statement:
+
+[source]
+----
+# trace 09e96c4c6db157e690716c2615ffd146  2026-09-18T12:37:29.077+09:00  12.2 ms  spring-orders → silk-bookstore  20 spans, 10 db, 0 errors
+
+offset     duration  span
+0.0 ms     12.2 ms   SERVER spring-orders GET /api/orders/{id}/enriched → 200
+0.7 ms     0.6 ms      INTERNAL OrderRepository.findById
+0.7 ms     0.5 ms        INTERNAL Session.find orders.domain.Order
+0.9 ms     0.1 ms          db SELECT orders
+1.4 ms     0.0 ms      db SELECT order_line
+1.6 ms     0.0 ms      db SELECT product  × 4, 0.0 ms avg, 0.0 ms total
+                         select p1_0.id,p1_0.name,p1_0.price,p1_0.sku from product p1_0 where p1_0.id=?
+1.7 ms     0.0 ms      db SELECT customer
+1.8 ms     0.1 ms      INTERNAL Transaction.commit
+2.2 ms     2.7 ms      CLIENT GET http://localhost:8081/api/books/155 → 200
+3.3 ms     1.0 ms        SERVER silk-bookstore GET /api/books/{id} → 200
+3.7 ms     0.1 ms          db SELECT books
+5.6 ms     3.1 ms      CLIENT GET http://localhost:8081/api/books/87 → 200
+6.5 ms     2.0 ms        SERVER silk-bookstore GET /api/books/{id} → 200
+7.2 ms     0.1 ms          db SELECT books
+9.0 ms     2.4 ms      CLIENT GET http://localhost:8081/api/books/27 → 200
+9.9 ms     0.9 ms        SERVER silk-bookstore GET /api/books/{id} → 200
+10.3 ms    0.1 ms          db SELECT books
+----
+
 Two spaces of indentation mark each level of depth, and the service is named only where it changes from the parent.
 Consecutive sibling spans with the same summary and category collapse after the third into one line with `× n`, the average and the total.
 A database span that is slow, or the first of a collapsed group, shows its statement on the next line.
 An error span shows its exception and the application frames under it, and the trace's log lines follow, oldest first.
 `--full` lists every repeated span and keeps the statements whole.
-
-The same renderings are served over HTTP with `format=text` (xref:api.adoc#agent-endpoints[Agent-facing endpoints]).
+<<trace,trace and traces>> shows a failed trace with its exception, its frames and its log lines.
 
 [#one-finding]
 === One finding
 
-`+GET /api/findings/{id}?format=text+` renders one finding of the window with the code that renders the list.
-The heading reads `# finding <id>` in place of `# findings`, over the same window and service.
-The table has the finding's one row, numbered by its rank in the whole list, and the evidence block under it is the one `findings` prints for that number.
-Everything under the heading is therefore the list's own bytes, except the suspect-change lines the CLI adds.
-`+GET /api/errors/{errorId}+` and `+GET /api/queries/{queryId}+` answer the same way with `format=text`: the heading `# error <id>` or `# query <id>`, then the group's row of the `errors` or `queries` table, and for an error its application frames.
+`+GET /api/findings/{id}?since&until&service+` answers one finding of the window, so a person who sees it in the UI can hand exactly it to an agent.
 This is what the UI's xref:pages.adoc#copy-as-markdown[Copy as Markdown] copies.
+The rules run over the window as for the list, with no `limit` and with acknowledged and resolved findings included, and the answer is the finding with that id and its `rank` among them.
+An id the rules do not produce over the window is `404`.
+
+Its text rendering is written by the code that writes the list, so apart from the heading its lines are the list's bytes:
+
+[source]
+----
+# finding n-plus-one:1d41bc5a9b2c  2026-09-18T12:37:06+09:00 → 12:41:08  (4m 1s, all services, 2456 requests)
+
+| # | severity | state | kind | id | service | title |
+| --- | --- | --- | --- | --- | --- | --- |
+| 2 | medium | new | n-plus-one | n-plus-one:1d41bc5a9b2c | orders | GET /orders/{id} runs SELECT order_line 6 times per request |
+
+2. n-plus-one:1d41bc5a9b2c — 1 of 1 request repeated it; 6 times; 12.0 ms per request in that statement
+   requests 1, affected 1, medianRepeats 6, maxRepeats 6, msPerRequest 12.0
+   select * from order_line where order_id = ?
+   traces: 4bf92f3577b34da6a3ce929d0e0e4736
+----
+
+The heading is the list's with `finding <id>` in place of `findings`, over the same window and service.
+The table has the list's columns and the finding's one row, numbered by its rank, and the evidence block under it is the one `findings` prints for that number.
+`findings --since=<from> --until=<to> --limit=100` over the same window prints both unchanged, bar the <<suspect-change,suspect-change lines>> it adds under the code frames, which no HTTP answer carries.
+
+`+GET /api/errors/{errorId}+` and `+GET /api/queries/{queryId}+` answer the same way with `format=text`: the heading `# error <errorId>` or `# query <queryId>` over the window, then the `errors` or `queries` table with the group's one row, and for an error the sample's application frames as the list prints them.
+The JSON of those two stays the pages' own (xref:api.adoc#query[One query], xref:api.adoc#error[One error group]).
 
 [#trace-diff]
 == Trace diff
 
-`trace <a> --diff=<b>` aligns two span trees and renders them as one text with a gutter, so after a fix you see which span went away and which one got slower without reading two trees.
+`trace <a> --diff=<b> [--full]` aligns two span trees and renders them as one text with a gutter, so after a fix you see which span went away and which one got slower without reading two trees.
+Over HTTP it is `+GET /api/traces/{a}?diff={b}+`.
 
 [source]
 ----
@@ -684,7 +763,16 @@ Statement, exception and log lines are not diffed.
 A matched span shows its statement or its exception when either side has one, as the single rendering would.
 
 `--full` expands collapsed groups on both sides before aligning.
-Either id unknown is exit code `4`, naming it.
+Either id unknown is a `404` naming it over HTTP, and exit code `4` in the CLI.
+
+The JSON is one object per line of the text:
+
+[source,json]
+----
+{ "a": "<id>", "b": "<id>", "durationMs": { "a": …, "b": … }, "spans": { "a": 48, "b": 12 },
+  "lines": [ { "op": "=" | "+" | "-", "depth": 1, "summary": "…", "category": "…",
+               "aMs": … | null, "bMs": … | null, "count": { "a": 42, "b": null } | null } ] }
+----
 
 [#tail]
 == Tail
@@ -694,7 +782,7 @@ Either id unknown is exit code `4`, naming it.
 java -jar spider-sense.jar tail [--kind=slow-request|slow-query|error] [--service=<name>] [--until-traces=<n>] [--timeout=<duration>] [--json]
 ----
 
-`tail` is the CLI's window on the live event stream: one line per event as it arrives, so an agent that has just sent a request can watch it land instead of sleeping and asking `findings` again.
+`tail` is the CLI's window on the live event stream, `GET /api/events` (xref:api.adoc#events[Live events]): one line per `tingle` event as it arrives, so an agent that has just sent a request can watch it land instead of sleeping and asking `findings` again.
 
 [source]
 ----
@@ -705,10 +793,10 @@ java -jar spider-sense.jar tail [--kind=slow-request|slow-query|error] [--servic
 The columns are local time with milliseconds, kind, service, title, detail and trace id, which are the event's own fields in that order.
 `--kind` and `--service` each filter on one value, and without either every event is printed.
 
-`--until-traces=<n>` ends with exit `0` once the stream has shown `n` new traces since the command started.
+`--until-traces=<n>` ends with exit `0` once the `stats` events have shown `n` new traces since the command started, `traces` on a `stats` event being the store's count.
 `--timeout=<duration>` takes a selector duration such as `30s` or `5m`, and ends with exit `0` when it elapses.
 Without either, `tail` runs until it is interrupted.
-`--json` prints the event's JSON object per line instead.
+`--json` prints the event's JSON object per line instead, with `"event": "tingle"` (or `"stats"`) added.
 
 `tail` needs a running Spider Sense, because there is no file to tail.
 Nothing at `--url` is a message on stderr and exit `2`.
@@ -725,25 +813,59 @@ java -jar spider-sense.jar export --since=start --out=session.json.gz
 java -jar spider-sense.jar import session.json.gz
 ----
 
-`export` writes to stdout, or to the file `--out` names, gzipped when that name ends in `.gz`.
-It takes `--since`, `--until` and `--service` like every other command.
-The document carries every service, span, log record, metric, metric series, metric point, live event and mark of the window.
-It also carries the index catalog of those services, whatever its age, because the agent reads a table's indexes once per process and usually before the window.
-A slow-query or N+1 finding over the imported session therefore has the same xref:findings.adoc#schema[schema block] it had where it was recorded.
-Every key is its column's name in camelCase, so a section is the table it came from.
-Nothing is derived on the way out or recomputed on the way in, because a document exported from one session must not change meaning under another machine's thresholds.
+`export [--since=… --until=… --service=…] [--out=<file>]` writes to stdout, or to the file `--out` names, gzipped when that name ends in `.gz`.
+Over HTTP it is `GET /api/export?since&until&service` (or `from` and `to`) without `traceId`, streamed as it is read, with `Content-Disposition: attachment; filename="spider-sense-<from>-<to>.json"`.
+With `traceId` the answer is the single-trace export instead (xref:api.adoc#data[Delete and export]).
 
-`import` posts the document to the running Spider Sense, or, when none answers or `--db` names a file, writes into the file in process through the same code the server uses.
-It prints one line:
+The document carries every service, span, log record, metric, metric series, metric point, tingle and mark of the window, and the index catalog (`db_table`) of its services:
+
+[source,json]
+----
+{ "spiderSense": { "version": "0.1.0", "schema": 4, "exportedAt": …, "window": { "from": …, "to": … }, "service": "…" | null },
+  "services": [ { "name": "…", "language": "…", "pid": …, "firstSeen": …, "lastSeen": …, "resource": { … } } ],
+  "spans": [ { …every column of the span table except id, attributes and events as the objects they are… } ],
+  "logs": [ { …every column of log except id… } ],
+  "metrics": [ { "name", "type", "unit", "description", "monotonic", "temporality" } ],
+  "metricSeries": [ { "id": 7, "service", "name", "attributes": { … } } ],
+  "metricPoints": [ { "seriesId": 7, "atMs", "value", "count", "sum", "min", "max", "buckets": { … } | null } ],
+  "tingles": [ { …every column except id… } ],
+  "marks": [ { "atMs", "name", "service", "note" } ],
+  "dbTables": [ { "service", "schemaName", "tableName", "product", "indexes": [ { "name", "unique", "columns": [ … ] } ], "seenMs" } ] }
+----
+
+Every key is its column's name in camelCase, so a section is the table it came from and an import binds it straight back: `at_ms` is `atMs`, `start_ms` is `startMs`, `parent_span_id` is `parentSpanId`.
+Nothing is derived on the way out or recomputed on the way in: `entry`, `slow`, `queryId` and the rest travel as they were stored, because a document exported from one session must not change meaning under another machine's thresholds.
+
+`dbTables` is cut by service and not by time.
+The extension reads a table's indexes once per process, so the row behind the window's statements was usually written before the window began, and every catalog row of the exported services travels, all of them when no `service` is given.
+Its `indexes` is the stored array as an array, or the stored text as a string when that text is not JSON.
+A `slow-query` or `n-plus-one` finding over the imported session therefore has the xref:findings.adoc#schema[schema block] it had where it was recorded.
+
+`import <file> [--url=… | --db=…]` posts the document to the running Spider Sense, or, when none answers or `--db` names a file, writes into the file in process through the same code the server uses.
+Over HTTP it is `POST /api/import` with the document as the body, `Content-Encoding: gzip` accepted, and the answer is `200` with the counts:
+
+[source,json]
+----
+{ "spans": n, "logs": n, "metricPoints": n, "tingles": n, "marks": n, "dbTables": n, "skippedTraces": n, "window": { "from": …, "to": … } }
+----
+
+The command prints one line:
 
 [source]
 ----
 imported 12,345 spans, 456 logs, 7,890 metric points, 12 tingles, 3 marks (2 traces already present) from 2026-09-18T12:37:06+09:00 → 12:41:08
 ----
 
-Import keeps every timestamp as exported, so set the time range to that window, or to `all`, to see the data.
-A file imported twice adds nothing: a trace whose id already has rows is skipped whole, a metric point is merged on its series and instant, a service row is merged, a mark is skipped when one with the same name and instant exists, and a table of the index catalog replaces the row the store had for it.
-A document whose schema is not this version's is refused, naming both versions.
+Import keeps every timestamp as exported, so set the time range to the answer's `window`, or to `all`, to see the data.
+Import is idempotent enough for a file imported twice.
+
+* A trace whose id already has rows in the store is skipped whole, its spans, logs and tingles, and `skippedTraces` counts it.
+* A metric point is merged on its `(series, at)` key, with the series looked up or created by `(service, name, attributes)`.
+* A service row is merged.
+* A mark is skipped when one with the same name and instant exists.
+* A catalog row is merged on its key `(service, schema_name, table_name)` as the writer merges it (xref:storage.adoc#writer[How it is written]), so the table the file describes replaces the row the store had for it.
+
+A document whose `schema` is not this version's is a `400` naming both versions.
 Acknowledgements and resolutions are not exported, because they are the reader's rather than the session's.
 
 [#sql]
@@ -754,8 +876,30 @@ Acknowledgements and resolutions are not exported, because they are the reader's
 java -jar spider-sense.jar sql "SELECT endpoint, COUNT(*) FROM span WHERE entry GROUP BY endpoint"
 ----
 
-`sql` runs one read-only statement over the schema, for a question no other command answers.
+`sql "<statement>" [--limit=200]` runs one read-only statement over the schema, for a question no other command answers.
+It is the escape hatch.
+Findings, compare and check answer what Spider Sense knows to look for, and everything else it holds is already documented by xref:storage.adoc#schema[the schema].
 Reach for it last: `findings`, `endpoints`, `queries`, `errors`, `compare` and `check` are the same data with the thresholds, the ranking and the rendering already applied, and they stay correct when the schema changes.
+
+The index catalog the extension reads is there too, as `db_table`.
+`SELECT table_name, indexes FROM db_table WHERE service = 'servlet-warehouse'` lists every table a slow statement of that service has touched, with its indexes as JSON.
+
+Over HTTP it is `POST /api/sql` with `{ "sql": "SELECT …", "limit": 200 }`.
+`format=text` as a query parameter, or an `Accept` whose first type is `text/markdown` or `text/plain`, selects the Markdown rendering, and the JSON is otherwise:
+
+[source,json]
+----
+{
+  "columns": ["ENDPOINT", "STATEMENTS"],
+  "rows": [ ["GET /orders/{id}", 42], ["GET /orders", 7] ],
+  "rowCount": 2,
+  "truncated": false,
+  "elapsedMs": 3
+}
+----
+
+A value is a JSON number, string, boolean or null, as the store holds it.
+Every instant in the schema is epoch milliseconds and stays a number, and an H2 `TIMESTAMP` a statement computes itself is an ISO string.
 
 The answer is a heading and a table:
 
@@ -769,25 +913,41 @@ The answer is a heading and a table:
 | GET /orders | 7 |
 ----
 
-The column headers are H2's own labels, which upper-case an unquoted name, so alias a column when the heading matters.
-At most 200 rows come back unless `--limit=<n>` says otherwise, and the cap is 5000.
-The heading carries `(truncated at 200)` when the cap cut the answer off, and a truncated answer is a sample rather than a total.
-`--json` prints `columns`, `rows`, `rowCount`, `truncated` and `elapsedMs` instead of the table, and `--full` keeps long cells whole instead of cutting them at 200 characters.
-Numbers are printed as the store holds them, without a thousands separator, so a value passed back into the next statement survives the round trip.
+The column headers are H2's own labels, which upper-case an unquoted name (`SERVICE`, `SPANS`), so alias a column when the heading matters.
+At most 200 rows come back unless `--limit=<n>` says otherwise, and the cap is 5000; a limit below 1 is a `400`.
+One row more than the limit is fetched, so `truncated` reports whether the cap cut the answer off rather than guessing at it.
+The heading carries ` (truncated at 200)` when the cap cut the answer off, and a truncated answer is a sample rather than a total.
+`--json` prints `columns`, `rows`, `rowCount`, `truncated` and `elapsedMs` instead of the table.
+
+The <<text-rendering,conventions>> hold here too.
+Nothing in the body depends on when it was rendered, so `elapsedMs` is in the JSON only.
+A cell is cut at 200 characters with `…` unless `--full` (`full=true`) is given, a `|` in a cell is escaped, and its newlines collapse to spaces.
+Numbers are printed as the store holds them, without a thousands separator, because a value passed back into the next statement has to survive the round trip.
 A SQL `NULL` is `—`.
 
-=== The read-only user
+[#read-only]
+=== Read-only, in three layers
 
-The statement runs as the H2 user `spider_sense_reader`, which has `SELECT` on the schema and nothing else.
-H2 itself therefore refuses `INSERT`, `UPDATE`, `DELETE`, `DROP` and `ALTER`, and the administrator-only functions `FILE_WRITE`, `CSVWRITE`, `FILE_READ`, `LINK_SCHEMA` and `RUNSCRIPT`.
-Before H2 sees the statement, only a single `SELECT`, `WITH`, `TABLE`, `VALUES`, `EXPLAIN` or `SHOW` is accepted, and a second statement after a `;` is refused.
-The connection itself is read-only, with autocommit off, a row cap of the limit plus one and a query timeout of 10 seconds.
+Each layer catches what the one before it cannot, and the second is the one that holds.
 
-Only a server creates that user, when it opens the database (xref:storage.adoc#reader[Storage]).
-A database an older Spider Sense created has no reader user in it yet, and `sql` then reports `the database has no read-only user yet; start an application or the standalone server with this version first` on stderr and exits `2`.
+. *A statement allowlist.*
+After the leading whitespace and the `--` and `/* */` comments are stripped, the first keyword must be `SELECT`, `WITH`, `TABLE`, `VALUES`, `EXPLAIN` or `SHOW`, and there must be one statement: a `;` followed by anything but whitespace is refused.
+String literals and comments make this a scanner over SQL text rather than a parser, which is exactly why it is not the layer that is trusted.
+. *A user with `SELECT` and nothing else.*
+The schema creates `spider_sense_reader`, idempotently, on every open by a server of this version, and grants it `SELECT` on schema `PUBLIC` (xref:storage.adoc#reader[The read-only user]).
+The statement runs on a connection opened as that user, with the same JDBC URL.
+H2 itself therefore refuses `INSERT`, `UPDATE`, `DELETE`, `DROP` and `ALTER` with "Not enough rights for object", and the administrator-only functions `FILE_WRITE`, `CSVWRITE`, `FILE_READ`, `LINK_SCHEMA` and `RUNSCRIPT` with "Admin rights are required for this operation", whatever the layer above thought it read.
+. *The limits of the connection.*
+`setMaxRows(limit + 1)`, a query timeout of 10 seconds, `setReadOnly(true)`, autocommit off, and a `rollback()` whatever happens.
 
-A statement that is not allowed and a statement H2 refuses or cannot parse both print a one-line error message.
+Only a server creates the reader user, when it opens the database.
+The direct-file path opens the reader connection the same way, and a database an older Spider Sense created has no reader user in it yet.
+`sql` then reports `the database has no read-only user yet; start an application or the standalone server with this version first` on stderr and exits `2`.
 
+A statement that is not allowed is a `400` with `{ "error": "…" }` naming the reason, and a statement H2 refuses or cannot parse is a `400` carrying H2's own message.
+In the text rendering, and so in the CLI, an error is that message on one line, because an agent that asked for Markdown should not have to parse a JSON object it did not expect.
+
+[#sql-window]
 === Bounding the window
 
 There is no `--since` here, because the window is a predicate you write.
@@ -809,6 +969,7 @@ Without a predicate on `start_ms` or `at_ms` the query reads the whole retention
 The three flags on `span` are the shortcuts worth remembering: `entry` counts requests, `category = 'db'` counts statements, and `error` counts failures.
 xref:storage.adoc#schema[The schema] has every table and column.
 
+[#sql-examples]
 === Worked queries
 
 The endpoints that issue the most distinct statements, a ranking `findings` cannot make.

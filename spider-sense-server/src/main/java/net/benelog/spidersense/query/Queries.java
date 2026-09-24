@@ -64,7 +64,7 @@ public final class Queries {
         this.catalog = new Catalog(sql);
     }
 
-    /** The index catalog, for the rules that answer over the same tables (agent.md). */
+    /** The index catalog, for the rules that answer over the same tables (findings.adoc#schema). */
     public Catalog catalog() {
         return catalog;
     }
@@ -262,7 +262,7 @@ public final class Queries {
      * How much database work each endpoint's requests did, by endpoint id.
      *
      * <p>The join is "a database span of the same trace and the same service"
-     * (storage.md): the database work of a downstream service belongs to that
+     * (storage.adoc): the database work of a downstream service belongs to that
      * service's own endpoint, not to the one that called it. A finding's
      * {@code dbShare} and a comparison's {@code dbCallsPerRequest} are the same
      * question, so they are one statement.
@@ -293,7 +293,7 @@ public final class Queries {
      * How much database work each job's runs did, by {@code service\0name}.
      *
      * <p>The same join as {@link #databaseWork}, over the root {@code INTERNAL} spans
-     * a {@code slow-job} finding is about (storage.md): a job is not an endpoint, so
+     * a {@code slow-job} finding is about (storage.adoc): a job is not an endpoint, so
      * it is keyed by the service and the span name rather than by an endpoint id.
      */
     public Map<String, DbWork> jobDatabaseWork(Window window, @Nullable String service) {
@@ -336,7 +336,7 @@ public final class Queries {
      * The query groups alone: the aggregate, with no callers and no schema block.
      *
      * <p>What a finding's state needs from the previous run, where only which groups
-     * crossed a threshold matters (agent.md, "State").
+     * crossed a threshold matters (findings.adoc#state).
      */
     List<Stats.QueryStats> queryGroups(Window window, @Nullable String service,
             @Nullable String sort, int limit, @Nullable String queryId) {
@@ -377,7 +377,7 @@ public final class Queries {
      *
      * <p>A window has a handful of services and a hundred query groups, so the
      * catalog is read per service rather than per statement; the matching itself is
-     * Java over what came back (storage.md, "How it is read").
+     * Java over what came back (storage.adoc#reads).
      */
     private List<Stats.QueryStats> withSchema(List<Stats.QueryStats> stats) {
         Map<String, Map<String, List<Catalog.Table>>> byService = new HashMap<>();
@@ -453,7 +453,7 @@ public final class Queries {
 
     /**
      * Occurrences per bucket for each of these error groups, as the errors page
-     * draws them (api.md, {@code ErrorGroup.series}).
+     * draws them (api.adoc#error-group, {@code ErrorGroup.series}).
      *
      * <p>The buckets are the window's, the ones the Overview charts, merged
      * {@code ceil(n / 30)} at a time from the oldest, so a sparkline has at most
@@ -535,7 +535,7 @@ public final class Queries {
 
     /**
      * The error groups alone: the aggregate, with no sample and no endpoints, which
-     * is what a finding's state needs from the previous run (agent.md, "State").
+     * is what a finding's state needs from the previous run (findings.adoc#state).
      */
     List<Stats.ErrorGroup> errorGroups(Window window, @Nullable String service, int limit,
             @Nullable String errorId) {
@@ -718,7 +718,7 @@ public final class Queries {
                 // An IN over the matching spans rather than an EXISTS per trace: H2 reads
                 // the spans by the predicate's index once instead of probing every trace.
                 // The span's own window makes that read a range of the (…, start_ms) index,
-                // the window's share of the group rather than its whole history (storage.md).
+                // the window's share of the group rather than its whole history (storage.adoc).
                 .and("t.trace_id IN (SELECT s.trace_id FROM span s WHERE s." + predicate
                         + " AND s.start_ms BETWEEN ? AND ?)", params.toArray());
         String order = slowest ? "t.duration_ns DESC" : "t.start_ms DESC";
@@ -864,7 +864,7 @@ public final class Queries {
      * it: a host and port, a database, a queue, an RPC service.
      *
      * <p>Public because a {@code slow-external} finding groups by the same value
-     * (agent.md), and two readings of "what did this call go to" would be two
+     * (findings.adoc#slow-external), and two readings of "what did this call go to" would be two
      * different names for one dependency.
      */
     public static String target(SpanRecord span) {
@@ -897,7 +897,7 @@ public final class Queries {
 
     /**
      * {@code GET localhost:8081/api/books/?}: what two outbound calls have to share
-     * to be the same call (agent.md, "The repeated call").
+     * to be the same call (findings.adoc#repeated-call).
      *
      * <p>The span's name, the dependency {@link #target}, and the path and query of
      * {@code url.full} with every run of digits replaced, which is what a loop
@@ -958,7 +958,7 @@ public final class Queries {
 
     // --- where the time went -------------------------------------------------
 
-    /** One summary a set of traces spent self time in (agent.md, "Where the time went"). */
+    /** One summary a set of traces spent self time in (findings.adoc#time). */
     public record HotSpan(String name, String category, double selfMs, double share, long count) {
     }
 
@@ -976,10 +976,10 @@ public final class Queries {
         public static final TimeSplit NONE = new TimeSplit(List.of(), Map.of());
     }
 
-    /** How many summaries a {@link TimeSplit} names (agent.md). */
+    /** How many summaries a {@link TimeSplit} names (findings.adoc#time). */
     private static final int HOT_SPANS = 3;
 
-    /** The four shares of a breakdown, in the order they are written (agent.md). */
+    /** The four shares of a breakdown, in the order they are written (findings.adoc#time). */
     private static final List<String> BUCKETS = List.of("db", "http", "internal", "self");
 
     private static final double[] EMPTY_SUM = new double[2];
@@ -988,8 +988,8 @@ public final class Queries {
      * The aggregated answer to "where did the time go", over one sample of traces.
      *
      * <p>One trace is an anecdote, so a {@code slow-endpoint} and a {@code slow-job}
-     * ask it over the twenty slowest traces they have (agent.md, "Where the time
-     * went"), and the endpoint page asks it over the twenty it already shows. It is
+     * ask it over the twenty slowest traces they have (findings.adoc#time),
+     * and the endpoint page asks it over the twenty it already shows. It is
      * read out of the spans rather than out of an aggregate, because a summary is
      * built from the attributes and not from a column, which is why the sample is
      * bounded rather than the window.
@@ -1326,7 +1326,7 @@ public final class Queries {
      * <p>Loaded as six columns over the window once and kept for the length of one
      * request. A recursive SQL walk would be exact to the row, but this answers
      * every query and every error group of one page from a single scan, which
-     * storage.md accepts at local-development volumes.
+     * storage.adoc accepts at local-development volumes.
      */
     record Ancestry(Map<String, Entry> entries, Map<String, String> parents) {
 
@@ -1345,7 +1345,7 @@ public final class Queries {
          * <p>A walk never leaves its trace, so the traces without a span of the
          * service hold nothing a span of the service can reach: leaving them out
          * changes no answer, and on a store shared by several applications it is
-         * most of the rows (storage.md).
+         * most of the rows (storage.adoc#reads).
          */
         static Ancestry of(Sql sql, Window window, @Nullable String service) {
             Map<String, Entry> entries = new HashMap<>();

@@ -16,7 +16,7 @@ import net.benelog.spidersilk.json.Json;
 
 /**
  * {@code init --mcp}: the project's {@code .mcp.json}, for a host that has no
- * shell and launches its tools as a process (agent.md, "init").
+ * shell and launches its tools as a process (agent-skill.adoc#init).
  *
  * <p>Everything else {@code init} writes is covered by {@link CliTest}; what is
  * here is the third line and the file it names.
@@ -76,7 +76,7 @@ class InitTest {
         assertThat(project.resolve(".mcp.json")).doesNotExist();
     }
 
-    /** {@code --no-skill} skips every skill, not only the first one (agent.md, "init"). */
+    /** {@code --no-skill} skips every skill, not only the first one (agent-skill.adoc#init). */
     @Test
     void noSkillInstallsNeitherSkill(@TempDir Path project) {
         Run run = init("--dir=" + project, "--jar=" + JAR, "--no-skill");

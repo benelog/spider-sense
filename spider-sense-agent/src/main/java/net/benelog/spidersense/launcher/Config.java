@@ -6,7 +6,8 @@ import java.util.Locale;
 import org.jspecify.annotations.Nullable;
 
 /**
- * The Spider Sense configuration, exactly the table in {@code docs/design.md} plus the mode.
+ * The Spider Sense configuration, exactly the table in {@code configuration.adoc#properties} plus
+ * the mode.
  *
  * <p>In agent mode system properties are the only channel there is, because {@code premain} runs
  * before the application's {@code main}; the standalone jar takes the same keys without the
@@ -14,7 +15,7 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>{@code db} and {@code retentionHours} are {@code null} when the user said nothing, and are
  * then left out of {@link #toServerArgs()} entirely: their defaults belong to the server, which
- * owns the database (see {@code docs/storage.md}), and repeating them here would mean two places
+ * owns the database (see {@code storage.adoc}), and repeating them here would mean two places
  * to change.
  */
 public record Config(
@@ -113,7 +114,7 @@ public record Config(
                 // Server-owned keys the launcher never interprets: the server runs in this JVM
                 // and reads them as spidersense.* properties, so the argument becomes the
                 // property. The value is kept as written, because an empty
-                // spidersense.ignore.endpoints means "ignore nothing" (design.md).
+                // spidersense.ignore.endpoints means "ignore nothing" (configuration.adoc#ignored-endpoints).
                 case "app.packages", "ignore.endpoints", "retention.spans",
                         "ingest.max-spans-per-second", "source.dirs" ->
                         System.setProperty("spidersense." + key, value);

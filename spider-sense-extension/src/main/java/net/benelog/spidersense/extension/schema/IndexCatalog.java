@@ -31,7 +31,7 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Reads the index catalog of the tables a slow statement touched and emits it as one log record per
- * table ({@code docs/design.md}, "The extension"; {@code docs/agent.md}, "The schema block").
+ * table ({@code design.adoc#extension}; {@code findings.adoc#schema}).
  *
  * <p>This class is a helper: the agent injects it into the class loader of the JDBC driver, beside
  * the advice that calls it, because advice never runs in the extension's own loader. That is why it

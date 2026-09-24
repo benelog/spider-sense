@@ -8,7 +8,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /**
- * The light parse of agent.md, over the statements the instrumentations actually
+ * The light parse of findings.adoc#schema, over the statements the instrumentations actually
  * record: Hibernate's aliased selects, a hand-written join, a write.
  */
 class SqlShapeTest {

@@ -1,5 +1,5 @@
 // The Requests | Load toggle and the chart spec behind it, shared by the Overview,
-// the Service page and the Endpoint page. docs/ui.md Overview item 2.
+// the Service page and the Endpoint page. pages.adoc#overview item 2.
 
 import { h } from './ui.js';
 import { bucketColors, bucketLabels } from './buckets.js';

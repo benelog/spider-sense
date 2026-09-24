@@ -1,6 +1,6 @@
-// Code frames as links into the editor, with the lines around them (docs/ui.md, "Code frames").
+// Code frames as links into the editor, with the lines around them (pages.adoc#code-frames).
 // Each frame asks GET /api/source once; a frame that does not resolve stays plain text.
-// A whole stack trace folds its framework frames by the same rules (docs/ui.md, "Stack traces").
+// A whole stack trace folds its framework frames by the same rules (pages.adoc#stack-traces).
 
 import { getJSON, state } from './api.js';
 import { h } from './ui.js';
@@ -82,9 +82,9 @@ export function codeFrame(frame) {
   return node;
 }
 
-// --- folding a stack trace (docs/ui.md, "Stack traces") -------------------------------------
+// --- folding a stack trace (pages.adoc#stack-traces) -------------------------------------
 
-/** The rules of a finding's `code` (docs/agent.md, "Code locations"), from /api/status.codeFrames. */
+/** The rules of a finding's `code` (findings.adoc#code), from /api/status.codeFrames. */
 function rules() {
   const frames = (state.status || {}).codeFrames;
   if (!frames) return null;

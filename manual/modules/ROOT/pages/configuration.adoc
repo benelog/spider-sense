@@ -5,6 +5,7 @@ Every option of Spider Sense is a `spidersense.*` key.
 You set a key as a system property on the command line of the JVM that runs the application, or as a line of a properties file.
 The standalone jar also takes it as a `--key=value` argument.
 The sources in order of precedence, highest first, are the `--key=value` argument, the `-Dspidersense.key` system property, the environment variable of the same name, the properties file, and the default.
+The environment variable of a key is its name in upper case with every `.` and `-` made `_`, so `spidersense.slow.query.ms` is `SPIDERSENSE_SLOW_QUERY_MS`.
 
 [#properties]
 == Properties
@@ -55,7 +56,7 @@ The sources in order of precedence, highest first, are the `--key=value` argumen
 
 | `spidersense.open`
 | `false`
-| Agent mode: open the browser at startup, best effort.
+| Agent mode: open the browser at startup (`java.awt.Desktop`), best effort.
 
 | `spidersense.app.packages`
 | unset
@@ -63,7 +64,7 @@ The sources in order of precedence, highest first, are the `--key=value` argumen
 
 | `spidersense.ignore.endpoints`
 | `/actuator/**,/health,/healthz,/livez,/readyz`
-| Comma-separated glob patterns. An entry span whose endpoint matches one of them is not a request. See <<ignored-endpoints,Ignored endpoints>>.
+| Comma-separated glob patterns. An entry span whose endpoint matches one of them is not a request. An empty value ignores nothing. See <<ignored-endpoints,Ignored endpoints>>.
 
 | `spidersense.source.dirs`
 | `src/main/java` and `src/main/kotlin` of the working directory and of each of its immediate subdirectories
@@ -112,20 +113,26 @@ Spider Sense reads `spider-sense.properties` from the working directory of the J
 A named file that does not exist is a warning on stderr, and the application starts without it.
 The launcher names the file it read on stdout.
 
-A key given as a system property, or as an environment variable of the same name, wins over the file.
+The launcher reads the file first, in `premain`, in the standalone `main`, and before it runs a CLI command.
+It applies every `spidersense.*` key of the file as the system property of the same name, unless that property or its environment variable is already set.
+From then on the launcher, the server, the extension and the CLI read the system properties exactly as they do for `-D`, so the file adds no second reader anywhere.
+A key given as a system property, or as an environment variable of the same name, therefore wins over the file.
 A value is trimmed, and an empty value counts: `spidersense.ignore.endpoints=` ignores nothing, as it does on the command line.
 Keys without the `spidersense.` prefix are left alone, so the same file can be handed to the OpenTelemetry agent with `-Dotel.javaagent.configuration-file=spider-sense.properties` and then carry `otel.*` keys as well.
 A `spidersense.*` key that is not in the table is applied with a warning, so a typo is visible.
 
 The file is read in every mode: under `-javaagent`, by the standalone jar, and by the xref:cli.adoc[CLI].
-The CLI's default `--url` is then the Spider Sense that the file's `spidersense.collector`, or `spidersense.host` and `spidersense.port`, point to.
+The CLI's default `--url` is then the Spider Sense that the file's `spidersense.collector`, or `spidersense.host` and `spidersense.port` with the defaults filled in, point to.
+A command run from the project's directory therefore asks the Spider Sense that directory's file points at.
+The environment variable `SPIDERSENSE_URL` still wins over what the file implies.
 Under xref:gradle-plugin.adoc[the Gradle plugin] or xref:maven.adoc[Maven] the file is read as well, because the working directory of the forked JVM is the project's.
 A `-D` property that the build tool adds wins over the file.
 The Gradle plugin's `configFile` names another file, as `-Dspidersense.config` does.
 
 === Environment variables
 
-Two thresholds are also read from the environment, because the OpenTelemetry agent extension that captures stack traces is configured before the server is:
+Every key has the environment variable described at the top of this page.
+Two thresholds are also read from the environment by the OpenTelemetry agent extension itself, because the extension that captures stack traces is configured before the server is:
 
 [cols="1,2",options="header"]
 |===
@@ -194,7 +201,8 @@ Always set `-Dotel.service.name=`, because without it the service is `unknown_se
 == Ignored endpoints
 
 `spidersense.ignore.endpoints` is a comma-separated list of glob patterns.
-An entry span whose endpoint matches one of them is stored, is in its trace and is in the trace list, but it is not an endpoint, not a request, not in the Apdex, never a slow-request tingle, never a finding and never a `check` verdict.
+An entry span whose endpoint matches one of them is written with `entry` false, exactly as a root `INTERNAL` span is (xref:design.adoc#endpoint-identity[Endpoint identity]).
+It is stored, is in its trace and is in the trace list, but it is not an endpoint, not a request, not in the Apdex, never a slow-request tingle, never a finding and never a `check` verdict.
 
 A health check polled every few seconds is the most frequent request of a typical Spring Boot application and the least interesting one.
 It is fast, it never fails, and it dilutes the request count, the Apdex, `check` and every `slow-endpoint` judgement.
@@ -205,7 +213,7 @@ The default is `/actuator/**,/health,/healthz,/livez,/readyz`, and an empty valu
 java -javaagent:"$SENSE" -Dspidersense.ignore.endpoints= -jar app.jar
 ----
 
-A pattern is matched against the endpoint name, which is `GET /actuator/health` when the framework reports a route, and the span name when it does not.
+A pattern is matched against the endpoint name as xref:design.adoc#endpoint-identity[Endpoint identity] defines it, which is `GET /actuator/health` when the framework reports a route, and the span name when it does not.
 
 * A pattern that starts with `/` is matched against the name with its leading `METHOD ` removed, so `/actuator/**` covers every method.
 * A pattern with a method, such as `GET /actuator/**`, is matched against the whole name.
@@ -213,7 +221,7 @@ A pattern is matched against the endpoint name, which is `GET /actuator/health` 
 
 `**` matches anything including `/`, `*` matches anything but `/`, and `?` matches one character that is not `/`.
 The match is case-sensitive and covers the whole name.
-`/api/status` shows the list in force as `ignore.endpoints`, and so does the `status` command.
+`/api/status` shows the list in force as `ignore.endpoints`, and so does the text rendering of the `status` command.
 
 [#source-dirs]
 == Source roots

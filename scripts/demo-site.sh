@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The published demo (docs/design.md, "The published demo"). Its rows and the answers
+# The published demo (design.adoc#the-published-demo). Its rows and the answers
 # the UI asks for live in a DoltHub database; the page reads them from there.
 #
 #   scripts/demo-site.sh record    [--no-build]   run the shared demo for MINUTES (5), mark before

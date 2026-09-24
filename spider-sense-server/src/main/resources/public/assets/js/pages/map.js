@@ -1,5 +1,5 @@
 // Service map: the topology of the window as one hand-drawn SVG, over /api/map.
-// docs/ui.md "Map", docs/api.md "Service map".
+// pages.adoc#map, api.adoc#map.
 
 import * as api from '../api.js';
 import * as router from '../router.js';
@@ -70,7 +70,7 @@ const BOW = 0.6 * ROW_PITCH;
  * The cubic of one edge. An edge that skips a column bows around the nodes in
  * between: its control points move 0.6 row pitches away from the nearest node it
  * would otherwise cross, and a further 0.6 each time that is not yet enough to
- * keep the whole curve out of the nodes. docs/ui.md "Map".
+ * keep the whole curve out of the nodes. pages.adoc#map.
  */
 export function edgeCurve(a, b, obstacles = []) {
   const p0 = { x: a.x + NODE_W, y: a.y + NODE_H / 2 };

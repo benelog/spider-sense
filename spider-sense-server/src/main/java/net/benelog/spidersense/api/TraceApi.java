@@ -23,7 +23,7 @@ import org.jspecify.annotations.Nullable;
  * ask {@link Queries} for records, render with {@link Codecs} — so what an
  * endpoint answers is visible without following anything.
  *
- * <p>The seven endpoints that also answer Markdown (api.md) go through
+ * <p>The seven endpoints that also answer Markdown (api.adoc#text-rendering) go through
  * {@link Reports} instead of rendering here, because the CLI answers those same
  * seven with no server running and there must be one implementation of each.
  */
@@ -113,7 +113,7 @@ public final class TraceApi {
             sample.add(trace.traceId());
         }
         // The same breakdown a slow-endpoint finding carries, over the same traces
-        // (agent.md, "Where the time went"), so the page and the finding agree.
+        // (findings.adoc#time), so the page and the finding agree.
         Json.JsonObject breakdown = Json.obj();
         queries.timeSplit(window, endpoint.service(), sample).breakdown()
                 .forEach(breakdown::put);
@@ -248,7 +248,7 @@ public final class TraceApi {
         Stats.ErrorGroup group = found.get(0);
         Stats.Buckets buckets = queries.errorBuckets(window, errorId);
         // The sample's application frames, the ones a finding's code would carry, so
-        // the page can show their source without a framework list of its own (ui.md).
+        // the page can show their source without a framework list of its own (pages.adoc#code-frames).
         Stats.ErrorSample sample = group.sample();
         List<String> code = sample == null ? List.of()
                 : reports.codeFrames().ofStacktrace(sample.stacktrace());
@@ -265,7 +265,7 @@ public final class TraceApi {
     }
 
     /**
-     * The text rendering of one group (agent.md, "One finding"), or the {@code 404}
+     * The text rendering of one group (cli.adoc#one-finding), or the {@code 404}
      * the JSON form answers when the group is not in the window.
      */
     private static WebResponse text(@Nullable String text, String missing) {

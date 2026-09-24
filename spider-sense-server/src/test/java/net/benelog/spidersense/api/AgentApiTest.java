@@ -230,7 +230,7 @@ class AgentApiTest {
     }
 
     /**
-     * The schema block of agent.md: three lines under a finding, a column in the
+     * The schema block of findings.adoc#schema: three lines under a finding, a column in the
      * queries table, and the same block in both JSON answers.
      */
     @Test
@@ -288,7 +288,7 @@ class AgentApiTest {
     }
 
     /**
-     * The three endpoints of agent.md's "Acknowledgements", and what a finding and
+     * The three endpoints of findings.adoc#acknowledgements, and what a finding and
      * its heading read like once one of them has been called.
      */
     @Test
@@ -347,7 +347,7 @@ class AgentApiTest {
 
     /**
      * A resolution over HTTP: the traffic precedes it, so the finding has not come
-     * back, and it is set aside with the acknowledged ones (agent.md, "Resolutions").
+     * back, and it is set aside with the acknowledged ones (findings.adoc#resolutions).
      */
     @Test
     void aFindingIsResolvedSetAsideAndWithdrawnAgain() {

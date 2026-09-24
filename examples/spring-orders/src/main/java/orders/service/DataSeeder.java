@@ -147,7 +147,7 @@ public class DataSeeder implements CommandLineRunner {
             Order order = new Order(customer, createdAt, status);
 
             // Two to six, so a loop over the lines of an order reaches the five repeats
-            // that make an n-plus-one (agent.md) on more than half of them: the enriched
+            // that make an n-plus-one (findings.adoc#n-plus-one) on more than half of them: the enriched
             // endpoint's one call per line is what the demo is here to show.
             int lineCount = 2 + random.nextInt(5);
             BigDecimal total = BigDecimal.ZERO;

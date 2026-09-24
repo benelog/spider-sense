@@ -14,7 +14,7 @@ import org.jspecify.annotations.Nullable;
  * test.
  *
  * <p>{@code check} answers pass or fail and the CLI turns that into an exit code
- * (agent.md). The third answer matters as much as the other two: when nothing was
+ * (check.adoc). The third answer matters as much as the other two: when nothing was
  * requested in the window there is nothing to judge, and saying "pass" there would
  * be a green light for a run that never happened — so {@code pass} is null and the
  * reason says why.
@@ -31,7 +31,7 @@ public final class Check {
     public static final String MAX_REGRESSIONS = "maxRegressions";
     public static final String MIN_APDEX = "minApdex";
 
-    /** The rules in the order agent.md lists them, which is the order they are answered in. */
+    /** The rules in the order check.adoc#rules lists them, which is the order they are answered in. */
     public static final List<String> RULES = List.of(MAX_P95_MS, MAX_ERRORS, MAX_ERROR_RATE,
             MAX_QUERIES_PER_REQUEST, MAX_SLOW_QUERIES, MAX_N_PLUS_ONE, MAX_LOG_ERRORS, MAX_REGRESSIONS,
             MIN_APDEX);
@@ -181,7 +181,7 @@ public final class Check {
                 List<Findings.Finding> found = new ArrayList<>();
                 for (Findings.Finding finding : ranked.get()) {
                     // A loop of queries and a loop of outbound calls are one mistake to
-                    // the caller, so one rule counts both (agent.md); a regressed N+1 is
+                    // the caller, so one rule counts both (check.adoc#rules); a regressed N+1 is
                     // still an N+1.
                     if ((Findings.N_PLUS_ONE.equals(finding.baseKind())
                             || Findings.N_PLUS_ONE_HTTP.equals(finding.baseKind()))
@@ -195,7 +195,7 @@ public final class Check {
             }
             case MAX_LOG_ERRORS -> {
                 // The rule counts the records, not the groups: one logger saying the
-                // same thing 200 times is 200 failures nothing else reports (agent.md).
+                // same thing 200 times is 200 failures nothing else reports (check.adoc#rules).
                 long records = 0;
                 Findings.Finding worst = null;
                 for (Findings.Finding finding : ranked.get()) {
@@ -213,7 +213,7 @@ public final class Check {
                 yield max(rule, limit, (double) records, detail);
             }
             case MAX_REGRESSIONS -> {
-                // A resolved finding that came back: the fix did not hold (agent.md).
+                // A resolved finding that came back: the fix did not hold (check.adoc#rules).
                 List<Findings.Finding> back = new ArrayList<>();
                 for (Findings.Finding finding : ranked.get()) {
                     if (Findings.REGRESSION.equals(finding.kind())

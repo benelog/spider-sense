@@ -8,7 +8,7 @@ import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
-/** The glob matching behind {@code spidersense.ignore.endpoints} (design.md, "Ignored endpoints"). */
+/** The glob matching behind {@code spidersense.ignore.endpoints} (configuration.adoc#ignored-endpoints). */
 class IgnoredEndpointsTest {
 
     private final IgnoredEndpoints defaults = IgnoredEndpoints.defaults();

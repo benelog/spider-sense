@@ -17,7 +17,7 @@ import net.benelog.spidersense.TestStore;
 import net.benelog.spidersense.ingest.OtlpDecoder;
 import net.benelog.spidersense.store.Store;
 
-/** The rules of agent.md, each over the data that makes it fire and data that does not. */
+/** The rules of findings.adoc#rules, each over the data that makes it fire and data that does not. */
 class FindingsTest {
 
     private static final long NOW = 1_700_000_000_000L;
@@ -312,7 +312,7 @@ class FindingsTest {
         assertThat(finding.traces()).containsExactly(traceId(1));
     }
 
-    /** The catalog of one table, as the extension sends it: a log record (design.md). */
+    /** The catalog of one table, as the extension sends it: a log record (design.adoc#index-catalog). */
     private void catalog(String table, String indexes) {
         decoder.accept(Otlp.logs(Otlp.service("orders"), "spider-sense",
                 Otlp.log(NOW, 9, "index catalog of " + table, null, null,
@@ -886,7 +886,7 @@ class FindingsTest {
         assertThat(findings.findings(window, null, 2)).hasSize(2);
     }
 
-    // --- acknowledgements (agent.md) -----------------------------------------
+    // --- acknowledgements (findings.adoc#acknowledgements) -----------------------------------------
 
     /** Three slow endpoints, so the acknowledged one has somewhere to fall to. */
     private void threeSlowEndpoints() {
@@ -940,7 +940,7 @@ class FindingsTest {
         assertThat(answer.acked()).isEqualTo(3);
     }
 
-    // --- resolutions and states (agent.md) -------------------------------------
+    // --- resolutions and states (findings.adoc#resolutions) -------------------------------------
 
     /** A resolution at a chosen instant: the store stamps its own with the clock. */
     private void resolveAt(String findingId, long at, @org.jspecify.annotations.Nullable String note) {

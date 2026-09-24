@@ -18,7 +18,7 @@ import org.jspecify.annotations.Nullable;
  * <p>This is the whole of the MCP adapter's behaviour, and it is deliberately the
  * same switch as {@code cli/Local.answer}: the same defaults, the same caps, the
  * same window resolution through {@link Selectors}, so an MCP answer and a CLI
- * answer over the same window are the same bytes (agent.md, "MCP").
+ * answer over the same window are the same bytes (mcp.adoc).
  *
  * <p>What the CLI reports with exit code 4 or as a 400 — no such trace, no such
  * mark, a bad selector, a refused statement — is a tool result with
@@ -101,7 +101,7 @@ public final class McpTools implements McpServer.ToolRunner {
     /**
      * The verdict twice: in the text for a reader, and in
      * {@code structuredContent} so a host need not read the heading for it
-     * (agent.md).
+     * (mcp.adoc#tools).
      */
     private McpServer.ToolResult check(Map<String, Object> arguments, @Nullable String service) {
         Map<String, Double> rules = new LinkedHashMap<>();

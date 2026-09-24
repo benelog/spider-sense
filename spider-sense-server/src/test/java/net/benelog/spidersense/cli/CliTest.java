@@ -31,7 +31,7 @@ import net.benelog.spidersense.store.Store;
 import net.benelog.spidersilk.json.Json;
 
 /**
- * The command line of agent.md: what each command asks for, what it prints, and
+ * The command line of cli.adoc: what each command asks for, what it prints, and
  * the exit code it leaves behind.
  *
  * <p>Both ways of answering are exercised against the same commands — a server on
@@ -383,7 +383,7 @@ class CliTest {
 
     /**
      * Acknowledging from the file, which is where an agent does it: the loop runs
-     * against a crashed application as readily as against a live one (agent.md).
+     * against a crashed application as readily as against a live one (cli.adoc).
      */
     @Test
     void ackAndUnackAreWrittenToTheFileAndShowUpInFindings() {
@@ -487,7 +487,7 @@ class CliTest {
     }
 
     /**
-     * The one line agent.md prints when it falls back, and the reason it exists:
+     * The one line cli.adoc#fallback prints when it falls back, and the reason it exists:
      * an agent must never mistake a file for a live server.
      */
     @Test
@@ -511,7 +511,7 @@ class CliTest {
      * {@code skillIndex} task wrote beside them, read here rather than pinned, so that a
      * new reference page — or a whole new skill under {@code skills/} — does not break
      * this test. The order is the order {@code init} prints, which is by skill name
-     * (agent.md, "init").
+     * (agent-skill.adoc#init).
      */
     private static Map<String, Long> packagedSkills() throws IOException {
         String index = new String(Objects.requireNonNull(
@@ -528,7 +528,7 @@ class CliTest {
 
     /**
      * {@code init} is the one command that asks nothing and only writes: the block into
-     * the project's CLAUDE.md, and the skills beside it (agent.md, "init").
+     * the project's CLAUDE.md, and the skills beside it (agent-skill.adoc#init).
      */
     @Test
     void initWritesTheBlockAndInstallsEverySkill(@TempDir Path project) throws IOException {

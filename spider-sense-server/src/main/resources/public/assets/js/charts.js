@@ -163,7 +163,7 @@ function tooltipFor(plot, container) {
 }
 
 /**
- * The marks of the shared state, drawn on every time series (docs/ui.md): a dashed
+ * The marks of the shared state, drawn on every time series (ui.adoc#marks-on-charts): a dashed
  * vertical line the full height of the plot with the name beside it, muted for the
  * automatic `start` marks and accent for the ones a person or an agent made.
  * A mark that names a service belongs to that service only.

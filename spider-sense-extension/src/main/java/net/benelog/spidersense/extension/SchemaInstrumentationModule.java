@@ -9,7 +9,7 @@ import java.util.List;
 /**
  * The extension's own instrumentation module, {@code spider-sense-schema}: the advice that reads
  * the index catalog of the tables a slow statement
- * touched ({@code docs/design.md}, "The extension").
+ * touched ({@code design.adoc#extension}).
  *
  * <p>It exists because the catalog needs a {@link java.sql.Connection}, and a span processor never
  * has one: by the time a database span ends, the only thing left of the statement is its text. An

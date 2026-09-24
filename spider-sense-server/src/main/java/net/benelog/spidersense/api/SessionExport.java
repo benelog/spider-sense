@@ -24,14 +24,14 @@ import org.jspecify.annotations.Nullable;
 /**
  * The whole window as one JSON document: every service, span, log record,
  * metric, series, point, tingle and mark, and the index catalog of its services
- * (agent.md, "Export and import").
+ * (cli.adoc#export-import).
  *
  * <p>It is written straight to the response — or to the file the CLI named —
  * rather than built as a tree first. A session worth exporting is the one that
  * is too big to describe in a message, so the largest thing alive here is one
  * row: the result sets are walked and each row is written as it is read.
  *
- * <p>The keys are the column names of storage.md in camelCase, and nothing is
+ * <p>The keys are the column names of storage.adoc#schema in camelCase, and nothing is
  * derived: the point of the document is that importing it reproduces the rows,
  * so {@code entry}, {@code slow}, {@code endpointId} and the rest travel as they
  * are stored rather than being decided again on the other side.
@@ -320,7 +320,7 @@ final class SessionExport {
     /**
      * {@code indexes} travels as the array it is; a stored text that does not
      * parse travels as that text, since the export repairs nothing (the reader
-     * drops such a row, storage.md).
+     * drops such a row, storage.adoc).
      */
     private static Json.JsonObject catalogRow(ResultSet rs) throws SQLException {
         String indexes = orEmptyArray(rs.getString("indexes"));

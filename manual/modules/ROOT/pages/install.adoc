@@ -17,15 +17,16 @@ The current version is `{project-version}`.
 
 | The jar
 | `{project-group}:spider-sense:{project-version}`
-| The single distributable jar. Its POM declares no dependencies.
+| The single distributable jar, built by `:spider-sense-agent:senseJar`. Its POM declares no dependencies.
 
 | The Gradle plugin
-| `{project-group}:spider-sense-gradle-plugin:{project-version}`
+| `{project-group}:spider-sense-gradle-plugin:{project-version}`, marker `{project-group}:net.benelog.spidersense.gradle.plugin`
 | The plugin id `net.benelog.spidersense`, which puts `-javaagent` on `bootRun` and `run`. See xref:gradle-plugin.adoc[The Gradle Plugin].
 |===
 
-The jar and the plugin are released together at one version.
-By default the plugin resolves the jar at its own version, so a plugin and the jar it fetches are always the same release.
+The jar and the plugin are released together at one version, which is `version` in the root `gradle.properties` of the repository.
+By default the plugin resolves the jar at that same version, so a plugin and the jar it fetches are always the same release.
+The repository publishes both with `./gradlew publishToMavenLocal` into `~/.m2`, and, signed, with `./gradlew centralBundle` into one bundle for the Central Portal, as `RELEASING.md` in the repository describes.
 The Gradle Plugin Portal proxies Maven Central, so the default `pluginManagement` finds the plugin.
 
 NOTE: This manual describes `main`, which is ahead of the latest release, so a feature it documents may not be in `{project-version}` yet.
@@ -54,6 +55,7 @@ SENSE="$PWD/spider-sense-agent/build/libs/spider-sense-{project-version}.jar"
 A project with `mavenLocal()` in `repositories` and in `pluginManagement.repositories` then resolves them as it would a release.
 This is how a build outside this repository uses an unreleased version.
 
+[#quick-start]
 == Quick start
 
 [source,bash]
@@ -68,6 +70,7 @@ Always set `-Dotel.service.name=`, because without it the service gets the OpenT
 `java -jar "$SENSE" status` checks the setup from a terminal.
 It names the mode, the port, the database file, the thresholds in force, the services seen and how many spans are stored.
 
+[#ways-to-run]
 == The four ways to run it
 
 [cols="1,2,2",options="header"]
@@ -94,12 +97,14 @@ It names the mode, the port, the database file, the thresholds in force, the ser
 `bootRun` and `spring-boot:run` fork the JVM themselves, so the agent has to be handed to the build tool rather than typed on your own command line.
 The Gradle plugin and the Maven parameters exist to hand it over.
 
+[#java-versions]
 == Java versions
 
 The jar itself needs Java 21 or later, which is Spider Silk's floor.
 The monitored application can run on any JVM the OpenTelemetry Java agent supports, but the embedded UI needs 21 or later, so agent mode requires 21 or later.
 An application on an older JVM can still be measured: run Spider Sense standalone on Java 21 or later and point the application at it, as xref:modes.adoc#forwarding[forwarding] describes.
 
+[#next]
 == What to read next
 
 xref:modes.adoc[The Three Modes] covers starting an application that is not a plain `java -jar`, and what to check when nothing arrives.

@@ -25,7 +25,7 @@ import org.jspecify.annotations.Nullable;
  * <p>The handlers are thin on purpose. Everything they answer comes from
  * {@link Reports}, because the CLI answers the same questions from the same
  * database with no server running, and two implementations of "what are the
- * findings" would eventually disagree (agent.md).
+ * findings" would eventually disagree (agent-loop.adoc#interfaces).
  */
 public final class AgentApi {
 
@@ -35,7 +35,7 @@ public final class AgentApi {
      *
      * <p>The CLI turns a check into an exit code and prints the Markdown, and one
      * request should answer both: without this header it would have to fetch the
-     * JSON as well, or parse prose for a word (api.md).
+     * JSON as well, or parse prose for a word (api.adoc).
      */
     public static final String PASS_HEADER = "X-Spider-Sense-Pass";
 
@@ -85,7 +85,7 @@ public final class AgentApi {
 
     /**
      * One finding of the window, its rank among all of them beside it: what the
-     * findings page's Copy as Markdown copies (agent.md, "One finding").
+     * findings page's Copy as Markdown copies (cli.adoc#one-finding).
      */
     public WebResponse finding(WebRequest req) {
         String id = req.pathParam("id");
@@ -102,7 +102,7 @@ public final class AgentApi {
      *
      * <p>The body is optional: an acknowledgement with no note is the common case,
      * and a caller that sends nothing at all must not be told its empty body is
-     * not valid JSON (agent.md, "Acknowledgements").
+     * not valid JSON (findings.adoc#acknowledgements).
      */
     public WebResponse ack(WebRequest req) {
         String note = note(req);
@@ -131,8 +131,8 @@ public final class AgentApi {
     }
 
     /**
-     * Resolves a finding: "I fixed this; tell me if it comes back" (agent.md,
-     * "Resolutions"). The body is optional, as an acknowledgement's is.
+     * Resolves a finding: "I fixed this; tell me if it comes back"
+     * (findings.adoc#resolutions). The body is optional, as an acknowledgement's is.
      */
     public WebResponse resolve(WebRequest req) {
         String note = note(req);
@@ -221,7 +221,7 @@ public final class AgentApi {
      * and the only endpoint here whose errors are part of the answer: a refused
      * statement or one H2 would not run is a {@code 400} naming the reason, in the
      * format the request asked for, because an agent that asked for Markdown
-     * cannot read a JSON error it did not expect (agent.md).
+     * cannot read a JSON error it did not expect (cli.adoc#sql).
      */
     public WebResponse sql(WebRequest req) {
         Json.JsonObject body = req.bodyJson().asObject();

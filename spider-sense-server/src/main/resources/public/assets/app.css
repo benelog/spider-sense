@@ -15,7 +15,7 @@
   --silk: #8a93a6;
   --spider: #5a3a22;
 
-  /* Series order from docs/ui.md: accent, silk, ok, warn, then four muted hues. */
+  /* Series order from ui.adoc#palette: accent, silk, ok, warn, then four muted hues. */
   --series-1: #e2603f;
   --series-2: #8a93a6;
   --series-3: #5ec27f;
@@ -25,7 +25,7 @@
   --series-7: #9b8cf2;
   --series-8: #35c0b6;
 
-  /* Response-time buckets: one fixed colour each, docs/ui.md "Identity". */
+  /* Response-time buckets: one fixed colour each, ui.adoc#response-buckets. */
   --bucket-1: var(--ok);
   --bucket-2: var(--series-8);
   --bucket-3: var(--warn);
@@ -389,7 +389,7 @@ input::placeholder { color: var(--text-muted); opacity: 0.8; }
 
 .statusbar { display: flex; height: 5px; width: 70px; border-radius: 3px; overflow: hidden; background: var(--bg-raised); gap: 1px; }
 
-/* Where the time went (docs/agent.md): one bar, four fixed buckets in a fixed order. */
+/* Where the time went (findings.adoc#time): one bar, four fixed buckets in a fixed order. */
 .breakdown { display: flex; height: 5px; width: 120px; border-radius: 3px; overflow: hidden; background: var(--bg-raised); gap: 1px; }
 .breakdown .seg-db { background: var(--accent); }
 .breakdown .seg-http { background: var(--series-8); }

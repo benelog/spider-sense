@@ -1,8 +1,8 @@
 // The demo page's fetch and EventSource shim: every GET /api/… is answered from the
-// DoltHub database that holds the recording (docs/design.md, "The published demo";
-// docs/ui.md), named by <html data-dolthub="owner/database@ref"> or ?dolthub=….
+// DoltHub database that holds the recording (design.adoc#the-published-demo;
+// ui.adoc#recording), named by <html data-dolthub="owner/database@ref"> or ?dolthub=….
 //
-// The database has the tables of docs/storage.md and one table of answers: what
+// The database has the tables of storage.adoc#schema and one table of answers: what
 // scripts/demo-site.mjs capture asked a Spider Sense loaded with those rows. The
 // aggregations come from the answers; the lists that are rows of one table (the
 // traces, one trace, the logs, the marks, the acknowledgements) are queried from the

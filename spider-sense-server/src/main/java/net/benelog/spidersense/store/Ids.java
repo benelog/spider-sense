@@ -49,7 +49,7 @@ public final class Ids {
     }
 
     /**
-     * The id of the error group a failed span belongs to (design.md).
+     * The id of the error group a failed span belongs to (design.adoc#errors).
      *
      * <p>The key is the root cause's type and the innermost application frame of
      * the chain, read from the root cause outwards: the same line throwing the same
@@ -101,7 +101,7 @@ public final class Ids {
      * <p>It is what makes {@code /api/books/155} and {@code /api/books/87} one
      * thing in three places — the trace diff aligns on it, the {@code
      * n-plus-one-http} rule groups on it and the aggregated hot spans do
-     * (agent.md) — so it is written here once rather than three times.
+     * (findings.adoc#hot-span) — so it is written here once rather than three times.
      */
     public static String normaliseDigits(@Nullable String line) {
         return line == null ? "" : DIGITS.matcher(line).replaceAll("?");
