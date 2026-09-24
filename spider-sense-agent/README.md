@@ -8,7 +8,7 @@ This module is the launcher and the packaging task that assembles `spider-sense-
 
 - The stock OpenTelemetry Java agent 2.31.1, verbatim: its bootstrap classes at the top level (`io/opentelemetry/javaagent/**`), everything else under `inst/**` as `.classdata`, plus `META-INF/licenses/**` and `META-INF/native-image/**`.
 - The launcher, `net/benelog/spidersense/launcher/**`: six small classes with no dependencies at all, because the agent appends this whole jar to the bootstrap class path.
-- The collector and UI as a nested fat jar at `spider-sense/server.jar`, extracted at startup to `${java.io.tmpdir}/spider-sense-<version>/server.jar` and loaded by `SenseClassLoader`, whose parent is the platform class loader.
+- The collector and UI as a nested fat jar at `spider-sense/server.jar`, extracted at startup to `${java.io.tmpdir}/spider-sense-<user>/server-<version>-<crc>.jar` and loaded by `SenseClassLoader`, whose parent is the platform class loader.
 - A manifest that makes the same file a Java agent and an executable jar: `Premain-Class`/`Agent-Class: net.benelog.spidersense.launcher.SpiderSenseAgent`, `Main-Class: net.benelog.spidersense.launcher.SpiderSenseMain`, `Can-Redefine-Classes` and `Can-Retransform-Classes`.
 
 The OpenTelemetry agent's own manifest is replaced by ours, which its jar check accepts because it only requires a `Premain-Class` attribute to be present.

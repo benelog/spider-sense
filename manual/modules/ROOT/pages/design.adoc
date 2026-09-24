@@ -52,10 +52,14 @@ spider-sense.jar
 The bundled agent is OpenTelemetry Java agent {otel-agent-version}, and the nested server jar carries Spider Silk {spider-silk-version}.
 
 The launcher is deliberately tiny and dependency-free because the OpenTelemetry agent appends the whole jar to the bootstrap class path (`Instrumentation.appendToBootstrapClassLoaderSearch`), so everything at the top level becomes bootstrap-visible.
-The server and its dependencies therefore live in a nested jar that the launcher extracts to `${java.io.tmpdir}/spider-sense-<version>/server.jar`, skipping the extraction when the file is already present with the same size.
+The server and its dependencies therefore live in a nested jar that the launcher extracts to `${java.io.tmpdir}/spider-sense-<user>/server-<version>-<crc>.jar`, where `<crc>` is the CRC-32 of the nested jar's content.
+A file of that name is already that content, so the launcher skips the extraction when it is present with the right size, and a rebuild at the same version gets a file of its own.
+The extraction writes a temporary file in the same directory and moves it into place, so two JVMs starting at once never see a half-written jar, and a file in use is never replaced.
+The directory belongs to one user: the launcher creates it readable and writable by its owner alone, and refuses one another user owns, because a jar in it could be replaced by that user.
+After a new extraction the launcher deletes the jars of other builds that no JVM has started from in the last minute.
 The launcher loads that jar through a dedicated `SenseClassLoader extends URLClassLoader` whose parent is the platform class loader.
 The server never sees the application's classes, and the application never sees Jetty or protobuf from the server.
-The extension is extracted the same way, to `extension.jar` beside it, and is loaded by the OpenTelemetry agent's own `ExtensionClassLoader` rather than by ours.
+The extension is extracted the same way, to `extension-<version>-<crc>.jar` beside it, and is loaded by the OpenTelemetry agent's own `ExtensionClassLoader` rather than by ours.
 
 [#premain]
 == What premain does
@@ -91,7 +95,7 @@ The agent source confirms the mechanism: `GlobalIgnoredTypesConfigurer` already 
 `otel.instrumentation.runtime-telemetry.enabled=true`::
 JVM metrics.
 This is already the agent's default, and the launcher sets it for clarity.
-`otel.javaagent.extensions=${java.io.tmpdir}/spider-sense-<version>/extension.jar`::
+`otel.javaagent.extensions=${java.io.tmpdir}/spider-sense-<user>/extension-<version>-<crc>.jar`::
 Appended to the user's own comma-separated list when one is set.
 It points at <<extension,the extension>>.
 When the launcher fails to extract the extension or to point at it, it prints a warning on stderr and nothing else, because a missing code location is not a reason to hold up the application.
