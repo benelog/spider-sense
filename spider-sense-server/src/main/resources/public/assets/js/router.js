@@ -33,12 +33,21 @@ export function parse(hash) {
   return { path: path.length > 1 && path.endsWith('/') ? path.slice(0, -1) : path, query };
 }
 
+/** One path segment, decoded once; a malformed escape is kept as it came rather than thrown. */
+function decodeParam(raw) {
+  try { return decodeURIComponent(raw); } catch (e) { return raw; }
+}
+
+/**
+ * Matched against the path as the hash carries it, still percent-encoded, and each parameter
+ * decoded once: `50%25%20off` is `50% off`, and an encoded `%2F` stays inside its segment.
+ */
 function match(path) {
   for (const route of routes) {
-    const m = route.re.exec(decodeURI(path));
+    const m = route.re.exec(path);
     if (m) {
       const params = {};
-      route.names.forEach((n, i) => { params[n] = decodeURIComponent(m[i + 1]); });
+      route.names.forEach((n, i) => { params[n] = decodeParam(m[i + 1]); });
       return { route, params };
     }
   }

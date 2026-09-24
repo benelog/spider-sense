@@ -230,6 +230,7 @@ Asks for confirmation, then sends `DELETE /api/data`.
 
 Routing is hash-based: `#/`, `+#/services/spring-orders+`, `+#/traces/<id>+`, and so on.
 The service filter and the time range live in the hash query, as in `+#/traces?service=x&range=1h+`.
+A path parameter is percent-encoded in the hash and decoded once, so a service named `50% off` is `+#/services/50%25%20off+`, and an encoded `/` stays part of its name.
 A URL can therefore be shared as it is, and opens on the same view.
 
 [#behaviour]
