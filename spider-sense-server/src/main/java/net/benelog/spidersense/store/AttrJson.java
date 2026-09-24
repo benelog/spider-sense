@@ -202,6 +202,14 @@ public final class AttrJson {
         return values;
     }
 
+    /**
+     * One value of the store's value space as JSON: a list is an array of its
+     * elements, never Java's {@code [a, b]}.
+     */
+    public static Json.JsonValue json(@Nullable Object value) {
+        return toJson(value);
+    }
+
     private static Json.JsonValue toJson(@Nullable Object value) {
         Json.JsonObject holder = Json.obj();
         switch (value) {

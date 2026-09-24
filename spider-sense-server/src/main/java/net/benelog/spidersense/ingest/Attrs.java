@@ -9,6 +9,7 @@ import java.util.Map;
 import com.google.protobuf.ByteString;
 import io.opentelemetry.proto.common.v1.AnyValue;
 import io.opentelemetry.proto.common.v1.KeyValue;
+import net.benelog.spidersense.store.AttrJson;
 import net.benelog.spidersilk.json.Json;
 import org.jspecify.annotations.Nullable;
 
@@ -63,7 +64,7 @@ public final class Attrs {
                 for (KeyValue entry : value.getKvlistValue().getValuesList()) {
                     Object nested = value(entry.getValue());
                     if (nested != null) {
-                        put(object, entry.getKey(), nested);
+                        object.put(entry.getKey(), AttrJson.json(nested));
                     }
                 }
                 yield object.toJson();
@@ -78,7 +79,7 @@ public final class Attrs {
         if (value == null) {
             return "";
         }
-        return value instanceof String text ? text : String.valueOf(value);
+        return value instanceof String text ? text : AttrJson.json(value).toJson();
     }
 
     /** The length of a valid trace id in bytes; 32 hex characters, which {@code CHAR(32)} holds. */
@@ -125,16 +126,5 @@ public final class Attrs {
             hex.append(Character.forDigit(b & 0xf, 16));
         }
         return hex.toString();
-    }
-
-    private static void put(Json.JsonObject object, String key, Object value) {
-        switch (value) {
-            case null -> object.putNull(key);
-            case String text -> object.put(key, text);
-            case Long number -> object.put(key, number.longValue());
-            case Double number -> object.put(key, number.doubleValue());
-            case Boolean flag -> object.put(key, flag.booleanValue());
-            default -> object.put(key, String.valueOf(value));
-        }
     }
 }
