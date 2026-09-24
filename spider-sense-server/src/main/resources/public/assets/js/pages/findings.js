@@ -490,7 +490,6 @@ export function render(root, ctx) {
       node = table(columns, { rows: [] });
       fill(body, node);
     }
-    for (const row of Array.from(node.tbody.querySelectorAll('.empty-row'))) row.remove();
     renderList(node.tbody, list, {
       key: (item) => item.key,
       create: (item) => (item.evidence
