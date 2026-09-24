@@ -556,6 +556,8 @@ class AgentApiTest {
     void compareNeedsBothWindowsAndAnswersOneTableEach() {
         serve((client, assembly) -> {
             assertThat(client.get("/api/compare?before=5m").statusCode()).isEqualTo(400);
+            assertThat(client.get("/api/compare?before=" + (NOW - 1000) + "&after=" + (NOW - 60_000))
+                    .statusCode()).as("before later than after").isEqualTo(400);
 
             postJson(client, "/api/marks", "{\"name\":\"start-of-run\",\"at\":" + (NOW - 1000) + "}");
             postProtobuf(client, "/v1/traces", sample());

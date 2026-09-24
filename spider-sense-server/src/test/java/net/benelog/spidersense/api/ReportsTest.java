@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import net.benelog.spidersense.Otlp;
 import net.benelog.spidersense.TestStore;
 import net.benelog.spidersense.ingest.OtlpDecoder;
+import net.benelog.spidersense.query.Selectors;
 import net.benelog.spidersense.query.Window;
 import net.benelog.spidersense.server.Config;
 import net.benelog.spidersense.store.Marks;
@@ -72,6 +73,52 @@ class ReportsTest {
                         .isInstanceOf(ReadOnlyQuery.Refused.class);
             }
         }
+    }
+
+    /**
+     * The after window is {@code [after, until)}: a request that starts exactly at
+     * {@code until} is in neither window, and an inverted pair of marks is refused
+     * the way an inverted {@code since} is (marks-and-compare.adoc#compare).
+     */
+    @Test
+    void compareWindowsAreOpenOnTheRightAndRefuseInvertedMarks() {
+        Config config = TestStore.config();
+        try (Store store = new Store(config.jdbcUrl(), config.databaseFile(), config.retentionHours(),
+                config.slowRequestMs(), config.slowQueryMs(), null)) {
+            OtlpDecoder decoder = new OtlpDecoder(store, () -> 4000);
+            long before = NOW - 60_000;
+            long after = NOW - 30_000;
+            decoder.accept(Otlp.traces(Otlp.service("orders"),
+                    entry(1, "/at-after", after), entry(2, "/at-until", NOW)));
+            store.writer().awaitIdle(5_000);
+
+            try (Reports reports = Reports.readOnly(config)) {
+                Json.JsonObject body = reports.compare(before, after, NOW, null, false).json().asObject();
+                assertThat(body.getObject("totals").getObject("after").getLong("requests")).isEqualTo(1);
+                assertThat(body.getObject("totals").getObject("before").getLong("requests")).isZero();
+                assertThat(body.getArray("endpoints")).hasSize(1);
+                assertThat(body.getArray("endpoints").get(0).asObject().getString("name"))
+                        .isEqualTo("GET /at-after");
+                assertThat(body.getObject("after").getLong("to")).isEqualTo(NOW - 1);
+
+                assertThatThrownBy(() -> reports.compare(after, before, NOW, null, false))
+                        .isInstanceOf(Selectors.BadSelector.class)
+                        .hasMessageContaining("not before after");
+                assertThatThrownBy(() -> reports.compare(before, NOW, after, null, false))
+                        .isInstanceOf(Selectors.BadSelector.class)
+                        .hasMessageContaining("not before until");
+                assertThatThrownBy(() -> reports.compare(before, before, NOW, null, false))
+                        .isInstanceOf(Selectors.BadSelector.class);
+            }
+        }
+    }
+
+    private static Span.Builder entry(int n, String route, long at) {
+        return Otlp.span("%032x".formatted(n), "%016x".formatted(n), "GET " + route,
+                Span.SpanKind.SPAN_KIND_SERVER, at, 10,
+                Otlp.attr("http.request.method", "GET"),
+                Otlp.attr("http.route", route),
+                Otlp.attr("http.response.status_code", 200));
     }
 
     /**

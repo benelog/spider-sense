@@ -394,11 +394,22 @@ public final class Reports implements AutoCloseable {
      * {@code [after, until)}: the instant a mark names belongs to the window that
      * starts with it, so exercising, marking and exercising again gives two windows
      * that do not share a request.
+     *
+     * <p>A window that would be empty or inverted is refused rather than clamped,
+     * the way every other window with {@code since} after {@code until} is.
      */
     public Report compare(long before, long after, long until, @Nullable String service,
             boolean full) {
-        Window first = Window.of(before, Math.max(before, after - 1));
-        Window second = Window.of(after, Math.max(after, until));
+        if (before >= after) {
+            throw new Selectors.BadSelector("before resolves to " + before
+                    + ", which is not before after " + after);
+        }
+        if (after >= until) {
+            throw new Selectors.BadSelector("after resolves to " + after
+                    + ", which is not before until " + until);
+        }
+        Window first = Window.of(before, after - 1);
+        Window second = Window.of(after, until - 1);
         Compare.Comparison comparison = compare.compare(first, second, service);
         return new Report(Codecs.comparison(comparison), Text.compare(comparison, service, full));
     }

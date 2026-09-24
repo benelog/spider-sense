@@ -105,6 +105,8 @@ Over HTTP it is `GET /api/compare?before=<selector>&after=<selector>&until=<sele
 
 It takes no `--since`, because its windows are the two selectors.
 *Before* is the window `[before, after)` and *after* is the window `[after, until)`, with `until` defaulting to now.
+A span that starts exactly at `after` belongs to the after window, and one that starts exactly at `until` belongs to neither.
+A `before` that does not resolve to a moment earlier than `after`, or an `after` that does not resolve to one earlier than `until`, would be an empty window, so it is answered with `400` over HTTP and is a usage error in the CLI, as an inverted `since` is.
 The usual use is two marks: `mark before`, exercise, change the code, `mark after`, exercise the same way, then `compare --before=before --after=after`.
 
 The answer has four parts.
