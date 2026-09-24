@@ -209,6 +209,7 @@ It is also `uncommitted` when `git blame` says the line itself is not committed 
 
 The line answers the question an agent has first: is the line this finding points at in the change I just made.
 It is off when the working directory is not in a repository or `git` cannot be run, and `--no-git` turns it off.
+A `git` command that has not answered within 10 seconds is killed, with whatever it started, and what it would have said is left out.
 `--json` prints the server's JSON, which never carries it.
 
 This line is the one thing the CLI adds to an answer instead of printing what the server or the in-process renderer produced, and it has to be.

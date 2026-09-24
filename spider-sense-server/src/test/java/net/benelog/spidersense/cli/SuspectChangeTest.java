@@ -6,8 +6,10 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.Test;
@@ -105,6 +107,38 @@ class SuspectChangeTest {
     @Test
     void outsideARepositoryThereIsNothingToSay() {
         assertThat(SuspectChange.in(repo, SourceRoots.of(null, repo), 0L)).isNull();
+    }
+
+    /**
+     * A {@code git} that does not answer is given up on at the deadline, and what it
+     * started goes with it. An alias that runs a shell stands in for a blame on a
+     * stale mount: the shell's {@code sleep} holds stdout open, which is what used
+     * to keep the read, and so the whole of {@code findings}, waiting.
+     */
+    @Test
+    void aGitThatDoesNotAnswerIsKilledAtTheDeadlineWithWhatItStarted() throws InterruptedException {
+        assumeTrue(git(repo, "--version"), "git is not available");
+        // A duration no other process's command line carries, so only this one is looked for.
+        String hang = "sleep 47.%06d".formatted(ThreadLocalRandom.current().nextInt(1_000_000));
+
+        long started = System.nanoTime();
+        List<String> lines = SuspectChange.git(Duration.ofSeconds(1), repo,
+                "-c", "alias.hang=!" + hang, "hang");
+        long tookMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
+
+        assertThat(lines).isNull();
+        assertThat(tookMs).as("well before the 47 s the shell would take").isLessThan(20_000);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (stillRunning(hang) && System.nanoTime() < deadline) {
+            Thread.sleep(50);
+        }
+        assertThat(stillRunning(hang)).as("the shell git started was killed too").isFalse();
+    }
+
+    private static boolean stillRunning(String commandLine) {
+        return ProcessHandle.allProcesses()
+                .filter(ProcessHandle::isAlive)
+                .anyMatch(p -> p.info().commandLine().orElse("").contains(commandLine));
     }
 
     @Test

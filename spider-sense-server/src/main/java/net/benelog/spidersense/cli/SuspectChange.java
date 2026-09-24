@@ -1,17 +1,20 @@
 package net.benelog.spidersense.cli;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -38,7 +41,10 @@ final class SuspectChange {
     /** A code frame line of the findings text: three spaces, then the frame, then nothing. */
     private static final Pattern FRAME_LINE = Pattern.compile("   (\\S+\\(\\S+:\\d+\\))");
 
-    private static final long GIT_TIMEOUT_SECONDS = 10;
+    private static final Duration GIT_TIMEOUT = Duration.ofSeconds(10);
+
+    /** How long stdout may take to drain once {@code git} has exited, however late that was. */
+    private static final long DRAIN_NANOS = TimeUnit.MILLISECONDS.toNanos(100);
 
     private final SourceRoots roots;
     private final Path repository;
@@ -186,6 +192,19 @@ final class SuspectChange {
 
     /** One {@code git} command's stdout as lines; null when it could not run or did not succeed. */
     private static @Nullable List<String> git(Path dir, String... args) {
+        return git(GIT_TIMEOUT, dir, args);
+    }
+
+    /**
+     * {@link #git(Path, String...)} with the time it may take: null, and the
+     * process and everything it started killed, once that has passed.
+     *
+     * <p>Stdout is read on a thread of its own, so the wait is what has the
+     * deadline. Read here, it would be the read that waited, for as long as a
+     * {@code git blame} on a stale mount takes, and the deadline would come only
+     * after it.
+     */
+    static @Nullable List<String> git(Duration timeout, Path dir, String... args) {
         List<String> command = new ArrayList<>();
         command.add("git");
         command.add("-C");
@@ -199,25 +218,49 @@ final class SuspectChange {
         } catch (IOException | RuntimeException e) {
             return null;
         }
-        try (InputStream in = process.getInputStream()) {
+        FutureTask<byte[]> stdout = new FutureTask<>(() -> {
+            try (InputStream in = process.getInputStream()) {
+                return in.readAllBytes();
+            }
+        });
+        Thread reader = new Thread(stdout, "spider-sense-git");
+        // A child git left behind can hold stdout open after the deadline; it must
+        // not keep the CLI from exiting.
+        reader.setDaemon(true);
+        long deadline = System.nanoTime() + timeout.toNanos();
+        try {
             process.getOutputStream().close();
-            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-            in.transferTo(bytes);
-            if (!process.waitFor(GIT_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-                process.destroyForcibly();
+            reader.start();
+            if (!process.waitFor(timeout.toNanos(), TimeUnit.NANOSECONDS)) {
+                destroyTree(process);
                 return null;
             }
+            // git has exited, so what is left in the pipe drains at once, unless a
+            // child of git still holds it open.
+            long left = Math.max(deadline - System.nanoTime(), DRAIN_NANOS);
+            byte[] bytes = stdout.get(left, TimeUnit.NANOSECONDS);
             if (process.exitValue() != 0) {
                 return null;
             }
-            return bytes.toString(StandardCharsets.UTF_8).lines().toList();
-        } catch (IOException e) {
-            process.destroyForcibly();
+            return new String(bytes, StandardCharsets.UTF_8).lines().toList();
+        } catch (IOException | ExecutionException | TimeoutException e) {
+            destroyTree(process);
             return null;
         } catch (InterruptedException e) {
-            process.destroyForcibly();
+            destroyTree(process);
             Thread.currentThread().interrupt();
             return null;
         }
+    }
+
+    /**
+     * Kills {@code git} and what it started: {@code git blame} through an alias or a
+     * textconv filter runs a shell, and killing only {@code git} would leave that
+     * running. The descendants are listed first, while they are still its.
+     */
+    private static void destroyTree(Process process) {
+        List<ProcessHandle> descendants = process.descendants().toList();
+        process.destroyForcibly();
+        descendants.forEach(ProcessHandle::destroyForcibly);
     }
 }
