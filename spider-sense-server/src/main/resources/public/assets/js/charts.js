@@ -467,7 +467,9 @@ export function scatterChart(container, opts) {
     const xs = visible.map((p) => p[0] / 1000);
     const ys = visible.map((p) => p[1]);
     const floor = state.logScale ? 0.1 : 0;
-    const top = state.yMax || Math.max(10, ...ys) * 1.05;
+    // The linear axis stops at yMax so a few outliers do not flatten the rest; the log
+    // scale has room for them, so it runs to the slowest point.
+    const top = state.logScale ? Math.max(10, ...ys) * 1.05 : (state.yMax || Math.max(10, ...ys) * 1.05);
     const data = [xs.length ? xs : [state.window.from / 1000, state.window.to / 1000], xs.length ? ys : [null, null]];
 
     // The heatmap's cells, in CSS pixels, recomputed on every draw so the hover can

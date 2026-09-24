@@ -239,7 +239,7 @@ Dots::
 The default.
 One 3 px dot per request in its service's colour, errors drawn as `--err` crosses on top, and slow requests ringed in `--warn`.
 The y-axis is linear by default, with its maximum at the window's p99 times 1.5 and a `▲ n above` note for the points that fall outside it.
-The Log scale toggle switches the y-axis to a logarithmic scale.
+The Log scale toggle switches the y-axis to a logarithmic scale that runs to the slowest point, so nothing is above it and the note goes.
 Hovering a point gives the endpoint, the service, the duration and the time, and a click opens the trace.
 
 Heatmap::

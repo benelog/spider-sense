@@ -35,6 +35,7 @@ export function render(root, ctx) {
       logToggle.setAttribute('aria-pressed', String(on));
       router.setQuery({ log: on ? '1' : '' });
       if (chart) chart.setLogScale(on);
+      paintBar();
     },
   }, 'Log scale');
 
@@ -142,7 +143,9 @@ export function render(root, ctx) {
       h('span', h('b', { class: s.errors ? 'bad' : '' }, count(s.errors)), ' errors'),
       h('span', h('b', { class: s.slow ? 'warned' : '' }, count(s.slow)), ' slow'));
     const max = yMaxOf();
-    const above = visible().filter((p) => p[1] > max).length;
+    // Only the linear axis clips; the log scale runs to the slowest point.
+    const logOn = logToggle.getAttribute('aria-pressed') === 'true';
+    const above = logOn ? 0 : visible().filter((p) => p[1] > max).length;
     clipNote.textContent = above ? '▲ ' + count(above) + ' above ' + dur(max) : '';
     clipNote.title = above ? 'Points above the axis maximum; switch to log scale to see them.' : '';
     if (truncated) {
