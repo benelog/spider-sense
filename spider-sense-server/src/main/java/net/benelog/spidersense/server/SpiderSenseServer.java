@@ -29,6 +29,7 @@ import net.benelog.spidersilk.HttpStatus;
 import net.benelog.spidersilk.WebResponse;
 import net.benelog.spidersilk.json.Json;
 import net.benelog.spidersilk.server.JettyServer;
+import org.eclipse.jetty.http.UriCompliance;
 import org.eclipse.jetty.util.thread.QueuedThreadPool;
 import org.eclipse.jetty.util.thread.ScheduledExecutorScheduler;
 import org.eclipse.jetty.util.thread.Scheduler;
@@ -123,7 +124,12 @@ public final class SpiderSenseServer implements AutoCloseable {
     private static JettyServer server(App app, int port, Config config) {
         // No handler reads a session, so the container's session manager and its
         // housekeeping thread are pure cost.
-        JettyServer server = new JettyServer(app).port(port).host(config.host()).sessions(false);
+        JettyServer server = new JettyServer(app).port(port).host(config.host()).sessions(false)
+                // A service name or a finding id may hold a '/', which a link carries as %2F
+                // inside one path segment; Jetty refuses that by default with an HTML 400.
+                .customizeHttpConfiguration(http -> http.setUriCompliance(UriCompliance.DEFAULT
+                        .with("spider-sense", UriCompliance.Violation.AMBIGUOUS_PATH_SEPARATOR)))
+                .customizeContext(context -> context.getServletHandler().setDecodeAmbiguousURIs(true));
         if (config.agentMode()) {
             // Inside someone else's JVM: our threads must never be what keeps it alive,
             // and the lifecycle belongs to the launcher, not to a shutdown hook of ours.

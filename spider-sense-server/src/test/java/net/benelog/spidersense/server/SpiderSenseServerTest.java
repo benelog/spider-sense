@@ -137,4 +137,31 @@ class SpiderSenseServerTest {
                     .readLine();
         }
     }
+
+    /** A service whose name holds a slash is reached through %2F, and a miss is the JSON 404. */
+    @Test
+    void anEncodedSlashInAPathSegmentIsPartOfTheName() throws Exception {
+        SpiderSenseServer server = SpiderSenseServer.start(TestStore.config());
+        try {
+            HttpResponse<String> response = HttpClient.newHttpClient().send(
+                    HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + server.port() + "/api/services/a%2Fb"))
+                            .timeout(Duration.ofSeconds(10)).build(),
+                    HttpResponse.BodyHandlers.ofString());
+
+            assertThat(response.headers().firstValue("Content-Type")).hasValueSatisfying(
+                    type -> assertThat(type).startsWith("application/json"));
+            assertThat(response.body()).contains("a/b");
+
+            for (String escape : new String[] {"/assets/..%2F..%2Fsimplelogger.properties",
+                    "/assets/js/..%2F..%2F..%2Fsimplelogger.properties", "/..%2Fsimplelogger.properties"}) {
+                HttpResponse<String> outside = HttpClient.newHttpClient().send(
+                        HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + server.port() + escape))
+                                .timeout(Duration.ofSeconds(10)).build(),
+                        HttpResponse.BodyHandlers.ofString());
+                assertThat(outside.body()).as(escape).doesNotContain("defaultLogLevel");
+            }
+        } finally {
+            server.stop();
+        }
+    }
 }

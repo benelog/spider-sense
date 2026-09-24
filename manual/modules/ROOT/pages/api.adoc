@@ -15,6 +15,7 @@ Durations are *milliseconds as doubles* (`12.34`) unless the field name ends in 
 * Every read endpoint takes an optional window `from` and `to` (epoch ms).
 The default `to` is now, and the default `from` is `to - 15 min`.
 * `service` filters are exact matches on `service.name`.
+A path parameter is one percent-encoded segment, so a service name or a finding id that holds a `/` travels as `%2F`.
 * Lists are newest first unless stated.
 * Unknown query parameters are ignored.
 A malformed number is a `400` (`{"error": "..."}`).
