@@ -287,6 +287,52 @@ class OtlpDecoderTest {
         assertThat(store.sql().count("SELECT COUNT(*) FROM span", List.of())).isEqualTo(1);
     }
 
+    /**
+     * Decoding is total: a span without a valid trace or span id is skipped, and
+     * the rest of its export is still stored (api.adoc#status-and-ingest).
+     */
+    @Test
+    void aSpanWithoutValidIdsIsSkippedAndTheRestOfTheExportIsStored() {
+        Span.Builder good = Otlp.span(TRACE, ROOT, "GET /orders", Span.SpanKind.SPAN_KIND_SERVER,
+                1_700_000_000_000L, 5, Otlp.attr("http.route", "/orders"));
+        Span.Builder noTraceId = Otlp.span(TRACE, CHILD, "no trace id", Span.SpanKind.SPAN_KIND_INTERNAL,
+                1_700_000_000_000L, 5).clearTraceId();
+        Span.Builder noSpanId = Otlp.span(TRACE, CHILD, "no span id", Span.SpanKind.SPAN_KIND_INTERNAL,
+                1_700_000_000_000L, 5).clearSpanId();
+        Span.Builder longTraceId = Otlp.span(TRACE + "00000000", CHILD, "a 20-byte trace id",
+                Span.SpanKind.SPAN_KIND_INTERNAL, 1_700_000_000_000L, 5);
+        Span.Builder zeroSpanId = Otlp.span(TRACE, "0000000000000000", "an all-zero span id",
+                Span.SpanKind.SPAN_KIND_INTERNAL, 1_700_000_000_000L, 5);
+        Span.Builder badParent = Otlp.span(TRACE, CHILD, "a 4-byte parent", Span.SpanKind.SPAN_KIND_INTERNAL,
+                1_700_000_000_000L, 5).setParentSpanId(Otlp.id("00f067aa"));
+
+        Batch batch = decoder.accept(Otlp.traces(Otlp.service("spring-orders"),
+                good, noTraceId, noSpanId, longTraceId, zeroSpanId, badParent));
+
+        assertThat(batch.spans()).extracting(SpanRecord::name)
+                .containsExactly("GET /orders", "a 4-byte parent");
+        assertThat(batch.spans().get(1).parentSpanId()).as("an invalid parent is none").isNull();
+        store.writer().awaitIdle(5_000);
+        assertThat(store.sql().count("SELECT COUNT(*) FROM span", List.of())).isEqualTo(2);
+    }
+
+    /** A log line's invalid ids are read as none, and the line itself is kept. */
+    @Test
+    void aLogWithInvalidIdsIsKeptUncorrelated() {
+        var wrongLength = Otlp.log(1_700_000_000_000L, 17, "wrong length", null, null).toBuilder()
+                .setTraceId(Otlp.id(TRACE + "0000")).setSpanId(Otlp.id(ROOT + "00")).build();
+        var zeros = Otlp.log(1_700_000_000_001L, 17, "all zeros", "0".repeat(32), "0".repeat(16));
+
+        Batch batch = decoder.accept(Otlp.logs(Otlp.service("worker"), "worker.Jobs", wrongLength, zeros));
+
+        assertThat(batch.logs()).hasSize(2).allSatisfy(log -> {
+            assertThat(log.traceId()).isNull();
+            assertThat(log.spanId()).isNull();
+        });
+        store.writer().awaitIdle(5_000);
+        assertThat(store.sql().count("SELECT COUNT(*) FROM log", List.of())).isEqualTo(2);
+    }
+
     // --- the ingest cap (storage.adoc#ingest-cap) -------------------------------------
 
     private static Span.Builder capSpan(int n, long at) {

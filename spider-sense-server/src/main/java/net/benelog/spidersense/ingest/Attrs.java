@@ -81,11 +81,43 @@ public final class Attrs {
         return value instanceof String text ? text : String.valueOf(value);
     }
 
-    /** 32 or 16 lowercase hex characters, or null for the empty id OTLP uses to mean "none". */
-    public static @Nullable String hex(ByteString id) {
-        if (id.isEmpty()) {
+    /** The length of a valid trace id in bytes; 32 hex characters, which {@code CHAR(32)} holds. */
+    private static final int TRACE_ID_BYTES = 16;
+
+    /** The length of a valid span id in bytes; 16 hex characters, which {@code CHAR(16)} holds. */
+    private static final int SPAN_ID_BYTES = 8;
+
+    /** A trace id as 32 lowercase hex characters, or null when it is not a valid one. */
+    public static @Nullable String traceId(ByteString id) {
+        return validId(id, TRACE_ID_BYTES);
+    }
+
+    /** A span id as 16 lowercase hex characters, or null when it is not a valid one. */
+    public static @Nullable String spanId(ByteString id) {
+        return validId(id, SPAN_ID_BYTES);
+    }
+
+    /**
+     * The id in hex when it has the length OTLP prescribes and is not all zeros,
+     * which the specification calls invalid; null otherwise, which is also what an
+     * empty id means.
+     *
+     * <p>An id of another length would not fit its {@code CHAR} column, and the
+     * failed insert would roll back every record of the flush, not only its own.
+     */
+    private static @Nullable String validId(ByteString id, int bytes) {
+        if (id.size() != bytes) {
             return null;
         }
+        for (int i = 0; i < bytes; i++) {
+            if (id.byteAt(i) != 0) {
+                return hex(id);
+            }
+        }
+        return null;
+    }
+
+    private static String hex(ByteString id) {
         byte[] bytes = id.toByteArray();
         StringBuilder hex = new StringBuilder(bytes.length * 2);
         for (byte b : bytes) {

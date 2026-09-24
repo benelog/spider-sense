@@ -775,6 +775,9 @@ That rule drops only `SERVER` spans on the server's own port.
 A `CLIENT` span calling that port is an application genuinely talking to Spider Sense, and it stays in its trace.
 A request body that is neither `application/x-protobuf` (also accepted as `application/protobuf`) nor `application/json` is `415`.
 An undecodable body of an accepted type is `400`.
+A span without a valid trace id and span id is skipped, and the rest of the request is stored.
+A valid trace id is 16 bytes and a valid span id 8, not all of them zero, as OTLP defines them.
+An invalid parent span id is read as none, and so are the invalid ids of a log record, so the span becomes a root and the log line stays uncorrelated.
 OTLP/JSON ids are accepted as hex, which is what the OTLP specification says, and as base64, which is what protobuf's own JSON mapping produces.
 The two are told apart by length, since only a hex id is exactly 32 or 16 characters of `[0-9a-f]`.
 The same holds for the proto field names (`trace_id`, `span_id`, `parent_span_id`), which protobuf's JSON parser accepts beside the lowerCamelCase names the specification prescribes.

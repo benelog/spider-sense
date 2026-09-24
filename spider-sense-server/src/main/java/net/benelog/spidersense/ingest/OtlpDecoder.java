@@ -3,7 +3,6 @@ package net.benelog.spidersense.ingest;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.function.IntSupplier;
 
 import io.opentelemetry.proto.collector.logs.v1.ExportLogsServiceRequest;
@@ -73,7 +72,7 @@ public final class OtlpDecoder {
                 String scope = scopeSpans.getScope().getName();
                 for (Span span : scopeSpans.getSpansList()) {
                     SpanRecord record = toRecord(span, service, scope);
-                    if (isOurOwnTraffic(record)) {
+                    if (record == null || isOurOwnTraffic(record)) {
                         continue;
                     }
                     // The ingest cap decides before the writer sees anything (storage.adoc#ingest-cap).
@@ -114,19 +113,30 @@ public final class OtlpDecoder {
         return embedded == null || embedded.equals(span.service());
     }
 
-    private static SpanRecord toRecord(Span span, String service, String scope) {
+    /**
+     * The record of a span, or null for a span without a valid trace or span id.
+     *
+     * <p>OTLP requires both ids of a span; they are the store's key, and a span
+     * without them could not be written or joined to anything. Such a span is
+     * skipped rather than refused, so the rest of its export is still stored.
+     * A parent id that is not a valid span id is read as none.
+     */
+    private static @Nullable SpanRecord toRecord(Span span, String service, String scope) {
+        String traceId = Attrs.traceId(span.getTraceId());
+        String spanId = Attrs.spanId(span.getSpanId());
+        if (traceId == null || spanId == null) {
+            return null;
+        }
         List<SpanRecord.SpanEvent> events = new ArrayList<>(span.getEventsCount());
         for (Span.Event event : span.getEventsList()) {
             events.add(new SpanRecord.SpanEvent(event.getName(), event.getTimeUnixNano(),
                     Attrs.toMap(event.getAttributesList())));
         }
         Status status = span.getStatus();
-        // OTLP requires both ids of a span; they are the store's primary key, and a
-        // span without them could not be written or joined to anything.
         return new SpanRecord(
-                Objects.requireNonNull(Attrs.hex(span.getTraceId()), "a span carries a trace id"),
-                Objects.requireNonNull(Attrs.hex(span.getSpanId()), "a span carries a span id"),
-                Attrs.hex(span.getParentSpanId()),
+                traceId,
+                spanId,
+                Attrs.spanId(span.getParentSpanId()),
                 service,
                 span.getName(),
                 kind(span.getKind()),
@@ -324,7 +334,10 @@ public final class OtlpDecoder {
                 : record.getObservedTimeUnixNano() != 0 ? millis(record.getObservedTimeUnixNano()) : now;
     }
 
-    /** The id is 0 here: the {@code log} table assigns it, and the reads report what it assigned. */
+    /**
+     * The id is 0 here: the {@code log} table assigns it, and the reads report what it assigned.
+     * A trace or span id that is not a valid one is read as none, so the line is kept uncorrelated.
+     */
     private static LogRecord toRecord(io.opentelemetry.proto.logs.v1.LogRecord record, String service,
             String logger, long now, Map<String, Object> attributes) {
         int severityNumber = record.getSeverityNumberValue();
@@ -336,8 +349,8 @@ public final class OtlpDecoder {
                 severityNumber,
                 Attrs.bodyText(record.getBody()),
                 logger,
-                Attrs.hex(record.getTraceId()),
-                Attrs.hex(record.getSpanId()),
+                Attrs.traceId(record.getTraceId()),
+                Attrs.spanId(record.getSpanId()),
                 attributes);
     }
 
