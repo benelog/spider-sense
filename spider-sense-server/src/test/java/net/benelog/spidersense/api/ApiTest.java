@@ -179,6 +179,20 @@ class ApiTest {
         });
     }
 
+    /** A small gzipped body that expands past the cap is refused before it fills the heap. */
+    @Test
+    void aBodyPastTheCapOnceGunzippedIs413() {
+        serve((client, assembly) -> {
+            byte[] expanded = new byte[65 * 1024 * 1024];
+            assertThat(Otlp.gzip(expanded).length).isLessThan(1024 * 1024);
+
+            HttpResponse<String> response = postGzippedProtobuf(client, "/v1/traces", expanded);
+
+            assertThat(response.statusCode()).isEqualTo(413);
+            assertThat(Json.parse(response.body()).asObject().getString("error")).contains("64 MB");
+        });
+    }
+
     @Test
     void tracesAndTheTraceDetailCarryTheFieldsTheContractNames() {
         serve((client, assembly) -> {

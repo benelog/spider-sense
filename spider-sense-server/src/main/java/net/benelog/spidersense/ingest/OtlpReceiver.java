@@ -1,11 +1,8 @@
 package net.benelog.spidersense.ingest;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
-import java.util.zip.GZIPInputStream;
+import java.util.function.Consumer;
 
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.Message;
@@ -45,6 +42,9 @@ public final class OtlpReceiver {
      */
     private static final String SYNC_PROPERTY = "spidersense.sync";
 
+    /** The most an export may hold once gunzipped; the OpenTelemetry Collector's own default is 20 MiB. */
+    private static final int MAX_BODY = 64 * 1024 * 1024;
+
     private final OtlpDecoder decoder;
     private final Writer writer;
 
@@ -60,51 +60,36 @@ public final class OtlpReceiver {
     }
 
     public WebResponse traces(WebRequest req) {
-        String encoding = encodingOf(req);
-        if (encoding == null) {
-            return unsupported(req);
-        }
-        ExportTraceServiceRequest.Builder request = ExportTraceServiceRequest.newBuilder();
-        try {
-            parse(req, encoding, request);
-        } catch (InvalidProtocolBufferException e) {
-            return undecodable(e);
-        }
-        decoder.accept(request.build());
-        flushIfSynchronous();
-        return ok(encoding, ExportTraceServiceResponse.getDefaultInstance());
+        return receive(req, ExportTraceServiceRequest.newBuilder(), request -> decoder.accept(request.build()),
+                ExportTraceServiceResponse.getDefaultInstance());
     }
 
     public WebResponse metrics(WebRequest req) {
-        String encoding = encodingOf(req);
-        if (encoding == null) {
-            return unsupported(req);
-        }
-        ExportMetricsServiceRequest.Builder request = ExportMetricsServiceRequest.newBuilder();
-        try {
-            parse(req, encoding, request);
-        } catch (InvalidProtocolBufferException e) {
-            return undecodable(e);
-        }
-        decoder.accept(request.build());
-        flushIfSynchronous();
-        return ok(encoding, ExportMetricsServiceResponse.getDefaultInstance());
+        return receive(req, ExportMetricsServiceRequest.newBuilder(), request -> decoder.accept(request.build()),
+                ExportMetricsServiceResponse.getDefaultInstance());
     }
 
     public WebResponse logs(WebRequest req) {
+        return receive(req, ExportLogsServiceRequest.newBuilder(), request -> decoder.accept(request.build()),
+                ExportLogsServiceResponse.getDefaultInstance());
+    }
+
+    private <B extends Message.Builder> WebResponse receive(WebRequest req, B request, Consumer<B> accept,
+            Message response) {
         String encoding = encodingOf(req);
         if (encoding == null) {
             return unsupported(req);
         }
-        ExportLogsServiceRequest.Builder request = ExportLogsServiceRequest.newBuilder();
         try {
             parse(req, encoding, request);
+        } catch (RequestBody.TooLarge e) {
+            return error(HttpStatus.CONTENT_TOO_LARGE, e.getMessage());
         } catch (InvalidProtocolBufferException e) {
             return undecodable(e);
         }
-        decoder.accept(request.build());
+        accept.accept(request);
         flushIfSynchronous();
-        return ok(encoding, ExportLogsServiceResponse.getDefaultInstance());
+        return ok(encoding, response);
     }
 
     private void flushIfSynchronous() {
@@ -115,25 +100,12 @@ public final class OtlpReceiver {
 
     private void parse(WebRequest req, String encoding, Message.Builder builder)
             throws InvalidProtocolBufferException {
-        byte[] body = body(req);
+        byte[] body = RequestBody.read(req, MAX_BODY);
         if (PROTOBUF.equals(encoding)) {
             builder.mergeFrom(body);
         } else {
             OtlpJson.merge(new String(body, StandardCharsets.UTF_8), builder);
         }
-    }
-
-    private static byte[] body(WebRequest req) {
-        try (InputStream in = gzipped(req) ? new GZIPInputStream(req.bodyStream()) : req.bodyStream()) {
-            return in.readAllBytes();
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-    }
-
-    private static boolean gzipped(WebRequest req) {
-        String encoding = req.header("Content-Encoding");
-        return encoding != null && encoding.toLowerCase(Locale.ROOT).contains("gzip");
     }
 
     /** The request's encoding, or null when it is one we do not speak. */

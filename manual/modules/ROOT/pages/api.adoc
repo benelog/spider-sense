@@ -40,7 +40,8 @@ POST /v1/logs
 
 The request `Content-Type` is `application/x-protobuf` or `application/json`, and `Content-Encoding: gzip` is accepted.
 The answer is `200` with an empty `Export{Trace,Metrics,Logs}ServiceResponse` in the request's content type.
-An undecodable body is `400`, and another content type is `415`.
+An undecodable body is `400`, another content type is `415`, and a body of more than 64 MB, counted after gunzip, is `413`.
+The receiver reads the body into the heap of the process it runs in, which in agent mode is the monitored application's.
 Partial success is never reported, so everything decodable is stored.
 A log record carrying the attribute `spidersense.schema.table` is the index catalog of one table, as read by xref:design.adoc#extension[the extension].
 It is stored as a `db_table` row rather than as a log (xref:storage.adoc#schema[Storage]).
@@ -97,6 +98,7 @@ Services and metric metadata stay.
 *`GET /api/export?from&to&since&until&service`* without `traceId` answers the session document described in xref:cli.adoc#export-import[Export and import], streamed.
 *`POST /api/import`* takes that document back and answers the counts.
 It accepts `Content-Encoding: gzip`.
+A document of more than 256 MB, counted after gunzip, is `413`.
 
 [#events]
 == Live events

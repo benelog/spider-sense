@@ -1,14 +1,10 @@
 package net.benelog.spidersense.api;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import java.util.function.IntSupplier;
-import java.util.zip.GZIPInputStream;
 
+import net.benelog.spidersense.ingest.RequestBody;
 import net.benelog.spidersense.query.Queries;
 import net.benelog.spidersense.query.Window;
 import net.benelog.spidersense.server.Config;
@@ -110,6 +106,12 @@ public final class ApiRoutes {
     }
 
     /**
+     * The largest document an import reads, once gunzipped. The whole document is
+     * held as text and as a tree, in agent mode in the monitored application's heap.
+     */
+    private static final int MAX_IMPORT = 256 * 1024 * 1024;
+
+    /**
      * That document back into the store.
      *
      * <p>The body is parsed whole rather than streamed: a session file is tens of
@@ -122,6 +124,8 @@ public final class ApiRoutes {
         Json.JsonObject document;
         try {
             document = Json.parse(body(req)).asObject();
+        } catch (RequestBody.TooLarge e) {
+            return WebResponse.json(Json.obj().put("error", e.getMessage())).status(HttpStatus.CONTENT_TOO_LARGE);
         } catch (RuntimeException e) {
             return Params.problem(req, "Undecodable import document: " + e.getMessage());
         }
@@ -139,14 +143,6 @@ public final class ApiRoutes {
 
     /** The body, gunzipped when {@code Content-Encoding} says so (api.adoc#ingest). */
     private static String body(WebRequest req) {
-        String encoding = req.header("Content-Encoding");
-        boolean gzipped = encoding != null && encoding.toLowerCase(Locale.ROOT).contains("gzip");
-        try (InputStream in = gzipped ? new GZIPInputStream(req.bodyStream()) : req.bodyStream()) {
-            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-            in.transferTo(bytes);
-            return bytes.toString(StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            throw new UncheckedIOException("could not read the import body", e);
-        }
+        return new String(RequestBody.read(req, MAX_IMPORT), StandardCharsets.UTF_8);
     }
 }
