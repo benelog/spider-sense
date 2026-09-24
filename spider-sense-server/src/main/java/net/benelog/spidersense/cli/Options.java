@@ -192,11 +192,16 @@ final class Options {
     private double number(String key) {
         // Every caller asks has(key) first, so there is something to parse.
         String value = Objects.requireNonNull(valueOrNull(key), "--" + key + " was not given");
+        double number;
         try {
-            return Double.parseDouble(value.trim());
+            number = Double.parseDouble(value.trim());
         } catch (NumberFormatException e) {
             throw new Usage("--" + key + " is not a number: " + value);
         }
+        if (!Double.isFinite(number) || !value.trim().matches("-?\\d+(\\.\\d+)?([eE][+-]?\\d+)?")) {
+            throw new Usage("--" + key + " is not a number: " + value);
+        }
+        return number;
     }
 
     /**

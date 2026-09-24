@@ -109,6 +109,9 @@ public final class McpTools implements McpServer.ToolRunner {
         for (String rule : Check.RULES) {
             Object value = arguments.get(rule);
             if (value instanceof Number number) {
+                if (!Double.isFinite(number.doubleValue())) {
+                    throw new McpServer.BadArgument(rule + " must be a finite number");
+                }
                 rules.put(rule, number.doubleValue());
             }
         }

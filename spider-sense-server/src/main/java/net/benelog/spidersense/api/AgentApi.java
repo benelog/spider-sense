@@ -278,6 +278,18 @@ public final class AgentApi {
         }
     }
 
+    /** A plain decimal number, such as {@code 500} or {@code 0.95}: not Java's {@code 5d} or {@code 0x1p3}. */
+    private static final java.util.regex.Pattern DECIMAL =
+            java.util.regex.Pattern.compile("-?\\d+(\\.\\d+)?([eE][+-]?\\d+)?");
+
+    private static double limit(String value) {
+        double limit = DECIMAL.matcher(value.trim()).matches() ? Double.parseDouble(value.trim()) : Double.NaN;
+        if (!Double.isFinite(limit)) {
+            throw new NumberFormatException("not a finite decimal number: " + value);
+        }
+        return limit;
+    }
+
     /** The rejection an {@code IllegalArgumentException} from the store means. */
     private static HttpException badRequest(IllegalArgumentException e) {
         String message = e.getMessage();
@@ -289,7 +301,7 @@ public final class AgentApi {
         Map<String, Double> rules = new LinkedHashMap<>();
         for (String rule : Check.RULES) {
             if (req.queryParamOrNull(rule) != null) {
-                rules.put(rule, req.queryParam(rule, Double::parseDouble));
+                rules.put(rule, req.queryParam(rule, AgentApi::limit));
             }
         }
         Reports.Report report = reports.check(window, Params.service(req),

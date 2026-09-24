@@ -605,6 +605,13 @@ class AgentApiTest {
 
             assertThat(client.get("/api/check?since=5m&format=text").body())
                     .contains("| rule | limit | actual | verdict | detail |");
+
+            // NaN fails every comparison and Infinity passes every one; 5d and 0x1p3 are Java, not numbers.
+            for (String limit : new String[] {"NaN", "Infinity", "1e400", "5d", "0x1p3"}) {
+                assertThat(client.get("/api/check?since=5m&maxErrors=" + limit).statusCode()).as(limit)
+                        .isEqualTo(400);
+            }
+            assertThat(client.get("/api/check?since=5m&maxErrorRate=0.05").statusCode()).isEqualTo(200);
         });
     }
 

@@ -64,6 +64,7 @@ A value counts every group and every finding of the window, never the top of a l
 
 When no rule is given the default set is `--max-errors=0`, `--max-n-plus-one=0`, `--max-regressions=0` and `--max-p95-ms=<slow.request.ms>`.
 Naming a rule replaces that set, and only the rules named are then evaluated.
+A limit is a finite decimal number (`500`, `0.05`, `1e3`); `NaN`, an infinity and Java's `5d` or `0x1p3` are refused, as a usage error on the command line and a `400` over HTTP, because `NaN` fails every comparison and an infinity passes every one.
 
 `--endpoint=` narrows the scope to one endpoint, by `endpointId` or by name (`GET /api/orders/\{id}`), and the heading names it.
 `--max-n-plus-one` and `--max-regressions` then count only the findings about that endpoint.

@@ -85,6 +85,12 @@ public final class Check {
     public CheckResult check(Window window, @Nullable String service, @Nullable String endpoint,
             @Nullable Map<String, Double> rules) {
         Map<String, Double> asked = rules == null || rules.isEmpty() ? defaults() : rules;
+        asked.forEach((rule, limit) -> {
+            if (!Double.isFinite(limit)) {
+                // NaN fails every comparison and an infinity passes every one: neither is a limit.
+                throw new IllegalArgumentException(rule + " is not a finite number: " + limit);
+            }
+        });
         List<Stats.EndpointStats> endpoints = scope(window, service, endpoint);
 
         long requests = 0;
