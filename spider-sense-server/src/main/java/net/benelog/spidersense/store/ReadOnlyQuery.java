@@ -210,13 +210,21 @@ public final class ReadOnlyQuery {
         if (semicolon >= 0 && !bare.substring(semicolon + 1).isBlank()) {
             throw new Refused("one statement at a time: there is more after the first ';'");
         }
+        if (FOR_UPDATE.matcher(bare).find()) {
+            // A read, but one that locks rows the writer then waits on past its lock
+            // timeout, losing a flush.
+            throw new Refused("FOR UPDATE takes locks the writer would wait on; read without it");
+        }
     }
+
+    private static final java.util.regex.Pattern FOR_UPDATE = java.util.regex.Pattern.compile(
+            "\\bFOR\\s+UPDATE\\b", java.util.regex.Pattern.CASE_INSENSITIVE);
 
     /**
      * The statement with its comments and its literals blanked out.
      *
-     * <p>{@code SELECT 1 -- ; DELETE FROM span} and
-     * {@code SELECT ';' FROM span} are one statement each, and this is what makes
+     * <p>{@code SELECT 1 -- ; DELETE FROM span}, {@code SELECT ';' FROM span} and
+     * {@code SELECT $$';$$ FROM span} are one statement each, and this is what makes
      * the guard see that. It is a scanner and not a parser, which is the honest
      * description of the first layer and the reason there is a second one.
      */
@@ -241,6 +249,11 @@ public final class ReadOnlyQuery {
                 bare.append(' ');
             } else if (c == '\'' || c == '"') {
                 at = past(statement, at, c);
+                bare.append(' ');
+            } else if (c == '$' && at + 1 < end && statement.charAt(at + 1) == '$') {
+                // H2's dollar-quoted string: $$ … $$, with nothing escaped inside.
+                int close = statement.indexOf("$$", at + 2);
+                at = close < 0 ? end : close + 2;
                 bare.append(' ');
             } else {
                 bare.append(c);

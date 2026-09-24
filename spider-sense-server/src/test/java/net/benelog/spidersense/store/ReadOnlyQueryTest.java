@@ -1,6 +1,7 @@
 package net.benelog.spidersense.store;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
 
@@ -29,5 +30,21 @@ class ReadOnlyQueryTest {
     void aWholeDecimalPastALongIsADoubleRatherThanAWrappedLong() {
         assertThat(row("SELECT CAST(42 AS DECIMAL(30, 0)), 1e19, 1e20, 12.5")).containsExactly(42L, 1e19, 1e20, 12.5);
         assertThat(row("SELECT 1e400")).containsExactly("1E+400");
+    }
+
+    /** A second statement cannot hide behind a dollar-quoted string, where a quote means nothing. */
+    @Test
+    void aDollarQuotedStringHidesNoSecondStatement() {
+        assertThatThrownBy(() -> ReadOnlyQuery.guard("SELECT $$'$$; SET QUERY_TIMEOUT 0"))
+                .isInstanceOf(ReadOnlyQuery.Refused.class).hasMessageContaining("one statement");
+        assertThat(row("SELECT $$it's; fine$$")).containsExactly("it's; fine");
+    }
+
+    /** FOR UPDATE reads, but locks rows the writer would wait on past its lock timeout. */
+    @Test
+    void forUpdateIsRefused() {
+        assertThatThrownBy(() -> ReadOnlyQuery.guard("SELECT * FROM span FOR  update"))
+                .isInstanceOf(ReadOnlyQuery.Refused.class).hasMessageContaining("FOR UPDATE");
+        assertThat(sql.run("SELECT 'for update' AS words", 10).rows()).hasSize(1);
     }
 }

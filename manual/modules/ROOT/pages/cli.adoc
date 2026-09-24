@@ -940,6 +940,8 @@ Each layer catches what the one before it cannot, and the second is the one that
 
 . *A statement allowlist.*
 After the leading whitespace and the `--` and `/* */` comments are stripped, the first keyword must be `SELECT`, `WITH`, `TABLE`, `VALUES`, `EXPLAIN` or `SHOW`, and there must be one statement: a `;` followed by anything but whitespace is refused.
+A `;` inside a `'…'` or `"…"` literal or H2's dollar-quoted `$$…$$` string does not count.
+`FOR UPDATE` is refused too: it reads, but it locks rows the writer would then wait on past its lock timeout.
 String literals and comments make this a scanner over SQL text rather than a parser, which is exactly why it is not the layer that is trusted.
 . *A user with `SELECT` and nothing else.*
 The schema creates `spider_sense_reader`, idempotently, on every open by a server of this version, and grants it `SELECT` on schema `PUBLIC` (xref:storage.adoc#reader[The read-only user]).
