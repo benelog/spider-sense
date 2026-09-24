@@ -210,9 +210,22 @@ public final class Writer implements AutoCloseable {
                 Thread.currentThread().interrupt();
                 break;
             }
-            flush();
+            flushSurviving();
         }
-        flush();
+        flushSurviving();
+    }
+
+    /**
+     * A flush that cannot end the thread: once it did, every later batch would be
+     * dropped with nothing saying why. What a flush itself cannot store it already
+     * reports; this catches what escapes that, such as a listener's failure.
+     */
+    private void flushSurviving() {
+        try {
+            flush();
+        } catch (RuntimeException | Error e) {
+            LOG.log(System.Logger.Level.WARNING, "Spider Sense's writer survived a failed flush", e);
+        }
     }
 
     private void flush() {
@@ -232,7 +245,9 @@ public final class Writer implements AutoCloseable {
             try {
                 write(batches);
                 stored = batches;
-            } catch (SQLException | RuntimeException e) {
+            } catch (SQLException | RuntimeException | StackOverflowError e) {
+                // A StackOverflowError too: an absurdly nested attribute value overflows the
+                // JSON encoder, and that costs its export like any other value the store refuses.
                 if (exiting) {
                     // Most likely H2's own exit hook closing the database; the flush at exit writes it.
                     unwritten.addAll(batches);
@@ -260,7 +275,7 @@ public final class Writer implements AutoCloseable {
             try {
                 write(List.of(batches.get(b)));
                 stored.add(batches.get(b));
-            } catch (SQLException | RuntimeException e) {
+            } catch (SQLException | RuntimeException | StackOverflowError e) {
                 if (exiting) {
                     unwritten.addAll(batches.subList(b, batches.size()));
                     break;

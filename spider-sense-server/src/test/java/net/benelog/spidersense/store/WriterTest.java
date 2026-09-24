@@ -81,6 +81,25 @@ class WriterTest {
         assertThat(store.sql().count("SELECT COUNT(*) FROM span", List.of())).isEqualTo(1);
     }
 
+    /** A value nested deep enough to overflow the JSON encoder costs its own export only. */
+    @Test
+    void aValueThatOverflowsTheEncoderCostsItsExportAndNotTheWriter() {
+        Object nested = "leaf";
+        for (int i = 0; i < 100_000; i++) {
+            nested = List.of(nested);
+        }
+        Batch deep = new Batch();
+        deep.add(new LogRecord(0, AT, "orders", "INFO", 9, "deep", null, null, null,
+                java.util.Map.of("nested", nested)));
+        store.writer().submit(deep);
+        decoder.accept(Otlp.logs(Otlp.service("orders"), "orders.Job", Otlp.log(AT, 9, "fine", null, null)));
+
+        store.writer().awaitIdle(5_000);
+
+        assertThat(store.sql().query("SELECT body FROM log", List.of(), rs -> rs.getString(1)))
+                .containsExactly("fine");
+    }
+
     /** A service or metric name longer than its column is stored cut, the same in every table. */
     @Test
     void aNameLongerThanItsColumnIsCutRatherThanLosingTheFlush() {
