@@ -777,6 +777,7 @@ A request body that is neither `application/x-protobuf` (also accepted as `appli
 An undecodable body of an accepted type is `400`.
 OTLP/JSON ids are accepted as hex, which is what the OTLP specification says, and as base64, which is what protobuf's own JSON mapping produces.
 The two are told apart by length, since only a hex id is exactly 32 or 16 characters of `[0-9a-f]`.
+The same holds for the proto field names (`trace_id`, `span_id`, `parent_span_id`), which protobuf's JSON parser accepts beside the lowerCamelCase names the specification prescribes.
 
 [#apdex]
 === Apdex and the histogram

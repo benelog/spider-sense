@@ -260,6 +260,33 @@ class OtlpDecoderTest {
         assertThat(request.getResourceSpansCount()).isEqualTo(1);
     }
 
+    /**
+     * Protobuf's JSON parser also accepts the proto field names, so a hex id under
+     * {@code trace_id} must be read as hex too, not as 24 bytes of base64.
+     */
+    @Test
+    void snakeCaseJsonIdsAreHexToo() throws Exception {
+        String json = """
+                {"resource_spans":[{"resource":{"attributes":[
+                  {"key":"service.name","value":{"string_value":"spring-orders"}}]},
+                 "scope_spans":[{"spans":[
+                  {"trace_id":"%s","span_id":"%s","parent_span_id":"%s","name":"SELECT orders","kind":3,
+                   "start_time_unix_nano":"1700000000000000000","end_time_unix_nano":"1700000005000000000"}]}]}]}
+                """.formatted(TRACE, CHILD, ROOT);
+        ExportTraceServiceRequest.Builder parsed = ExportTraceServiceRequest.newBuilder();
+        OtlpJson.merge(json, parsed);
+
+        Batch batch = decoder.accept(parsed.build());
+
+        assertThat(batch.spans()).singleElement().satisfies(span -> {
+            assertThat(span.traceId()).isEqualTo(TRACE);
+            assertThat(span.spanId()).isEqualTo(CHILD);
+            assertThat(span.parentSpanId()).isEqualTo(ROOT);
+        });
+        store.writer().awaitIdle(5_000);
+        assertThat(store.sql().count("SELECT COUNT(*) FROM span", List.of())).isEqualTo(1);
+    }
+
     // --- the ingest cap (storage.adoc#ingest-cap) -------------------------------------
 
     private static Span.Builder capSpan(int n, long at) {

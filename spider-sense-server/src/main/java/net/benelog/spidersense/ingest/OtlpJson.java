@@ -49,6 +49,11 @@ public final class OtlpJson {
      * Rewrites {@code traceId}, {@code spanId} and {@code parentSpanId} string
      * values that are hex into base64. Any other value, including an already
      * base64 one, is copied unchanged.
+     *
+     * <p>The snake-case spellings ({@code trace_id}, {@code span_id},
+     * {@code parent_span_id}) are rewritten too: the specification asks for
+     * lowerCamelCase, but {@link JsonFormat} accepts the proto field names as well,
+     * and a hex id it reads as base64 would be 24 bytes of nonsense.
      */
     public static String hexIdsToBase64(String json) {
         return rewrite(Json.parse(json)).toJson();
@@ -79,11 +84,16 @@ public final class OtlpJson {
     }
 
     private static boolean isIdField(String key) {
-        return key.equals("traceId") || key.equals("spanId") || key.equals("parentSpanId");
+        return isTraceId(key) || key.equals("spanId") || key.equals("span_id")
+                || key.equals("parentSpanId") || key.equals("parent_span_id");
+    }
+
+    private static boolean isTraceId(String key) {
+        return key.equals("traceId") || key.equals("trace_id");
     }
 
     private static String convertIfHex(String key, String value) {
-        int hexLength = key.equals("traceId") ? 32 : 16;
+        int hexLength = isTraceId(key) ? 32 : 16;
         if (value.length() != hexLength || !isHex(value)) {
             return value;
         }
