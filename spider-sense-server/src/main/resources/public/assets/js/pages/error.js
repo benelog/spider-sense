@@ -24,6 +24,7 @@ function exceptionChain(chain, mode) {
 export function render(root, ctx) {
   const id = ctx.params.id;
   let destroyed = false;
+  const latest = api.requestSequence();
   let chart = null;
   let mode = framesMode(ctx.query);
   let lastChain = null;
@@ -73,10 +74,11 @@ export function render(root, ctx) {
   }
 
   async function load() {
+    const current = latest();
     try {
       const win = api.windowFor();
       const data = await api.errorGroup(id, { window: win });
-      if (destroyed) return;
+      if (destroyed || !current()) return;
       const e = data.error || {};
       loaded = { window: win, service: e.service };
       build();
@@ -130,7 +132,7 @@ export function render(root, ctx) {
 
       fill(tracesBody, traceTable(data.traces || [], { empty: 'No trace in this window.' }));
     } catch (err) {
-      if (destroyed) return;
+      if (destroyed || !current()) return;
       built = false;
       fill(page, errorBox(err, load));
     }

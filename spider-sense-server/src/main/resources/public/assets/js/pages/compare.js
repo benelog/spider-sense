@@ -246,7 +246,7 @@ export function render(root, ctx) {
       data = res;
       paint();
     } catch (e) {
-      if (destroyed) return;
+      if (destroyed || lastKey !== key) return;
       delete nodes.endpoints; delete nodes.queries; delete nodes.errors;
       built = false;
       tiles.hidden = true;

@@ -240,6 +240,7 @@ A URL can therefore be shared as it is, and opens on the same view.
 === Live refresh
 
 Every list re-renders in place when Live refreshes it, without losing the scroll position or the selection.
+A page paints only the answer to the newest of its requests: an older range, filter or page that answers last is dropped, so a slow `all` never overwrites the `5m` asked after it, and a *Load more* still pending when the filter changes adds nothing to the new list.
 
 [#numbers-and-times]
 === Numbers and times

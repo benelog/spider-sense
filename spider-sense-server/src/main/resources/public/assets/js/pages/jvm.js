@@ -11,6 +11,7 @@ const toMib = (arr) => (arr || []).map((v) => (v == null ? null : v / MIB));
 
 export function render(root, ctx) {
   let destroyed = false;
+  const latest = api.requestSequence();
   const charts = new Map();
 
   const head = h('div.trace-head');
@@ -48,8 +49,9 @@ export function render(root, ctx) {
     else box.chart = timeSeries(box.bodyNode, spec);
   }
 
-  async function pickService() {
+  async function pickService(current) {
     const res = await api.services();
+    if (destroyed || !current()) return;
     const withJvm = (res.services || []).filter((s) => s.hasJvm);
     fill(page, panel({ title: 'JVM' }, emptyState(
       withJvm.length
@@ -60,14 +62,15 @@ export function render(root, ctx) {
   }
 
   async function load() {
+    const current = latest();
     if (!api.state.service) {
       reset();
-      await pickService().catch((e) => fill(page, errorBox(e, load)));
+      await pickService(current).catch((e) => { if (!destroyed && current()) fill(page, errorBox(e, load)); });
       return;
     }
     try {
       const data = await api.jvm({});
-      if (destroyed) return;
+      if (destroyed || !current()) return;
       const heap = data.heap || {};
       if (!(heap.t || []).length && !(data.threads && (data.threads.t || []).length)) {
         reset();
@@ -175,7 +178,7 @@ export function render(root, ctx) {
         ]);
       }
     } catch (e) {
-      if (destroyed) return;
+      if (destroyed || !current()) return;
       reset();
       fill(page, errorBox(e, load));
     }

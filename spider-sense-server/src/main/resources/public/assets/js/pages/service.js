@@ -123,6 +123,7 @@ export function endpointTable(rows, sortState, onSort) {
 export function render(root, ctx) {
   const name = ctx.params.name;
   let destroyed = false;
+  const latest = api.requestSequence();
   let sort = { key: ctx.query.sort || 'totalMs', dir: ctx.query.dir === 'asc' ? 'asc' : 'desc' };
   let endpoints = [];
   let endpointNode = null;
@@ -243,9 +244,10 @@ export function render(root, ctx) {
   }
 
   async function load() {
+    const current = latest();
     try {
       const data = await api.service(name);
-      if (destroyed) return;
+      if (destroyed || !current()) return;
       build();
       paintHead(data.service || {}, data.resource);
       fill(statsRow, statTiles(data.service || {}, (api.state.status || {}).thresholds));
@@ -258,7 +260,7 @@ export function render(root, ctx) {
       paintDeps(data.dependencies || []);
       paintResource(data.resource);
     } catch (e) {
-      if (destroyed) return;
+      if (destroyed || !current()) return;
       built = false;
       fill(page, errorBox(e, load));
     }

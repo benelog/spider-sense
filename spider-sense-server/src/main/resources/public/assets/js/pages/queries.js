@@ -29,6 +29,7 @@ function unindexedCell(schema) {
 
 export function render(root, ctx) {
   let destroyed = false;
+  const latest = api.requestSequence();
   let rows = [];
   let node = null;
   let sort = SORTS.some((s) => s.id === ctx.query.sort) ? ctx.query.sort : 'total';
@@ -93,13 +94,14 @@ export function render(root, ctx) {
   }
 
   async function load() {
+    const current = latest();
     try {
       const res = await api.queries({ sort, limit: 100 });
-      if (destroyed) return;
+      if (destroyed || !current()) return;
       rows = res.queries || [];
       paint();
     } catch (e) {
-      if (!destroyed) { node = null; fill(body, errorBox(e, load)); }
+      if (!destroyed && current()) { node = null; fill(body, errorBox(e, load)); }
     }
   }
 

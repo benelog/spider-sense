@@ -99,6 +99,24 @@ export function getJSON(path, query) {
   return promise;
 }
 
+/**
+ * One stream of a page's loads, newest wins. Each call starts a request and returns a check that
+ * stays true only until the next call starts one:
+ *
+ *   const latest = api.requestSequence();
+ *   async function load() { const current = latest(); const res = await api.x(); if (!current()) return; ... }
+ *
+ * The window's `to` moves with the clock, so two loads of the same view are two URLs, and a slow
+ * answer to an older range or filter would otherwise paint over the newer one.
+ */
+export function requestSequence() {
+  let last = 0;
+  return () => {
+    const mine = ++last;
+    return () => mine === last;
+  };
+}
+
 /** GET a text rendering (api.adoc#text-rendering): format=text, the body as it came. */
 export function getText(path, query) {
   return fetch(path + qs({ ...query, format: 'text' }), { headers: { accept: 'text/markdown' } })

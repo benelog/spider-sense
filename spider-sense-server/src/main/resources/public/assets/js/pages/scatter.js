@@ -10,6 +10,8 @@ import { count, dur, clock } from '../format.js';
 
 export function render(root, ctx) {
   let destroyed = false;
+  const latest = api.requestSequence();
+  const latestTraces = api.requestSequence();
   let points = [];
   let chart = null;
   let selection = null;
@@ -170,6 +172,7 @@ export function render(root, ctx) {
   }
 
   async function loadTraces() {
+    const current = latestTraces();
     try {
       const extra = { limit: 50 };
       if (showOk !== showErr) extra.status = showErr ? 'error' : 'ok';
@@ -180,7 +183,7 @@ export function render(root, ctx) {
         opts = { window: { from: selection.from, to: selection.to } };
       }
       const res = await api.traces(extra, opts);
-      if (destroyed) return;
+      if (destroyed || !current()) return;
       const rows = res.traces || [];
       if (!listNode) {
         listNode = traceTable(rows, { empty: 'No trace in this selection.' });
@@ -189,7 +192,7 @@ export function render(root, ctx) {
         listNode.setRows(rows);
       }
     } catch (e) {
-      if (!destroyed) { listNode = null; fill(listBody, errorBox(e, loadTraces)); }
+      if (!destroyed && current()) { listNode = null; fill(listBody, errorBox(e, loadTraces)); }
     }
   }
 
@@ -215,11 +218,13 @@ export function render(root, ctx) {
 
   async function load(incremental) {
     const requested = scope();
+    // A Live merge never supersedes a full load; it is dropped by scope instead (below).
+    const current = incremental ? () => true : latest();
     try {
       const now = Date.now();
       const opts = incremental ? { window: { from: now - 10000, to: now } } : undefined;
       const res = await api.scatter({ limit: 5000 }, opts);
-      if (destroyed) return;
+      if (destroyed || !current()) return;
       truncated = !!res.truncated;
       const incoming = res.points || [];
       if (incremental) {
@@ -243,7 +248,7 @@ export function render(root, ctx) {
         makeChart(w);
       }
     } catch (e) {
-      if (!destroyed) fill(chartBody, errorBox(e, () => load()));
+      if (!destroyed && current()) fill(chartBody, errorBox(e, () => load()));
     }
   }
 

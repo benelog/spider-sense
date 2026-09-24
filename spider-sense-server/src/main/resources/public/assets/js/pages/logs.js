@@ -10,6 +10,7 @@ const SEVERITIES = ['TRACE', 'DEBUG', 'INFO', 'WARN', 'ERROR'];
 
 export function render(root, ctx) {
   let destroyed = false;
+  const latest = api.requestSequence();
   let rows = [];
   let total = 0;
   let node = null;
@@ -130,12 +131,13 @@ export function render(root, ctx) {
 
   /** `cursor` is the last row's `{ before: at, beforeId: id }` when loading more. */
   async function load(cursor) {
+    const current = latest();
     try {
       const res = await api.logs({
         q: filter.q, severity: filter.severity, traceId: filter.traceId, limit: 200,
         before: cursor && cursor.before, beforeId: cursor && cursor.beforeId,
       });
-      if (destroyed) return;
+      if (destroyed || !current()) return;
       const incoming = res.logs || [];
       total = res.total || incoming.length;
       if (cursor) {
@@ -154,7 +156,7 @@ export function render(root, ctx) {
       }
       paint();
     } catch (e) {
-      if (!destroyed) { node = null; fill(body, errorBox(e, () => load())); }
+      if (!destroyed && current()) { node = null; fill(body, errorBox(e, () => load())); }
     }
   }
 

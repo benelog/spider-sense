@@ -64,6 +64,8 @@ export function render(root, ctx) {
   let total = 0;
   let loading = false;
   let destroyed = false;
+  const latest = api.requestSequence();
+  const latestEndpoints = api.requestSequence();
   let endpointOptions = [];
 
   const input = h('input', { type: 'search', placeholder: 'Search span names and attributes', value: filter.q, 'aria-label': 'Search traces' });
@@ -133,21 +135,23 @@ export function render(root, ctx) {
   }
 
   async function loadEndpoints() {
+    const current = latestEndpoints();
     if (!api.state.service) { endpointSelect.hidden = true; return; }
     try {
       const res = await api.endpoints({});
-      if (destroyed) return;
+      if (destroyed || !current()) return;
       endpointOptions = res.endpoints || [];
       const value = endpointSelect.value || filter.endpointId;
       fill(endpointSelect, h('option', { value: '' }, 'Any endpoint'),
         endpointOptions.map((e) => h('option', { value: e.endpointId }, e.name)));
       endpointSelect.value = endpointOptions.some((e) => e.endpointId === value) ? value : '';
       endpointSelect.hidden = false;
-    } catch (e) { endpointSelect.hidden = true; }
+    } catch (e) { if (current()) endpointSelect.hidden = true; }
   }
 
   /** `cursor` is the last row's `{ before: start, beforeId: traceId }` when loading more. */
   async function load(cursor) {
+    const current = latest();
     loading = true;
     try {
       const res = await api.traces({
@@ -160,7 +164,7 @@ export function render(root, ctx) {
         before: cursor && cursor.before,
         beforeId: cursor && cursor.beforeId,
       });
-      if (destroyed) return;
+      if (destroyed || !current()) return;
       const incoming = res.traces || [];
       total = res.total || incoming.length;
       if (cursor) {
@@ -171,9 +175,9 @@ export function render(root, ctx) {
       }
       paint();
     } catch (e) {
-      if (!destroyed) fill(body, errorBox(e, () => load()));
+      if (!destroyed && current()) fill(body, errorBox(e, () => load()));
     } finally {
-      loading = false;
+      if (current()) loading = false;
     }
   }
 

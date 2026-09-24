@@ -26,6 +26,8 @@ function alignTo(t, s, key) {
 
 export function render(root, ctx) {
   let destroyed = false;
+  const latest = api.requestSequence();
+  const latestSeries = api.requestSequence();
   let catalog = [];
   let selected = ctx.query.metric || '';
   let rateOn = ctx.query.rate === '1';
@@ -111,6 +113,7 @@ export function render(root, ctx) {
   }
 
   async function loadSeries() {
+    const current = latestSeries();
     if (!selected) {
       detailTitle.textContent = 'Metric';
       rateBtn.hidden = true;
@@ -122,7 +125,7 @@ export function render(root, ctx) {
     try {
       const meta = catalog.find((m) => m.name === selected) || {};
       const data = await api.metricSeries({ name: selected, rate: rateOn ? 'true' : '' });
-      if (destroyed) return;
+      if (destroyed || !current()) return;
       const series = data.series || [];
       detailTitle.textContent = selected + (data.unit ? ' (' + data.unit + ')' : '');
       rateBtn.hidden = data.type !== 'sum';
@@ -163,7 +166,7 @@ export function render(root, ctx) {
         countPanel.hidden = true;
       }
     } catch (e) {
-      if (!destroyed) fill(chartBody, errorBox(e, loadSeries));
+      if (!destroyed && current()) fill(chartBody, errorBox(e, loadSeries));
     }
   }
 
@@ -174,9 +177,10 @@ export function render(root, ctx) {
   }
 
   async function load() {
+    const current = latest();
     try {
       const res = await api.metricCatalog({});
-      if (destroyed) return;
+      if (destroyed || !current()) return;
       catalog = (res.metrics || []).slice().sort((a, b) => a.name.localeCompare(b.name));
       if (!catalog.length) {
         fill(listBox, h('div', { style: { padding: '18px', textAlign: 'center' } }, h('span.muted', 'No metric has arrived yet.')));
@@ -187,7 +191,7 @@ export function render(root, ctx) {
       paintCatalog();
       await loadSeries();
     } catch (e) {
-      if (!destroyed) fill(listBox, errorBox(e, load));
+      if (!destroyed && current()) fill(listBox, errorBox(e, load));
     }
   }
 

@@ -8,6 +8,7 @@ import { count, rel, bothTimes, truncate, splitType } from '../format.js';
 
 export function render(root, ctx) {
   let destroyed = false;
+  const latest = api.requestSequence();
   let rows = [];
   let node = null;
   // Read at each paint, so a theme flip gives the next refresh its colour.
@@ -61,13 +62,14 @@ export function render(root, ctx) {
   }
 
   async function load() {
+    const current = latest();
     try {
       const res = await api.errors({ limit: 100 });
-      if (destroyed) return;
+      if (destroyed || !current()) return;
       rows = res.errors || [];
       paint();
     } catch (e) {
-      if (!destroyed) { node = null; fill(body, errorBox(e, load)); }
+      if (!destroyed && current()) { node = null; fill(body, errorBox(e, load)); }
     }
   }
 

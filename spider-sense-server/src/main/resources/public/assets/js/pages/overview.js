@@ -29,6 +29,7 @@ export function statTiles(totals, thresholds) {
 
 export function render(root, ctx) {
   let destroyed = false;
+  const latest = api.requestSequence();
   let chart = null;
   let tingles = [];
 
@@ -187,13 +188,14 @@ export function render(root, ctx) {
   }
 
   async function load() {
+    const current = latest();
     try {
       const [data, found] = await Promise.all([
         api.overview(),
         // hideAcked: the top five are the unacknowledged ones (pages.adoc#overview).
         api.findings({ limit: 5, hideAcked: true }).catch(() => ({ findings: [] })),
       ]);
-      if (destroyed) return;
+      if (destroyed || !current()) return;
       findings = found.findings || [];
       const services = data.services || [];
       const requests = (data.totals || {}).requests || 0;
@@ -222,7 +224,7 @@ export function render(root, ctx) {
       tingles = data.tingles || [];
       paintTingles();
     } catch (e) {
-      if (destroyed) return;
+      if (destroyed || !current()) return;
       built = false;
       fill(page, errorBox(e, load));
     }

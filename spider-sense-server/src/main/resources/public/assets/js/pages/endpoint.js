@@ -12,6 +12,7 @@ import { dur, count, rate, rel, bothTimes, truncate } from '../format.js';
 export function render(root, ctx) {
   const id = ctx.params.id;
   let destroyed = false;
+  const latest = api.requestSequence();
   let data = null;
   let activeTab = ctx.query.tab || 'slowest';
 
@@ -106,9 +107,11 @@ export function render(root, ctx) {
   }
 
   async function load() {
+    const current = latest();
     try {
-      data = await api.endpoint(id);
-      if (destroyed) return;
+      const res = await api.endpoint(id);
+      if (destroyed || !current()) return;
+      data = res;
       build();
       const e = data.endpoint || {};
       ctx.setTitle(e.name || 'Endpoint');
@@ -117,7 +120,7 @@ export function render(root, ctx) {
       red.apply(data.series || {});
       paintTabs();
     } catch (err) {
-      if (destroyed) return;
+      if (destroyed || !current()) return;
       built = false;
       fill(page, errorBox(err, load));
     }

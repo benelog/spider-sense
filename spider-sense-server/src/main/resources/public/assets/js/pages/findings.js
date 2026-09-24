@@ -425,6 +425,7 @@ export function windowName() {
 
 export function render(root, ctx) {
   let destroyed = false;
+  const latest = api.requestSequence();
   let rows = [];
   let requests = 0;
   let listWindow = null;
@@ -520,9 +521,10 @@ export function render(root, ctx) {
   }
 
   async function load() {
+    const current = latest();
     try {
       const res = await api.findings({ limit: 100 });
-      if (destroyed) return;
+      if (destroyed || !current()) return;
       rows = res.findings || [];
       requests = res.requests || 0;
       listWindow = res.window || api.windowFor();
@@ -538,7 +540,7 @@ export function render(root, ctx) {
       }
       paint();
     } catch (e) {
-      if (!destroyed) { node = null; fill(body, errorBox(e, load)); }
+      if (!destroyed && current()) { node = null; fill(body, errorBox(e, load)); }
     }
   }
 

@@ -182,6 +182,7 @@ export function layout(nodes, edges) {
 
 export function render(root, ctx) {
   let destroyed = false;
+  const latest = api.requestSequence();
   let data = null;
   let layoutKey = null;
   let placed = null;
@@ -528,9 +529,10 @@ export function render(root, ctx) {
   // --- loading ----------------------------------------------------------
 
   async function load() {
+    const current = latest();
     try {
       const res = await api.map();
-      if (destroyed) return;
+      if (destroyed || !current()) return;
       data = res;
       const nodes = data.nodes || [];
       const edges = data.edges || [];
@@ -553,7 +555,7 @@ export function render(root, ctx) {
         update();
       }
     } catch (e) {
-      if (!destroyed) { layoutKey = null; fill(svgBox, errorBox(e, load)); }
+      if (!destroyed && current()) { layoutKey = null; fill(svgBox, errorBox(e, load)); }
     }
   }
 

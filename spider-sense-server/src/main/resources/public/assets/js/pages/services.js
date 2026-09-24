@@ -9,6 +9,7 @@ import { dur, count, rate, pct, rel, bothTimes } from '../format.js';
 
 export function render(root, ctx) {
   let destroyed = false;
+  const latest = api.requestSequence();
   let rows = [];
   let sort = { key: ctx.query.sort || 'requests', dir: ctx.query.dir === 'asc' ? 'asc' : 'desc' };
   let node = null;
@@ -63,9 +64,10 @@ export function render(root, ctx) {
   }
 
   async function load() {
+    const current = latest();
     try {
       const res = await api.services();
-      if (destroyed) return;
+      if (destroyed || !current()) return;
       rows = res.services || [];
       seedServices(rows.map((s) => s.name));
       if (!rows.length) {
@@ -75,7 +77,7 @@ export function render(root, ctx) {
       }
       paint();
     } catch (e) {
-      if (!destroyed) { node = null; fill(body, errorBox(e, load)); }
+      if (!destroyed && current()) { node = null; fill(body, errorBox(e, load)); }
     }
   }
 

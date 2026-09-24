@@ -13,6 +13,7 @@ import { dur, count, rel, bothTimes } from '../format.js';
 export function render(root, ctx) {
   const id = ctx.params.id;
   let destroyed = false;
+  const latest = api.requestSequence();
   let chart = null;
   let loaded = null;
 
@@ -39,10 +40,11 @@ export function render(root, ctx) {
   }
 
   async function load() {
+    const current = latest();
     try {
       const win = api.windowFor();
       const data = await api.query(id, { window: win });
-      if (destroyed) return;
+      if (destroyed || !current()) return;
       const q = data.query || {};
       loaded = { window: win, service: q.service };
       build();
@@ -92,7 +94,7 @@ export function render(root, ctx) {
 
       fill(tracesBody, traceTable(data.traces || [], { empty: 'No trace contains this query in this window.' }));
     } catch (e) {
-      if (destroyed) return;
+      if (destroyed || !current()) return;
       built = false;
       fill(page, errorBox(e, load));
     }
