@@ -93,9 +93,6 @@ public final class Findings {
     /** The OTLP severity number of {@code ERROR}; a {@code log-error} counts it and worse. */
     private static final int ERROR_SEVERITY = 17;
 
-    /** A guard on the one rule that reads log rows rather than an aggregate. */
-    private static final int MAX_LOG_ROWS = 20_000;
-
     /** The title of a {@code log-error} carries this much of the message (findings.adoc#log-error). */
     private static final int MESSAGE_IN_TITLE = 80;
 
@@ -616,9 +613,46 @@ public final class Findings {
 
     // --- log error -----------------------------------------------------------
 
-    /** One {@code ERROR} log record nothing else reports, and where it came from. */
-    private record LogLine(long at, @Nullable String traceId, String endpoint,
-            Map<String, Object> attributes) {
+    /**
+     * One {@code (service, logger, normalised message)} group of {@code ERROR} log
+     * records nothing else reports, folded as its records are read: the counts are
+     * of every record, and only the newest few trace ids and the newest record's
+     * attributes are kept as evidence.
+     */
+    private static final class LogGroup {
+        final String service;
+        final String logger;
+        final String message;
+        long count;
+        long firstSeen;
+        long lastSeen;
+        final Map<String, long[]> byEndpoint = new LinkedHashMap<>();
+        /** The newest distinct trace ids, oldest first. */
+        final LinkedHashSet<String> traces = new LinkedHashSet<>();
+        @Nullable String attributes;
+
+        LogGroup(String service, String logger, String message) {
+            this.service = service;
+            this.logger = logger;
+            this.message = message;
+        }
+
+        void add(long at, @Nullable String traceId, String endpoint, @Nullable String attributes) {
+            if (count == 0) {
+                firstSeen = at;
+            }
+            count++;
+            lastSeen = at;
+            byEndpoint.computeIfAbsent(endpoint, name -> new long[1])[0]++;
+            if (traceId != null) {
+                traces.remove(traceId);
+                traces.add(traceId);
+                if (traces.size() > EVIDENCE_TRACES) {
+                    traces.remove(traces.iterator().next());
+                }
+            }
+            this.attributes = attributes;
+        }
     }
 
     /**
@@ -632,7 +666,9 @@ public final class Findings {
      *
      * <p>The grouping is the one {@link Ids#normaliseMessage} defines, which is a
      * Java regular expression rather than SQL, so the rows are read and grouped
-     * here; the cap is the same order as the dependency scan's.
+     * here. Every row of the window is read, because {@code count} is what
+     * {@code check --max-log-errors} sums and a cap on the rows would undercount it
+     * (check.adoc#rules); what a group holds does not grow with its records.
      */
     private List<Ranked> logErrors(Window window, @Nullable String service, Reads reads,
             boolean evidence) {
@@ -643,68 +679,55 @@ public final class Findings {
             where = where + " AND l.service = ?";
             params.add(service);
         }
-        Map<String, List<LogLine>> byGroup = new LinkedHashMap<>();
-        Map<String, String[]> named = new LinkedHashMap<>();
+        Map<String, LogGroup> byGroup = new LinkedHashMap<>();
         sql.forEach("SELECT l.service AS service, l.logger AS logger, l.body AS body, l.at_ms AS at_ms,"
-                + " l.trace_id AS trace_id, l.span_id AS span_id, l.attributes AS attributes,"
+                + " l.trace_id AS trace_id, l.span_id AS span_id,"
+                + (evidence ? " l.attributes AS attributes," : "")
                 + " t.root_name AS root_name FROM log l"
                 + " LEFT JOIN trace t ON t.trace_id = l.trace_id WHERE " + where
-                + " ORDER BY l.at_ms, l.id LIMIT " + MAX_LOG_ROWS, params, rs -> {
+                + " ORDER BY l.at_ms, l.id", params, rs -> {
+                    String serviceName = rs.getString("service");
                     String logger = logger(rs.getString("logger"));
                     String message = Ids.normaliseMessage(rs.getString("body"));
-                    String key = rs.getString("service") + "\0" + logger + "\0" + message;
-                    named.putIfAbsent(key, new String[]{rs.getString("service"), logger, message});
-                    byGroup.computeIfAbsent(key, k -> new ArrayList<>())
-                            .add(new LogLine(rs.getLong("at_ms"), rs.getString("trace_id"),
+                    String key = serviceName + "\0" + logger + "\0" + message;
+                    byGroup.computeIfAbsent(key, k -> new LogGroup(serviceName, logger, message))
+                            .add(rs.getLong("at_ms"), rs.getString("trace_id"),
                                     evidence
                                             ? endpointOf(reads, rs.getString("span_id"),
                                                     rs.getString("root_name"))
                                             : endpointOf(null, null, rs.getString("root_name")),
-                                    evidence ? AttrJson.decode(rs.getString("attributes")) : Map.of()));
+                                    evidence ? rs.getString("attributes") : null);
                 });
 
         List<Ranked> found = new ArrayList<>();
-        byGroup.forEach((key, records) -> {
-            String[] parts = Objects.requireNonNull(named.get(key), "every group was named as it was read");
-            String serviceName = parts[0];
-            String logger = parts[1];
-            String message = parts[2];
-            Map<String, long[]> byEndpoint = new LinkedHashMap<>();
-            for (LogLine record : records) {
-                byEndpoint.computeIfAbsent(record.endpoint(), name -> new long[1])[0]++;
-            }
+        for (LogGroup group : byGroup.values()) {
             List<Stats.EndpointCount> endpoints = new ArrayList<>();
-            byEndpoint.forEach((name, count) -> endpoints.add(new Stats.EndpointCount(name, count[0])));
+            group.byEndpoint.forEach((name, count) -> endpoints.add(new Stats.EndpointCount(name, count[0])));
             endpoints.sort(Stats.EndpointCount.MOST_FIRST);
 
             Map<String, Object> numbers = new LinkedHashMap<>();
-            numbers.put("count", (long) records.size());
-            numbers.put("firstSeen", records.get(0).at());
-            numbers.put("lastSeen", records.get(records.size() - 1).at());
-            numbers.put("logger", logger);
-            numbers.put("message", message);
+            numbers.put("count", group.count);
+            numbers.put("firstSeen", group.firstSeen);
+            numbers.put("lastSeen", group.lastSeen);
+            numbers.put("logger", group.logger);
+            numbers.put("message", group.message);
             numbers.put("endpoints", endpointCounts(endpoints));
 
-            List<String> traces = new ArrayList<>();
-            for (int i = records.size() - 1; i >= 0 && traces.size() < EVIDENCE_TRACES; i--) {
-                String traceId = records.get(i).traceId();
-                if (traceId != null && !traces.contains(traceId)) {
-                    traces.add(traceId);
-                }
-            }
-            String seenIn = endpoints.isEmpty() ? serviceName : endpoints.get(0).name();
+            List<String> traces = new ArrayList<>(group.traces);
+            Collections.reverse(traces);
+            String seenIn = endpoints.isEmpty() ? group.service : endpoints.get(0).name();
             Finding finding = new Finding(
-                    id(LOG_ERROR, serviceName, logger + "\0" + message),
-                    LOG_ERROR, HIGH, serviceName,
-                    "ERROR in " + simpleName(logger) + ": " + cut(message, MESSAGE_IN_TITLE),
-                    Numbers.plural(records.size(), "record") + " in " + seenIn
-                            + ", none of them on a failed trace; " + message,
-                    new Subject(null, null, null, null, null, null, logger, null),
+                    id(LOG_ERROR, group.service, group.logger + "\0" + group.message),
+                    LOG_ERROR, HIGH, group.service,
+                    "ERROR in " + simpleName(group.logger) + ": " + cut(group.message, MESSAGE_IN_TITLE),
+                    Numbers.plural(group.count, "record") + " in " + seenIn
+                            + ", none of them on a failed trace; " + group.message,
+                    new Subject(null, null, null, null, null, null, group.logger, null),
                     numbers, null,
-                    frames.ofStacktrace(stacktraceOf(records.get(records.size() - 1).attributes())),
+                    frames.ofStacktrace(stacktraceOf(AttrJson.decode(group.attributes))),
                     List.copyOf(traces));
-            found.add(new Ranked(finding, records.size()));
-        });
+            found.add(new Ranked(finding, group.count));
+        }
         return found;
     }
 

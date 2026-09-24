@@ -243,6 +243,37 @@ class CheckTest {
     }
 
     @Test
+    void theLogErrorRuleCountsEveryRecordPastTwentyThousand() {
+        decoder.accept(Otlp.traces(Otlp.service("orders"), entry("/orders", 10)));
+        int records = 20_001;
+        for (int from = 0; from < records; from += 1_000) {
+            List<io.opentelemetry.proto.logs.v1.LogRecord> chunk = new ArrayList<>();
+            for (int i = from; i < Math.min(records, from + 1_000); i++) {
+                chunk.add(Otlp.log(NOW + i, 17, "Retry budget spent", null, null));
+            }
+            decoder.accept(Otlp.logs(Otlp.service("orders"), "orders.Job",
+                    chunk.toArray(new io.opentelemetry.proto.logs.v1.LogRecord[0])));
+            flush();
+        }
+        // A group whose only record comes after the first twenty thousand.
+        decoder.accept(Otlp.logs(Otlp.service("orders"), "orders.Sweeper",
+                Otlp.log(NOW + records, 17, "Sweep failed", null, null)));
+        flush();
+
+        Check.CheckResult result = check.check(window, "orders", null,
+                Map.of(Check.MAX_LOG_ERRORS, 20_001.0));
+
+        assertThat(rule(result, Check.MAX_LOG_ERRORS).actual()).isEqualTo(20_002.0);
+        assertThat(rule(result, Check.MAX_LOG_ERRORS).pass()).isFalse();
+        assertThat(findings.findings(window, "orders", 100))
+                .filteredOn(finding -> Findings.LOG_ERROR.equals(finding.kind()))
+                .extracting(Findings.Finding::title, finding -> finding.numbers().get("count"))
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("ERROR in Job: Retry budget spent", 20_001L),
+                        org.assertj.core.groups.Tuple.tuple("ERROR in Sweeper: Sweep failed", 1L));
+    }
+
+    @Test
     void theLogErrorRulePassesWhenNothingLoggedAnErrorOutsideAFailedTrace() {
         decoder.accept(Otlp.traces(Otlp.service("orders"), entry("/orders", 10)));
         flush();

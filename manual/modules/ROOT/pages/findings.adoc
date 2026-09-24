@@ -570,6 +570,7 @@ The message is normalised as an error message is.
 `subject.logger` is the logger, and the title is `ERROR in <logger short name>: <message cut at 80 characters>`.
 
 `numbers`: `count` (the uncovered records), `firstSeen`, `lastSeen`, `logger`, `message` (normalised), `endpoints` (the entry span of each record's trace, as `error` counts them, and `(no endpoint)` for a record without one).
+`count` covers every uncovered record of the window, never the first rows read, because `check --max-log-errors` sums it.
 
 This is what `catch (Exception e) { log.error(…, e); return fallback; }` leaves behind: no span error, no exception event, one line in the log, and a request that answered 200 with the wrong answer.
 A record whose trace has an error span is already reported by an `error` finding and is not counted twice, so a `log-error` is by construction the failure nothing else tells you about.
