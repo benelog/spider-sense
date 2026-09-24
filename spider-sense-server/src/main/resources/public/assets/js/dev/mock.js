@@ -1184,7 +1184,7 @@ function findingsFor(w, service, limit, hideAcked) {
       id: findingId('pool-exhausted', 'spring-orders', 'HikariPool-1'),
       kind: 'pool-exhausted', severity: 'high', service: 'spring-orders',
       title: 'HikariPool-1 ran out of connections',
-      why: '10 of 10 connections in use and 4 requests waiting',
+      why: 'up to 10 of 10 connections in use and up to 4 requests waiting',
       subject: { ...NO_SUBJECT, pool: 'HikariPool-1' },
       numbers: { pool: 'HikariPool-1', max: 10, usedMax: 10, pendingMax: 4, at: w.to - 60000 },
       statement: null,

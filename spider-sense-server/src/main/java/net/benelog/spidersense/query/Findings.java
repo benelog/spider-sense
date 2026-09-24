@@ -1416,32 +1416,46 @@ public final class Findings {
      * <p>"Pending above zero" is a request that waited for a connection, and "used
      * equals max" is the moment the next one would have: both are the pool being the
      * bottleneck rather than the database.
+     *
+     * <p>{@code usedMax} is the highest usage of the window, not the usage at the
+     * worst point: the most waiting and the fullest pool need not be the same
+     * moment, and "{@code usedMax} equal to {@code max}" has to read as "the pool
+     * was full" whichever came first (findings.adoc#pool-exhausted).
      */
     private @Nullable Ranked exhausted(String service, JvmView.ConnectionPool pool) {
         long at = 0;
         double worstPending = 0;
         double worstUsed = 0;
+        double usedMax = 0;
         double max = Double.NaN;
         boolean exhausted = false;
         for (int i = 0; i < pool.t().length; i++) {
             double pending = pool.pending().length > i ? pool.pending()[i] : Double.NaN;
             double used = pool.used().length > i ? pool.used()[i] : Double.NaN;
             double limit = pool.max().length > i ? pool.max()[i] : Double.NaN;
+            if (!Double.isNaN(used)) {
+                usedMax = Math.max(usedMax, used);
+            }
+            if (Double.isNaN(max) && !Double.isNaN(limit)) {
+                max = limit;
+            }
             boolean waiting = !Double.isNaN(pending) && pending > 0;
             boolean full = !Double.isNaN(used) && !Double.isNaN(limit) && limit > 0 && used >= limit;
             if (!waiting && !full) {
                 continue;
             }
-            exhausted = true;
             double pendingValue = Double.isNaN(pending) ? 0 : pending;
             double usedValue = Double.isNaN(used) ? 0 : used;
-            if (pendingValue > worstPending
+            if (!exhausted || pendingValue > worstPending
                     || (pendingValue == worstPending && usedValue > worstUsed)) {
                 worstPending = pendingValue;
                 worstUsed = usedValue;
                 at = pool.t()[i];
-                max = limit;
+                if (!Double.isNaN(limit)) {
+                    max = limit;
+                }
             }
+            exhausted = true;
         }
         if (!exhausted) {
             return null;
@@ -1449,7 +1463,7 @@ public final class Findings {
         Map<String, Object> numbers = new LinkedHashMap<>();
         numbers.put("pool", pool.name());
         numbers.put("max", Double.isNaN(max) ? null : max);
-        numbers.put("usedMax", worstUsed);
+        numbers.put("usedMax", usedMax);
         numbers.put("pendingMax", worstPending);
         numbers.put("at", at);
 
@@ -1458,11 +1472,11 @@ public final class Findings {
                 id(POOL_EXHAUSTED, service, pool.name()),
                 POOL_EXHAUSTED, HIGH, service,
                 pool.name() + " ran out of connections",
-                Numbers.number(worstUsed) + " of " + limit + " connections in use and "
-                        + Numbers.number(worstPending) + " requests waiting at the worst point",
+                "up to " + Numbers.number(usedMax) + " of " + limit + " connections in use and up to "
+                        + Numbers.number(worstPending) + " requests waiting",
                 new Subject(null, null, null, pool.name(), null, null, null, null),
                 numbers, null, List.of(), List.of());
-        return new Ranked(finding, worstPending * 1_000_000 + worstUsed);
+        return new Ranked(finding, worstPending * 1_000_000 + usedMax);
     }
 
     private List<String> servicesInScope(@Nullable String service) {

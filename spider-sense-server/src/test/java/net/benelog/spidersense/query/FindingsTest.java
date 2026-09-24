@@ -551,12 +551,39 @@ class FindingsTest {
         assertThat(finding.traces()).isEmpty();
     }
 
+    @Test
+    void aPoolFullAtAnotherPointThanTheMostWaitingReadsAsFull() {
+        decoder.accept(Otlp.traces(Otlp.service("orders"), entry(1, "/orders", 10)));
+        // Three waiting with eight of ten in use, then nobody waiting with all ten in use.
+        long first = NOW - 30_000;
+        pool(first, "db.client.connections.usage", 8, Otlp.attr("state", "used"));
+        pool(first, "db.client.connections.max", 10);
+        pool(first, "db.client.connections.pending_requests", 3);
+        pool(NOW, "db.client.connections.usage", 10, Otlp.attr("state", "used"));
+        pool(NOW, "db.client.connections.max", 10);
+        pool(NOW, "db.client.connections.pending_requests", 0);
+        flush();
+
+        Findings.Finding finding = of(Findings.POOL_EXHAUSTED).get(0);
+
+        assertThat((Double) finding.numbers().get("pendingMax")).isEqualTo(3.0);
+        assertThat(finding.numbers().get("at")).isEqualTo(first);
+        assertThat((Double) finding.numbers().get("usedMax")).isEqualTo(10.0);
+        assertThat(finding.numbers().get("max")).isEqualTo(10.0);
+        assertThat(finding.why()).isEqualTo("up to 10.0 of 10.0 connections in use and up to 3.0 requests waiting");
+    }
+
     private void pool(String metric, double value, io.opentelemetry.proto.common.v1.KeyValue... extra) {
+        pool(NOW, metric, value, extra);
+    }
+
+    private void pool(long at, String metric, double value,
+            io.opentelemetry.proto.common.v1.KeyValue... extra) {
         io.opentelemetry.proto.common.v1.KeyValue[] attributes =
                 new io.opentelemetry.proto.common.v1.KeyValue[extra.length + 1];
         attributes[0] = Otlp.attr("pool.name", "HikariPool-1");
         System.arraycopy(extra, 0, attributes, 1, extra.length);
-        decoder.accept(Otlp.sum(Otlp.service("orders"), metric, "{connection}", NOW, value, false,
+        decoder.accept(Otlp.sum(Otlp.service("orders"), metric, "{connection}", at, value, false,
                 attributes));
     }
 

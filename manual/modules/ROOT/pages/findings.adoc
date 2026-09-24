@@ -592,7 +592,7 @@ It is always `high`, and it is ranked by pending first and used second.
 
 `subject.pool` is the pool.
 
-`numbers`: `pool`, `max`, `usedMax`, `pendingMax`, `at` (the worst point).
+`numbers`: `pool`, `max`, `usedMax` (the most connections in use at any point of the window), `pendingMax` (the most requests waiting at any point), `at` (the worst point: the most waiting, then the most in use).
 There are no `traces`, because the finding comes from the pool's metrics rather than from a span.
 
 `pendingMax` above zero means threads waited for a connection, and `usedMax` equal to `max` means the pool was full.

@@ -438,7 +438,7 @@ When the fallback is the right behaviour, keep it and make it visible: record it
 
 ## `pool-exhausted`
 
-`numbers`: `pool`, `max`, `usedMax`, `pendingMax`, `at` (the worst point).
+`numbers`: `pool`, `max`, `usedMax` (the most connections in use at any point), `pendingMax` (the most requests waiting at any point), `at` (the worst point).
 There are no `traces`: this comes from the pool's metrics, not from a span.
 
 `pendingMax` above zero means threads waited for a connection, and `usedMax == max` means the pool was full.
