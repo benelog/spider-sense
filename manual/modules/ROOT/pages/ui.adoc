@@ -200,7 +200,7 @@ Has three tabs: `-javaagent`, environment variables, and `curl`.
 Each tab is a copyable block carrying the actual endpoint from `/api/status`.
 
 Clear data::
-Asks for confirmation, then sends `DELETE /api/data`.
+Asks for confirmation, saying what xref:api.adoc#data[`DELETE /api/data`] deletes and what it keeps, then sends it.
 
 [#keyboard]
 == Keyboard
