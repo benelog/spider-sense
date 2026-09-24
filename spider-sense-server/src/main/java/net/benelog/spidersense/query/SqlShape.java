@@ -59,7 +59,18 @@ final class SqlShape {
             "between", "exists", "case", "when", "then", "else", "end", "true", "false", "asc",
             "desc", "nulls", "first", "last", "distinct", "all", "any", "some", "interval",
             "current_date", "current_timestamp", "current_time", "date", "time", "timestamp",
-            "cast", "only", "rows", "row", "next", "with", "recursive");
+            "cast", "only", "rows", "row", "next", "with", "recursive", "except", "intersect", "minus");
+
+    /**
+     * The keywords that are also common column names. In a predicate, one that a
+     * comparison follows ({@code where date = ?}) is the column; anywhere else it
+     * is still the keyword.
+     */
+    private static final Set<String> COLUMN_WORDS = Set.of(
+            "date", "time", "timestamp", "first", "last", "next", "row", "rows", "only", "interval");
+
+    /** What follows a column in a comparison, besides an operator. */
+    private static final Set<String> COMPARISON_WORDS = Set.of("is", "in", "like", "ilike", "between", "not");
 
     /** Where a table list ends: the next clause, or a parenthesis. */
     private static final Set<String> TABLE_LIST_STOP = Set.of(
@@ -75,8 +86,8 @@ final class SqlShape {
      * {@code )} restores the region its {@code (} interrupted.
      */
     private static final Set<String> REGION_END = Set.of(
-            "select", "from", "group", "having", "limit", "offset", "fetch", "union", "set",
-            "values", "insert", "update", "delete", "join");
+            "select", "from", "group", "having", "limit", "offset", "fetch", "union", "except",
+            "intersect", "minus", "set", "values", "insert", "update", "delete", "join");
 
     /**
      * The keywords a {@code ::} cast's type may be spelt with
@@ -89,6 +100,9 @@ final class SqlShape {
     private final List<TableRef> tables = new ArrayList<>();
     private final List<ColumnRef> predicates = new ArrayList<>();
     private final Set<String> predicateKeys = new LinkedHashSet<>();
+
+    /** The names a select list gives with {@code as}, which an order by may sort by. */
+    private final Set<String> selectAliases = new LinkedHashSet<>();
 
     /** alias or table name → the table it resolves to, null for a derived table. */
     private final Map<String, String> aliases = new LinkedHashMap<>();
@@ -148,6 +162,12 @@ final class SqlShape {
                 continue;
             }
             String word = token.keyword();
+            if (region == Region.PREDICATE && word != null && COLUMN_WORDS.contains(word)
+                    && comparedAt(tokens, i + 1)) {
+                column(token);     // "where date = ?": the keyword is a column's name
+                i++;
+                continue;
+            }
             if ("on".equals(word) && i + 1 < tokens.size()
                     && (tokens.get(i + 1).isWord("conflict") || tokens.get(i + 1).isWord("duplicate"))) {
                 i = skipConflictTarget(tokens, i + 1);
@@ -175,8 +195,18 @@ final class SqlShape {
                 i++;
                 continue;
             }
+            if (region == Region.NONE && token.kind() == Token.Kind.NAME && i > 0
+                    && "as".equals(tokens.get(i - 1).keyword())) {
+                selectAliases.add(token.text());     // "price * qty as total"
+                i++;
+                continue;
+            }
             if (region == Region.NONE || token.kind() != Token.Kind.NAME) {
                 i++;
+                continue;
+            }
+            if (region == Region.ORDER && token.parts().size() == 1 && selectAliases.contains(token.text())) {
+                i++;     // "order by total": the select list's own name, no column of a table
                 continue;
             }
             if (followedByParenthesis(tokens, i)) {
@@ -360,6 +390,18 @@ final class SqlShape {
         if (predicateKeys.add(table + "." + column)) {
             predicates.add(new ColumnRef(table, column));
         }
+    }
+
+    /** Whether a comparison begins at {@code i}: an operator, or {@code is}, {@code in}, {@code like}…. */
+    private static boolean comparedAt(List<Token> tokens, int i) {
+        if (i >= tokens.size()) {
+            return false;
+        }
+        Token token = tokens.get(i);
+        if (token.kind() == Token.Kind.PUNCTUATION) {
+            return "=<>!".contains(token.text());
+        }
+        return token.keyword() != null && COMPARISON_WORDS.contains(token.keyword());
     }
 
     private static boolean followedByParenthesis(List<Token> tokens, int i) {

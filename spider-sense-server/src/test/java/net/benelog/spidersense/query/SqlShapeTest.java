@@ -54,6 +54,31 @@ class SqlShapeTest {
     }
 
     @Test
+    void aSelectListAliasInTheOrderByIsNoColumn() {
+        assertThat(predicates("select id, name, price * qty as total from items where name = ? order by total desc"))
+                .containsExactly("items.name");
+    }
+
+    @Test
+    void aSetOperatorEndsTheWhereItFollows() {
+        assertThat(predicates("select id from items where name = ? except select id from items where sku = ?"))
+                .containsExactly("items.name", "items.sku");
+        assertThat(predicates("select id from items where name = ? intersect select id from items"))
+                .containsExactly("items.name");
+    }
+
+    /** A keyword that is also a column's name is that column when a comparison follows it. */
+    @Test
+    void aColumnNamedByAKeywordIsReadInAComparison() {
+        assertThat(predicates("select * from events where date = ? and time > ? and first is null"))
+                .containsExactly("events.date", "events.time", "events.first");
+        assertThat(predicates("select * from events where kind = ? order by at_ms nulls first"))
+                .containsExactly("events.kind", "events.at_ms");
+        assertThat(predicates("select * from events where created > current_date - interval ? and kind = ?"))
+                .containsExactly("events.created", "events.kind");
+    }
+
+    @Test
     void aBareColumnBelongsToTheOnlyTable() {
         assertThat(predicates("select * from items where category = ? and supplier_id = ?"))
                 .containsExactly("items.category", "items.supplier_id");

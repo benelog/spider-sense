@@ -211,6 +211,8 @@ Each is written as `table.column` in lower case whatever case the statement used
 A subquery's `where` counts as well, and the clause it interrupts goes on after its closing parenthesis, so `where i.id in (select l.item_id from lines l) and i.name = ?` names `items.id` and `items.name`.
 The type of a cast is not a column (`where id = ?::uuid` names `items.id`), and neither is an upsert's conflict target, the unique key the write collides on (`on conflict (id) do update`, `on duplicate key update`).
 Nor is a word of a comment, which the agent's sanitiser keeps (`-- …` to the end of the line, `/* … */`, an optimizer hint, an sqlcommenter suffix).
+A name the select list gives with `as` is not a column when the `order by` sorts by it (`price * qty as total … order by total`), and `except`, `intersect` and `minus` end the clause before them as `union` does.
+A keyword that is also a common column name (`date`, `time`, `timestamp`, `first`, `last`, `next`, `row`, `rows`, `only`, `interval`) is that column in a `where` or `on` clause when a comparison follows it (`where date = ?`), and the keyword anywhere else.
 
 A function in an `order by` list is skipped whole (`order by sum(l.quantity) desc` names no column), because no index sorts an aggregate.
 `unindexed` is the subset of `predicates` that no index of their table has as its first column, the one an index can seek on.
