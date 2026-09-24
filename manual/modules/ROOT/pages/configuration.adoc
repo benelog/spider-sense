@@ -21,7 +21,7 @@ A numeric key whose value is not a number, such as `spidersense.slow.query.ms=1x
 
 | `spidersense.host`
 | `127.0.0.1`
-| The bind address. Use `0.0.0.0` to reach it from another machine.
+| The bind address. Use `0.0.0.0` to reach it from another machine, which also accepts a request under any host name (xref:api.adoc#conventions[API conventions]).
 
 | `spidersense.collector`
 | unset

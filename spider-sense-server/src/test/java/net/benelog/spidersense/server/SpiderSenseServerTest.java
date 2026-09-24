@@ -2,10 +2,15 @@ package net.benelog.spidersense.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.net.Socket;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 
 import org.junit.jupiter.api.Test;
@@ -74,6 +79,62 @@ class SpiderSenseServerTest {
             assertThat(storage.fallbackReason()).isNotBlank();
         } finally {
             server.stop();
+        }
+    }
+
+    /** A web page's cross-origin request, and one under a rebound host name, are turned away. */
+    @Test
+    void aForeignOriginOrHostIsForbidden() throws Exception {
+        SpiderSenseServer server = SpiderSenseServer.start(TestStore.config());
+        try {
+            int port = server.port();
+            HttpResponse<String> foreign = HttpClient.newHttpClient().send(
+                    HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/api/marks"))
+                            .header("Content-Type", "text/plain")
+                            .header("Origin", "http://evil.example")
+                            .POST(HttpRequest.BodyPublishers.ofString("{\"name\":\"x\"}"))
+                            .timeout(Duration.ofSeconds(10)).build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertThat(foreign.statusCode()).isEqualTo(403);
+            assertThat(server.store().sql().count("SELECT COUNT(*) FROM mark WHERE name = 'x'",
+                    java.util.List.of())).isZero();
+
+            HttpResponse<String> own = HttpClient.newHttpClient().send(
+                    HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/api/status"))
+                            .header("Origin", "http://127.0.0.1:" + port)
+                            .timeout(Duration.ofSeconds(10)).build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertThat(own.statusCode()).isEqualTo(200);
+
+            assertThat(statusLine(port, "evil.example:" + port)).contains(" 403 ");
+            assertThat(statusLine(port, "localhost:" + port)).contains(" 200 ");
+        } finally {
+            server.stop();
+        }
+    }
+
+    @Test
+    void theHostCheckAcceptsLoopbackNamesAndAnyNameOnAWildcardBind() {
+        assertThat(LocalRequests.name("[::1]:4000")).isEqualTo("::1");
+        assertThat(LocalRequests.name("LocalHost:4000")).isEqualTo("localhost");
+        assertThat(LocalRequests.name("::1")).isEqualTo("::1");
+        assertThat(LocalRequests.acceptedHost("127.0.0.1", "127.0.0.1")).isTrue();
+        assertThat(LocalRequests.acceptedHost("localhost", "127.0.0.1")).isTrue();
+        assertThat(LocalRequests.acceptedHost("::1", "127.0.0.1")).isTrue();
+        assertThat(LocalRequests.acceptedHost("evil.example", "127.0.0.1")).isFalse();
+        assertThat(LocalRequests.acceptedHost("192.168.1.5", "192.168.1.5")).isTrue();
+        assertThat(LocalRequests.acceptedHost("my-laptop", "0.0.0.0")).isTrue();
+        assertThat(LocalRequests.acceptedHost("my-laptop", "::")).isTrue();
+    }
+
+    /** The status line of a GET under a {@code Host} the JDK's client will not send. */
+    private static String statusLine(int port, String host) throws IOException {
+        try (Socket socket = new Socket(java.net.InetAddress.getLoopbackAddress(), port)) {
+            socket.getOutputStream().write(("GET /api/status HTTP/1.1\r\nHost: " + host
+                    + "\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
+            socket.getOutputStream().flush();
+            return new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.US_ASCII))
+                    .readLine();
         }
     }
 }

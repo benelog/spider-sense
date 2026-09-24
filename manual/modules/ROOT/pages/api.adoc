@@ -21,6 +21,10 @@ A malformed number is a `400` (`{"error": "..."}`).
 So is a JSON body that is not the object an endpoint takes, or that carries a field of the wrong type.
 * Every JSON answer is `application/json; charset=utf-8`.
 An error is `{"error": "<message>"}` with a 4xx or 5xx status.
+* A request whose `Host` is not a name of this machine, or whose `Origin` is not the server's own, is `403`.
+A web page open in the developer's browser can reach `127.0.0.1` too, by a cross-origin request or by pointing a name of its own at it (DNS rebinding), and this API writes and reads without credentials.
+A loopback name (`localhost`, `127.0.0.1`, `[::1]`) or the bind address is accepted as `Host`, and any `Host` once the bind address is a wildcard (`0.0.0.0`, `::`).
+The CLI, an MCP client and an OpenTelemetry exporter send no `Origin`.
 * `traceId` is 32 lowercase hex characters, and `spanId` is 16.
 The group ids (`queryId`, `errorId`, `endpointId`) are opaque strings, a hash of the group key, stable for the life of the process.
 
