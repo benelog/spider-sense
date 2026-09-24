@@ -33,6 +33,19 @@ public final class Database implements AutoCloseable {
             @Nullable String fallbackReason) {
     }
 
+    /**
+     * No read-only connection to be had: the database has no reader user yet, or
+     * H2 would not open one. {@code sql} reports it as it reports a refused
+     * statement, because the statement cannot run and the message says what to do
+     * (cli.adoc#sql); a type of its own, so that no other
+     * {@code IllegalStateException} is taken for it.
+     */
+    public static final class ReaderUnavailable extends IllegalStateException {
+        ReaderUnavailable(String message, @Nullable Throwable cause) {
+            super(message, cause);
+        }
+    }
+
     private static final System.Logger LOG = System.getLogger(Database.class.getName());
     private static final int MAX_CONNECTIONS = 8;
 
@@ -206,15 +219,16 @@ public final class Database implements AutoCloseable {
      * <p>It is not pooled and it is not the writer's: one statement borrows it,
      * rolls back and closes it, and nothing else in Spider Sense ever holds it.
      *
-     * @throws IllegalStateException when the database has no reader user, which is
-     *                               what a database an older Spider Sense created
-     *                               looks like until a server of this version
-     *                               opens it
+     * @throws ReaderUnavailable when the database has no reader user, which is
+     *                            what a database an older Spider Sense created
+     *                            looks like until a server of this version
+     *                            opens it, or when H2 will not connect it
      */
     public Connection reader() {
         if (!hasReader()) {
-            throw new IllegalStateException("the database has no read-only user yet;"
-                    + " start an application or the standalone server with this version first");
+            throw new ReaderUnavailable("the database has no read-only user yet;"
+                    + " start an application or the standalone server with this version first",
+                    null);
         }
         JdbcDataSource source = new JdbcDataSource();
         source.setURL(readerUrl(url));
@@ -223,7 +237,7 @@ public final class Database implements AutoCloseable {
         try {
             return source.getConnection();
         } catch (SQLException e) {
-            throw new IllegalStateException("could not open a read-only connection to " + url
+            throw new ReaderUnavailable("could not open a read-only connection to " + url
                     + ": " + e.getMessage(), e);
         }
     }

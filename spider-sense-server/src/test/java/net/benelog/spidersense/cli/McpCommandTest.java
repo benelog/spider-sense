@@ -118,6 +118,27 @@ class McpCommandTest {
         assertThat(text(lines.get(1))).startsWith("# findings  ");
     }
 
+    /**
+     * A file no server of this version has opened has no read-only user, and
+     * {@code sql} over it is a tool result the model can read, as the CLI's exit
+     * code 2 and message are, rather than a JSON-RPC internal error.
+     */
+    @Test
+    void sqlOverAFileWithNoReaderUserIsAToolErrorAndNotAProtocolError() {
+        String db = "--db=" + TestStore.memoryUrl();
+        String sql = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":"
+                + "{\"name\":\"sql\",\"arguments\":{\"sql\":\"SELECT 1\"}}}";
+
+        Run run = run(sql + "\n", "mcp", db);
+
+        List<String> lines = run.out().lines().toList();
+        assertThat(lines).hasSize(1);
+        Json.JsonObject response = Json.parse(lines.get(0)).asObject();
+        assertThat(response.has("error")).as("not a protocol error").isFalse();
+        assertThat(response.getObject("result").getBoolean("isError")).isTrue();
+        assertThat(text(lines.get(0))).contains("the database has no read-only user yet");
+    }
+
     /** The {@code resolve} tool writes to the file as the CLI's {@code resolve} does. */
     @Test
     void aResolutionIsRecordedInTheFileJustAsTheCliRecordsItThere() {

@@ -547,7 +547,7 @@ public final class Reports implements AutoCloseable {
      *
      * @throws ReadOnlyQuery.Refused when the statement is not one this may run, or
      *                               when H2 refuses it
-     * @throws IllegalStateException when the database has no reader user yet
+     * @throws Database.ReaderUnavailable when the database has no reader user yet
      */
     public Report sql(@Nullable String statement, int limit, boolean full) {
         ReadOnlyQuery.Result result = readOnly.run(statement, limit);

@@ -8,6 +8,7 @@ import net.benelog.spidersense.query.Selectors;
 import net.benelog.spidersense.query.Window;
 import net.benelog.spidersense.store.Acks;
 import net.benelog.spidersense.store.AttrJson;
+import net.benelog.spidersense.store.Database;
 import net.benelog.spidersense.store.Marks;
 import net.benelog.spidersense.store.ReadOnlyQuery;
 import net.benelog.spidersilk.App;
@@ -260,7 +261,7 @@ public final class AgentApi {
         int limit = (int) Math.min(body.limit(), ReadOnlyQuery.LIMIT_MAX);
         try {
             return Params.answer(req, reports.sql(body.statement(), limit, Params.full(req)));
-        } catch (IllegalArgumentException | IllegalStateException e) {
+        } catch (IllegalArgumentException | Database.ReaderUnavailable e) {
             return Params.problem(req, e.getMessage());
         }
     }

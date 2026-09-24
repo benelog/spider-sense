@@ -8,6 +8,7 @@ import net.benelog.spidersense.cli.Limits;
 import net.benelog.spidersense.query.Check;
 import net.benelog.spidersense.query.Selectors;
 import net.benelog.spidersense.query.Window;
+import net.benelog.spidersense.store.Database;
 import net.benelog.spidersense.store.Marks;
 import net.benelog.spidersilk.json.Json;
 import org.jspecify.annotations.Nullable;
@@ -21,9 +22,9 @@ import org.jspecify.annotations.Nullable;
  * answer over the same window are the same bytes (mcp.adoc).
  *
  * <p>What the CLI reports with exit code 4 or as a 400 — no such trace, no such
- * mark, a bad selector, a refused statement — is a tool result with
- * {@code isError} rather than a protocol error, because it is an answer the model
- * has to act on and not a mistake in the call.
+ * mark, a bad selector, a refused statement, a store with no read-only user yet —
+ * is a tool result with {@code isError} rather than a protocol error, because it
+ * is an answer the model has to act on and not a mistake in the call.
  */
 public final class McpTools implements McpServer.ToolRunner {
 
@@ -38,7 +39,7 @@ public final class McpTools implements McpServer.ToolRunner {
         try {
             return answer(name, arguments);
         } catch (Reports.NoSuchTrace | Selectors.UnknownMark | Selectors.BadSelector
-                | IllegalArgumentException e) {
+                | Database.ReaderUnavailable | IllegalArgumentException e) {
             return McpServer.ToolResult.failed(oneLine(e.getMessage()));
         }
     }
