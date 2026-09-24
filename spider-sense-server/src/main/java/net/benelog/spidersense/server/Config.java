@@ -31,7 +31,8 @@ import org.jspecify.annotations.Nullable;
  *                         drops the spans of traces it has not seen yet; null when unset, which is
  *                         no cap at all (storage.adoc#ingest-cap)
  * @param embeddedService  the {@code service.name} of the JVM the server runs inside, or null
- *                         when nobody knows it yet — see {@code ServiceRegistry}
+ *                         when nobody knows it yet — see {@code ServiceRegistry} — and always
+ *                         null in standalone mode, which runs inside nothing
  * @param appPackages      comma-separated package prefixes that count as application code in a
  *                         finding's code frames; empty means "everything that is not a
  *                         known framework" (findings.adoc#code)
@@ -98,18 +99,20 @@ public record Config(
                 }
             }
         }
-        String mode = string(values, "mode", STANDALONE);
+        boolean agent = AGENT.equalsIgnoreCase(string(values, "mode", STANDALONE));
         return new Config(
                 string(values, "host", "127.0.0.1"),
                 number(values, "port", 4000).intValue(),
-                AGENT.equalsIgnoreCase(mode) ? AGENT : STANDALONE,
+                agent ? AGENT : STANDALONE,
                 string(values, "db", DEFAULT_DB),
                 number(values, "retention.hours", 24L).intValue(),
                 number(values, "retention.spans", Sweeper.DEFAULT_RETENTION_SPANS),
                 optionalNumber(values, "ingest.max-spans-per-second"),
                 number(values, "slow.request.ms", 500L),
                 number(values, "slow.query.ms", 100L),
-                embeddedService(values),
+                // A standalone server runs inside no application, whatever service a
+                // properties file or a build tool names for the applications beside it.
+                agent ? embeddedService(values) : null,
                 string(values, "app.packages", ""),
                 string(values, "ignore.endpoints", IgnoredEndpoints.DEFAULT),
                 stringOrNull(values, "source.dirs"),

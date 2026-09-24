@@ -172,7 +172,9 @@ public record Config(
         }
         args.add("--slow.request.ms=" + slowRequestMs);
         args.add("--slow.query.ms=" + slowQueryMs);
-        if (service != null && !service.isEmpty()) {
+        // Only an agent is embedded in the service: a standalone server runs inside nothing,
+        // even when the properties file or the Gradle plugin names the application's service.
+        if (AGENT.equals(mode) && service != null && !service.isEmpty()) {
             args.add("--embedded-service=" + service);
         }
         return args;

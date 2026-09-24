@@ -56,6 +56,20 @@ class ConfigTest {
     }
 
     @Test
+    void aStandaloneServerIsEmbeddedInNothing() {
+        assertThat(Config.parse(new String[]{"--embedded-service=orders"}).embeddedService())
+                .as("standalone is the default mode").isNull();
+
+        System.setProperty("spidersense.service", "orders");
+        try {
+            assertThat(Config.parse(new String[]{"--mode=standalone"}).embeddedService()).isNull();
+            assertThat(Config.parse(new String[]{"--mode=agent"}).embeddedService()).isEqualTo("orders");
+        } finally {
+            System.clearProperty("spidersense.service");
+        }
+    }
+
+    @Test
     void theJarPathIsTheLaunchersArgumentAndUnknownOtherwise() {
         assertThat(Config.parse(new String[]{"--jar=/opt/spider-sense.jar"}).jar())
                 .isEqualTo("/opt/spider-sense.jar");

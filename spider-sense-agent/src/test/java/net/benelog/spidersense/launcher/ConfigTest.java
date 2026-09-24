@@ -129,7 +129,11 @@ class ConfigTest {
                         "--slow.request.ms=500",
                         "--slow.query.ms=100");
 
-        assertThat(c.withService("orders").toServerArgs()).contains("--embedded-service=orders");
+        assertThat(Config.defaults().withService("orders").toServerArgs())
+                .as("an agent is embedded in the service").contains("--embedded-service=orders");
+        assertThat(c.withService("orders").toServerArgs())
+                .as("a standalone server is embedded in nothing")
+                .noneMatch(arg -> arg.startsWith("--embedded-service"));
     }
 
     @Test
@@ -155,7 +159,7 @@ class ConfigTest {
         Config c = Config.fromArgs(new String[] {
                 "--port=4321", "--host=0.0.0.0", "--service=orders",
                 "--db=jdbc:h2:mem:it", "--retention.hours=6",
-                "--slow.request.ms=13", "--slow.query.ms=14"}).withMode("standalone");
+                "--slow.request.ms=13", "--slow.query.ms=14"}).withMode("agent");
 
         Config again = Config.fromArgs(c.toServerArgs().toArray(new String[0]));
 

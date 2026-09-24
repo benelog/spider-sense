@@ -220,6 +220,7 @@ An `enabled` of `false` is the same as not applying the plugin, except that the 
 
 The `spiderSense` task is a `JavaExec` with the jar as its only class path, `net.benelog.spidersense.launcher.SpiderSenseMain` as its main class, and no dependency on compiling the project.
 The block's `spidersense.*` properties are passed to it as they are to the application, so a standalone started this way listens where the block says.
+Its `service` is passed as well, and a standalone ignores it: the standalone runs inside no application, so its `status` names no embedded service.
 When the block names a `collector`, a `host` or a `port`, it also sets the environment variable `SPIDERSENSE_URL` to the base URL they imply, which is `collector` when set and otherwise `http://<host>:<port>` with the defaults filled in.
 A CLI command therefore asks the Spider Sense the application is sending to rather than the default port.
 When the block names none of them, the variable stays unset and the CLI's own default applies.
