@@ -574,9 +574,15 @@ public final class Writer implements AutoCloseable {
             }
             statement.executeBatch();
         }
+        List<Series> series = new ArrayList<>(samples.size());
+        for (Batch.MetricSample sample : samples) {
+            series.add(Series.of(sample));
+        }
+        forgetDeletedSeries(connection, series);
         try (PreparedStatement statement = connection.prepareStatement(MERGE_POINT)) {
-            for (Batch.MetricSample sample : samples) {
-                long seriesId = seriesId(connection, sample);
+            for (int s = 0; s < samples.size(); s++) {
+                Batch.MetricSample sample = samples.get(s);
+                long seriesId = seriesId(connection, sample, series.get(s));
                 MetricPoint point = sample.point();
                 int i = 1;
                 statement.setLong(i++, seriesId);
@@ -610,17 +616,71 @@ public final class Writer implements AutoCloseable {
         return json.append("]}").toString();
     }
 
+    /** How many cached ids one statement checks. */
+    private static final int SERIES_CHECK_CHUNK = 500;
+
+    /** What identifies a sample's series: its cache key, and the hash and attributes of its row. */
+    private record Series(String key, String hash, String attributes) {
+
+        static Series of(Batch.MetricSample sample) {
+            String attributes = AttrJson.encodeSorted(sample.attributes());
+            String hash = Ids.shortHash(attributes);
+            return new Series(sample.service() + "\0" + sample.name() + "\0" + hash, hash, attributes);
+        }
+    }
+
+    /**
+     * Drops from the cache the ids of the flush's series whose rows are gone, so
+     * {@link #seriesId} looks them up or creates them again.
+     *
+     * <p>A row can go behind this writer's back: the sweeper deletes a series that
+     * has had no points for a retention window, and {@code DELETE /api/data} in any
+     * process sharing the file deletes them all. A point merged with a dead id
+     * would join no series and be invisible to every read. One {@code SELECT} per
+     * flush that carries metrics is the price, against the few hundred lookups the
+     * cache saves.
+     */
+    private void forgetDeletedSeries(Connection connection, List<Series> series) throws SQLException {
+        Map<Long, String> cached = new LinkedHashMap<>();
+        for (Series one : series) {
+            Long id = seriesIds.get(one.key());
+            if (id != null) {
+                cached.put(id, one.key());
+            }
+        }
+        List<Long> ids = List.copyOf(cached.keySet());
+        for (int from = 0; from < ids.size(); from += SERIES_CHECK_CHUNK) {
+            List<Long> chunk = ids.subList(from, Math.min(ids.size(), from + SERIES_CHECK_CHUNK));
+            Set<Long> present = new HashSet<>();
+            try (PreparedStatement select = connection.prepareStatement(
+                    "SELECT id FROM metric_series WHERE id IN (" + Sql.placeholders(chunk.size()) + ")")) {
+                for (int i = 0; i < chunk.size(); i++) {
+                    select.setLong(i + 1, chunk.get(i));
+                }
+                try (ResultSet rs = select.executeQuery()) {
+                    while (rs.next()) {
+                        present.add(rs.getLong(1));
+                    }
+                }
+            }
+            for (Long id : chunk) {
+                String key = cached.get(id);
+                if (key != null && !present.contains(id)) {
+                    seriesIds.remove(key, id);
+                }
+            }
+        }
+    }
+
     /** Series ids are looked up once and cached; a JVM exports the same few hundred forever. */
-    private long seriesId(Connection connection, Batch.MetricSample sample) throws SQLException {
-        String attributes = AttrJson.encodeSorted(sample.attributes());
-        String hash = Ids.shortHash(attributes);
-        String key = sample.service() + "\0" + sample.name() + "\0" + hash;
-        Long cached = seriesIds.get(key);
+    private long seriesId(Connection connection, Batch.MetricSample sample, Series series)
+            throws SQLException {
+        Long cached = seriesIds.get(series.key());
         if (cached != null) {
             return cached;
         }
-        long id = lookupOrCreateSeries(connection, sample, hash, attributes);
-        seriesIds.put(key, id);
+        long id = lookupOrCreateSeries(connection, sample, series.hash(), series.attributes());
+        seriesIds.put(series.key(), id);
         return id;
     }
 
