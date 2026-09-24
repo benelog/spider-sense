@@ -550,6 +550,31 @@ class FindingsTest {
         assertThat(kinds).containsSubsequence(Findings.SLOW_ENDPOINT, Findings.SLOW_JOB);
     }
 
+    /** findings.adoc's kind order: an N+1 comes before a log-error of the same severity. */
+    @Test
+    void aLogErrorIsRankedAfterAnNPlusOneOfTheSameSeverity() {
+        decoder.accept(Otlp.traces(Otlp.service("orders"), entry(1, "/orders/{id}", 10)));
+        decoder.accept(Otlp.logs(Otlp.service("orders"), "orders.web.OrderController",
+                Otlp.log(NOW, 17, "Payment gateway timeout", traceId(1), spanId(1))));
+        Span.Builder root = entry(2, "/orders", 60);
+        List<Span.Builder> spans = new ArrayList<>();
+        spans.add(root);
+        for (int i = 0; i < 20; i++) {
+            spans.add(query(root, 200 + i, "select * from order_line where order_id = ?", "order_line",
+                    NOW + i, 2));
+        }
+        decoder.accept(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
+        flush();
+
+        List<String> kinds = new ArrayList<>();
+        for (Findings.Finding finding : findings.findings(window, null, 20)) {
+            if (finding.severity().equals(Findings.HIGH)) {
+                kinds.add(finding.kind());
+            }
+        }
+        assertThat(kinds).containsSubsequence(Findings.N_PLUS_ONE, Findings.LOG_ERROR);
+    }
+
     @Test
     void aPoolWithSomebodyWaitingIsExhausted() {
         decoder.accept(Otlp.traces(Otlp.service("orders"), entry(1, "/orders", 10)));

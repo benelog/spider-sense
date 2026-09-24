@@ -555,10 +555,10 @@ public final class Findings {
     /** A finding with the impact it is ranked by inside its kind. */
     private record Ranked(Finding finding, double impact) {
 
-        private static final List<String> KINDS = List.of(REGRESSION, ERROR, LOG_ERROR, N_PLUS_ONE,
-                N_PLUS_ONE_HTTP, SLOW_QUERY,
-                SLOW_ENDPOINT, SLOW_JOB, SLOW_EXTERNAL, POOL_EXHAUSTED, GC_PAUSE, HEAP_PRESSURE,
-                THREAD_GROWTH);
+        /** findings.adoc: the kind order that breaks a tie of severity. */
+        private static final List<String> KINDS = List.of(REGRESSION, ERROR, N_PLUS_ONE, N_PLUS_ONE_HTTP,
+                SLOW_QUERY, SLOW_ENDPOINT, SLOW_JOB, SLOW_EXTERNAL, LOG_ERROR, POOL_EXHAUSTED, GC_PAUSE,
+                HEAP_PRESSURE, THREAD_GROWTH);
 
         static final Comparator<Ranked> ORDER = Comparator
                 .comparingInt((Ranked r) -> severityRank(r.finding().severity()))
