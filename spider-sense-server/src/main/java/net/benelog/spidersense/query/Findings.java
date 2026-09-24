@@ -375,23 +375,23 @@ public final class Findings {
     }
 
     private List<Ranked> rules(Window window, @Nullable String service, Scope scope) {
-        Ancestors ancestors = new Ancestors(sql, window, service);
+        Reads reads = new Reads(sql, queries, window, service);
         boolean evidence = scope.evidence();
         List<Ranked> found = new ArrayList<>();
         if (scope.runs(ERROR)) {
-            found.addAll(errors(window, service, evidence));
+            found.addAll(errors(window, service, reads, evidence));
         }
         if (scope.runs(LOG_ERROR)) {
-            found.addAll(logErrors(window, service, ancestors, evidence));
+            found.addAll(logErrors(window, service, reads, evidence));
         }
         if (scope.runs(N_PLUS_ONE)) {
-            found.addAll(nPlusOne(window, service, ancestors, evidence));
+            found.addAll(nPlusOne(window, service, reads, evidence));
         }
         if (scope.runs(N_PLUS_ONE_HTTP)) {
-            found.addAll(nPlusOneHttp(window, service, ancestors, evidence));
+            found.addAll(nPlusOneHttp(window, service, reads, evidence));
         }
         if (scope.runs(SLOW_QUERY)) {
-            found.addAll(slowQueries(window, service, evidence));
+            found.addAll(slowQueries(window, service, reads, evidence));
         }
         if (scope.runs(SLOW_ENDPOINT)) {
             found.addAll(slowEndpoints(window, service, evidence));
@@ -400,7 +400,7 @@ public final class Findings {
             found.addAll(slowJobs(window, service, evidence));
         }
         if (scope.runs(SLOW_EXTERNAL)) {
-            found.addAll(slowExternal(window, service, ancestors, evidence));
+            found.addAll(slowExternal(window, reads, evidence));
         }
         if (scope.runs(POOL_EXHAUSTED)) {
             found.addAll(poolExhausted(window, service));
@@ -578,10 +578,11 @@ public final class Findings {
 
     // --- error ---------------------------------------------------------------
 
-    private List<Ranked> errors(Window window, @Nullable String service, boolean evidence) {
+    private List<Ranked> errors(Window window, @Nullable String service, Reads reads,
+            boolean evidence) {
         List<Ranked> found = new ArrayList<>();
         List<Stats.ErrorGroup> groups = evidence
-                ? queries.errors(window, service, GROUPS, null)
+                ? queries.errors(window, service, GROUPS, null, reads::ancestry)
                 : queries.errorGroups(window, service, GROUPS, null);
         for (Stats.ErrorGroup group : groups) {
             if (group.count() <= 0) {
@@ -632,7 +633,7 @@ public final class Findings {
      * Java regular expression rather than SQL, so the rows are read and grouped
      * here; the cap is the same order as the dependency scan's.
      */
-    private List<Ranked> logErrors(Window window, @Nullable String service, Ancestors ancestors,
+    private List<Ranked> logErrors(Window window, @Nullable String service, Reads reads,
             boolean evidence) {
         List<Object> params = new ArrayList<>(List.of(window.from(), window.to()));
         String where = "l.at_ms BETWEEN ? AND ? AND l.severity_number >= " + ERROR_SEVERITY
@@ -655,7 +656,7 @@ public final class Findings {
                     byGroup.computeIfAbsent(key, k -> new ArrayList<>())
                             .add(new LogLine(rs.getLong("at_ms"), rs.getString("trace_id"),
                                     evidence
-                                            ? endpointOf(ancestors, rs.getString("span_id"),
+                                            ? endpointOf(reads, rs.getString("span_id"),
                                                     rs.getString("root_name"))
                                             : endpointOf(null, null, rs.getString("root_name")),
                                     evidence ? AttrJson.decode(rs.getString("attributes")) : Map.of()));
@@ -707,10 +708,10 @@ public final class Findings {
     }
 
     /** The endpoint a log record belongs to, as an {@code error} finding's endpoints are found. */
-    private static String endpointOf(@Nullable Ancestors ancestors, @Nullable String spanId,
+    private static String endpointOf(@Nullable Reads reads, @Nullable String spanId,
             @Nullable String rootName) {
-        if (ancestors != null && spanId != null && !spanId.isBlank()) {
-            Queries.Ancestry.Entry entry = ancestors.get().entryOf(spanId);
+        if (reads != null && spanId != null && !spanId.isBlank()) {
+            Queries.Ancestry.Entry entry = reads.ancestry().entryOf(spanId);
             if (entry != null) {
                 return entry.endpoint();
             }
@@ -745,7 +746,7 @@ public final class Findings {
      * callers already use, because two endpoints of one trace each running the
      * statement four times is not an N+1 and grouping by trace alone cannot tell.
      */
-    private List<Ranked> nPlusOne(Window window, @Nullable String service, Ancestors ancestors,
+    private List<Ranked> nPlusOne(Window window, @Nullable String service, Reads reads,
             boolean evidence) {
         List<String[]> candidates = candidates(window, service);
         if (candidates.isEmpty()) {
@@ -771,7 +772,7 @@ public final class Findings {
             where = where + " AND service = ?";
             params.add(service);
         }
-        Queries.Ancestry ancestry = ancestors.get();
+        Queries.Ancestry ancestry = reads.ancestry();
         Map<String, List<Repeat>> byEntry = new LinkedHashMap<>();
         sql.forEach("SELECT span_id, trace_id, query_id, service, start_ms, duration_ns, db_statement,"
                 + " db_operation, db_table, attributes FROM span WHERE " + where, params, rs -> {
@@ -922,11 +923,11 @@ public final class Findings {
      * spans and the parent-chain walk — because the call's target lives in the
      * attributes rather than in a column.
      */
-    private List<Ranked> nPlusOneHttp(Window window, @Nullable String service, Ancestors ancestors,
+    private List<Ranked> nPlusOneHttp(Window window, @Nullable String service, Reads reads,
             boolean evidence) {
-        Queries.Ancestry ancestry = ancestors.get();
+        Queries.Ancestry ancestry = reads.ancestry();
         Map<String, List<CallRepeat>> byEntry = new LinkedHashMap<>();
-        for (SpanRecord span : queries.outboundHttp(window, service)) {
+        for (SpanRecord span : reads.outboundHttp()) {
             Queries.Ancestry.Entry entry = ancestry.entryOf(span.spanId());
             if (entry == null) {
                 continue;
@@ -1020,10 +1021,11 @@ public final class Findings {
 
     // --- slow query ----------------------------------------------------------
 
-    private List<Ranked> slowQueries(Window window, @Nullable String service, boolean evidence) {
+    private List<Ranked> slowQueries(Window window, @Nullable String service, Reads reads,
+            boolean evidence) {
         List<Stats.QueryStats> slow = new ArrayList<>();
         List<Stats.QueryStats> groups = evidence
-                ? queries.queries(window, service, "total", GROUPS, null)
+                ? queries.queries(window, service, "total", GROUPS, null, reads::ancestry)
                 : queries.queryGroups(window, service, "total", GROUPS, null);
         for (Stats.QueryStats query : groups) {
             if (query.p95Ms() > tingles.slowQueryMs()) {
@@ -1078,7 +1080,7 @@ public final class Findings {
 
     private List<Ranked> slowEndpoints(Window window, @Nullable String service, boolean evidence) {
         List<Stats.EndpointStats> slow = new ArrayList<>();
-        for (Stats.EndpointStats endpoint : queries.endpoints(window, service, null)) {
+        for (Stats.EndpointStats endpoint : queries.endpoints(window, service, null, false)) {
             if (endpoint.p95Ms() > tingles.slowRequestMs()) {
                 slow.add(endpoint);
             }
@@ -1086,8 +1088,14 @@ public final class Findings {
         if (slow.isEmpty()) {
             return List.of();
         }
+        // Only the endpoints that crossed the threshold become findings, so only they
+        // are joined with their database spans.
+        List<String> slowIds = new ArrayList<>();
+        for (Stats.EndpointStats endpoint : slow) {
+            slowIds.add(endpoint.endpointId());
+        }
         Map<String, Queries.DbWork> databaseWork = evidence
-                ? queries.databaseWork(window, service) : Map.of();
+                ? queries.databaseWork(window, service, slowIds) : Map.of();
 
         List<Ranked> found = new ArrayList<>();
         for (Stats.EndpointStats endpoint : slow) {
@@ -1159,10 +1167,17 @@ public final class Findings {
         if (slow.isEmpty()) {
             return List.of();
         }
-        Map<String, Queries.DbWork> databaseWork = evidence
-                ? queries.jobDatabaseWork(window, service) : Map.of();
-        Map<String, Map<String, Object>> samples = evidence
-                ? jobSampleAttributes(window, service) : Map.of();
+        // Only the jobs that crossed the threshold become findings, so only they are
+        // joined with their database spans, one service at a time.
+        Map<String, Set<String>> slowNames = new LinkedHashMap<>();
+        for (Job job : slow) {
+            slowNames.computeIfAbsent(job.service(), name -> new LinkedHashSet<>()).add(job.name());
+        }
+        Map<String, Queries.DbWork> databaseWork = new HashMap<>();
+        if (evidence) {
+            slowNames.forEach((name, names) ->
+                    databaseWork.putAll(queries.jobDatabaseWork(window, name, names)));
+        }
 
         List<Ranked> found = new ArrayList<>();
         for (Job job : slow) {
@@ -1203,7 +1218,7 @@ public final class Findings {
                             + Numbers.percent(share) + " of the time",
                     new Subject(null, null, null, null, job.name(), null, null, null),
                     numbers, null,
-                    frames.ofAttributes(samples.get(key)), traces);
+                    evidence ? frames.ofAttributes(newestRun(window, job)) : List.of(), traces);
             found.add(new Ranked(finding, job.totalMs()));
         }
         return found;
@@ -1224,22 +1239,20 @@ public final class Findings {
     }
 
     /**
-     * The newest run of each job group, for the {@code code.*} frames.
+     * The attributes of a job's newest run, for the {@code code.*} frames.
      *
-     * <p>One statement for every group, as {@link #sampleAttributes} does for a
-     * single column; a job is keyed by two, so it partitions by both.
+     * <p>One statement per slow job rather than one over every job group: the
+     * service's {@code (service, start_ms)} index is read backwards from the end of
+     * the window and stops at the first run, where a statement over every group
+     * would read every span of the window.
      */
-    private Map<String, Map<String, Object>> jobSampleAttributes(Window window,
-            @Nullable String service) {
+    private @Nullable Map<String, Object> newestRun(Window window, Job job) {
         List<Object> params = new ArrayList<>(List.of(window.from(), window.to()));
-        String where = jobWhere(service, params);
-        Map<String, Map<String, Object>> samples = new HashMap<>();
-        sql.forEach("SELECT * FROM (SELECT service, name, attributes,"
-                + " ROW_NUMBER() OVER (PARTITION BY service, name ORDER BY start_ms DESC, id DESC) AS rn"
-                + " FROM span WHERE " + where + ") WHERE rn = 1", params, rs ->
-                        samples.put(rs.getString("service") + "\0" + rs.getString("name"),
-                                AttrJson.decode(rs.getString("attributes"))));
-        return samples;
+        String where = jobWhere(job.service(), params) + " AND name = ?";
+        params.add(job.name());
+        return sql.queryOne("SELECT attributes FROM span WHERE " + where
+                + " ORDER BY start_ms DESC, id DESC LIMIT 1", params,
+                rs -> AttrJson.decode(rs.getString("attributes")));
     }
 
     /** A run of a job: a root {@code INTERNAL} span of the window (design.adoc#endpoint-identity). */
@@ -1264,10 +1277,9 @@ public final class Findings {
      * than by a {@code GROUP BY}; the percentiles are the nearest-rank ones
      * {@code PERCENTILE_DISC} gives the other rules.
      */
-    private List<Ranked> slowExternal(Window window, @Nullable String service, Ancestors ancestors,
-            boolean evidence) {
+    private List<Ranked> slowExternal(Window window, Reads reads, boolean evidence) {
         Map<String, List<SpanRecord>> byGroup = new LinkedHashMap<>();
-        for (SpanRecord span : queries.outboundHttp(window, service)) {
+        for (SpanRecord span : reads.outboundHttp()) {
             byGroup.computeIfAbsent(
                     span.service() + "\0" + Queries.target(span) + "\0" + span.name(),
                     key -> new ArrayList<>()).add(span);
@@ -1275,7 +1287,7 @@ public final class Findings {
         List<Ranked> found = new ArrayList<>();
         byGroup.forEach((key, calls) -> {
             String[] parts = key.split("\0", 3);
-            Ranked ranked = external(window, evidence ? ancestors : null, parts[0], parts[1], parts[2],
+            Ranked ranked = external(window, evidence ? reads : null, parts[0], parts[1], parts[2],
                     calls);
             if (ranked != null) {
                 found.add(ranked);
@@ -1284,8 +1296,8 @@ public final class Findings {
         return found;
     }
 
-    /** One group; with no {@code ancestors} it is the id alone, with no callers and no evidence. */
-    private @Nullable Ranked external(Window window, @Nullable Ancestors ancestors, String service,
+    /** One group; with no {@code reads} it is the id alone, with no callers and no evidence. */
+    private @Nullable Ranked external(Window window, @Nullable Reads reads, String service,
             String target, String name, List<SpanRecord> calls) {
         double[] durations = new double[calls.size()];
         double totalMs = 0;
@@ -1315,8 +1327,8 @@ public final class Findings {
         numbers.put("p95Ms", p95Ms);
         numbers.put("maxMs", durations[durations.length - 1]);
         numbers.put("totalMs", totalMs);
-        numbers.put("callers", ancestors == null ? List.of()
-                : callers(externalCallers(ancestors, calls, service)));
+        numbers.put("callers", reads == null ? List.of()
+                : callers(externalCallers(reads, calls, service)));
 
         String severity = p95Ms > 4 * tingles.slowRequestMs() ? HIGH : MEDIUM;
         Finding finding = new Finding(
@@ -1329,16 +1341,16 @@ public final class Findings {
                         + Numbers.millis(totalMs) + " in total",
                 new Subject(null, null, null, null, null, target, null, null),
                 numbers, null,
-                ancestors == null ? List.of()
+                reads == null ? List.of()
                         : frames.ofAttributes(newest == null ? null : newest.attributes()),
-                ancestors == null ? List.of() : externalTraces(window, calls));
+                reads == null ? List.of() : externalTraces(window, calls));
         return new Ranked(finding, totalMs);
     }
 
     /** Which endpoints made the calls: the nearest entry span up the chain, as a query's callers. */
-    private static List<Stats.Caller> externalCallers(Ancestors ancestors, List<SpanRecord> calls,
+    private static List<Stats.Caller> externalCallers(Reads reads, List<SpanRecord> calls,
             String service) {
-        Queries.Ancestry ancestry = ancestors.get();
+        Queries.Ancestry ancestry = reads.ancestry();
         Map<String, long[]> counts = new LinkedHashMap<>();
         Map<String, String> byService = new LinkedHashMap<>();
         for (SpanRecord call : calls) {
@@ -1661,31 +1673,47 @@ public final class Findings {
     // --- shared --------------------------------------------------------------
 
     /**
-     * The parent-chain walk of one window, loaded at most once for one call of
-     * {@link #findings}.
+     * The scans of one window that more than one rule reads, each made at most
+     * once for one run of the rules.
      *
-     * <p>Three rules need it — the N+1, the outbound calls and the log errors — and
-     * {@link Queries.Ancestry#of} is a scan of the window's spans, so it is built
-     * lazily and shared rather than built once per rule.
+     * <p>The parent-chain walk ({@link Queries.Ancestry#of}) is read by the query
+     * callers, the error endpoints, the N+1s, the outbound calls and the log errors;
+     * the outbound HTTP spans by {@code n-plus-one-http} and {@code slow-external}.
+     * Each is a scan of the window's spans, so it is made lazily, when the first rule
+     * asks, and handed to the others. The query callers and the error endpoints get
+     * the same walk {@code /api/queries} and {@code /api/errors} build for the same
+     * window and service, so their numbers stay the list's numbers.
      */
-    private static final class Ancestors {
+    private static final class Reads {
 
         private final Sql sql;
+        private final Queries queries;
         private final Window window;
         private final @Nullable String service;
         private Queries.@Nullable Ancestry ancestry;
+        private @Nullable List<SpanRecord> outboundHttp;
 
-        private Ancestors(Sql sql, Window window, @Nullable String service) {
+        private Reads(Sql sql, Queries queries, Window window, @Nullable String service) {
             this.sql = sql;
+            this.queries = queries;
             this.window = window;
             this.service = service;
         }
 
-        Queries.Ancestry get() {
+        Queries.Ancestry ancestry() {
             Queries.Ancestry loaded = ancestry;
             if (loaded == null) {
                 loaded = Queries.Ancestry.of(sql, window, service);
                 ancestry = loaded;
+            }
+            return loaded;
+        }
+
+        List<SpanRecord> outboundHttp() {
+            List<SpanRecord> loaded = outboundHttp;
+            if (loaded == null) {
+                loaded = queries.outboundHttp(window, service);
+                outboundHttp = loaded;
             }
             return loaded;
         }

@@ -17,6 +17,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.function.Supplier;
 
 import net.benelog.spidersense.store.AttrJson;
 import net.benelog.spidersense.store.Ids;
@@ -219,6 +220,15 @@ public final class Queries {
 
     public List<Stats.EndpointStats> endpoints(Window window, @Nullable String service,
             @Nullable String endpointId) {
+        return endpoints(window, service, endpointId, true);
+    }
+
+    /**
+     * The same, with or without the status codes, which are a second scan of the
+     * window's entry spans and which no finding reads.
+     */
+    List<Stats.EndpointStats> endpoints(Window window, @Nullable String service,
+            @Nullable String endpointId, boolean withStatusCodes) {
         Clause where = entryWindow(window, service).and("endpoint_id IS NOT NULL");
         if (endpointId != null) {
             where = where.and("endpoint_id = ?", endpointId);
@@ -230,7 +240,7 @@ public final class Queries {
                 + " FROM span WHERE " + where.sql()
                 + " GROUP BY endpoint_id, service ORDER BY total_ns DESC";
 
-        Map<String, Map<String, Long>> statusCodes = statusCodes(where);
+        Map<String, Map<String, Long>> statusCodes = withStatusCodes ? statusCodes(where) : Map.of();
         double seconds = window.rangeSeconds();
         return sql.query(query, where.params(), rs -> {
             String id = rs.getString("endpoint_id");
@@ -271,6 +281,21 @@ public final class Queries {
      * instant, every span of the service in the window once per entry span.
      */
     public Map<String, DbWork> databaseWork(Window window, @Nullable String service) {
+        return databaseWork(window, service, null);
+    }
+
+    /**
+     * The same, for these endpoints only, or for every endpoint when
+     * {@code endpointIds} is null.
+     *
+     * <p>A {@code slow-endpoint} finding needs the endpoints that crossed the
+     * threshold and nothing else, and the join costs every trace it reads.
+     */
+    public Map<String, DbWork> databaseWork(Window window, @Nullable String service,
+            @Nullable Collection<String> endpointIds) {
+        if (endpointIds != null && endpointIds.isEmpty()) {
+            return Map.of();
+        }
         List<Object> params = new ArrayList<>(List.of(window.from(), window.to(),
                 window.from(), window.to()));
         String where = "e.entry AND e.endpoint_id IS NOT NULL AND e.start_ms BETWEEN ? AND ?"
@@ -278,6 +303,10 @@ public final class Queries {
         if (service != null) {
             where = where + " AND e.service = ?";
             params.add(service);
+        }
+        if (endpointIds != null) {
+            where = where + " AND e.endpoint_id IN (" + Sql.placeholders(endpointIds.size()) + ")";
+            params.addAll(endpointIds);
         }
         Map<String, DbWork> work = new HashMap<>();
         sql.forEach("SELECT e.endpoint_id AS id, COUNT(*) AS calls, SUM(d.duration_ns) AS total_ns"
@@ -295,16 +324,23 @@ public final class Queries {
      * <p>The same join as {@link #databaseWork}, over the root {@code INTERNAL} spans
      * a {@code slow-job} finding is about (storage.adoc): a job is not an endpoint, so
      * it is keyed by the service and the span name rather than by an endpoint id.
+     *
+     * <p>Only the jobs of one service named {@code names} are joined, which are the
+     * ones a {@code slow-job} finding is about: the runs are then read by the
+     * service's {@code (service, start_ms)} index rather than out of every span of
+     * the window.
      */
-    public Map<String, DbWork> jobDatabaseWork(Window window, @Nullable String service) {
-        List<Object> params = new ArrayList<>(List.of(window.from(), window.to(),
-                window.from(), window.to()));
-        String where = "r.parent_span_id IS NULL AND r.kind = 'INTERNAL'"
-                + " AND r.start_ms BETWEEN ? AND ? AND d.start_ms BETWEEN ? AND ?";
-        if (service != null) {
-            where = where + " AND r.service = ?";
-            params.add(service);
+    public Map<String, DbWork> jobDatabaseWork(Window window, String service,
+            Collection<String> names) {
+        if (names.isEmpty()) {
+            return Map.of();
         }
+        List<Object> params = new ArrayList<>(List.of(window.from(), window.to(),
+                window.from(), window.to(), service));
+        String where = "r.parent_span_id IS NULL AND r.kind = 'INTERNAL'"
+                + " AND r.start_ms BETWEEN ? AND ? AND d.start_ms BETWEEN ? AND ? AND r.service = ?";
+        where = where + " AND r.name IN (" + Sql.placeholders(names.size()) + ")";
+        params.addAll(names);
         Map<String, DbWork> work = new HashMap<>();
         sql.forEach("SELECT r.service AS service, r.name AS name, COUNT(d.id) AS calls,"
                 + " SUM(d.duration_ns) AS total_ns"
@@ -329,7 +365,20 @@ public final class Queries {
 
     public List<Stats.QueryStats> queries(Window window, @Nullable String service,
             @Nullable String sort, int limit, @Nullable String queryId) {
-        return withSchema(withCallers(queryGroups(window, service, sort, limit, queryId), window));
+        return queries(window, service, sort, limit, queryId, () -> Ancestry.of(sql, window, service));
+    }
+
+    /**
+     * The same, with the parent-chain walk handed in, so that the rules of one
+     * answer that each need it read the window's spans for it once.
+     *
+     * <p>The walk must be the one of this window over the traces that have a span
+     * of {@code service}, or over every trace when it is null.
+     */
+    List<Stats.QueryStats> queries(Window window, @Nullable String service, @Nullable String sort,
+            int limit, @Nullable String queryId, Supplier<Ancestry> ancestry) {
+        return withSchema(withCallers(queryGroups(window, service, sort, limit, queryId), window,
+                ancestry));
     }
 
     /**
@@ -397,8 +446,13 @@ public final class Queries {
     /**
      * The endpoint each query was issued from: the nearest entry span up the
      * parent chain, within the trace.
+     *
+     * <p>A query id hashes its service (storage.adoc), so every span read here is a
+     * span of the groups' service, and the walk over that service's traces reaches
+     * every entry span the walk over all of them would.
      */
-    private List<Stats.QueryStats> withCallers(List<Stats.QueryStats> stats, Window window) {
+    private List<Stats.QueryStats> withCallers(List<Stats.QueryStats> stats, Window window,
+            Supplier<Ancestry> ancestors) {
         if (stats.isEmpty()) {
             return stats;
         }
@@ -406,7 +460,7 @@ public final class Queries {
         for (Stats.QueryStats query : stats) {
             ids.add(query.queryId());
         }
-        Ancestry ancestry = Ancestry.of(sql, window);
+        Ancestry ancestry = ancestors.get();
         Map<String, Map<String, long[]>> callers = new HashMap<>();
         Map<String, Map<String, String>> callerService = new HashMap<>();
         Clause where = window(window, null)
@@ -513,6 +567,12 @@ public final class Queries {
 
     public List<Stats.ErrorGroup> errors(Window window, @Nullable String service, int limit,
             @Nullable String errorId) {
+        return errors(window, service, limit, errorId, () -> Ancestry.of(sql, window, service));
+    }
+
+    /** The same, with the parent-chain walk handed in, as {@link #queries} takes it. */
+    List<Stats.ErrorGroup> errors(Window window, @Nullable String service, int limit,
+            @Nullable String errorId, Supplier<Ancestry> ancestry) {
         List<Stats.ErrorGroup> groups = errorGroups(window, service, limit, errorId);
         if (groups.isEmpty()) {
             return groups;
@@ -522,7 +582,7 @@ public final class Queries {
             ids.add(group.errorId());
         }
         Map<String, Stats.ErrorSample> samples = errorSamples(window, ids);
-        Map<String, List<Stats.EndpointCount>> endpoints = errorEndpoints(window, ids);
+        Map<String, List<Stats.EndpointCount>> endpoints = errorEndpoints(window, ids, ancestry);
 
         List<Stats.ErrorGroup> complete = new ArrayList<>(groups.size());
         for (Stats.ErrorGroup group : groups) {
@@ -577,8 +637,10 @@ public final class Queries {
         return samples;
     }
 
-    private Map<String, List<Stats.EndpointCount>> errorEndpoints(Window window, Set<String> ids) {
-        Ancestry ancestry = Ancestry.of(sql, window);
+    /** Where each error group occurred; an error id hashes its service, as a query id does. */
+    private Map<String, List<Stats.EndpointCount>> errorEndpoints(Window window, Set<String> ids,
+            Supplier<Ancestry> ancestors) {
+        Ancestry ancestry = ancestors.get();
         Clause where = window(window, null)
                 .and("error_id IN (" + Sql.placeholders(ids.size()) + ")", ids.toArray());
         Map<String, Map<String, long[]>> counts = new LinkedHashMap<>();
@@ -1332,10 +1394,6 @@ public final class Queries {
 
         /** The entry span itself, so a finding can count the requests it affected. */
         record Entry(String spanId, String endpoint, String service) {
-        }
-
-        static Ancestry of(Sql sql, Window window) {
-            return of(sql, window, null);
         }
 
         /**

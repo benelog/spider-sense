@@ -278,9 +278,13 @@ The external targets reuse the dependency scan, which is the outbound spans of t
 * Findings (xref:findings.adoc[Findings]): `n-plus-one` is `GROUP BY trace_id, query_id HAVING COUNT(*) >= 5` over the database spans of the window, attributed to the entry span by the same parent-chain walk the query callers use.
 `dbCallsPerRequest` and `dbMsPerRequest` of an endpoint join the endpoint's entry spans with the database spans of the same trace and service.
 `slow-job` is the same aggregation over `span WHERE parent_span_id IS NULL AND kind = 'INTERNAL'` grouped by `(service, name)`, with the database work joined the same way.
+Only the endpoints and jobs that crossed the threshold are joined, since only they become findings; a job's runs are read by its service's `(service, start_ms)` index, and so is its newest run, whose attributes give the code frames.
 The other kinds are the endpoint, query and error aggregations above, filtered by the thresholds.
-The parent-chain walk reads the window's spans once per answer.
-For one service it reads only the traces that have a span of that service in the window, which is where every entry span its spans can reach lies.
+A scan of the window that several rules need is made once per answer and handed to each of them.
+The parent-chain walk is one: the query callers, the error endpoints, `n-plus-one`, `n-plus-one-http`, `slow-external` and `log-error` all read the same one.
+The outbound HTTP spans are the other: `n-plus-one-http` and `slow-external` read the same rows.
+For one service the walk reads only the traces that have a span of that service in the window, which is where every entry span its spans can reach lies.
+The query and error lists read it the same way, so a finding's callers and endpoints are the list's.
 * The traces that contain a group (a finding's evidence and sample, the slowest and newest traces of the endpoint, query and error pages): `SELECT * FROM trace t WHERE t.start_ms BETWEEN ? AND ? AND t.trace_id IN (SELECT s.trace_id FROM span s WHERE s.<group> = ? AND s.start_ms BETWEEN ? AND ?)`.
 The matching span starts in the window too, so the subquery is a range of the group's `(…, start_ms)` index.
 It costs the window's share of the group, never its whole history.
