@@ -1,5 +1,7 @@
 package net.benelog.spidersense.store;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The tables, verbatim from storage.adoc#schema.
  *
@@ -216,37 +218,56 @@ public final class Schema {
     }
 
     /**
+     * Checks the stored version first, then creates what is missing.
+     *
+     * <p>The order matters both ways. A database of another version may hold a
+     * table whose old shape an index of this version cannot be created on, so its
+     * tables are dropped before {@link #TABLES} runs, not after. And a refused open
+     * must leave the database as it found it, without a table of this version
+     * created in it.
+     *
      * @param upgrade whether a database of another version is dropped and recreated
      *                (the server's way) or refused (the CLI's way: a command that
      *                reads a file must never empty it under a running older server)
      */
     static void create(Sql sql, boolean upgrade) {
-        sql.execute(TABLES);
-        Long stored = sql.queryOne("SELECT value FROM meta WHERE key = 'schema_version'",
-                java.util.List.of(), rs -> Long.valueOf(rs.getString(1)));
+        Long stored = storedVersion(sql);
         if (stored != null && stored != VERSION && !upgrade) {
             throw new IllegalStateException("the database is schema version " + stored
                     + " and this Spider Sense expects " + VERSION
                     + "; start an application or the standalone server with this version first"
                     + " (it recreates the tables), or point --db at another file");
         }
+        if (stored != null && stored != VERSION) {
+            for (String table : new String[]{"span", "trace", "log", "metric_point", "metric_series",
+                    "metric", "tingle", "mark", "ack", "db_table", "service"}) {
+                sql.execute("DROP TABLE IF EXISTS " + table);
+            }
+        }
+        sql.execute(TABLES);
         if (stored == null) {
             sql.update("MERGE INTO meta (key, value) KEY(key) VALUES (?, ?)",
                     java.util.List.of("schema_version", String.valueOf(VERSION)));
             sql.update("MERGE INTO meta (key, value) KEY(key) VALUES (?, ?)",
                     java.util.List.of("created_at", String.valueOf(System.currentTimeMillis())));
         } else if (stored != VERSION) {
-            for (String table : new String[]{"span", "trace", "log", "metric_point", "metric_series",
-                    "metric", "tingle", "mark", "ack", "db_table", "service"}) {
-                sql.execute("DROP TABLE IF EXISTS " + table);
-            }
-            sql.execute(TABLES);
             sql.update("MERGE INTO meta (key, value) KEY(key) VALUES (?, ?)",
                     java.util.List.of("schema_version", String.valueOf(VERSION)));
         }
         if (upgrade) {
             reader(sql);
         }
+    }
+
+    /** The {@code schema_version} in {@code meta}, or null for a database without one. */
+    private static @Nullable Long storedVersion(Sql sql) {
+        long meta = sql.count("SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES"
+                + " WHERE TABLE_SCHEMA = 'PUBLIC' AND TABLE_NAME = 'META'", java.util.List.of());
+        if (meta == 0) {
+            return null;
+        }
+        return sql.queryOne("SELECT value FROM meta WHERE key = 'schema_version'",
+                java.util.List.of(), rs -> Long.valueOf(rs.getString(1)));
     }
 
     /**

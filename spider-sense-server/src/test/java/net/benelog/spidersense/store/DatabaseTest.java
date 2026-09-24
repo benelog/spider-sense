@@ -53,6 +53,47 @@ class DatabaseTest {
         }
     }
 
+    /**
+     * A table of another version may lack a column an index of this one is on,
+     * so the server's open drops the old tables before it creates the new ones.
+     */
+    @Test
+    void theServerOpenUpgradesATableAnIndexOfThisVersionCannotBeCreatedOn() {
+        String url = TestStore.memoryUrl();
+        try (Database first = Database.open(url, null)) {
+            first.sql().execute("DROP TABLE span", "CREATE TABLE span (id BIGINT)");
+            first.sql().update("UPDATE meta SET value = ? WHERE key = 'schema_version'",
+                    List.of(String.valueOf(Schema.VERSION - 1)));
+
+            try (Database upgraded = Database.open(url, null)) {
+                assertThat(upgraded.storage().fallback()).as("the file itself was upgraded").isFalse();
+                assertThat(upgraded.sql().count("SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS"
+                        + " WHERE TABLE_NAME = 'SPAN' AND COLUMN_NAME = 'START_MS'", List.of()))
+                        .isEqualTo(1);
+                String version = upgraded.sql().queryOne("SELECT value FROM meta WHERE key = 'schema_version'",
+                        List.of(), rs -> rs.getString(1));
+                assertThat(version).isEqualTo(String.valueOf(Schema.VERSION));
+            }
+        }
+    }
+
+    /** A refused open leaves the database as it found it, without a table of this version in it. */
+    @Test
+    void theCliOpenCreatesNothingInADatabaseOfAnotherVersion() {
+        String url = TestStore.memoryUrl();
+        try (Database first = Database.open(url, null)) {
+            first.sql().execute("DROP TABLE db_table");
+            first.sql().update("UPDATE meta SET value = ? WHERE key = 'schema_version'",
+                    List.of(String.valueOf(Schema.VERSION + 1)));
+
+            assertThatThrownBy(() -> Database.openExisting(url, null))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("schema version " + (Schema.VERSION + 1));
+            assertThat(first.sql().count("SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES"
+                    + " WHERE TABLE_NAME = 'DB_TABLE'", List.of())).isZero();
+        }
+    }
+
     @Test
     void thePageCacheIsASixteenthOfTheHeapBetweenSixteenAndTwoHundredFiftySixMib() {
         long mib = 1024 * 1024;
