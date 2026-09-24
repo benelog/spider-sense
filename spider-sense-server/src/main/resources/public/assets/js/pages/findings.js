@@ -255,6 +255,7 @@ function ackDialog(finding, onDone) {
   });
 
   async function submit() {
+    if (ok.disabled) return;     // in flight already: a second Enter would POST again
     ok.disabled = true;
     try {
       await api.ackFinding(finding.id, noteInput.value.trim());
@@ -298,6 +299,7 @@ function resolveDialog(finding, onDone) {
   });
 
   async function submit() {
+    if (ok.disabled) return;     // in flight already: a second Enter would POST again
     ok.disabled = true;
     try {
       await api.resolveFinding(finding.id, noteInput.value.trim());

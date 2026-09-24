@@ -476,6 +476,8 @@ export function markDialog(opts = {}) {
   });
 
   async function submit() {
+    // In flight already: a held Enter repeats, and each repeat would POST another mark.
+    if (ok.disabled) return;
     const name = nameInput.value.trim();
     if (!/^[A-Za-z0-9._-]{1,64}$/.test(name)) {
       problem.hidden = false;
