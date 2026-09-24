@@ -102,4 +102,22 @@ class ConfigTest {
                 () -> Config.parse(new String[]{"--port=eight"})))
                 .hasMessageContaining("--port");
     }
+
+    @Test
+    void environmentVariablesAreReadBelowArgumentsAndSystemProperties() {
+        java.util.Map<String, String> env = java.util.Map.of(
+                "SPIDERSENSE_PORT", "4001",
+                "SPIDERSENSE_SLOW_QUERY_MS", "25",
+                "SPIDERSENSE_SLOW_REQUEST_MS", "700");
+        System.setProperty("spidersense.slow.request.ms", "600");
+        try {
+            Config config = Config.parse(new String[]{"--slow.query.ms=40"}, env::get);
+
+            assertThat(config.port()).isEqualTo(4001);
+            assertThat(config.slowQueryMs()).isEqualTo(40);
+            assertThat(config.slowRequestMs()).isEqualTo(600);
+        } finally {
+            System.clearProperty("spidersense.slow.request.ms");
+        }
+    }
 }

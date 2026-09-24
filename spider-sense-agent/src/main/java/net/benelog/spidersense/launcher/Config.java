@@ -3,6 +3,7 @@ package net.benelog.spidersense.launcher;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.function.Function;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -50,18 +51,30 @@ public record Config(
 
     /** Reads the {@code spidersense.*} system properties, falling back to the defaults. */
     public static Config fromSystemProperties() {
+        return fromSystemProperties(System::getenv);
+    }
+
+    /**
+     * The same with the environment given, for a test: each key is its system property,
+     * else its {@code SPIDERSENSE_*} variable (configuration.adoc).
+     */
+    static Config fromSystemProperties(Function<String, @Nullable String> env) {
+        Function<String, @Nullable String> read = name -> {
+            String v = System.getProperty(name);
+            return emptyToNull(v != null ? v : env.apply(envName(name)));
+        };
         Config d = defaults();
         return new Config(
-                intProperty("spidersense.port", d.port()),
-                stringProperty("spidersense.host", d.host()),
-                optionalProperty("spidersense.collector"),
-                optionalProperty("spidersense.service"),
-                optionalProperty("spidersense.db"),
-                integerProperty("spidersense.retention.hours"),
-                longProperty("spidersense.slow.request.ms", d.slowRequestMs()),
-                longProperty("spidersense.slow.query.ms", d.slowQueryMs()),
-                booleanProperty("spidersense.open", d.open()),
-                stringProperty("spidersense.mode", d.mode()));
+                intProperty(read, "spidersense.port", d.port()),
+                stringProperty(read, "spidersense.host", d.host()),
+                read.apply("spidersense.collector"),
+                read.apply("spidersense.service"),
+                read.apply("spidersense.db"),
+                integerProperty(read, "spidersense.retention.hours"),
+                longProperty(read, "spidersense.slow.request.ms", d.slowRequestMs()),
+                longProperty(read, "spidersense.slow.query.ms", d.slowQueryMs()),
+                booleanProperty(read, "spidersense.open", d.open()),
+                stringProperty(read, "spidersense.mode", d.mode()));
     }
 
     /**
@@ -216,33 +229,28 @@ public record Config(
         return v == null || v.isEmpty() ? null : v;
     }
 
-    private static String stringProperty(String name, String fallback) {
-        String v = emptyToNull(System.getProperty(name));
+    private static String stringProperty(Function<String, @Nullable String> read, String name, String fallback) {
+        String v = read.apply(name);
         return v != null ? v : fallback;
     }
 
-    /** A property whose absence is itself the value: the launcher passes it on only when set. */
-    private static @Nullable String optionalProperty(String name) {
-        return emptyToNull(System.getProperty(name));
-    }
-
-    private static int intProperty(String name, int fallback) {
-        String v = emptyToNull(System.getProperty(name));
+    private static int intProperty(Function<String, @Nullable String> read, String name, int fallback) {
+        String v = read.apply(name);
         return v != null ? Integer.parseInt(v.trim()) : fallback;
     }
 
-    private static @Nullable Integer integerProperty(String name) {
-        String v = emptyToNull(System.getProperty(name));
+    private static @Nullable Integer integerProperty(Function<String, @Nullable String> read, String name) {
+        String v = read.apply(name);
         return v != null ? Integer.valueOf(v.trim()) : null;
     }
 
-    private static long longProperty(String name, long fallback) {
-        String v = emptyToNull(System.getProperty(name));
+    private static long longProperty(Function<String, @Nullable String> read, String name, long fallback) {
+        String v = read.apply(name);
         return v != null ? Long.parseLong(v.trim()) : fallback;
     }
 
-    private static boolean booleanProperty(String name, boolean fallback) {
-        String v = emptyToNull(System.getProperty(name));
+    private static boolean booleanProperty(Function<String, @Nullable String> read, String name, boolean fallback) {
+        String v = read.apply(name);
         return v != null ? Boolean.parseBoolean(v.trim()) : fallback;
     }
 }

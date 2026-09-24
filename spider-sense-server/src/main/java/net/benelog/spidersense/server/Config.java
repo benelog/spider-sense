@@ -2,7 +2,11 @@ package net.benelog.spidersense.server;
 
 import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.function.Function;
+
 
 import net.benelog.spidersense.store.IgnoredEndpoints;
 import net.benelog.spidersense.store.Sweeper;
@@ -65,6 +69,15 @@ public record Config(
     public static final String DEFAULT_DB = "~/db/spider-sense/sense";
 
     public static Config parse(String[] args) {
+        return parse(args, System::getenv);
+    }
+
+    /**
+     * The same with the environment given, for a test: a key the arguments and the
+     * system properties leave unsaid is read from its {@code SPIDERSENSE_*} variable
+     * (configuration.adoc).
+     */
+    static Config parse(String[] args, Function<String, @Nullable String> env) {
         Map<String, String> values = new HashMap<>();
         for (String arg : args) {
             if (!arg.startsWith("--")) {
@@ -75,6 +88,14 @@ public record Config(
                 values.put(arg.substring(2, equals), arg.substring(equals + 1));
             } else {
                 values.put(arg.substring(2), "true");
+            }
+        }
+        for (String key : KEYS) {
+            if (!values.containsKey(key) && System.getProperty("spidersense." + key) == null) {
+                String fromEnv = env.apply(envName("spidersense." + key));
+                if (fromEnv != null && !fromEnv.isEmpty()) {
+                    values.put(key, fromEnv);
+                }
             }
         }
         String mode = string(values, "mode", STANDALONE);
@@ -93,6 +114,28 @@ public record Config(
                 string(values, "ignore.endpoints", IgnoredEndpoints.DEFAULT),
                 stringOrNull(values, "source.dirs"),
                 stringOrNull(values, "jar"));
+    }
+
+    /** The keys {@link #parse} reads, each also from its environment variable. */
+    private static final List<String> KEYS = List.of("host", "port", "mode", "db", "retention.hours",
+            "retention.spans", "ingest.max-spans-per-second", "slow.request.ms", "slow.query.ms",
+            "embedded-service", "app.packages", "ignore.endpoints", "source.dirs", "jar");
+
+    /**
+     * The {@code spidersense.*} setting outside the arguments: the system property,
+     * else the environment variable of the same name, else null.
+     */
+    public static @Nullable String setting(String property) {
+        String value = System.getProperty(property);
+        if (value == null) {
+            value = System.getenv(envName(property));
+        }
+        return value == null || value.isEmpty() ? null : value;
+    }
+
+    /** {@code spidersense.slow.query.ms} is {@code SPIDERSENSE_SLOW_QUERY_MS}. */
+    public static String envName(String property) {
+        return property.toUpperCase(Locale.ROOT).replace('.', '_').replace('-', '_');
     }
 
     public boolean agentMode() {
@@ -156,9 +199,12 @@ public record Config(
             return named;
         }
         String property = System.getProperty("spidersense.embedded-service");
+        if (property != null) {
+            return property;
+        }
         // configuration.adoc#properties names the launcher's own property spidersense.service; when the
         // launcher was told the name that way, it is the same answer.
-        return property != null ? property : System.getProperty("spidersense.service");
+        return setting("spidersense.service");
     }
 
     /**

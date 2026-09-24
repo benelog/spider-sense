@@ -5,6 +5,7 @@ import java.io.InputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.List;
 
 import net.benelog.spidersense.api.Reports;
 import net.benelog.spidersense.query.Selectors;
@@ -176,7 +177,14 @@ public final class Cli {
         if (named != null && !named.isBlank()) {
             return named.trim();
         }
-        return configuredUrl(System.getProperties());
+        java.util.Properties settings = new java.util.Properties();
+        for (String key : List.of("spidersense.collector", "spidersense.host", "spidersense.port")) {
+            String value = Config.setting(key);
+            if (value != null) {
+                settings.setProperty(key, value);
+            }
+        }
+        return configuredUrl(settings);
     }
 
     /**

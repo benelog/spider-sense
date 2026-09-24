@@ -44,6 +44,21 @@ class ConfigTest {
     }
 
     @Test
+    void environmentVariablesAreReadBelowSystemProperties() {
+        java.util.Map<String, String> env = java.util.Map.of(
+                "SPIDERSENSE_PORT", "4001",
+                "SPIDERSENSE_COLLECTOR", "http://127.0.0.1:4000",
+                "SPIDERSENSE_SLOW_QUERY_MS", "25");
+        set("spidersense.slow.query.ms", "30");
+
+        Config c = Config.fromSystemProperties(env::get);
+
+        assertThat(c.port()).isEqualTo(4001);
+        assertThat(c.collector()).isEqualTo("http://127.0.0.1:4000");
+        assertThat(c.slowQueryMs()).isEqualTo(30);
+    }
+
+    @Test
     void systemPropertiesAreRead() {
         set("spidersense.port", "4321");
         set("spidersense.host", "0.0.0.0");

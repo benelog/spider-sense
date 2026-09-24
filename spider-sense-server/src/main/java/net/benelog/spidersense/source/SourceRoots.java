@@ -11,6 +11,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
+import net.benelog.spidersense.server.Config;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -93,7 +94,7 @@ public final class SourceRoots {
 
     /** {@code spidersense.source.dirs} of this JVM against its working directory. */
     public static SourceRoots fromSystemProperties() {
-        return of(System.getProperty("spidersense.source.dirs"), Path.of(""));
+        return of(Config.setting("spidersense.source.dirs"), Path.of(""));
     }
 
     /** The roots that exist, in the order they are tried. */
