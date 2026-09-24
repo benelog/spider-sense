@@ -198,6 +198,21 @@ class DatabaseTest {
                 .hasMessageContaining(why);
     }
 
+    /** An application's own database, named by a mistaken --db, gets no table of ours. */
+    @Test
+    void theCliOpenCreatesNothingInADatabaseSpiderSenseNeverWrote() {
+        String url = TestStore.memoryUrl();
+        try (Database app = Database.open(url, null)) {
+            app.sql().execute("DROP ALL OBJECTS", "CREATE TABLE orders (id BIGINT PRIMARY KEY)");
+
+            assertThatThrownBy(() -> Database.openExisting(url, null))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("no Spider Sense schema");
+            assertThat(app.sql().count("SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES"
+                    + " WHERE TABLE_SCHEMA = 'PUBLIC'", List.of())).isEqualTo(1);
+        }
+    }
+
     /**
      * A database an older Spider Sense created has no reader user, and the CLI's
      * open does not add one to a database a running server may own: {@code sql}

@@ -199,6 +199,7 @@ The schema is created with `IF NOT EXISTS` at startup.
 The stored `meta.schema_version` is read before any table is created.
 A database of another version therefore has its tables dropped before this version's are created, since an index of this version may be on a column an older table lacks.
 The CLI, which refuses another version, leaves such a database exactly as it found it.
+It also refuses a database that holds tables but no `meta`, which is one Spider Sense never wrote, such as the application's own named by a mistaken `--db`; only an empty database gets this version's tables from it.
 `meta.schema_version` is `7`, the version that moved the error group key to the root cause and its frame.
 Version 6 added the `resolved` column of `ack`, version 5 added `db_table`, version 4 added `ack`, and version 3 added `mark`.
 A version that changes a table or the meaning of a stored id drops and recreates every table, because the data is a cache of a development session and not a record.
