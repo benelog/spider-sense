@@ -195,6 +195,9 @@ Spider Sense only fills in defaults, and only where you have set neither the pro
 | The extension records `code.stacktrace` on a slow query, on the fifth repeat of an N+1, and on a slow outbound call. It also reads the index catalog of the tables a slow statement touches, which is a finding's xref:findings.adoc#schema[schema block].
 |===
 
+Spider Sense sets no other system property in the application's JVM.
+Its own server logs at `warn` through a `simplelogger.properties` only its class loader sees, so an application that logs through slf4j-simple keeps its own level, and `-Dorg.slf4j.simpleLogger.defaultLogLevel=` still raises the server's.
+
 Always set `-Dotel.service.name=`, because without it the service is `unknown_service:java` and the service filter has nothing to select.
 `-Dspidersense.service=` does the same thing in agent mode.
 

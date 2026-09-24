@@ -74,6 +74,8 @@ public final class SampleApp {
     }
 
     public static void main(String[] args) throws Exception {
+        // The agent's premain has run by now; whatever it set JVM-wide, this application sees.
+        System.out.println("sample: slf4j level " + System.getProperty("org.slf4j.simpleLogger.defaultLogLevel"));
         // The address is a literal and not a host name, so there is nothing to select between;
         // the client below reaches the server at the same literal.
         @SuppressWarnings("AddressSelection")

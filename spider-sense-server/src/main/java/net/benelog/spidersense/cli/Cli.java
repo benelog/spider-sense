@@ -221,9 +221,10 @@ public final class Cli {
      * Stdout is the report and nothing else.
      *
      * <p>slf4j-simple talks at info level by default and H2 and the pool would fill
-     * the terminal with it, so the CLI is quiet for the same reason the embedded
-     * server is (SpiderSenseServer.quietLoggingUnlessTold), unless its user said
-     * otherwise.
+     * the terminal with it, so the CLI is quiet, unless its user said otherwise.
+     * The CLI's JVM is its own, so a system property is fine here; the server keeps
+     * its level in its jar's {@code simplelogger.properties} instead, since in agent
+     * mode the JVM is the monitored application's.
      */
     private static void quietLoggingUnlessTold() {
         if (System.getProperty("org.slf4j.simpleLogger.defaultLogLevel") == null) {

@@ -145,6 +145,9 @@ class SingleJarIT {
                 .as("the packaged agent reports its own version, not Spider Sense's")
                 .contains("2.31.1");
         assertThat(output).contains("[spider-sense] UI: " + base);
+        assertThat(output)
+                .as("the embedded server keeps its logging quiet without touching the application's")
+                .contains("sample: slf4j level null");
     }
 
     // --- the extension ------------------------------------------------------------------------

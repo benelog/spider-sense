@@ -64,7 +64,6 @@ public final class SpiderSenseServer implements AutoCloseable {
 
     public static void main(String[] args) {
         Config config = Config.parse(args);
-        quietLoggingUnlessTold();
         SpiderSenseServer server = start(config);
         System.out.println("Spider Sense (" + config.mode() + "): " + config.endpoint(server.port()));
         if (!config.agentMode()) {
@@ -198,17 +197,6 @@ public final class SpiderSenseServer implements AutoCloseable {
             return in == null ? null : new String(in.readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
-        }
-    }
-
-    /**
-     * Spider Silk and Jetty log through slf4j, and slf4j-simple talks at info level
-     * by default. A collector living inside someone else's application must be
-     * quiet unless its user asked otherwise.
-     */
-    private static void quietLoggingUnlessTold() {
-        if (System.getProperty("org.slf4j.simpleLogger.defaultLogLevel") == null) {
-            System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", "warn");
         }
     }
 
