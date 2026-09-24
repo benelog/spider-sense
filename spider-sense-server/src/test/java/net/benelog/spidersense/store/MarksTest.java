@@ -78,8 +78,27 @@ class MarksTest {
         flush();
         assertThat(startMarks()).hasSize(2);
         assertThat(startMarks().get(0).note()).isEqualTo("pid 4321");
-        // The mark is stamped with the sighting, which is when the export arrived.
         assertThat(startMarks().get(0).at()).isPositive();
+    }
+
+    /**
+     * An exporter batches for seconds, so a run's first request arrives after it
+     * began: the start mark takes that request's start, and since=start keeps it.
+     */
+    @Test
+    void theStartMarkIsTheRunsFirstRecordNotTheExportsArrival() {
+        long started = System.currentTimeMillis() - 3_000;
+        export("orders", 1234, started);
+        flush();
+
+        assertThat(startMarks().get(0).at()).isEqualTo(started);
+
+        // A record claiming to be far older than its export moves the mark back no further than a minute.
+        long now = System.currentTimeMillis();
+        export("orders", 4321, now - 3_600_000);
+        flush();
+
+        assertThat(startMarks().get(0).at()).isBetween(now - 61_000, now);
     }
 
     private List<Marks.Mark> startMarks() {

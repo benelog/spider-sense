@@ -663,7 +663,7 @@ public final class Writer implements AutoCloseable {
             Object language = sighting.resource().get("telemetry.sdk.language");
             Object pid = sighting.resource().get("process.pid");
             String resource = AttrJson.encode(sighting.resource(), 65535);
-            markRestart(connection, sighting, pid);
+            markRestart(connection, sighting, pid, startOf(batches, sighting));
             try (PreparedStatement update = connection.prepareStatement(
                     "UPDATE service SET language = ?, pid = ?, last_seen = ?, resource = ? WHERE name = ?")) {
                 update.setString(1, language == null ? null : String.valueOf(language));
@@ -689,6 +689,38 @@ public final class Writer implements AutoCloseable {
         }
     }
 
+    /** How far before its receipt a run's first record may have started (a metric export interval). */
+    private static final long START_LEAD_MS = 60_000;
+
+    /**
+     * When a sighting's run began, as far as this flush tells: the earliest span
+     * start, log record or metric point of its service, never after the sighting's
+     * receipt and never more than {@link #START_LEAD_MS} before it. An exporter
+     * batches for seconds, so the first requests of a run arrive after they began,
+     * and a start mark at the receipt would leave them out of {@code since=start}.
+     */
+    private static long startOf(List<Batch> batches, Batch.Sighting sighting) {
+        long start = sighting.at();
+        for (Batch batch : batches) {
+            for (SpanRecord span : batch.spans()) {
+                if (span.service().equals(sighting.name())) {
+                    start = Math.min(start, span.startMillis());
+                }
+            }
+            for (LogRecord log : batch.logs()) {
+                if (log.service().equals(sighting.name())) {
+                    start = Math.min(start, log.at());
+                }
+            }
+            for (Batch.MetricSample sample : batch.metrics()) {
+                if (sample.service().equals(sighting.name())) {
+                    start = Math.min(start, sample.point().at());
+                }
+            }
+        }
+        return Math.max(start, sighting.at() - START_LEAD_MS);
+    }
+
     /**
      * A {@code start} mark for a service whose process id is new.
      *
@@ -697,7 +729,7 @@ public final class Writer implements AutoCloseable {
      * and running the application again. A sighting without a {@code process.pid}
      * marks nothing, since there is nothing to compare.
      */
-    private void markRestart(Connection connection, Batch.Sighting sighting, @Nullable Object pid)
+    private void markRestart(Connection connection, Batch.Sighting sighting, @Nullable Object pid, long at)
             throws SQLException {
         if (!(pid instanceof Number number)) {
             return;
@@ -719,7 +751,7 @@ public final class Writer implements AutoCloseable {
         }
         try (PreparedStatement insert = connection.prepareStatement(
                 "INSERT INTO mark (at_ms, name, service, note) VALUES (?, ?, ?, ?)")) {
-            insert.setLong(1, sighting.at());
+            insert.setLong(1, at);
             insert.setString(2, Marks.START);
             insert.setString(3, sighting.name());
             insert.setString(4, "pid " + number.longValue());
