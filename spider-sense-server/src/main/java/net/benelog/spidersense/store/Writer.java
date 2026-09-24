@@ -335,7 +335,7 @@ public final class Writer implements AutoCloseable {
                 db_table, query_id, error_type, error_message, error_id, scope, attributes, events)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""";
 
-    private Set<String> insertSpans(Connection connection, List<Batch> batches) throws SQLException {
+    Set<String> insertSpans(Connection connection, List<Batch> batches) throws SQLException {
         Set<String> touched = new LinkedHashSet<>();
         try (PreparedStatement statement = connection.prepareStatement(INSERT_SPAN)) {
             int pending = 0;
@@ -407,6 +407,16 @@ public final class Writer implements AutoCloseable {
                 root_kind, services, span_count, error_count, db_count, http_status, slow, error)
             KEY(trace_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""";
 
+    /**
+     * A placeholder for a trace row, merged before the spans are read so that the
+     * row is locked for the rest of the transaction. The real values replace it
+     * before the commit, so no other connection ever sees it.
+     */
+    private static final String LOCK_TRACE = """
+            MERGE INTO trace (trace_id, start_ms, end_ms, duration_ns, root_name, root_service, root_kind,
+                services, span_count, error_count, db_count, slow, error)
+            KEY(trace_id) VALUES (?, 0, 0, 0, '', '', '', '[]', 0, 0, 0, FALSE, FALSE)""";
+
     /** One row per span of the touched traces, enough to rebuild the summaries. */
     private record TraceSpan(String traceId, String spanId, @Nullable String parentSpanId,
             String service, String name, @Nullable String endpoint, String kind, long startMs,
@@ -417,7 +427,9 @@ public final class Writer implements AutoCloseable {
         if (traceIds.isEmpty()) {
             return;
         }
-        List<String> ids = List.copyOf(traceIds);
+        // Sorted, so two writers locking overlapping sets take the locks in one order.
+        List<String> ids = traceIds.stream().sorted().toList();
+        lockTraces(connection, ids);
         Map<String, List<TraceSpan>> byTrace = new LinkedHashMap<>();
         String select = """
                 SELECT trace_id, span_id, parent_span_id, service, name, endpoint, kind, start_ms, start_ns,
@@ -446,6 +458,23 @@ public final class Writer implements AutoCloseable {
             if (!byTrace.isEmpty()) {
                 statement.executeBatch();
             }
+        }
+    }
+
+    /**
+     * Locks the touched trace rows before their spans are read. Another process
+     * sharing the file may be flushing other spans of the same trace; without the
+     * lock each reads only its own uncommitted spans, and the one that commits
+     * second overwrites the row with half the trace. With it, the second waits for
+     * the first to commit and then reads every span.
+     */
+    private static void lockTraces(Connection connection, List<String> ids) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(LOCK_TRACE)) {
+            for (String id : ids) {
+                statement.setString(1, id);
+                statement.addBatch();
+            }
+            statement.executeBatch();
         }
     }
 

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Set;
 
 import io.opentelemetry.proto.trace.v1.Span;
 
@@ -132,6 +133,50 @@ class WriterTest {
 
         assertThat(database.sql().count("SELECT COUNT(*) FROM span", List.of())).isEqualTo(2);
         assertThat(database.sql().count("SELECT COUNT(*) FROM tingle", List.of())).isZero();
+        database.close();
+    }
+
+    /**
+     * Two processes sharing the file flush the two halves of one distributed trace
+     * at once. The second to recompute the trace row must wait for the first and
+     * count both halves, not overwrite the row with its own half.
+     */
+    @Test
+    void twoWritersFlushingOneTraceAtOnceBothCountInItsRow() throws Exception {
+        Database database = Database.open(fileUrl(), dir.resolve("sense.mv.db"));
+        Writer first = writer(database);
+        Writer second = writer(database);
+        String trace = "%032x".formatted(7);
+        Span.Builder client = Otlp.span(trace, "%016x".formatted(1), "GET /books", Span.SpanKind.SPAN_KIND_CLIENT,
+                AT, 20);
+        Span.Builder server = Otlp.child(client, "%016x".formatted(2), "GET /books", Span.SpanKind.SPAN_KIND_SERVER,
+                AT + 1, 10);
+        Batch orders = decoder.accept(Otlp.traces(Otlp.service("orders"), client));
+        Batch bookstore = decoder.accept(Otlp.traces(Otlp.service("bookstore"), server));
+
+        try (java.sql.Connection a = database.sql().connection();
+                java.sql.Connection b = database.sql().connection()) {
+            a.setAutoCommit(false);
+            b.setAutoCommit(false);
+            Set<String> touchedByA = first.insertSpans(a, List.of(orders));
+            Set<String> touchedByB = second.insertSpans(b, List.of(bookstore));
+            first.mergeTraces(a, touchedByA);
+
+            var merging = java.util.concurrent.CompletableFuture.runAsync(() -> {
+                try {
+                    second.mergeTraces(b, touchedByB);
+                    b.commit();
+                } catch (java.sql.SQLException e) {
+                    throw new IllegalStateException(e);
+                }
+            });
+            Thread.sleep(300);
+            a.commit();
+            merging.get(10, java.util.concurrent.TimeUnit.SECONDS);
+        }
+
+        assertThat(database.sql().count("SELECT span_count FROM trace WHERE trace_id = ?", List.of(trace)))
+                .isEqualTo(2);
         database.close();
     }
 
