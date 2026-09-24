@@ -657,6 +657,7 @@ The range is rounded to the second and written in its largest units (`6s`, `2m 3
 * A trace and `logs` are lines rather than a table, and `status` and `mark` answer in their own shape.
 * Durations are milliseconds with one decimal and a thousands separator (`1,532.4 ms`), counts are integers, rates are percentages with one decimal, and an Apdex is a score with three decimals.
 * A cell with nothing in it is `—`, and in `compare` the two sides of a row share one cell, `before → after`.
+* A cell is one line whatever text it holds: its newlines and runs of whitespace collapse to one space, and a `|` in it is escaped, so an exception message, a note or a span name never splits a row.
 * A statement is cut at 200 characters with `…`, and `--full` keeps it whole.
 * Nothing in the body depends on when it was rendered, only on the window.
 `now` appears only in the heading.

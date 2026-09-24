@@ -250,7 +250,7 @@ final class Text {
     private static void findingRow(StringBuilder text, int n, Findings.Finding finding) {
         row(text, List.of(String.valueOf(n), severity(finding), finding.state(),
                 finding.kind(), finding.id(),
-                finding.service(), oneLine(finding.title())));
+                finding.service(), finding.title()));
     }
 
     private static void findingEvidence(StringBuilder text, int n, Findings.Finding finding,
@@ -491,7 +491,7 @@ final class Text {
     static String mark(Marks.Mark mark) {
         return "mark " + mark.name() + " at " + instantMillis(mark.at())
                 + (mark.service() == null ? "" : " (" + mark.service() + ")")
-                + (mark.note() == null ? "" : " — " + mark.note()) + "\n";
+                + (mark.note() == null ? "" : " — " + oneLine(mark.note())) + "\n";
     }
 
     // --- acknowledgements -----------------------------------------------------
@@ -583,7 +583,7 @@ final class Text {
                                 millis(diff.after() == null ? null : diff.after().p95Ms())),
                         pair(millis(diff.before() == null ? null : diff.before().totalMs()),
                                 millis(diff.after() == null ? null : diff.after().totalMs())),
-                        statement(diff.statement(), full)));
+                        shortened(diff.statement(), full)));
             }
         }
 
@@ -735,7 +735,7 @@ final class Text {
                 Numbers.millis(query.totalMs()),
                 callers.isEmpty() ? "—" : String.join("; ", callers),
                 unindexed(query.schema()),
-                statement(query.statement(), full)));
+                shortened(query.statement(), full)));
     }
 
     static String errors(Window window, @Nullable String service, List<Stats.ErrorGroup> errors, long requests,
@@ -1224,15 +1224,11 @@ final class Text {
             text.append(" (truncated at ").append(limit).append(')');
         }
         text.append("\n\n");
-        List<String> header = new ArrayList<>(result.columns().size());
-        for (String column : result.columns()) {
-            header.add(oneLine(column));
-        }
-        table(text, header);
+        table(text, result.columns());
         for (List<Object> row : result.rows()) {
             List<String> cells = new ArrayList<>(row.size());
             for (Object value : row) {
-                cells.add(cell(value, full));
+                cells.add(sqlValue(value, full));
             }
             row(text, cells);
         }
@@ -1248,27 +1244,56 @@ final class Text {
      * round trip. Text is cut like a statement, at 200 characters unless
      * {@code full}.
      */
-    private static String cell(@Nullable Object value, boolean full) {
+    private static String sqlValue(@Nullable Object value, boolean full) {
         return switch (value) {
             case null -> "—";
             case Boolean flag -> String.valueOf(flag);
             case Long number -> String.valueOf(number);
             case Double number -> String.valueOf(number);
-            default -> statement(String.valueOf(value), full);
+            default -> shortened(String.valueOf(value), full);
         };
     }
 
+    /** A statement on a line of its own: one line, cut at 200 characters unless {@code full}. */
     static String statement(@Nullable String statement, boolean full) {
-        if (statement == null) {
+        return statement == null ? "—" : escapeBars(shortened(statement, full));
+    }
+
+    /**
+     * A statement or a value cut to one line and to 200 characters unless
+     * {@code full}, with its bars left alone: {@link #row} escapes a cell once,
+     * after the cut, so the cut never splits an escape.
+     */
+    private static String shortened(@Nullable String value, boolean full) {
+        if (value == null) {
             return "—";
         }
-        String single = oneLine(statement);
+        String single = collapse(value);
         return full || single.length() <= STATEMENT ? single : single.substring(0, STATEMENT) + "…";
     }
 
-    /** A table cell cannot carry a newline or a bar. */
+    /** Free text on a line of its own, or inside one: no newline, and no bar a table could split on. */
     static String oneLine(@Nullable String value) {
-        return value == null ? "—" : value.replaceAll("\\s+", " ").replace("|", "\\|").trim();
+        return value == null ? "—" : escapeBars(collapse(value));
+    }
+
+    private static String collapse(String value) {
+        return value.replaceAll("\\s+", " ").trim();
+    }
+
+    private static String escapeBars(String value) {
+        return value.replace("|", "\\|");
+    }
+
+    /**
+     * A table cell: one line, its bars escaped, and {@code —} when nothing is
+     * left. Every cell goes through it, because almost every cell carries text
+     * the application wrote — an exception message with its newlines, a note, a
+     * span name, a service name — and one newline or bar in it breaks the row.
+     */
+    private static String cell(String value) {
+        String single = collapse(value);
+        return single.isEmpty() ? "—" : escapeBars(single);
     }
 
     private static String or(@Nullable String value) {
@@ -1284,8 +1309,13 @@ final class Text {
         row(text, rule);
     }
 
+    /** One row of a table, every cell made safe for it by {@link #cell(String)}. */
     private static void row(StringBuilder text, List<String> cells) {
-        text.append("| ").append(String.join(" | ", cells)).append(" |\n");
+        text.append('|');
+        for (String each : cells) {
+            text.append(' ').append(cell(each)).append(" |");
+        }
+        text.append('\n');
     }
 
     private static String pad(String value, int width) {
