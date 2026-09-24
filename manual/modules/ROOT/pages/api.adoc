@@ -717,6 +717,7 @@ Such a span still appears in its trace and in `/api/traces`, but in nothing that
 `QueryStats.callers[].endpoint` and `ErrorGroup.endpoints[].name` are the nearest *entry span up the parent chain within the trace*, not the trace's root.
 A query issued by the second service of a two-service trace is therefore attributed to that service's own endpoint.
 A span whose chain leaves the window is reported as `(no endpoint)`.
+Both lists are sorted by count descending, then by name, so the endpoint an `error` finding's title names is the same on every call over the same window.
 
 [#nulls]
 === Nulls in series

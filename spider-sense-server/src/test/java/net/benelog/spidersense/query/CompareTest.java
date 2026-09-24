@@ -2,7 +2,9 @@ package net.benelog.spidersense.query;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import io.opentelemetry.proto.trace.v1.Span;
@@ -113,6 +115,23 @@ class CompareTest {
         assertThat(verdicts.get("java.lang.IllegalStateException")).isEqualTo(Compare.GONE);
         // The endpoint that stopped failing is better, whatever its percentile did.
         assertThat(endpointVerdicts().get("GET /ship")).isEqualTo(Compare.BETTER);
+    }
+
+    @Test
+    void rowsOfEqualVerdictAndWeightAreOrderedById() {
+        for (String type : new String[]{"orders.Zeta", "orders.Alpha", "orders.Mid"}) {
+            send(Otlp.failing(entry("/ship", BEFORE + 1000, 10), type, "failed",
+                    "at orders.Ship.run(Ship.java:1)"));
+            send(Otlp.failing(entry("/ship", AFTER + 1000, 10), type, "failed",
+                    "at orders.Ship.run(Ship.java:1)"));
+        }
+        flush();
+
+        List<Compare.ErrorDiff> errors = compare.compare(before, after, null).errors();
+
+        assertThat(errors).hasSize(3).extracting(Compare.ErrorDiff::verdict).containsOnly(Compare.SAME);
+        assertThat(errors).extracting(Compare.ErrorDiff::errorId)
+                .isSortedAccordingTo(Comparator.naturalOrder());
     }
 
     @Test

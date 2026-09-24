@@ -674,7 +674,7 @@ public final class Findings {
             }
             List<Stats.EndpointCount> endpoints = new ArrayList<>();
             byEndpoint.forEach((name, count) -> endpoints.add(new Stats.EndpointCount(name, count[0])));
-            endpoints.sort((a, b) -> Long.compare(b.count(), a.count()));
+            endpoints.sort(Stats.EndpointCount.MOST_FIRST);
 
             Map<String, Object> numbers = new LinkedHashMap<>();
             numbers.put("count", (long) records.size());
@@ -1371,7 +1371,7 @@ public final class Findings {
                 list.add(new Stats.Caller(endpoint,
                         Objects.requireNonNull(byService.get(endpoint), "every endpoint was named"),
                         count[0])));
-        list.sort((a, b) -> Long.compare(b.calls(), a.calls()));
+        list.sort(Stats.Caller.MOST_FIRST);
         return list;
     }
 

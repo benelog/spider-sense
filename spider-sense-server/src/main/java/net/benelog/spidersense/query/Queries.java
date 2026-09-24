@@ -263,7 +263,7 @@ public final class Queries {
                 + " SUM(CASE WHEN error THEN 1 ELSE 0 END) AS errors, SUM(duration_ns) AS total_ns,"
                 + " MAX(duration_ns) AS max_ns, " + responseBuckets.columns() + ", " + PERCENTILES
                 + " FROM span WHERE " + where.sql()
-                + " GROUP BY endpoint_id, service ORDER BY total_ns DESC";
+                + " GROUP BY endpoint_id, service ORDER BY total_ns DESC, endpoint_id";
 
         Map<String, Map<String, Long>> statusCodes = withStatusCodes ? statusCodes(where) : Map.of();
         double seconds = window.rangeSeconds();
@@ -432,7 +432,7 @@ public final class Queries {
                 + " SUM(duration_ns) AS total_ns, MAX(duration_ns) AS max_ns, MAX(start_ms) AS last_seen,"
                 + " SUM(CASE WHEN duration_ns > " + slowNs + " THEN 1 ELSE 0 END) AS slow_calls, "
                 + PERCENTILES + " FROM span WHERE " + where.sql()
-                + " GROUP BY query_id, service ORDER BY " + order + " LIMIT " + Math.max(1, limit);
+                + " GROUP BY query_id, service ORDER BY " + order + ", query_id LIMIT " + Math.max(1, limit);
 
         return sql.query(query, where.params(), rs -> {
             long calls = rs.getLong("calls");
@@ -508,7 +508,7 @@ public final class Queries {
                     list.add(new Stats.Caller(name,
                             callerService.getOrDefault(query.queryId(), Map.of())
                                     .getOrDefault(name, query.service()), count[0])));
-            list.sort((a, b) -> Long.compare(b.calls(), a.calls()));
+            list.sort(Stats.Caller.MOST_FIRST);
             withCallers.add(new Stats.QueryStats(query.queryId(), query.service(), query.system(),
                     query.namespace(), query.operation(), query.table(), query.statement(), query.calls(),
                     query.errors(), query.avgMs(), query.p50Ms(), query.p95Ms(), query.maxMs(),
@@ -631,7 +631,7 @@ public final class Queries {
         String query = "SELECT error_id, service, MAX(error_type) AS type, MAX(error_message) AS message,"
                 + " COUNT(*) AS count, MIN(start_ms) AS first_seen, MAX(start_ms) AS last_seen"
                 + " FROM span WHERE " + where.sql()
-                + " GROUP BY error_id, service ORDER BY count DESC LIMIT " + Math.max(1, limit);
+                + " GROUP BY error_id, service ORDER BY count DESC, error_id LIMIT " + Math.max(1, limit);
 
         return sql.query(query, where.params(), rs ->
                 new Stats.ErrorGroup(rs.getString("error_id"), rs.getString("service"),
@@ -679,7 +679,7 @@ public final class Queries {
         counts.forEach((errorId, byEndpoint) -> {
             List<Stats.EndpointCount> list = new ArrayList<>();
             byEndpoint.forEach((name, count) -> list.add(new Stats.EndpointCount(name, count[0])));
-            list.sort((a, b) -> Long.compare(b.count(), a.count()));
+            list.sort(Stats.EndpointCount.MOST_FIRST);
             endpoints.put(errorId, list);
         });
         return endpoints;

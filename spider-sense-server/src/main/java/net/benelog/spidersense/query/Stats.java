@@ -1,5 +1,6 @@
 package net.benelog.spidersense.query;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
@@ -70,6 +71,10 @@ public final class Stats {
 
     /** Which endpoint issued a query, and how often. */
     public record Caller(String endpoint, String service, long calls) {
+
+        /** The most frequent first, and the endpoint name between equals. */
+        public static final Comparator<Caller> MOST_FIRST =
+                Comparator.comparingLong(Caller::calls).reversed().thenComparing(Caller::endpoint);
     }
 
     /**
@@ -86,6 +91,14 @@ public final class Stats {
     }
 
     public record EndpointCount(String name, long count) {
+
+        /**
+         * The most frequent first, and the name between equals, so the endpoint a
+         * title names does not depend on the order the rows were read in.
+         */
+        public static final Comparator<EndpointCount> MOST_FIRST =
+                Comparator.comparingLong(EndpointCount::count).reversed()
+                        .thenComparing(EndpointCount::name);
     }
 
     public record ErrorSample(String traceId, String spanId, long at, @Nullable String message,

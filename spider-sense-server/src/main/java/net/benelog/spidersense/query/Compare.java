@@ -95,7 +95,8 @@ public final class Compare {
             endpointDiffs.add(new EndpointDiff(id, any.service(), any.name(), sideBefore, sideAfter,
                     verdict(sideBefore, sideAfter)));
         }
-        endpointDiffs.sort(order(EndpointDiff::verdict, diff -> weight.get(diff.endpointId())));
+        endpointDiffs.sort(order(EndpointDiff::verdict, diff -> weight.get(diff.endpointId()),
+                EndpointDiff::endpointId));
 
         long beforeRequests = queries.totals(before, service).requests();
         long afterRequests = queries.totals(after, service).requests();
@@ -114,7 +115,8 @@ public final class Compare {
             queryDiffs.add(new QueryDiff(id, any.service(), any.statement(), sideBefore, sideAfter,
                     queryVerdict(sideBefore, sideAfter)));
         }
-        queryDiffs.sort(order(QueryDiff::verdict, diff -> queryWeight.get(diff.queryId())));
+        queryDiffs.sort(order(QueryDiff::verdict, diff -> queryWeight.get(diff.queryId()),
+                QueryDiff::queryId));
 
         Map<String, Stats.ErrorGroup> beforeErrors = errors(before, service);
         Map<String, Stats.ErrorGroup> afterErrors = errors(after, service);
@@ -130,7 +132,7 @@ public final class Compare {
                     countAfter, errorVerdict(countBefore, countAfter)));
         }
         errorDiffs.sort(order(ErrorDiff::verdict,
-                diff -> (double) Math.max(diff.before(), diff.after())));
+                diff -> (double) Math.max(diff.before(), diff.after()), ErrorDiff::errorId));
 
         return new Comparison(before, after, queries.totals(before, service),
                 queries.totals(after, service), endpointDiffs, queryDiffs, errorDiffs);
@@ -203,12 +205,17 @@ public final class Compare {
         return to > from * (1 + RELATIVE) && to - from >= absolute;
     }
 
-    /** Worst first: {@code worse}, {@code new}, {@code same}, {@code better}, {@code gone}. */
+    /**
+     * Worst first: {@code worse}, {@code new}, {@code same}, {@code better}, {@code gone};
+     * the heaviest first within a verdict, and the id between equal weights, so two
+     * calls over the same windows list the rows in the same order (cli.adoc).
+     */
     private static <T> Comparator<T> order(java.util.function.Function<T, String> verdict,
-            java.util.function.ToDoubleFunction<T> weight) {
+            java.util.function.ToDoubleFunction<T> weight, java.util.function.Function<T, String> id) {
         List<String> verdicts = List.of(WORSE, NEW, SAME, BETTER, GONE);
         return Comparator.<T>comparingInt(diff -> verdicts.indexOf(verdict.apply(diff)))
-                .thenComparing(Comparator.comparingDouble(weight).reversed());
+                .thenComparing(Comparator.comparingDouble(weight).reversed())
+                .thenComparing(id);
     }
 
     // --- sides ---------------------------------------------------------------

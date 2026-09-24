@@ -155,7 +155,7 @@ Every row carries a verdict, decided in this order.
 * `better` when the same measure shrinks by that much, or when errors disappear.
 * `same` otherwise.
 
-Endpoints are sorted worst first: `worse`, then `new`, `same`, `better`, `gone`, each group by total time descending.
+Endpoints are sorted worst first: `worse`, then `new`, `same`, `better`, `gone`, each group by total time descending, then by id.
 Queries and errors are sorted the same way.
 
 === The text rendering

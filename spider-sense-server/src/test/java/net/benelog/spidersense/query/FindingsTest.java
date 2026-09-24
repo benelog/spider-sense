@@ -142,6 +142,21 @@ class FindingsTest {
     }
 
     @Test
+    void anErrorAsFrequentAtTwoEndpointsIsNamedAfterTheFirstByName() {
+        decoder.accept(Otlp.traces(Otlp.service("orders"),
+                Otlp.failing(entry(1, "/orders/{id}/ship", 10), "java.lang.IllegalStateException",
+                        "no such order 42", STACKTRACE),
+                Otlp.failing(entry(2, "/orders/{id}", 10), "java.lang.IllegalStateException",
+                        "no such order 43", STACKTRACE)));
+        flush();
+
+        Findings.Finding finding = of(Findings.ERROR).get(0);
+
+        assertThat(finding.numbers().get("count")).isEqualTo(2L);
+        assertThat(finding.title()).isEqualTo("IllegalStateException in GET /orders/{id}");
+    }
+
+    @Test
     void aStatementRepeatedUnderOneEntrySpanIsAnNPlusOne() {
         Span.Builder root = entry(1, "/orders/{id}", 60);
         List<Span.Builder> spans = new ArrayList<>();
