@@ -261,6 +261,30 @@ class OtlpDecoderTest {
     }
 
     /**
+     * A uint64 written as a JSON number past 2^63 is legal OTLP that Spider Silk's parser
+     * refuses; the fallback through protobuf's own parser must still read the ids as hex.
+     */
+    @Test
+    void hexIdsAreHexWhenOnlyProtobufsParserReadsTheDocument() throws Exception {
+        String json = """
+                {"resourceSpans":[{"resource":{"attributes":[
+                  {"key":"service.name","value":{"stringValue":"spring-orders"}}]},
+                 "scopeSpans":[{"spans":[
+                  {"traceId":"%s","spanId":"%s","name":"GET /orders","kind":2,
+                   "startTimeUnixNano":1700000000000000000,"endTimeUnixNano":18446744073709551615}]}]}]}
+                """.formatted(TRACE, ROOT);
+        ExportTraceServiceRequest.Builder parsed = ExportTraceServiceRequest.newBuilder();
+        OtlpJson.merge(json, parsed);
+
+        Batch batch = decoder.accept(parsed.build());
+
+        assertThat(batch.spans()).singleElement().satisfies(span -> {
+            assertThat(span.traceId()).isEqualTo(TRACE);
+            assertThat(span.spanId()).isEqualTo(ROOT);
+        });
+    }
+
+    /**
      * Protobuf's JSON parser also accepts the proto field names, so a hex id under
      * {@code trace_id} must be read as hex too, not as 24 bytes of base64.
      */

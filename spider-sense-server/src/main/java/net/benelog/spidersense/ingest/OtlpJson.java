@@ -2,6 +2,8 @@ package net.benelog.spidersense.ingest;
 
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.Message;
@@ -39,10 +41,33 @@ public final class OtlpJson {
         try {
             JsonFormat.parser().ignoringUnknownFields().merge(hexIdsToBase64(json), builder);
         } catch (Json.JsonException e) {
-            // Not JSON we could walk; let JsonFormat report what is wrong with it.
+            // Not JSON Spider Silk's parser walks, such as a uint64 written as a number past
+            // 2^63, which OTLP allows. JsonFormat may still read it, so the ids are rewritten in
+            // the text instead; handed over as they are, hex ids would decode as base64 into
+            // ids of the wrong length, and every span would be skipped with a 200.
             builder.clear();
-            JsonFormat.parser().ignoringUnknownFields().merge(json, builder);
+            JsonFormat.parser().ignoringUnknownFields().merge(hexIdsToBase64InText(json), builder);
         }
+    }
+
+    /**
+     * An id member in the text: its key, and a value that may be hex. Inside a string value
+     * every quote is escaped, so a key followed by an unescaped quote is a real member.
+     */
+    private static final Pattern ID_MEMBER = Pattern.compile(
+            "\"(traceId|trace_id|spanId|span_id|parentSpanId|parent_span_id)\"(\\s*:\\s*)\"([0-9A-Fa-f]{16,32})\"");
+
+    /** {@link #hexIdsToBase64} over the text, for a document the tree cannot be built from. */
+    static String hexIdsToBase64InText(String json) {
+        Matcher member = ID_MEMBER.matcher(json);
+        StringBuilder out = new StringBuilder(json.length());
+        while (member.find()) {
+            String key = member.group(1);
+            member.appendReplacement(out, Matcher.quoteReplacement(
+                    "\"" + key + "\"" + member.group(2) + "\"" + convertIfHex(key, member.group(3)) + "\""));
+        }
+        member.appendTail(out);
+        return out.toString();
     }
 
     /**
