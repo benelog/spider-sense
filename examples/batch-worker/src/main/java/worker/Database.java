@@ -45,7 +45,7 @@ public final class Database {
      */
     public static void createSchema(DataSource dataSource) {
         try (Connection connection = dataSource.getConnection();
-             Statement statement = connection.createStatement()) {
+            Statement statement = connection.createStatement()) {
             statement.execute("""
                     create table if not exists accounts (
                         id          int auto_increment primary key,
