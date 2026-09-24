@@ -49,7 +49,8 @@ export function render(root, ctx) {
   function paintModeToggle() {
     fill(modeBox, loadToggle(mode, (next) => {
       mode = next;
-      router.setQuery({ chart: next === 'requests' ? '' : next });
+      // Written in full, Requests too: the Service page defaults to Load, and the choice crosses.
+      router.setQuery({ chart: next });
       paintModeToggle();
       paintChart(lastSeries);
     }));

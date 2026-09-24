@@ -13,6 +13,8 @@ export const state = {
   service: '',
   range: '15m',
   live: false,
+  /** The Requests | Load choice, '' when no page has made one (pages.adoc#services). */
+  chart: '',
   status: null,
   /** The marks the shell keeps fresh, so every chart can draw them for free. */
   marks: [],
@@ -24,6 +26,7 @@ export function sharedQuery() {
   if (state.service) q.service = state.service;
   if (state.range !== '15m') q.range = state.range;
   if (state.live) q.live = '1';
+  if (state.chart) q.chart = state.chart;
   return q;
 }
 

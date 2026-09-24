@@ -84,6 +84,7 @@ function syncStateFromQuery(query) {
   state.service = query.service || '';
   state.range = RANGES.some((r) => r.id === query.range) ? query.range : '15m';
   state.live = query.live === '1';
+  state.chart = query.chart === 'load' || query.chart === 'requests' ? query.chart : '';
   el.serviceSelect.value = state.service;
   el.rangeSelect.value = state.range;
   el.liveToggle.setAttribute('aria-pressed', String(state.live));
