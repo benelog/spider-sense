@@ -237,6 +237,46 @@ class McpCommandTest {
         }
     }
 
+    /**
+     * A server that answers a forwarded message with an error status other than
+     * 404 or 405 is running and refusing that message: the call fails, and the
+     * next one asks the server again rather than turning to the file for good.
+     */
+    @Test
+    void aStatusFromARunningServerFailsTheCallAndTheSessionKeepsAskingIt() throws IOException {
+        java.util.concurrent.atomic.AtomicInteger asked = new java.util.concurrent.atomic.AtomicInteger();
+        com.sun.net.httpserver.HttpServer refusing = com.sun.net.httpserver.HttpServer.create(
+                new java.net.InetSocketAddress(java.net.InetAddress.getLoopbackAddress(), 0), 0);
+        refusing.createContext("/mcp", exchange -> {
+            asked.incrementAndGet();
+            byte[] body = "{\"error\":\"The body is larger than 1 MB\"}".getBytes(UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(413, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        refusing.start();
+        try {
+            String base = "http://127.0.0.1:" + refusing.getAddress().getPort();
+            String findings = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":"
+                    + "{\"name\":\"findings\",\"arguments\":{}}}";
+            String again = findings.replace("\"id\":1", "\"id\":2");
+
+            Run run = runAt(base, findings + "\n" + again + "\n", "mcp");
+
+            List<String> lines = run.out().lines().toList();
+            assertThat(lines).hasSize(2);
+            for (String line : lines) {
+                assertThat(Json.parse(line).asObject().getObject("result").getBoolean("isError")).isTrue();
+                assertThat(text(line)).contains("refused the call").contains("413");
+            }
+            assertThat(run.err()).as("no turn to the file").isEmpty();
+            assertThat(asked.get()).as("both calls reached the server").isEqualTo(2);
+        } finally {
+            refusing.stop(0);
+        }
+    }
+
     @Test
     void mcpTakesOnlyTheTwoOptionsThatSayWhereToRead() {
         assertThat(run("", "mcp", "--since=5m").exit()).isEqualTo(2);

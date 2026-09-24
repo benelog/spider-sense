@@ -109,6 +109,10 @@ final class Mcp {
                 // Running, only slow: this call fails and the next one asks it again.
                 String said = e.said();
                 return server.handle(line, (name, arguments) -> McpServer.ToolResult.failed(said));
+            } catch (Remote.Refused e) {
+                // Running, and it refused this one message: the same.
+                String said = String.valueOf(e.getMessage());
+                return server.handle(line, (name, arguments) -> McpServer.ToolResult.failed(said));
             } catch (Remote.Unreachable e) {
                 if (named) {
                     String said = "no Spider Sense at " + forwardTo + " (" + e.getMessage() + ")";

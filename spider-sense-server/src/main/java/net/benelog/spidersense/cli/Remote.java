@@ -64,6 +64,18 @@ final class Remote {
         }
     }
 
+    /**
+     * A Spider Sense answered a forwarded message with an error status: one too
+     * large for its body limit, say. It is running, so this call fails and the
+     * next one asks it again; the file is not the better answer.
+     */
+    static final class Refused extends RuntimeException {
+
+        Refused(String base, String why) {
+            super("the Spider Sense at " + base + " refused the call: " + why);
+        }
+    }
+
     private static final Duration CONNECT = Duration.ofSeconds(2);
     private static final Duration READ = Duration.ofMinutes(2);
 
@@ -212,9 +224,11 @@ final class Remote {
      *
      * <p>The client, the timeouts and the {@link Unreachable} rule are the CLI's
      * own, so "is there a Spider Sense there" is answered the same way for every
-     * command. A status of 400 or more is unreachable too: this server answers a
-     * JSON-RPC error with 200, so a status means the thing at that URL is not a
-     * Spider Sense of this version, and the file is the better answer.
+     * command. A 404 or 405 is unreachable too: this server answers a JSON-RPC
+     * error with 200 and has {@code POST /mcp}, so either means the thing at that
+     * URL is not a Spider Sense of this version, and the file is the better
+     * answer. Any other error status is a running Spider Sense refusing this one
+     * message ({@link Refused}).
      *
      * @return the response body, or null when the server answered with none
      */
@@ -234,8 +248,12 @@ final class Remote {
             Thread.currentThread().interrupt();
             throw new Unreachable("interrupted");
         }
-        if (response.statusCode() >= 400) {
-            throw new Unreachable("HTTP " + response.statusCode());
+        int status = response.statusCode();
+        if (status == 404 || status == 405) {
+            throw new Unreachable("HTTP " + status);
+        }
+        if (status >= 400) {
+            throw new Refused(base, "HTTP " + status + ", " + message(response));
         }
         String answer = response.body();
         return answer == null || answer.isBlank() ? null : answer;

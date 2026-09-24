@@ -72,6 +72,8 @@ When none answers, the `mcp` command opens the H2 file in process exactly as the
 `--db` reads a file without asking any server (xref:cli.adoc#fallback[The direct-file fallback]).
 A `--url` named on the command line states that a server is there, so when nothing answers it the call is a failed tool result saying so, rather than a read of a file that may hold a different application.
 A Spider Sense that is busy past the CLI's 2 minutes answers that call with a failed tool result saying so, and the next call asks it again.
+So does one that answers a call with an error status other than `404` or `405`: it is running and refused that one message.
+A `404` or `405` means what answers at the URL is not a Spider Sense of this version, and the session turns to the file as when nothing answers.
 
 stdio is the transport for a host on the same machine, and the one that still answers after the application has crashed.
 
