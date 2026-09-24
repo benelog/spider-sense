@@ -40,6 +40,19 @@ class SqlShapeTest {
                 .containsExactly("items.name");
     }
 
+    /** The agent's sanitizer keeps comments; a hint or a trailing note names no column. */
+    @Test
+    void theWordsOfACommentAreNoColumns() {
+        assertThat(predicates("select * from items where id = ? -- trailing comment here"))
+                .containsExactly("items.id");
+        assertThat(predicates("select * from items where id = ? /* hint */ and sku = ?"))
+                .containsExactly("items.id", "items.sku");
+        assertThat(predicates("select * from items where id = ?\n-- a note\nand sku = ? /*traceparent=?*/"))
+                .containsExactly("items.id", "items.sku");
+        assertThat(predicates("select * from items where name = '-- not a comment' and sku = ?"))
+                .containsExactly("items.name", "items.sku");
+    }
+
     @Test
     void aBareColumnBelongsToTheOnlyTable() {
         assertThat(predicates("select * from items where category = ? and supplier_id = ?"))

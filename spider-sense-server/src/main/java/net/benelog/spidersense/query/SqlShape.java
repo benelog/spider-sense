@@ -421,6 +421,14 @@ final class SqlShape {
                 char c = statement.charAt(i);
                 if (Character.isWhitespace(c)) {
                     i++;
+                } else if (statement.startsWith("--", i)) {
+                    // A comment is kept by the agent's sanitizer (a hint, an sqlcommenter
+                    // suffix); its words are no names of the statement.
+                    int end = statement.indexOf('\n', i);
+                    i = end < 0 ? length : end + 1;
+                } else if (statement.startsWith("/*", i)) {
+                    int end = statement.indexOf("*/", i + 2);
+                    i = end < 0 ? length : end + 2;
                 } else if (c == '\'') {
                     i = literal(statement, i);
                 } else if (c == '?') {
