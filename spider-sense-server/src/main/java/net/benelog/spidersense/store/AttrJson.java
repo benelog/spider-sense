@@ -217,6 +217,9 @@ public final class AttrJson {
             case String text -> holder.put("v", text);
             case Long number -> holder.put("v", number.longValue());
             case Integer number -> holder.put("v", number.longValue());
+            // JSON has no NaN or Infinity, and Spider Silk refuses to write one: the
+            // attribute keeps its value as the text Java spells it.
+            case Double number when !Double.isFinite(number) -> holder.put("v", number.toString());
             case Double number -> holder.put("v", number.doubleValue());
             case Boolean flag -> holder.put("v", flag.booleanValue());
             case List<?> list -> {

@@ -100,6 +100,21 @@ class WriterTest {
         assertThat(pointsWithASeries()).isEqualTo(1);
     }
 
+    /** A double attribute JSON has no number for is kept as text, not refused with its export. */
+    @Test
+    void aNonFiniteDoubleAttributeIsStoredAsText() {
+        io.opentelemetry.proto.common.v1.KeyValue nan = io.opentelemetry.proto.common.v1.KeyValue.newBuilder()
+                .setKey("ratio")
+                .setValue(io.opentelemetry.proto.common.v1.AnyValue.newBuilder().setDoubleValue(Double.NaN))
+                .build();
+        decoder.accept(Otlp.traces(Otlp.service("orders"), Otlp.span("%032x".formatted(3), "%016x".formatted(3),
+                "GET /orders", Span.SpanKind.SPAN_KIND_SERVER, AT, 5, nan)));
+        store.writer().awaitIdle(5_000);
+
+        assertThat(store.sql().query("SELECT attributes FROM span", List.of(), rs -> rs.getString(1)))
+                .singleElement().asString().contains("\"ratio\":\"NaN\"");
+    }
+
     /** Buckets past their column are left out; the point keeps its count and sum. */
     @Test
     void aHistogramWithTooManyBucketsIsStoredWithoutThem() {
