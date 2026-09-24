@@ -225,7 +225,9 @@ When the block names a `collector`, a `host` or a `port`, it also sets the envir
 A CLI command therefore asks the Spider Sense the application is sending to rather than the default port.
 When the block names none of them, the variable stays unset and the CLI's own default applies.
 That default is the URL the task's `spidersense.*` properties imply, so a port set in `configFile` or in `spider-sense.properties` is followed too.
-The task exits with the CLI's exit code, and `check` reports its verdict through that code.
+A CLI exit code other than `0` fails the task, and Gradle's failure message names that code as the process's exit value.
+`./gradlew` itself exits `1` for every failed task, so a script cannot tell the CLI's codes `1` to `4` apart through the task.
+A script that branches on the code runs `java -jar` on the jar itself, and `spiderSenseCheck` fails with a message of its own for each outcome of `check` (<<check-task,Check as a build step>>).
 
 `spiderSenseInit` runs `init --dir=<the project directory> --jar=<the jar>`.
 It writes the Spider Sense block into the project's `CLAUDE.md` and installs the skills into `.claude/skills/`, as xref:agent-skill.adoc#init[The Agent Skill] describes.
