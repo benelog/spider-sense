@@ -16,6 +16,9 @@ export function render(root, ctx) {
   let liveTimer = null;
   let truncated = false;
   const hidden = new Set();
+  /** The service and range the points were last loaded for in full; Live only merges within them. */
+  let loadedFor = null;
+  const scope = () => api.state.service + '|' + api.state.range;
 
   ctx.setTitle('Response time scatter');
 
@@ -211,6 +214,7 @@ export function render(root, ctx) {
   }
 
   async function load(incremental) {
+    const requested = scope();
     try {
       const now = Date.now();
       const opts = incremental ? { window: { from: now - 10000, to: now } } : undefined;
@@ -219,6 +223,7 @@ export function render(root, ctx) {
       truncated = !!res.truncated;
       const incoming = res.points || [];
       if (incremental) {
+        if (requested !== loadedFor) return;   // asked for a service or range no longer shown
         const seen = new Set(points.map((p) => p[4]));
         const fresh = incoming.filter((p) => !seen.has(p[4]));
         const w = api.windowFor();
@@ -226,6 +231,7 @@ export function render(root, ctx) {
         paintBar();
         if (chart) chart.setPoints(shown(), w);
       } else {
+        loadedFor = requested;
         points = incoming;
         const w = (res.window && res.window.from) ? res.window : api.windowFor();
         if (!points.length && !(api.state.status && api.state.status.counts && api.state.status.counts.spans)) {
@@ -254,7 +260,9 @@ export function render(root, ctx) {
   return {
     refresh: () => {
       startLive();
-      if (api.state.live) return;     // the 2 s timer owns the refresh while Live is on
+      // The 2 s timer owns the refresh while Live is on, but it only merges the last 10 s of the
+      // same service and range: a change of either reloads the whole window and its traces.
+      if (api.state.live && loadedFor === scope()) return;
       load();
       loadTraces();
     },
