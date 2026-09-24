@@ -613,6 +613,7 @@ A pool at its limit also shows as endpoints whose p95 rises while their `dbMsPer
 One collector, `jvm.gc.duration` per `jvm.gc.name` and `jvm.gc.action`, with a point in the window whose longest single collection is at least `slow.request.ms`, or whose collections summed over the export interval take at least 10% of that interval.
 It is `high` for a single collection over the threshold, and `medium` otherwise.
 The impact it is ranked by is the longest collection.
+Under cumulative temporality, the OpenTelemetry Java agent's default, a point's `max` is the longest collection since the JVM started, so a point stands for a collection in its own interval only when its `max` rose above the previous point's; otherwise its interval's mean collection counts, and the window's first point is only the baseline.
 
 `subject.jvm` is `gc:<name>`, and the title is `<gc> paused for <worstMs>`.
 

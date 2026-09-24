@@ -1531,10 +1531,12 @@ public final class Findings {
         long collections = 0;
         for (int i = 0; i < points.size(); i++) {
             MetricPoint point = points.get(i);
-            double longest = point.max() * toMillis;
-            if (longest > worstMs) {
-                worstMs = longest;
-                worstAt = point.at();
+            if (!cumulative) {
+                double longest = point.max() * toMillis;
+                if (longest > worstMs) {
+                    worstMs = longest;
+                    worstAt = point.at();
+                }
             }
             if (cumulative && i == 0) {
                 continue;
@@ -1542,8 +1544,20 @@ public final class Findings {
             long count = point.count();
             double sum = point.sum();
             if (cumulative) {
-                count -= points.get(i - 1).count();
-                sum -= points.get(i - 1).sum();
+                MetricPoint previous = points.get(i - 1);
+                count -= previous.count();
+                sum -= previous.sum();
+                // A cumulative point's max is the longest collection since the JVM started, so
+                // it names this interval only when it rose in it; the interval's mean is a
+                // collection at least that long in any case.
+                double longest = count > 0 ? sum / count * toMillis : 0;
+                if (count > 0 && point.max() > previous.max()) {
+                    longest = Math.max(longest, point.max() * toMillis);
+                }
+                if (longest > worstMs) {
+                    worstMs = longest;
+                    worstAt = point.at();
+                }
             }
             if (count > 0) {
                 collections += count;

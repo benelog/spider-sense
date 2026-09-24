@@ -824,6 +824,16 @@ class FindingsTest {
     }
 
     @Test
+    void aLongCollectionBeforeTheWindowIsNoGcPauseInIt() {
+        decoder.accept(Otlp.traces(Otlp.service("orders"), entry(1, "/orders", 10)));
+        gc(NOW - 1000, 2, 0.62, 0.61);
+        gc(NOW, 3, 0.63, 0.61);
+        flush();
+
+        assertThat(of(Findings.GC_PAUSE)).isEmpty();
+    }
+
+    @Test
     void shortCollectionsAreNoFinding() {
         decoder.accept(Otlp.traces(Otlp.service("orders"), entry(1, "/orders", 10)));
         gc(NOW - 1000, 10, 0.02, 0.004);
