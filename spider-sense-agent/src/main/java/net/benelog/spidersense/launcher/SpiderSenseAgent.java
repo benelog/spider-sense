@@ -48,6 +48,7 @@ public final class SpiderSenseAgent {
         }
 
         // 2. The embedded collector + UI, unless we forward to one elsewhere.
+        boolean exportNowhere = false;
         try {
             if (config.collector() != null) {
                 System.out.println(PREFIX + "forwarding to " + config.otlpEndpoint());
@@ -60,10 +61,26 @@ public final class SpiderSenseAgent {
             }
         } catch (Throwable t) {
             warn("the embedded UI did not start; the application is unaffected", t);
+            try {
+                exportNowhere = boundByAnother(t) && !spiderSenseAt(config.baseUrl());
+                if (exportNowhere) {
+                    System.err.println(PREFIX + "port " + config.port() + " is held by something that is not"
+                            + " Spider Sense; telemetry is not exported. Set -Dspidersense.port= to a free port.");
+                }
+            } catch (Throwable probe) {
+                warn("could not tell what holds the port", probe);
+            }
         }
 
         // 3. The OpenTelemetry defaults, never overriding what the user already set.
         try {
+            if (exportNowhere) {
+                // Set first, so the otlp defaults below find them set: exporting to a foreign
+                // port would fail on every interval for the life of the process.
+                setDefault("otel.traces.exporter", "none");
+                setDefault("otel.metrics.exporter", "none");
+                setDefault("otel.logs.exporter", "none");
+            }
             applyOtelDefaults(config);
         } catch (Throwable t) {
             warn("could not set the OpenTelemetry defaults", t);
@@ -189,6 +206,39 @@ public final class SpiderSenseAgent {
     }
 
     static void warn(String what, Throwable t) {
-        System.err.println(PREFIX + what + ": " + t);
+        Throwable cause = t.getCause();
+        // The cause says why: "Failed to start Jetty on port 4000" alone does not name the BindException.
+        System.err.println(PREFIX + what + ": " + t + (cause != null ? " (" + cause + ")" : ""));
+    }
+
+    /** Whether the embedded server failed because its port was taken. */
+    static boolean boundByAnother(Throwable failure) {
+        for (Throwable t = failure; t != null; t = t.getCause()) {
+            if (t instanceof java.net.BindException) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Whether a Spider Sense answers at {@code baseUrl}: then the port is another application's
+     * embedded one, and exporting to it is what the user wants (modes.adoc#troubleshooting).
+     */
+    static boolean spiderSenseAt(String baseUrl) {
+        try {
+            java.net.HttpURLConnection connection = (java.net.HttpURLConnection)
+                    URI.create(baseUrl + "/api/status").toURL().openConnection();
+            connection.setConnectTimeout(1_000);
+            connection.setReadTimeout(1_000);
+            try (java.io.InputStream in = connection.getInputStream()) {
+                String body = new String(in.readNBytes(64 * 1024), java.nio.charset.StandardCharsets.UTF_8);
+                return connection.getResponseCode() == 200 && body.replace(" ", "").contains("\"name\":\"SpiderSense\"");
+            } finally {
+                connection.disconnect();
+            }
+        } catch (java.io.IOException | RuntimeException e) {
+            return false;
+        }
     }
 }

@@ -56,6 +56,33 @@ class AgentDefaultsTest {
         assertThat(SpiderSenseAgent.effectiveServiceName(config)).isEqualTo("orders-api");
     }
 
+    /** Only a Spider Sense on the port is worth exporting to; anything else is foreign. */
+    @Test
+    void aPortIsAnotherSpiderSensesOnlyWhenItsStatusSaysSo() throws IOException {
+        com.sun.net.httpserver.HttpServer other = com.sun.net.httpserver.HttpServer.create(
+                new java.net.InetSocketAddress(java.net.InetAddress.getLoopbackAddress(), 0), 0);
+        String[] status = {"{\"name\": \"Spider Sense\", \"mode\": \"agent\"}"};
+        other.createContext("/", exchange -> {
+            byte[] body = status[0].getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        other.start();
+        try {
+            String base = "http://127.0.0.1:" + other.getAddress().getPort();
+            assertThat(SpiderSenseAgent.spiderSenseAt(base)).isTrue();
+
+            status[0] = "<html>a web server of some other kind</html>";
+            assertThat(SpiderSenseAgent.spiderSenseAt(base)).isFalse();
+        } finally {
+            other.stop(0);
+        }
+        assertThat(SpiderSenseAgent.boundByAnother(
+                new IllegalStateException("Failed to start Jetty", new java.net.BindException("in use")))).isTrue();
+        assertThat(SpiderSenseAgent.boundByAnother(new IllegalStateException("no"))).isFalse();
+    }
+
     @Test
     void fillsInTheDefaultsForALocalTool() {
         SpiderSenseAgent.applyOtelDefaults(Config.defaults().withPort(4010));

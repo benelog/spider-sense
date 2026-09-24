@@ -321,7 +321,7 @@ xref:marks-and-compare.adoc#marks[Marks] describes them.
 | No `-Dotel.service.name=` was set. Set it and restart.
 
 | Port 4000 is already in use
-| Another Spider Sense, or another application under the agent, has it. Use `-Dspidersense.port=4001` and `--url=http://127.0.0.1:4001`, or point the second application at the first with `-Dspidersense.collector=http://127.0.0.1:4000`.
+| Another Spider Sense, or another application under the agent, has it, and the application's telemetry goes to that one. Use `-Dspidersense.port=4001` and `--url=http://127.0.0.1:4001`, or point the second application at the first with `-Dspidersense.collector=http://127.0.0.1:4000`. When what holds the port is not a Spider Sense, the agent says so on stderr and exports nothing, rather than failing an export to it every few seconds.
 
 | Two applications, and each trace stops at the service boundary
 | Both are embedding their own Spider Sense. Put them in forwarding mode against one standalone.
