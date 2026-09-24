@@ -77,6 +77,38 @@ class SqlShapeTest {
     }
 
     @Test
+    void aPredicateAfterAClosedSubqueryIsStillAPredicate() {
+        String statement = "select * from items i where i.id in (select l.item_id from lines l)"
+                + " and i.name = ?";
+
+        assertThat(SqlShape.of(statement).readable()).isTrue();
+        assertThat(tables(statement)).containsExactly("items", "lines");
+        assertThat(predicates(statement)).as("the where the subquery interrupted goes on after its )")
+                .containsExactly("items.id", "items.name");
+    }
+
+    @Test
+    void aNestedSubqueryRestoresEachRegionItInterrupted() {
+        String statement = "select * from items i where i.id in (select l.item_id from lines l"
+                + " where l.order_id in (select o.id from orders o) and l.quantity > ?)"
+                + " and i.name = ? order by i.created_at";
+
+        assertThat(predicates(statement)).containsExactly("items.id", "lines.order_id",
+                "lines.quantity", "items.name", "items.created_at");
+    }
+
+    @Test
+    void aSubqueryInTheSelectListLeavesTheSelectListOutsideItsWhere() {
+        String statement = "select (select max(l.quantity) from lines l where l.order_id = ?) as top,"
+                + " i.name from items i where i.category = ?";
+
+        assertThat(SqlShape.of(statement).readable())
+                .as("i.name after the ) is a selected column, not a predicate naming an unseen alias")
+                .isTrue();
+        assertThat(predicates(statement)).containsExactly("lines.order_id", "items.category");
+    }
+
+    @Test
     void aWriteNamesItsTableAndOnlyItsWhereClauseIsAPredicate() {
         assertThat(tables("update items set stock = ? where id = ?")).containsExactly("items");
         assertThat(predicates("update items set stock = ? where id = ?"))

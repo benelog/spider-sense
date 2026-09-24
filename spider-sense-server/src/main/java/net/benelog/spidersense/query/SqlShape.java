@@ -1,6 +1,8 @@
 package net.benelog.spidersense.query;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -20,9 +22,12 @@ import org.jspecify.annotations.Nullable;
  * grammar: which column of which table would an index have to lead with
  * (findings.adoc#schema).
  *
- * <p>The scan is flat: a subquery is not a scope of its own, so the tables and
- * the predicates of {@code where x in (select id from y where y.a = ?)} are
- * those of both. The one thing it refuses to guess is attribution, and
+ * <p>The scan is flat where names are concerned: a subquery is not a scope of
+ * its own, so the tables and the predicates of
+ * {@code where x in (select id from y where y.a = ?)} are those of both. Only
+ * the clause a token sits in is kept per parenthesis, so the {@code where} that
+ * a subquery interrupts goes on after its {@code )}. The one thing it refuses
+ * to guess is attribution, and
  * {@link #readable()} says so: an unqualified column in a join, a column
  * qualified by the alias of a derived table, or a statement with no table at all
  * makes the whole shape unusable rather than half right. A block that is wrong
@@ -65,7 +70,10 @@ final class SqlShape {
     /** The keywords that open a table list, and what follows each. */
     private static final Set<String> TABLE_INTRO = Set.of("from", "join", "update", "into");
 
-    /** What closes a predicate or an order region; {@code )} never does (flat scan). */
+    /**
+     * What closes a predicate or an order region at the depth it is read at; a
+     * {@code )} restores the region its {@code (} interrupted.
+     */
     private static final Set<String> REGION_END = Set.of(
             "select", "from", "group", "having", "limit", "offset", "fetch", "union", "set",
             "values", "insert", "update", "delete", "join");
@@ -111,9 +119,24 @@ final class SqlShape {
 
     private void scan(List<Token> tokens) {
         Region region = Region.NONE;
+        // The region each open parenthesis interrupted: a subquery's "select"
+        // ends the region inside it, never the one around it.
+        Deque<Region> outer = new ArrayDeque<>();
         int i = 0;
         while (i < tokens.size()) {
             Token token = tokens.get(i);
+            if (token.is("(")) {
+                outer.push(region);
+                i++;
+                continue;
+            }
+            if (token.is(")")) {
+                if (!outer.isEmpty()) {
+                    region = outer.pop();
+                }
+                i++;
+                continue;
+            }
             String word = token.keyword();
             if (word != null && TABLE_INTRO.contains(word)) {
                 // "insert into" and "delete from" name a table; so does a join.
