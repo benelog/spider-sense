@@ -333,6 +333,40 @@ class ExportImportTest {
         throw new AssertionError("no slow-query finding in the window");
     }
 
+    /**
+     * An import neither brings a start mark in nor gives a running service the
+     * file's process id, either of which would move {@code since=start}.
+     */
+    @Test
+    void anImportLeavesTheRunningServicesStartAlone() {
+        serve(client -> {
+            postProtobuf(client, "/v1/traces", Otlp.traces(
+                    Otlp.resource(Otlp.attr("service.name", "spring-orders"), Otlp.attr("process.pid", 100)),
+                    Otlp.span(TRACE, ROOT, "GET /orders", Span.SpanKind.SPAN_KIND_SERVER, NOW, 5)).toByteArray());
+            long starts = rows(client, "SELECT COUNT(*) FROM mark WHERE name = 'start'");
+
+            String document = Json.obj()
+                    .put("spiderSense", Json.obj().put("schema", Schema.VERSION))
+                    .put("services", Json.arr().add(Json.obj().put("name", "spring-orders").put("pid", 200)
+                            .put("firstSeen", NOW - 60_000).put("lastSeen", NOW - 30_000)))
+                    .put("marks", Json.arr()
+                            .add(Json.obj().put("atMs", NOW + 50).put("name", "start").put("service", "spring-orders"))
+                            .add(Json.obj().put("atMs", NOW + 60).put("name", "before")))
+                    .toJson();
+            assertThat(postJson(client, "/api/import", document).statusCode()).isEqualTo(200);
+            postProtobuf(client, "/v1/traces", Otlp.traces(
+                    Otlp.resource(Otlp.attr("service.name", "spring-orders"), Otlp.attr("process.pid", 100)),
+                    Otlp.span(FAILING_TRACE, ROOT, "GET /orders", Span.SpanKind.SPAN_KIND_SERVER, NOW + 100, 5))
+                    .toByteArray());
+
+            assertThat(rows(client, "SELECT pid FROM service WHERE name = 'spring-orders'")).isEqualTo(100);
+            assertThat(rows(client, "SELECT COUNT(*) FROM mark WHERE name = 'start'")).isEqualTo(starts);
+            assertThat(rows(client, "SELECT COUNT(*) FROM mark WHERE name = 'before'")).isEqualTo(1);
+            assertThat(rows(client, "SELECT MIN(first_seen) FROM service WHERE name = 'spring-orders'"))
+                    .isEqualTo(NOW - 60_000);
+        });
+    }
+
     @Test
     void aDocumentOfAnotherSchemaVersionIsRefused() {
         serve(client -> {

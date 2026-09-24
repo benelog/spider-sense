@@ -867,8 +867,9 @@ Import is idempotent enough for a file imported twice.
 A log line is identified by its service, instant, severity, body, logger and ids, and a tingle by its instant, kind, service, title, detail and ids.
 Two identical rows in the file stay two rows.
 * A metric point is merged on its `(series, at)` key, with the series looked up or created by `(service, name, attributes)`.
-* A service row is merged.
-* A mark is skipped when one with the same name and instant exists.
+* A service row is inserted when the store has none of that name, and otherwise only widens its first and last sighting, keeping the stored process id, language and resource.
+The process id is the one the writer compares to insert a `start` mark, so an imported one would move `since=start` to the moment of the import.
+* A mark is skipped when one with the same name and instant exists, and a `start` mark is never imported: it would claim a run of an application that is not running here and become the newest start of its service.
 * A catalog row is merged on its key `(service, schema_name, table_name)` as the writer merges it (xref:storage.adoc#writer[How it is written]), so the table the file describes replaces the row the store had for it.
 
 A document whose `schema` is not this version's is a `400` naming both versions.

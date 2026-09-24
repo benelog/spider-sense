@@ -385,7 +385,9 @@ public final class Importer {
         for (Json.JsonValue value : marks) {
             Json.JsonObject mark = value.asObject();
             String name = string(mark, "name");
-            if (name == null) {
+            if (name == null || Marks.START.equals(name)) {
+                // A start mark claims a run of an application that is not running here,
+                // and would become the newest start of its service.
                 continue;
             }
             long at = longOr(mark, "atMs", 0);
@@ -474,15 +476,15 @@ public final class Importer {
             long firstSeen = longOr(service, "firstSeen", 0);
             long lastSeen = longOr(service, "lastSeen", firstSeen);
             String resource = nested(service, "resource", AttrJson.EMPTY_OBJECT);
+            // A stored row keeps its pid, language and resource: they describe the
+            // process running here, and a pid the writer does not recognise would
+            // make its next flush of that service insert a start mark at now.
             try (PreparedStatement update = connection.prepareStatement(
-                    "UPDATE service SET language = ?, pid = ?, first_seen = LEAST(first_seen, ?),"
-                            + " last_seen = GREATEST(last_seen, ?), resource = ? WHERE name = ?")) {
-                update.setString(1, Writer.cut(string(service, "language"), 64));
-                Writer.setLong(update, 2, number(service, "pid"));
-                update.setLong(3, firstSeen);
-                update.setLong(4, lastSeen);
-                update.setString(5, resource);
-                update.setString(6, name);
+                    "UPDATE service SET first_seen = LEAST(first_seen, ?),"
+                            + " last_seen = GREATEST(last_seen, ?) WHERE name = ?")) {
+                update.setLong(1, firstSeen);
+                update.setLong(2, lastSeen);
+                update.setString(3, name);
                 if (update.executeUpdate() > 0) {
                     continue;
                 }
