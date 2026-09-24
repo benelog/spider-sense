@@ -53,6 +53,36 @@ class IngestCapTest {
     }
 
     @Test
+    void aDroppedTraceStaysDroppedInTheNextSecond() {
+        IngestCap one = new IngestCap(1L, clock::get);
+        assertThat(one.accept(traceId(1))).isTrue();
+        assertThat(one.accept(traceId(2))).as("trace 2's child is over the cap").isFalse();
+
+        clock.addAndGet(1000);
+
+        assertThat(one.accept(traceId(2))).as("trace 2's parent, a second later").isFalse();
+        assertThat(one.droppedSpans()).isEqualTo(2);
+        assertThat(one.accept(traceId(3))).as("the dropped span took nothing from the new second")
+                .isTrue();
+        assertThat(one.accept(traceId(1))).as("an accepted trace still adds spans above the cap")
+                .isTrue();
+    }
+
+    @Test
+    void aBurstOfDroppedTracesDoesNotPushOutTheAcceptedOnes() {
+        for (int n = 1; n <= 10; n++) {
+            cap.accept(traceId(n));
+        }
+        for (int n = 11; n <= 20_010; n++) {
+            assertThat(cap.accept(traceId(n))).isFalse();
+        }
+
+        for (int n = 1; n <= 10; n++) {
+            assertThat(cap.accept(traceId(n))).as("trace " + n + " is still being stored").isTrue();
+        }
+    }
+
+    @Test
     void anUnsetOrZeroCapDropsNothing() {
         IngestCap none = IngestCap.none();
         IngestCap zero = new IngestCap(0L, clock::get);

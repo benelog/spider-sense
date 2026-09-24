@@ -274,9 +274,11 @@ That check locks the series rows (`FOR UPDATE`), and the sweep of series with no
 `spidersense.ingest.max-spans-per-second` protects the file from a load test.
 It is unset by default.
 The receiver counts the spans it has accepted in the current wall-clock second.
-Once the count is over the cap, a span whose trace id is not among the traces accepted in the last 10,000 is dropped, and a span of a trace already accepted is kept.
-Those 10,000 trace ids are a bounded, insertion-ordered set.
-Every stored trace therefore stays complete, and the dropped ones are whole traces.
+Once the count is over the cap, the first span of a trace it has not decided yet is dropped, and a span of a trace already accepted is kept.
+A trace is decided once: every later span of a dropped trace is dropped too, even in a later second when the count is back under the cap, and does not count toward that second.
+The decisions are kept for the last 10,000 accepted and the last 10,000 dropped trace ids, two bounded, insertion-ordered sets, so a burst of dropped traces never pushes out an accepted one.
+A span of a trace that has fallen out of both sets is decided afresh.
+Every stored trace therefore stays complete, and the dropped ones are whole traces, as long as a trace's spans arrive while its decision is still kept.
 Logs and metric points are never dropped.
 The dropped spans are counted in `/api/status.storage.droppedSpans` and carried on the SSE `stats` event as `droppedSpans`.
 The UI shows the number in the sidebar foot while it grows (xref:ui.adoc[Layout and Controls]).

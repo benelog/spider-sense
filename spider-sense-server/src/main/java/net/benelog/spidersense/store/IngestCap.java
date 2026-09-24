@@ -1,7 +1,9 @@
 package net.benelog.spidersense.store;
 
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.LongSupplier;
 
@@ -12,11 +14,17 @@ import org.jspecify.annotations.Nullable;
  * load test (storage.adoc#ingest-cap).
  *
  * <p>It counts the spans accepted in the current wall-clock second. Once that
- * count is over the cap, a span is kept only when its trace is one of the last
- * {@value #REMEMBERED_TRACES} traces something was accepted for; anything else is
- * dropped and counted. So what survives a burst is whole traces rather than a
- * sample of spans from all of them, and a trace on screen is never missing the
- * half of itself that arrived a moment later.
+ * count is over the cap, the first span of a trace nobody has seen yet is
+ * dropped and counted, and the decision is remembered: a trace is accepted or
+ * dropped once, and every later span of it follows, even in a later second when
+ * the count is back under the cap. So what survives a burst is whole traces
+ * rather than a sample of spans from all of them, and a trace on screen is never
+ * missing the half of itself that arrived a moment later.
+ *
+ * <p>The decisions are two bounded windows of {@value #REMEMBERED_TRACES} trace
+ * ids each, one accepted and one dropped, so a burst of dropped traces never
+ * pushes out the accepted ones; a span of a trace that has fallen out of both is
+ * decided afresh.
  *
  * <p>Logs and metric points are never dropped: they are a fraction of the volume
  * and losing one is losing the sentence that explains a trace.
@@ -26,21 +34,15 @@ import org.jspecify.annotations.Nullable;
  */
 public final class IngestCap {
 
-    /** The window of traces a burst may still add spans to. */
+    /** How many accepted, and how many dropped, trace ids the decisions are remembered for. */
     private static final int REMEMBERED_TRACES = 10_000;
 
     private final @Nullable Long maxSpansPerSecond;
     private final LongSupplier clock;
     private final AtomicLong droppedSpans = new AtomicLong();
 
-    /** Insertion-ordered and bounded: the oldest trace id falls out when the window is full. */
-    private final LinkedHashMap<String, Boolean> accepted =
-            new LinkedHashMap<>(16, 0.75f, false) {
-                @Override
-                protected boolean removeEldestEntry(Map.Entry<String, Boolean> eldest) {
-                    return size() > REMEMBERED_TRACES;
-                }
-            };
+    private final Set<String> accepted = remembered();
+    private final Set<String> dropped = remembered();
 
     private long second = Long.MIN_VALUE;
     private long countThisSecond;
@@ -84,15 +86,30 @@ public final class IngestCap {
                 second = now;
                 countThisSecond = 0;
             }
-            countThisSecond++;
-            if (countThisSecond > maxSpansPerSecond && !accepted.containsKey(traceId)) {
-                countThisSecond--;
+            if (dropped.contains(traceId)) {
                 droppedSpans.incrementAndGet();
                 return false;
             }
-            accepted.put(traceId, Boolean.TRUE);
+            countThisSecond++;
+            if (countThisSecond > maxSpansPerSecond && !accepted.contains(traceId)) {
+                countThisSecond--;
+                dropped.add(traceId);
+                droppedSpans.incrementAndGet();
+                return false;
+            }
+            accepted.add(traceId);
             return true;
         }
+    }
+
+    /** Insertion-ordered and bounded: the oldest trace id falls out when the window is full. */
+    private static Set<String> remembered() {
+        return Collections.newSetFromMap(new LinkedHashMap<>(16, 0.75f, false) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<String, Boolean> eldest) {
+                return size() > REMEMBERED_TRACES;
+            }
+        });
     }
 
     /** {@code /api/status.storage.droppedSpans}, and the SSE {@code stats} event. */
