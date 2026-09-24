@@ -119,6 +119,10 @@ class ConfigTest {
         assertThat(Config.defaults().baseUrl()).isEqualTo("http://127.0.0.1:4000");
         assertThat(Config.fromArgs(new String[] {"--host=0.0.0.0", "--port=4010"}).baseUrl())
                 .isEqualTo("http://127.0.0.1:4010");
+        assertThat(Config.fromArgs(new String[] {"--host=::1", "--port=4010"}).baseUrl())
+                .as("an IPv6 address in brackets").isEqualTo("http://[::1]:4010");
+        assertThat(Config.fromArgs(new String[] {"--host=::", "--port=4010"}).baseUrl())
+                .isEqualTo("http://127.0.0.1:4010");
     }
 
     @Test

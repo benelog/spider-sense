@@ -134,6 +134,10 @@ class CliTest {
                 .as("0.0.0.0 is a bind address, not one to connect to")
                 .isEqualTo("http://127.0.0.1:4002");
 
+        java.util.Properties v6 = new java.util.Properties();
+        v6.setProperty("spidersense.host", "::1");
+        assertThat(Cli.configuredUrl(v6)).as("an IPv6 address in brackets").isEqualTo("http://[::1]:4000");
+
         java.util.Properties collector = new java.util.Properties();
         collector.setProperty("spidersense.collector", "http://elsewhere:4000/");
         collector.setProperty("spidersense.port", "4002");

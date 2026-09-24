@@ -190,6 +190,10 @@ public record Config(
         if (h == null || h.isEmpty() || h.equals("0.0.0.0") || h.equals("::") || h.equals("[::]")) {
             h = DEFAULT_HOST;
         }
+        // An IPv6 address goes into a URL in brackets: http://[::1]:4000.
+        if (h.contains(":") && !h.startsWith("[")) {
+            h = "[" + h + "]";
+        }
         return "http://" + h + ":" + port;
     }
 

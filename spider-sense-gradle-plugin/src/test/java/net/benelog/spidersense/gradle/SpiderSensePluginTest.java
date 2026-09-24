@@ -159,6 +159,14 @@ class SpiderSensePluginTest {
     }
 
     @Test
+    void aWildcardOrIpv6BindAddressBecomesOneToCall() {
+        assertThat(SpiderSensePlugin.callable("0.0.0.0")).isEqualTo("127.0.0.1");
+        assertThat(SpiderSensePlugin.callable("::")).isEqualTo("127.0.0.1");
+        assertThat(SpiderSensePlugin.callable("::1")).isEqualTo("[::1]");
+        assertThat(SpiderSensePlugin.callable("localhost")).isEqualTo("localhost");
+    }
+
+    @Test
     void attachesTheAgentAndNamesTheServiceAfterTheProject() {
         String output = probe();
 

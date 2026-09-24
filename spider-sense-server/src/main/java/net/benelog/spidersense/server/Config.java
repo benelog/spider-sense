@@ -147,7 +147,9 @@ public record Config(
 
     /** The base URL to print and to advertise in {@code /api/status}. */
     public String endpoint(int boundPort) {
-        return "http://" + host + ":" + boundPort;
+        // An IPv6 address goes into a URL in brackets: http://[::1]:4000.
+        String h = host.contains(":") && !host.startsWith("[") ? "[" + host + "]" : host;
+        return "http://" + h + ":" + boundPort;
     }
 
     /**

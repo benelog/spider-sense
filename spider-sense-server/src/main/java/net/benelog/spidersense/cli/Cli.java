@@ -209,6 +209,9 @@ public final class Cli {
         if (host == null || host.equals("0.0.0.0") || host.equals("::") || host.equals("[::]")) {
             host = "127.0.0.1";
         }
+        if (host.contains(":") && !host.startsWith("[")) {
+            host = "[" + host + "]";     // an IPv6 address, which a URL brackets
+        }
         return "http://" + host + ":" + (port == null ? "4000" : port);
     }
 

@@ -242,9 +242,20 @@ public class SpiderSensePlugin implements Plugin<Project> {
      * the task gets imply, which includes a {@code configFile}, and a URL made
      * of the defaults here would override the file's port.
      */
+    /**
+     * The address a client calls for a bind address: loopback for a wildcard, which
+     * is not an address to call, and an IPv6 address in the brackets a URL needs.
+     */
+    static String callable(String host) {
+        if (host.equals("0.0.0.0") || host.equals("::") || host.equals("[::]")) {
+            return "127.0.0.1";
+        }
+        return host.contains(":") && !host.startsWith("[") ? "[" + host + "]" : host;
+    }
+
     private Provider<String> baseUrl(SpiderSenseExtension extension) {
         Provider<String> hostAndPort = extension.getHost().orElse("127.0.0.1").zip(extension.getPort().orElse(4000),
-                (host, port) -> "http://" + ("0.0.0.0".equals(host) ? "127.0.0.1" : host) + ":" + port);
+                (host, port) -> "http://" + callable(host) + ":" + port);
         Provider<String> whenNamed = extension.getHost().map(host -> true)
                 .orElse(extension.getPort().map(port -> true))
                 .flatMap(named -> hostAndPort);
