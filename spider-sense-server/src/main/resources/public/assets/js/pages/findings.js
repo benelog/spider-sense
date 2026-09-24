@@ -167,7 +167,8 @@ function numberValue(key, value, kind) {
   if (key === 'dbShare' || key === 'shareMax' || key === 'ratioMax') return h('span', pct(value));
   if ((BYTE_NUMBERS[kind] || new Set()).has(key)) return h('span', bytes(value));
   if (key.endsWith('Ms') || key === 'msPerRequest') return h('span', dur(value));
-  if (key.endsWith('PerRequest') || key.endsWith('PerRun') || key === 'max') return h('span', rate(value));
+  if (key.endsWith('PerRequest') || key.endsWith('PerRun')) return h('span', rate(value));
+  // max (a pool's connections, a JVM's threads) is a count like the rest (pages.adoc#findings).
   return h('span', count(value));
 }
 
