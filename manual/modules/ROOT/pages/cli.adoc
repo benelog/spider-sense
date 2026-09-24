@@ -824,11 +824,11 @@ The document carries every service, span, log record, metric, metric series, met
 
 [source,json]
 ----
-{ "spiderSense": { "version": "0.1.0", "schema": 7, "exportedAt": …, "window": { "from": …, "to": … }, "service": "…" | null },
+{ "spiderSense": { "version": "0.1.0", "schema": 8, "exportedAt": …, "window": { "from": …, "to": … }, "service": "…" | null },
   "services": [ { "name": "…", "language": "…", "pid": …, "firstSeen": …, "lastSeen": …, "resource": { … } } ],
   "spans": [ { …every column of the span table except id, attributes and events as the objects they are… } ],
   "logs": [ { …every column of log except id… } ],
-  "metrics": [ { "name", "type", "unit", "description", "monotonic", "temporality" } ],
+  "metrics": [ { "service", "name", "type", "unit", "description", "monotonic", "temporality" } ],
   "metricSeries": [ { "id": 7, "service", "name", "attributes": { … } } ],
   "metricPoints": [ { "seriesId": 7, "atMs", "value", "count", "sum", "min", "max", "buckets": { … } | null } ],
   "tingles": [ { …every column except id… } ],

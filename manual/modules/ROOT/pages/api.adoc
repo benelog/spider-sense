@@ -758,6 +758,8 @@ Search an error's endpoint or type instead, or use `/api/errors`.
 [#metrics-clarifications]
 === Metrics
 
+The metadata of a metric is each service's own, so every series of `/api/metrics/series` is read by the type and temporality of the service that exported it.
+A catalog entry for a name several services export takes its `type`, `unit` and `description` from the first of its `services`.
 `step` on `/api/metrics/series` is accepted and ignored.
 The exporter's interval already sets the resolution, and resampling a second time blurs the spike the chart is being read for.
 `rate=true` changes `v` only for a monotonic sum, and leaves other types unaffected.

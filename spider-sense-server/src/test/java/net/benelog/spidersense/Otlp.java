@@ -130,6 +130,13 @@ public final class Otlp {
     /** A sum; the connection-pool metrics are non-monotonic ones. */
     public static ExportMetricsServiceRequest sum(Resource resource, String name, String unit,
             long at, double value, boolean monotonic, KeyValue... attributes) {
+        return sum(resource, name, unit, at, value, monotonic,
+                AggregationTemporality.AGGREGATION_TEMPORALITY_CUMULATIVE, attributes);
+    }
+
+    public static ExportMetricsServiceRequest sum(Resource resource, String name, String unit,
+            long at, double value, boolean monotonic, AggregationTemporality temporality,
+            KeyValue... attributes) {
         NumberDataPoint point = NumberDataPoint.newBuilder()
                 .setTimeUnixNano(at * 1_000_000L)
                 .setAsDouble(value)
@@ -138,7 +145,7 @@ public final class Otlp {
         Metric metric = Metric.newBuilder().setName(name).setUnit(unit)
                 .setSum(Sum.newBuilder()
                         .setIsMonotonic(monotonic)
-                        .setAggregationTemporality(AggregationTemporality.AGGREGATION_TEMPORALITY_CUMULATIVE)
+                        .setAggregationTemporality(temporality)
                         .addDataPoints(point))
                 .build();
         return metrics(resource, metric);

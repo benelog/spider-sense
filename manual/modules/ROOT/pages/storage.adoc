@@ -121,12 +121,14 @@ CREATE INDEX IF NOT EXISTS log_trace   ON log (trace_id);
 CREATE INDEX IF NOT EXISTS log_service ON log (service, at_ms);
 
 CREATE TABLE IF NOT EXISTS metric (
-    name        VARCHAR(255) PRIMARY KEY,
+    service     VARCHAR(255) NOT NULL,
+    name        VARCHAR(255) NOT NULL,
     type        VARCHAR(12) NOT NULL,        -- gauge sum histogram
     unit        VARCHAR(64),
     description VARCHAR(1024),
     monotonic   BOOLEAN NOT NULL,
-    temporality VARCHAR(12)                  -- cumulative delta
+    temporality VARCHAR(12),                 -- cumulative delta
+    PRIMARY KEY (service, name)
 );
 
 CREATE TABLE IF NOT EXISTS metric_series (
@@ -200,8 +202,8 @@ The stored `meta.schema_version` is read before any table is created.
 A database of another version therefore has its tables dropped before this version's are created, since an index of this version may be on a column an older table lacks.
 The CLI, which refuses another version, leaves such a database exactly as it found it.
 It also refuses a database that holds tables but no `meta`, which is one Spider Sense never wrote, such as the application's own named by a mistaken `--db`; only an empty database gets this version's tables from it.
-`meta.schema_version` is `7`, the version that moved the error group key to the root cause and its frame.
-Version 6 added the `resolved` column of `ack`, version 5 added `db_table`, version 4 added `ack`, and version 3 added `mark`.
+`meta.schema_version` is `8`, the version that keyed `metric` by service as well as name.
+Version 7 moved the error group key to the root cause and its frame, version 6 added the `resolved` column of `ack`, version 5 added `db_table`, version 4 added `ack`, and version 3 added `mark`.
 A version that changes a table or the meaning of a stored id drops and recreates every table, because the data is a cache of a development session and not a record.
 Version 7 changed every `error_id`, and so the id of every `error` finding.
 Acknowledgements and resolutions recorded before the upgrade are therefore lost with the rest of the tables, rather than kept as rows nothing can reach.
@@ -263,6 +265,7 @@ Once the rows are in, the flush shuts down the engine this process holds, so the
 After the flush at exit has begun, the writer's thread writes nothing more, since writing through the pool after H2 closed the file would open it again behind that flush.
 
 Metric points are written on the same path.
+A `metric` row describes one service's instrument, so two services that export one name as different instruments, one a `CUMULATIVE` sum and the other a `DELTA` sum, keep a row each, and each service's points are read by its own row.
 A series row is looked up by `(service, name, attr_hash)` through a small in-memory cache of ids.
 The sweeper and `DELETE /api/data`, in this process or in any other sharing the file, delete series rows behind that cache.
 Each flush that carries metric points therefore checks, in one `SELECT`, that the cached ids of its series still have a row, and looks up or creates again a series whose row is gone.

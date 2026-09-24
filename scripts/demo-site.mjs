@@ -73,10 +73,10 @@ const TABLES = [
     ddl: `id BIGINT NOT NULL, at_ms BIGINT NOT NULL, service VARCHAR(255) NOT NULL, severity_number INT NOT NULL,
           severity VARCHAR(8) NOT NULL, body TEXT NOT NULL, logger VARCHAR(512), trace_id CHAR(32), span_id CHAR(16),
           attributes TEXT NOT NULL` },
-  { name: 'metric', key: ['name'], window: null,
-    columns: 'name type unit description monotonic temporality', bool: 'monotonic', required: 'name type',
-    ddl: `name VARCHAR(255) NOT NULL, type VARCHAR(12) NOT NULL, unit VARCHAR(64), description VARCHAR(1024),
-          monotonic BOOLEAN NOT NULL, temporality VARCHAR(12)` },
+  { name: 'metric', key: ['service', 'name'], window: null,
+    columns: 'service name type unit description monotonic temporality', bool: 'monotonic', required: 'service name type',
+    ddl: `service VARCHAR(255) NOT NULL, name VARCHAR(255) NOT NULL, type VARCHAR(12) NOT NULL, unit VARCHAR(64),
+          description VARCHAR(1024), monotonic BOOLEAN NOT NULL, temporality VARCHAR(12)` },
   { name: 'metric_series', key: ['id'], window: 'series',
     columns: 'id service name attr_hash attributes', required: 'service name attr_hash attributes',
     ddl: `id BIGINT NOT NULL, service VARCHAR(255) NOT NULL, name VARCHAR(255) NOT NULL, attr_hash CHAR(12) NOT NULL,
@@ -472,6 +472,15 @@ async function doltEnsureTables(tables = TABLES) {
         if (have.has(name)) continue;
         console.log('alter ' + table.name + ': add ' + name);
         await doltWrite('ALTER TABLE `' + table.name + '` ADD COLUMN ' + addedColumn(def), 'ALTER TABLE ' + table.name + ' ADD ' + name);
+      }
+      // A key the schema widened, as metric's became (service, name): the rows a
+      // recording now carries would collide on the old one.
+      const key = (await doltQuery(DOLTHUB.branch, "SHOW KEYS FROM `" + table.name + "` WHERE Key_name = 'PRIMARY'"))
+        .sort((a, b) => Number(a.Seq_in_index) - Number(b.Seq_in_index)).map((row) => String(row.Column_name));
+      if (key.join(',') !== table.key.join(',')) {
+        console.log('alter ' + table.name + ': primary key (' + table.key.join(', ') + ')');
+        await doltWrite('ALTER TABLE `' + table.name + '` DROP PRIMARY KEY, ADD PRIMARY KEY ('
+          + table.key.map((k) => '`' + k + '`').join(', ') + ')', 'ALTER TABLE ' + table.name + ' PRIMARY KEY');
       }
       continue;
     }

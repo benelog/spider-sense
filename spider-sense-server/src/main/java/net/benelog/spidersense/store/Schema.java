@@ -13,7 +13,7 @@ import org.jspecify.annotations.Nullable;
  */
 public final class Schema {
 
-    public static final int VERSION = 7;
+    public static final int VERSION = 8;
 
     /**
      * The H2 user {@code POST /api/sql} runs on: {@code SELECT} on {@code PUBLIC}
@@ -129,12 +129,14 @@ public final class Schema {
             "CREATE INDEX IF NOT EXISTS log_service ON log (service, at_ms)",
             """
             CREATE TABLE IF NOT EXISTS metric (
-                name        VARCHAR(255) PRIMARY KEY,
+                service     VARCHAR(255) NOT NULL,
+                name        VARCHAR(255) NOT NULL,
                 type        VARCHAR(12) NOT NULL,
                 unit        VARCHAR(64),
                 description VARCHAR(1024),
                 monotonic   BOOLEAN NOT NULL,
-                temporality VARCHAR(12)
+                temporality VARCHAR(12),
+                PRIMARY KEY (service, name)
             )""",
             """
             CREATE TABLE IF NOT EXISTS metric_series (

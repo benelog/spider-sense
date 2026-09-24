@@ -57,11 +57,15 @@ public final class MetricQueries {
         if (servicesByName.isEmpty()) {
             return List.of();
         }
+        // Metadata is a service's own (storage.adoc#schema); a name several services
+        // export is described by the first of them, in the order the list names them.
         Map<String, String[]> metadata = new LinkedHashMap<>();
-        sql.forEach("SELECT name, type, unit, description FROM metric", List.of(), rs -> {
-            metadata.put(rs.getString("name"), new String[]{rs.getString("type"), rs.getString("unit"),
-                    rs.getString("description")});
-        });
+        sql.forEach("SELECT service, name, type, unit, description FROM metric"
+                + (service == null ? "" : " WHERE service = ?") + " ORDER BY name, service",
+                service == null ? List.of() : List.of(service), rs -> {
+                    metadata.putIfAbsent(rs.getString("name"), new String[]{rs.getString("type"),
+                            rs.getString("unit"), rs.getString("description")});
+                });
         List<MetricMeta> catalog = new ArrayList<>(servicesByName.size());
         servicesByName.forEach((name, names) -> {
             String[] meta = metadata.getOrDefault(name, new String[]{"gauge", "", ""});
@@ -80,10 +84,19 @@ public final class MetricQueries {
      */
     public List<SeriesData> series(String name, @Nullable String service,
             Map<String, String> attributeFilters, Window window) {
-        String[] meta = sql.queryOne("SELECT type, unit, monotonic, temporality FROM metric WHERE name = ?",
-                List.of(name), rs -> new String[]{rs.getString("type"), rs.getString("unit"),
-                        String.valueOf(rs.getBoolean("monotonic")), rs.getString("temporality")});
-        if (meta == null) {
+        // Each service's series are read by that service's own metadata: one exporting
+        // the name as a DELTA sum must not turn another's CUMULATIVE points into rates
+        // of their totals.
+        Map<String, Meta> metaByService = new LinkedHashMap<>();
+        List<Object> metaParams = new ArrayList<>(List.of(name));
+        if (service != null) {
+            metaParams.add(service);
+        }
+        sql.forEach("SELECT service, type, unit, monotonic, temporality FROM metric WHERE name = ?"
+                + (service == null ? "" : " AND service = ?"), metaParams,
+                rs -> metaByService.put(rs.getString("service"), new Meta(rs.getString("type"),
+                        rs.getString("unit"), rs.getBoolean("monotonic"), rs.getString("temporality"))));
+        if (metaByService.isEmpty()) {
             return List.of();
         }
         List<Object> params = new ArrayList<>(List.of(name));
@@ -112,14 +125,18 @@ public final class MetricQueries {
         });
 
         List<SeriesData> data = new ArrayList<>();
-        boolean monotonic = Boolean.parseBoolean(meta[2]);
         for (SeriesBuilder builder : builders.values()) {
-            if (matches(builder.attributes, attributeFilters)) {
-                data.add(new SeriesData(builder.service, name, meta[0], meta[1], monotonic, meta[3],
-                        builder.attributes, List.copyOf(builder.points)));
+            Meta meta = metaByService.get(builder.service);
+            if (meta != null && matches(builder.attributes, attributeFilters)) {
+                data.add(new SeriesData(builder.service, name, meta.type(), meta.unit(), meta.monotonic(),
+                        meta.temporality(), builder.attributes, List.copyOf(builder.points)));
             }
         }
         return data;
+    }
+
+    /** One service's description of one metric name. */
+    private record Meta(String type, String unit, boolean monotonic, String temporality) {
     }
 
     /** The newest point of a metric for a service, whatever its attributes. */

@@ -510,13 +510,15 @@ public final class Importer {
             throws SQLException {
         for (Json.JsonValue value : metrics) {
             Json.JsonObject metric = value.asObject();
+            String service = string(metric, "service");
             String name = string(metric, "name");
-            if (name == null) {
+            if (service == null || name == null) {
                 continue;
             }
             try (PreparedStatement select = connection.prepareStatement(
-                    "SELECT COUNT(*) FROM metric WHERE name = ?")) {
-                select.setString(1, name);
+                    "SELECT COUNT(*) FROM metric WHERE service = ? AND name = ?")) {
+                select.setString(1, service);
+                select.setString(2, name);
                 try (ResultSet rs = select.executeQuery()) {
                     if (rs.next() && rs.getLong(1) > 0) {
                         continue;
@@ -524,14 +526,15 @@ public final class Importer {
                 }
             }
             try (PreparedStatement insert = connection.prepareStatement(
-                    "INSERT INTO metric (name, type, unit, description, monotonic, temporality)"
-                            + " VALUES (?, ?, ?, ?, ?, ?)")) {
-                insert.setString(1, name);
-                insert.setString(2, or(string(metric, "type"), "gauge"));
-                insert.setString(3, Writer.cut(string(metric, "unit"), 64));
-                insert.setString(4, Writer.cut(string(metric, "description"), 1024));
-                insert.setBoolean(5, flag(metric, "monotonic"));
-                insert.setString(6, string(metric, "temporality"));
+                    "INSERT INTO metric (service, name, type, unit, description, monotonic, temporality)"
+                            + " VALUES (?, ?, ?, ?, ?, ?, ?)")) {
+                insert.setString(1, service);
+                insert.setString(2, name);
+                insert.setString(3, or(string(metric, "type"), "gauge"));
+                insert.setString(4, Writer.cut(string(metric, "unit"), 64));
+                insert.setString(5, Writer.cut(string(metric, "description"), 1024));
+                insert.setBoolean(6, flag(metric, "monotonic"));
+                insert.setString(7, string(metric, "temporality"));
                 insert.executeUpdate();
             }
         }

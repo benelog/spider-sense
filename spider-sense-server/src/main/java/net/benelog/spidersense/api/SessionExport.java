@@ -204,11 +204,12 @@ final class SessionExport {
      * belong to, and a description has no instant of its own.
      */
     private static Select metrics() {
-        return new Select("SELECT * FROM metric ORDER BY name", List.of());
+        return new Select("SELECT * FROM metric ORDER BY service, name", List.of());
     }
 
     private static Json.JsonObject metric(ResultSet rs) throws SQLException {
         return Json.obj()
+                .put("service", rs.getString("service"))
                 .put("name", rs.getString("name"))
                 .put("type", rs.getString("type"))
                 .put("unit", rs.getString("unit"))

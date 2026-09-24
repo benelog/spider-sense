@@ -764,11 +764,13 @@ public final class Writer implements AutoCloseable {
             KEY(series_id, at_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""";
 
     void insertMetrics(Connection connection, List<Batch> batches) throws SQLException {
+        // Keyed by service as well as name: two services may export one name as
+        // different instruments, and each one's points mean what its own metadata says.
         Map<String, Batch.MetricSample> metadata = new LinkedHashMap<>();
         List<Batch.MetricSample> samples = new ArrayList<>();
         for (Batch batch : batches) {
             for (Batch.MetricSample sample : batch.metrics()) {
-                metadata.put(sample.name(), sample);
+                metadata.put(sample.service() + "\0" + sample.name(), sample);
                 samples.add(sample);
             }
         }
@@ -776,15 +778,16 @@ public final class Writer implements AutoCloseable {
             return;
         }
         try (PreparedStatement statement = connection.prepareStatement(
-                "MERGE INTO metric (name, type, unit, description, monotonic, temporality)"
-                        + " KEY(name) VALUES (?, ?, ?, ?, ?, ?)")) {
+                "MERGE INTO metric (service, name, type, unit, description, monotonic, temporality)"
+                        + " KEY(service, name) VALUES (?, ?, ?, ?, ?, ?, ?)")) {
             for (Batch.MetricSample sample : metadata.values()) {
-                statement.setString(1, sample.name());
-                statement.setString(2, sample.type());
-                statement.setString(3, cut(sample.unit(), 64));
-                statement.setString(4, cut(sample.description(), 1024));
-                statement.setBoolean(5, sample.monotonic());
-                statement.setString(6, sample.temporality());
+                statement.setString(1, sample.service());
+                statement.setString(2, sample.name());
+                statement.setString(3, sample.type());
+                statement.setString(4, cut(sample.unit(), 64));
+                statement.setString(5, cut(sample.description(), 1024));
+                statement.setBoolean(6, sample.monotonic());
+                statement.setString(7, sample.temporality());
                 statement.addBatch();
             }
             statement.executeBatch();
