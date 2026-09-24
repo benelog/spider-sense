@@ -266,6 +266,7 @@ Metric points are written on the same path.
 A series row is looked up by `(service, name, attr_hash)` through a small in-memory cache of ids.
 The sweeper and `DELETE /api/data`, in this process or in any other sharing the file, delete series rows behind that cache.
 Each flush that carries metric points therefore checks, in one `SELECT`, that the cached ids of its series still have a row, and looks up or creates again a series whose row is gone.
+That check locks the series rows (`FOR UPDATE`), and the sweep of series with no point left locks its candidates and checks again before it deletes them, so a sweep running while a flush adds the first points of a series waits for that flush and keeps the series.
 
 [#ingest-cap]
 === The ingest cap

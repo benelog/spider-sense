@@ -230,6 +230,39 @@ class WriterTest {
         database.close();
     }
 
+    /**
+     * The orphan sweep, in this process or another, runs while a flush adds the
+     * first points of a series that has none committed. It must wait for that
+     * flush and keep the series, not delete it under the uncommitted points.
+     */
+    @Test
+    void theOrphanSweepWaitsForAFlushAddingPointsToASeries() throws Exception {
+        Database database = Database.open(fileUrl(), dir.resolve("sense.mv.db"));
+        Writer writer = writer(database);
+        Batch first = decoder.accept(Otlp.gauge(Otlp.service("orders"), "jvm.memory.used", "By", AT, 1));
+        writer.submit(first);
+        writer.flushNow();
+        // The point goes by age; the series stays, cached in the writer, with nothing committed.
+        database.sql().update("DELETE FROM metric_point", List.of());
+
+        Batch next = decoder.accept(Otlp.gauge(Otlp.service("orders"), "jvm.memory.used", "By", AT + 1_000, 2));
+        try (java.sql.Connection flush = database.sql().connection()) {
+            flush.setAutoCommit(false);
+            writer.insertMetrics(flush, List.of(next));
+
+            var sweep = java.util.concurrent.CompletableFuture.supplyAsync(
+                    () -> Sweeper.deleteOrphanSeries(database.sql()));
+            Thread.sleep(300);
+            assertThat(sweep).as("the sweep waits for the flush's lock").isNotDone();
+            flush.commit();
+            assertThat(sweep.get(10, java.util.concurrent.TimeUnit.SECONDS)).isZero();
+        }
+
+        assertThat(database.sql().count("SELECT COUNT(*) FROM metric_point p"
+                + " JOIN metric_series s ON s.id = p.series_id", List.of())).isEqualTo(1);
+        database.close();
+    }
+
     // --- the flush at exit -----------------------------------------------------------
 
     @TempDir

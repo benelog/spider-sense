@@ -731,7 +731,7 @@ public final class Writer implements AutoCloseable {
             MERGE INTO metric_point (series_id, at_ms, value, count, sum, min, max, buckets)
             KEY(series_id, at_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""";
 
-    private void insertMetrics(Connection connection, List<Batch> batches) throws SQLException {
+    void insertMetrics(Connection connection, List<Batch> batches) throws SQLException {
         Map<String, Batch.MetricSample> metadata = new LinkedHashMap<>();
         List<Batch.MetricSample> samples = new ArrayList<>();
         for (Batch batch : batches) {
@@ -841,7 +841,10 @@ public final class Writer implements AutoCloseable {
             List<Long> chunk = ids.subList(from, Math.min(ids.size(), from + SERIES_CHECK_CHUNK));
             Set<Long> present = new HashSet<>();
             try (PreparedStatement select = connection.prepareStatement(
-                    "SELECT id FROM metric_series WHERE id IN (" + Sql.placeholders(chunk.size()) + ")")) {
+                    // Locked: the orphan sweep locks a series before it deletes it, so the
+                    // points this flush adds are committed before the sweep looks again.
+                    "SELECT id FROM metric_series WHERE id IN (" + Sql.placeholders(chunk.size())
+                            + ") FOR UPDATE")) {
                 for (int i = 0; i < chunk.size(); i++) {
                     select.setLong(i + 1, chunk.get(i));
                 }
@@ -875,7 +878,7 @@ public final class Writer implements AutoCloseable {
     private long lookupOrCreateSeries(Connection connection, Batch.MetricSample sample, String hash,
             String attributes) throws SQLException {
         try (PreparedStatement select = connection.prepareStatement(
-                "SELECT id FROM metric_series WHERE service = ? AND name = ? AND attr_hash = ?")) {
+                "SELECT id FROM metric_series WHERE service = ? AND name = ? AND attr_hash = ? FOR UPDATE")) {
             select.setString(1, sample.service());
             select.setString(2, sample.name());
             select.setString(3, hash);

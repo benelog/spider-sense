@@ -372,8 +372,7 @@ public final class Database implements AutoCloseable {
                     ? "DELETE FROM mark o WHERE " + Marks.NOT_NEWEST_START
                     : "DELETE FROM " + table, List.of());
         }
-        sql.update("DELETE FROM metric_series WHERE id NOT IN (SELECT series_id FROM metric_point)",
-                List.of());
+        Sweeper.deleteOrphanSeries(sql);
     }
 
     @Override

@@ -1,5 +1,9 @@
 package net.benelog.spidersense.store;
 
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -63,8 +67,61 @@ public final class Sweeper implements AutoCloseable {
             {"span", "start_ms"}, {"trace", "start_ms"}, {"log", "at_ms"},
             {"metric_point", "at_ms"}, {"tingle", "at_ms"}};
 
-    private static final String ORPHAN_SERIES =
-            "DELETE FROM metric_series WHERE id NOT IN (SELECT series_id FROM metric_point)";
+    /** How many series one lock and delete of the orphan sweep names. */
+    private static final int ORPHAN_CHUNK = 500;
+
+    /**
+     * Deletes the series rows with no point left, without racing a writer.
+     *
+     * <p>A writer, in this process or another sharing the file, may be adding the
+     * first points of a series whose earlier ones are gone; they are uncommitted,
+     * so a plain {@code DELETE … WHERE id NOT IN (SELECT series_id FROM
+     * metric_point)} would remove the series under them. The writer locks the
+     * series rows it writes to, and this locks the candidates before it deletes,
+     * checking again once the lock is held; H2 does not re-evaluate a delete's
+     * condition after waiting for a lock, so the check has to come after it.
+     *
+     * @return the number of series deleted
+     */
+    static int deleteOrphanSeries(Sql sql) {
+        return sql.with(connection -> {
+            boolean autoCommit = connection.getAutoCommit();
+            connection.setAutoCommit(false);
+            try {
+                List<Long> candidates = new ArrayList<>();
+                try (PreparedStatement select = connection.prepareStatement(
+                        "SELECT id FROM metric_series WHERE id NOT IN (SELECT series_id FROM metric_point)");
+                        ResultSet rs = select.executeQuery()) {
+                    while (rs.next()) {
+                        candidates.add(rs.getLong(1));
+                    }
+                }
+                int deleted = 0;
+                for (int from = 0; from < candidates.size(); from += ORPHAN_CHUNK) {
+                    List<Long> chunk = candidates.subList(from, Math.min(candidates.size(), from + ORPHAN_CHUNK));
+                    String in = Sql.placeholders(chunk.size());
+                    try (PreparedStatement lock = connection.prepareStatement(
+                            "SELECT id FROM metric_series WHERE id IN (" + in + ") FOR UPDATE")) {
+                        Sql.bind(lock, List.copyOf(chunk));
+                        lock.executeQuery().close();
+                    }
+                    try (PreparedStatement delete = connection.prepareStatement(
+                            "DELETE FROM metric_series WHERE id IN (" + in + ")"
+                                    + " AND id NOT IN (SELECT series_id FROM metric_point)")) {
+                        Sql.bind(delete, List.copyOf(chunk));
+                        deleted += delete.executeUpdate();
+                    }
+                }
+                connection.commit();
+                return deleted;
+            } catch (SQLException | RuntimeException e) {
+                connection.rollback();
+                throw e;
+            } finally {
+                connection.setAutoCommit(autoCommit);
+            }
+        }, "the orphan series sweep");
+    }
 
     private final Sql sql;
     private final int retentionHours;
@@ -112,7 +169,7 @@ public final class Sweeper implements AutoCloseable {
         // needs for as long as that process runs.
         deleted += sql.update("DELETE FROM mark o WHERE o.at_ms < ? AND " + Marks.NOT_NEWEST_START,
                 List.of(cutoff));
-        deleted += sql.update(ORPHAN_SERIES, List.of());
+        deleted += deleteOrphanSeries(sql);
         deleted += sweepToCap();
         return deleted;
     }
@@ -147,7 +204,7 @@ public final class Sweeper implements AutoCloseable {
             if (pruned == 0) {
                 break;
             }
-            pruned += sql.update(ORPHAN_SERIES, List.of());
+            pruned += deleteOrphanSeries(sql);
             deleted += pruned;
             LOG.log(System.Logger.Level.INFO,
                     "Spider Sense span cap: " + spans + " spans is over " + retentionSpans
