@@ -312,6 +312,26 @@ class FindingsTest {
         assertThat(finding.traces()).containsExactly(traceId(1));
     }
 
+    @Test
+    void aSlowQueryTakesItsCodeFromTheSlowCallNotTheNewest() {
+        Span.Builder root = entry(1, "/books", 400);
+        String statement = "select * from book where title like ?";
+        decoder.accept(Otlp.traces(Otlp.service("orders"), root,
+                query(root, 100, statement, "book", NOW, 300)
+                        .addAttributes(Otlp.attr("code.stacktrace", QUERY_STACKTRACE)),
+                query(root, 101, statement, "book", NOW + 310, 5),
+                query(root, 102, statement, "book", NOW + 320, 5),
+                query(root, 103, statement, "book", NOW + 330, 5)));
+        flush();
+
+        List<Findings.Finding> slow = of(Findings.SLOW_QUERY);
+
+        assertThat(slow).hasSize(1);
+        assertThat(slow.get(0).code()).containsExactly(
+                "orders.OrderLineRepository.findByOrderId(OrderLineRepository.java:29)",
+                "orders.OrderService.lines(OrderService.java:54)");
+    }
+
     /** The catalog of one table, as the extension sends it: a log record (design.adoc#index-catalog). */
     private void catalog(String table, String indexes) {
         decoder.accept(Otlp.logs(Otlp.service("orders"), "spider-sense",
@@ -587,6 +607,23 @@ class FindingsTest {
         assertThat(callers).hasSize(1);
         assertThat(callers.get(0).get("endpoint")).isEqualTo("GET /orders/{id}");
         assertThat(callers.get(0).get("calls")).isEqualTo(1L);
+    }
+
+    @Test
+    void aSlowExternalTakesItsCodeFromTheSlowCallNotTheNewest() {
+        Span.Builder root = entry(1, "/orders/{id}", 2000);
+        decoder.accept(Otlp.traces(Otlp.service("orders"), root,
+                outbound(root, 100, "localhost", 8081, NOW, 800)
+                        .addAttributes(Otlp.attr("code.stacktrace", QUERY_STACKTRACE)),
+                outbound(root, 101, "localhost", 8081, NOW + 900, 20)));
+        flush();
+
+        List<Findings.Finding> slow = of(Findings.SLOW_EXTERNAL);
+
+        assertThat(slow).hasSize(1);
+        assertThat(slow.get(0).code()).containsExactly(
+                "orders.OrderLineRepository.findByOrderId(OrderLineRepository.java:29)",
+                "orders.OrderService.lines(OrderService.java:54)");
     }
 
     @Test

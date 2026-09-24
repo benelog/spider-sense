@@ -1302,6 +1302,8 @@ public final class Findings {
         double[] durations = new double[calls.size()];
         double totalMs = 0;
         long errors = 0;
+        // The newest call that carries code.stacktrace, which the extension writes only on a
+        // slow one (findings.adoc#code), else the newest call.
         SpanRecord newest = null;
         for (int i = 0; i < calls.size(); i++) {
             SpanRecord call = calls.get(i);
@@ -1310,7 +1312,8 @@ public final class Findings {
             if (call.isError()) {
                 errors++;
             }
-            if (newest == null || call.startNanos() > newest.startNanos()) {
+            if (newest == null || (hasStack(call) && !hasStack(newest))
+                    || (hasStack(call) == hasStack(newest) && call.startNanos() > newest.startNanos())) {
                 newest = call;
             }
         }
@@ -1345,6 +1348,10 @@ public final class Findings {
                         : frames.ofAttributes(newest == null ? null : newest.attributes()),
                 reads == null ? List.of() : externalTraces(window, calls));
         return new Ranked(finding, totalMs);
+    }
+
+    private static boolean hasStack(SpanRecord span) {
+        return span.attributes().containsKey("code.stacktrace");
     }
 
     /** Which endpoints made the calls: the nearest entry span up the chain, as a query's callers. */
@@ -1808,14 +1815,20 @@ public final class Findings {
         return kind + ":" + Ids.shortHash(kind + "\0" + service + "\0" + subject);
     }
 
-    /** The newest attributes of one span per group, for the {@code code.*} frames. */
+    /**
+     * The attributes of one span per group, for the {@code code.*} frames: the newest
+     * that carries {@code code.stacktrace}, which the extension writes only on a slow
+     * statement (findings.adoc#code), else the newest.
+     */
     private Map<String, Map<String, Object>> sampleAttributes(Window window, String column,
             Set<String> ids) {
         List<Object> params = new ArrayList<>(List.of(window.from(), window.to()));
         params.addAll(ids);
         Map<String, Map<String, Object>> samples = new HashMap<>();
         sql.forEach("SELECT * FROM (SELECT " + column + " AS group_id, attributes,"
-                + " ROW_NUMBER() OVER (PARTITION BY " + column + " ORDER BY start_ms DESC, id DESC) AS rn"
+                + " ROW_NUMBER() OVER (PARTITION BY " + column
+                + " ORDER BY CASE WHEN attributes LIKE '%\"code.stacktrace\"%' THEN 0 ELSE 1 END,"
+                + " start_ms DESC, id DESC) AS rn"
                 + " FROM span WHERE start_ms BETWEEN ? AND ? AND " + column + " IN ("
                 + Sql.placeholders(ids.size()) + ")) WHERE rn = 1", params, rs ->
                         samples.put(rs.getString("group_id"),
