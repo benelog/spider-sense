@@ -409,6 +409,33 @@ class AgentApiTest {
     }
 
     @Test
+    void aNoteThatIsNotAnObjectsStringIsTheCallersMistake() {
+        serve((client, assembly) -> {
+            postProtobuf(client, "/v1/traces", sample());
+            String id = json(client.get("/api/findings?since=5m"))
+                    .getArray("findings").get(0).asObject().getString("id");
+            for (String action : List.of("ack", "resolve")) {
+                for (String malformed : List.of("\"x\"", "{\"note\":1}")) {
+                    HttpResponse<String> rejected = postJson(client,
+                            "/api/findings/" + id + "/" + action, malformed);
+                    assertThat(rejected.statusCode()).as(action + " " + malformed).isEqualTo(400);
+                }
+            }
+            assertThat(json(client.get("/api/acks")).getArray("acks").size()).isZero();
+        });
+    }
+
+    @Test
+    void anEpochSelectorPastTheLargestLongIs400() {
+        serve((client, assembly) -> {
+            HttpResponse<String> response = client.get("/api/findings?since=99999999999999999999");
+            assertThat(response.statusCode()).isEqualTo(400);
+            assertThat(Json.parse(response.body()).asObject().getString("error"))
+                    .contains("out of range");
+        });
+    }
+
+    @Test
     void theFormatIsJsonUnlessTextIsAskedForByParameterOrByAccept() {
         serve((client, assembly) -> {
             postProtobuf(client, "/v1/traces", sample());
@@ -498,6 +525,14 @@ class AgentApiTest {
             HttpResponse<String> bad = postJson(client, "/api/marks", "{\"name\":\"two words\"}");
             assertThat(bad.statusCode()).isEqualTo(400);
             assertThat(Json.parse(bad.body()).asObject().getString("error")).isNotBlank();
+
+            // A body of the wrong shape is the caller's mistake too, not a server error.
+            for (String malformed : List.of("[]", "{\"at\":\"now\"}", "{\"name\":5}")) {
+                HttpResponse<String> rejected = postJson(client, "/api/marks", malformed);
+                assertThat(rejected.statusCode()).as(malformed).isEqualTo(400);
+                assertThat(Json.parse(rejected.body()).asObject().getString("error"))
+                        .as(malformed).isNotBlank();
+            }
 
             Json.JsonObject marks = json(client.get("/api/marks"));
             assertThat(marks.getArray("marks")).hasSize(1);
@@ -644,6 +679,22 @@ class AgentApiTest {
             assertThat(zero.statusCode()).isEqualTo(400);
             assertThat(Json.parse(zero.body()).asObject().getString("error"))
                     .isEqualTo("limit must be at least 1");
+
+            HttpResponse<String> quoted = postJson(client, "/api/sql",
+                    "{\"sql\":\"SELECT 1\",\"limit\":\"200\"}");
+            assertThat(quoted.statusCode()).isEqualTo(400);
+            assertThat(Json.parse(quoted.body()).asObject().getString("error")).contains("200");
+
+            HttpResponse<String> notAnObject = postJson(client, "/api/sql?format=text", "[]");
+            assertThat(notAnObject.statusCode()).isEqualTo(400);
+            assertThat(notAnObject.headers().firstValue("content-type"))
+                    .hasValue("text/markdown; charset=utf-8");
+
+            // 2^32 + 1 is capped, not cut to 1 by an int cast.
+            Json.JsonObject huge = json(postJson(client, "/api/sql",
+                    "{\"sql\":\"SELECT span_id FROM span\",\"limit\":4294967297}"));
+            assertThat(huge.getLong("rowCount")).isEqualTo(9);
+            assertThat(huge.getBoolean("truncated")).isFalse();
 
             HttpResponse<String> asText = postJson(client, "/api/sql?format=text",
                     "{\"sql\":\"DROP TABLE span\"}");

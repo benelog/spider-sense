@@ -868,6 +868,7 @@ Import is idempotent enough for a file imported twice.
 * A catalog row is merged on its key `(service, schema_name, table_name)` as the writer merges it (xref:storage.adoc#writer[How it is written]), so the table the file describes replaces the row the store had for it.
 
 A document whose `schema` is not this version's is a `400` naming both versions.
+A document that is not JSON, or whose rows are not the shapes `export` writes, is a `400` naming what did not decode, and nothing of it is written.
 Acknowledgements and resolutions are not exported, because they are the reader's rather than the session's.
 
 [#sql]

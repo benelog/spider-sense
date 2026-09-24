@@ -129,6 +129,11 @@ public final class ApiRoutes {
             return Params.answer(req, reports.imported(reports.importDocument(document)));
         } catch (Importer.WrongSchema e) {
             return Params.problem(req, e.getMessage());
+        } catch (Json.JsonException e) {
+            // A row of the wrong shape (a span that is not an object, a number that
+            // is a string) fails only once the import reads it, and the transaction
+            // has rolled back by the time it reaches here.
+            return Params.problem(req, "Undecodable import document: " + e.getMessage());
         }
     }
 

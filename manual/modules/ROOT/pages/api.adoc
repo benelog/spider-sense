@@ -18,6 +18,7 @@ The default `to` is now, and the default `from` is `to - 15 min`.
 * Lists are newest first unless stated.
 * Unknown query parameters are ignored.
 A malformed number is a `400` (`{"error": "..."}`).
+So is a JSON body that is not the object an endpoint takes, or that carries a field of the wrong type.
 * Every JSON answer is `application/json; charset=utf-8`.
 An error is `{"error": "<message>"}` with a 4xx or 5xx status.
 * `traceId` is 32 lowercase hex characters, and `spanId` is 16.

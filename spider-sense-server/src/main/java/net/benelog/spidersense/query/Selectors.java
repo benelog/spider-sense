@@ -71,7 +71,11 @@ public final class Selectors {
             return anchor - Long.parseLong(duration.group(1)) * unitMillis(duration.group(2).charAt(0));
         }
         if (EPOCH.matcher(value).matches()) {
-            return Long.parseLong(value);
+            try {
+                return Long.parseLong(value);
+            } catch (NumberFormatException e) {
+                throw new BadSelector("Epoch milliseconds out of range: " + value);
+            }
         }
         if (!Marks.NAME.matcher(value).matches()) {
             throw new BadSelector("Not a time selector: " + value

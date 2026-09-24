@@ -65,6 +65,10 @@ class SelectorsTest {
                 .isInstanceOf(Selectors.BadSelector.class);
         assertThatThrownBy(() -> selectors.resolve("", NOW, null))
                 .isInstanceOf(Selectors.BadSelector.class);
+        assertThatThrownBy(() -> selectors.resolve("99999999999999999999", NOW, null))
+                .as("epoch milliseconds past Long.MAX_VALUE")
+                .isInstanceOf(Selectors.BadSelector.class)
+                .hasMessageContaining("out of range");
     }
 
     @Test

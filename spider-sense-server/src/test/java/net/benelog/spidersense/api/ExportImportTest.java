@@ -309,4 +309,18 @@ class ExportImportTest {
                     .isEqualTo(400);
         });
     }
+
+    @Test
+    void aDocumentWhoseRowsAreNotTheExportedShapesIsRefused() {
+        serve(client -> {
+            String document = Json.obj()
+                    .put("spiderSense", Json.obj().put("schema", Schema.VERSION))
+                    .put("spans", Json.arr().add("not a span"))
+                    .toJson();
+            HttpResponse<String> response = postJson(client, "/api/import", document);
+            assertThat(response.statusCode()).isEqualTo(400);
+            assertThat(Json.parse(response.body()).asObject().getString("error"))
+                    .startsWith("Undecodable import document");
+        });
+    }
 }

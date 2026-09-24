@@ -160,13 +160,23 @@ public final class AgentApi {
         return WebResponse.noContent();
     }
 
-    /** The optional {@code note} of an acknowledgement's or a resolution's body. */
+    /**
+     * The optional {@code note} of an acknowledgement's or a resolution's body.
+     *
+     * <p>A body that is there but is not an object with a string note is the
+     * caller's {@code 400}, as a malformed mark is.
+     */
     private static @Nullable String note(WebRequest req) {
         String body = req.body();
         if (body == null || body.isBlank()) {
             return null;
         }
-        return AttrJson.optionalString(req.bodyJson().asObject(), "note");
+        return req.bodyJson(json -> new Note(AttrJson.optionalString(json.asObject(), "note")))
+                .text();
+    }
+
+    /** What an acknowledgement's or a resolution's body says. */
+    private record Note(@Nullable String text) {
     }
 
     public WebResponse acks(WebRequest req) {
@@ -178,18 +188,31 @@ public final class AgentApi {
     }
 
     public WebResponse mark(WebRequest req) {
-        Json.JsonObject body = req.bodyJson().asObject();
-        String name = AttrJson.optionalString(body, "name");
-        String note = AttrJson.optionalString(body, "note");
-        String service = AttrJson.optionalString(body, "service");
-        Long at = body.has("at") && !body.get("at").isNull() ? body.getLong("at") : null;
+        MarkBody body = req.bodyJson(MarkBody::read);
         Marks.Mark mark;
         try {
-            mark = reports.markStore().create(name, service, note, at);
+            mark = reports.markStore().create(body.name(), body.service(), body.note(), body.at());
         } catch (IllegalArgumentException e) {
             throw badRequest(e);
         }
         return Params.answer(req, reports.mark(mark)).status(HttpStatus.CREATED);
+    }
+
+    /**
+     * The body of {@code POST /api/marks}. It is read through
+     * {@code bodyJson(reader)}, so a body that is not an object, or a field of the
+     * wrong type, is a {@code 400} naming it rather than a server error.
+     */
+    private record MarkBody(@Nullable String name, @Nullable String note, @Nullable String service,
+            @Nullable Long at) {
+
+        static MarkBody read(Json.JsonValue json) {
+            Json.JsonObject body = json.asObject();
+            return new MarkBody(AttrJson.optionalString(body, "name"),
+                    AttrJson.optionalString(body, "note"),
+                    AttrJson.optionalString(body, "service"),
+                    body.has("at") && !body.get("at").isNull() ? body.getLong("at") : null);
+        }
     }
 
     /**
@@ -224,20 +247,33 @@ public final class AgentApi {
      * cannot read a JSON error it did not expect (cli.adoc#sql).
      */
     public WebResponse sql(WebRequest req) {
-        Json.JsonObject body = req.bodyJson().asObject();
-        String statement = AttrJson.optionalString(body, "sql");
-        int limit = ReadOnlyQuery.LIMIT;
-        if (body.has("limit") && !body.get("limit").isNull()) {
-            limit = (int) body.getLong("limit");
+        SqlBody body;
+        try {
+            body = req.bodyJson(SqlBody::read);
+        } catch (HttpException e) {
+            return Params.problem(req, e.getMessage());
         }
-        if (limit < 1) {
+        // Compared as the long it was sent as: a cast first would turn 2^32 + 1 into 1.
+        if (body.limit() < 1) {
             return Params.problem(req, "limit must be at least 1");
         }
+        int limit = (int) Math.min(body.limit(), ReadOnlyQuery.LIMIT_MAX);
         try {
-            return Params.answer(req, reports.sql(statement,
-                    Math.min(limit, ReadOnlyQuery.LIMIT_MAX), Params.full(req)));
+            return Params.answer(req, reports.sql(body.statement(), limit, Params.full(req)));
         } catch (IllegalArgumentException | IllegalStateException e) {
             return Params.problem(req, e.getMessage());
+        }
+    }
+
+    /** The body of {@code POST /api/sql}, its limit defaulted but not yet capped. */
+    private record SqlBody(@Nullable String statement, long limit) {
+
+        static SqlBody read(Json.JsonValue json) {
+            Json.JsonObject body = json.asObject();
+            long limit = body.has("limit") && !body.get("limit").isNull()
+                    ? body.getLong("limit")
+                    : ReadOnlyQuery.LIMIT;
+            return new SqlBody(AttrJson.optionalString(body, "sql"), limit);
         }
     }
 
