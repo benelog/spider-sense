@@ -107,9 +107,9 @@ public final class MetricQueries {
     public List<MetricMeta> catalog(@Nullable String service) {
         Map<String, List<String>> servicesByName = new LinkedHashMap<>();
         Map<String, Integer> seriesByName = new LinkedHashMap<>();
-        String seriesSql = "SELECT name, service FROM metric_series"
+        String seriesQuery = "SELECT name, service FROM metric_series"
                 + (service == null ? "" : " WHERE service = ?") + " ORDER BY name, service";
-        sql.forEach(seriesSql, service == null ? List.of() : List.of(service), rs -> {
+        sql.forEach(seriesQuery, service == null ? List.of() : List.of(service), rs -> {
             String name = rs.getString("name");
             List<String> names = servicesByName.computeIfAbsent(name, n -> new ArrayList<>());
             if (!names.contains(rs.getString("service"))) {

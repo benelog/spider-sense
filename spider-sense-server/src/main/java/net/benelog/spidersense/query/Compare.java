@@ -101,27 +101,27 @@ public final class Compare {
         long beforeRequests = before.totals().requests();
         long afterRequests = after.totals().requests();
         List<EndpointDiff> endpoints = join(before.endpoints(), after.endpoints(),
-                (id, one, two, either) -> {
-                    Side sideBefore = side(one, before.work().get(id));
-                    Side sideAfter = side(two, after.work().get(id));
+                (id, inBefore, inAfter, either) -> {
+                    Side sideBefore = side(inBefore, before.work().get(id));
+                    Side sideAfter = side(inAfter, after.work().get(id));
                     return new Weighted<>(new EndpointDiff(id, either.service(), either.name(),
                             sideBefore, sideAfter, verdict(sideBefore, sideAfter)),
-                            totalMs(one) + totalMs(two));
+                            totalMs(inBefore) + totalMs(inAfter));
                 },
                 EndpointDiff::verdict, EndpointDiff::endpointId);
         List<QueryDiff> queryDiffs = join(before.queries(), after.queries(),
-                (id, one, two, either) -> {
-                    QuerySide sideBefore = querySide(one, beforeRequests);
-                    QuerySide sideAfter = querySide(two, afterRequests);
+                (id, inBefore, inAfter, either) -> {
+                    QuerySide sideBefore = querySide(inBefore, beforeRequests);
+                    QuerySide sideAfter = querySide(inAfter, afterRequests);
                     return new Weighted<>(new QueryDiff(id, either.service(), either.statement(),
                             sideBefore, sideAfter, queryVerdict(sideBefore, sideAfter)),
-                            (one == null ? 0 : one.totalMs()) + (two == null ? 0 : two.totalMs()));
+                            (inBefore == null ? 0 : inBefore.totalMs()) + (inAfter == null ? 0 : inAfter.totalMs()));
                 },
                 QueryDiff::verdict, QueryDiff::queryId);
         List<ErrorDiff> errors = join(before.errors(), after.errors(),
-                (id, one, two, either) -> {
-                    long countBefore = one == null ? 0 : one.count();
-                    long countAfter = two == null ? 0 : two.count();
+                (id, inBefore, inAfter, either) -> {
+                    long countBefore = inBefore == null ? 0 : inBefore.count();
+                    long countAfter = inAfter == null ? 0 : inAfter.count();
                     return new Weighted<>(new ErrorDiff(id, either.service(), either.type(),
                             either.message(), countBefore, countAfter,
                             errorVerdict(countBefore, countAfter)),
@@ -159,11 +159,11 @@ public final class Compare {
         ids.addAll(after.keySet());
         List<Weighted<D>> rows = new ArrayList<>(ids.size());
         for (String each : ids) {
-            T one = before.get(each);
-            T two = after.get(each);
-            T either = Objects.requireNonNull(one != null ? one : two,
+            T inBefore = before.get(each);
+            T inAfter = after.get(each);
+            T either = Objects.requireNonNull(inBefore != null ? inBefore : inAfter,
                     "the id came from one of the two windows");
-            rows.add(builder.row(each, one, two, either));
+            rows.add(builder.row(each, inBefore, inAfter, either));
         }
         rows.sort(order(row -> verdict.apply(row.diff()), Weighted::weight, row -> id.apply(row.diff())));
         List<D> diffs = new ArrayList<>(rows.size());

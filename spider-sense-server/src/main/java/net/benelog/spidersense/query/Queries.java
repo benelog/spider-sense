@@ -582,7 +582,7 @@ public final class Queries {
                 where.params(), rs -> {
                     String queryId = rs.getString("query_id");
                     Ancestry.Entry entry = ancestry.entryOf(rs.getString("span_id"));
-                    String name = entry == null ? "(no endpoint)" : entry.endpoint();
+                    String name = entry == null ? Ancestry.NO_ENDPOINT : entry.endpoint();
                     callers.computeIfAbsent(queryId, id -> new LinkedHashMap<>())
                             .merge(name, 1L, Long::sum);
                     callerService.computeIfAbsent(queryId, id -> new HashMap<>())
@@ -750,7 +750,7 @@ public final class Queries {
         sql.forEach("SELECT error_id, span_id FROM span WHERE " + where.sql(), where.params(), rs -> {
             Ancestry.Entry entry = ancestry.entryOf(rs.getString("span_id"));
             counts.computeIfAbsent(rs.getString("error_id"), id -> new LinkedHashMap<>())
-                    .merge(entry == null ? "(no endpoint)" : entry.endpoint(), 1L, Long::sum);
+                    .merge(entry == null ? Ancestry.NO_ENDPOINT : entry.endpoint(), 1L, Long::sum);
         });
         Map<String, List<Stats.EndpointCount>> endpoints = new HashMap<>();
         counts.forEach((errorId, byEndpoint) -> {
@@ -806,7 +806,7 @@ public final class Queries {
                     + " AND s.endpoint_id = ?)", filter.endpointId());
         }
         if (filter.q() != null && !filter.q().isBlank()) {
-            String like = contains(filter.q());
+            String like = likeContaining(filter.q());
             where = where.and("EXISTS (SELECT 1 FROM span s WHERE s.trace_id = t.trace_id"
                     + " AND (LOWER(s.name) LIKE ? ESCAPE '\\' OR LOWER(s.attributes) LIKE ? ESCAPE '\\'))",
                     like, like);
@@ -819,7 +819,7 @@ public final class Queries {
      * {@code %}, {@code _} and {@code \\} match themselves, so {@code 100%} is a
      * substring and not a prefix (api.adoc#free-text-search).
      */
-    static String contains(String text) {
+    static String likeContaining(String text) {
         String escaped = text.toLowerCase(Locale.ROOT)
                 .replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
         return "%" + escaped + "%";
@@ -843,7 +843,7 @@ public final class Queries {
         List<LogRecord> logs = sql.query("SELECT * FROM log WHERE trace_id = ? ORDER BY at_ms",
                 List.of(traceId), Rows::log);
         return new TraceDetail(traceId, start / 1_000_000L, end / 1_000_000L,
-                Math.max(0, end - start) / 1_000_000.0, List.copyOf(serviceNames), sorted(spans), logs);
+                Rows.ms(Math.max(0, end - start)), List.copyOf(serviceNames), sorted(spans), logs);
     }
 
     /**
@@ -1066,7 +1066,7 @@ public final class Queries {
                     (long) LogRecord.severityFloor(filter.severity()));
         }
         if (filter.q() != null && !filter.q().isBlank()) {
-            String like = contains(filter.q());
+            String like = likeContaining(filter.q());
             // The logger too: a log-error finding's link names its logger in q (pages.adoc#findings).
             where = where.and("(LOWER(body) LIKE ? ESCAPE '\\' OR LOWER(logger) LIKE ? ESCAPE '\\'"
                     + " OR LOWER(attributes) LIKE ? ESCAPE '\\')", like, like, like);
@@ -1203,7 +1203,7 @@ public final class Queries {
             boolean located) {
 
         public double durationMillis() {
-            return durationNanos / 1_000_000.0;
+            return Rows.ms(durationNanos);
         }
 
         public long startMillis() {
@@ -1688,6 +1688,9 @@ public final class Queries {
      * storage.adoc accepts at local-development volumes.
      */
     record Ancestry(Map<String, Entry> entries, Map<String, String> parents) {
+
+        /** What a span with no entry span up its chain is attributed to, as a caller or a place. */
+        static final String NO_ENDPOINT = "(no endpoint)";
 
         /**
          * How far up a parent chain the walk goes before it gives up: a guard against a

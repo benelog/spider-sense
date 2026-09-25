@@ -191,7 +191,7 @@ class JvmRulesTest {
 
     @Test
     void aPoolWithNoLimitsIsExhaustedWhenSomethingWaited() {
-        Findings.Ranked ranked = Findings.exhausted("svc", pool(new double[]{3, 10, 4},
+        Findings.Ranked ranked = Findings.exhaustionOf("svc", pool(new double[]{3, 10, 4},
                 new double[]{NaN, NaN, NaN}, new double[]{NaN, 2, 0}));
 
         assertThat(ranked).isNotNull();
@@ -204,13 +204,13 @@ class JvmRulesTest {
 
     @Test
     void aPoolWithNoLimitsAndNobodyWaitingIsNot() {
-        assertThat(Findings.exhausted("svc", pool(new double[]{3, 10},
+        assertThat(Findings.exhaustionOf("svc", pool(new double[]{3, 10},
                 new double[]{NaN, NaN}, new double[]{NaN, NaN}))).isNull();
     }
 
     @Test
     void aFullPoolIsExhaustedEvenWithNobodyWaiting() {
-        Findings.Ranked ranked = Findings.exhausted("svc", pool(new double[]{5, 10, 7},
+        Findings.Ranked ranked = Findings.exhaustionOf("svc", pool(new double[]{5, 10, 7},
                 new double[]{10, 10, 10}, new double[]{0, 0, 0}));
 
         assertThat(ranked).isNotNull();
@@ -222,7 +222,7 @@ class JvmRulesTest {
 
     @Test
     void theWorstPointIsTheMostWaitingThenTheFullest() {
-        Findings.Ranked ranked = Findings.exhausted("svc", pool(new double[]{10, 8, 10},
+        Findings.Ranked ranked = Findings.exhaustionOf("svc", pool(new double[]{10, 8, 10},
                 new double[]{10, 10, 10}, new double[]{1, 3, 3}));
 
         assertThat(ranked).isNotNull();

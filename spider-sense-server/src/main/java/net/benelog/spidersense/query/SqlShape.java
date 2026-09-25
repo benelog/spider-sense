@@ -187,29 +187,29 @@ final class SqlShape {
         Region region = Region.NONE;
         // The region each open parenthesis interrupted: a subquery's "select"
         // ends the region inside it, never the one around it.
-        Deque<Region> outer = new ArrayDeque<>();
+        Deque<Region> interruptedRegions = new ArrayDeque<>();
         // The word before each open parenthesis, "" for none: inside
         // "extract(" a "from" is an argument separator, not a table list.
-        Deque<String> calls = new ArrayDeque<>();
+        Deque<String> enclosingCallees = new ArrayDeque<>();
         int i = 0;
         while (i < tokens.size()) {
             Token token = tokens.get(i);
             if (token.is("(")) {
-                outer.push(region);
+                interruptedRegions.push(region);
                 String call = i > 0 ? callee(tokens.get(i - 1)) : "";
-                calls.push(call);
+                enclosingCallees.push(call);
                 i = skipLeadingWord(tokens, i + 1, call);
                 continue;
             }
             if (token.is(")")) {
-                if (!outer.isEmpty()) {
-                    region = outer.pop();
-                    calls.pop();
+                if (!interruptedRegions.isEmpty()) {
+                    region = interruptedRegions.pop();
+                    enclosingCallees.pop();
                 }
                 i++;
                 continue;
             }
-            String call = calls.isEmpty() ? "" : calls.getFirst();
+            String call = enclosingCallees.isEmpty() ? "" : enclosingCallees.getFirst();
             if ((token.isWord("from") && FROM_FUNCTIONS.contains(call))
                     || (token.isWord("for") && FOR_FUNCTIONS.contains(call))
                     || (token.isWord("placing") && call.equals("overlay"))) {
@@ -362,22 +362,22 @@ final class SqlShape {
         if (i < tokens.size() && tokens.get(i).is("(")) {
             i = skipGroup(tokens, i + 1);
         } else if (i + 1 < tokens.size() && !tokens.get(i).isKeyword()
-                && tokens.get(i).kind() != Token.Kind.PUNCTUATION && unit(tokens.get(i + 1))) {
+                && tokens.get(i).kind() != Token.Kind.PUNCTUATION && isIntervalUnit(tokens.get(i + 1))) {
             i++;
         }
-        while (i < tokens.size() && unit(tokens.get(i))) {
+        while (i < tokens.size() && isIntervalUnit(tokens.get(i))) {
             i++;
             if (i < tokens.size() && tokens.get(i).is("(")) {
                 i = skipGroup(tokens, i + 1);     // the precision of "day(3)"
             }
-            if (i + 1 < tokens.size() && tokens.get(i).isWord("to") && unit(tokens.get(i + 1))) {
+            if (i + 1 < tokens.size() && tokens.get(i).isWord("to") && isIntervalUnit(tokens.get(i + 1))) {
                 i++;
             }
         }
         return i;
     }
 
-    private static boolean unit(Token token) {
+    private static boolean isIntervalUnit(Token token) {
         return token.kind() == Token.Kind.NAME && !token.quoted() && token.parts().size() == 1
                 && INTERVAL_UNITS.contains(token.text());
     }
@@ -509,7 +509,7 @@ final class SqlShape {
             if (!aliases.containsKey(name)) {
                 aliases.put(name, name);
             }
-            if (!contains(name, schema)) {
+            if (!hasTable(name, schema)) {
                 tables.add(new TableRef(name, schema));
             }
             i = alias(tokens, i + 1, name);
@@ -522,7 +522,7 @@ final class SqlShape {
         return i;
     }
 
-    private boolean contains(String name, @Nullable String schema) {
+    private boolean hasTable(String name, @Nullable String schema) {
         for (TableRef table : tables) {
             if (table.name().equals(name) && java.util.Objects.equals(table.schema(), schema)) {
                 return true;
@@ -601,27 +601,22 @@ final class SqlShape {
 
     /** @return the index just past the {@code )} that matches the {@code (} before {@code start} */
     private static int skipGroup(List<Token> tokens, int start) {
-        int depth = 1;
-        int i = start;
-        while (i < tokens.size() && depth > 0) {
-            if (tokens.get(i).is("(")) {
-                depth++;
-            } else if (tokens.get(i).is(")")) {
-                depth--;
-            }
-            i++;
-        }
-        return i;
+        return skipBalanced(tokens, start, "(", ")");
     }
 
     /** @return the index just past the {@code ]} that matches the {@code [} before {@code start} */
     private static int skipBrackets(List<Token> tokens, int start) {
+        return skipBalanced(tokens, start, "[", "]");
+    }
+
+    /** @return the index just past the {@code close} that matches the {@code open} before {@code start} */
+    private static int skipBalanced(List<Token> tokens, int start, String open, String close) {
         int depth = 1;
         int i = start;
         while (i < tokens.size() && depth > 0) {
-            if (tokens.get(i).is("[")) {
+            if (tokens.get(i).is(open)) {
                 depth++;
-            } else if (tokens.get(i).is("]")) {
+            } else if (tokens.get(i).is(close)) {
                 depth--;
             }
             i++;
@@ -688,7 +683,7 @@ final class SqlShape {
                         i++;
                     }
                     tokens.add(new Token(Kind.NUMBER, statement.substring(start, i), List.of(), false));
-                } else if (starts(statement, i)) {
+                } else if (startsName(statement, i)) {
                     i = name(statement, i, tokens);
                 } else if (statement.startsWith("::", i)) {
                     tokens.add(new Token(Kind.PUNCTUATION, "::", List.of(), false));
@@ -751,7 +746,7 @@ final class SqlShape {
             return i;
         }
 
-        private static boolean starts(String statement, int i) {
+        private static boolean startsName(String statement, int i) {
             char c = statement.charAt(i);
             return Character.isLetter(c) || c == '_' || c == '"' || c == '`'
                     || (c == '[' && bracketName(statement, i));
@@ -783,16 +778,16 @@ final class SqlShape {
         private static int name(String statement, int start, List<Token> tokens) {
             List<String> parts = new ArrayList<>();
             boolean[] quoted = {false};
-            int i = part(statement, start, parts, quoted);
+            int i = namePart(statement, start, parts, quoted);
             while (i < statement.length() && statement.charAt(i) == '.'
-                    && i + 1 < statement.length() && starts(statement, i + 1)) {
-                i = part(statement, i + 1, parts, quoted);
+                    && i + 1 < statement.length() && startsName(statement, i + 1)) {
+                i = namePart(statement, i + 1, parts, quoted);
             }
             tokens.add(new Token(Kind.NAME, String.join(".", parts), List.copyOf(parts), quoted[0]));
             return i;
         }
 
-        private static int part(String statement, int start, List<String> parts, boolean[] quoted) {
+        private static int namePart(String statement, int start, List<String> parts, boolean[] quoted) {
             char c = statement.charAt(start);
             char close = c == '"' ? '"' : c == '`' ? '`' : c == '[' ? ']' : 0;
             if (close != 0) {

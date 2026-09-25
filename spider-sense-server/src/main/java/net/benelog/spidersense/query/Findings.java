@@ -461,7 +461,7 @@ public final class Findings {
     }
 
     private List<Ranked> rules(Window window, @Nullable String service, Scope scope) {
-        Reads reads = new Reads(sql, queries, window, service);
+        SharedScans reads = new SharedScans(sql, queries, window, service);
         boolean evidence = scope.evidence();
         List<Ranked> found = new ArrayList<>();
         if (scope.runs(ERROR)) {
@@ -501,7 +501,7 @@ public final class Findings {
     }
 
     /** The findings the rules produce over a window for one service, by id. */
-    private Map<String, Ranked> byId(Window window, String service) {
+    private Map<String, Ranked> rulesById(Window window, String service) {
         Map<String, Ranked> byId = new LinkedHashMap<>();
         for (Ranked each : rules(window, service)) {
             byId.put(each.finding().id(), each);
@@ -532,7 +532,7 @@ public final class Findings {
         }
         String service = finding.finding().service();
         Map<String, Ranked> after = since.computeIfAbsent(new ResolvedIn(resolvedAt, service),
-                key -> byId(Window.of(resolvedAt + 1, window.to()), service));
+                key -> rulesById(Window.of(resolvedAt + 1, window.to()), service));
         return after.get(finding.finding().id());
     }
 
@@ -668,7 +668,7 @@ public final class Findings {
 
     // --- error ---------------------------------------------------------------
 
-    private List<Ranked> errors(Window window, @Nullable String service, Reads reads,
+    private List<Ranked> errors(Window window, @Nullable String service, SharedScans reads,
             boolean evidence) {
         List<Ranked> found = new ArrayList<>();
         List<Stats.ErrorGroup> groups = evidence
@@ -763,7 +763,7 @@ public final class Findings {
      * {@code check --max-log-errors} sums and a cap on the rows would undercount it
      * (check.adoc#rules); what a group holds does not grow with its records.
      */
-    private List<Ranked> logErrors(Window window, @Nullable String service, Reads reads,
+    private List<Ranked> logErrors(Window window, @Nullable String service, SharedScans reads,
             boolean evidence) {
         Where where = new Where("l.at_ms BETWEEN ? AND ? AND l.severity_number >= " + ERROR_SEVERITY
                 + " AND (t.trace_id IS NULL OR t.error_count = 0)", window.from(), window.to());
@@ -810,7 +810,7 @@ public final class Findings {
             Finding finding = new Finding(
                     id(LOG_ERROR, group.service, group.logger + "\0" + group.message),
                     LOG_ERROR, HIGH, group.service,
-                    "ERROR in " + simpleName(group.logger) + ": " + cut(group.message, MESSAGE_IN_TITLE),
+                    "ERROR in " + simpleName(group.logger) + ": " + oneLine(group.message, MESSAGE_IN_TITLE),
                     Numbers.plural(group.count, "record") + " in " + seenIn
                             + ", none of them on a failed trace; " + group.message,
                     Subject.logger(group.logger),
@@ -823,7 +823,7 @@ public final class Findings {
     }
 
     /** The endpoint a log record belongs to, as an {@code error} finding's endpoints are found. */
-    private static String endpointOf(@Nullable Reads reads, @Nullable String spanId,
+    private static String endpointOf(@Nullable SharedScans reads, @Nullable String spanId,
             @Nullable String rootName) {
         if (reads != null && spanId != null && !spanId.isBlank()) {
             Queries.Ancestry.Entry entry = reads.ancestry().entryOf(spanId);
@@ -831,7 +831,7 @@ public final class Findings {
                 return entry.endpoint();
             }
         }
-        return rootName == null ? "(no endpoint)" : rootName;
+        return rootName == null ? Queries.Ancestry.NO_ENDPOINT : rootName;
     }
 
     /** The logging bridge exports the throwable as an attribute when there was one. */
@@ -860,7 +860,7 @@ public final class Findings {
      * callers already use, because two endpoints of one trace each running the
      * statement four times is not an N+1 and grouping by trace alone cannot tell.
      */
-    private List<Ranked> nPlusOne(Window window, @Nullable String service, Reads reads,
+    private List<Ranked> nPlusOne(Window window, @Nullable String service, SharedScans reads,
             boolean evidence) {
         List<Candidate> candidates = candidates(window, service);
         if (candidates.isEmpty()) {
@@ -995,7 +995,7 @@ public final class Findings {
      * spans and the parent-chain walk — because the call's target lives in the
      * attributes rather than in a column.
      */
-    private List<Ranked> nPlusOneHttp(Window window, @Nullable String service, Reads reads,
+    private List<Ranked> nPlusOneHttp(Window window, @Nullable String service, SharedScans reads,
             boolean evidence) {
         Queries.Ancestry ancestry = reads.ancestry();
         List<Repeats.Occurrence<Queries.OutboundCall>> occurrences = new ArrayList<>();
@@ -1028,7 +1028,7 @@ public final class Findings {
     }
 
     /** How many located repeats an {@code n-plus-one-http} reads the attributes of for its code. */
-    private static final int CODE_ATTEMPTS = 20;
+    private static final int MAX_CODE_LOOKUPS = 20;
 
     /**
      * The code of an {@code n-plus-one-http}: the frames of the newest repeat whose call
@@ -1046,7 +1046,7 @@ public final class Findings {
                 continue;
             }
             List<String> code = frames.ofAttributes(attributesOf(call.traceId(), call.spanId()));
-            if (!code.isEmpty() || ++attempts >= CODE_ATTEMPTS) {
+            if (!code.isEmpty() || ++attempts >= MAX_CODE_LOOKUPS) {
                 return code;
             }
         }
@@ -1057,7 +1057,7 @@ public final class Findings {
 
     // --- slow query ----------------------------------------------------------
 
-    private List<Ranked> slowQueries(Window window, @Nullable String service, Reads reads,
+    private List<Ranked> slowQueries(Window window, @Nullable String service, SharedScans reads,
             boolean evidence) {
         // Every group over the threshold, however it ranks by total time: the cut of a
         // list applied before the threshold would hide a slow group behind fast frequent ones.
@@ -1302,7 +1302,7 @@ public final class Findings {
      * than by a {@code GROUP BY}; the percentiles are the nearest-rank ones
      * {@code PERCENTILE_DISC} gives the other rules.
      */
-    private List<Ranked> slowExternal(Window window, Reads reads, boolean evidence) {
+    private List<Ranked> slowExternal(Window window, SharedScans reads, boolean evidence) {
         Map<ExternalGroup, List<Queries.OutboundCall>> byGroup = new LinkedHashMap<>();
         for (Queries.OutboundCall span : reads.outboundHttp()) {
             byGroup.computeIfAbsent(new ExternalGroup(span.service(), span.target(), span.name()),
@@ -1310,7 +1310,7 @@ public final class Findings {
         }
         List<Ranked> found = new ArrayList<>();
         byGroup.forEach((group, calls) -> {
-            Ranked ranked = external(window, evidence ? reads : null, group.service(), group.target(),
+            Ranked ranked = slowExternalGroup(window, evidence ? reads : null, group.service(), group.target(),
                     group.name(), calls);
             if (ranked != null) {
                 found.add(ranked);
@@ -1324,7 +1324,7 @@ public final class Findings {
     }
 
     /** One group; with no {@code reads} it is the id alone, with no callers and no evidence. */
-    private @Nullable Ranked external(Window window, @Nullable Reads reads, String service,
+    private @Nullable Ranked slowExternalGroup(Window window, @Nullable SharedScans reads, String service,
             String target, String name, List<Queries.OutboundCall> calls) {
         Queries.CallStats stats = Queries.CallStats.ofCalls(calls);
         double p95Ms = stats.p95Ms();
@@ -1374,14 +1374,14 @@ public final class Findings {
     }
 
     /** Which endpoints made the calls: the nearest entry span up the chain, as a query's callers. */
-    private static List<Stats.Caller> externalCallers(Reads reads, List<Queries.OutboundCall> calls,
+    private static List<Stats.Caller> externalCallers(SharedScans reads, List<Queries.OutboundCall> calls,
             String service) {
         Queries.Ancestry ancestry = reads.ancestry();
         Map<String, Long> counts = new LinkedHashMap<>();
         Map<String, String> byService = new LinkedHashMap<>();
         for (Queries.OutboundCall call : calls) {
             Queries.Ancestry.Entry entry = ancestry.entryOf(call.spanId());
-            String endpoint = entry == null ? "(no endpoint)" : entry.endpoint();
+            String endpoint = entry == null ? Queries.Ancestry.NO_ENDPOINT : entry.endpoint();
             counts.merge(endpoint, 1L, Long::sum);
             byService.putIfAbsent(endpoint, entry == null ? service : entry.service());
         }
@@ -1420,7 +1420,7 @@ public final class Findings {
         List<Ranked> found = new ArrayList<>();
         for (String name : servicesInScope(service)) {
             for (JvmView.ConnectionPool pool : JvmView.connectionPools(metrics, name, window)) {
-                Ranked exhausted = exhausted(name, pool);
+                Ranked exhausted = exhaustionOf(name, pool);
                 if (exhausted != null) {
                     found.add(exhausted);
                 }
@@ -1441,7 +1441,7 @@ public final class Findings {
      * moment, and "{@code usedMax} equal to {@code max}" has to read as "the pool
      * was full" whichever came first (findings.adoc#pool-exhausted).
      */
-    static @Nullable Ranked exhausted(String service, JvmView.ConnectionPool pool) {
+    static @Nullable Ranked exhaustionOf(String service, JvmView.ConnectionPool pool) {
         long at = 0;
         double worstPending = 0;
         double worstUsed = 0;
@@ -1449,9 +1449,9 @@ public final class Findings {
         double max = Double.NaN;
         boolean exhausted = false;
         for (int i = 0; i < pool.t().length; i++) {
-            double pending = at(pool.pending(), i);
-            double used = at(pool.used(), i);
-            double limit = at(pool.max(), i);
+            double pending = valueAt(pool.pending(), i);
+            double used = valueAt(pool.used(), i);
+            double limit = valueAt(pool.max(), i);
             if (!Double.isNaN(used)) {
                 usedMax = Math.max(usedMax, used);
             }
@@ -1525,15 +1525,15 @@ public final class Findings {
         for (String name : servicesInScope(service)) {
             for (MetricQueries.SeriesData series :
                     metrics.series(MetricSeriesNames.GC_DURATION, name, Map.of(), window)) {
-                add(found, gcPause(name, series, tingles.slowRequestMs()));
+                addIfFound(found, gcPause(name, series, tingles.slowRequestMs()));
             }
-            add(found, heapPressure(name, JvmView.heap(metrics, name, window)));
-            add(found, threadGrowth(name, JvmView.threads(metrics, name, window)));
+            addIfFound(found, heapPressure(name, JvmView.heap(metrics, name, window)));
+            addIfFound(found, threadGrowth(name, JvmView.threads(metrics, name, window)));
         }
         return found;
     }
 
-    private static void add(List<Ranked> found, @Nullable Ranked ranked) {
+    private static void addIfFound(List<Ranked> found, @Nullable Ranked ranked) {
         if (ranked != null) {
             found.add(ranked);
         }
@@ -1627,8 +1627,8 @@ public final class Findings {
         double limit = 0;
         long at = 0;
         for (int i = 0; i < heap.t().length; i++) {
-            double used = at(heap.used(), i);
-            double max = at(heap.limit(), i);
+            double used = valueAt(heap.used(), i);
+            double max = valueAt(heap.limit(), i);
             if (Double.isNaN(used) || Double.isNaN(max) || max <= 0) {
                 continue;
             }
@@ -1667,7 +1667,7 @@ public final class Findings {
         double max = 0;
         long at = 0;
         for (int i = 0; i < threads.t().length; i++) {
-            double count = at(threads.count(), i);
+            double count = valueAt(threads.count(), i);
             if (Double.isNaN(count)) {
                 continue;
             }
@@ -1705,7 +1705,7 @@ public final class Findings {
     }
 
     /** A value of an aligned series, or {@link Double#NaN} when the series is shorter. */
-    private static double at(double[] values, int index) {
+    private static double valueAt(double[] values, int index) {
         return values.length > index ? values[index] : Double.NaN;
     }
 
@@ -1723,12 +1723,12 @@ public final class Findings {
      * the same walk {@code /api/queries} and {@code /api/errors} build for the same
      * window and service, so their numbers stay the list's numbers.
      */
-    private static final class Reads {
+    private static final class SharedScans {
 
         private final Lazy<Queries.Ancestry> ancestry;
         private final Lazy<List<Queries.OutboundCall>> outboundHttp;
 
-        private Reads(Sql sql, Queries queries, Window window, @Nullable String service) {
+        private SharedScans(Sql sql, Queries queries, Window window, @Nullable String service) {
             this.ancestry = Lazy.of(() -> Queries.Ancestry.of(sql, window, service));
             this.outboundHttp = Lazy.of(() -> queries.outboundHttp(window, service));
         }
@@ -1807,7 +1807,7 @@ public final class Findings {
     }
 
     /** One line, cut at {@code max} characters with an ellipsis. */
-    private static String cut(@Nullable String text, int max) {
+    private static String oneLine(@Nullable String text, int max) {
         String single = text == null ? "" : text.replaceAll("\\s+", " ").trim();
         return single.length() <= max ? single : single.substring(0, max) + "…";
     }
@@ -1879,7 +1879,7 @@ public final class Findings {
         if (statement == null) {
             return "a query";
         }
-        return cut(statement, STATEMENT_IN_TITLE);
+        return oneLine(statement, STATEMENT_IN_TITLE);
     }
 
     /** {@code java.lang.IllegalStateException} is said as {@code IllegalStateException}. */
