@@ -198,6 +198,9 @@ The pulse respects a reduced-motion preference.
 [#dialogs]
 == Dialogs
 
+A dialog closes on `Esc`, on its close button, and on a click on the backdrop that also began on the backdrop.
+A drag that starts in one of its fields and ends outside it, as when selecting the text, leaves it open.
+
 How to send data::
 Has three tabs: `-javaagent`, environment variables, and `curl`.
 Each tab is a copyable block carrying the actual endpoint from `/api/status`.

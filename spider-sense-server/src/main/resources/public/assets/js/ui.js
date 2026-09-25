@@ -436,7 +436,14 @@ export function dialog({ title, body, actions, onClose }) {
     h('div.dialog-body', body),
     actions ? h('footer.dialog-foot', actions) : null);
   dlg.addEventListener('close', () => { if (onClose) onClose(dlg.returnValue); dlg.remove(); });
-  dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
+  // A click on the backdrop closes the dialog, but only when it also began there: a drag
+  // from a field inside to the backdrop fires its click on the dialog too, and would lose the text.
+  let pressedOnBackdrop = false;
+  dlg.addEventListener('pointerdown', (e) => { pressedOnBackdrop = e.target === dlg; });
+  dlg.addEventListener('click', (e) => {
+    if (e.target === dlg && pressedOnBackdrop) dlg.close();
+    pressedOnBackdrop = false;
+  });
   document.body.appendChild(dlg);
   dlg.showModal();
   return dlg;
