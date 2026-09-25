@@ -161,7 +161,15 @@ export async function refreshStatus() {
   return state.status;
 }
 
-export function clearData() { return fetch('/api/data', { method: 'DELETE' }); }
+/** DELETE /api/data; a refusal (a lock on the shared file, a Host check) throws an ApiError. */
+export function clearData() {
+  return fetch('/api/data', { method: 'DELETE' }).then(async (res) => {
+    if (res.ok) return null;
+    let message = res.status + ' ' + res.statusText;
+    try { message = (await res.json()).error || message; } catch (e) { /* no JSON body */ }
+    throw new ApiError(message, res.status);
+  });
+}
 
 export function exportUrl(extra = {}) {
   return '/api/export' + qs(extra.traceId ? { traceId: extra.traceId } : params(extra));

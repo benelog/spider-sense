@@ -203,6 +203,8 @@ Each tab is a copyable block carrying the actual endpoint from `/api/status`.
 
 Clear data::
 Asks for confirmation, saying what xref:api.adoc#data[`DELETE /api/data`] deletes and what it keeps, then sends it.
+A `204` reloads the page and shows the toast `Data cleared`.
+Any other answer, or no answer, shows `Data not cleared:` and the error in the toast instead, and leaves the page as it was.
 
 [#keyboard]
 == Keyboard

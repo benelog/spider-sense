@@ -253,7 +253,13 @@ function clearDataDialog() {
         type: 'button',
         onclick: async () => {
           dlg.close();
-          await api.clearData();
+          try {
+            await api.clearData();
+          } catch (e) {
+            // Nothing was deleted, so the page stays as it is.
+            ui.toast('Data not cleared: ' + (e && e.message ? e.message : e));
+            return;
+          }
           await api.refreshStatus().then(paintFoot).catch(() => {});
           tingleCount = 0;
           updateBadge();
