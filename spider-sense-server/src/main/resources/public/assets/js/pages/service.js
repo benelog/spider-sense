@@ -41,7 +41,7 @@ function endpointTable(rows, sortState, onSort) {
 
 export function render(root, ctx) {
   const name = ctx.params.name;
-  let sort = sortFromQuery(ctx.query, 'totalMs');
+  let sort = sortFromQuery(ctx.query(), 'totalMs');
   let endpoints = [];
   let endpointNode = null;
 

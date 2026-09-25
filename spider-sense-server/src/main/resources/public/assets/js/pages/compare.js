@@ -103,8 +103,6 @@ export function render(root, ctx) {
     panel({ class: 'cmp-panel' }, bar), tiles, body);
   root.appendChild(page);
 
-  function query() { return router.currentRoute().query || {}; }
-
   function apply() {
     router.setQuery({
       before: beforeSelect.value,
@@ -117,7 +115,7 @@ export function render(root, ctx) {
   /** The three selects, and the two newest marks when the hash named none. */
   function paintSelects() {
     const options = markOptions(api.state.marks || []);
-    const q = query();
+    const q = ctx.query();
     const known = new Set(options.map((o) => o.value));
     const fillMarkSelect = (node, chosen, extra) => {
       fill(node, extra, options.map((o) => h('option', { value: o.value }, o.label)));

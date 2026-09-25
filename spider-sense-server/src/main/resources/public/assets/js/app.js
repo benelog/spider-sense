@@ -222,7 +222,10 @@ function showRoute(current) {
   markNav(navKey);
   const ctx = {
     params: current.params,
-    query: current.query,
+    // The query the page was opened with; a same-route hash change only refreshes the page,
+    // so a page reads the hash's query as it is now through query().
+    initialQuery: current.query,
+    query: () => router.currentRoute().query || {},
     setTitle,
     navigate: (path, query) => router.go(path, { ...api.sharedQuery(), ...query }),
   };

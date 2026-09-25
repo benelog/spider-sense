@@ -19,9 +19,9 @@ export function labelOf(s, service = api.state.service) {
 
 export function render(root, ctx) {
   let catalog = [];
-  let selected = ctx.query.metric || '';
-  let rateOn = ctx.query.rate === '1';
-  let filterText = ctx.query.find || '';
+  let selected = ctx.query().metric || '';
+  let rateOn = ctx.query().rate === '1';
+  let filterText = ctx.query().find || '';
 
   const search = h('input', { type: 'search', placeholder: 'Find a metric', value: filterText, 'aria-label': 'Find a metric' });
   const listBox = h('div.catalog', spinner());

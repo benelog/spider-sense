@@ -36,13 +36,18 @@ before(async () => {
   for (const p of ['/', '/services/:name', '/endpoints/:id', '/traces/:id', '/queries/:id', '/errors/:id']) router.register(p);
 });
 
+/** What app.js hands a page: query() reads the hash as it is now, initialQuery as it was. */
+function pageContext(params) {
+  return { params, initialQuery: {}, query: () => router.currentRoute().query || {}, setTitle() {}, navigate() {} };
+}
+
 /** Renders a page, waits for its answer, and fails on a thrown error or an error box. */
 async function visit(name, params = {}, service = '') {
   api.state.service = service;
   const page = await import(JS + 'pages/' + name + '.js');
   const root = document.createElement('main');
   document.body.replaceChildren(root);
-  const instance = page.render(root, { params, query: {}, setTitle() {}, navigate() {} }) || {};
+  const instance = page.render(root, pageContext(params)) || {};
   await until(() => !root.querySelector('.loading'), name + ' to load');
   await settle();
   assert.deepEqual(root.querySelectorAll('.error-box').map((b) => b.textContent), [], name + ' shows an error box');

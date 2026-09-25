@@ -11,7 +11,7 @@ import { rate, pct } from '../format.js';
 
 export function render(root, ctx) {
   let rows = [];
-  let sort = sortFromQuery(ctx.query, 'requests');
+  let sort = sortFromQuery(ctx.query(), 'requests');
   let node = null;
 
   const body = h('div', spinner());

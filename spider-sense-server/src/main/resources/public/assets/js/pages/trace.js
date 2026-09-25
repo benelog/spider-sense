@@ -19,9 +19,9 @@ import {
 export function render(root, ctx) {
   const traceId = ctx.params.id;
   let data = null;
-  let view = router.queryParam(ctx.query, 'view', ['waterfall', 'profile'], 'waterfall');
-  let profileSort = router.queryParam(ctx.query, 'sort', ['start', 'elapsed', 'self'], 'start');
-  let selectedSpan = ctx.query.span || null;
+  let view = router.queryParam(ctx.query(), 'view', ['waterfall', 'profile'], 'waterfall');
+  let profileSort = router.queryParam(ctx.query(), 'sort', ['start', 'elapsed', 'self'], 'start');
+  let selectedSpan = ctx.query().span || null;
   const collapsed = new Set();
   let lastShape = '';
 

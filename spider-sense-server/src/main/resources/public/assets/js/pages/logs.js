@@ -37,9 +37,9 @@ export function render(root, ctx) {
   let loadedFor = '';
 
   const filter = {
-    q: ctx.query.q || '',
-    severity: router.queryParam(ctx.query, 'severity', SEVERITIES, ''),
-    traceId: ctx.query.traceId || '',
+    q: ctx.query().q || '',
+    severity: router.queryParam(ctx.query(), 'severity', SEVERITIES, ''),
+    traceId: ctx.query().traceId || '',
   };
 
   const input = h('input', { type: 'search', placeholder: 'Search log bodies', value: filter.q, 'aria-label': 'Search logs' });

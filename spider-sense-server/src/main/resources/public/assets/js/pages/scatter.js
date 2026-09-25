@@ -37,11 +37,11 @@ export function render(root, ctx) {
 
   ctx.setTitle('Response time scatter');
 
-  let mode = router.queryParam(ctx.query, 'mode', ['dots', 'heatmap'], 'dots');
-  let showOk = ctx.query.hide !== 'ok';
-  let showErr = ctx.query.hide !== 'err';
+  let mode = router.queryParam(ctx.query(), 'mode', ['dots', 'heatmap'], 'dots');
+  let showOk = ctx.query().hide !== 'ok';
+  let showErr = ctx.query().hide !== 'err';
 
-  let logScale = ctx.query.log === '1';
+  let logScale = ctx.query().log === '1';
 
   const logToggle = h('button.btn', {
     type: 'button', 'aria-pressed': String(logScale),

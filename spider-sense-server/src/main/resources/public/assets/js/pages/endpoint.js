@@ -12,7 +12,7 @@ import { dur, count, rate } from '../format.js';
 export function render(root, ctx) {
   const id = ctx.params.id;
   let data = null;
-  let activeTab = router.queryParam(ctx.query, 'tab', ['slowest', 'recent', 'queries', 'errors'], 'slowest');
+  let activeTab = router.queryParam(ctx.query(), 'tab', ['slowest', 'recent', 'queries', 'errors'], 'slowest');
 
   const head = h('div.trace-head');
   const headPanel = panel({}, head);

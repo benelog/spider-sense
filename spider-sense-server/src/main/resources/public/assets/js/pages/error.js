@@ -25,7 +25,7 @@ function exceptionChain(chain, mode) {
 
 export function render(root, ctx) {
   const id = ctx.params.id;
-  let mode = framesMode(ctx.query);
+  let mode = framesMode(ctx.query());
   let lastChain = null;
   let loaded = null;
 

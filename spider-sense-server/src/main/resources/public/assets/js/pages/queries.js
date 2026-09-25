@@ -31,8 +31,8 @@ function unindexedCell(schema) {
 export function render(root, ctx) {
   let rows = [];
   let node = null;
-  let sort = router.queryParam(ctx.query, 'sort', SORTS.map((s) => s.id), 'total');
-  let filterText = ctx.query.q || '';
+  let sort = router.queryParam(ctx.query(), 'sort', SORTS.map((s) => s.id), 'total');
+  let filterText = ctx.query().q || '';
 
   const input = h('input', { type: 'search', placeholder: 'Filter statements', value: filterText, 'aria-label': 'Filter statements' });
   const sortSelect = h('select', { 'aria-label': 'Sort by' }, SORTS.map((s) => h('option', { value: s.id }, s.label)));

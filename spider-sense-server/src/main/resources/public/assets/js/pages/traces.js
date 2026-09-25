@@ -8,7 +8,7 @@ import { traceTable } from '../widgets.js';
 import { count } from '../format.js';
 
 export function render(root, ctx) {
-  const initialQuery = { ...ctx.query };
+  const initialQuery = { ...ctx.query() };
   const filter = {
     q: initialQuery.q || '',
     minMs: initialQuery.minMs || '',
