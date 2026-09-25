@@ -554,7 +554,10 @@ class CliTest {
         assertThat(claude).endsWith("<!-- spider-sense:end -->\n");
         assertThat(claude)
                 .contains("java -javaagent:/x/spider-sense.jar -jar <app jar>")
-                .contains("JAVA_TOOL_OPTIONS=\"-javaagent:/x/spider-sense.jar\" ./gradlew bootRun")
+                .contains("./gradlew bootRun -PspiderSense.jar=/x/spider-sense.jar")
+                .contains("JAVA_TOOL_OPTIONS=\"-javaagent:/x/spider-sense.jar\" <command>")
+                .contains("`--no-daemon`")
+                .doesNotContain("JAVA_TOOL_OPTIONS=\"-javaagent:/x/spider-sense.jar\" ./gradlew")
                 .contains("java -jar /x/spider-sense.jar findings --since=start")
                 .contains("<http://127.0.0.1:4000>")
                 .contains("The loop — start, mark, exercise, findings, fix, compare, check — is in the "

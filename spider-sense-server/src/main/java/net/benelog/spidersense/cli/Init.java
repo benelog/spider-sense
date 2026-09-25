@@ -57,7 +57,9 @@ final class Init {
             ## Spider Sense
 
             Spider Sense is a local-development observability tool for this project, and the jar is at `${jar}`.
-            Start the application under it with `java -javaagent:${jar} -jar <app jar>`, or, when the start command is not yours to change, with `JAVA_TOOL_OPTIONS="-javaagent:${jar}" ./gradlew bootRun` (or `./gradlew run`).
+            Start the application under it with `java -javaagent:${jar} -jar <app jar>`.
+            Under Gradle, apply the `net.benelog.spidersense` plugin and run `./gradlew bootRun -PspiderSense.jar=${jar}` (or `run`): it puts the agent on the application's JVM and not on the Gradle daemon.
+            When the start command is not yours to change, `JAVA_TOOL_OPTIONS="-javaagent:${jar}" <command>` attaches it; a `./gradlew` command then needs `--no-daemon`, or the daemon hosts a Spider Sense of its own on port 4000.
             The UI is then at <http://127.0.0.1:4000> unless the port was changed.
 
             Ask it from the terminal; every answer is Markdown made for an agent:
