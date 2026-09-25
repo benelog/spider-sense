@@ -12,8 +12,8 @@ import javax.inject.Inject;
  * <p>Each rule becomes one {@code --max-…} or {@code --min-…} argument of the
  * CLI's {@code check}, and a rule left unset contributes nothing, so the CLI's
  * own default set ({@code maxErrors=0}, {@code maxNPlusOne=0},
- * {@code maxP95Ms=<slow.request.ms>}) applies to a block that names no rule at
- * all. The window and the scope are the other three: {@code since}, which
+ * {@code maxRegressions=0}, {@code maxP95Ms=<slow.request.ms>}) applies to a
+ * block that names no rule at all. The window and the scope are the other three: {@code since}, which
  * defaults to {@code start} and which the project property
  * {@code spiderSense.check.since} overrides for one run, {@code until}, and
  * {@code service}, which follows the outer block's {@code service}.

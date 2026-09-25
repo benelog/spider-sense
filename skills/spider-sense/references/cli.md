@@ -103,6 +103,7 @@ spider-sense: no Spider Sense database at /home/me/db/spider-sense/sense.mv.db; 
 ```
 
 A file of another schema version is refused the same way, with exit `2` and a message naming both versions.
+A file that holds tables but no Spider Sense schema, such as the application's own database named by a mistaken `--db`, is refused as well, with exit `2` and `spider-sense: the database holds tables but no Spider Sense schema; point --db at the file an application under the agent or the standalone server writes`.
 
 ## MCP over stdio
 

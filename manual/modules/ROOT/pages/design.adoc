@@ -57,6 +57,7 @@ A file of that name is already that content, so the launcher skips the extractio
 The extraction writes a temporary file in the same directory and moves it into place, so two JVMs starting at once never see a half-written jar, and a file in use is never replaced.
 The directory belongs to one user: the launcher creates it readable and writable by its owner alone, and refuses one another user owns, because a jar in it could be replaced by that user.
 After a new extraction the launcher deletes the jars of other builds that no JVM has started from in the last minute.
+On every start, with or without an extraction, it also deletes the temporary `nested-*.jar.tmp` files older than a minute, which only a JVM killed during its copy leaves behind.
 The launcher loads that jar through a dedicated `SenseClassLoader extends URLClassLoader` whose parent is the platform class loader.
 The server never sees the application's classes, and the application never sees Jetty or protobuf from the server.
 The extension is extracted the same way, to `extension-<version>-<crc>.jar` beside it, and is loaded by the OpenTelemetry agent's own `ExtensionClassLoader` rather than by ours.

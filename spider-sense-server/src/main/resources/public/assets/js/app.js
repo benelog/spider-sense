@@ -257,8 +257,9 @@ function clearDataDialog() {
   const dlg = dialog({
     title: 'Clear data',
     // api.adoc#data: what DELETE /api/data removes from the store on disk, and what it keeps.
-    body: h('p', 'Every span, trace, log, metric point, tingle, mark, acknowledgement and resolution'
-      + ' is deleted from the store. Services, metric names and each service\u2019s newest start mark stay.'),
+    body: h('p', 'Every span, trace, log, metric point and series, tingle, mark, acknowledgement, resolution'
+      + ' and index catalog is deleted from the store.'
+      + ' Services, metric metadata and each service\u2019s newest start mark stay.'),
     actions: [
       h('button.btn', { type: 'button', onclick: () => dlg.close() }, 'Cancel'),
       h('button.btn.btn-primary', {

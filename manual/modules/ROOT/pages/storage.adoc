@@ -319,7 +319,8 @@ It costs the window's share of the group, never its whole history.
 * The acknowledgements and resolutions of a page of findings: `SELECT * FROM ack WHERE finding_id IN (…)`, one statement for the page.
 A finding's xref:findings.adoc#state[state] reads the two newest `start` marks of its service with `SELECT at_ms FROM mark WHERE name = 'start' AND service = ? AND at_ms <= ? ORDER BY at_ms DESC LIMIT 2`.
 It runs the rules of the page's kinds again over the run between those two marks, for ids alone, and keeps what they found in memory for as long as the server runs.
-* Free-text search (`q`): `LOWER(name) LIKE ? OR LOWER(attributes) LIKE ?` within the window.
+* Free-text search (`q`): `+LOWER(name) LIKE ? ESCAPE '\' OR LOWER(attributes) LIKE ? ESCAPE '\'+` over the spans of the window, and `+LOWER(body) LIKE ? ESCAPE '\' OR LOWER(logger) LIKE ? ESCAPE '\' OR LOWER(attributes) LIKE ? ESCAPE '\'+` over its logs.
+The pattern is the lower-cased text with its `%`, `_` and `\` escaped, between two `%`.
 A scan of the window is acceptable at local-development volumes.
 * JVM and metrics: `metric_point` joined with `metric_series`, resampled in Java where the API asks for it.
 

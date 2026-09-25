@@ -8,6 +8,7 @@ The sources in order of precedence, highest first, are the `--key=value` argumen
 The environment variable of a key is its name in upper case with every `.` and `-` made `_`, so `spidersense.slow.query.ms` is `SPIDERSENSE_SLOW_QUERY_MS`.
 An environment variable that is set but empty counts as unset, so it hides neither the properties file nor the default.
 A numeric key whose value is not a number, such as `spidersense.slow.query.ms=1x`, is a warning on stderr, and that key alone takes its default; every other key keeps its value.
+The launcher's own numeric arguments are the exception: the standalone jar answers a malformed `--port`, `--retention.hours`, `--slow.request.ms` or `--slow.query.ms` as a usage error, printing `spider-sense: --slow.query.ms is not a number: 1x` on stderr and exiting `2` without starting.
 
 [#properties]
 == Properties
@@ -180,8 +181,8 @@ Spider Sense only fills in defaults, and only where you have set neither the pro
 | The same reason, for metrics.
 
 | `otel.metrics.exporter`, `otel.logs.exporter`, `otel.traces.exporter`
-| `otlp`
-| All three signals go to the collector.
+| `otlp`, or `none` when the port is held by something that is not a Spider Sense
+| All three signals go to the collector, and none goes to a port held by something else, where every export would fail (xref:modes.adoc[The Three Modes]).
 
 | `otel.javaagent.exclude-class-loaders`
 | Spider Sense's own server class loader, appended to a list you set
@@ -196,7 +197,7 @@ Spider Sense only fills in defaults, and only where you have set neither the pro
 | The extension records `code.stacktrace` on a slow query, on the fifth repeat of an N+1, and on a slow outbound call. It also reads the index catalog of the tables a slow statement touches, which is a finding's xref:findings.adoc#schema[schema block].
 |===
 
-Spider Sense sets no other system property in the application's JVM.
+Beyond this table, Spider Sense sets in the application's JVM only the `spidersense.*` keys of <<properties-file,the properties file>>, each as the system property of the same name, and no other system property.
 Its own server logs at `warn` through a `simplelogger.properties` only its class loader sees, so an application that logs through slf4j-simple keeps its own level, and `-Dorg.slf4j.simpleLogger.defaultLogLevel=` still raises the server's.
 
 Always set `-Dotel.service.name=`, because without it the service is `unknown_service:java` and the service filter has nothing to select.

@@ -36,7 +36,7 @@ The panel head links to *All findings* (`#/findings`).
 Because the panel asks with `hideAcked=true`, acknowledged findings, and resolved ones that have not come back, are left out, so the five are always ones nobody has dismissed, and regressions come first.
 With no finding in the window the panel says `Nothing worth fixing in this window.`
 
-. *Throughput and latency*: a uPlot chart, 220 px high, with a *Requests* | *Load* toggle in the panel head, remembered in the hash query as `chart=load`.
+. *Throughput and latency*: a uPlot chart, 220 px high, with a *Requests* | *Load* toggle in the panel head, remembered in the hash query as `chart=requests` or `chart=load` and carried by every internal link.
 Requests draws the requests per time bucket as bars in the silk grey, with the errors stacked on top in `--err`.
 Load splits the same bars into the four response-time buckets, stacked bottom-up in the bucket colours, with the errors on top in `--err`.
 In both, p95 is a line on a second y-axis in the accent colour.

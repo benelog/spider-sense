@@ -242,6 +242,8 @@ The Mark dialog opens once at a time.
 
 Routing is hash-based: `#/`, `+#/services/spring-orders+`, `+#/traces/<id>+`, and so on.
 The service filter and the time range live in the hash query, as in `+#/traces?service=x&range=1h+`.
+So do *Live*, as `live=1`, and the *Requests* | *Load* choice of the throughput charts, as `chart=requests` or `chart=load` (xref:pages.adoc#overview[Overview]).
+Every internal link carries these four, so a choice made on one page holds on the next.
 A path parameter is percent-encoded in the hash and decoded once, so a service named `50% off` is `+#/services/50%25%20off+`, and an encoded `/` stays part of its name.
 A URL can therefore be shared as it is, and opens on the same view.
 

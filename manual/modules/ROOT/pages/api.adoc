@@ -91,8 +91,9 @@ The UI's *Copy CLI line* names it (xref:pages.adoc#copy-as-markdown[Copy as Mark
 === Delete and export
 
 *`DELETE /api/data`* answers `204`.
-It deletes every span, trace, log, metric point, tingle, mark, acknowledgement and resolution.
+It deletes every span, trace, log, metric point and metric series, tingle, mark, acknowledgement, resolution and index catalog (`db_table`).
 Services, metric metadata and each service's newest `start` mark stay, so `since=start` still names the run of a process that keeps running.
+An index catalog comes back after the application restarts, because the extension looks each table up once per process (xref:design.adoc#index-catalog[The index catalog]).
 
 *`GET /api/export?traceId`* answers one trace as an `application/json` download (`Content-Disposition: attachment`) of `+{ "traces": [<trace as in GET /api/traces/{id}>] }+`.
 
@@ -749,7 +750,7 @@ Lists paged with `before` are newest first, with the row id breaking a tie insid
 === Free-text search
 
 `q` on `/api/traces` matches, case-insensitively, any span name or any part of the span's attribute JSON in that trace.
-It runs as the `LOWER(name) LIKE ? OR LOWER(attributes) LIKE ?` that xref:storage.adoc[Storage] describes.
+It runs as the `+LOWER(name) LIKE ? ESCAPE '\' OR LOWER(attributes) LIKE ? ESCAPE '\'+` that xref:storage.adoc[Storage] describes.
 `q` is a plain substring on both endpoints: its `%`, `_` and `\` are escaped, so `100%` matches the text "100%" and not every text that starts with "100".
 Span *event* attributes, notably `exception.message`, are not searched.
 Search an error's endpoint or type instead, or use `/api/errors`.
