@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import net.benelog.spidersense.query.Window;
+import net.benelog.spidersense.server.Version;
 import net.benelog.spidersense.store.AttrJson;
 import net.benelog.spidersense.store.Schema;
 import net.benelog.spidersense.store.Sql;
@@ -72,7 +73,7 @@ final class SessionExport {
             throws SQLException, IOException {
         text.write("{\"spiderSense\":");
         text.write(Json.obj()
-                .put("version", ApiRoutes.VERSION)
+                .put("version", Version.CURRENT)
                 .put("schema", Schema.VERSION)
                 .put("exportedAt", System.currentTimeMillis())
                 .put("window", Json.obj().put("from", window.from()).put("to", window.to()))

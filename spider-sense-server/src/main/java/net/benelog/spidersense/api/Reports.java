@@ -17,6 +17,7 @@ import net.benelog.spidersense.query.Selectors;
 import net.benelog.spidersense.query.Stats;
 import net.benelog.spidersense.query.Window;
 import net.benelog.spidersense.server.Config;
+import net.benelog.spidersense.server.Version;
 import net.benelog.spidersense.store.Acks;
 import net.benelog.spidersense.store.Database;
 import net.benelog.spidersense.store.IgnoredEndpoints;
@@ -186,8 +187,8 @@ public final class Reports implements AutoCloseable {
                     .put("logs", endpoint + "/v1/logs");
         }
         Json.JsonObject json = Json.obj()
-                .put("name", ApiRoutes.NAME)
-                .put("version", ApiRoutes.VERSION)
+                .put("name", Version.NAME)
+                .put("version", Version.CURRENT)
                 .put("mode", mode)
                 .put("startedAt", startedAt)
                 .put("now", System.currentTimeMillis())
@@ -228,7 +229,7 @@ public final class Reports implements AutoCloseable {
                         .put("log", queries.oldestLog()));
 
         Map<String, @Nullable String> fields = new LinkedHashMap<>();
-        fields.put("name", ApiRoutes.NAME + " " + ApiRoutes.VERSION);
+        fields.put("name", Version.NAME + " " + Version.CURRENT);
         fields.put("mode", mode);
         fields.put("endpoint", endpoint);
         fields.put("started", startedAt <= 0 ? null : Text.instantMillis(startedAt));

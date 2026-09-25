@@ -19,6 +19,7 @@ import net.benelog.spidersense.TestStore;
 import net.benelog.spidersense.mcp.McpServer;
 import net.benelog.spidersense.server.Config;
 import net.benelog.spidersense.server.SpiderSenseServer;
+import net.benelog.spidersense.server.Version;
 import net.benelog.spidersilk.json.Json;
 import net.benelog.spidersilk.test.TestClient;
 import net.benelog.spidersilk.test.WebTest;
@@ -119,7 +120,7 @@ class McpApiTest {
                     .asObject().getObject("result");
             assertThat(initialized.getString("protocolVersion")).isEqualTo("2025-06-18");
             assertThat(initialized.getObject("serverInfo").getString("version"))
-                    .isEqualTo(ApiRoutes.VERSION);
+                    .isEqualTo(Version.CURRENT);
 
             Json.JsonArray tools = Json.parse(post(client, "/mcp",
                     "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}").body())

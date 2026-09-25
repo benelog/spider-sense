@@ -25,9 +25,6 @@ import net.benelog.spidersilk.json.Json;
  */
 public final class ApiRoutes {
 
-    public static final String NAME = "Spider Sense";
-    public static final String VERSION = "0.1.0";
-
     private final Config config;
     private final Store store;
     private final Queries queries;

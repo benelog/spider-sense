@@ -19,6 +19,7 @@ import net.benelog.spidersense.Otlp;
 import net.benelog.spidersense.TestStore;
 import net.benelog.spidersense.server.Config;
 import net.benelog.spidersense.server.SpiderSenseServer;
+import net.benelog.spidersense.server.Version;
 import net.benelog.spidersilk.json.Json;
 import net.benelog.spidersilk.test.TestClient;
 import net.benelog.spidersilk.test.WebTest;
@@ -695,7 +696,7 @@ class ApiTest {
 
             Json.JsonObject status = json(client.get("/api/status"));
             assertThat(status.getString("name")).isEqualTo("Spider Sense");
-            assertThat(status.getString("version")).isEqualTo(ApiRoutes.VERSION);
+            assertThat(status.getString("version")).isEqualTo(Version.CURRENT);
             assertThat(status.getString("mode")).isEqualTo("standalone");
             assertThat(status.getString("endpoint")).startsWith("http://127.0.0.1:");
             assertThat(status.getObject("otlp").getString("traces")).endsWith("/v1/traces");

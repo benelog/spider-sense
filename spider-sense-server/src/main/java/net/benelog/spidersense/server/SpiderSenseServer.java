@@ -101,7 +101,7 @@ public final class SpiderSenseServer implements AutoCloseable {
         new MetricsApi(metrics, store.services(), reports.selectors()).register(app);
         new AgentApi(reports).register(app);
         new SourceApi(SourceRoots.of(config.sourceDirs(), Path.of(""))).register(app);
-        new McpApi(new McpServer(new McpTools(reports), ApiRoutes.VERSION)).register(app);
+        new McpApi(new McpServer(new McpTools(reports), Version.CURRENT)).register(app);
         new EventsApi(store, queries).register(app);
         app.error(HttpStatus.NOT_FOUND, SpiderSenseServer::notFound);
         app.server((a, port) -> server(a, port, config));

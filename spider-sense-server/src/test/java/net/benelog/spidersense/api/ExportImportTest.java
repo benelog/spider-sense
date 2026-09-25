@@ -16,6 +16,7 @@ import net.benelog.spidersense.Otlp;
 import net.benelog.spidersense.TestStore;
 import net.benelog.spidersense.server.Config;
 import net.benelog.spidersense.server.SpiderSenseServer;
+import net.benelog.spidersense.server.Version;
 import net.benelog.spidersense.store.Schema;
 import net.benelog.spidersilk.json.Json;
 import net.benelog.spidersilk.test.TestClient;
@@ -156,7 +157,7 @@ class ExportImportTest {
             Json.JsonObject document = Json.parse(response.body()).asObject();
             Json.JsonObject header = document.getObject("spiderSense");
             assertThat(header.getLong("schema")).isEqualTo(Schema.VERSION);
-            assertThat(header.getString("version")).isEqualTo(ApiRoutes.VERSION);
+            assertThat(header.getString("version")).isEqualTo(Version.CURRENT);
             assertThat(header.getObject("window").getLong("from")).isEqualTo(NOW - 60_000);
             assertThat(header.get("service").isNull()).isTrue();
 

@@ -8,11 +8,11 @@ import java.io.PrintStream;
 import java.io.UncheckedIOException;
 import java.util.Map;
 
-import net.benelog.spidersense.api.ApiRoutes;
 import net.benelog.spidersense.api.Reports;
 import net.benelog.spidersense.mcp.McpServer;
 import net.benelog.spidersense.mcp.McpTools;
 import net.benelog.spidersense.server.Config;
+import net.benelog.spidersense.server.Version;
 import net.benelog.spidersilk.json.Json;
 import org.jspecify.annotations.Nullable;
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -56,7 +56,7 @@ final class Mcp {
         this.named = named;
         this.out = out;
         this.err = err;
-        this.server = new McpServer(this::inProcess, ApiRoutes.VERSION);
+        this.server = new McpServer(this::inProcess, Version.CURRENT);
     }
 
     static int run(Options options, String defaultUrl, InputStream in, PrintStream out,
