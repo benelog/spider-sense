@@ -66,6 +66,8 @@ export function render(root, ctx) {
   const latest = api.requestSequence();
   const latestEndpoints = api.requestSequence();
   let endpointOptions = [];
+  // The service the endpoint filter belongs to: an endpoint is one route of one service.
+  let endpointService = api.state.service || '';
 
   const input = h('input', { type: 'search', placeholder: 'Search span names and attributes', value: filter.q, 'aria-label': 'Search traces' });
   const minInput = h('input', { type: 'number', min: '0', step: '10', placeholder: 'ms', value: filter.minMs, 'aria-label': 'Minimum duration in milliseconds' });
@@ -186,7 +188,22 @@ export function render(root, ctx) {
   load();
 
   return {
-    refresh: () => { if (!rows.length || !document.querySelector('.drawer')) { loadEndpoints(); load(); } },
+    refresh: () => {
+      const service = api.state.service || '';
+      if (service !== endpointService) {
+        endpointService = service;
+        if (filter.endpointId) {
+          // The endpoint was one of the previous service's: the filter goes, from the hash
+          // too, and the query change this makes refreshes the page again without it.
+          filter.endpointId = '';
+          endpointSelect.value = '';
+          rows = [];
+          router.setQuery({ endpointId: '' });
+          return;
+        }
+      }
+      if (!rows.length || !document.querySelector('.drawer')) { loadEndpoints(); load(); }
+    },
     destroy: () => { destroyed = true; apply.cancel(); },
   };
 }
