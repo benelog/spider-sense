@@ -166,7 +166,8 @@ function numberValue(key, value, kind) {
   if (key === 'apdex') return h('span', fmtApdex(value));
   if (key === 'dbShare' || key === 'shareMax' || key === 'ratioMax') return h('span', pct(value));
   if ((BYTE_NUMBERS[kind] || new Set()).has(key)) return h('span', bytes(value));
-  if (key.endsWith('Ms') || key === 'msPerRequest') return h('span', dur(value));
+  // A duration ends in Ms, or in Ms per request or run (msPerRequest, dbMsPerRequest, dbMsPerRun).
+  if (/(^ms|Ms)(PerRequest|PerRun)?$/.test(key)) return h('span', dur(value));
   if (key.endsWith('PerRequest') || key.endsWith('PerRun')) return h('span', rate(value));
   // max (a pool's connections, a JVM's threads) is a count like the rest (pages.adoc#findings).
   return h('span', count(value));
