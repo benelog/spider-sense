@@ -32,7 +32,8 @@ public final class SchemaInstrumentationModule extends InstrumentationModule {
      *
      * <p>The list is written out rather than derived: the injector has no class path to scan, and a
      * nested class that is added later and forgotten here is a {@code NoClassDefFoundError} inside
-     * the application, which is exactly what this extension may never cause.
+     * the application, which is exactly what this extension may never cause;
+     * {@code SchemaInstrumentationModuleTest} compares it with the compiled package.
      */
     private static final List<String> HELPERS = Collections.unmodifiableList(Arrays.asList(
             HELPER_PACKAGE + "IndexCatalog",

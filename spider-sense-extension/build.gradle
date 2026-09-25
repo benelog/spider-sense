@@ -27,6 +27,8 @@ dependencies {
     testImplementation "io.opentelemetry:opentelemetry-sdk-logs:${rootProject.ext.otelSdkVersion}"
     testImplementation "io.opentelemetry:opentelemetry-sdk-testing:${rootProject.ext.otelSdkVersion}"
     testImplementation "io.opentelemetry.instrumentation:opentelemetry-instrumentation-api:${rootProject.ext.otelAgentVersion}"
+    // For SchemaInstrumentationModuleTest, which checks the helper list the module hands the agent.
+    testImplementation "io.opentelemetry.javaagent:opentelemetry-javaagent-extension-api:${rootProject.ext.otelAgentVersion}-alpha"
     testImplementation "com.h2database:h2:${rootProject.ext.h2Version}"
     testImplementation "org.junit.jupiter:junit-jupiter:${rootProject.ext.junitVersion}"
     testImplementation "org.assertj:assertj-core:${rootProject.ext.assertjVersion}"
