@@ -101,13 +101,8 @@ public final class Check {
         }
 
         // Three rules read the findings; the rules run once for all of them.
-        List<List<Findings.Finding>> found = new ArrayList<>(1);
-        Supplier<List<Findings.Finding>> ranked = () -> {
-            if (found.isEmpty()) {
-                found.add(findings.ranked(window, service, Queries.ALL_GROUPS));
-            }
-            return found.get(0);
-        };
+        Lazy<List<Findings.Finding>> ranked =
+                Lazy.of(() -> findings.ranked(window, service, Queries.ALL_GROUPS));
         List<RuleCheck> checks = new ArrayList<>();
         for (String rule : RULES) {
             Double limit = asked.get(rule);
@@ -141,16 +136,16 @@ public final class Check {
                 String detail = worst == null ? "no endpoint in the window"
                         : worst.name() + " p95 " + Numbers.millis(worst.p95Ms()) + " over "
                                 + Numbers.plural(worst.calls(), "call");
-                yield max(rule, limit, actual, detail);
+                yield atMost(rule, limit, actual, detail);
             }
             case MAX_ERRORS -> {
                 long count = errorCount(window, service, endpoint);
-                yield max(rule, limit, (double) count, count == 0 ? "no error in the window"
+                yield atMost(rule, limit, (double) count, count == 0 ? "no error in the window"
                         : Numbers.plural(count, "occurrence") + " over the window");
             }
             case MAX_ERROR_RATE -> {
                 double actual = requests == 0 ? 0 : (double) errors / requests;
-                yield max(rule, limit, actual, errors + " of "
+                yield atMost(rule, limit, actual, errors + " of "
                         + Numbers.plural(requests, "request") + " failed (" + Numbers.percent(actual) + ")");
             }
             case MAX_QUERIES_PER_REQUEST -> {
@@ -168,7 +163,7 @@ public final class Check {
                 String detail = worst == null ? "no endpoint in the window"
                         : worst.name() + " runs " + Numbers.number(actual)
                                 + " database calls per request";
-                yield max(rule, limit, actual, detail);
+                yield atMost(rule, limit, actual, detail);
             }
             case MAX_SLOW_QUERIES -> {
                 long slow = 0;
@@ -186,7 +181,7 @@ public final class Check {
                         slow += work.getOrDefault(each.endpointId(), Queries.DbWork.NONE).slowCalls();
                     }
                 }
-                yield max(rule, limit, (double) slow,
+                yield atMost(rule, limit, (double) slow,
                         Numbers.plural(slow, "call") + " over " + tingles.slowQueryMs() + " ms");
             }
             case MAX_N_PLUS_ONE -> {
@@ -203,7 +198,7 @@ public final class Check {
                 }
                 String detail = found.isEmpty() ? "no repeated statement or call in the window"
                         : Numbers.plural(found.size(), "finding") + ": " + found.get(0).title();
-                yield max(rule, limit, found.size(), detail);
+                yield atMost(rule, limit, found.size(), detail);
             }
             case MAX_LOG_ERRORS -> {
                 // The rule counts the records, not the groups: one logger saying the
@@ -222,7 +217,7 @@ public final class Check {
                 }
                 String detail = worst == null ? "no ERROR log outside a failed trace"
                         : Numbers.plural(records, "record") + ": " + worst.title();
-                yield max(rule, limit, (double) records, detail);
+                yield atMost(rule, limit, (double) records, detail);
             }
             case MAX_REGRESSIONS -> {
                 // A resolved finding that came back: the fix did not hold (check.adoc#rules).
@@ -236,9 +231,9 @@ public final class Check {
                 String detail = back.isEmpty() ? "no resolved finding came back"
                         : Numbers.plural(back.size(), "finding") + ": " + back.get(0).numbers()
                                 .get(Findings.ORIGINAL_KIND) + " " + back.get(0).title();
-                yield max(rule, limit, back.size(), detail);
+                yield atMost(rule, limit, back.size(), detail);
             }
-            default -> {
+            case MIN_APDEX -> {
                 Double apdex = apdex(endpoints, endpoint, totals);
                 String detail = apdex == null ? "no request to score"
                         : "Apdex " + Numbers.score(apdex) + " over "
@@ -246,10 +241,13 @@ public final class Check {
                 boolean pass = apdex == null || apdex >= limit;
                 yield new RuleCheck(rule, limit, apdex, pass, detail);
             }
+            // A rule added to RULES without a case here is a bug, not an Apdex.
+            default -> throw new IllegalArgumentException("No evaluation for rule " + rule);
         };
     }
 
-    private static RuleCheck max(String rule, double limit, double actual, String detail) {
+    /** A rule of the form {@code max…}: it passes while the actual is at most the limit. */
+    private static RuleCheck atMost(String rule, double limit, double actual, String detail) {
         return new RuleCheck(rule, limit, actual, actual <= limit, detail);
     }
 

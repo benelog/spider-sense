@@ -1703,36 +1703,20 @@ public final class Findings {
      */
     private static final class Reads {
 
-        private final Sql sql;
-        private final Queries queries;
-        private final Window window;
-        private final @Nullable String service;
-        private Queries.@Nullable Ancestry ancestry;
-        private @Nullable List<Queries.OutboundCall> outboundHttp;
+        private final Lazy<Queries.Ancestry> ancestry;
+        private final Lazy<List<Queries.OutboundCall>> outboundHttp;
 
         private Reads(Sql sql, Queries queries, Window window, @Nullable String service) {
-            this.sql = sql;
-            this.queries = queries;
-            this.window = window;
-            this.service = service;
+            this.ancestry = Lazy.of(() -> Queries.Ancestry.of(sql, window, service));
+            this.outboundHttp = Lazy.of(() -> queries.outboundHttp(window, service));
         }
 
         Queries.Ancestry ancestry() {
-            Queries.Ancestry loaded = ancestry;
-            if (loaded == null) {
-                loaded = Queries.Ancestry.of(sql, window, service);
-                ancestry = loaded;
-            }
-            return loaded;
+            return ancestry.get();
         }
 
         List<Queries.OutboundCall> outboundHttp() {
-            List<Queries.OutboundCall> loaded = outboundHttp;
-            if (loaded == null) {
-                loaded = queries.outboundHttp(window, service);
-                outboundHttp = loaded;
-            }
-            return loaded;
+            return outboundHttp.get();
         }
     }
 
