@@ -153,6 +153,42 @@ class OtlpDecoderTest {
         assertThat(sample.point().hasBuckets()).isTrue();
     }
 
+    /**
+     * A collector forwards a Prometheus staleness marker as a point flagged
+     * {@code NO_RECORDED_VALUE} with no value. It is no measurement, and read as one
+     * it would be a 0 on the chart and a counter reset to {@code rate=true}.
+     */
+    @Test
+    void aPointWithNoRecordedValueIsLeftOut() {
+        var flagged = io.opentelemetry.proto.metrics.v1.NumberDataPoint.newBuilder()
+                .setTimeUnixNano(1_700_000_000_000L * 1_000_000L)
+                .setFlags(io.opentelemetry.proto.metrics.v1.DataPointFlags
+                        .DATA_POINT_FLAGS_NO_RECORDED_VALUE_MASK_VALUE);
+        var unset = io.opentelemetry.proto.metrics.v1.NumberDataPoint.newBuilder()
+                .setTimeUnixNano(1_700_000_001_000L * 1_000_000L);
+        var measured = io.opentelemetry.proto.metrics.v1.NumberDataPoint.newBuilder()
+                .setTimeUnixNano(1_700_000_002_000L * 1_000_000L).setAsInt(7);
+        var histogram = io.opentelemetry.proto.metrics.v1.HistogramDataPoint.newBuilder()
+                .setTimeUnixNano(1_700_000_000_000L * 1_000_000L)
+                .setFlags(io.opentelemetry.proto.metrics.v1.DataPointFlags
+                        .DATA_POINT_FLAGS_NO_RECORDED_VALUE_MASK_VALUE);
+
+        Batch batch = decoder.accept(Otlp.metrics(Otlp.service("spring-orders"),
+                io.opentelemetry.proto.metrics.v1.Metric.newBuilder().setName("probe.gauge")
+                        .setGauge(io.opentelemetry.proto.metrics.v1.Gauge.newBuilder()
+                                .addDataPoints(flagged).addDataPoints(unset).addDataPoints(measured))
+                        .build(),
+                io.opentelemetry.proto.metrics.v1.Metric.newBuilder().setName("probe.duration")
+                        .setHistogram(io.opentelemetry.proto.metrics.v1.Histogram.newBuilder()
+                                .addDataPoints(histogram))
+                        .build()));
+
+        assertThat(batch.metrics()).singleElement().satisfies(sample -> {
+            assertThat(sample.name()).isEqualTo("probe.gauge");
+            assertThat(sample.point().value()).isEqualTo(7);
+        });
+    }
+
     @Test
     void decodesLogsWithTheSeverityTableAndTheScopeAsLogger() {
         Batch batch = decoder.accept(Otlp.logs(Otlp.service("spring-orders"), "o.s.boot.StartupInfoLogger",

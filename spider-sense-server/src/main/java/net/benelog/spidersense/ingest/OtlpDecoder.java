@@ -11,6 +11,7 @@ import io.opentelemetry.proto.collector.trace.v1.ExportTraceServiceRequest;
 import io.opentelemetry.proto.logs.v1.ResourceLogs;
 import io.opentelemetry.proto.logs.v1.ScopeLogs;
 import io.opentelemetry.proto.metrics.v1.AggregationTemporality;
+import io.opentelemetry.proto.metrics.v1.DataPointFlags;
 import io.opentelemetry.proto.metrics.v1.ExponentialHistogramDataPoint;
 import io.opentelemetry.proto.metrics.v1.HistogramDataPoint;
 import io.opentelemetry.proto.metrics.v1.Metric;
@@ -193,6 +194,9 @@ public final class OtlpDecoder {
         switch (metric.getDataCase()) {
             case GAUGE -> {
                 for (NumberDataPoint point : metric.getGauge().getDataPointsList()) {
+                    if (noValue(point)) {
+                        continue;
+                    }
                     batch.add(new Batch.MetricSample(service, name, "gauge", unit, description, false,
                             "UNSPECIFIED", Attrs.toMap(point.getAttributesList()), number(point)));
                 }
@@ -201,6 +205,9 @@ public final class OtlpDecoder {
                 var sum = metric.getSum();
                 String temporality = temporality(sum.getAggregationTemporality());
                 for (NumberDataPoint point : sum.getDataPointsList()) {
+                    if (noValue(point)) {
+                        continue;
+                    }
                     batch.add(new Batch.MetricSample(service, name, "sum", unit, description,
                             sum.getIsMonotonic(), temporality, Attrs.toMap(point.getAttributesList()),
                             number(point)));
@@ -210,6 +217,9 @@ public final class OtlpDecoder {
                 var histogram = metric.getHistogram();
                 String temporality = temporality(histogram.getAggregationTemporality());
                 for (HistogramDataPoint point : histogram.getDataPointsList()) {
+                    if (noRecordedValue(point.getFlags())) {
+                        continue;
+                    }
                     batch.add(new Batch.MetricSample(service, name, "histogram", unit, description, false,
                             temporality, Attrs.toMap(point.getAttributesList()), histogram(point)));
                 }
@@ -218,6 +228,9 @@ public final class OtlpDecoder {
                 var histogram = metric.getExponentialHistogram();
                 String temporality = temporality(histogram.getAggregationTemporality());
                 for (ExponentialHistogramDataPoint point : histogram.getDataPointsList()) {
+                    if (noRecordedValue(point.getFlags())) {
+                        continue;
+                    }
                     batch.add(new Batch.MetricSample(service, name, "histogram", unit, description, false,
                             temporality, Attrs.toMap(point.getAttributesList()), exponential(point)));
                 }
@@ -226,6 +239,21 @@ public final class OtlpDecoder {
                 // Summary and the development signals are not drawn anywhere; ignore them.
             }
         }
+    }
+
+    /**
+     * A point that carries no value: flagged {@code NO_RECORDED_VALUE}, as a
+     * collector forwards a Prometheus staleness marker, or with neither
+     * {@code asDouble} nor {@code asInt} set. Read as it stands it would be a 0,
+     * which a chart draws and a counter reads as a reset, so it is left out.
+     */
+    private static boolean noValue(NumberDataPoint point) {
+        return noRecordedValue(point.getFlags())
+                || point.getValueCase() == NumberDataPoint.ValueCase.VALUE_NOT_SET;
+    }
+
+    private static boolean noRecordedValue(int flags) {
+        return (flags & DataPointFlags.DATA_POINT_FLAGS_NO_RECORDED_VALUE_MASK_VALUE) != 0;
     }
 
     private static MetricPoint number(NumberDataPoint point) {
