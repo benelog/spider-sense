@@ -35,7 +35,7 @@ export function render(root, ctx) {
   sevSelect.value = filter.severity;
   const traceInput = h('input', { type: 'text', placeholder: 'trace id', value: filter.traceId, 'aria-label': 'Trace id', style: { width: '190px', fontFamily: 'var(--font-mono)' } });
 
-  const apply = debounce(() => {
+  const applyFilter = debounce(() => {
     filter.q = input.value.trim();
     filter.severity = sevSelect.value;
     filter.traceId = traceInput.value.trim();
@@ -43,10 +43,10 @@ export function render(root, ctx) {
     rows = [];
     loader.load();
   }, 400);
-  input.addEventListener('input', apply);
-  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') apply.flush(); });
-  traceInput.addEventListener('input', apply);
-  sevSelect.addEventListener('change', () => apply.flush());
+  input.addEventListener('input', applyFilter);
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') applyFilter.flush(); });
+  traceInput.addEventListener('input', applyFilter);
+  sevSelect.addEventListener('change', () => applyFilter.flush());
 
   const countLabel = h('span.muted', { style: { marginLeft: 'auto', fontSize: '11px' } });
   const body = h('div', spinner());
@@ -63,15 +63,15 @@ export function render(root, ctx) {
     body, foot));
 
   const columns = [
-    { key: 'at', label: 'Time', sortable: false, width: '112px', render: (l) => h('span.mono', { title: bothTimes(l.at) }, timeMs(l.at)) },
-    { key: 'severity', label: 'Level', sortable: false, width: '64px', render: (l) => severityChip(l.severity) },
-    { key: 'service', label: 'Service', sortable: false, width: '148px', render: (l) => serviceChip(l.service) },
-    { key: 'logger', label: 'Logger', sortable: false, width: '180px', render: (l) => h('span.cell-ellipsis.mono.muted', { title: l.logger }, l.logger || '-') },
-    { key: 'body', label: 'Message', sortable: false, cls: 'wide', render: (l) => h('span.log-body', l.body) },
+    { key: 'at', label: 'Time', sortable: false, width: '112px', render: (log) => h('span.mono', { title: bothTimes(log.at) }, timeMs(log.at)) },
+    { key: 'severity', label: 'Level', sortable: false, width: '64px', render: (log) => severityChip(log.severity) },
+    { key: 'service', label: 'Service', sortable: false, width: '148px', render: (log) => serviceChip(log.service) },
+    { key: 'logger', label: 'Logger', sortable: false, width: '180px', render: (log) => h('span.cell-ellipsis.mono.muted', { title: log.logger }, log.logger || '-') },
+    { key: 'body', label: 'Message', sortable: false, cls: 'wide', render: (log) => h('span.log-body', log.body) },
     {
       key: 'traceId', label: 'Trace', sortable: false, width: '88px',
-      render: (l) => (l.traceId
-        ? h('a.mono', { href: router.detailHref('traces', l.traceId), title: l.traceId, onclick: (e) => e.stopPropagation() }, shortId(l.traceId))
+      render: (log) => (log.traceId
+        ? h('a.mono', { href: router.detailHref('traces', log.traceId), title: log.traceId, onclick: (e) => e.stopPropagation() }, shortId(log.traceId))
         : h('span.muted', '-')),
     },
   ];
@@ -80,7 +80,7 @@ export function render(root, ctx) {
     countLabel.textContent = rows.length ? count(rows.length) + ' of ' + count(total) : '';
     if (!node) {
       node = table(columns, {
-        rowKey: (l) => String(l.id),
+        rowKey: (log) => String(log.id),
         detail: detailOf,
         detailClass: 'log-detail',
         expanded,
@@ -93,8 +93,8 @@ export function render(root, ctx) {
   }
 
   /** An open row: its attributes, and the stack trace an exception carries. */
-  function detailOf(l) {
-    const attrs = { ...(l.attributes || {}) };
+  function detailOf(log) {
+    const attrs = { ...(log.attributes || {}) };
     const stack = attrs['exception.stacktrace'];
     delete attrs['exception.stacktrace'];
     return h('div', { style: { display: 'grid', gap: '10px', padding: '4px 0' } },
@@ -112,11 +112,11 @@ export function render(root, ctx) {
    * the rows the window has left; null when the page does not reach them, and a gap would open.
    */
   function merged(incoming, from) {
-    const known = new Set(rows.map((l) => l.id));
-    const fresh = incoming.filter((l) => !known.has(l.id));
+    const known = new Set(rows.map((log) => log.id));
+    const fresh = incoming.filter((log) => !known.has(log.id));
     if (fresh.length === incoming.length && incoming.length >= LIMIT) return null;
     return fresh.concat(rows)
-      .filter((l) => l.at >= from)
+      .filter((log) => log.at >= from)
       .sort((a, b) => (b.at - a.at) || (b.id - a.id));
   }
 
@@ -140,8 +140,8 @@ export function render(root, ctx) {
     total = res.total || incoming.length;
     const kept = tail ? merged(incoming, w.from) : null;
     if (cursor) {
-      const seen = new Set(rows.map((l) => l.id));
-      rows = rows.concat(incoming.filter((l) => !seen.has(l.id)));
+      const seen = new Set(rows.map((log) => log.id));
+      rows = rows.concat(incoming.filter((log) => !seen.has(log.id)));
       pagedBack = true;
     } else if (kept) {
       rows = kept;
@@ -172,6 +172,6 @@ export function render(root, ctx) {
   return {
     // Live tail: new lines arrive at the top; the scroll position is left alone.
     refresh: () => { if (!expanded.size || window.scrollY < TAIL_SCROLL_SLACK_PX) loader.load(); },
-    destroy: () => { loader.destroy(); apply.cancel(); },
+    destroy: () => { loader.destroy(); applyFilter.cancel(); },
   };
 }

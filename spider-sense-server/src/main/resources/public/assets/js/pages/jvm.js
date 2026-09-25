@@ -66,14 +66,14 @@ export function render(root, ctx) {
       return;
     }
     layout.build();
-    const r = data.runtime || {};
+    const runtime = data.runtime || {};
     fill(head,
       h('div.row', { style: { gap: '8px' } },
         h('b', { style: { fontSize: '15px' } }, api.state.service),
-        r.jvm ? chip(r.jvm) : null,
-        r.pid ? chip('pid ' + r.pid) : null,
-        r.host ? chip(r.host) : null,
-        r.cpuCount ? chip(count(r.cpuCount) + ' cpu') : null));
+        runtime.jvm ? chip(runtime.jvm) : null,
+        runtime.pid ? chip('pid ' + runtime.pid) : null,
+        runtime.host ? chip(runtime.host) : null,
+        runtime.cpuCount ? chip(count(runtime.cpuCount) + ' cpu') : null));
 
     chartPanel('heap', 'Heap memory', {
       height: 170, t: heap.t || [],
@@ -95,13 +95,13 @@ export function render(root, ctx) {
       axes: [{ scale: 'y', label: 'MiB' }],
     });
 
-    const pools = data.pools || [];
+    const memoryPools = data.pools || [];
     // Each pool has its own timestamps: one that exists only before a restart must not be
     // drawn over another pool's instants.
-    const poolTimes = alignedTimes(pools);
+    const poolTimes = alignedTimes(memoryPools);
     chartPanel('pools', 'Memory pools', {
       height: 170, t: poolTimes,
-      series: pools.map((p, i) => ({ label: p.name, values: toMib(alignTo(poolTimes, p, 'used')), color: seriesColor(i), type: 'line', width: 1.6 })),
+      series: memoryPools.map((p, i) => ({ label: p.name, values: toMib(alignTo(poolTimes, p, 'used')), color: seriesColor(i), type: 'line', width: 1.6 })),
       axes: [{ scale: 'y', label: 'MiB' }],
     });
 
@@ -152,14 +152,14 @@ export function render(root, ctx) {
     });
 
     // One panel per JDBC pool; nothing is added when the service reports none.
-    const pools2 = data.connectionPools || [];
+    const connectionPools = data.connectionPools || [];
     for (const [id, box] of charts) {
-      if (!id.startsWith('pool:') || pools2.some((p) => 'pool:' + p.name === id)) continue;
+      if (!id.startsWith('pool:') || connectionPools.some((p) => 'pool:' + p.name === id)) continue;
       box.destroy();
       box.node.remove();
       charts.delete(id);
     }
-    for (const pool of pools2) {
+    for (const pool of connectionPools) {
       chartPanel('pool:' + pool.name, 'Connection pool ' + pool.name, {
         height: 170, t: pool.t || [],
         series: [

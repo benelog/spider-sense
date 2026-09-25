@@ -67,16 +67,16 @@ export function render(root, ctx) {
   const layout = skeleton(root, () => [headPanel, statsRow, red, endpointPanel, half, depsPanel, resourcePanel]);
 
   function paintHead(summary, resource) {
-    const r = resource || {};
+    const attrs = resource || {};
     fill(head,
       h('div.row', { style: { gap: '10px' } },
         h('span.dot.service-dot.large', { style: { background: serviceColor(name) } }),
         h('b', { style: { fontSize: '15px' } }, name),
         summary.embedded ? chip('embedded', { class: 'chip-accent' }) : null,
         summary.language ? chip(summary.language) : null,
-        r['process.runtime.name'] ? chip(r['process.runtime.name'] + ' ' + (r['process.runtime.version'] || '')) : null,
-        r['host.name'] ? chip(r['host.name'], { title: 'host.name' }) : null,
-        r['process.pid'] ? chip('pid ' + r['process.pid']) : null),
+        attrs['process.runtime.name'] ? chip(attrs['process.runtime.name'] + ' ' + (attrs['process.runtime.version'] || '')) : null,
+        attrs['host.name'] ? chip(attrs['host.name'], { title: 'host.name' }) : null,
+        attrs['process.pid'] ? chip('pid ' + attrs['process.pid']) : null),
       h('div.row', { style: { marginLeft: 'auto', gap: '12px' } },
         h('span.muted', { style: { fontSize: '11px' }, title: bothTimes(summary.lastSeen) }, 'last seen ' + rel(summary.lastSeen)),
         summary.hasJvm ? h('a.btn', { href: router.href('/jvm', { ...api.sharedQuery(), service: name }) }, icon('jvm'), 'JVM') : null,

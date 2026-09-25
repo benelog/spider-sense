@@ -6,9 +6,8 @@ import * as router from '../router.js';
 import { h, fill, panel, table, chip, serviceChip, markDialog, copyBlock, spinner, emptyState } from '../ui.js';
 import { pageLoader } from '../page.js';
 import { oneLineSql } from '../sql.js';
-import { fmtApdex } from '../buckets.js';
 import { errorTypeColumn, messageColumn, serviceColumn } from '../columns.js';
-import { count, dur, rate, time } from '../format.js';
+import { count, dur, rate, apdex, time } from '../format.js';
 
 const VERDICTS = ['worse', 'new', 'same', 'better', 'gone'];
 
@@ -61,7 +60,7 @@ export function verdictOf(kind, before, after) {
   return 'same';
 }
 
-function tile(caption, before, after, format, verdict) {
+function compareTile(caption, before, after, format, verdict) {
   const fmt = (v) => (v === null || v === undefined ? '—' : format(v));
   return h('div.stat.cmp-tile', { class: 'stat cmp-tile is-' + (verdict || 'same') },
     h('div.cmp-tile-value',
@@ -85,7 +84,7 @@ function markOptions(marks) {
 export function render(root, ctx) {
   let data = null;
   let built = false;
-  let pending = false;
+  let writingDefaultSelectors = false;
 
   const beforeSelect = h('select', { 'aria-label': 'Before' });
   const afterSelect = h('select', { 'aria-label': 'After' });
@@ -120,7 +119,7 @@ export function render(root, ctx) {
     const options = markOptions(api.state.marks || []);
     const q = query();
     const known = new Set(options.map((o) => o.value));
-    const put = (node, chosen, extra) => {
+    const fillMarkSelect = (node, chosen, extra) => {
       fill(node, extra, options.map((o) => h('option', { value: o.value }, o.label)));
       // a selector from the hash that no mark carries is still shown, as it was typed
       if (chosen && !known.has(chosen) && chosen !== 'now') node.appendChild(h('option', { value: chosen }, chosen));
@@ -129,18 +128,18 @@ export function render(root, ctx) {
     const before = q.before || (options[1] ? options[1].value : '');
     const after = q.after || (options[0] ? options[0].value : '');
     const until = q.until || 'now';
-    put(beforeSelect, before, null);
-    put(afterSelect, after, null);
-    put(untilSelect, until, h('option', { value: 'now' }, 'now'));
-    const enough = !!(before && after);
-    compareBtn.disabled = !enough;
+    fillMarkSelect(beforeSelect, before, null);
+    fillMarkSelect(afterSelect, after, null);
+    fillMarkSelect(untilSelect, until, h('option', { value: 'now' }, 'now'));
+    const hasBothMarks = !!(before && after);
+    compareBtn.disabled = !hasBothMarks;
     // the two newest marks are a choice like any other: it belongs in the URL
-    if (enough && (!q.before || !q.after)) {
-      pending = true;
+    if (hasBothMarks && (!q.before || !q.after)) {
+      writingDefaultSelectors = true;
       router.setQuery({ before, after, until }, { defaults: { until: 'now' } });
-      pending = false;
+      writingDefaultSelectors = false;
     }
-    return { before, after, until: until === 'now' ? '' : until, enough };
+    return { before, after, until: until === 'now' ? '' : until, hasBothMarks };
   }
 
   function needMarks() {
@@ -210,10 +209,10 @@ export function render(root, ctx) {
     const after = totals.after || {};
     tiles.hidden = false;
     fill(tiles,
-      tile('requests', before.requests, after.requests, count, 'same'),
-      tile('errors', before.errors, after.errors, count, verdictOf('errors', before.errors, after.errors)),
-      tile('p95', before.p95Ms, after.p95Ms, dur, verdictOf('p95', before.p95Ms, after.p95Ms)),
-      tile('apdex', before.apdex, after.apdex, fmtApdex, verdictOf('apdex', before.apdex, after.apdex)));
+      compareTile('requests', before.requests, after.requests, count, 'same'),
+      compareTile('errors', before.errors, after.errors, count, verdictOf('errors', before.errors, after.errors)),
+      compareTile('p95', before.p95Ms, after.p95Ms, dur, verdictOf('p95', before.p95Ms, after.p95Ms)),
+      compareTile('apdex', before.apdex, after.apdex, apdex, verdictOf('apdex', before.apdex, after.apdex)));
 
     const endpoints = paintTable('endpoints', 'Endpoints', endpointColumns, (data && data.endpoints) || [], {
       rowKey: (r) => r.endpointId,
@@ -250,9 +249,9 @@ export function render(root, ctx) {
   });
 
   function load() {
-    if (pending) return;
+    if (writingDefaultSelectors) return;
     const chosen = paintSelects();
-    if (!chosen.enough) { needMarks(); return; }
+    if (!chosen.hasBothMarks) { needMarks(); return; }
     loader.load(chosen);
   }
 

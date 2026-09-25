@@ -4,10 +4,10 @@ import * as api from './api.js';
 import { RANGES, DEFAULT_RANGE, state } from './api.js';
 import * as router from './router.js';
 import * as ui from './ui.js';
-import { h, fill, dialog, copyBlock, closeDrawer, drawerOpen } from './ui.js';
+import { h, fill, dialog, copyBlock, closeDrawer, closeDrawerSilently, drawerOpen } from './ui.js';
 import { EDITORS, editor, setEditor } from './frames.js';
 import { retheme, redrawAll } from './charts.js';
-import { rate as fmtRate, count as fmtCount, bytes } from './format.js';
+import * as fmt from './format.js';
 
 import * as overview from './pages/overview.js';
 import * as findingsPage from './pages/findings.js';
@@ -27,27 +27,28 @@ import * as logs from './pages/logs.js';
 import * as jvm from './pages/jvm.js';
 import * as metrics from './pages/metrics.js';
 
+/** The page table: the route pattern, the page module, the title, and the nav entry it lights up. */
 const PAGES = [
-  ['/', overview, 'Overview', '/'],
-  ['/findings', findingsPage, 'Findings', '/findings'],
-  ['/compare', comparePage, 'Compare', '/compare'],
-  ['/map', mapPage, 'Service map', '/map'],
-  ['/services', services, 'Services', '/services'],
-  ['/services/:name', servicePage, 'Service', '/services'],
-  ['/endpoints/:id', endpointPage, 'Endpoint', '/services'],
-  ['/scatter', scatter, 'Response time scatter', '/scatter'],
-  ['/traces', traces, 'Traces', '/traces'],
-  ['/traces/:id', tracePage, 'Trace', '/traces'],
-  ['/queries', queries, 'Queries', '/queries'],
-  ['/queries/:id', queryPage, 'Query', '/queries'],
-  ['/errors', errorsPage, 'Errors', '/errors'],
-  ['/errors/:id', errorPage, 'Error', '/errors'],
-  ['/logs', logs, 'Logs', '/logs'],
-  ['/jvm', jvm, 'JVM', '/jvm'],
-  ['/metrics', metrics, 'Metrics', '/metrics'],
+  { pattern: '/', page: overview, title: 'Overview', nav: '/' },
+  { pattern: '/findings', page: findingsPage, title: 'Findings', nav: '/findings' },
+  { pattern: '/compare', page: comparePage, title: 'Compare', nav: '/compare' },
+  { pattern: '/map', page: mapPage, title: 'Service map', nav: '/map' },
+  { pattern: '/services', page: services, title: 'Services', nav: '/services' },
+  { pattern: '/services/:name', page: servicePage, title: 'Service', nav: '/services' },
+  { pattern: '/endpoints/:id', page: endpointPage, title: 'Endpoint', nav: '/services' },
+  { pattern: '/scatter', page: scatter, title: 'Response time scatter', nav: '/scatter' },
+  { pattern: '/traces', page: traces, title: 'Traces', nav: '/traces' },
+  { pattern: '/traces/:id', page: tracePage, title: 'Trace', nav: '/traces' },
+  { pattern: '/queries', page: queries, title: 'Queries', nav: '/queries' },
+  { pattern: '/queries/:id', page: queryPage, title: 'Query', nav: '/queries' },
+  { pattern: '/errors', page: errorsPage, title: 'Errors', nav: '/errors' },
+  { pattern: '/errors/:id', page: errorPage, title: 'Error', nav: '/errors' },
+  { pattern: '/logs', page: logs, title: 'Logs', nav: '/logs' },
+  { pattern: '/jvm', page: jvm, title: 'JVM', nav: '/jvm' },
+  { pattern: '/metrics', page: metrics, title: 'Metrics', nav: '/metrics' },
 ];
 
-const el = {};
+const shell = {};
 let active = null;          // { module, instance, navKey }
 let liveTimer = null;
 let events = null;
@@ -77,7 +78,7 @@ function isDark(theme) {
 function applyTheme(theme) {
   document.documentElement.dataset.theme = theme || '';
   const dark = isDark(theme);
-  const btn = el.themeToggle;
+  const btn = shell.themeToggle;
   if (btn) {
     btn.setAttribute('aria-label', dark ? 'Switch to light theme' : 'Switch to dark theme');
     btn.querySelector('use').setAttribute('href', dark ? '#i-sun' : '#i-moon');
@@ -99,22 +100,22 @@ function syncStateFromQuery(query) {
   state.range = router.queryParam(query, 'range', RANGES.map((r) => r.id), DEFAULT_RANGE);
   state.live = query.live === '1';
   state.chart = router.queryParam(query, 'chart', ['requests', 'load'], '');
-  el.serviceSelect.value = state.service;
-  el.rangeSelect.value = state.range;
-  el.liveToggle.setAttribute('aria-pressed', String(state.live));
-  el.rateReadout.hidden = !state.live;
+  shell.serviceSelect.value = state.service;
+  shell.rangeSelect.value = state.range;
+  shell.liveToggle.setAttribute('aria-pressed', String(state.live));
+  shell.rateReadout.hidden = !state.live;
   document.body.classList.toggle('is-live', state.live);
   startLive();
 }
 
 function fillServiceSelect(names) {
-  const current = el.serviceSelect.value;
+  const current = shell.serviceSelect.value;
   const wanted = ['', ...names];
-  const have = Array.from(el.serviceSelect.options).map((o) => o.value);
+  const have = Array.from(shell.serviceSelect.options).map((o) => o.value);
   if (have.length === wanted.length && have.every((v, i) => v === wanted[i])) return;
-  fill(el.serviceSelect, h('option', { value: '' }, 'All services'),
+  fill(shell.serviceSelect, h('option', { value: '' }, 'All services'),
     names.map((n) => h('option', { value: n }, n)));
-  el.serviceSelect.value = names.includes(current) ? current : '';
+  shell.serviceSelect.value = names.includes(current) ? current : '';
 }
 
 /** How often Live refreshes the page (ui.adoc#live-refresh). */
@@ -161,7 +162,7 @@ function loadMarks() {
 }
 
 /** The Mark button and the `M` key: mark, exercise, compare (marks-and-compare.adoc#marks). */
-function markDialog() {
+function openMarkDialog() {
   ui.markDialog({ onDone: () => loadMarks().then(() => refreshPage()) });
 }
 
@@ -174,12 +175,12 @@ function refreshPage() {
 // --- routing -------------------------------------------------------------
 
 function setTitle(text) {
-  el.title.textContent = text;
+  shell.title.textContent = text;
   document.title = text === 'Overview' ? 'Spider Sense' : text + ' — Spider Sense';
 }
 
 function markNav(navKey) {
-  for (const a of el.nav.querySelectorAll('a[data-nav]')) {
+  for (const a of shell.nav.querySelectorAll('a[data-nav]')) {
     if (a.dataset.nav === navKey) a.setAttribute('aria-current', 'page');
     else a.removeAttribute('aria-current');
   }
@@ -203,9 +204,9 @@ function onRoute(current, changedRoute) {
 function showRoute(current) {
   const changedRoute = routeChangePending;
   routeChangePending = false;
-  const entry = PAGES.find((p) => p[0] === current.route.pattern);
+  const entry = PAGES.find((p) => p.pattern === current.route.pattern);
   if (!entry) return;
-  const [, module, title, navKey] = entry;
+  const { page: module, title, nav: navKey } = entry;
   if (!changedRoute && active && active.module === module) {
     refreshPage();
     return;
@@ -213,9 +214,9 @@ function showRoute(current) {
   if (active && active.instance && active.instance.destroy) {
     try { active.instance.destroy(); } catch (e) { console.error(e); }
   }
-  closeDrawer(true);
-  el.main.replaceChildren();
-  el.main.scrollTop = 0;
+  closeDrawerSilently();
+  shell.main.replaceChildren();
+  shell.main.scrollTop = 0;
   scrollTo(0, 0);
   setTitle(title);
   markNav(navKey);
@@ -227,10 +228,10 @@ function showRoute(current) {
   };
   let instance = null;
   try {
-    instance = module.render(el.main, ctx) || {};
+    instance = module.render(shell.main, ctx) || {};
   } catch (e) {
     console.error(e);
-    fill(el.main, ui.errorBox(e, () => router.reload()));
+    fill(shell.main, ui.errorBox(e, () => router.reload()));
     instance = {};
   }
   active = { module, instance, navKey };
@@ -292,8 +293,8 @@ function clearDataDialog() {
 // --- live events ---------------------------------------------------------
 
 function updateBadge() {
-  el.tingleBadge.hidden = tingleCount === 0;
-  el.tingleBadge.textContent = tingleCount > 99 ? '99+' : String(tingleCount);
+  shell.tingleBadge.hidden = tingleCount === 0;
+  shell.tingleBadge.textContent = tingleCount > 99 ? '99+' : String(tingleCount);
 }
 
 function pulse() {
@@ -327,8 +328,8 @@ function connectEvents() {
     let data = null;
     try { data = JSON.parse(ev.data); } catch (e) { return; }
     const perSecond = data.perSecond || {};
-    el.rateReadout.textContent = fmtRate(perSecond.spans || 0) + ' spans/s';
-    el.rateReadout.title = 'Spans per second, and ' + fmtRate(perSecond.logs || 0) + ' logs/s';
+    shell.rateReadout.textContent = fmt.rate(perSecond.spans || 0) + ' spans/s';
+    shell.rateReadout.title = 'Spans per second, and ' + fmt.rate(perSecond.logs || 0) + ' logs/s';
     noteDroppedSpans(data.droppedSpans);
   });
   events.addEventListener('service', () => {
@@ -360,12 +361,12 @@ function onKey(e) {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (isTyping(e.target)) return;
   if (e.key === '/') {
-    const input = el.main.querySelector('.querybar input, input[type="search"], input[type="text"]');
+    const input = shell.main.querySelector('.querybar input, input[type="search"], input[type="text"]');
     if (input) { e.preventDefault(); input.focus(); input.select(); }
     return;
   }
   if (e.key === 'l' || e.key === 'L') { e.preventDefault(); router.setQuery({ live: state.live ? '' : '1' }); return; }
-  if (e.key === 'm' || e.key === 'M') { e.preventDefault(); markDialog(); return; }
+  if (e.key === 'm' || e.key === 'M') { e.preventDefault(); openMarkDialog(); return; }
   if (e.key === '[' || e.key === ']') {
     e.preventDefault();
     const i = api.rangeIndex(state.range);
@@ -376,8 +377,8 @@ function onKey(e) {
 
 function setNav(open) {
   document.body.classList.toggle('nav-open', open);
-  el.scrim.hidden = !open;
-  el.menuBtn.setAttribute('aria-expanded', String(open));
+  shell.scrim.hidden = !open;
+  shell.menuBtn.setAttribute('aria-expanded', String(open));
 }
 
 // --- boot ----------------------------------------------------------------
@@ -389,7 +390,7 @@ async function boot() {
     await import('./dev/replay.js');
   }
 
-  Object.assign(el, {
+  Object.assign(shell, {
     main: document.getElementById('main'),
     title: document.getElementById('page-title'),
     nav: document.getElementById('nav'),
@@ -404,30 +405,30 @@ async function boot() {
     scrim: document.getElementById('scrim'),
   });
 
-  fill(el.rangeSelect, RANGES.map((r) => h('option', { value: r.id }, r.label)));
+  fill(shell.rangeSelect, RANGES.map((r) => h('option', { value: r.id }, r.label)));
   const editorSelect = document.getElementById('editor-select');
   fill(editorSelect, EDITORS.map((x) => h('option', { value: x.id }, x.label)));
   editorSelect.value = editor();
   editorSelect.addEventListener('change', () => setEditor(editorSelect.value));
   applyTheme(storedTheme());
 
-  el.themeToggle.addEventListener('click', toggleTheme);
-  el.serviceSelect.addEventListener('change', () => router.setQuery({ service: el.serviceSelect.value }));
-  el.rangeSelect.addEventListener('change', () => router.setQuery({ range: el.rangeSelect.value }, { defaults: { range: DEFAULT_RANGE } }));
-  el.liveToggle.addEventListener('click', () => router.setQuery({ live: state.live ? '' : '1' }));
-  el.markBtn.addEventListener('click', markDialog);
+  shell.themeToggle.addEventListener('click', toggleTheme);
+  shell.serviceSelect.addEventListener('change', () => router.setQuery({ service: shell.serviceSelect.value }));
+  shell.rangeSelect.addEventListener('change', () => router.setQuery({ range: shell.rangeSelect.value }, { defaults: { range: DEFAULT_RANGE } }));
+  shell.liveToggle.addEventListener('click', () => router.setQuery({ live: state.live ? '' : '1' }));
+  shell.markBtn.addEventListener('click', openMarkDialog);
   document.getElementById('send-data-btn').addEventListener('click', sendDataDialog);
   document.getElementById('clear-data-btn').addEventListener('click', clearDataDialog);
   document.getElementById('tingle-link').addEventListener('click', () => { tingleCount = 0; updateBadge(); });
-  el.menuBtn.addEventListener('click', () => setNav(!document.body.classList.contains('nav-open')));
-  el.scrim.addEventListener('click', () => setNav(false));
-  el.nav.addEventListener('click', () => setNav(false));
+  shell.menuBtn.addEventListener('click', () => setNav(!document.body.classList.contains('nav-open')));
+  shell.scrim.addEventListener('click', () => setNav(false));
+  shell.nav.addEventListener('click', () => setNav(false));
   addEventListener('keydown', onKey);
   matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
     if (!document.documentElement.dataset.theme) applyTheme('');
   });
 
-  for (const [pattern] of PAGES) router.register(pattern);
+  for (const { pattern } of PAGES) router.register(pattern);
 
   try {
     await api.refreshStatus();
@@ -460,10 +461,10 @@ function paintFoot() {
   const hours = status.retention && status.retention.hours;
   if (store.path || store.url) {
     row.hidden = false;
-    cell.textContent = store.sizeBytes != null ? bytes(store.sizeBytes) : 'on disk';
+    cell.textContent = store.sizeBytes != null ? fmt.bytes(store.sizeBytes) : 'on disk';
     row.title = [
       store.path || store.url,
-      store.sizeBytes != null ? bytes(store.sizeBytes) + ' on disk' : null,
+      store.sizeBytes != null ? fmt.bytes(store.sizeBytes) + ' on disk' : null,
       hours ? 'kept for ' + hours + ' h' : null,
     ].filter(Boolean).join('\n');
   } else {
@@ -479,8 +480,8 @@ function paintFoot() {
     warn.title = store.fallbackReason || 'The database could not be opened; data is kept in memory and is lost on restart.';
   } else if (store.droppedBatches > 0) {
     warn.hidden = false;
-    warn.textContent = fmtCount(store.droppedBatches) + ' batches dropped';
-    warn.title = 'The write queue overflowed' + (store.queued ? ', ' + fmtCount(store.queued) + ' batches waiting' : '') + '.';
+    warn.textContent = fmt.count(store.droppedBatches) + ' batches dropped';
+    warn.title = 'The write queue overflowed' + (store.queued ? ', ' + fmt.count(store.queued) + ' batches waiting' : '') + '.';
   } else {
     warn.hidden = true;
   }
@@ -507,7 +508,7 @@ function noteDroppedSpans(count) {
   if (!line) return;
   line.hidden = false;
   line.textContent = 'dropping spans';
-  line.title = fmtCount(count) + ' spans dropped by the ingest cap (spidersense.ingest.max-spans-per-second).';
+  line.title = fmt.count(count) + ' spans dropped by the ingest cap (spidersense.ingest.max-spans-per-second).';
   clearTimeout(droppingTimer);
   droppingTimer = setTimeout(() => { line.hidden = true; }, DROPPING_HOLD_MS);
 }

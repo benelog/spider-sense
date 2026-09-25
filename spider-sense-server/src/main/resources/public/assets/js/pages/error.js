@@ -93,7 +93,7 @@ export function render(root, ctx) {
         h('a.link-btn', { href: router.detailHref('traces', e.sample.traceId) }, 'Open trace'),
         h('span.muted', { style: { fontSize: '11px' }, title: bothTimes(e.sample.at) }, full(e.sample.at))) : null,
       copyButtons({
-        markdown: () => ({ path: '/api/errors/' + encodeURIComponent(id), query: api.params({}, { window: loaded.window, service: null }) }),
+        markdown: () => ({ path: '/api/errors/' + encodeURIComponent(id), query: api.params({}, { window: loaded.window, omitService: true }) }),
         cli: () => cliLine('errors', loaded.window, loaded.service),
       }));
 

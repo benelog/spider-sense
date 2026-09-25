@@ -5,7 +5,7 @@ import * as api from '../api.js';
 import * as router from '../router.js';
 import { h, fill, panel, spinner, errorBox, serviceColor, seedServices, noDataYet, segmented } from '../ui.js';
 import { pageLoader } from '../page.js';
-import { scatterChart, legend } from '../charts.js';
+import { scatterChart, legend, POINT, isError, isSlow } from '../charts.js';
 import { traceTable } from '../widgets.js';
 import { count, dur, clock } from '../format.js';
 
@@ -98,35 +98,35 @@ export function render(root, ctx) {
 
   /** The points the Success / Failed toggles leave; the chart hides services itself. */
   function shown() {
-    return points.filter((p) => ((p[5] & 1) ? showErr : showOk));
+    return points.filter((p) => (isError(p) ? showErr : showOk));
   }
 
   function visible() {
-    return shown().filter((p) => !hidden.has(p[2]));
+    return shown().filter((p) => !hidden.has(p[POINT.SERVICE]));
   }
 
   function stats() {
     const list = visible();
     return {
       total: list.length,
-      errors: list.filter((p) => p[5] & 1).length,
-      slow: list.filter((p) => p[5] & 2).length,
+      errors: list.filter((p) => isError(p)).length,
+      slow: list.filter((p) => isSlow(p)).length,
     };
   }
 
   function yMaxOf() {
-    const ds = visible().map((p) => p[1]).sort((a, b) => a - b);
+    const ds = visible().map((p) => p[POINT.MS]).sort((a, b) => a - b);
     if (!ds.length) return 100;
     const p99 = ds[Math.min(ds.length - 1, Math.floor(ds.length * 0.99))];
     return Math.max(10, p99 * 1.5);
   }
 
   function paintBar() {
-    const services = [...new Set(points.map((p) => p[2]))].sort();
+    const services = [...new Set(points.map((p) => p[POINT.SERVICE]))].sort();
     seedServices(services);
     fill(legendBox, legend(services.map((s) => ({
       label: s, color: serviceColor(s), off: hidden.has(s),
-      value: count(shown().filter((p) => p[2] === s).length),
+      value: count(shown().filter((p) => p[POINT.SERVICE] === s).length),
     })), {
       onToggle: (item) => {
         if (hidden.has(item.label)) hidden.delete(item.label); else hidden.add(item.label);
@@ -142,7 +142,7 @@ export function render(root, ctx) {
     const max = yMaxOf();
     // Only the linear axis clips; the log scale runs to the slowest point.
     const logOn = logToggle.getAttribute('aria-pressed') === 'true';
-    const above = logOn ? 0 : visible().filter((p) => p[1] > max).length;
+    const above = logOn ? 0 : visible().filter((p) => p[POINT.MS] > max).length;
     clipNote.textContent = above ? '▲ ' + count(above) + ' above ' + dur(max) : '';
     clipNote.title = above ? 'Points above the axis maximum; switch to log scale to see them.' : '';
     if (truncated) {
@@ -214,7 +214,7 @@ export function render(root, ctx) {
         paintSelection();
         loadTraces();
       },
-      onPick: (p) => router.openDetail('traces', p[4]),
+      onPick: (p) => router.openDetail('traces', p[POINT.TRACE]),
     });
   }
 
@@ -248,10 +248,10 @@ export function render(root, ctx) {
       const now = Date.now();
       const res = await api.scatter({ limit: 5000 }, { window: { from: now - LIVE_MERGE_WINDOW_MS, to: now } });
       if (loader.isDestroyed() || requested !== loadedFor) return;
-      const seen = new Set(points.map((p) => p[4]));
-      const fresh = (res.points || []).filter((p) => !seen.has(p[4]));
+      const seen = new Set(points.map((p) => p[POINT.TRACE]));
+      const fresh = (res.points || []).filter((p) => !seen.has(p[POINT.TRACE]));
       const w = api.windowFor();
-      points = points.concat(fresh).filter((p) => p[0] >= w.from);
+      points = points.concat(fresh).filter((p) => p[POINT.START] >= w.from);
       paintBar();
       // The axis follows the merged points, as the ▲ note paintBar just wrote does.
       if (chart) chart.setPoints(shown(), w, yMaxOf());

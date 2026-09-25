@@ -53,7 +53,7 @@ export function render(root, ctx) {
       copyBlock(formatSql(q.statement || '')),
       schemaLines(q.schema),
       h('div.row', copyButtons({
-        markdown: () => ({ path: '/api/queries/' + encodeURIComponent(id), query: api.params({}, { window: loaded.window, service: null }) }),
+        markdown: () => ({ path: '/api/queries/' + encodeURIComponent(id), query: api.params({}, { window: loaded.window, omitService: true }) }),
         cli: () => cliLine('queries', loaded.window, loaded.service),
       })));
 

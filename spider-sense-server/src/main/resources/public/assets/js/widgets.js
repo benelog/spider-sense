@@ -7,16 +7,16 @@ import * as router from './router.js';
 import { h, table, icon, chip, stat, serviceChip, statusChip, durationBar } from './ui.js';
 import { chartBox } from './charts.js';
 import { chartModeSwitch, throughputSpec } from './throughput.js';
-import { apdexClass, fmtApdex, ERROR_RATE_BAD, DEFAULT_SLOW_REQUEST_MS } from './buckets.js';
-import { dur, count, rate, pct, time, bothTimes, shortId } from './format.js';
+import { apdexClass, ERROR_RATE_BAD, DEFAULT_SLOW_REQUEST_MS } from './buckets.js';
+import { dur, count, rate, pct, apdex, time, bothTimes, shortId } from './format.js';
 
 // --- traces ---------------------------------------------------------------
 
 /** The trace table of the Traces, Endpoint, Query, Error and Scatter pages. */
 export function traceTable(rows, opts = {}) {
-  const ref = { max: 0 };
-  const recalc = (rs) => { ref.max = rs.reduce((m, r) => Math.max(m, r.durationMs || 0), 0); };
-  recalc(rows);
+  const durationScale = { max: 0 };
+  const rescale = (nextRows) => { durationScale.max = nextRows.reduce((m, r) => Math.max(m, r.durationMs || 0), 0); };
+  rescale(rows);
   const columns = [
     { key: 'start', label: 'Time', sortable: false, width: '88px', render: (r) => h('span.mono', { title: bothTimes(r.start) }, time(r.start)) },
     {
@@ -31,7 +31,7 @@ export function traceTable(rows, opts = {}) {
       key: 'durationMs', label: 'Duration', align: 'right', sortable: false, width: '110px',
       render: (r) => h('div.duration-cell',
         h('span', { class: r.error ? 'bad' : r.slow ? 'warned' : '' }, dur(r.durationMs)),
-        durationBar(r.durationMs, ref.max, r.error ? 'err' : r.slow ? 'slow' : null)),
+        durationBar(r.durationMs, durationScale.max, r.error ? 'err' : r.slow ? 'slow' : null)),
     },
     { key: 'spanCount', label: 'Spans', align: 'right', sortable: false, width: '58px', render: (r) => count(r.spanCount) },
     { key: 'dbCount', label: 'DB', align: 'right', sortable: false, width: '48px', render: (r) => (r.dbCount ? count(r.dbCount) : h('span.muted', '-')) },
@@ -55,7 +55,7 @@ export function traceTable(rows, opts = {}) {
   const node = table(columns, { rows, ...rowOpts });
   /** Replace the rows in place: scroll position and the sort header survive. */
   const setRows = node.setRows;
-  node.setRows = (rs) => { recalc(rs); return setRows(rs); };
+  node.setRows = (nextRows) => { rescale(nextRows); return setRows(nextRows); };
   return node;
 }
 
@@ -67,7 +67,7 @@ export function statTiles(totals, thresholds) {
   const slow = (thresholds && thresholds.slowRequestMs) || DEFAULT_SLOW_REQUEST_MS;
   return [
     stat(count(t.requests), 'total', 'requests'),
-    stat(fmtApdex(t.apdex), '', 'apdex', { class: apdexClass(t.apdex), title: 'Apdex, T = ' + dur(slow) }),
+    stat(apdex(t.apdex), '', 'apdex', { class: apdexClass(t.apdex), title: 'Apdex, T = ' + dur(slow) }),
     stat(pct(t.errorRate || 0), '', 'error rate', { class: t.errorRate > ERROR_RATE_BAD ? 'is-bad' : '' }),
     stat(dur(t.p50Ms), '', 'p50'),
     stat(dur(t.p95Ms), '', 'p95', { class: t.p95Ms > slow ? 'is-warn' : '' }),

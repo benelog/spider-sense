@@ -8,13 +8,13 @@ import { traceTable } from '../widgets.js';
 import { count } from '../format.js';
 
 export function render(root, ctx) {
-  const q = { ...ctx.query };
+  const initialQuery = { ...ctx.query };
   const filter = {
-    q: q.q || '',
-    minMs: q.minMs || '',
-    maxMs: q.maxMs || '',
-    status: router.queryParam(q, 'status', ['all', 'error', 'ok'], 'all'),
-    endpointId: q.endpointId || '',
+    q: initialQuery.q || '',
+    minMs: initialQuery.minMs || '',
+    maxMs: initialQuery.maxMs || '',
+    status: router.queryParam(initialQuery, 'status', ['all', 'error', 'ok'], 'all'),
+    endpointId: initialQuery.endpointId || '',
   };
   let rows = [];
   let total = 0;
@@ -32,7 +32,7 @@ export function render(root, ctx) {
   const endpointSelect = h('select', { 'aria-label': 'Endpoint filter' }, h('option', { value: '' }, 'Any endpoint'));
   endpointSelect.hidden = true;
 
-  const apply = debounce(() => {
+  const applyFilter = debounce(() => {
     filter.q = input.value.trim();
     filter.minMs = minInput.value;
     filter.maxMs = maxInput.value;
@@ -43,12 +43,12 @@ export function render(root, ctx) {
     list.load();
   }, 400);
 
-  input.addEventListener('input', apply);
-  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') apply.flush(); });
-  minInput.addEventListener('input', apply);
-  maxInput.addEventListener('input', apply);
-  statusSelect.addEventListener('change', () => apply.flush());
-  endpointSelect.addEventListener('change', () => apply.flush());
+  input.addEventListener('input', applyFilter);
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') applyFilter.flush(); });
+  minInput.addEventListener('input', applyFilter);
+  maxInput.addEventListener('input', applyFilter);
+  statusSelect.addEventListener('change', () => applyFilter.flush());
+  endpointSelect.addEventListener('change', () => applyFilter.flush());
 
   const countLabel = h('span.muted', { style: { marginLeft: 'auto', fontSize: '11px' } });
   const bar = h('div.querybar',
@@ -154,6 +154,6 @@ export function render(root, ctx) {
       }
       if (!rows.length || !document.querySelector('.drawer')) { endpoints.load(); list.load(); }
     },
-    destroy: () => { list.destroy(); endpoints.destroy(); apply.cancel(); },
+    destroy: () => { list.destroy(); endpoints.destroy(); applyFilter.cancel(); },
   };
 }

@@ -79,3 +79,9 @@ test('shortId, splitType and truncate', () => {
   assert.equal(fmt.truncate('abcd', 4), 'abcd');
   assert.equal(fmt.truncate(null, 4), '');
 });
+
+test('apdex has two decimals and a dash for no request', () => {
+  assert.equal(fmt.apdex(0.934), '0.93');
+  assert.equal(fmt.apdex(1), '1.00');
+  assert.equal(fmt.apdex(null), '-');
+});

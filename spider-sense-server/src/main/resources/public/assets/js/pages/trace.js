@@ -4,7 +4,7 @@ import * as api from '../api.js';
 import * as router from '../router.js';
 import {
   h, fill, icon, panel, table, chip, serviceChip, serviceColor, severityChip, idButton, segmented, categoryIcon,
-  drawer, closeDrawer, spinner,
+  drawer, closeDrawer, closeDrawerSilently, spinner,
 } from '../ui.js';
 import { pageLoader, skeleton } from '../page.js';
 import { formatSql } from '../sql.js';
@@ -23,7 +23,7 @@ export function render(root, ctx) {
   let profileSort = router.queryParam(ctx.query, 'sort', ['start', 'elapsed', 'self'], 'start');
   let selectedSpan = ctx.query.span || null;
   const collapsed = new Set();
-  let shape = '';
+  let lastShape = '';
 
   const head = h('div.trace-head');
   const headPanel = panel({}, head);
@@ -245,14 +245,14 @@ export function render(root, ctx) {
   }
 
   /**
-   * `live` is a Live refresh: a trace's spans arrive in several exports and from several
+   * `{ live: true }` is a Live refresh: a trace's spans arrive in several exports and from several
    * services, so one opened early is incomplete. The refetch repaints only when the trace
    * changed, keeping the collapsed spans, the selected span, its open drawer and the focus.
    */
-  function paint(next, live = false) {
+  function paint(next, { live = false } = {}) {
     const nextShape = shapeOf(next);
-    if (live && layout.built && nextShape === shape) return;
-    shape = nextShape;
+    if (live && layout.built && nextShape === lastShape) return;
+    lastShape = nextShape;
     data = next;
     const focused = live && document.activeElement && bodyBox.contains(document.activeElement)
       ? document.activeElement.closest('[data-key]') : null;
@@ -282,13 +282,13 @@ export function render(root, ctx) {
     paint,
     body: layout,
     // A Live refresh that fails keeps the trace on screen; the next tick asks again.
-    onError: (e, live) => !(live && layout.built),
+    onError: (e, { live = false } = {}) => !(live && layout.built),
   });
 
   loader.load();
   return {
-    refresh: () => { if (api.state.live) loader.load(true); },
+    refresh: () => { if (api.state.live) loader.load({ live: true }); },
     onEscape: () => closeDrawer(),
-    destroy: () => { loader.destroy(); closeDrawer(true); },
+    destroy: () => { loader.destroy(); closeDrawerSilently(); },
   };
 }

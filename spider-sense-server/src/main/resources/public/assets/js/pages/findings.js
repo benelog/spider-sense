@@ -5,8 +5,7 @@ import * as api from '../api.js';
 import * as router from '../router.js';
 import { h, fill, panel, table, chip, serviceChip, copyBlock, spinner, noDataYet, formDialog, errorText, toast, breakdownBar, breakdownLead, BREAKDOWN_BUCKETS } from '../ui.js';
 import { formatSql } from '../sql.js';
-import { fmtApdex } from '../buckets.js';
-import { count, dur, rate, pct, bytes, time, bothTimes, truncate, shortId } from '../format.js';
+import { count, dur, rate, pct, apdex, bytes, time, bothTimes, truncate, shortId } from '../format.js';
 import { codeFrame } from '../frames.js';
 import { copyButtons, cliLine } from '../copyas.js';
 import { pageLoader } from '../page.js';
@@ -22,7 +21,7 @@ export function severityMark(severity) {
  * Whether a finding is listed last and dimmed: acknowledged, or resolved and not
  * back since (findings.adoc#resolutions).
  */
-export function setAside(finding) {
+export function isSetAside(finding) {
   return !!finding.ack || (!!finding.resolution && finding.kind !== 'regression');
 }
 
@@ -36,7 +35,7 @@ function severityCell(finding) {
     return h('span.sev-mark', { title: finding.ack.note || finding.severity + ' severity, acknowledged' },
       severityDot(finding.severity), h('span.sev-word', 'acked'));
   }
-  if (setAside(finding)) {
+  if (isSetAside(finding)) {
     return h('span.sev-mark', { title: finding.resolution.note || finding.severity + ' severity, resolved' },
       severityDot(finding.severity), h('span.sev-word', 'resolved'));
   }
@@ -113,7 +112,7 @@ function numberValue(key, value, kind) {
   if (key === 'at' || key === 'firstSeen' || key === 'lastSeen' || key === 'resolvedAt') {
     return h('span', { title: bothTimes(value) }, time(value));
   }
-  if (key === 'apdex') return h('span', fmtApdex(value));
+  if (key === 'apdex') return h('span', apdex(value));
   if (key === 'dbShare' || key === 'shareMax' || key === 'ratioMax') return h('span', pct(value));
   if ((BYTE_NUMBERS[kind] || new Set()).has(key)) return h('span', bytes(value));
   // A duration ends in Ms, or in Ms per request or run (msPerRequest, dbMsPerRequest, dbMsPerRun).
@@ -328,7 +327,7 @@ export function render(root, ctx) {
     if (!node) {
       node = table(columns, {
         rowKey: (f) => f.id,
-        rowClass: (f) => (setAside(f) ? 'is-acked' : null),
+        rowClass: (f) => (isSetAside(f) ? 'is-acked' : null),
         detail: (f) => evidence(f, loader.load, () => listWindow),
         detailKey: ackSignature,
         detailClass: 'f-detail',

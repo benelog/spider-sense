@@ -4,7 +4,7 @@
 
 import * as api from './api.js';
 import { h } from './ui.js';
-import { dur, count as fmtCount, pct } from './format.js';
+import * as fmt from './format.js';
 
 const DEFAULT_BOUNDS = [125, 500, 2000];
 
@@ -17,8 +17,8 @@ export function bucketBounds(status = api.state.status) {
 }
 
 /** A bound as a label: "125 ms" under a second, "2 s" above. */
-function bound(ms) {
-  if (ms < 1000) return dur(ms);
+function boundLabel(ms) {
+  if (ms < 1000) return fmt.dur(ms);
   const s = Math.round((ms / 1000) * 10) / 10;
   return s + ' s';
 }
@@ -26,7 +26,7 @@ function bound(ms) {
 /** ['≤125 ms', '≤500 ms', '≤2 s', '>2 s', 'error'] */
 export function bucketLabels(status = api.state.status) {
   const [a, b, c] = bucketBounds(status);
-  return ['≤' + bound(a), '≤' + bound(b), '≤' + bound(c), '>' + bound(c), 'error'];
+  return ['≤' + boundLabel(a), '≤' + boundLabel(b), '≤' + boundLabel(c), '>' + boundLabel(c), 'error'];
 }
 
 /** The colour token of each bucket, resolvable by charts.js and by CSS. */
@@ -61,13 +61,7 @@ export function apdexClass(value) {
 /** An Apdex in a cell or a card: two decimals, coloured as `apdexClass` grades it. */
 export function apdexCell(value, tag = 'span') {
   const grade = apdexClass(value);
-  return h(tag, { class: grade === 'is-bad' ? 'bad' : grade === 'is-warn' ? 'warned' : null }, fmtApdex(value));
-}
-
-/** Two decimals, one less than the API carries; '-' when there was no request. */
-export function fmtApdex(value) {
-  if (value == null || Number.isNaN(value)) return '-';
-  return value.toFixed(2);
+  return h(tag, { class: grade === 'is-bad' ? 'bad' : grade === 'is-warn' ? 'warned' : null }, fmt.apdex(value));
 }
 
 /** The five counts as a title: "≤125 ms: 900 (75.0%)…". */
@@ -75,7 +69,7 @@ export function histogramTitle(histogram) {
   const labels = bucketLabels();
   const total = (histogram || []).reduce((a, b) => a + (b || 0), 0);
   return labels
-    .map((l, i) => l + ': ' + fmtCount((histogram || [])[i] || 0) + (total ? ' (' + pct(((histogram || [])[i] || 0) / total) + ')' : ''))
+    .map((l, i) => l + ': ' + fmt.count((histogram || [])[i] || 0) + (total ? ' (' + fmt.pct(((histogram || [])[i] || 0) / total) + ')' : ''))
     .join('\n');
 }
 
@@ -98,8 +92,8 @@ export function histogramBars(histogram, opts = {}) {
     title: opts.compact ? title : null,
     role: 'img',
     'aria-label': 'Response summary. ' + title.replace(/\n/g, ', '),
-  }, values.map((v, i) => h('div.hist-bar', { title: opts.compact ? null : labels[i] + ': ' + fmtCount(v || 0) + (total ? ' (' + pct((v || 0) / total) + ')' : '') },
-    h('span.hist-count', fmtCount(v || 0)),
+  }, values.map((v, i) => h('div.hist-bar', { title: opts.compact ? null : labels[i] + ': ' + fmt.count(v || 0) + (total ? ' (' + fmt.pct((v || 0) / total) + ')' : '') },
+    h('span.hist-count', fmt.count(v || 0)),
     h('span.hist-track', h('span.hist-fill', { style: { height: Math.max(v ? 2 : 0, ((v || 0) / max) * 100) + '%', background: colors[i] } })),
     h('span.hist-label', labels[i]))));
 }

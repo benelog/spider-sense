@@ -473,7 +473,7 @@ let drawerNode = null;
 let drawerCloser = null;
 
 export function drawer({ title, subtitle, body, onClose }) {
-  closeDrawer(true);
+  closeDrawerSilently();
   const close = () => closeDrawer();
   drawerNode = h('aside.drawer', { role: 'dialog', 'aria-modal': 'false', 'aria-label': title || 'Details' },
     h('header.drawer-head',
@@ -487,13 +487,23 @@ export function drawer({ title, subtitle, body, onClose }) {
   return drawerNode;
 }
 
-export function closeDrawer(silent = false) {
+/** Closes the drawer, and tells whoever opened it. */
+export function closeDrawer() {
+  return dropDrawer(true);
+}
+
+/** Closes the drawer without telling whoever opened it: the page is going, or another drawer is coming. */
+export function closeDrawerSilently() {
+  return dropDrawer(false);
+}
+
+function dropDrawer(notify) {
   if (!drawerNode) return false;
   const node = drawerNode, onClose = drawerCloser;
   drawerNode = null; drawerCloser = null;
   node.remove();
   document.body.classList.remove('drawer-open');
-  if (!silent && onClose) onClose();
+  if (notify && onClose) onClose();
   return true;
 }
 

@@ -38,6 +38,12 @@ export function pct(fraction) {
   return NUM1.format(fraction * 100) + '%';
 }
 
+/** An Apdex with two decimals, one less than the API carries; '-' when there was no request. */
+export function apdex(value) {
+  if (value == null || Number.isNaN(value)) return '-';
+  return value.toFixed(2);
+}
+
 export function bytes(n) {
   if (n == null || Number.isNaN(n)) return '-';
   const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];

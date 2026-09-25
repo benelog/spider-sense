@@ -1,7 +1,7 @@
 // uPlot helpers. Colours are read from CSS custom properties at render time and
 // every chart rebuilds itself when the theme changes or its container resizes.
 
-import { clock, clockShort, durBare, count as fmtCount } from './format.js';
+import * as fmt from './format.js';
 import { state } from './api.js';
 import { panel, readSeriesColors, serviceColor } from './ui.js';
 
@@ -64,7 +64,7 @@ function timeAxis(colors, opts = {}) {
     ticks: { stroke: withAlpha(colors.line, 0.75), width: 1, size: 4 },
     font: uiFont(),
     space: 70,
-    values: (u, splits) => splits.map((s) => (opts.short ? clockShort(s * 1000) : clock(s * 1000))),
+    values: (u, splits) => splits.map((s) => (opts.short ? fmt.clockShort(s * 1000) : fmt.clock(s * 1000))),
   };
 }
 
@@ -75,21 +75,21 @@ function isCountScale(scale) {
   return scale !== 'ms' && scale !== 'pct' && scale !== 'load';
 }
 
-function valueAxis(colors, o = {}) {
+function valueAxis(colors, axisOpts = {}) {
   return {
-    scale: o.scale || 'y',
-    side: o.side === undefined ? 3 : o.side,
-    stroke: o.stroke || colors.muted,
-    grid: o.grid === false ? { show: false } : { stroke: withAlpha(colors.line, 0.75), width: 1 },
+    scale: axisOpts.scale || 'y',
+    side: axisOpts.side === undefined ? 3 : axisOpts.side,
+    stroke: axisOpts.stroke || colors.muted,
+    grid: axisOpts.grid === false ? { show: false } : { stroke: withAlpha(colors.line, 0.75), width: 1 },
     ticks: { show: false },
     font: uiFont(),
-    size: o.size || 52,
-    label: o.label,
-    labelSize: o.label ? 18 : 0,
+    size: axisOpts.size || 52,
+    label: axisOpts.label,
+    labelSize: axisOpts.label ? 18 : 0,
     labelFont: uiFont(),
     labelGap: 2,
-    incrs: o.count !== false && isCountScale(o.scale || 'y') ? COUNT_INCRS : undefined,
-    values: o.values || ((u, splits) => splits.map((s) => fmtCount(s))),
+    incrs: axisOpts.count !== false && isCountScale(axisOpts.scale || 'y') ? COUNT_INCRS : undefined,
+    values: axisOpts.values || ((u, splits) => splits.map((s) => fmt.count(s))),
   };
 }
 
@@ -134,11 +134,6 @@ class Chart {
     const w = this.width();
     if (Math.abs(w - this.plot.width) < 2) return;
     this.plot.setSize({ width: w, height: this.height });
-  }
-
-  setData(data, resetScales = true) {
-    this.data = data;
-    if (this.plot) this.plot.setData(data, resetScales);
   }
 
   destroy() {
@@ -286,7 +281,7 @@ export function timeSeries(container, spec) {
           label: s.label, scale, stroke: color, fill: withAlpha(color, s.fillAlpha == null ? (s.stack ? 1 : 0.85) : s.fillAlpha),
           width: 0, points: { show: false },
           paths: uPlot.paths.bars({ size: [bars > 1 && idx > 0 ? 0.62 : 0.72, 24, 1], align: 0, radius: 0.15 }),
-          value: (u, v) => fmtCount(v),
+          value: (u, v) => fmt.count(v),
         });
       } else {
         series.push({
@@ -295,7 +290,7 @@ export function timeSeries(container, spec) {
           fill: s.type === 'area' ? withAlpha(color, 0.12) : null,
           points: { show: false },
           spanGaps: true,
-          value: (u, v) => (s.scale === 'ms' ? durBare(v) + ' ms' : s.scale === 'pct' ? (v == null ? '-' : v.toFixed(1) + '%') : fmtCount(v)),
+          value: (u, v) => (s.scale === 'ms' ? fmt.durBare(v) + ' ms' : s.scale === 'pct' ? (v == null ? '-' : v.toFixed(1) + '%') : fmt.count(v)),
         });
       }
     }
@@ -309,7 +304,7 @@ export function timeSeries(container, spec) {
         stroke: a.color ? resolveColor(a.color, colors) : colors.muted,
         grid: i === 0,
         values: a.values || (a.scale === 'ms'
-          ? (u, splits) => splits.map((s) => durBare(s))
+          ? (u, splits) => splits.map((s) => fmt.durBare(s))
           : a.scale === 'pct'
             ? (u, splits) => splits.map((s) => (s == null ? '' : s.toFixed(s < 10 ? 1 : 0) + '%'))
             : undefined),
@@ -342,7 +337,7 @@ export function timeSeries(container, spec) {
               return `<span class="k"><i style="background:${color}"></i>${escapeHtml(s.label)}</span><span class="v">${escapeHtml(u.series[column[i]].value(u, v))}</span>`;
             }).filter(Boolean);
             if (!rows.length) { tip.classList.remove('show'); return; }
-            tip.innerHTML = `<div class="t">${clock(u.data[0][idx] * 1000)}</div>${rows.join('')}`;
+            tip.innerHTML = `<div class="t">${fmt.clock(u.data[0][idx] * 1000)}</div>${rows.join('')}`;
             tip.classList.add('show');
             const w2 = tip.offsetWidth;
             tip.style.left = Math.min(Math.max(left - w2 / 2, 4), u.width - w2 - 4) + 'px';
@@ -492,6 +487,16 @@ export function sparkline(values, opts = {}) {
   return svg;
 }
 
+/**
+ * The fields of a scatter point, as api.adoc#scatter sends it:
+ * [start, durationMs, service, endpointName, traceId, flags].
+ */
+export const POINT = { START: 0, MS: 1, SERVICE: 2, ENDPOINT: 3, TRACE: 4, FLAGS: 5 };
+
+/** The flags of a point: 1 is an error, 2 a slow request (and 4 a slow query). */
+export const isError = (p) => (p[POINT.FLAGS] & 1) !== 0;
+export const isSlow = (p) => (p[POINT.FLAGS] & 2) !== 0;
+
 /** A click picks the nearest point within this many CSS pixels. */
 const PICK_RADIUS_PX = 12;
 
@@ -513,9 +518,9 @@ export function scatterChart(container, opts) {
   };
 
   const chart = new Chart(container, (width, height, colors) => {
-    const visible = view.points.filter((p) => !view.hidden.has(p[2]));
-    const xs = visible.map((p) => p[0] / 1000);
-    const ys = visible.map((p) => p[1]);
+    const visible = view.points.filter((p) => !view.hidden.has(p[POINT.SERVICE]));
+    const xs = visible.map((p) => p[POINT.START] / 1000);
+    const ys = visible.map((p) => p[POINT.MS]);
     // The log axis starts under the fastest visible point, at 0.5 ms at the most, so no point
     // falls below it; a point of 0 ms, which a log axis has no room for, sits on its bottom edge.
     const fastest = ys.reduce((m, y) => Math.min(m, y), Infinity);
@@ -540,8 +545,8 @@ export function scatterChart(container, opts) {
       const cells = new Map();
       let max = 0;
       for (const p of visible) {
-        const x = u.valToPos(p[0] / 1000, 'x');
-        const y = u.valToPos(Math.max(p[1], floor || 0.0001), 'y');
+        const x = u.valToPos(p[POINT.START] / 1000, 'x');
+        const y = u.valToPos(Math.max(p[POINT.MS], floor || 0.0001), 'y');
         if (x < -0.5 || x > width + 0.5 || y < -0.5 || y > height + 0.5) continue;
         const c = Math.min(cols - 1, Math.max(0, Math.floor(x / cellW)));
         const r = Math.min(ROWS - 1, Math.max(0, Math.floor(y / cellH)));
@@ -549,7 +554,7 @@ export function scatterChart(container, opts) {
         let cell = cells.get(key);
         if (!cell) { cell = { c, r, count: 0, errors: 0 }; cells.set(key, cell); }
         cell.count++;
-        if (p[5] & 1) cell.errors++;
+        if (isError(p)) cell.errors++;
         if (cell.count > max) max = cell.count;
       }
       return { cells, cols, rows: ROWS, cellW, cellH, width, height, max };
@@ -592,18 +597,18 @@ export function scatterChart(container, opts) {
       const pts = visible;
       // plain points first, then slow rings, then errors on top
       for (const p of pts) {
-        if (p[5] & 1) continue;
-        let c = colorFor.get(p[2]);
-        if (!c) { c = serviceColor(p[2]); colorFor.set(p[2], c); }
-        const x = u.valToPos(p[0] / 1000, 'x', true);
-        const y = u.valToPos(Math.max(p[1], floor || 0.0001), 'y', true);
+        if (isError(p)) continue;
+        let c = colorFor.get(p[POINT.SERVICE]);
+        if (!c) { c = serviceColor(p[POINT.SERVICE]); colorFor.set(p[POINT.SERVICE], c); }
+        const x = u.valToPos(p[POINT.START] / 1000, 'x', true);
+        const y = u.valToPos(Math.max(p[POINT.MS], floor || 0.0001), 'y', true);
         if (y < t - 4) continue;
         ctx.fillStyle = c;
         ctx.globalAlpha = 0.85;
         ctx.beginPath();
         ctx.arc(x, y, 2.1 * devicePixelRatio, 0, Math.PI * 2);
         ctx.fill();
-        if (p[5] & 2) {
+        if (isSlow(p)) {
           ctx.globalAlpha = 1;
           ctx.strokeStyle = colors.warn;
           ctx.lineWidth = 1.5 * devicePixelRatio;
@@ -616,9 +621,9 @@ export function scatterChart(container, opts) {
       ctx.strokeStyle = colors.err;
       ctx.lineWidth = 1.6 * devicePixelRatio;
       for (const p of pts) {
-        if (!(p[5] & 1)) continue;
-        const x = u.valToPos(p[0] / 1000, 'x', true);
-        const y = u.valToPos(Math.max(p[1], floor || 0.0001), 'y', true);
+        if (!isError(p)) continue;
+        const x = u.valToPos(p[POINT.START] / 1000, 'x', true);
+        const y = u.valToPos(Math.max(p[POINT.MS], floor || 0.0001), 'y', true);
         if (y < t - 4) continue;
         const r = 3.6 * devicePixelRatio;
         ctx.beginPath();
@@ -645,7 +650,7 @@ export function scatterChart(container, opts) {
         ],
         axes: [
           timeAxis(colors),
-          valueAxis(colors, { scale: 'y', count: false, label: 'Response time (ms)', size: 60, values: (u, splits) => splits.map((s) => durBare(s)) }),
+          valueAxis(colors, { scale: 'y', count: false, label: 'Response time (ms)', size: 60, values: (u, splits) => splits.map((s) => fmt.durBare(s)) }),
         ],
         legend: { show: false },
         cursor: {
@@ -675,9 +680,9 @@ export function scatterChart(container, opts) {
           const px = ev.clientX - rect.left, py = ev.clientY - rect.top;
           let best = null, bestD = PICK_RADIUS_PX * PICK_RADIUS_PX;
           for (const p of view.points) {
-            if (view.hidden.has(p[2])) continue;
-            const x = plot.valToPos(p[0] / 1000, 'x');
-            const y = plot.valToPos(Math.max(p[1], floor || 0.0001), 'y');
+            if (view.hidden.has(p[POINT.SERVICE])) continue;
+            const x = plot.valToPos(p[POINT.START] / 1000, 'x');
+            const y = plot.valToPos(Math.max(p[POINT.MS], floor || 0.0001), 'y');
             const d = (x - px) * (x - px) + (y - py) * (y - py);
             if (d < bestD) { bestD = d; best = p; }
           }
@@ -695,10 +700,10 @@ export function scatterChart(container, opts) {
           const x1 = plot.posToVal((cell.c + 1) * bins.cellW, 'x') * 1000;
           const yTop = plot.posToVal(cell.r * bins.cellH, 'y');
           const yBottom = plot.posToVal((cell.r + 1) * bins.cellH, 'y');
-          tip.innerHTML = `<div class="t">${clock(x0)} – ${clock(x1)}</div>` +
-            `<span class="k">Response time</span><span class="v">${durBare(Math.max(0, yBottom))} – ${durBare(Math.max(0, yTop))} ms</span>` +
-            `<span class="k">Requests</span><span class="v">${fmtCount(cell.count)}</span>` +
-            (cell.errors ? `<span class="k">Errors</span><span class="v">${fmtCount(cell.errors)}</span>` : '');
+          tip.innerHTML = `<div class="t">${fmt.clock(x0)} – ${fmt.clock(x1)}</div>` +
+            `<span class="k">Response time</span><span class="v">${fmt.durBare(Math.max(0, yBottom))} – ${fmt.durBare(Math.max(0, yTop))} ms</span>` +
+            `<span class="k">Requests</span><span class="v">${fmt.count(cell.count)}</span>` +
+            (cell.errors ? `<span class="k">Errors</span><span class="v">${fmt.count(cell.errors)}</span>` : '');
           tip.classList.add('show');
           const tw = tip.offsetWidth;
           tip.style.left = Math.min(Math.max((cell.c + 0.5) * bins.cellW - tw / 2, 4), rect.width - tw - 4) + 'px';
@@ -710,13 +715,13 @@ export function scatterChart(container, opts) {
           const p = pick(ev);
           if (!p) { tip.classList.remove('show'); over.style.cursor = 'crosshair'; return; }
           over.style.cursor = 'pointer';
-          tip.innerHTML = `<div class="t">${escapeHtml(p[3])}</div>` +
-            `<span class="k"><i style="background:${serviceColor(p[2])}"></i>${escapeHtml(p[2])}</span><span class="v">${durBare(p[1])} ms</span>` +
-            `<span class="k">Time</span><span class="v">${clock(p[0])}</span>`;
+          tip.innerHTML = `<div class="t">${escapeHtml(p[POINT.ENDPOINT])}</div>` +
+            `<span class="k"><i style="background:${serviceColor(p[POINT.SERVICE])}"></i>${escapeHtml(p[POINT.SERVICE])}</span><span class="v">${fmt.durBare(p[POINT.MS])} ms</span>` +
+            `<span class="k">Time</span><span class="v">${fmt.clock(p[POINT.START])}</span>`;
           tip.classList.add('show');
           const rect = over.getBoundingClientRect();
-          const left = plot.valToPos(p[0] / 1000, 'x');
-          const topPos = plot.valToPos(Math.max(p[1], floor || 0.0001), 'y');
+          const left = plot.valToPos(p[POINT.START] / 1000, 'x');
+          const topPos = plot.valToPos(Math.max(p[POINT.MS], floor || 0.0001), 'y');
           const tw = tip.offsetWidth;
           tip.style.left = Math.min(Math.max(left - tw / 2, 4), rect.width - tw - 4) + 'px';
           tip.style.top = Math.max(4, topPos - tip.offsetHeight - 14) + 'px';

@@ -3,7 +3,7 @@ import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { state } from '../../main/resources/public/assets/js/api.js';
 import {
-  bucketBounds, bucketLabels, apdexClass, fmtApdex, histogramTitle, slowRequestMs,
+  bucketBounds, bucketLabels, apdexClass, histogramTitle, slowRequestMs,
 } from '../../main/resources/public/assets/js/buckets.js';
 
 afterEach(() => { state.status = null; });
@@ -33,12 +33,6 @@ test('apdexClass warns under 0.85 and is bad under 0.7', () => {
   assert.equal(apdexClass(0.849), 'is-warn');
   assert.equal(apdexClass(0.7), 'is-warn');
   assert.equal(apdexClass(0.699), 'is-bad');
-});
-
-test('fmtApdex has two decimals and a dash for no request', () => {
-  assert.equal(fmtApdex(0.934), '0.93');
-  assert.equal(fmtApdex(1), '1.00');
-  assert.equal(fmtApdex(null), '-');
 });
 
 test('histogramTitle names each bucket with its count and share', () => {

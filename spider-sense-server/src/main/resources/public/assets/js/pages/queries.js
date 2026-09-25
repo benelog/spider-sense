@@ -32,18 +32,18 @@ export function render(root, ctx) {
   let rows = [];
   let node = null;
   let sort = router.queryParam(ctx.query, 'sort', SORTS.map((s) => s.id), 'total');
-  let text = ctx.query.q || '';
+  let filterText = ctx.query.q || '';
 
-  const input = h('input', { type: 'search', placeholder: 'Filter statements', value: text, 'aria-label': 'Filter statements' });
+  const input = h('input', { type: 'search', placeholder: 'Filter statements', value: filterText, 'aria-label': 'Filter statements' });
   const sortSelect = h('select', { 'aria-label': 'Sort by' }, SORTS.map((s) => h('option', { value: s.id }, s.label)));
   sortSelect.value = sort;
 
-  const apply = debounce(() => {
-    text = input.value.trim();
-    router.setQuery({ q: text });
+  const applyFilter = debounce(() => {
+    filterText = input.value.trim();
+    router.setQuery({ q: filterText });
     paint();
   }, 300);
-  input.addEventListener('input', apply);
+  input.addEventListener('input', applyFilter);
   sortSelect.addEventListener('change', () => {
     sort = sortSelect.value;
     router.setQuery({ sort }, { defaults: { sort: 'total' } });
@@ -78,8 +78,8 @@ export function render(root, ctx) {
   };
 
   function filtered() {
-    if (!text) return rows;
-    const needle = text.toLowerCase();
+    if (!filterText) return rows;
+    const needle = filterText.toLowerCase();
     return rows.filter((q) => (q.statement || '').toLowerCase().includes(needle) || (q.table || '').toLowerCase().includes(needle));
   }
 
@@ -100,5 +100,5 @@ export function render(root, ctx) {
   });
 
   loader.load();
-  return { refresh: loader.load, destroy: () => { loader.destroy(); apply.cancel(); } };
+  return { refresh: loader.load, destroy: () => { loader.destroy(); applyFilter.cancel(); } };
 }

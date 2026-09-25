@@ -38,7 +38,7 @@ test('params carries the window and the top bar service, and drops empty extras'
   state.service = 'orders';
   assert.deepEqual(params({}, { window }), { from: 1, to: 2, service: 'orders' });
   assert.deepEqual(params({}, { window, service: 'books' }), { from: 1, to: 2, service: 'books' });
-  assert.deepEqual(params({}, { window, service: null }), { from: 1, to: 2 });
+  assert.deepEqual(params({}, { window, omitService: true }), { from: 1, to: 2 });
 });
 
 test('sharedQuery leaves out what is the default', () => {

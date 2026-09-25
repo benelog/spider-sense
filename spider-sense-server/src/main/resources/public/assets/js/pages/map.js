@@ -5,13 +5,13 @@ import * as api from '../api.js';
 import * as router from '../router.js';
 import {
   h, fill, panel, stat, spinner, noDataYet,
-  drawer, closeDrawer, seedServices, categoryIcon,
+  drawer, closeDrawer, closeDrawerSilently, seedServices, categoryIcon,
 } from '../ui.js';
 import { pageLoader } from '../page.js';
 import { timeSeries } from '../charts.js';
 import { throughputSpec } from '../throughput.js';
-import { histogramBars, bucketVars, apdexClass, fmtApdex, ERROR_RATE_BAD } from '../buckets.js';
-import { dur, count, rate, pct, truncate } from '../format.js';
+import { histogramBars, bucketVars, apdexClass, ERROR_RATE_BAD } from '../buckets.js';
+import { dur, count, rate, pct, apdex, truncate } from '../format.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 const NODE_W = 200, NODE_H = 64, COL_PITCH = 260, ROW_PITCH = 96, PAD_X = 22, PAD_Y = 20;
@@ -474,7 +474,7 @@ export function render(root, ctx) {
     return [
       h('div.stat-row',
         stat(count(n.requests), 'total', 'requests'),
-        stat(fmtApdex(n.apdex), '', 'apdex', { class: apdexClass(n.apdex) }),
+        stat(apdex(n.apdex), '', 'apdex', { class: apdexClass(n.apdex) }),
         stat(pct(n.errorRate || 0), '', 'error rate', { class: n.errorRate > ERROR_RATE_BAD ? 'is-bad' : '' }),
         stat(dur(n.p95Ms), '', 'p95'),
         stat(rate(n.rps || 0), '/s', 'requests per second')),
@@ -555,7 +555,7 @@ export function render(root, ctx) {
       loader.destroy();
       removeEventListener('resize', sizePanel);
       if (drawerChart) drawerChart.destroy();
-      closeDrawer(true);
+      closeDrawerSilently();
     },
   };
 }

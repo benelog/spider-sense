@@ -88,22 +88,25 @@ export function openDetail(kind, id) {
   go(detailPath(kind, id), sharedQuery());
 }
 
-/** Navigate, keeping the shared top-bar query unless overridden. */
-export function go(path, query = {}, replace = false) {
-  const next = href(path, query);
-  if (replace) history.replaceState(null, '', next);
-  else location.hash = next;
-  if (replace) handle();
+/** Navigate, a new history entry. */
+export function go(path, query = {}) {
+  location.hash = href(path, query);
+}
+
+/** Navigate in place of the current history entry, and handle the route at once. */
+export function replace(path, query = {}) {
+  history.replaceState(null, '', href(path, query));
+  handle();
 }
 
 /**
  * Change only the query of the current route. An empty value removes its key, and so does a value
  * equal to its entry in `defaults`: a URL names only what differs from the page's defaults.
  */
-export function setQuery(patch, { defaults = {}, replace = true } = {}) {
+export function setQuery(patch, { defaults = {} } = {}) {
   const query = { ...current.query };
   for (const [k, v] of Object.entries(patch)) query[k] = k in defaults && v === defaults[k] ? '' : v;
-  go(current.path, compactQuery(query), replace);
+  replace(current.path, compactQuery(query));
 }
 
 let lastKey = null;
@@ -112,7 +115,7 @@ function handle() {
   const { path, query } = parse(location.hash);
   const found = match(path);
   if (!found) {
-    if (path !== '/') { go('/', query, true); return; }
+    if (path !== '/') { replace('/', query); return; }
     return;
   }
   const key = found.route.pattern + '|' + JSON.stringify(found.params);

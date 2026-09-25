@@ -62,12 +62,12 @@ export function windowFor(range = state.range, now = Date.now()) {
 }
 
 /**
- * The service a read names: `opts.service` when the caller gives one, none when it gives null,
- * and the top bar's otherwise.
+ * The service a read names: none with `omitService` (a read of one thing, which names its own),
+ * `opts.service` when the caller gives one, and the top bar's otherwise.
  */
 function serviceFor(opts = {}) {
-  if (opts.service === null) return '';
-  return opts.service !== undefined ? opts.service : state.service;
+  if (opts.omitService) return '';
+  return opts.service !== undefined && opts.service !== null ? opts.service : state.service;
 }
 
 /** from/to/service plus whatever the caller adds; empty values are dropped (compactQuery). */
@@ -206,15 +206,15 @@ export function collectorBase() {
 
 // --- reads --------------------------------------------------------------
 
-export function overview(opts) { return getJSON('/api/overview', params({}, { ...opts, service: null })); }
+export function overview(opts) { return getJSON('/api/overview', params({}, { ...opts, omitService: true })); }
 
-export function services(opts) { return getJSON('/api/services', params({}, { ...opts, service: null })); }
+export function services(opts) { return getJSON('/api/services', params({}, { ...opts, omitService: true })); }
 
-export function service(name, opts) { return getJSON('/api/services/' + encodeURIComponent(name), params({}, { ...opts, service: null })); }
+export function service(name, opts) { return getJSON('/api/services/' + encodeURIComponent(name), params({}, { ...opts, omitService: true })); }
 
 export function endpoints(extra, opts) { return getJSON('/api/endpoints', params(extra, opts)); }
 
-export function endpoint(id, opts) { return getJSON('/api/endpoints/' + encodeURIComponent(id), params({}, { ...opts, service: null })); }
+export function endpoint(id, opts) { return getJSON('/api/endpoints/' + encodeURIComponent(id), params({}, { ...opts, omitService: true })); }
 
 export function traces(extra, opts) { return getJSON('/api/traces', params(extra, opts)); }
 
@@ -222,15 +222,15 @@ export function trace(id) { return getJSON('/api/traces/' + encodeURIComponent(i
 
 export function scatter(extra, opts) { return getJSON('/api/scatter', params(extra, opts)); }
 
-export function map(opts) { return getJSON('/api/map', params({}, { ...opts, service: null })); }
+export function map(opts) { return getJSON('/api/map', params({}, { ...opts, omitService: true })); }
 
 export function queries(extra, opts) { return getJSON('/api/queries', params(extra, opts)); }
 
-export function query(id, opts) { return getJSON('/api/queries/' + encodeURIComponent(id), params({}, { ...opts, service: null })); }
+export function query(id, opts) { return getJSON('/api/queries/' + encodeURIComponent(id), params({}, { ...opts, omitService: true })); }
 
 export function errors(extra, opts) { return getJSON('/api/errors', params(extra, opts)); }
 
-export function errorGroup(id, opts) { return getJSON('/api/errors/' + encodeURIComponent(id), params({}, { ...opts, service: null })); }
+export function errorGroup(id, opts) { return getJSON('/api/errors/' + encodeURIComponent(id), params({}, { ...opts, omitService: true })); }
 
 export function logs(extra, opts) { return getJSON('/api/logs', params(extra, opts)); }
 
