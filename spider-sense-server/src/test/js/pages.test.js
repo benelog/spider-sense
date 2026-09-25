@@ -108,8 +108,10 @@ test('a profile row opens the span drawer, and the page closes it when it goes',
   assert.ok(trace.root.querySelectorAll('tr.profile-row').length > 0);
   trace.root.querySelector('tr.profile-row').click();
   assert.equal(ui.drawerOpen(), true);
+  assert.ok(ui.drawerBody().textContent.includes('span id'), 'the drawer body holds the span');
   trace.instance.destroy();
   assert.equal(ui.drawerOpen(), false);
+  assert.equal(ui.drawerBody(), null);
 });
 
 test('the Mark dialog marks through the API and closes', async () => {

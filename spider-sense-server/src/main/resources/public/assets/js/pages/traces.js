@@ -2,7 +2,7 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, icon, panel, debounce, spinner, noDataYet } from '../ui.js';
+import { h, fill, icon, panel, debounce, spinner, noDataYet, drawerOpen } from '../ui.js';
 import { pageLoader } from '../page.js';
 import { traceTable } from '../widgets.js';
 import { count } from '../format.js';
@@ -152,7 +152,7 @@ export function render(root, ctx) {
           return;
         }
       }
-      if (!rows.length || !document.querySelector('.drawer')) { endpoints.load(); list.load(); }
+      if (!rows.length || !drawerOpen()) { endpoints.load(); list.load(); }
     },
     destroy: () => { list.destroy(); endpoints.destroy(); applyFilter.cancel(); },
   };

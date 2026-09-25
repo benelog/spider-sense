@@ -475,16 +475,18 @@ export function placeholder(text) {
 // --- drawer -------------------------------------------------------------
 
 let drawerNode = null;
+let drawerBodyNode = null;
 let drawerCloser = null;
 
 export function drawer({ title, subtitle, body, onClose }) {
   closeDrawerSilently();
   const close = () => closeDrawer();
+  drawerBodyNode = h('div.drawer-body', body);
   drawerNode = h('aside.drawer', { role: 'dialog', 'aria-modal': 'false', 'aria-label': title || 'Details' },
     h('header.drawer-head',
       h('div.drawer-titles', h('h2.drawer-title', title || ''), subtitle ? h('div.drawer-sub', subtitle) : null),
       iconButton('close', 'Close details', close)),
-    h('div.drawer-body', body));
+    drawerBodyNode);
   drawerCloser = onClose;
   document.body.appendChild(drawerNode);
   document.body.classList.add('drawer-open');
@@ -505,7 +507,7 @@ export function closeDrawerSilently() {
 function dropDrawer(notify) {
   if (!drawerNode) return false;
   const node = drawerNode, onClose = drawerCloser;
-  drawerNode = null; drawerCloser = null;
+  drawerNode = null; drawerBodyNode = null; drawerCloser = null;
   node.remove();
   document.body.classList.remove('drawer-open');
   if (notify && onClose) onClose();
@@ -513,6 +515,9 @@ function dropDrawer(notify) {
 }
 
 export function drawerOpen() { return !!drawerNode; }
+
+/** The open drawer's body, to repaint in place, or null when no drawer is open. */
+export function drawerBody() { return drawerBodyNode; }
 
 // --- dialog -------------------------------------------------------------
 

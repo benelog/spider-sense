@@ -41,13 +41,15 @@ export function render(root, ctx) {
   let showOk = ctx.query.hide !== 'ok';
   let showErr = ctx.query.hide !== 'err';
 
+  let logScale = ctx.query.log === '1';
+
   const logToggle = h('button.btn', {
-    type: 'button', 'aria-pressed': String(ctx.query.log === '1'),
+    type: 'button', 'aria-pressed': String(logScale),
     onclick: () => {
-      const on = logToggle.getAttribute('aria-pressed') !== 'true';
-      logToggle.setAttribute('aria-pressed', String(on));
-      router.setQuery({ log: on ? '1' : '' });
-      if (chart) chart.setLogScale(on);
+      logScale = !logScale;
+      logToggle.setAttribute('aria-pressed', String(logScale));
+      router.setQuery({ log: logScale ? '1' : '' });
+      if (chart) chart.setLogScale(logScale);
       paintBar();
     },
   }, 'Log scale');
@@ -149,8 +151,7 @@ export function render(root, ctx) {
       h('span', h('b', { class: s.slow ? 'warned' : '' }, count(s.slow)), ' slow'));
     const max = yMaxOf();
     // Only the linear axis clips; the log scale runs to the slowest point.
-    const logOn = logToggle.getAttribute('aria-pressed') === 'true';
-    const above = logOn ? 0 : visible().filter((p) => p[POINT.MS] > max).length;
+    const above = logScale ? 0 : visible().filter((p) => p[POINT.MS] > max).length;
     clipNote.textContent = above ? '▲ ' + count(above) + ' above ' + dur(max) : '';
     clipNote.title = above ? 'Points above the axis maximum; switch to log scale to see them.' : '';
     if (truncated) {
@@ -215,7 +216,7 @@ export function render(root, ctx) {
       window,
       hidden,
       mode,
-      logScale: logToggle.getAttribute('aria-pressed') === 'true',
+      logScale,
       yMax: yMaxOf(),
       onSelect: (rect) => {
         selection = rect;

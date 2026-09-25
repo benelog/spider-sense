@@ -4,7 +4,7 @@ import * as api from '../api.js';
 import * as router from '../router.js';
 import {
   h, fill, icon, panel, table, chip, serviceChip, serviceColor, severityChip, idButton, segmented, categoryIcon,
-  drawer, closeDrawer, closeDrawerSilently, spinner,
+  drawer, drawerBody, closeDrawer, closeDrawerSilently, spinner,
 } from '../ui.js';
 import { pageLoader, skeleton } from '../page.js';
 import { formatSql } from '../sql.js';
@@ -269,7 +269,7 @@ export function render(root, ctx) {
       const span = (data.spans || []).find((s) => s.spanId === selectedSpan);
       if (span && live) {
         for (const row of bodyBox.querySelectorAll('.wf-row, tbody tr')) row.classList.toggle('selected', row.dataset.key === span.spanId);
-        const open = document.querySelector('.drawer .drawer-body');
+        const open = drawerBody();
         if (open) fill(open, spanBody(span));
       } else if (span) {
         openSpan(span);
