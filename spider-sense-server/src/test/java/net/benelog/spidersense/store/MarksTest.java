@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
+import java.util.Map;
 
 import io.opentelemetry.proto.trace.v1.Span;
 
@@ -19,7 +20,8 @@ class MarksTest {
 
     private static final long NOW = 1_700_000_000_000L;
 
-    private final Store store = new Store(TestStore.memoryUrl(), null, 24, 500, 100, null);
+    private final Store store = new Store(TestStore.memoryUrl(), null, 24, 500, 100, null,
+            IgnoredEndpoints.DEFAULT, Sweeper.DEFAULT_RETENTION_SPANS, IngestCap.none(), () -> NOW);
     private final OtlpDecoder decoder = new OtlpDecoder(store, () -> 4000);
 
     @AfterEach
@@ -57,7 +59,9 @@ class MarksTest {
         assertThatThrownBy(() -> store.marks().create("x".repeat(65), null, null, null))
                 .isInstanceOf(IllegalArgumentException.class);
 
-        assertThat(store.marks().create("v2.1_rc-3", null, null, null).name()).isEqualTo("v2.1_rc-3");
+        Marks.Mark now = store.marks().create("v2.1_rc-3", null, null, null);
+        assertThat(now.name()).isEqualTo("v2.1_rc-3");
+        assertThat(now.at()).as("a mark without an instant is taken now").isEqualTo(NOW);
     }
 
     @Test
@@ -102,18 +106,27 @@ class MarksTest {
      */
     @Test
     void theStartMarkIsTheRunsFirstRecordNotTheExportsArrival() {
-        long started = System.currentTimeMillis() - 3_000;
-        export("orders", 1234, started);
+        received("orders", 1234, NOW - 3_000, NOW);
         flush();
 
-        assertThat(startMarks().get(0).at()).isEqualTo(started);
+        assertThat(startMarks().get(0).at()).isEqualTo(NOW - 3_000);
 
         // A record claiming to be far older than its export moves the mark back no further than a minute.
-        long now = System.currentTimeMillis();
-        export("orders", 4321, now - 3_600_000);
+        received("orders", 4321, NOW - 3_600_000, NOW + 10_000);
         flush();
 
-        assertThat(startMarks().get(0).at()).isBetween(now - 61_000, now);
+        assertThat(startMarks()).filteredOn(mark -> "pid 4321".equals(mark.note()))
+                .extracting(Marks.Mark::at).containsExactly(NOW + 10_000 - 60_000);
+    }
+
+    /** A span of a run of {@code service} that started at {@code startMs}, received at {@code receivedMs}. */
+    private void received(String service, long pid, long startMs, long receivedMs) {
+        Batch batch = new Batch();
+        store.sawService(batch, service, Map.of("telemetry.sdk.language", "java", "process.pid", pid), receivedMs);
+        batch.add(new SpanRecord("%032x".formatted(startMs), "%016x".formatted(startMs), null, service,
+                "GET /orders", "SERVER", startMs * 1_000_000L, startMs * 1_000_000L + 5_000_000L, "UNSET", null,
+                Map.of(), List.of(), "test"));
+        store.submit(batch);
     }
 
     private List<Marks.Mark> startMarks() {

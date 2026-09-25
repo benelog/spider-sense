@@ -16,6 +16,7 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.LongSupplier;
 
 import org.jspecify.annotations.Nullable;
 
@@ -57,6 +58,7 @@ public final class Writer implements AutoCloseable {
     private final EventBus events;
     private final Tingles tingles;
     private final TraceSummaries traces;
+    private final LongSupplier clock;
     private final Thread thread;
 
     private final AtomicInteger queuedRecords = new AtomicInteger();
@@ -71,7 +73,13 @@ public final class Writer implements AutoCloseable {
     private volatile @Nullable Thread exitHook;
 
     public Writer(Sql sql, EventBus events, Tingles tingles) {
+        this(sql, events, tingles, System::currentTimeMillis);
+    }
+
+    /** @param clock what a flush's {@code ingested} event is stamped with, in epoch milliseconds */
+    public Writer(Sql sql, EventBus events, Tingles tingles, LongSupplier clock) {
         this.sql = sql;
+        this.clock = clock;
         this.events = events;
         this.tingles = tingles;
         this.traces = new TraceSummaries(tingles.slowRequestMs());
@@ -321,7 +329,7 @@ public final class Writer implements AutoCloseable {
     }
 
     private void publish(List<Batch> batches) {
-        long now = System.currentTimeMillis();
+        long now = clock.getAsLong();
         for (Batch batch : batches) {
             for (Tingle tingle : batch.tingles()) {
                 events.publish("tingle", tingle);

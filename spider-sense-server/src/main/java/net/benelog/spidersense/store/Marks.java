@@ -6,6 +6,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.LongSupplier;
 import java.util.regex.Pattern;
 
 import org.jspecify.annotations.Nullable;
@@ -48,9 +49,16 @@ public final class Marks {
     private static final int MAX_NOTE = 1024;
 
     private final Sql sql;
+    private final LongSupplier clock;
 
     public Marks(Sql sql) {
+        this(sql, System::currentTimeMillis);
+    }
+
+    /** @param clock what a mark without an instant is taken at, in epoch milliseconds */
+    public Marks(Sql sql, LongSupplier clock) {
         this.sql = sql;
+        this.clock = clock;
     }
 
     /**
@@ -65,7 +73,7 @@ public final class Marks {
             throw new IllegalArgumentException(
                     "A mark name is 1 to 64 characters of [A-Za-z0-9._-]: " + name);
         }
-        long when = at == null ? System.currentTimeMillis() : at;
+        long when = at == null ? clock.getAsLong() : at;
         String cutNote = note != null && note.length() > MAX_NOTE ? note.substring(0, MAX_NOTE) : note;
         long id = sql.with(connection -> {
             try (PreparedStatement statement = connection.prepareStatement(

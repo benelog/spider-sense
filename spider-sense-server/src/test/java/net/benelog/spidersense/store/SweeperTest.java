@@ -26,7 +26,8 @@ class SweeperTest {
     /** Now, rounded down to the hour, so every row sits at a predictable distance from it. */
     private static final long NOW = System.currentTimeMillis() / HOUR * HOUR;
 
-    private final Store store = new Store(TestStore.memoryUrl(), null, 24, 500, 100, null);
+    private final Store store = new Store(TestStore.memoryUrl(), null, 24, 500, 100, null,
+            IgnoredEndpoints.DEFAULT, Sweeper.DEFAULT_RETENTION_SPANS, IngestCap.none(), () -> NOW);
     private final OtlpDecoder decoder = new OtlpDecoder(store, () -> 4000);
 
     @AfterEach
@@ -76,7 +77,7 @@ class SweeperTest {
         assertThat(total("tingle")).isPositive();
         assertThat(total("metric_point")).isEqualTo(HOURS);
 
-        new Sweeper(store.sql(), 24, 100).sweep();
+        new Sweeper(store.sql(), 24, 100, () -> NOW).sweep();
 
         // 250 spans, 50 an hour: hours 0, 1 and 2 go and 100 spans are left.
         assertThat(total("span")).isEqualTo(100);
@@ -100,7 +101,7 @@ class SweeperTest {
     void aCapOfZeroIsNoCapAtAll() {
         fill();
 
-        new Sweeper(store.sql(), 24, 0).sweep();
+        new Sweeper(store.sql(), 24, 0, () -> NOW).sweep();
 
         assertThat(total("span")).isEqualTo(HOURS * PER_HOUR);
         assertThat(total("log")).isEqualTo(HOURS * PER_HOUR);
@@ -113,11 +114,11 @@ class SweeperTest {
      */
     @Test
     void aCatalogRowOlderThanTheRetentionGoesAndAFreshOneStays() {
-        catalog("ITEMS", System.currentTimeMillis() - 48 * HOUR);
-        catalog("MOVEMENTS", System.currentTimeMillis());
+        catalog("ITEMS", NOW - 48 * HOUR);
+        catalog("MOVEMENTS", NOW);
         assertThat(total("db_table")).isEqualTo(2);
 
-        new Sweeper(store.sql(), 24, 0).sweep();
+        new Sweeper(store.sql(), 24, 0, () -> NOW).sweep();
 
         assertThat(store.sql().query("SELECT table_name FROM db_table", List.of(),
                 rs -> rs.getString(1))).containsExactly("MOVEMENTS");
@@ -149,7 +150,7 @@ class SweeperTest {
         marks.create(Marks.START, "billing", "pid 3", old);
         marks.create("before", null, null, old);
 
-        new Sweeper(store.sql(), 24).sweep();
+        new Sweeper(store.sql(), 24, Sweeper.DEFAULT_RETENTION_SPANS, () -> NOW).sweep();
 
         assertThat(store.sql().query("SELECT note FROM mark ORDER BY note", List.of(), rs -> rs.getString(1)))
                 .containsExactly("pid 2", "pid 3");
@@ -159,5 +160,21 @@ class SweeperTest {
 
         assertThat(store.sql().query("SELECT note FROM mark ORDER BY note", List.of(), rs -> rs.getString(1)))
                 .containsExactly("pid 2", "pid 3");
+    }
+
+    /** The retention keeps what is exactly as old as it, and takes what is a millisecond older. */
+    @Test
+    void theRetentionCutoffIsExact() {
+        long cutoff = NOW - 24 * HOUR;
+        store.marks().create("older", null, null, cutoff - 1);
+        store.marks().create("exact", null, null, cutoff);
+        catalog("OLDER", cutoff - 1);
+        catalog("EXACT", cutoff);
+
+        new Sweeper(store.sql(), 24, 0, () -> NOW).sweep();
+
+        assertThat(store.marks().list(50)).extracting(Marks.Mark::name).containsExactly("exact");
+        assertThat(store.sql().query("SELECT table_name FROM db_table", List.of(),
+                rs -> rs.getString(1))).containsExactly("EXACT");
     }
 }

@@ -8,6 +8,7 @@ import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.LongSupplier;
 
 import org.jspecify.annotations.Nullable;
 
@@ -60,9 +61,16 @@ public final class Acks {
     private static final int MAX_NOTE = 1024;
 
     private final Sql sql;
+    private final LongSupplier clock;
 
     public Acks(Sql sql) {
+        this(sql, System::currentTimeMillis);
+    }
+
+    /** @param clock what stamps a decision, in epoch milliseconds */
+    public Acks(Sql sql, LongSupplier clock) {
         this.sql = sql;
+        this.clock = clock;
     }
 
     /**
@@ -87,7 +95,7 @@ public final class Acks {
 
     private Ack decide(@Nullable String findingId, @Nullable String note, boolean resolved) {
         String id = checked(findingId);
-        long at = System.currentTimeMillis();
+        long at = clock.getAsLong();
         String cutNote = note != null && note.length() > MAX_NOTE ? note.substring(0, MAX_NOTE) : note;
         sql.update("MERGE INTO ack (finding_id, at_ms, note, resolved) KEY(finding_id) VALUES (?, ?, ?, ?)",
                 Arrays.asList(id, at, cutNote, resolved));

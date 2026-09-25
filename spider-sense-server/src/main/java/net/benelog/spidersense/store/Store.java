@@ -2,6 +2,7 @@ package net.benelog.spidersense.store;
 
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.function.LongSupplier;
 
 import org.jspecify.annotations.Nullable;
 
@@ -50,15 +51,27 @@ public final class Store implements AutoCloseable {
             long slowRequestMs, long slowQueryMs, @Nullable String embeddedService,
             @Nullable String ignoreEndpoints,
             long retentionSpans, IngestCap ingestCap) {
+        this(jdbcUrl, databaseFile, retentionHours, slowRequestMs, slowQueryMs, embeddedService,
+                ignoreEndpoints, retentionSpans, ingestCap, System::currentTimeMillis);
+    }
+
+    /**
+     * @param clock what the marks, the acknowledgements, the writer's events and the
+     *              retention read the time from, in epoch milliseconds
+     */
+    public Store(String jdbcUrl, @Nullable Path databaseFile, int retentionHours,
+            long slowRequestMs, long slowQueryMs, @Nullable String embeddedService,
+            @Nullable String ignoreEndpoints,
+            long retentionSpans, IngestCap ingestCap, LongSupplier clock) {
         this.database = Database.open(jdbcUrl, databaseFile);
         this.sql = database.sql();
         this.tingles = new Tingles(slowRequestMs, slowQueryMs, IgnoredEndpoints.of(ignoreEndpoints));
         this.services = new ServiceRegistry(sql, embeddedService);
-        this.marks = new Marks(sql);
-        this.acks = new Acks(sql);
+        this.marks = new Marks(sql, clock);
+        this.acks = new Acks(sql, clock);
         this.ingestCap = ingestCap;
-        this.writer = new Writer(sql, events, tingles).start(database);
-        this.sweeper = new Sweeper(sql, retentionHours, retentionSpans).start();
+        this.writer = new Writer(sql, events, tingles, clock).start(database);
+        this.sweeper = new Sweeper(sql, retentionHours, retentionSpans, clock).start();
     }
 
     public Sql sql() {

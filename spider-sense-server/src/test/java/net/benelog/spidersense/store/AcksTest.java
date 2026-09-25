@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -21,35 +22,34 @@ class AcksTest {
     private static final String SLOW = "slow-endpoint:1a2b3c4d5e6f";
     private static final String NPLUS = "n-plus-one:0011223344ff";
 
-    private final Store store = new Store(TestStore.memoryUrl(), null, 24, 500, 100, null);
+    private static final long NOW = 1_700_000_000_000L;
+
+    /** The rows are stamped with the clock, so two in one millisecond have no order. */
+    private final AtomicLong clock = new AtomicLong(NOW);
+    private final Store store = new Store(TestStore.memoryUrl(), null, 24, 500, 100, null,
+            IgnoredEndpoints.DEFAULT, Sweeper.DEFAULT_RETENTION_SPANS, IngestCap.none(), clock::get);
 
     @AfterEach
     void close() {
         store.close();
     }
 
-    /** The rows are stamped with the clock, so two in one millisecond have no order. */
-    private static void tick() {
-        long now = System.currentTimeMillis();
-        while (System.currentTimeMillis() == now) {
-            Thread.onSpinWait();
-        }
-    }
-
     @Test
     void anAcknowledgementIsWrittenAndListedNewestFirst() {
         Acks acks = store.acks();
         acks.ack(NPLUS, null);
-        tick();
+        clock.set(NOW + 1);
         Acks.Ack newest = acks.ack(SLOW, "slow by design until the schema changes");
 
         List<Acks.Ack> all = acks.all(50);
 
         assertThat(all).hasSize(2);
         assertThat(all.get(0).findingId()).isEqualTo(SLOW);
-        assertThat(all.get(0).at()).isEqualTo(newest.at());
+        assertThat(newest.at()).isEqualTo(NOW + 1);
+        assertThat(all.get(0).at()).isEqualTo(NOW + 1);
         assertThat(all.get(0).note()).isEqualTo("slow by design until the schema changes");
         assertThat(all.get(1).findingId()).isEqualTo(NPLUS);
+        assertThat(all.get(1).at()).isEqualTo(NOW);
         assertThat(all.get(1).note()).isNull();
     }
 

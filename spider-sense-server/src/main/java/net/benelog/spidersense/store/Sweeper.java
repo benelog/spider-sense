@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.function.LongSupplier;
 
 import org.jspecify.annotations.Nullable;
 
@@ -123,6 +124,7 @@ public final class Sweeper implements AutoCloseable {
     private final Sql sql;
     private final int retentionHours;
     private final long retentionSpans;
+    private final LongSupplier clock;
     private final ScheduledExecutorService scheduler;
 
     /** The cap at its documented default. */
@@ -132,9 +134,18 @@ public final class Sweeper implements AutoCloseable {
 
     /** @param retentionSpans the most {@code span} rows kept; {@code 0} or less is no cap */
     public Sweeper(Sql sql, int retentionHours, long retentionSpans) {
+        this(sql, retentionHours, retentionSpans, System::currentTimeMillis);
+    }
+
+    /**
+     * @param retentionSpans the most {@code span} rows kept; {@code 0} or less is no cap
+     * @param clock          what the retention cutoff counts back from, in epoch milliseconds
+     */
+    public Sweeper(Sql sql, int retentionHours, long retentionSpans, LongSupplier clock) {
         this.sql = sql;
         this.retentionHours = retentionHours;
         this.retentionSpans = retentionSpans;
+        this.clock = clock;
         this.scheduler = Executors.newSingleThreadScheduledExecutor(runnable -> {
             Thread thread = new Thread(runnable, "spider-sense-sweeper");
             thread.setDaemon(true);
@@ -156,7 +167,7 @@ public final class Sweeper implements AutoCloseable {
      * @return the number of rows deleted
      */
     public int sweep() {
-        long cutoff = System.currentTimeMillis() - retentionHours * HOUR_MS;
+        long cutoff = clock.getAsLong() - retentionHours * HOUR_MS;
         int deleted = 0;
         for (String[] table : TABLE_AND_COLUMN) {
             deleted += sql.update("DELETE FROM " + table[0] + " WHERE " + table[1] + " < ?",
