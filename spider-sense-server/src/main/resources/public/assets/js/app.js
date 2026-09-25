@@ -342,6 +342,9 @@ function isTyping(target) {
 }
 
 function onKey(e) {
+  // A modal dialog owns the keyboard: Esc closes it natively, and no shortcut acts on the page
+  // underneath it or opens a second dialog over it.
+  if (document.querySelector('dialog[open]')) return;
   if (e.key === 'Escape') {
     if (document.body.classList.contains('nav-open')) { setNav(false); return; }
     if (drawerOpen()) { closeDrawer(); return; }

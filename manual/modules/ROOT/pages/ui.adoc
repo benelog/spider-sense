@@ -230,6 +230,10 @@ Any other answer, or no answer, shows `Data not cleared:` and the error in the t
 | Opens the Mark dialog
 |===
 
+The keys act only outside a text field and while no dialog is open.
+An open dialog keeps the keyboard to itself, and `Esc` closes it.
+The Mark dialog opens once at a time.
+
 [#urls]
 == URLs
 

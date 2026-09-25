@@ -448,7 +448,11 @@ export function dialog({ title, body, actions, onClose }) {
  * usual pair costs two clicks; the top bar's service filter becomes the mark's
  * service, because a mark of one service is what `since=start` of that service means.
  */
+let openMarkDialog = null;
+
 export function markDialog(opts = {}) {
+  // One at a time: a second one stacked over the first would create a second mark.
+  if (openMarkDialog && openMarkDialog.open) return openMarkDialog;
   const window_ = api.windowFor();
   const named = (api.state.marks || []).some(
     (m) => m.name === 'before' && m.at >= window_.from && m.at <= window_.to);
@@ -476,7 +480,9 @@ export function markDialog(opts = {}) {
         : 'The mark is recorded for every service. Filter by a service to mark only that one.'),
       problem),
     actions: [h('button.btn', { type: 'button', onclick: () => dlg.close() }, 'Cancel'), ok],
+    onClose: () => { if (openMarkDialog === dlg) openMarkDialog = null; },
   });
+  openMarkDialog = dlg;
 
   async function submit() {
     // In flight already: a held Enter repeats, and each repeat would POST another mark.
