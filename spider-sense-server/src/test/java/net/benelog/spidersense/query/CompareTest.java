@@ -232,4 +232,103 @@ class CompareTest {
                 Otlp.attr("db.operation", "SELECT"),
                 Otlp.attr("db.sql.table", "order_line"));
     }
+
+    // --- the diff of two snapshots, with no store -------------------------------
+
+    private static Stats.EndpointStats endpointStats(String id, long calls, long errors, double p95Ms,
+            double totalMs) {
+        return new Stats.EndpointStats(id, "orders", "GET", "/" + id, "GET /" + id, "SERVER", calls,
+                errors, 0, 0, 0, p95Ms, p95Ms, p95Ms, p95Ms, totalMs, new long[5], null, Map.of());
+    }
+
+    private static Stats.QueryStats queryStats(String id, long calls, double totalMs) {
+        return new Stats.QueryStats(id, "orders", "h2", null, "SELECT", "t", "select " + id, calls, 0,
+                0, 1, 1, 1, totalMs, 0, List.of(), 0, null);
+    }
+
+    private static Stats.ErrorGroup errorGroup(String id, long count) {
+        return new Stats.ErrorGroup(id, "orders", "java.lang.IllegalStateException", "boom " + id,
+                count, 0, 0, List.of(), null);
+    }
+
+    private static Compare.Snapshot snapshot(Window window, long requests,
+            Map<String, Stats.EndpointStats> endpoints, Map<String, Queries.DbWork> work,
+            Map<String, Stats.QueryStats> queries, Map<String, Stats.ErrorGroup> errors) {
+        Stats.Totals totals = new Stats.Totals(requests, 0, 0, 0, 0, 0, 0, 0, new long[5], null);
+        return new Compare.Snapshot(window, totals, endpoints, work, queries, errors);
+    }
+
+    @Test
+    void theRowsAreOrderedByVerdictThenWeightThenId() {
+        Compare.Snapshot one = snapshot(before, 10,
+                Map.of("same-light", endpointStats("same-light", 10, 0, 100, 10),
+                        "same-heavy", endpointStats("same-heavy", 10, 0, 100, 900),
+                        "better", endpointStats("better", 10, 0, 500, 50),
+                        "gone", endpointStats("gone", 10, 0, 100, 5_000),
+                        "worse", endpointStats("worse", 10, 0, 100, 1)),
+                Map.of(), Map.of(), Map.of());
+        Compare.Snapshot two = snapshot(after, 10,
+                Map.of("same-light", endpointStats("same-light", 10, 0, 100, 10),
+                        "same-heavy", endpointStats("same-heavy", 10, 0, 100, 900),
+                        "better", endpointStats("better", 10, 0, 100, 50),
+                        "worse", endpointStats("worse", 10, 0, 500, 1),
+                        "b-new", endpointStats("b-new", 10, 0, 100, 3),
+                        "a-new", endpointStats("a-new", 10, 0, 100, 3)),
+                Map.of(), Map.of(), Map.of());
+
+        Compare.Comparison comparison = Compare.diff(one, two);
+
+        assertThat(comparison.endpoints()).extracting(Compare.EndpointDiff::endpointId)
+                .containsExactly("worse", "a-new", "b-new", "same-heavy", "same-light", "better", "gone");
+        assertThat(comparison.before()).isEqualTo(before);
+        assertThat(comparison.after()).isEqualTo(after);
+    }
+
+    @Test
+    void aSideReadsItsDatabaseWorkAndAMissingSideIsNull() {
+        Compare.Snapshot one = snapshot(before, 10, Map.of("e", endpointStats("e", 10, 0, 100, 10)),
+                Map.of("e", new Queries.DbWork(40, 200, 0)), Map.of(), Map.of());
+        Compare.Snapshot two = snapshot(after, 10, Map.of(), Map.of(), Map.of(), Map.of());
+
+        Compare.EndpointDiff diff = Compare.diff(one, two).endpoints().get(0);
+
+        assertThat(diff.verdict()).isEqualTo(Compare.GONE);
+        assertThat(diff.after()).isNull();
+        assertThat(diff.before()).isNotNull();
+        assertThat(diff.before().dbCallsPerRequest()).isEqualTo(4.0);
+        assertThat(diff.before().dbMsPerRequest()).isEqualTo(20.0);
+    }
+
+    @Test
+    void aQuerysCallsPerRequestDividesByTheWindowsRequests() {
+        Compare.Snapshot one = snapshot(before, 10, Map.of(), Map.of(),
+                Map.of("q", queryStats("q", 50, 100)), Map.of());
+        Compare.Snapshot two = snapshot(after, 20, Map.of(), Map.of(),
+                Map.of("q", queryStats("q", 20, 30), "r", queryStats("r", 20, 40)), Map.of());
+
+        List<Compare.QueryDiff> queries = Compare.diff(one, two).queries();
+
+        assertThat(queries).extracting(Compare.QueryDiff::queryId).containsExactly("r", "q");
+        Compare.QueryDiff fixed = queries.get(1);
+        assertThat(fixed.before().callsPerRequest()).isEqualTo(5.0);
+        assertThat(fixed.after().callsPerRequest()).isEqualTo(1.0);
+        assertThat(fixed.verdict()).isEqualTo(Compare.BETTER);
+    }
+
+    @Test
+    void anErrorGroupIsWeightedByItsLargerCountAndNamedByTheBeforeWindow() {
+        Compare.Snapshot one = snapshot(before, 10, Map.of(), Map.of(), Map.of(),
+                Map.of("e1", errorGroup("e1", 2), "e2", errorGroup("e2", 9)));
+        Stats.ErrorGroup renamed = new Stats.ErrorGroup("e1", "orders", "java.lang.IllegalStateException",
+                "renamed", 7, 0, 0, List.of(), null);
+        Compare.Snapshot two = snapshot(after, 10, Map.of(), Map.of(), Map.of(),
+                Map.of("e1", renamed, "e2", errorGroup("e2", 12)));
+
+        List<Compare.ErrorDiff> errors = Compare.diff(one, two).errors();
+
+        assertThat(errors).extracting(Compare.ErrorDiff::errorId).containsExactly("e2", "e1");
+        assertThat(errors.get(1).message()).isEqualTo("boom e1");
+        assertThat(errors.get(1).before()).isEqualTo(2);
+        assertThat(errors.get(1).after()).isEqualTo(7);
+    }
 }

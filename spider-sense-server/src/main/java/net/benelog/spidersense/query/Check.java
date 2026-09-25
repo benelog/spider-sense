@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 import net.benelog.spidersense.store.Tingles;
@@ -185,17 +186,12 @@ public final class Check {
                         Numbers.plural(slow, "call") + " over " + tingles.slowQueryMs() + " ms");
             }
             case MAX_N_PLUS_ONE -> {
-                List<Findings.Finding> found = new ArrayList<>();
-                for (Findings.Finding finding : ranked.get()) {
-                    // A loop of queries and a loop of outbound calls are one mistake to
-                    // the caller, so one rule counts both (check.adoc#rules); a regressed N+1 is
-                    // still an N+1.
-                    if ((Findings.N_PLUS_ONE.equals(finding.baseKind())
-                            || Findings.N_PLUS_ONE_HTTP.equals(finding.baseKind()))
-                            && (endpoint == null || inScope(finding, endpoints))) {
-                        found.add(finding);
-                    }
-                }
+                // A loop of queries and a loop of outbound calls are one mistake to the
+                // caller, so one rule counts both (check.adoc#rules); a regressed N+1 is
+                // still an N+1.
+                List<Findings.Finding> found = matching(ranked.get(), endpoint, endpoints,
+                        finding -> Findings.N_PLUS_ONE.equals(finding.baseKind())
+                                || Findings.N_PLUS_ONE_HTTP.equals(finding.baseKind()));
                 String detail = found.isEmpty() ? "no repeated statement or call in the window"
                         : Numbers.plural(found.size(), "finding") + ": " + found.get(0).title();
                 yield atMost(rule, limit, found.size(), detail);
@@ -221,13 +217,8 @@ public final class Check {
             }
             case MAX_REGRESSIONS -> {
                 // A resolved finding that came back: the fix did not hold (check.adoc#rules).
-                List<Findings.Finding> back = new ArrayList<>();
-                for (Findings.Finding finding : ranked.get()) {
-                    if (Findings.REGRESSION.equals(finding.kind())
-                            && (endpoint == null || inScope(finding, endpoints))) {
-                        back.add(finding);
-                    }
-                }
+                List<Findings.Finding> back = matching(ranked.get(), endpoint, endpoints,
+                        finding -> Findings.REGRESSION.equals(finding.kind()));
                 String detail = back.isEmpty() ? "no resolved finding came back"
                         : Numbers.plural(back.size(), "finding") + ": " + back.get(0).numbers()
                                 .get(Findings.ORIGINAL_KIND) + " " + back.get(0).title();
@@ -290,6 +281,22 @@ public final class Check {
     private static boolean matchesName(String endpoint, String name, String service) {
         return endpoint.equals(name)
                 || endpoint.equals(net.benelog.spidersense.store.Ids.endpointId(service, name));
+    }
+
+    /**
+     * The ranked findings the predicate accepts that are about the scope: every one when
+     * the scope is the whole window, else those whose subject is one of its endpoints.
+     */
+    private static List<Findings.Finding> matching(List<Findings.Finding> ranked,
+            @Nullable String endpoint, List<Stats.EndpointStats> endpoints,
+            Predicate<Findings.Finding> accepted) {
+        List<Findings.Finding> found = new ArrayList<>();
+        for (Findings.Finding finding : ranked) {
+            if (accepted.test(finding) && (endpoint == null || inScope(finding, endpoints))) {
+                found.add(finding);
+            }
+        }
+        return found;
     }
 
     private static boolean inScope(Findings.Finding finding, List<Stats.EndpointStats> endpoints) {

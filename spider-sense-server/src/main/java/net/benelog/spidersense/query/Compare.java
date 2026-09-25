@@ -2,13 +2,14 @@ package net.benelog.spidersense.query;
 
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Function;
+import java.util.function.ToDoubleFunction;
 
 import org.jspecify.annotations.Nullable;
 
@@ -64,6 +65,15 @@ public final class Compare {
             List<ErrorDiff> errors) {
     }
 
+    /**
+     * Everything a comparison reads of one window, read once: the totals, and the
+     * endpoints, their database work, the query groups and the error groups by id.
+     */
+    record Snapshot(Window window, Stats.Totals totals, Map<String, Stats.EndpointStats> endpoints,
+            Map<String, Queries.DbWork> work, Map<String, Stats.QueryStats> queries,
+            Map<String, Stats.ErrorGroup> errors) {
+    }
+
     private final Queries queries;
 
     public Compare(Queries queries) {
@@ -71,65 +81,105 @@ public final class Compare {
     }
 
     public Comparison compare(Window before, Window after, @Nullable String service) {
-        Map<String, Stats.EndpointStats> beforeEndpoints = endpoints(before, service);
-        Map<String, Stats.EndpointStats> afterEndpoints = endpoints(after, service);
-        Map<String, Queries.DbWork> beforeWork = queries.databaseWork(before, service);
-        Map<String, Queries.DbWork> afterWork = queries.databaseWork(after, service);
+        return diff(snapshot(before, service), snapshot(after, service));
+    }
 
-        Map<String, Double> weight = new HashMap<>();
-        List<EndpointDiff> endpointDiffs = new ArrayList<>();
-        for (String id : union(beforeEndpoints.keySet(), afterEndpoints.keySet())) {
-            Stats.EndpointStats one = beforeEndpoints.get(id);
-            Stats.EndpointStats two = afterEndpoints.get(id);
-            Stats.EndpointStats any = Objects.requireNonNull(one != null ? one : two,
+    private Snapshot snapshot(Window window, @Nullable String service) {
+        // The aggregates alone: a verdict reads neither the status codes, nor the callers
+        // and the schema block of a query, nor where an error occurred.
+        return new Snapshot(window, queries.totals(window, service),
+                index(queries.endpointsWithoutStatusCodes(window, service), Stats.EndpointStats::endpointId),
+                queries.databaseWork(window, service),
+                index(queries.queryGroups(window, service, "total", Queries.ALL_GROUPS, null),
+                        Stats.QueryStats::queryId),
+                index(queries.errorGroups(window, service, Queries.ALL_GROUPS, null),
+                        Stats.ErrorGroup::errorId));
+    }
+
+    /** The comparison of two snapshots: every group of either, with its verdict, worst first. */
+    static Comparison diff(Snapshot before, Snapshot after) {
+        long beforeRequests = before.totals().requests();
+        long afterRequests = after.totals().requests();
+        List<EndpointDiff> endpoints = join(before.endpoints(), after.endpoints(),
+                (id, one, two, either) -> {
+                    Side sideBefore = side(one, before.work().get(id));
+                    Side sideAfter = side(two, after.work().get(id));
+                    return new Weighted<>(new EndpointDiff(id, either.service(), either.name(),
+                            sideBefore, sideAfter, verdict(sideBefore, sideAfter)),
+                            totalMs(one) + totalMs(two));
+                },
+                EndpointDiff::verdict, EndpointDiff::endpointId);
+        List<QueryDiff> queryDiffs = join(before.queries(), after.queries(),
+                (id, one, two, either) -> {
+                    QuerySide sideBefore = querySide(one, beforeRequests);
+                    QuerySide sideAfter = querySide(two, afterRequests);
+                    return new Weighted<>(new QueryDiff(id, either.service(), either.statement(),
+                            sideBefore, sideAfter, queryVerdict(sideBefore, sideAfter)),
+                            (one == null ? 0 : one.totalMs()) + (two == null ? 0 : two.totalMs()));
+                },
+                QueryDiff::verdict, QueryDiff::queryId);
+        List<ErrorDiff> errors = join(before.errors(), after.errors(),
+                (id, one, two, either) -> {
+                    long countBefore = one == null ? 0 : one.count();
+                    long countAfter = two == null ? 0 : two.count();
+                    return new Weighted<>(new ErrorDiff(id, either.service(), either.type(),
+                            either.message(), countBefore, countAfter,
+                            errorVerdict(countBefore, countAfter)),
+                            Math.max(countBefore, countAfter));
+                },
+                ErrorDiff::verdict, ErrorDiff::errorId);
+        return new Comparison(before.window(), after.window(), before.totals(), after.totals(),
+                endpoints, queryDiffs, errors);
+    }
+
+    private static double totalMs(Stats.@Nullable EndpointStats endpoint) {
+        return endpoint == null ? 0 : endpoint.totalMs();
+    }
+
+    /** A row of a comparison with the weight it is ordered by within its verdict. */
+    private record Weighted<D>(D diff, double weight) {
+    }
+
+    /** Builds the row of one id from the group of each window, either of which may be missing. */
+    @FunctionalInterface
+    private interface RowBuilder<T, D> {
+
+        /** @param either the group of the window that has it, the before one when both do */
+        Weighted<D> row(String id, @Nullable T before, @Nullable T after, T either);
+    }
+
+    /**
+     * A full outer join by id of two windows' groups, in the order
+     * marks-and-compare.adoc#verdicts gives: by verdict, then the heaviest first, then
+     * the id.
+     */
+    private static <T, D> List<D> join(Map<String, T> before, Map<String, T> after,
+            RowBuilder<T, D> builder, Function<D, String> verdict, Function<D, String> id) {
+        Set<String> ids = new LinkedHashSet<>(before.keySet());
+        ids.addAll(after.keySet());
+        List<Weighted<D>> rows = new ArrayList<>(ids.size());
+        for (String each : ids) {
+            T one = before.get(each);
+            T two = after.get(each);
+            T either = Objects.requireNonNull(one != null ? one : two,
                     "the id came from one of the two windows");
-            Side sideBefore = side(one, beforeWork.get(id));
-            Side sideAfter = side(two, afterWork.get(id));
-            weight.put(id, (one == null ? 0 : one.totalMs()) + (two == null ? 0 : two.totalMs()));
-            endpointDiffs.add(new EndpointDiff(id, any.service(), any.name(), sideBefore, sideAfter,
-                    verdict(sideBefore, sideAfter)));
+            rows.add(builder.row(each, one, two, either));
         }
-        endpointDiffs.sort(order(EndpointDiff::verdict, diff -> weight.get(diff.endpointId()),
-                EndpointDiff::endpointId));
-
-        long beforeRequests = queries.totals(before, service).requests();
-        long afterRequests = queries.totals(after, service).requests();
-        Map<String, Stats.QueryStats> beforeQueries = queries(before, service);
-        Map<String, Stats.QueryStats> afterQueries = queries(after, service);
-        Map<String, Double> queryWeight = new HashMap<>();
-        List<QueryDiff> queryDiffs = new ArrayList<>();
-        for (String id : union(beforeQueries.keySet(), afterQueries.keySet())) {
-            Stats.QueryStats one = beforeQueries.get(id);
-            Stats.QueryStats two = afterQueries.get(id);
-            Stats.QueryStats any = Objects.requireNonNull(one != null ? one : two,
-                    "the id came from one of the two windows");
-            QuerySide sideBefore = querySide(one, beforeRequests);
-            QuerySide sideAfter = querySide(two, afterRequests);
-            queryWeight.put(id, (one == null ? 0 : one.totalMs()) + (two == null ? 0 : two.totalMs()));
-            queryDiffs.add(new QueryDiff(id, any.service(), any.statement(), sideBefore, sideAfter,
-                    queryVerdict(sideBefore, sideAfter)));
+        rows.sort(order(row -> verdict.apply(row.diff()), Weighted::weight, row -> id.apply(row.diff())));
+        List<D> diffs = new ArrayList<>(rows.size());
+        for (Weighted<D> row : rows) {
+            diffs.add(row.diff());
         }
-        queryDiffs.sort(order(QueryDiff::verdict, diff -> queryWeight.get(diff.queryId()),
-                QueryDiff::queryId));
+        return diffs;
+    }
 
-        Map<String, Stats.ErrorGroup> beforeErrors = errors(before, service);
-        Map<String, Stats.ErrorGroup> afterErrors = errors(after, service);
-        List<ErrorDiff> errorDiffs = new ArrayList<>();
-        for (String id : union(beforeErrors.keySet(), afterErrors.keySet())) {
-            Stats.ErrorGroup one = beforeErrors.get(id);
-            Stats.ErrorGroup two = afterErrors.get(id);
-            Stats.ErrorGroup any = Objects.requireNonNull(one != null ? one : two,
-                    "the id came from one of the two windows");
-            long countBefore = one == null ? 0 : one.count();
-            long countAfter = two == null ? 0 : two.count();
-            errorDiffs.add(new ErrorDiff(id, any.service(), any.type(), any.message(), countBefore,
-                    countAfter, errorVerdict(countBefore, countAfter)));
+    /** The groups of a window by id, in the order they were read. */
+    private static <T> Map<String, T> index(List<T> groups, Function<T, String> id) {
+        Map<String, T> byId = new LinkedHashMap<>();
+        for (T group : groups) {
+            byId.put(id.apply(group), group);
         }
-        errorDiffs.sort(order(ErrorDiff::verdict,
-                diff -> (double) Math.max(diff.before(), diff.after()), ErrorDiff::errorId));
-
-        return new Comparison(before, after, queries.totals(before, service),
-                queries.totals(after, service), endpointDiffs, queryDiffs, errorDiffs);
+        return byId;
     }
 
     // --- verdicts ------------------------------------------------------------
@@ -204,8 +254,8 @@ public final class Compare {
      * the heaviest first within a verdict, and the id between equal weights, so two
      * calls over the same windows list the rows in the same order (cli.adoc).
      */
-    private static <T> Comparator<T> order(java.util.function.Function<T, String> verdict,
-            java.util.function.ToDoubleFunction<T> weight, java.util.function.Function<T, String> id) {
+    private static <T> Comparator<T> order(Function<T, String> verdict, ToDoubleFunction<T> weight,
+            Function<T, String> id) {
         List<String> verdicts = List.of(WORSE, NEW, SAME, BETTER, GONE);
         return Comparator.<T>comparingInt(diff -> verdicts.indexOf(verdict.apply(diff)))
                 .thenComparing(Comparator.comparingDouble(weight).reversed())
@@ -235,36 +285,5 @@ public final class Compare {
         }
         return new QuerySide(stats.calls(), requests == 0 ? 0 : (double) stats.calls() / requests,
                 stats.p95Ms(), stats.totalMs());
-    }
-
-    private Map<String, Stats.EndpointStats> endpoints(Window window, @Nullable String service) {
-        Map<String, Stats.EndpointStats> byId = new LinkedHashMap<>();
-        for (Stats.EndpointStats endpoint : queries.endpointsWithoutStatusCodes(window, service)) {
-            byId.put(endpoint.endpointId(), endpoint);
-        }
-        return byId;
-    }
-
-    private Map<String, Stats.QueryStats> queries(Window window, @Nullable String service) {
-        Map<String, Stats.QueryStats> byId = new LinkedHashMap<>();
-        // The aggregate alone: a verdict reads neither the callers nor the schema block.
-        for (Stats.QueryStats query : queries.queryGroups(window, service, "total", Queries.ALL_GROUPS, null)) {
-            byId.put(query.queryId(), query);
-        }
-        return byId;
-    }
-
-    private Map<String, Stats.ErrorGroup> errors(Window window, @Nullable String service) {
-        Map<String, Stats.ErrorGroup> byId = new LinkedHashMap<>();
-        for (Stats.ErrorGroup group : queries.errorGroups(window, service, Queries.ALL_GROUPS, null)) {
-            byId.put(group.errorId(), group);
-        }
-        return byId;
-    }
-
-    private static Set<String> union(Set<String> before, Set<String> after) {
-        Set<String> ids = new LinkedHashSet<>(before);
-        ids.addAll(after);
-        return ids;
     }
 }
