@@ -2,7 +2,7 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, panel, stat, table, chip, serviceChip, copyBlock, spinner, errorBox } from '../ui.js';
+import { h, fill, fillRows, panel, stat, table, chip, serviceChip, copyBlock, spinner, errorBox } from '../ui.js';
 import { timeSeries, legend } from '../charts.js';
 import { formatSql } from '../sql.js';
 import { traceTable } from './traces.js';
@@ -23,8 +23,17 @@ export function render(root, ctx) {
   const chartBody = h('div.chart');
   const chartLegend = h('div');
   const chartPanel = panel({ title: 'Calls and p95' }, chartLegend, chartBody);
-  const callersBody = h('div');
-  const tracesBody = h('div');
+  // The two tables are built once, and a Live refresh gives them new rows, so a focused row
+  // and a scrolled table survive it (ui.adoc#live-refresh).
+  const callerOpts = { rowKey: (c) => c.service + '|' + c.endpoint, empty: 'No caller recorded.' };
+  const callersTable = table([
+    { key: 'endpoint', label: 'Endpoint', sortable: false, cls: 'wide', render: (c) => h('span.cell-ellipsis', { title: c.endpoint }, c.endpoint) },
+    { key: 'service', label: 'Service', sortable: false, width: '150px', render: (c) => serviceChip(c.service) },
+    { key: 'calls', label: 'Calls', align: 'right', sortable: false, width: '72px', render: (c) => count(c.calls) },
+  ], { ...callerOpts, rows: [] });
+  const tracesTable = traceTable([], { empty: 'No trace contains this query in this window.' });
+  const callersBody = h('div', callersTable);
+  const tracesBody = h('div', tracesTable);
   const half = h('div.grid-2',
     panel({ title: 'Callers' }, callersBody),
     panel({ title: 'Slowest traces' }, tracesBody));
@@ -86,13 +95,8 @@ export function render(root, ctx) {
       fill(chartLegend, legend([{ label: 'Calls per bucket', color: 'silk' }, { label: 'p95, right axis', color: 'accent' }]));
       if (chart) chart.update(spec); else chart = timeSeries(chartBody, spec);
 
-      fill(callersBody, table([
-        { key: 'endpoint', label: 'Endpoint', sortable: false, cls: 'wide', render: (c) => h('span.cell-ellipsis', { title: c.endpoint }, c.endpoint) },
-        { key: 'service', label: 'Service', sortable: false, width: '150px', render: (c) => serviceChip(c.service) },
-        { key: 'calls', label: 'Calls', align: 'right', sortable: false, width: '72px', render: (c) => count(c.calls) },
-      ], { rows: q.callers || [], rowKey: (c) => c.service + '|' + c.endpoint, empty: 'No caller recorded.' }));
-
-      fill(tracesBody, traceTable(data.traces || [], { empty: 'No trace contains this query in this window.' }));
+      fillRows(callersTable, q.callers || [], callerOpts);
+      tracesTable.setRows(data.traces || []);
     } catch (e) {
       if (destroyed || !current()) return;
       built = false;

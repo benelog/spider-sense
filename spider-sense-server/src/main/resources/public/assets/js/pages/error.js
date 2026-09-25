@@ -2,7 +2,7 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, panel, stat, table, serviceChip, idButton, spinner, errorBox } from '../ui.js';
+import { h, fill, fillRows, panel, stat, table, serviceChip, idButton, spinner, errorBox } from '../ui.js';
 import { timeSeries, legend } from '../charts.js';
 import { codeFrame, foldedStack, framesMode, framesToggle } from '../frames.js';
 import { copyButtons, cliLine } from '../copyas.js';
@@ -57,8 +57,16 @@ export function render(root, ctx) {
       ? exceptionChain(lastChain, mode)
       : h('span.muted', 'This error carried no stack trace.'));
   }
-  const endpointsBody = h('div');
-  const tracesBody = h('div');
+  // The two tables are built once, and a Live refresh gives them new rows, so a focused row
+  // and a scrolled table survive it (ui.adoc#live-refresh).
+  const endpointOpts = { rowKey: (x) => x.name, empty: 'No endpoint recorded.' };
+  const endpointsTable = table([
+    { key: 'name', label: 'Endpoint', sortable: false, cls: 'wide', render: (x) => h('span.cell-ellipsis', { title: x.name }, x.name) },
+    { key: 'count', label: 'Count', align: 'right', sortable: false, width: '72px', render: (x) => count(x.count) },
+  ], { ...endpointOpts, rows: [] });
+  const tracesTable = traceTable([], { empty: 'No trace in this window.' });
+  const endpointsBody = h('div', endpointsTable);
+  const tracesBody = h('div', tracesTable);
   const half = h('div.grid-2',
     panel({ title: 'Endpoints' }, endpointsBody),
     panel({ title: 'Recent traces' }, tracesBody));
@@ -125,12 +133,8 @@ export function render(root, ctx) {
         stackTraceBox);
       paintStack();
 
-      fill(endpointsBody, table([
-        { key: 'name', label: 'Endpoint', sortable: false, cls: 'wide', render: (x) => h('span.cell-ellipsis', { title: x.name }, x.name) },
-        { key: 'count', label: 'Count', align: 'right', sortable: false, width: '72px', render: (x) => count(x.count) },
-      ], { rows: e.endpoints || [], rowKey: (x) => x.name, empty: 'No endpoint recorded.' }));
-
-      fill(tracesBody, traceTable(data.traces || [], { empty: 'No trace in this window.' }));
+      fillRows(endpointsTable, e.endpoints || [], endpointOpts);
+      tracesTable.setRows(data.traces || []);
     } catch (err) {
       if (destroyed || !current()) return;
       built = false;
