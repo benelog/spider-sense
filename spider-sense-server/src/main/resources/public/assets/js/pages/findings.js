@@ -3,7 +3,7 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, panel, table, chip, serviceChip, copyBlock, spinner, emptyState, snippetBlocks, formDialog, errorText, toast, breakdownBar, breakdownLead } from '../ui.js';
+import { h, fill, panel, table, chip, serviceChip, copyBlock, spinner, noDataYet, formDialog, errorText, toast, breakdownBar, breakdownLead } from '../ui.js';
 import { formatSql } from '../sql.js';
 import { fmtApdex } from '../buckets.js';
 import { count, dur, rate, pct, bytes, time, bothTimes, truncate, shortId } from '../format.js';
@@ -347,12 +347,9 @@ export function render(root, ctx) {
       listWindow = res.window || api.windowFor();
       if (!rows.length && !res.requests) {
         node = null;
-        const s = api.state.status || {};
-        fill(body, emptyState(
-          ((s.counts || {}).spans
-            ? 'No request ' + windowName() + ', so there is nothing to judge. Send some traffic, or widen the range in the top bar.'
-            : 'Nothing has arrived yet. Attach Spider Sense to an application, or point any OTLP/HTTP sender at this collector.'),
-          snippetBlocks(s.endpoint || location.origin)));
+        fill(body, noDataYet(((api.state.status || {}).counts || {}).spans
+          ? 'No request ' + windowName() + ', so there is nothing to judge. Send some traffic, or widen the range in the top bar.'
+          : 'Nothing has arrived yet. Attach Spider Sense to an application, or point any OTLP/HTTP sender at this collector.'));
         return;
       }
       paint();

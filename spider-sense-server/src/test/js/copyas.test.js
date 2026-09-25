@@ -16,3 +16,7 @@ test('cliLine quotes a jar path or a service name the shell would split', () => 
   assert.equal(cliLine('queries', { from: 1, to: 2 }, "it's"),
     "java -jar '/home/me/my jars/spider-sense.jar' queries --since=1 --until=2 --service='it'\\''s'");
 });
+
+test('cliLine takes the jar it names when handed one', () => {
+  assert.equal(cliLine('check', { from: 1, to: 2 }, '', 'sense.jar'), 'java -jar sense.jar check --since=1 --until=2');
+});

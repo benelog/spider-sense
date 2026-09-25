@@ -9,8 +9,8 @@ import { dur, count as fmtCount, pct } from './format.js';
 const DEFAULT_BOUNDS = [125, 500, 2000];
 
 /** [T/4, T, 4T] from /api/status, or the default bounds before status has arrived. */
-export function bucketBounds() {
-  const t = (api.state.status || {}).thresholds || {};
+export function bucketBounds(status = api.state.status) {
+  const t = (status || {}).thresholds || {};
   const b = t.responseBucketsMs;
   if (Array.isArray(b) && b.length === 3 && b.every((v) => typeof v === 'number' && v > 0)) return b;
   return DEFAULT_BOUNDS;
@@ -24,8 +24,8 @@ function bound(ms) {
 }
 
 /** ['≤125 ms', '≤500 ms', '≤2 s', '>2 s', 'error'] */
-export function bucketLabels() {
-  const [a, b, c] = bucketBounds();
+export function bucketLabels(status = api.state.status) {
+  const [a, b, c] = bucketBounds(status);
   return ['≤' + bound(a), '≤' + bound(b), '≤' + bound(c), '>' + bound(c), 'error'];
 }
 

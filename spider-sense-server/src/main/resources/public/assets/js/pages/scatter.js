@@ -3,7 +3,7 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, panel, spinner, errorBox, serviceColor, seedServices, emptyState, snippetBlocks, segmented } from '../ui.js';
+import { h, fill, panel, spinner, errorBox, serviceColor, seedServices, noDataYet, segmented } from '../ui.js';
 import { pageLoader } from '../page.js';
 import { scatterChart, legend } from '../charts.js';
 import { traceTable } from '../widgets.js';
@@ -224,7 +224,7 @@ export function render(root, ctx) {
       points = res.points || [];
       const w = (res.window && res.window.from) ? res.window : api.windowFor();
       if (!points.length && !(api.state.status && api.state.status.counts && api.state.status.counts.spans)) {
-        fill(chartBody, emptyState('No request has been recorded yet.', snippetBlocks((api.state.status || {}).endpoint || location.origin)));
+        fill(chartBody, noDataYet('No request has been recorded yet.'));
         fill(counts);
         return;
       }

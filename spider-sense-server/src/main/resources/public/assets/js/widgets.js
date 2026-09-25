@@ -159,9 +159,8 @@ export function kindChip(kind) {
  * Where a finding points: its subject's page, and the first evidence trace when the
  * subject has no page of its own (a job) or names nothing (pages.adoc#findings).
  */
-export function findingTarget(finding) {
+export function findingTarget(finding, shared = api.sharedQuery()) {
   const subject = finding.subject || {};
-  const shared = api.sharedQuery();
   if (subject.endpointId) return { path: router.detailPath('endpoints', subject.endpointId), query: shared };
   if (subject.queryId) return { path: router.detailPath('queries', subject.queryId), query: shared };
   if (subject.errorId) return { path: router.detailPath('errors', subject.errorId), query: shared };

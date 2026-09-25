@@ -199,6 +199,11 @@ export function exportUrl(extra = {}) {
 
 export function eventsUrl() { return '/api/events'; }
 
+/** Where an application sends: the collector /api/status names, or this page's own origin before it answers. */
+export function collectorBase() {
+  return (state.status || {}).endpoint || location.origin;
+}
+
 // --- reads --------------------------------------------------------------
 
 export function overview(opts) { return getJSON('/api/overview', params({}, { ...opts, service: null })); }

@@ -2,7 +2,7 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, panel, table, chip, serviceColor, comparator, sortFromQuery, nextSort, spinner, emptyState, snippetBlocks, seedServices } from '../ui.js';
+import { h, fill, panel, table, chip, serviceColor, comparator, sortFromQuery, nextSort, spinner, noDataYet, seedServices } from '../ui.js';
 import { pageLoader } from '../page.js';
 import { sparkline } from '../charts.js';
 import { apdexCell } from '../buckets.js';
@@ -70,7 +70,7 @@ export function render(root, ctx) {
       seedServices(rows.map((s) => s.name));
       if (!rows.length) {
         node = null;
-        fill(body, emptyState('No service has sent anything yet.', snippetBlocks((api.state.status || {}).endpoint || location.origin)));
+        fill(body, noDataYet('No service has sent anything yet.'));
         return;
       }
       paint();

@@ -2,7 +2,7 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, icon, panel, renderList, debounce, spinner, emptyState, seriesColor } from '../ui.js';
+import { h, fill, icon, panel, renderList, debounce, spinner, emptyState, placeholder, seriesColor } from '../ui.js';
 import { pageLoader } from '../page.js';
 import { chartBox, alignedTimes, alignTo } from '../charts.js';
 import { count } from '../format.js';
@@ -59,7 +59,7 @@ export function render(root, ctx) {
         node.replaceChildren(...item(m).childNodes);
       },
     });
-    if (!list.length) fill(listBox, h('div', { style: { padding: '18px', textAlign: 'center' } }, h('span.muted', 'No metric matches.')));
+    if (!list.length) fill(listBox, placeholder('No metric matches.'));
   }
 
   function item(m) {
@@ -151,7 +151,7 @@ export function render(root, ctx) {
     paint: (res) => {
       catalog = (res.metrics || []).slice().sort((a, b) => a.name.localeCompare(b.name));
       if (!catalog.length) {
-        fill(listBox, h('div', { style: { padding: '18px', textAlign: 'center' } }, h('span.muted', 'No metric has arrived yet.')));
+        fill(listBox, placeholder('No metric has arrived yet.'));
         chart.empty(emptyState('No metric has arrived yet. The OpenTelemetry agent exports runtime metrics every 5 seconds by default.'));
         chart.setTitle('Metric');
         rateBtn.hidden = true;

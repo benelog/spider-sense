@@ -46,3 +46,8 @@ test('histogramTitle names each bucket with its count and share', () => {
     '≤125 ms: 3 (75.0%)\n≤500 ms: 1 (25.0%)\n≤2 s: 0 (0.0%)\n>2 s: 0 (0.0%)\nerror: 0 (0.0%)');
   assert.equal(histogramTitle(null), '≤125 ms: 0\n≤500 ms: 0\n≤2 s: 0\n>2 s: 0\nerror: 0');
 });
+
+test('the bounds can come from a status handed in rather than the shared one', () => {
+  assert.deepEqual(bucketLabels({ thresholds: { responseBucketsMs: [50, 200, 800] } }), ['≤50.0 ms', '≤200 ms', '≤800 ms', '>800 ms', 'error']);
+  assert.deepEqual(bucketBounds(null), [125, 500, 2000]);
+});

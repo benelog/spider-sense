@@ -2,7 +2,7 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, icon, panel, table, serviceChip, severityChip, debounce, spinner, emptyState, snippetBlocks } from '../ui.js';
+import { h, fill, icon, panel, table, serviceChip, severityChip, debounce, spinner, noDataYet } from '../ui.js';
 import { pageLoader } from '../page.js';
 import { stackTrace } from '../frames.js';
 import { timeMs, bothTimes, count, shortId } from '../format.js';
@@ -151,8 +151,7 @@ export function render(root, ctx) {
     if (!rows.length && !filter.q && !filter.severity && !filter.traceId
         && !((api.state.status || {}).counts || {}).logs) {
       node = null;
-      fill(body, emptyState('No log record has arrived yet. The OpenTelemetry agent exports logs when the logs exporter is on.',
-        snippetBlocks((api.state.status || {}).endpoint || location.origin)));
+      fill(body, noDataYet('No log record has arrived yet. The OpenTelemetry agent exports logs when the logs exporter is on.'));
       foot.hidden = true;
       return;
     }

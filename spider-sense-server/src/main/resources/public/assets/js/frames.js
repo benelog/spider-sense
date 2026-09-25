@@ -86,8 +86,8 @@ export function codeFrame(frame) {
 // --- folding a stack trace (pages.adoc#stack-traces) -------------------------------------
 
 /** The rules of a finding's `code` (findings.adoc#code), from /api/status.codeFrames. */
-function rules() {
-  const frames = (state.status || {}).codeFrames;
+function rules(status) {
+  const frames = (status || {}).codeFrames;
   if (!frames) return null;
   return { app: frames.appPackages || [], framework: frames.frameworkPrefixes || [] };
 }
@@ -163,11 +163,11 @@ export function foldLabel(run) {
  * folded. Without the rules (a server or a recording that does not send them) nothing is folded
  * or highlighted.
  */
-export function foldedStack(text, mode = 'app') {
+export function foldedStack(text, mode = 'app', status = state.status) {
   const pre = document.createElement('pre');
   pre.className = 'stack';
   if (!text) return pre;
-  const r = rules();
+  const r = rules(status);
   let run = [];
 
   function flush() {

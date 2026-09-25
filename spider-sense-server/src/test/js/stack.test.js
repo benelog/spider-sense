@@ -49,3 +49,9 @@ test('without the rules nothing is folded or highlighted', () => {
   assert.deepEqual(classes(foldedStack(TRACE, 'app')),
     ['st-head', 'st-frame', 'st-frame', 'st-frame', 'st-frame', 'st-cause', 'st-frame', 'st-frame']);
 });
+
+test('foldedStack takes the rules from a status handed in', () => {
+  const status = { codeFrames: { appPackages: ['com.example.'], frameworkPrefixes: [] } };
+  assert.deepEqual(classes(foldedStack(TRACE, 'app', status)),
+    ['st-head', 'st-own', 'st-fold', 'st-run', 'st-cause', 'st-own', 'st-frame']);
+});

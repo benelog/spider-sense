@@ -2,7 +2,7 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, icon, panel, chip, serviceChip, serviceColor, renderList, emptyState, snippetBlocks, seedServices } from '../ui.js';
+import { h, fill, icon, panel, chip, serviceChip, serviceColor, renderList, emptyState, snippetBlocks, placeholder, seedServices } from '../ui.js';
 import { pageLoader, skeleton } from '../page.js';
 import { chartBox, sparkline } from '../charts.js';
 import { histogramBars, apdexCell } from '../buckets.js';
@@ -56,8 +56,7 @@ export function render(root, ctx) {
       update: (node, f) => node.replaceChildren(...findingRow(f).childNodes),
     });
     if (!list.length) {
-      fill(findingsBody, h('div', { style: { padding: '18px', textAlign: 'center' } },
-        h('span.muted', 'Nothing worth fixing in this window.')));
+      fill(findingsBody, placeholder('Nothing worth fixing in this window.'));
     }
   }
 
@@ -129,7 +128,7 @@ export function render(root, ctx) {
       },
       enter: (node, t) => { if (t.fresh) node.classList.add('fresh'); },
     });
-    if (!tingles.length) fill(tingleBody, h('div', { style: { padding: '18px', textAlign: 'center' } }, h('span.muted', 'Nothing noteworthy in this window.')));
+    if (!tingles.length) fill(tingleBody, placeholder('Nothing noteworthy in this window.'));
   }
 
   function tingleRow(t) {
@@ -152,7 +151,6 @@ export function render(root, ctx) {
     const services = data.services || [];
     const requests = (data.totals || {}).requests || 0;
     if (!requests) {
-      const s = api.state.status || {};
       const neverSeen = !services.length;
       layout.replace(panel({}, emptyState(
         neverSeen
@@ -160,7 +158,7 @@ export function render(root, ctx) {
           : 'No request in this time range. Send some traffic, or widen the range in the top bar.',
         h('div', { style: { display: 'grid', gap: '10px', justifyItems: 'center', width: '100%' } },
           neverSeen ? h('img.empty-hero', { src: 'assets/logo.svg', alt: '', width: '96', height: '96' }) : null,
-          snippetBlocks(s.endpoint || location.origin)))));
+          snippetBlocks(api.collectorBase())))));
       return;
     }
     layout.build();

@@ -4,7 +4,7 @@
 import * as api from '../api.js';
 import * as router from '../router.js';
 import {
-  h, fill, panel, stat, spinner, emptyState, snippetBlocks,
+  h, fill, panel, stat, spinner, noDataYet,
   drawer, closeDrawer, seedServices,
 } from '../ui.js';
 import { pageLoader } from '../page.js';
@@ -535,11 +535,9 @@ export function render(root, ctx) {
       layoutKey = null;
       nodeRefs.clear();
       edgeRefs.clear();
-      fill(svgBox, emptyState(
-        nodes.length
-          ? 'No call has been traced between these nodes in this window. Send some traffic, or widen the range in the top bar.'
-          : 'Nothing has been traced yet. Attach Spider Sense to an application, or point any OTLP/HTTP sender at this collector.',
-        snippetBlocks((api.state.status || {}).endpoint || location.origin)));
+      fill(svgBox, noDataYet(nodes.length
+        ? 'No call has been traced between these nodes in this window. Send some traffic, or widen the range in the top bar.'
+        : 'Nothing has been traced yet. Attach Spider Sense to an application, or point any OTLP/HTTP sender at this collector.'));
       return;
     }
     // The edges are part of the layout: a call between services moves a node to a later

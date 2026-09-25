@@ -5,8 +5,8 @@ import { getText, state } from './api.js';
 import { h, copyText, toast, errorText } from './ui.js';
 
 /** The jar the CLI line names: /api/status.jar, else the name the manual uses. */
-function jar() {
-  const path = (state.status || {}).jar;
+function jarOf(status) {
+  const path = (status || {}).jar;
   if (!path) return 'spider-sense.jar';
   return /^[\w@%+=:,./-]+$/.test(path) ? path : "'" + path.replace(/'/g, "'\\''") + "'";
 }
@@ -15,8 +15,8 @@ function jar() {
  * `java -jar <jar> <command> --since=<from> --until=<to>`, with `--service` when one is named:
  * the same window as the page, as epoch milliseconds, so the CLI answers for what is on screen.
  */
-export function cliLine(command, window, service) {
-  return 'java -jar ' + jar() + ' ' + command
+export function cliLine(command, window, service, jar = jarOf(state.status)) {
+  return 'java -jar ' + jar + ' ' + command
     + ' --since=' + Math.round(window.from) + ' --until=' + Math.round(window.to)
     + (service ? ' --service=' + (/^[\w.:-]+$/.test(service) ? service : "'" + service.replace(/'/g, "'\\''") + "'") : '');
 }

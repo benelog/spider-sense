@@ -449,6 +449,16 @@ export function emptyState(sentence, extra) {
     extra);
 }
 
+/** The empty state of a page nothing has been sent to yet: the sentence and the three snippets. */
+export function noDataYet(sentence) {
+  return emptyState(sentence, snippetBlocks(api.collectorBase()));
+}
+
+/** A muted line centred in an empty list. */
+export function placeholder(text) {
+  return h('div', { style: { padding: '18px', textAlign: 'center' } }, h('span.muted', text));
+}
+
 // --- drawer -------------------------------------------------------------
 
 let drawerNode = null;

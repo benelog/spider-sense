@@ -2,7 +2,7 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, icon, panel, debounce, spinner, emptyState, snippetBlocks } from '../ui.js';
+import { h, fill, icon, panel, debounce, spinner, noDataYet } from '../ui.js';
 import { pageLoader } from '../page.js';
 import { traceTable } from '../widgets.js';
 import { count } from '../format.js';
@@ -74,7 +74,7 @@ export function render(root, ctx) {
       tableNode = null;
       fill(body, hasFilter || (api.state.status && api.state.status.counts && api.state.status.counts.traces)
         ? traceTable([], {})
-        : emptyState('No trace has arrived yet. Point an application at this collector and reload.', snippetBlocks((api.state.status || {}).endpoint || location.origin)));
+        : noDataYet('No trace has arrived yet. Point an application at this collector and reload.'));
       foot.hidden = true;
       return;
     }
