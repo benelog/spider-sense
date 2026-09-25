@@ -157,7 +157,7 @@ public final class Cli {
      * {@code git} to ask.
      */
     static String withSuspectChanges(String findings) {
-        SuspectChange suspects = SuspectChange.in(Path.of(""), SourceRoots.fromSystemProperties(),
+        SuspectChange suspects = SuspectChange.forWorkingDirectory(Path.of(""), SourceRoots.fromSystemProperties(),
                 System.currentTimeMillis());
         return suspects == null ? findings : suspects.annotate(findings);
     }
@@ -213,12 +213,12 @@ public final class Cli {
      * runs asks the Spider Sense the application sends to.
      */
     static String configuredUrl(java.util.Properties properties) {
-        String collector = value(properties, "spidersense.collector");
+        String collector = nonBlank(properties, "spidersense.collector");
         if (collector != null) {
             return Remote.trimSlash(collector);
         }
-        String host = value(properties, "spidersense.host");
-        String port = value(properties, "spidersense.port");
+        String host = nonBlank(properties, "spidersense.host");
+        String port = nonBlank(properties, "spidersense.port");
         if (host == null && port == null) {
             return DEFAULT_URL;
         }
@@ -226,7 +226,7 @@ public final class Cli {
                 + (port == null ? String.valueOf(Config.DEFAULT_PORT) : port);
     }
 
-    private static @Nullable String value(java.util.Properties properties, String key) {
+    private static @Nullable String nonBlank(java.util.Properties properties, String key) {
         String v = properties.getProperty(key);
         return v == null || v.isBlank() ? null : v.trim();
     }

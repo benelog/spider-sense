@@ -227,7 +227,7 @@ class CliTest {
     }
 
     private static String path(String... args) {
-        return Remote.path(Options.parse(args));
+        return Remote.pathAndQuery(Options.parse(args));
     }
 
     // --- over HTTP -----------------------------------------------------------

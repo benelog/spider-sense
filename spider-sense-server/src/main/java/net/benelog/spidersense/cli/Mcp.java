@@ -43,17 +43,17 @@ final class Mcp {
     private @Nullable String base;
 
     /** A named {@code --url} is a statement that there is a server there. */
-    private final boolean named;
+    private final boolean urlNamed;
 
     /** Opened on the first call that needs it, and only if one does. */
     private @Nullable Config config;
     private @Nullable Reports reports;
 
-    private Mcp(Options options, @Nullable String base, boolean named, PrintStream out,
+    private Mcp(Options options, @Nullable String base, boolean urlNamed, PrintStream out,
             PrintStream err) {
         this.options = options;
         this.base = base;
-        this.named = named;
+        this.urlNamed = urlNamed;
         this.out = out;
         this.err = err;
         this.server = new McpServer(McpTools.TOOLS, this::inProcess, Version.CURRENT);
@@ -66,13 +66,13 @@ final class Mcp {
         String base = options.has("db") ? null : url == null ? defaultUrl : url;
         Mcp mcp = new Mcp(options, base, url != null, out, err);
         try {
-            return mcp.pump(in);
+            return mcp.serve(in);
         } finally {
             mcp.close();
         }
     }
 
-    private int pump(InputStream in) {
+    private int serve(InputStream in) {
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(in, UTF_8))) {
             String line;
             while ((line = reader.readLine()) != null) {
@@ -114,7 +114,7 @@ final class Mcp {
                 String said = String.valueOf(e.getMessage());
                 return server.handle(line, (name, arguments) -> McpServer.ToolResult.failed(said));
             } catch (Remote.Unreachable e) {
-                if (named) {
+                if (urlNamed) {
                     String said = e.line(forwardTo);
                     return server.handle(line, (name, arguments) -> McpServer.ToolResult.failed(said));
                 }

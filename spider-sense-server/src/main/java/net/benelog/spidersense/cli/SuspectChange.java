@@ -61,7 +61,7 @@ final class SuspectChange {
     private final Set<String> uncommitted;
     private final long now;
     private final Git git;
-    private final Map<String, @Nullable String> blamed = new HashMap<>();
+    private final Map<String, @Nullable String> noteByFrame = new HashMap<>();
 
     private SuspectChange(SourceRoots roots, Path repository, Set<String> uncommitted, long now, Git git) {
         this.roots = roots;
@@ -75,12 +75,12 @@ final class SuspectChange {
      * The annotator for a working directory, or null when it is not inside a repository or
      * {@code git} cannot be run there.
      */
-    static @Nullable SuspectChange in(Path workingDir, SourceRoots roots, long now) {
-        return in(workingDir, roots, now, SuspectChange::git);
+    static @Nullable SuspectChange forWorkingDirectory(Path workingDir, SourceRoots roots, long now) {
+        return forWorkingDirectory(workingDir, roots, now, SuspectChange::git);
     }
 
     /** The same with the {@code git} to ask given. */
-    static @Nullable SuspectChange in(Path workingDir, SourceRoots roots, long now, Git git) {
+    static @Nullable SuspectChange forWorkingDirectory(Path workingDir, SourceRoots roots, long now, Git git) {
         List<String> top = git.run(workingDir, "rev-parse", "--show-toplevel");
         if (top == null || top.isEmpty() || top.get(0).isBlank()) {
             return null;
@@ -120,9 +120,9 @@ final class SuspectChange {
             if (end >= 0) {
                 out.append('\n');
             }
-            Matcher m = FRAME_LINE.matcher(line);
-            if (m.matches()) {
-                String note = noteFor(m.group(1));
+            Matcher frame = FRAME_LINE.matcher(line);
+            if (frame.matches()) {
+                String note = noteFor(frame.group(1));
                 if (note != null) {
                     if (end < 0) {
                         out.append('\n');
@@ -137,8 +137,8 @@ final class SuspectChange {
 
     /** {@code uncommitted}, or {@code changed in <hash> (<age>): <subject>}; null when git says nothing. */
     @Nullable String noteFor(String frame) {
-        if (blamed.containsKey(frame)) {
-            return blamed.get(frame);
+        if (noteByFrame.containsKey(frame)) {
+            return noteByFrame.get(frame);
         }
         String note = null;
         SourceRoots.Location location = roots.resolve(frame);
@@ -147,7 +147,7 @@ final class SuspectChange {
                     .replace(java.io.File.separatorChar, '/');
             note = uncommitted.contains(relative) ? "uncommitted" : blame(relative, location.line());
         }
-        blamed.put(frame, note);
+        noteByFrame.put(frame, note);
         return note;
     }
 
@@ -214,8 +214,8 @@ final class SuspectChange {
         while (unit < limits.length && seconds >= limits[unit]) {
             unit++;
         }
-        long n = seconds / sizes[unit];
-        return n + " " + units[unit] + (n == 1 ? "" : "s") + " ago";
+        long count = seconds / sizes[unit];
+        return count + " " + units[unit] + (count == 1 ? "" : "s") + " ago";
     }
 
     /** One {@code git} command's stdout as lines; null when it could not run or did not succeed. */

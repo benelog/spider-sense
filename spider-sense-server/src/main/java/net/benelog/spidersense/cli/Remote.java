@@ -129,7 +129,7 @@ final class Remote {
         if (Options.IMPORT.equals(options.command())) {
             return importFile(options, base, out, err);
         }
-        HttpRequest.Builder request = request(base, path(options));
+        HttpRequest.Builder request = request(base, pathAndQuery(options));
         // A statement and a mark are what the caller says rather than what it asks about, so they
         // travel in a body; everything else is a window and some filters (api.adoc).
         String body = command(options).bodyOf(options);
@@ -172,7 +172,7 @@ final class Remote {
      */
     private static int export(Options options, String base, PrintStream out, PrintStream err) {
         String name = options.valueOrNull("out");
-        HttpRequest request = request(base, window(options, new Query("/api/export")).toString()).GET().build();
+        HttpRequest request = request(base, withWindow(options, new UrlBuilder("/api/export")).toString()).GET().build();
         HttpClient client = client();
         try {
             HttpResponse<InputStream> response =
@@ -268,8 +268,8 @@ final class Remote {
      * command prints the same list whether it was answered over HTTP or read from
      * the file.
      */
-    static String path(Options options) {
-        Query query = command(options).pathOf(options);
+    static String pathAndQuery(Options options) {
+        UrlBuilder query = command(options).pathOf(options);
         if (options.flag("full")) {
             query.add("full", "true");
         }
@@ -277,17 +277,17 @@ final class Remote {
     }
 
     /** {@code check}'s path: the window, the endpoint, and each rule asked for. */
-    static Query check(Options options) {
-        Query query = window(options, new Query("/api/check"))
+    static UrlBuilder check(Options options) {
+        UrlBuilder query = withWindow(options, new UrlBuilder("/api/check"))
                 .add("endpoint", options.valueOrNull("endpoint"));
         for (Map.Entry<String, Double> rule : options.rules().entrySet()) {
-            query.add(rule.getKey(), plain(rule.getValue()));
+            query.add(rule.getKey(), plainNumber(rule.getValue()));
         }
         return query;
     }
 
     /** The window and the service every windowed command sends. */
-    static Query window(Options options, Query query) {
+    static UrlBuilder withWindow(Options options, UrlBuilder query) {
         return query
                 .add("since", options.value("since", Selectors.DEFAULT_SINCE))
                 .add("until", options.valueOrNull("until"))
@@ -364,7 +364,7 @@ final class Remote {
     }
 
     /** A whole limit stays whole in the URL: {@code maxErrors=0}, not {@code 0.0}. */
-    private static String plain(double value) {
+    private static String plainNumber(double value) {
         return value == Math.rint(value) && !Double.isInfinite(value)
                 ? String.valueOf((long) value)
                 : String.valueOf(value);
@@ -375,16 +375,16 @@ final class Remote {
     }
 
     /** A URL with its query string, built in the order the parameters are added. */
-    static final class Query {
+    static final class UrlBuilder {
 
         private final StringBuilder url;
         private boolean started;
 
-        Query(String path) {
+        UrlBuilder(String path) {
             this.url = new StringBuilder(path);
         }
 
-        Query add(String key, @Nullable String value) {
+        UrlBuilder add(String key, @Nullable String value) {
             if (value != null) {
                 url.append(started ? '&' : '?').append(key).append('=').append(encode(value));
                 started = true;
@@ -392,7 +392,7 @@ final class Remote {
             return this;
         }
 
-        Query add(String key, int value) {
+        UrlBuilder add(String key, int value) {
             return add(key, String.valueOf(value));
         }
 

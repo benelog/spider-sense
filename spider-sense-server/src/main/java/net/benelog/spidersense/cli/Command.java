@@ -36,17 +36,17 @@ import org.jspecify.annotations.Nullable;
  * @param local       the answer from the file; null for a command {@link Local} answers another way
  */
 record Command(String commandName, Set<String> options, @Nullable String argument,
-        Command.@Nullable Method method, @Nullable Function<Options, Remote.Query> path,
+        Command.@Nullable Method method, @Nullable Function<Options, Remote.UrlBuilder> path,
         @Nullable Function<Options, String> body, Command.@Nullable LocalAnswer local) {
 
     /** Every row, in the order {@link Help} lists them. */
     static final List<Command> ALL = List.of(
             new Command(Options.STATUS, with(), null, Method.GET,
-                options -> new Remote.Query("/api/status"), null,
+                options -> new Remote.UrlBuilder("/api/status"), null,
                 (options, reports, service) -> reports.status(Local.FILE_MODE, null, 0)),
 
             new Command(Options.FINDINGS, with("since", "until", "limit", "full", "hide-acked", "no-git"), null, Method.GET,
-                options -> Remote.window(options, new Remote.Query("/api/findings"))
+                options -> Remote.withWindow(options, new Remote.UrlBuilder("/api/findings"))
                         .add("limit", options.limit(Limits.FINDINGS, Limits.FINDINGS_MAX))
                         .add("hideAcked", options.flag("hide-acked") ? "true" : null),
                 null,
@@ -55,27 +55,27 @@ record Command(String commandName, Set<String> options, @Nullable String argumen
                                 options.flag("full"), options.flag("hide-acked")))),
 
             new Command(Options.ACK, with("note"), "a finding id", Method.POST,
-                options -> new Remote.Query("/api/findings/" + Remote.encode(options.requiredArgument()) + "/ack"),
+                options -> new Remote.UrlBuilder("/api/findings/" + Remote.encode(options.requiredArgument()) + "/ack"),
                 Command::noteBody,
                 (options, reports, service) -> reports.ack(
                         reports.ack(options.requiredArgument(), options.valueOrNull("note")))),
 
             new Command(Options.UNACK, with(), "a finding id", Method.DELETE,
-                options -> new Remote.Query("/api/findings/" + Remote.encode(options.requiredArgument()) + "/ack"),
+                options -> new Remote.UrlBuilder("/api/findings/" + Remote.encode(options.requiredArgument()) + "/ack"),
                 null, null),
 
             new Command(Options.RESOLVE, with("note"), "a finding id", Method.POST,
-                options -> new Remote.Query("/api/findings/" + Remote.encode(options.requiredArgument()) + "/resolve"),
+                options -> new Remote.UrlBuilder("/api/findings/" + Remote.encode(options.requiredArgument()) + "/resolve"),
                 Command::noteBody,
                 (options, reports, service) -> reports.resolve(
                         reports.resolve(options.requiredArgument(), options.valueOrNull("note")))),
 
             new Command(Options.UNRESOLVE, with(), "a finding id", Method.DELETE,
-                options -> new Remote.Query("/api/findings/" + Remote.encode(options.requiredArgument()) + "/resolve"),
+                options -> new Remote.UrlBuilder("/api/findings/" + Remote.encode(options.requiredArgument()) + "/resolve"),
                 null, null),
 
             new Command(Options.TRACE, with("full", "diff"), "a trace id", Method.GET,
-                options -> new Remote.Query("/api/traces/" + Remote.encode(options.requiredArgument()))
+                options -> new Remote.UrlBuilder("/api/traces/" + Remote.encode(options.requiredArgument()))
                         .add("diff", options.valueOrNull("diff")),
                 null,
                 (options, reports, service) -> options.has("diff")
@@ -87,7 +87,7 @@ record Command(String commandName, Set<String> options, @Nullable String argumen
                 null, null, null),
 
             new Command(Options.TRACES, with("since", "until", "limit", "full", "status", "min-ms", "q"), null, Method.GET,
-                options -> Remote.window(options, new Remote.Query("/api/traces"))
+                options -> Remote.withWindow(options, new Remote.UrlBuilder("/api/traces"))
                         .add("status", options.valueOrNull("status"))
                         .add("minMs", options.valueOrNull("min-ms"))
                         .add("q", options.valueOrNull("q"))
@@ -100,26 +100,26 @@ record Command(String commandName, Set<String> options, @Nullable String argumen
                         options.limit(Limits.CLI_TRACES, Limits.TRACES_MAX)), options.flag("full"))),
 
             new Command(Options.ENDPOINTS, with("since", "until"), null, Method.GET,
-                options -> Remote.window(options, new Remote.Query("/api/endpoints")),
+                options -> Remote.withWindow(options, new Remote.UrlBuilder("/api/endpoints")),
                 null,
                 (options, reports, service) -> reports.endpoints(Local.window(options, reports, service), service)),
 
             new Command(Options.QUERIES, with("since", "until", "limit", "full"), null, Method.GET,
-                options -> Remote.window(options, new Remote.Query("/api/queries"))
+                options -> Remote.withWindow(options, new Remote.UrlBuilder("/api/queries"))
                         .add("limit", options.limit(Limits.QUERIES, Limits.QUERIES_MAX)),
                 null,
                 (options, reports, service) -> reports.queries(Local.window(options, reports, service), service, null,
                         options.limit(Limits.QUERIES, Limits.QUERIES_MAX), options.flag("full"))),
 
             new Command(Options.ERRORS, with("since", "until", "limit", "full"), null, Method.GET,
-                options -> Remote.window(options, new Remote.Query("/api/errors"))
+                options -> Remote.withWindow(options, new Remote.UrlBuilder("/api/errors"))
                         .add("limit", options.limit(Limits.ERRORS, Limits.ERRORS_MAX)),
                 null,
                 (options, reports, service) -> reports.errors(Local.window(options, reports, service), service,
                         options.limit(Limits.ERRORS, Limits.ERRORS_MAX), options.flag("full"))),
 
             new Command(Options.LOGS, with("since", "until", "limit", "severity", "q", "trace"), null, Method.GET,
-                options -> Remote.window(options, new Remote.Query("/api/logs"))
+                options -> Remote.withWindow(options, new Remote.UrlBuilder("/api/logs"))
                         .add("severity", options.valueOrNull("severity"))
                         .add("q", options.valueOrNull("q"))
                         .add("traceId", options.valueOrNull("trace"))
@@ -132,7 +132,7 @@ record Command(String commandName, Set<String> options, @Nullable String argumen
                         options.limit(Limits.LOGS, Limits.LOGS_MAX)))),
 
             new Command(Options.MARK, with("note"), "a mark name", Method.POST,
-                options -> new Remote.Query("/api/marks"),
+                options -> new Remote.UrlBuilder("/api/marks"),
                 options -> Json.obj()
                         .put("name", options.requiredArgument())
                         .put("note", options.valueOrNull("note"))
@@ -142,12 +142,12 @@ record Command(String commandName, Set<String> options, @Nullable String argumen
                         reports.mark(options.requiredArgument(), options.valueOrNull("note"), service))),
 
             new Command(Options.MARKS, with("limit"), null, Method.GET,
-                options -> new Remote.Query("/api/marks").add("limit", options.limit(Limits.MARKS, Limits.MARKS_MAX)),
+                options -> new Remote.UrlBuilder("/api/marks").add("limit", options.limit(Limits.MARKS, Limits.MARKS_MAX)),
                 null,
                 (options, reports, service) -> reports.marks(options.limit(Limits.MARKS, Limits.MARKS_MAX))),
 
             new Command(Options.COMPARE, with("before", "after", "until", "full"), null, Method.GET,
-                options -> new Remote.Query("/api/compare")
+                options -> new Remote.UrlBuilder("/api/compare")
                         .add("before", options.valueOrNull("before"))
                         .add("after", options.valueOrNull("after"))
                         .add("until", options.valueOrNull("until"))
@@ -160,7 +160,7 @@ record Command(String commandName, Set<String> options, @Nullable String argumen
                 Remote::check, null, null),
 
             new Command(Options.SQL, with("limit", "full"), "a statement", Method.POST,
-                options -> new Remote.Query("/api/sql"),
+                options -> new Remote.UrlBuilder("/api/sql"),
                 options -> Json.obj()
                         .put("sql", options.requiredArgument())
                         .put("limit", options.limit(Limits.SQL, Limits.SQL_MAX))
@@ -197,7 +197,7 @@ record Command(String commandName, Set<String> options, @Nullable String argumen
     }
 
     /** The command's path and its own parameters, or a usage error for one that is not sent. */
-    Remote.Query pathOf(Options given) {
+    Remote.UrlBuilder pathOf(Options given) {
         if (path == null) {
             throw new Options.Usage("unknown command: " + commandName);
         }

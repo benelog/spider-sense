@@ -51,7 +51,7 @@ final class Init {
     static final String SKILL_TARGET = ".claude/skills";
 
     /** The placeholder the jar path replaces; the block is written once, here. */
-    private static final String JAR = "${jar}";
+    private static final String JAR_PLACEHOLDER = "${jar}";
 
     private static final String BODY = """
             ## Spider Sense
@@ -92,7 +92,7 @@ final class Init {
     /** The block exactly as agent-skill.adoc#block prints it, with the jar path filled in. */
     static String block(String jar, boolean skillInstalled) {
         String body = BODY + (skillInstalled ? SKILL_HERE : SKILL_ELSEWHERE);
-        return (START + "\n" + body + END).replace(JAR, jar);
+        return (START + "\n" + body + END).replace(JAR_PLACEHOLDER, jar);
     }
 
     static int run(Options options, PrintStream out, PrintStream err) {
@@ -175,11 +175,11 @@ final class Init {
      */
     private static String pretty(Json.JsonValue value) {
         StringBuilder out = new StringBuilder();
-        write(out, value, 0);
+        writePretty(out, value, 0);
         return out.toString();
     }
 
-    private static void write(StringBuilder out, Json.JsonValue value, int depth) {
+    private static void writePretty(StringBuilder out, Json.JsonValue value, int depth) {
         if (value instanceof Json.JsonObject object) {
             if (object.size() == 0) {
                 out.append("{}");
@@ -191,7 +191,7 @@ final class Init {
                 indent(out, depth + 1);
                 writeKey(out, keys.get(i));
                 out.append(": ");
-                write(out, object.get(keys.get(i)), depth + 1);
+                writePretty(out, object.get(keys.get(i)), depth + 1);
                 out.append(i < keys.size() - 1 ? ",\n" : "\n");
             }
             indent(out, depth);
@@ -204,7 +204,7 @@ final class Init {
             out.append("[\n");
             for (int i = 0; i < array.size(); i++) {
                 indent(out, depth + 1);
-                write(out, array.get(i), depth + 1);
+                writePretty(out, array.get(i), depth + 1);
                 out.append(i < array.size() - 1 ? ",\n" : "\n");
             }
             indent(out, depth);

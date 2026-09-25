@@ -74,7 +74,7 @@ class SuspectChangeTest {
         write("src/main/java/orders/Draft.java", "class Draft {}\n");
 
         long now = (COMMITTED + 2 * 60 * 60) * 1000;
-        SuspectChange suspects = SuspectChange.in(repo, SourceRoots.of(null, repo), now);
+        SuspectChange suspects = SuspectChange.forWorkingDirectory(repo, SourceRoots.of(null, repo), now);
 
         assertThat(suspects).isNotNull();
         String annotated = suspects.annotate(FINDINGS);
@@ -97,7 +97,7 @@ class SuspectChangeTest {
         assertThat(git(repo, "commit", "-q", "-m", "First")).isTrue();
         write("src/main/java/orders/OrderService.java", "class OrderService {\n  void load(int id) {}\n}\n");
 
-        SuspectChange suspects = SuspectChange.in(repo, SourceRoots.of(null, repo),
+        SuspectChange suspects = SuspectChange.forWorkingDirectory(repo, SourceRoots.of(null, repo),
                 System.currentTimeMillis());
 
         assertThat(suspects.noteFor("orders.OrderService.load(OrderService.java:2)"))
@@ -116,7 +116,7 @@ class SuspectChangeTest {
         assertThat(git(repo, "commit", "-q", "-m", "First")).isTrue();
         write("주문/src/main/java/orders/OrderService.java", "class OrderService {\n  void load() {}\n}\n");
 
-        SuspectChange suspects = SuspectChange.in(repo, SourceRoots.of(null, repo),
+        SuspectChange suspects = SuspectChange.forWorkingDirectory(repo, SourceRoots.of(null, repo),
                 System.currentTimeMillis());
 
         assertThat(suspects.noteFor("orders.OrderService.load(OrderService.java:2)"))
@@ -125,7 +125,7 @@ class SuspectChangeTest {
 
     @Test
     void outsideARepositoryThereIsNothingToSay() {
-        assertThat(SuspectChange.in(repo, SourceRoots.of(null, repo), 0L)).isNull();
+        assertThat(SuspectChange.forWorkingDirectory(repo, SourceRoots.of(null, repo), 0L)).isNull();
     }
 
     /**
@@ -228,7 +228,7 @@ class SuspectChangeTest {
             };
         };
 
-        SuspectChange suspects = SuspectChange.in(repo, SourceRoots.of(null, repo),
+        SuspectChange suspects = SuspectChange.forWorkingDirectory(repo, SourceRoots.of(null, repo),
                 (COMMITTED + 3 * 24 * 60 * 60) * 1000, git);
 
         assertThat(suspects).isNotNull();
@@ -245,6 +245,6 @@ class SuspectChangeTest {
 
     @Test
     void aGitThatCannotRunMeansNoAnnotator() {
-        assertThat(SuspectChange.in(repo, SourceRoots.of(null, repo), 0L, (dir, args) -> null)).isNull();
+        assertThat(SuspectChange.forWorkingDirectory(repo, SourceRoots.of(null, repo), 0L, (dir, args) -> null)).isNull();
     }
 }
