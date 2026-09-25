@@ -34,18 +34,29 @@ function value(s, key) {
   return s ? s[key] : null;
 }
 
-/** The API's own rule, as pages.adoc#compare repeats it for the tiles. */
-function verdictOf(kind, before, after) {
+/** More than a fifth bigger and bigger by at least 10 ms: Compare.java's bounds for a p95. */
+const RELATIVE = 0.2;
+const ABSOLUTE_MS = 10;
+/** An Apdex that moved less than this reads the same at the two decimals a tile shows. */
+const APDEX_STEP = 0.005;
+
+/** `to` grew past both bounds over `from`, as Compare.grew decides it. */
+function grew(from, to) {
+  return to > from * (1 + RELATIVE) && to - from >= ABSOLUTE_MS;
+}
+
+/** The API's own rule (marks-and-compare.adoc#verdicts), as pages.adoc#compare repeats it for the tiles. */
+export function verdictOf(kind, before, after) {
   if (before == null || after == null) return 'same';
   if (kind === 'errors') return after > before ? 'worse' : after < before ? 'better' : 'same';
   if (kind === 'p95') {
-    if (after > before * 1.2 && after - before > 10) return 'worse';
-    if (before > after * 1.2 && before - after > 10) return 'better';
+    if (grew(before, after)) return 'worse';
+    if (grew(after, before)) return 'better';
     return 'same';
   }
   if (kind === 'apdex') {
-    if (after < before - 0.005) return 'worse';
-    if (after > before + 0.005) return 'better';
+    if (after < before - APDEX_STEP) return 'worse';
+    if (after > before + APDEX_STEP) return 'better';
     return 'same';
   }
   return 'same';

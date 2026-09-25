@@ -1340,15 +1340,38 @@ function totalsOf(w, service) {
 
 const VERDICT_ORDER = { worse: 0, new: 1, same: 2, better: 3, gone: 4 };
 
-function verdictOf(before, after, key, step) {
-  if (!before && !after) return 'same';
-  if (!before) return 'new';
+/** Compare.java's bounds: more than a fifth bigger and bigger by at least the absolute step. */
+const RELATIVE = 0.2;
+const ABSOLUTE_MS = 10;
+const ABSOLUTE_CALLS = 0.5;
+const grew = (from, to, absolute) => to > from * (1 + RELATIVE) && to - from >= absolute;
+
+/** Compare.verdict: every reason for worse is asked before any reason for better. */
+function endpointVerdict(before, after) {
+  if (!before) return after ? 'new' : 'same';
   if (!after) return 'gone';
   if ((after.errors || 0) > (before.errors || 0)) return 'worse';
-  if ((after.errors || 0) < (before.errors || 0)) return 'better';
-  const b = before[key] || 0, a = after[key] || 0;
-  if (a > b * 1.2 && a - b > step) return 'worse';
-  if (b > a * 1.2 && b - a > step) return 'better';
+  if (grew(before.p95Ms || 0, after.p95Ms || 0, ABSOLUTE_MS)) return 'worse';
+  if ((before.errors || 0) > 0 && !after.errors) return 'better';
+  if (grew(after.p95Ms || 0, before.p95Ms || 0, ABSOLUTE_MS)) return 'better';
+  return 'same';
+}
+
+/** Compare.queryVerdict: the measure is calls per request. */
+function queryVerdict(before, after) {
+  if (!before) return after ? 'new' : 'same';
+  if (!after) return 'gone';
+  if (grew(before.callsPerRequest || 0, after.callsPerRequest || 0, ABSOLUTE_CALLS)) return 'worse';
+  if (grew(after.callsPerRequest || 0, before.callsPerRequest || 0, ABSOLUTE_CALLS)) return 'better';
+  return 'same';
+}
+
+/** Compare.errorVerdict, over the two counts. */
+function errorVerdict(before, after) {
+  if (!before && after > 0) return 'new';
+  if (!after && before > 0) return 'gone';
+  if (after > before) return 'worse';
+  if (after < before) return 'better';
   return 'same';
 }
 
@@ -1377,7 +1400,7 @@ function compareOf(before, after, until, service) {
     if (i === 3) a = null;
     return {
       endpointId: id, service: ep ? ep.service : '', name: ep ? ep.name : id,
-      before: b, after: a, verdict: verdictOf(b, a, 'p95Ms', 10),
+      before: b, after: a, verdict: endpointVerdict(b, a),
       _total: (a ? a.calls * a.p95Ms : 0) + (b ? b.calls * b.p95Ms : 0),
     };
   });
@@ -1401,7 +1424,7 @@ function compareOf(before, after, until, service) {
     if (i === 2) b = null;
     return {
       queryId: id, service: def ? def.service : '', statement: def ? def.statement : id,
-      before: b, after: a, verdict: verdictOf(b, a, 'p95Ms', 10),
+      before: b, after: a, verdict: queryVerdict(b, a),
       _total: (a ? a.totalMs : 0) + (b ? b.totalMs : 0),
     };
   });
@@ -1416,7 +1439,7 @@ function compareOf(before, after, until, service) {
     return {
       errorId: id, service: def ? def.service : '', type: def ? def.type : id, message: def ? def.message : '',
       before: b, after: a,
-      verdict: b == null ? 'new' : a == null ? 'gone' : a > b ? 'worse' : a < b ? 'better' : 'same',
+      verdict: errorVerdict(b || 0, a || 0),
       _total: (a || 0) + (b || 0),
     };
   });
