@@ -48,7 +48,8 @@ tasks.named('bootRun') {
 . Creates the `spiderSense` configuration, resolvable and not consumable, non-transitive, with one default dependency: `{project-group}:spider-sense:<version>`, where `version` is the block's property and defaults to the plugin's own version.
 A dependency added to the configuration by the build replaces the default.
 A project in a checkout of this repository uses the jar it just built this way: `dependencies { spiderSense project(path: ':spider-sense-agent', configuration: 'senseJar') }`.
-. Attaches to every `JavaExec` task whose name is in `attachTo` (default `bootRun`, `bootTestRun`, `run`) by adding a `CommandLineArgumentProvider` to the task's `jvmArgumentProviders`.
+. Attaches to every `JavaExec` or `Test` task whose name is in `attachTo` (default `bootRun`, `bootTestRun`, `run`) by adding a `CommandLineArgumentProvider` to the task's `jvmArgumentProviders`.
+A name in `attachTo` that is neither kind of task attaches nothing.
 The provider contributes `-javaagent:<jar>` first, then one `-Dspidersense.<key>=<value>` per property of the block that has a value.
 The jar is a declared input of the task, so a project dependency on it is built first.
 A task that is not in `attachTo`, or a run with `spiderSense.enabled` false, gets nothing: no argument, no jar resolution.
@@ -93,7 +94,7 @@ xref:configuration.adoc#properties[Configuration] lists the jar's defaults.
 | `attachTo`
 | `Set<String>`
 | `bootRun`, `bootTestRun`, `run`
-| the names of the `JavaExec` tasks that get the agent
+| the names of the `JavaExec` and `Test` tasks that get the agent
 
 | `configFile`
 | `RegularFile`
@@ -339,7 +340,8 @@ Setting any rule replaces that set, so a build that sets `maxP95Ms` and still wa
 
 The test task is not attached by default.
 A test JVM is short-lived and may be forked several times, and several embedded servers would fight over one port.
-To measure tests, forward them to a standalone Spider Sense: add `test` to `attachTo` and set `collector`, one line each:
+To measure tests, forward them to a standalone Spider Sense: add `test` to `attachTo` and set `collector`, one line each.
+Gradle's `test` task is a `Test`, not a `JavaExec`, and the plugin attaches to both kinds.
 
 [source,groovy]
 ----

@@ -42,7 +42,10 @@ public abstract class SpiderSenseExtension {
      */
     public abstract RegularFileProperty getJar();
 
-    /** The names of the {@link org.gradle.api.tasks.JavaExec} tasks that get the agent. */
+    /**
+     * The names of the tasks that get the agent: a {@link org.gradle.api.tasks.JavaExec}
+     * or a {@link org.gradle.api.tasks.testing.Test}.
+     */
     public abstract SetProperty<String> getAttachTo();
 
     /**

@@ -120,6 +120,8 @@ class SpiderSensePluginTest {
                             "bootRun=" + contributed('bootRun'),
                             "run=" + contributed('run'),
                             "other=" + contributed('other'),
+                            "test=" + tasks.named('test', Test).get().jvmArgumentProviders
+                                    .collectMany { it.asArguments() },
                             "check=" + tasks.named('spiderSenseCheck', JavaExec).get()
                                     .argumentProviders.collectMany { it.asArguments() },
                             "checkGroup=" + tasks.named('spiderSenseCheck').get().group,
@@ -251,6 +253,21 @@ class SpiderSensePluginTest {
 
         assertThat(probe()).contains("other=[-javaagent:" + stubJar.toAbsolutePath()
                 + ", -Dspidersense.service=scratch]");
+    }
+
+    /** Gradle's test task forks a JVM but is not a {@code JavaExec}, and naming it is how tests are measured. */
+    @Test
+    void attachToAddsTheTestTask() throws IOException {
+        assertThat(probe()).contains("test=[]");
+
+        buildFile("""
+                jar = file('%JAR%')
+                attachTo.add('test')
+                collector = 'http://127.0.0.1:4000'
+                """.replace("%JAR%", stubJar.toAbsolutePath().toString()));
+
+        assertThat(probe()).contains("test=[-javaagent:" + stubJar.toAbsolutePath()
+                + ", -Dspidersense.service=scratch, -Dspidersense.collector=http://127.0.0.1:4000]");
     }
 
     @Test

@@ -12,6 +12,8 @@ import org.gradle.api.provider.ListProperty;
 import org.gradle.api.provider.Provider;
 import org.gradle.api.provider.ProviderFactory;
 import org.gradle.api.tasks.JavaExec;
+import org.gradle.api.tasks.testing.Test;
+import org.gradle.process.JavaForkOptions;
 
 import java.io.File;
 import java.io.IOException;
@@ -36,8 +38,8 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>Applying it creates the {@code spiderSense} extension and the
  * {@code spiderSense} configuration, adds a {@link SpiderSenseArguments} to the
- * {@code jvmArgumentProviders} of every {@link JavaExec} task named in
- * {@code attachTo}, and registers the {@code spiderSense},
+ * {@code jvmArgumentProviders} of every {@link JavaExec} and {@link Test} task
+ * named in {@code attachTo}, and registers the {@code spiderSense},
  * {@code spiderSenseInit} and {@code spiderSenseCheck} tasks. An argument
  * provider rather than a write to
  * {@code jvmArgs} leaves the task's own arguments alone and defers every
@@ -139,8 +141,10 @@ public class SpiderSensePlugin implements Plugin<Project> {
     }
 
     /**
-     * Adds the argument provider to every {@link JavaExec} task. Whether it
-     * contributes anything is decided from the task's name and the effective
+     * Adds the argument provider to every task that forks a JVM for the
+     * project's code: {@link JavaExec} for {@code bootRun} and {@code run}, and
+     * {@link Test}, which forks one too but is not a {@code JavaExec}. Whether
+     * it contributes anything is decided from the task's name and the effective
      * {@code enabled}, so a task added to {@code attachTo} after this ran is
      * still attached, and an unattached task neither resolves the jar nor waits
      * for whatever builds it.
@@ -148,15 +152,17 @@ public class SpiderSensePlugin implements Plugin<Project> {
     private void attach(Project project, ObjectFactory objects, SpiderSenseExtension extension,
             Provider<Boolean> enabled, Provider<File> namedJar, Configuration configuration,
             Provider<List<String>> systemProperties) {
-        project.getTasks().withType(JavaExec.class).configureEach(task -> {
+        Action<Task> attachOne = task -> {
             String name = task.getName();
             Provider<Boolean> attached = enabled.zip(extension.getAttachTo(),
                     (on, names) -> on && names.contains(name));
             FileCollection jar = objects.fileCollection()
                     .from(new JarSource(attached, namedJar, configuration));
-            task.getJvmArgumentProviders().add(new SpiderSenseArguments(
+            ((JavaForkOptions) task).getJvmArgumentProviders().add(new SpiderSenseArguments(
                     jar, systemProperties, attached, true, configuration.getName()));
-        });
+        };
+        project.getTasks().withType(JavaExec.class).configureEach(attachOne);
+        project.getTasks().withType(Test.class).configureEach(attachOne);
     }
 
     /**
