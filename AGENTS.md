@@ -56,6 +56,7 @@ java -jar spider-sense-agent/build/libs/spider-sense-<version>.jar findings --si
 ./gradlew :examples:spring-orders:bootRun          # the example under the Gradle plugin (gradle-plugin.adoc)
 ./gradlew publishToMavenLocal                     # the jar and the plugin into ~/.m2, for a project outside this repository
 npm install && npm run docs                       # the manual as a site, into build/site
+npm test                                          # the UI tests (node --test over spider-sense-server/src/test/js)
 scripts/demo-shared.sh                            # one standalone Spider Sense (:4000) all four example apps forward to, plus the load generator
 scripts/demo.sh                                   # each example app with its own embedded Spider Sense (:4000 to :4003)
 ```
