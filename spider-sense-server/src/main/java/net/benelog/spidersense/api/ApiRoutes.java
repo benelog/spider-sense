@@ -1,9 +1,9 @@
 package net.benelog.spidersense.api;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Locale;
 import java.util.function.IntSupplier;
 
+import net.benelog.spidersense.ingest.ErrorBody;
 import net.benelog.spidersense.ingest.RequestBody;
 import net.benelog.spidersense.query.Queries;
 import net.benelog.spidersense.query.Window;
@@ -54,16 +54,11 @@ public final class ApiRoutes {
                 req.path().startsWith("/api/") ? res.header("Cache-Control", "no-store") : res);
 
         app.error(HttpStatus.BAD_REQUEST, req ->
-                WebResponse.json(Codecs.error(message(req, "Bad request"))));
+                WebResponse.json(ErrorBody.json(req.errorMessage(), "Bad request")));
         app.error(HttpStatus.METHOD_NOT_ALLOWED, req ->
-                WebResponse.json(Codecs.error(message(req, "Method not allowed"))));
+                WebResponse.json(ErrorBody.json(req.errorMessage(), "Method not allowed")));
         app.error(HttpStatus.INTERNAL_SERVER_ERROR, req ->
-                WebResponse.json(Codecs.error(message(req, "Internal server error"))));
-    }
-
-    private static String message(WebRequest req, String fallback) {
-        String message = req.errorMessage();
-        return message == null || message.isBlank() ? fallback : message;
+                WebResponse.json(ErrorBody.json(req.errorMessage(), "Internal server error")));
     }
 
     public WebResponse status(WebRequest req) {
@@ -124,7 +119,7 @@ public final class ApiRoutes {
         try {
             document = Json.parse(body(req)).asObject();
         } catch (RequestBody.TooLarge e) {
-            return WebResponse.json(Json.obj().put("error", e.getMessage())).status(HttpStatus.CONTENT_TOO_LARGE);
+            return ErrorBody.response(HttpStatus.CONTENT_TOO_LARGE, e.getMessage(), "Content too large");
         } catch (RuntimeException e) {
             return Params.problem(req, "Undecodable import document: " + e.getMessage());
         }

@@ -16,6 +16,7 @@ import net.benelog.spidersense.api.MetricsApi;
 import net.benelog.spidersense.api.Reports;
 import net.benelog.spidersense.api.SourceApi;
 import net.benelog.spidersense.api.TraceApi;
+import net.benelog.spidersense.ingest.ErrorBody;
 import net.benelog.spidersense.ingest.OtlpDecoder;
 import net.benelog.spidersense.ingest.OtlpReceiver;
 import net.benelog.spidersense.mcp.McpServer;
@@ -28,7 +29,6 @@ import net.benelog.spidersense.store.Store;
 import net.benelog.spidersilk.App;
 import net.benelog.spidersilk.HttpStatus;
 import net.benelog.spidersilk.WebResponse;
-import net.benelog.spidersilk.json.Json;
 import net.benelog.spidersilk.server.JettyServer;
 import org.eclipse.jetty.http.UriCompliance;
 import org.eclipse.jetty.util.thread.QueuedThreadPool;
@@ -197,8 +197,7 @@ public final class SpiderSenseServer implements AutoCloseable {
         // framework's own "Not Found: /path" for an unmatched route is not worth keeping.
         String message = req.errorMessage();
         boolean generic = message == null || message.isBlank() || message.startsWith("Not Found");
-        return WebResponse.json(Json.obj().put("error", generic ? "Not found: " + path : message))
-                .status(HttpStatus.NOT_FOUND);
+        return ErrorBody.response(HttpStatus.NOT_FOUND, generic ? null : message, "Not found: " + path);
     }
 
     private static boolean hasExtension(String path) {

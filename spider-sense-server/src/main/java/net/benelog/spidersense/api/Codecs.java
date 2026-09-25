@@ -751,10 +751,6 @@ public final class Codecs {
                 .put("connectionPools", connectionPools);
     }
 
-    static Json.JsonObject error(@Nullable String message) {
-        return Json.obj().put("error", message == null ? "Bad request" : message);
-    }
-
     // --- the agent interface --------------------------------------------------
 
     static Json.JsonObject mark(Marks.Mark mark) {

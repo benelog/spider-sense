@@ -5,6 +5,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import net.benelog.spidersense.ingest.ErrorBody;
 import net.benelog.spidersense.query.Selectors;
 import net.benelog.spidersense.query.Window;
 import net.benelog.spidersilk.HttpStatus;
@@ -92,11 +93,10 @@ final class Params {
      * JSON object it was not expecting (cli.adoc#sql).
      */
     static WebResponse problem(WebRequest req, @Nullable String message) {
-        String said = message == null || message.isBlank() ? "Bad request" : message;
         return wantsText(req)
-                ? WebResponse.text(said + "\n").contentType(Text.CONTENT_TYPE)
-                        .status(HttpStatus.BAD_REQUEST)
-                : WebResponse.json(Codecs.error(said)).status(HttpStatus.BAD_REQUEST);
+                ? WebResponse.text(ErrorBody.message(message, "Bad request") + "\n")
+                        .contentType(Text.CONTENT_TYPE).status(HttpStatus.BAD_REQUEST)
+                : ErrorBody.response(HttpStatus.BAD_REQUEST, message, "Bad request");
     }
 
     /** The {@code limit} parameter, clamped by {@link Limits#clamp}. */

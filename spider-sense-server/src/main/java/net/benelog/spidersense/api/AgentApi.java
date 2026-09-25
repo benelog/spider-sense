@@ -3,6 +3,7 @@ package net.benelog.spidersense.api;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import net.benelog.spidersense.ingest.ErrorBody;
 import net.benelog.spidersense.query.Check;
 import net.benelog.spidersense.query.Selectors;
 import net.benelog.spidersense.query.Window;
@@ -66,9 +67,9 @@ public final class AgentApi {
         // A selector is either the caller's mistake or a question about data, and an
         // agent reacts differently to the two; both reach here from every endpoint.
         app.exception(Selectors.BadSelector.class,
-                (req, e) -> WebResponse.json(Codecs.error(e.getMessage())).status(HttpStatus.BAD_REQUEST));
+                (req, e) -> ErrorBody.response(HttpStatus.BAD_REQUEST, e.getMessage(), "Bad request"));
         app.exception(Selectors.UnknownMark.class,
-                (req, e) -> WebResponse.json(Codecs.error(e.getMessage())).status(HttpStatus.NOT_FOUND));
+                (req, e) -> ErrorBody.response(HttpStatus.NOT_FOUND, e.getMessage(), "Not found"));
     }
 
     public WebResponse findings(WebRequest req) {
@@ -280,8 +281,7 @@ public final class AgentApi {
 
     /** The rejection an {@code IllegalArgumentException} from the store means. */
     private static HttpException badRequest(IllegalArgumentException e) {
-        String message = e.getMessage();
-        return new HttpException(HttpStatus.BAD_REQUEST, message == null ? "Bad request" : message);
+        return new HttpException(HttpStatus.BAD_REQUEST, ErrorBody.message(e.getMessage(), "Bad request"));
     }
 
     public WebResponse check(WebRequest req) {

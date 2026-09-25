@@ -2,10 +2,10 @@ package net.benelog.spidersense.server;
 
 import java.util.Locale;
 
+import net.benelog.spidersense.ingest.ErrorBody;
 import net.benelog.spidersilk.HttpStatus;
 import net.benelog.spidersilk.WebRequest;
 import net.benelog.spidersilk.WebResponse;
-import net.benelog.spidersilk.json.Json;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -80,6 +80,6 @@ final class LocalRequests {
     }
 
     private static WebResponse forbidden(String why) {
-        return WebResponse.json(Json.obj().put("error", why)).status(HttpStatus.FORBIDDEN);
+        return ErrorBody.response(HttpStatus.FORBIDDEN, why, "Forbidden");
     }
 }

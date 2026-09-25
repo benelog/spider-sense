@@ -4,7 +4,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 
-import net.benelog.spidersilk.json.Json;
+import net.benelog.spidersense.ingest.ErrorBody;
 import org.eclipse.jetty.http.HttpHeader;
 import org.eclipse.jetty.server.Request;
 import org.eclipse.jetty.server.Response;
@@ -25,9 +25,7 @@ final class JsonErrorHandler extends ErrorHandler {
     @Override
     protected void generateResponse(Request request, Response response, int code,
             @Nullable String message, @Nullable Throwable cause, Callback callback) throws IOException {
-        String body = Json.obj()
-                .put("error", message == null || message.isBlank() ? "HTTP " + code : message)
-                .toJson();
+        String body = ErrorBody.json(message, "HTTP " + code).toJson();
         response.getHeaders().put(HttpHeader.CONTENT_TYPE, "application/json; charset=utf-8");
         response.write(true, ByteBuffer.wrap(body.getBytes(StandardCharsets.UTF_8)), callback);
     }

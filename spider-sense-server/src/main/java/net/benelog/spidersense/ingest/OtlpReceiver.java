@@ -19,7 +19,6 @@ import net.benelog.spidersilk.App;
 import net.benelog.spidersilk.HttpStatus;
 import net.benelog.spidersilk.WebRequest;
 import net.benelog.spidersilk.WebResponse;
-import net.benelog.spidersilk.json.Json;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -147,6 +146,6 @@ public final class OtlpReceiver {
     }
 
     private static WebResponse error(HttpStatus status, String message) {
-        return WebResponse.json(Json.obj().put("error", message)).status(status);
+        return ErrorBody.response(status, message, "HTTP " + status.code());
     }
 }
