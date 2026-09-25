@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.entry;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
@@ -57,5 +58,22 @@ class SlowGroupTest {
         assertThat(Stats.Node.serviceOf("svc:orders")).isEqualTo("orders");
         assertThat(Stats.Node.serviceOf("db:h2:mem")).isNull();
         assertThat(Stats.Node.serviceOf("user")).isNull();
+    }
+
+    @Test
+    void callStatsAreNearestRankOverTheCallsInAnyOrder() {
+        List<Double> durations = List.of(40.0, 10.0, 30.0, 20.0);
+
+        Queries.CallStats stats = Queries.CallStats.of(durations, ms -> ms, ms -> ms >= 30);
+
+        assertThat(stats.calls()).isEqualTo(4);
+        assertThat(stats.errors()).isEqualTo(2);
+        assertThat(stats.avgMs()).isEqualTo(25.0);
+        assertThat(stats.p50Ms()).isEqualTo(20.0);
+        assertThat(stats.p95Ms()).isEqualTo(40.0);
+        assertThat(stats.maxMs()).isEqualTo(40.0);
+        assertThat(stats.totalMs()).isEqualTo(100.0);
+        assertThat(Queries.CallStats.of(List.<Double>of(), ms -> ms, ms -> false))
+                .isEqualTo(new Queries.CallStats(0, 0, 0, 0, 0, 0, 0));
     }
 }

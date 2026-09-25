@@ -17,7 +17,9 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
+import java.util.function.ToDoubleFunction;
 
 import net.benelog.spidersense.store.AttrJson;
 import net.benelog.spidersense.store.Ids;
@@ -1074,25 +1076,34 @@ public final class Queries {
 
     /** What one service calls: its outbound spans grouped by target. */
     public List<Stats.Dependency> dependencies(String service, Window window) {
-        Where where = Where.window(window, service)
-                .and("NOT entry")
-                .and("category IN ('http', 'db', 'messaging', 'rpc')");
-        List<SpanRecord> spans = sql.query("SELECT " + Rows.SPAN_COLUMNS + " FROM span WHERE "
-                + where.sql() + " LIMIT " + MAX_DEPENDENCY_ROWS, where.params(), Rows::span);
-
         Map<TargetKey, List<SpanRecord>> byTarget = new LinkedHashMap<>();
-        for (SpanRecord span : spans) {
+        for (SpanRecord span : dependencySpans(window, service)) {
             byTarget.computeIfAbsent(new TargetKey(span.category(), target(span)), k -> new ArrayList<>())
                     .add(span);
         }
         List<Stats.Dependency> dependencies = new ArrayList<>();
         byTarget.forEach((key, group) -> {
-            CallStats stats = CallStats.of(group);
+            CallStats stats = CallStats.ofSpans(group);
             dependencies.add(new Stats.Dependency(key.category(), key.target(), stats.calls(),
                     stats.errors(), stats.avgMs(), stats.p95Ms()));
         });
         dependencies.sort((a, b) -> Long.compare(b.calls(), a.calls()));
         return dependencies;
+    }
+
+    /** The categories of span that call a dependency: what the dependency list and the map show. */
+    private static final String DEPENDENCY_CATEGORIES = "('http', 'db', 'messaging', 'rpc')";
+
+    /**
+     * The outbound spans of the window that call a dependency, of one service or of every
+     * one, at most {@value #MAX_DEPENDENCY_ROWS} of them.
+     */
+    private List<SpanRecord> dependencySpans(Window window, @Nullable String service) {
+        Where where = Where.window(window, service)
+                .and("NOT entry")
+                .and("category IN " + DEPENDENCY_CATEGORIES);
+        return sql.query("SELECT " + Rows.SPAN_COLUMNS + " FROM span WHERE "
+                + where.sql() + " LIMIT " + MAX_DEPENDENCY_ROWS, where.params(), Rows::span);
     }
 
     /** What an outbound span called and what kind of dependency it is: one group of calls. */
@@ -1527,12 +1538,9 @@ public final class Queries {
                         + " AND p.span_id = c.parent_span_id"
                         + " WHERE c.start_ms BETWEEN ? AND ? AND c.entry AND p.service <> c.service"
                         + " GROUP BY p.service, c.service",
-                List.of(window.from(), window.to()), rs -> {
-                    long calls = rs.getLong("calls");
-                    return new Stats.Edge(Stats.Node.serviceId(rs.getString("caller")),
-                            Stats.Node.serviceId(rs.getString("callee")), calls, rs.getLong("errors"),
-                            calls == 0 ? 0 : Rows.ms(rs, "total_ns") / calls, Rows.ms(rs, "p95_ns"));
-                });
+                List.of(window.from(), window.to()), rs -> edge(rs,
+                        Stats.Node.serviceId(rs.getString("caller")),
+                        Stats.Node.serviceId(rs.getString("callee"))));
     }
 
     /** Entry spans that nothing traced started: the traffic from outside. */
@@ -1546,12 +1554,18 @@ public final class Queries {
                         + " AND (c.parent_span_id IS NULL OR NOT EXISTS (SELECT 1 FROM span p"
                         + " WHERE p.trace_id = c.trace_id AND p.span_id = c.parent_span_id))"
                         + " GROUP BY c.service",
-                List.of(window.from(), window.to()), rs -> {
-                    long calls = rs.getLong("calls");
-                    return new Stats.Edge("user", Stats.Node.serviceId(rs.getString("callee")), calls,
-                            rs.getLong("errors"),
-                            calls == 0 ? 0 : Rows.ms(rs, "total_ns") / calls, Rows.ms(rs, "p95_ns"));
-                });
+                List.of(window.from(), window.to()), rs -> edge(rs, "user",
+                        Stats.Node.serviceId(rs.getString("callee"))));
+    }
+
+    /**
+     * An edge of the map from an aggregate row of {@code calls}, {@code errors},
+     * {@code total_ns} and {@code p95_ns}.
+     */
+    private static Stats.Edge edge(ResultSet rs, String from, String to) throws SQLException {
+        long calls = rs.getLong("calls");
+        return new Stats.Edge(from, to, calls, rs.getLong("errors"),
+                calls == 0 ? 0 : Rows.ms(rs, "total_ns") / calls, Rows.ms(rs, "p95_ns"));
     }
 
     /** The nodes of the dependencies nobody traces, and the edges of the services that call them. */
@@ -1574,15 +1588,9 @@ public final class Queries {
                         + " WHERE c.start_ms BETWEEN ? AND ? AND c.entry AND p.service <> c.service",
                 List.of(window.from(), window.to()), rs -> rs.getString(1)));
 
-        Where where = Where.window(window, null)
-                .and("NOT entry")
-                .and("category IN ('http', 'db', 'messaging', 'rpc')");
-        List<SpanRecord> spans = sql.query("SELECT " + Rows.SPAN_COLUMNS + " FROM span WHERE "
-                + where.sql() + " LIMIT " + MAX_DEPENDENCY_ROWS, where.params(), Rows::span);
-
         Map<TargetKey, List<SpanRecord>> byTarget = new LinkedHashMap<>();
         Map<CallerKey, List<SpanRecord>> byCaller = new LinkedHashMap<>();
-        for (SpanRecord span : spans) {
+        for (SpanRecord span : dependencySpans(window, null)) {
             if (crossService.contains(span.spanId())) {
                 continue;
             }
@@ -1593,36 +1601,50 @@ public final class Queries {
         }
         List<Stats.Node> nodes = new ArrayList<>();
         byTarget.forEach((target, group) -> {
-            CallStats stats = CallStats.of(group);
+            CallStats stats = CallStats.ofSpans(group);
             nodes.add(Stats.Node.target(target.category(), target.target(),
                     stats.calls(), stats.errors(), stats.avgMs(), stats.p95Ms()));
         });
         List<Stats.Edge> edges = new ArrayList<>();
         byCaller.forEach((caller, group) -> {
-            CallStats stats = CallStats.of(group);
+            CallStats stats = CallStats.ofSpans(group);
             edges.add(new Stats.Edge(Stats.Node.serviceId(caller.service()), caller.target().nodeId(),
                     stats.calls(), stats.errors(), stats.avgMs(), stats.p95Ms()));
         });
         return new Targets(nodes, edges);
     }
 
-    /** Calls, errors, mean and p95 over a group of spans read row by row. */
-    private record CallStats(long calls, long errors, double avgMs, double p95Ms) {
+    /**
+     * Calls, errors, the mean and the nearest-rank percentiles over a group of calls read
+     * row by row: a dependency, a node or an edge of the map, a {@code slow-external}
+     * group. One definition, so the map and a finding give one dependency one p95.
+     */
+    record CallStats(long calls, long errors, double avgMs, double p50Ms, double p95Ms,
+            double maxMs, double totalMs) {
 
-        static CallStats of(List<SpanRecord> spans) {
-            double[] durations = new double[spans.size()];
+        static CallStats ofSpans(List<SpanRecord> spans) {
+            return of(spans, SpanRecord::durationMillis, SpanRecord::isError);
+        }
+
+        static CallStats ofCalls(List<OutboundCall> calls) {
+            return of(calls, OutboundCall::durationMillis, OutboundCall::error);
+        }
+
+        static <T> CallStats of(List<T> calls, ToDoubleFunction<T> durationMs, Predicate<T> failed) {
+            double[] durations = new double[calls.size()];
             long errors = 0;
             double total = 0;
-            for (int i = 0; i < spans.size(); i++) {
-                durations[i] = spans.get(i).durationMillis();
+            for (int i = 0; i < calls.size(); i++) {
+                durations[i] = durationMs.applyAsDouble(calls.get(i));
                 total += durations[i];
-                if (spans.get(i).isError()) {
+                if (failed.test(calls.get(i))) {
                     errors++;
                 }
             }
             Arrays.sort(durations);
-            return new CallStats(spans.size(), errors,
-                    spans.isEmpty() ? 0 : total / spans.size(), percentile(durations, 0.95));
+            return new CallStats(calls.size(), errors, calls.isEmpty() ? 0 : total / calls.size(),
+                    percentile(durations, 0.5), percentile(durations, 0.95),
+                    durations.length == 0 ? 0 : durations[durations.length - 1], total);
         }
     }
 

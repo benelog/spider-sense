@@ -1,7 +1,6 @@
 package net.benelog.spidersense.query;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -1327,35 +1326,28 @@ public final class Findings {
     /** One group; with no {@code reads} it is the id alone, with no callers and no evidence. */
     private @Nullable Ranked external(Window window, @Nullable Reads reads, String service,
             String target, String name, List<Queries.OutboundCall> calls) {
-        double[] durations = new double[calls.size()];
-        double totalMs = 0;
-        long errors = 0;
+        Queries.CallStats stats = Queries.CallStats.ofCalls(calls);
+        double p95Ms = stats.p95Ms();
+        if (p95Ms <= tingles.slowRequestMs()) {
+            return null;
+        }
         // The newest call that carries code.stacktrace, which the extension writes only on a
         // slow one (findings.adoc#code), else the newest call.
         Queries.OutboundCall newest = null;
-        for (int i = 0; i < calls.size(); i++) {
-            Queries.OutboundCall call = calls.get(i);
-            durations[i] = call.durationMillis();
-            totalMs += durations[i];
-            if (call.error()) {
-                errors++;
-            }
+        for (Queries.OutboundCall call : calls) {
             if (newest == null || (call.located() && !newest.located())
                     || (call.located() == newest.located() && call.startNanos() > newest.startNanos())) {
                 newest = call;
             }
         }
-        Arrays.sort(durations);
-        double p95Ms = Queries.percentile(durations, 0.95);
-        if (p95Ms <= tingles.slowRequestMs()) {
-            return null;
-        }
+        long errors = stats.errors();
+        double totalMs = stats.totalMs();
 
         Map<String, Object> numbers = new LinkedHashMap<>();
-        numbers.put("calls", (long) calls.size());
+        numbers.put("calls", stats.calls());
         numbers.put("errors", errors);
-        new SlowGroup(service, name, calls.size(), Queries.percentile(durations, 0.5), p95Ms,
-                durations[durations.length - 1], totalMs).putPercentiles(numbers);
+        new SlowGroup(service, name, stats.calls(), stats.p50Ms(), p95Ms, stats.maxMs(), totalMs)
+                .putPercentiles(numbers);
         numbers.put("callers", reads == null ? List.of()
                 : callers(externalCallers(reads, calls, service)));
 
