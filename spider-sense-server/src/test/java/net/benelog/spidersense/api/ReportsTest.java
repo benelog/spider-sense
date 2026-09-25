@@ -29,8 +29,7 @@ class ReportsTest {
     @Test
     void theClockGivenIsStatusNowTheDefaultEndAndTheExportTime() {
         Config config = TestStore.config();
-        try (Store store = new Store(config.jdbcUrl(), config.databaseFile(), config.retentionHours(),
-                config.slowRequestMs(), config.slowQueryMs(), null);
+        try (Store store = new Store(config.storeSettings(System::currentTimeMillis));
                 Reports reports = Reports.readOnly(config, () -> NOW)) {
             assertThat(reports.now()).isEqualTo(NOW);
             assertThat(reports.status("file", null, 0).json().asObject().getLong("now")).isEqualTo(NOW);
@@ -47,8 +46,7 @@ class ReportsTest {
     @Test
     void readOnlyAnswersFromTheDatabaseWithNoServerRunning() {
         Config config = TestStore.config();
-        try (Store store = new Store(config.jdbcUrl(), config.databaseFile(), config.retentionHours(),
-                config.slowRequestMs(), config.slowQueryMs(), null)) {
+        try (Store store = new Store(config.storeSettings(System::currentTimeMillis))) {
             OtlpDecoder decoder = new OtlpDecoder(store, () -> 4000);
             decoder.ingest(Otlp.traces(Otlp.service("orders"),
                     Otlp.span("%032x".formatted(1), "%016x".formatted(1), "GET /orders/report",
@@ -103,8 +101,7 @@ class ReportsTest {
     @Test
     void compareWindowsAreOpenOnTheRightAndRefuseInvertedMarks() {
         Config config = TestStore.config();
-        try (Store store = new Store(config.jdbcUrl(), config.databaseFile(), config.retentionHours(),
-                config.slowRequestMs(), config.slowQueryMs(), null)) {
+        try (Store store = new Store(config.storeSettings(System::currentTimeMillis))) {
             OtlpDecoder decoder = new OtlpDecoder(store, () -> 4000);
             long before = NOW - 60_000;
             long after = NOW - 30_000;
@@ -149,8 +146,7 @@ class ReportsTest {
     @Test
     void aRegressionRendersFirstWithItsResolutionInTheNumbers() {
         Config config = TestStore.config();
-        try (Store store = new Store(config.jdbcUrl(), config.databaseFile(), config.retentionHours(),
-                config.slowRequestMs(), config.slowQueryMs(), null)) {
+        try (Store store = new Store(config.storeSettings(System::currentTimeMillis))) {
             OtlpDecoder decoder = new OtlpDecoder(store, () -> 4000);
             decoder.ingest(Otlp.traces(Otlp.service("orders"),
                     Otlp.span("%032x".formatted(1), "%016x".formatted(1), "GET /orders/report",
@@ -194,8 +190,7 @@ class ReportsTest {
     @Test
     void anEmptyLogsAnswerCountsTheRequestsOfTheWindow() {
         Config config = TestStore.config();
-        try (Store store = new Store(config.jdbcUrl(), config.databaseFile(), config.retentionHours(),
-                config.slowRequestMs(), config.slowQueryMs(), null)) {
+        try (Store store = new Store(config.storeSettings(System::currentTimeMillis))) {
             Reports reports = new Reports(config, store, config::port);
             Window window = Window.of(NOW - 60_000, NOW + 60_000);
             net.benelog.spidersense.query.Queries.LogFilter errors =
@@ -224,10 +219,7 @@ class ReportsTest {
     void statusReportsTheRetentionCapTheIngestCapAndWhatTheCapDropped() {
         Config config = TestStore.config("--retention.spans=250000",
                 "--ingest.max-spans-per-second=5000");
-        try (Store store = new Store(config.jdbcUrl(), config.databaseFile(), config.retentionHours(),
-                config.slowRequestMs(), config.slowQueryMs(), null,
-                net.benelog.spidersense.store.IgnoredEndpoints.DEFAULT, config.retentionSpans(),
-                net.benelog.spidersense.store.IngestCap.of(config.maxSpansPerSecond()))) {
+        try (Store store = new Store(config.storeSettings(System::currentTimeMillis))) {
             Reports reports = new Reports(config, store, config::port);
 
             Reports.Report status = reports.status("standalone", "http://127.0.0.1:4000", NOW);
@@ -258,8 +250,7 @@ class ReportsTest {
     @Test
     void statusWithoutAnIngestCapSaysSoAndLeavesTheRowOut() {
         Config config = TestStore.config();
-        try (Store store = new Store(config.jdbcUrl(), config.databaseFile(), config.retentionHours(),
-                config.slowRequestMs(), config.slowQueryMs(), null)) {
+        try (Store store = new Store(config.storeSettings(System::currentTimeMillis))) {
             Reports.Report status = new Reports(config, store, config::port)
                     .status("standalone", null, NOW);
 

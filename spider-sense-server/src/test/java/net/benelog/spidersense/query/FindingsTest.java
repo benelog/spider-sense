@@ -31,7 +31,7 @@ class FindingsTest {
             \tat orders.OrderLineRepository.findByOrderId(OrderLineRepository.java:29)
             \tat orders.OrderService.lines(OrderService.java:54)""";
 
-    private final Store store = new Store(TestStore.memoryUrl(), null, 24, 500, 100, null);
+    private final Store store = new Store(Store.Settings.defaults(TestStore.memoryUrl()));
     private final OtlpDecoder decoder = new OtlpDecoder(store, () -> 4000);
     private final Queries queries = new Queries(store.sql(), store.tingles(), store.services());
     private final MetricQueries metrics = new MetricQueries(store.sql());

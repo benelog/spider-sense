@@ -26,8 +26,7 @@ class AcksTest {
 
     /** The rows are stamped with the clock, so two in one millisecond have no order. */
     private final AtomicLong clock = new AtomicLong(NOW);
-    private final Store store = new Store(TestStore.memoryUrl(), null, 24, 500, 100, null,
-            IgnoredEndpoints.DEFAULT, Sweeper.DEFAULT_RETENTION_SPANS, IngestCap.none(), clock::get);
+    private final Store store = new Store(Store.Settings.defaults(TestStore.memoryUrl()).withClock(clock::get));
 
     @AfterEach
     void close() {

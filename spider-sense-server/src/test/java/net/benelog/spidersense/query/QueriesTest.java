@@ -24,7 +24,7 @@ class QueriesTest {
 
     private static final long NOW = 1_700_000_000_000L;
 
-    private final Store store = new Store(TestStore.memoryUrl(), null, 24, 500, 100, null);
+    private final Store store = new Store(Store.Settings.defaults(TestStore.memoryUrl()));
     private final OtlpDecoder decoder = new OtlpDecoder(store, () -> 4000);
     private final Queries queries = new Queries(store.sql(), store.tingles(), store.services());
     private final Window window = Window.of(NOW - 60_000, NOW + 60_000);

@@ -393,7 +393,7 @@ class CliTest {
     void ackAndUnackAreWrittenToTheFileAndShowUpInFindings() {
         String url = TestStore.memoryUrl();
         String db = "--db=" + url;
-        try (Store store = new Store(url, null, 24, 500, 100, null)) {
+        try (Store store = new Store(Store.Settings.defaults(url))) {
             new OtlpDecoder(store, () -> 4000).ingest(sample());
             store.writer().awaitIdle(5_000);
         }

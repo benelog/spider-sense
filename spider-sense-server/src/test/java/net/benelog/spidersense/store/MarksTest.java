@@ -20,8 +20,7 @@ class MarksTest {
 
     private static final long NOW = 1_700_000_000_000L;
 
-    private final Store store = new Store(TestStore.memoryUrl(), null, 24, 500, 100, null,
-            IgnoredEndpoints.DEFAULT, Sweeper.DEFAULT_RETENTION_SPANS, IngestCap.none(), () -> NOW);
+    private final Store store = new Store(Store.Settings.defaults(TestStore.memoryUrl()).withClock(() -> NOW));
     private final OtlpDecoder decoder = new OtlpDecoder(store, () -> 4000);
 
     @AfterEach

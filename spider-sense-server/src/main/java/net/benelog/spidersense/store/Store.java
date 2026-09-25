@@ -28,52 +28,62 @@ public final class Store implements AutoCloseable {
     private final Sweeper sweeper;
     private final IngestCap ingestCap;
 
-    /** The store with the ignore list at its documented default. */
-    public Store(String jdbcUrl, @Nullable Path databaseFile, int retentionHours,
-            long slowRequestMs, long slowQueryMs, @Nullable String embeddedService) {
-        this(jdbcUrl, databaseFile, retentionHours, slowRequestMs, slowQueryMs, embeddedService,
-                IgnoredEndpoints.DEFAULT);
-    }
-
-    /** The store with the span cap at its default and no ingest cap. */
-    public Store(String jdbcUrl, @Nullable Path databaseFile, int retentionHours,
-            long slowRequestMs, long slowQueryMs, @Nullable String embeddedService,
-            @Nullable String ignoreEndpoints) {
-        this(jdbcUrl, databaseFile, retentionHours, slowRequestMs, slowQueryMs, embeddedService,
-                ignoreEndpoints, Sweeper.DEFAULT_RETENTION_SPANS, IngestCap.none());
-    }
-
     /**
-     * @param retentionSpans the most {@code span} rows the sweeper keeps, {@code 0} for no cap
-     * @param ingestCap      what decides whether a span is written at all
-     *                       (storage.adoc#ingest-cap); {@link IngestCap#none()} accepts everything
+     * What a store is opened with, by name, so no two adjacent numbers can be
+     * swapped at a call site.
+     *
+     * @param databaseFile    the file behind {@code jdbcUrl}, or null for a memory database
+     * @param retentionHours  how old a row the sweeper keeps (storage.adoc#retention)
+     * @param embeddedService the {@code service.name} of the JVM the server runs inside, or null
+     * @param ignoreEndpoints the {@code spidersense.ignore.endpoints} globs, or null for none
+     * @param retentionSpans  the most {@code span} rows the sweeper keeps, {@code 0} for no cap
+     * @param ingestCap       what decides whether a span is written at all
+     *                        (storage.adoc#ingest-cap); {@link IngestCap#none()} accepts everything
+     * @param clock           what the marks, the acknowledgements, the writer's events and the
+     *                        retention read the time from, in epoch milliseconds
      */
-    public Store(String jdbcUrl, @Nullable Path databaseFile, int retentionHours,
+    public record Settings(String jdbcUrl, @Nullable Path databaseFile, int retentionHours,
             long slowRequestMs, long slowQueryMs, @Nullable String embeddedService,
-            @Nullable String ignoreEndpoints,
-            long retentionSpans, IngestCap ingestCap) {
-        this(jdbcUrl, databaseFile, retentionHours, slowRequestMs, slowQueryMs, embeddedService,
-                ignoreEndpoints, retentionSpans, ingestCap, System::currentTimeMillis);
+            @Nullable String ignoreEndpoints, long retentionSpans, IngestCap ingestCap, LongSupplier clock) {
+
+        /**
+         * The documented defaults on {@code jdbcUrl}: a day of retention, 500 ms and
+         * 100 ms thresholds, the default ignore list and span cap, no ingest cap, no
+         * embedded service, and the wall clock.
+         */
+        public static Settings defaults(String jdbcUrl) {
+            return new Settings(jdbcUrl, null, 24, 500, 100, null, IgnoredEndpoints.DEFAULT,
+                    Sweeper.DEFAULT_RETENTION_SPANS, IngestCap.none(), System::currentTimeMillis);
+        }
+
+        public Settings withRetentionSpans(long spans) {
+            return new Settings(jdbcUrl, databaseFile, retentionHours, slowRequestMs, slowQueryMs,
+                    embeddedService, ignoreEndpoints, spans, ingestCap, clock);
+        }
+
+        public Settings withIngestCap(IngestCap cap) {
+            return new Settings(jdbcUrl, databaseFile, retentionHours, slowRequestMs, slowQueryMs,
+                    embeddedService, ignoreEndpoints, retentionSpans, cap, clock);
+        }
+
+        public Settings withClock(LongSupplier time) {
+            return new Settings(jdbcUrl, databaseFile, retentionHours, slowRequestMs, slowQueryMs,
+                    embeddedService, ignoreEndpoints, retentionSpans, ingestCap, time);
+        }
     }
 
-    /**
-     * @param clock what the marks, the acknowledgements, the writer's events and the
-     *              retention read the time from, in epoch milliseconds
-     */
-    public Store(String jdbcUrl, @Nullable Path databaseFile, int retentionHours,
-            long slowRequestMs, long slowQueryMs, @Nullable String embeddedService,
-            @Nullable String ignoreEndpoints,
-            long retentionSpans, IngestCap ingestCap, LongSupplier clock) {
-        this.clock = clock;
-        this.database = Database.open(jdbcUrl, databaseFile);
+    public Store(Settings settings) {
+        this.clock = settings.clock();
+        this.database = Database.open(settings.jdbcUrl(), settings.databaseFile());
         this.sql = database.sql();
-        this.tingles = new Tingles(slowRequestMs, slowQueryMs, IgnoredEndpoints.of(ignoreEndpoints));
-        this.services = new ServiceRegistry(sql, embeddedService);
+        this.tingles = new Tingles(settings.slowRequestMs(), settings.slowQueryMs(),
+                IgnoredEndpoints.of(settings.ignoreEndpoints()));
+        this.services = new ServiceRegistry(sql, settings.embeddedService());
         this.marks = new Marks(sql, clock);
         this.acks = new Acks(sql, clock);
-        this.ingestCap = ingestCap;
+        this.ingestCap = settings.ingestCap();
         this.writer = new Writer(sql, events, tingles, clock).start(database);
-        this.sweeper = new Sweeper(sql, retentionHours, retentionSpans, clock).start();
+        this.sweeper = new Sweeper(sql, settings.retentionHours(), settings.retentionSpans(), clock).start();
     }
 
     public Sql sql() {

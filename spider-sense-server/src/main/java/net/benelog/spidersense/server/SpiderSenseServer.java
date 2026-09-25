@@ -24,7 +24,6 @@ import net.benelog.spidersense.mcp.McpTools;
 import net.benelog.spidersense.query.MetricQueries;
 import net.benelog.spidersense.query.Queries;
 import net.benelog.spidersense.source.SourceRoots;
-import net.benelog.spidersense.store.IngestCap;
 import net.benelog.spidersense.store.Store;
 import net.benelog.spidersilk.App;
 import net.benelog.spidersilk.HttpStatus;
@@ -92,10 +91,7 @@ public final class SpiderSenseServer implements AutoCloseable {
      * that pins it can put its telemetry at fixed instants and still ask for {@code since=5m}.
      */
     public static Assembly assemble(Config config, LongSupplier clock) {
-        Store store = new Store(config.jdbcUrl(), config.databaseFile(), config.retentionHours(),
-                config.slowRequestMs(), config.slowQueryMs(), config.embeddedService(),
-                config.ignoreEndpoints(), config.retentionSpans(),
-                IngestCap.of(config.maxSpansPerSecond()), clock);
+        Store store = new Store(config.storeSettings(clock));
         AtomicInteger boundPort = new AtomicInteger(config.port());
 
         Reports reports = new Reports(config, store, boundPort::get);

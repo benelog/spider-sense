@@ -14,7 +14,6 @@ import org.junit.jupiter.api.Test;
 import net.benelog.spidersense.Otlp;
 import net.benelog.spidersense.TestStore;
 import net.benelog.spidersense.store.Batch;
-import net.benelog.spidersense.store.IgnoredEndpoints;
 import net.benelog.spidersense.store.IngestCap;
 import net.benelog.spidersense.store.SpanRecord;
 import net.benelog.spidersense.store.Store;
@@ -25,7 +24,7 @@ class OtlpDecoderTest {
     private static final String ROOT = "00f067aa0ba902b7";
     private static final String CHILD = "00f067aa0ba902b8";
 
-    private final Store store = new Store(TestStore.memoryUrl(), null, 24, 500, 100, null);
+    private final Store store = new Store(Store.Settings.defaults(TestStore.memoryUrl()));
     private final OtlpDecoder decoder = new OtlpDecoder(store, () -> 4000);
 
     @AfterEach
@@ -402,8 +401,8 @@ class OtlpDecoderTest {
 
     /** A store whose cap runs on a clock the test holds still, so one export is one second. */
     private static Store capped(Long maxSpansPerSecond, AtomicLong clock) {
-        return new Store(TestStore.memoryUrl(), null, 24, 500, 100, null,
-                IgnoredEndpoints.DEFAULT, 0, new IngestCap(maxSpansPerSecond, clock::get));
+        return new Store(Store.Settings.defaults(TestStore.memoryUrl()).withRetentionSpans(0)
+                .withIngestCap(new IngestCap(maxSpansPerSecond, clock::get)));
     }
 
     @Test

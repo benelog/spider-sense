@@ -8,8 +8,11 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.LongSupplier;
 
 import net.benelog.spidersense.store.IgnoredEndpoints;
+import net.benelog.spidersense.store.IngestCap;
+import net.benelog.spidersense.store.Store;
 import net.benelog.spidersense.store.Sweeper;
 import org.jspecify.annotations.Nullable;
 
@@ -257,6 +260,12 @@ public record Config(
             path = path.substring("file:".length());
         }
         return Path.of(expandHome(path, home) + ".mv.db");
+    }
+
+    /** What the server's store is opened with: this configuration, read with {@code clock}. */
+    public Store.Settings storeSettings(LongSupplier clock) {
+        return new Store.Settings(jdbcUrl(), databaseFile(), retentionHours, slowRequestMs, slowQueryMs,
+                embeddedService, ignoreEndpoints, retentionSpans, IngestCap.of(maxSpansPerSecond), clock);
     }
 
     /** The path with a leading {@code ~} read as this JVM's home directory. */

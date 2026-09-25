@@ -58,7 +58,7 @@ class MetricQueriesTest {
     @ValueSource(booleans = {false, true})
     void aServiceReadsItsPointsByItsOwnTemporality(boolean serviceBFirst) {
         long now = 1_700_000_000_000L;
-        try (Store store = new Store(TestStore.memoryUrl(), null, 24, 500, 100, null)) {
+        try (Store store = new Store(Store.Settings.defaults(TestStore.memoryUrl()))) {
             OtlpDecoder decoder = new OtlpDecoder(store, () -> 4000);
             MetricQueries metrics = new MetricQueries(store.sql());
             Window window = Window.of(now - 60_000, now + 60_000);

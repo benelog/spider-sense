@@ -106,8 +106,7 @@ class TraceDiffCliTest {
 
     private static void inTheFile(BiConsumer<Store, String> body) {
         Config config = TestStore.config();
-        try (Store store = new Store(config.jdbcUrl(), config.databaseFile(),
-                config.retentionHours(), config.slowRequestMs(), config.slowQueryMs(), null)) {
+        try (Store store = new Store(config.storeSettings(System::currentTimeMillis))) {
             new OtlpDecoder(store, () -> 4000).ingest(sample());
             store.writer().awaitIdle(5_000);
             body.accept(store, "--db=" + config.jdbcUrl());

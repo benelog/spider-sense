@@ -22,7 +22,7 @@ class WriterTest {
 
     private static final long AT = 1_700_000_000_000L;
 
-    private final Store store = new Store(TestStore.memoryUrl(), null, 24, 500, 100, null);
+    private final Store store = new Store(Store.Settings.defaults(TestStore.memoryUrl()));
     private final OtlpDecoder decoder = new OtlpDecoder(store, () -> 4000);
 
     @AfterEach

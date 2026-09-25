@@ -26,8 +26,7 @@ class SweeperTest {
     /** Now, rounded down to the hour, so every row sits at a predictable distance from it. */
     private static final long NOW = System.currentTimeMillis() / HOUR * HOUR;
 
-    private final Store store = new Store(TestStore.memoryUrl(), null, 24, 500, 100, null,
-            IgnoredEndpoints.DEFAULT, Sweeper.DEFAULT_RETENTION_SPANS, IngestCap.none(), () -> NOW);
+    private final Store store = new Store(Store.Settings.defaults(TestStore.memoryUrl()).withClock(() -> NOW));
     private final OtlpDecoder decoder = new OtlpDecoder(store, () -> 4000);
 
     @AfterEach

@@ -24,7 +24,7 @@ class CompareTest {
     private static final long BEFORE = NOW - 120_000;
     private static final long AFTER = NOW - 30_000;
 
-    private final Store store = new Store(TestStore.memoryUrl(), null, 24, 500, 100, null);
+    private final Store store = new Store(Store.Settings.defaults(TestStore.memoryUrl()));
     private final OtlpDecoder decoder = new OtlpDecoder(store, () -> 4000);
     private final Queries queries = new Queries(store.sql(), store.tingles(), store.services());
     private final Compare compare = new Compare(queries);
