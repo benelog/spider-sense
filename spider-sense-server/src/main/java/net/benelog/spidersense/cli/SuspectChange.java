@@ -46,17 +46,29 @@ final class SuspectChange {
     /** How long stdout may take to drain once {@code git} has exited, however late that was. */
     private static final long DRAIN_NANOS = TimeUnit.MILLISECONDS.toNanos(100);
 
+    /**
+     * One {@code git} command in a directory: its stdout as lines, or null when it could not run
+     * or did not succeed. {@link SuspectChange#git(Path, String...)} runs the real one; a test
+     * answers for it.
+     */
+    @FunctionalInterface
+    interface Git {
+        @Nullable List<String> run(Path dir, String... args);
+    }
+
     private final SourceRoots roots;
     private final Path repository;
     private final Set<String> uncommitted;
     private final long now;
+    private final Git git;
     private final Map<String, @Nullable String> blamed = new HashMap<>();
 
-    private SuspectChange(SourceRoots roots, Path repository, Set<String> uncommitted, long now) {
+    private SuspectChange(SourceRoots roots, Path repository, Set<String> uncommitted, long now, Git git) {
         this.roots = roots;
         this.repository = repository;
         this.uncommitted = uncommitted;
         this.now = now;
+        this.git = git;
     }
 
     /**
@@ -64,7 +76,12 @@ final class SuspectChange {
      * {@code git} cannot be run there.
      */
     static @Nullable SuspectChange in(Path workingDir, SourceRoots roots, long now) {
-        List<String> top = git(workingDir, "rev-parse", "--show-toplevel");
+        return in(workingDir, roots, now, SuspectChange::git);
+    }
+
+    /** The same with the {@code git} to ask given. */
+    static @Nullable SuspectChange in(Path workingDir, SourceRoots roots, long now, Git git) {
+        List<String> top = git.run(workingDir, "rev-parse", "--show-toplevel");
         if (top == null || top.isEmpty() || top.get(0).isBlank()) {
             return null;
         }
@@ -79,7 +96,7 @@ final class SuspectChange {
                 List.of("diff", "--name-only"),
                 List.of("diff", "--cached", "--name-only"),
                 List.of("ls-files", "--others", "--exclude-standard"))) {
-            List<String> names = git(repository, args.toArray(String[]::new));
+            List<String> names = git.run(repository, args.toArray(String[]::new));
             if (names == null) {
                 return null;
             }
@@ -89,7 +106,7 @@ final class SuspectChange {
                 }
             }
         }
-        return new SuspectChange(roots, repository, uncommitted, now);
+        return new SuspectChange(roots, repository, uncommitted, now, git);
     }
 
     /** The text with one line under each code frame that resolves to a file of the repository. */
@@ -135,9 +152,20 @@ final class SuspectChange {
     }
 
     private @Nullable String blame(String relative, int line) {
-        List<String> porcelain = git(repository, "blame", "-L", line + "," + line, "--porcelain",
+        List<String> porcelain = git.run(repository, "blame", "-L", line + "," + line, "--porcelain",
                 "--", relative);
-        if (porcelain == null || porcelain.isEmpty()) {
+        return porcelain == null ? null : noteFromBlame(porcelain, now);
+    }
+
+    /**
+     * The note for one line from {@code git blame --porcelain}: {@code uncommitted} for the
+     * all-zero hash, else {@code changed in <hash> (<age>): <subject>}, the age left out when the
+     * author time is missing or malformed; null when the output names no commit.
+     *
+     * @param now what the age is counted back from, in epoch milliseconds
+     */
+    static @Nullable String noteFromBlame(List<String> porcelain, long now) {
+        if (porcelain.isEmpty()) {
             return null;
         }
         String first = porcelain.get(0);

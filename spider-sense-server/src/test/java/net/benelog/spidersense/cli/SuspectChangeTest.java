@@ -170,4 +170,81 @@ class SuspectChangeTest {
         assertThat(SuspectChange.age(90 * 24 * 60 * 60 * 1000L)).isEqualTo("3 months ago");
         assertThat(SuspectChange.age(800 * 24 * 60 * 60 * 1000L)).isEqualTo("2 years ago");
     }
+
+    private static final String HASH = "4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f";
+
+    /** {@code git blame --porcelain} of one line, as git writes it. */
+    private static List<String> porcelain(String hash, String... headers) {
+        List<String> lines = new ArrayList<>();
+        lines.add(hash + " 2 2 1");
+        lines.addAll(List.of(headers));
+        lines.add("filename src/main/java/orders/OrderService.java");
+        lines.add("\t  void load() {}");
+        return lines;
+    }
+
+    @Test
+    void aBlamedLineNamesItsCommitItsAgeAndItsSubject() {
+        long now = (COMMITTED + 2 * 60 * 60) * 1000;
+        record Row(List<String> porcelain, String expected) {
+        }
+        List<Row> rows = List.of(
+                new Row(porcelain(HASH, "author Test", "author-time " + COMMITTED, "summary Load orders by id"),
+                        "changed in 4e5f6a7 (2 hours ago): Load orders by id"),
+                new Row(porcelain(HASH, "summary Load orders by id"),
+                        "changed in 4e5f6a7: Load orders by id"),
+                new Row(porcelain(HASH, "author-time soon", "summary Load orders by id"),
+                        "changed in 4e5f6a7: Load orders by id"),
+                new Row(porcelain(HASH, "author-time " + COMMITTED),
+                        "changed in 4e5f6a7 (2 hours ago): "),
+                new Row(porcelain("0".repeat(40), "author Not Committed Yet"), "uncommitted"));
+        for (Row row : rows) {
+            assertThat(SuspectChange.noteFromBlame(row.porcelain(), now)).as("%s", row.porcelain())
+                    .isEqualTo(row.expected());
+        }
+    }
+
+    @Test
+    void blameOutputThatNamesNoCommitSaysNothing() {
+        assertThat(SuspectChange.noteFromBlame(List.of(), 0L)).isNull();
+        assertThat(SuspectChange.noteFromBlame(List.of("abc 1 1 1"), 0L)).isNull();
+    }
+
+    /** The annotation over a repository git is only asked about: no process is started. */
+    @Test
+    void theFramesAreAnnotatedFromWhatGitAnswers() throws IOException {
+        write("src/main/java/orders/OrderService.java", "class OrderService {\n  void load() {}\n}\n");
+        write("src/main/java/orders/Draft.java", "class Draft {}\n");
+        Path top = repo.toRealPath();
+        List<String> asked = new ArrayList<>();
+        SuspectChange.Git git = (dir, args) -> {
+            asked.add(String.join(" ", args));
+            return switch (args[0]) {
+                case "rev-parse" -> List.of(top.toString());
+                case "diff" -> args[1].equals("--name-only") ? List.of("src/main/java/orders/Draft.java") : List.of();
+                case "ls-files" -> List.of();
+                case "blame" -> porcelain(HASH, "author-time " + COMMITTED, "summary Load orders by id");
+                default -> null;
+            };
+        };
+
+        SuspectChange suspects = SuspectChange.in(repo, SourceRoots.of(null, repo),
+                (COMMITTED + 3 * 24 * 60 * 60) * 1000, git);
+
+        assertThat(suspects).isNotNull();
+        assertThat(suspects.annotate(FINDINGS)).contains("""
+                   orders.OrderService.load(OrderService.java:2)
+                     changed in 4e5f6a7 (3 days ago): Load orders by id
+                   orders.Draft.save(Draft.java:1)
+                     uncommitted
+                   orders.Staged.run(Staged.java:1)
+                   orders.Missing.run(Missing.java:1)
+                """);
+        assertThat(asked).contains("blame -L 2,2 --porcelain -- src/main/java/orders/OrderService.java");
+    }
+
+    @Test
+    void aGitThatCannotRunMeansNoAnnotator() {
+        assertThat(SuspectChange.in(repo, SourceRoots.of(null, repo), 0L, (dir, args) -> null)).isNull();
+    }
 }
