@@ -460,6 +460,7 @@ The axes carry their units, `MiB`, `ms`, `%`, and connections.
 
 `#/metrics` is the explorer for every metric that arrived.
 The catalog on the left is searchable, and lists each metric's name, type chip, unit and series count.
+It lists the metrics of the top bar's service, and a change of service or a Live refresh reloads it with the chart, so a metric that starts arriving appears.
 The chart on the right draws the selected metric over the window, one line per series, with a legend of the series' attributes.
 Each series is drawn at its own timestamps, so two services that export at different offsets share the time axis without one being shifted onto the other's points.
 A `rate` toggle applies to sums.

@@ -167,6 +167,10 @@ export function render(root, ctx) {
       if (!catalog.length) {
         fill(listBox, h('div', { style: { padding: '18px', textAlign: 'center' } }, h('span.muted', 'No metric has arrived yet.')));
         fill(chartBody, emptyState('No metric has arrived yet. The OpenTelemetry agent exports runtime metrics every 5 seconds by default.'));
+        fill(chartLegend);
+        detailTitle.textContent = 'Metric';
+        rateBtn.hidden = true;
+        countPanel.hidden = true;
         return;
       }
       if (!selected || !catalog.some((m) => m.name === selected)) selected = catalog[0].name;
@@ -179,7 +183,9 @@ export function render(root, ctx) {
 
   load();
   return {
-    refresh: () => loadSeries(),
+    // The catalog is the top bar's service's, and grows while metrics arrive: a refresh, which
+    // a service change is too, reloads it before the selected metric's series.
+    refresh: () => load(),
     destroy: () => {
       destroyed = true;
       applySearch.cancel();
