@@ -21,7 +21,7 @@ import org.jspecify.annotations.Nullable;
  * @param parentSpanId  16 lowercase hex characters, or null for a root span
  * @param kind          {@code INTERNAL}, {@code SERVER}, {@code CLIENT}, {@code PRODUCER} or {@code CONSUMER}
  * @param status        {@code UNSET}, {@code OK} or {@code ERROR}
- * @param attributes    values are String, Long, Double, Boolean or a List of those
+ * @param attributes    values are String, Long, Double, Boolean, or a List or a Map of those
  */
 public record SpanRecord(
         String traceId,

@@ -60,7 +60,8 @@ public final class AttrJson {
         if (json.length() <= max) {
             return json;
         }
-        List<Map<String, Object>> maps = List.of(new LinkedHashMap<>(attributes));
+        List<Map<String, Object>> maps = List.of(flattened(attributes));
+        json = encode(maps.get(0));
         while (json.length() > max) {
             if (!cutLongest(maps, json.length() - max)) {
                 return EMPTY_OBJECT;
@@ -111,7 +112,7 @@ public final class AttrJson {
         }
         List<Map<String, Object>> maps = new ArrayList<>(events.size());
         for (SpanRecord.SpanEvent event : events) {
-            maps.add(new LinkedHashMap<>(event.attributes()));
+            maps.add(flattened(event.attributes()));
         }
         while (json.length() > max) {
             if (!cutLongest(maps, json.length() - max)) {
@@ -125,6 +126,17 @@ public final class AttrJson {
             json = encodeEvents(cut);
         }
         return json;
+    }
+
+    /**
+     * A copy whose nested objects are their JSON text: a string, which the cut can
+     * shorten like any other, where an object too long for the column could only
+     * be dropped with every attribute beside it.
+     */
+    private static Map<String, Object> flattened(Map<String, Object> attributes) {
+        Map<String, Object> flat = new LinkedHashMap<>(attributes);
+        flat.replaceAll((key, value) -> value instanceof Map<?, ?> map ? toJson(map).toJson() : value);
+        return flat;
     }
 
     /**
@@ -204,7 +216,8 @@ public final class AttrJson {
 
     /**
      * One value of the store's value space as JSON: a list is an array of its
-     * elements, never Java's {@code [a, b]}.
+     * elements, never Java's {@code [a, b]}, and a map is an object, however deep
+     * either nests.
      */
     public static Json.JsonValue json(@Nullable Object value) {
         return toJson(value);
@@ -228,6 +241,11 @@ public final class AttrJson {
                     array.add(toJson(element));
                 }
                 holder.put("v", array);
+            }
+            case Map<?, ?> map -> {
+                Json.JsonObject object = Json.obj();
+                map.forEach((key, each) -> object.put(String.valueOf(key), toJson(each)));
+                holder.put("v", object);
             }
             default -> holder.put("v", String.valueOf(value));
         }

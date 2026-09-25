@@ -247,6 +247,8 @@ The thread flushes every 200 ms, or as soon as 500 records are waiting, in one t
 Every text value is cut to its column before it is bound: a service or metric name at 255 characters as it is decoded, so every table holds the same name, and a trace's `services` by leaving out the names past its width.
 A histogram point whose buckets do not fit their column keeps its count, sum, min and max and is stored without buckets.
 A double attribute that JSON has no number for, `NaN` or an infinity, is stored as the string `"NaN"`, `"Infinity"` or `"-Infinity"`.
+A key/value list, as an attribute or a log body, is stored as a JSON object however deep it nests, inside another list or an array included, and an attribute that is one reads back as that object's JSON text.
+An object too long for its column is cut as that text, like any other long string value.
 When a flush still fails, each of its batches is written again in a transaction of its own, so a row the database refuses costs only the export that carried it.
 A failed flush is rolled back whole before that, whatever failed, a stack overflow on an attribute nested thousands of levels deep included, so no batch is stored twice.
 The catalog rows of a flush are merged in the same transaction.

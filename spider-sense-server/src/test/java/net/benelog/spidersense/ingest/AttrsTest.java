@@ -9,6 +9,8 @@ import io.opentelemetry.proto.common.v1.KeyValueList;
 
 import org.junit.jupiter.api.Test;
 
+import net.benelog.spidersense.store.AttrJson;
+
 /** OTLP values as the store keeps them. */
 class AttrsTest {
 
@@ -31,5 +33,27 @@ class AttrsTest {
                 .addValues(KeyValue.newBuilder().setKey("n").setValue(AnyValue.newBuilder().setIntValue(3))))
                 .build();
         assertThat(Attrs.bodyText(kvlist)).isEqualTo("{\"tags\":[\"x\",\"y\"],\"n\":3}");
+    }
+
+    private static AnyValue kvlist(String key, AnyValue value) {
+        return AnyValue.newBuilder().setKvlistValue(KeyValueList.newBuilder()
+                .addValues(KeyValue.newBuilder().setKey(key).setValue(value))).build();
+    }
+
+    /**
+     * A key/value list one level down is an object inside the object, and inside an
+     * array, not a string holding its escaped JSON.
+     */
+    @Test
+    void aKeyValueListNestedInAKeyValueListOrAnArrayIsAnObject() {
+        AnyValue id = AnyValue.newBuilder().setIntValue(1).build();
+
+        assertThat(Attrs.bodyText(kvlist("user", kvlist("id", id)))).isEqualTo("{\"user\":{\"id\":1}}");
+        assertThat(Attrs.bodyText(array(kvlist("id", id)))).isEqualTo("[{\"id\":1}]");
+
+        java.util.Map<String, Object> attributes = Attrs.toMap(java.util.List.of(
+                KeyValue.newBuilder().setKey("user").setValue(kvlist("id", id)).build(),
+                KeyValue.newBuilder().setKey("users").setValue(array(kvlist("id", id))).build()));
+        assertThat(AttrJson.encodeSorted(attributes)).isEqualTo("{\"user\":{\"id\":1},\"users\":[{\"id\":1}]}");
     }
 }

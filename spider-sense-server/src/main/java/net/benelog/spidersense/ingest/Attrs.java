@@ -2,6 +2,7 @@ package net.benelog.spidersense.ingest;
 
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -10,17 +11,16 @@ import com.google.protobuf.ByteString;
 import io.opentelemetry.proto.common.v1.AnyValue;
 import io.opentelemetry.proto.common.v1.KeyValue;
 import net.benelog.spidersense.store.AttrJson;
-import net.benelog.spidersilk.json.Json;
 import org.jspecify.annotations.Nullable;
 
 /**
  * OTLP attribute values turned into the plain Java values the store keeps.
  *
  * <p>The store's value space is deliberately small — String, Long, Double,
- * Boolean and lists of those — because that is exactly what JSON has. The two
- * OTLP shapes that do not fit are flattened rather than modelled: bytes become
- * base64 and a nested key/value list becomes a JSON string, which is what the
- * span drawer would show anyway.
+ * Boolean, and lists and maps of those — because that is exactly what JSON has.
+ * Bytes, the one OTLP shape that does not fit, become base64. A key/value list is
+ * a map, stored as a JSON object however deep it nests, and read back as that
+ * object's JSON text, which is what the span drawer would show anyway.
  */
 public final class Attrs {
 
@@ -60,14 +60,16 @@ public final class Attrs {
                 yield List.copyOf(values);
             }
             case KVLIST_VALUE -> {
-                Json.JsonObject object = Json.obj();
+                // A map rather than its JSON text: text one level down would be stored
+                // as a string inside the JSON, its quotes escaped.
+                Map<String, Object> map = new LinkedHashMap<>();
                 for (KeyValue entry : value.getKvlistValue().getValuesList()) {
                     Object nested = value(entry.getValue());
                     if (nested != null) {
-                        object.put(entry.getKey(), AttrJson.json(nested));
+                        map.put(entry.getKey(), nested);
                     }
                 }
-                yield object.toJson();
+                yield Collections.unmodifiableMap(map);
             }
             default -> null;
         };

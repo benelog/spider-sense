@@ -32,6 +32,21 @@ class AttrJsonTest {
                 .endsWith(AttrJson.CUT_MARK);
     }
 
+    /** An object too long for the column is cut as its text, not dropped with the attributes beside it. */
+    @Test
+    void aNestedObjectTooLongForTheColumnIsCutAsItsText() {
+        Map<String, Object> attributes = new LinkedHashMap<>();
+        attributes.put("http.route", "/orders/{id}");
+        attributes.put("payload", Map.of("body", "x".repeat(5_000)));
+
+        String json = AttrJson.encode(attributes, 1000);
+
+        assertThat(json.length()).isLessThanOrEqualTo(1000);
+        Map<String, Object> decoded = AttrJson.decode(json);
+        assertThat(decoded.get("http.route")).isEqualTo("/orders/{id}");
+        assertThat((String) decoded.get("payload")).startsWith("{\"body\":\"xxx").endsWith(AttrJson.CUT_MARK);
+    }
+
     @Test
     void textThatCannotBeCutFallsBackToAnEmptyObject() {
         Map<String, Object> attributes = new LinkedHashMap<>();
