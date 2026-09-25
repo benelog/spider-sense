@@ -56,7 +56,7 @@ final class Mcp {
         this.named = named;
         this.out = out;
         this.err = err;
-        this.server = new McpServer(this::inProcess, Version.CURRENT);
+        this.server = new McpServer(McpTools.TOOLS, this::inProcess, Version.CURRENT);
     }
 
     static int run(Options options, String defaultUrl, InputStream in, PrintStream out,

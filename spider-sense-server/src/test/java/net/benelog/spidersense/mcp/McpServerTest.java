@@ -9,6 +9,7 @@ import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
+import net.benelog.spidersense.query.Check;
 import net.benelog.spidersilk.json.Json;
 
 /**
@@ -25,7 +26,7 @@ class McpServerTest {
     private final List<String> called = new ArrayList<>();
     private Map<String, Object> lastArguments;
 
-    private final McpServer server = new McpServer((name, arguments) -> {
+    private final McpServer server = new McpServer(McpTools.TOOLS, (name, arguments) -> {
         called.add(name);
         lastArguments = arguments;
         return McpServer.ToolResult.of("# " + name);
@@ -126,6 +127,32 @@ class McpServerTest {
         assertThat(hideAcked.getString("description")).contains("acknowledged");
     }
 
+    /** A rule MCP did not publish would be dropped from every call without an error. */
+    @Test
+    void everyCheckRuleIsANumberArgumentOfTheCheckToolAndReachesTheCall() {
+        Json.JsonArray tools = answer(server.handle(request(4, "tools/list", null)))
+                .getObject("result").getArray("tools");
+        Json.JsonObject check = null;
+        for (Json.JsonValue tool : tools) {
+            if (tool.asObject().getString("name").equals("check")) {
+                check = tool.asObject();
+            }
+        }
+        assertThat(check).isNotNull();
+        StringBuilder arguments = new StringBuilder();
+        for (String rule : Check.RULES) {
+            Json.JsonObject argument = properties(check).getObject(rule);
+            assertThat(argument).as(rule).isNotNull();
+            assertThat(argument.getString("type")).as(rule).isEqualTo("number");
+            assertThat(argument.getString("description")).as(rule).isEqualTo(Check.describe(rule));
+            arguments.append(arguments.isEmpty() ? "" : ",").append('"').append(rule).append("\":1");
+        }
+
+        server.handle(request(9, "tools/call", "{\"name\":\"check\",\"arguments\":{" + arguments + "}}"));
+
+        assertThat(lastArguments.keySet()).containsExactlyElementsOf(Check.RULES);
+    }
+
     private static Json.JsonObject properties(Json.JsonObject tool) {
         return tool.getObject("inputSchema").getObject("properties");
     }
@@ -159,7 +186,7 @@ class McpServerTest {
 
     @Test
     void aToolThatFailsIsAResultWithIsErrorRatherThanAProtocolError() {
-        McpServer failing = new McpServer(
+        McpServer failing = new McpServer(McpTools.TOOLS,
                 (name, arguments) -> McpServer.ToolResult.failed("No such trace: ff"), "0");
 
         Json.JsonObject answered = answer(failing.handle(request(6, "tools/call",
@@ -176,7 +203,7 @@ class McpServerTest {
         Map<String, Object> structured = new LinkedHashMap<>();
         structured.put("pass", false);
         structured.put("requests", 12L);
-        McpServer checking = new McpServer(
+        McpServer checking = new McpServer(McpTools.TOOLS,
                 (name, arguments) -> new McpServer.ToolResult("# check  fail", false, structured), "0");
 
         Json.JsonObject result = answer(checking.handle(request(8, "tools/call",
@@ -211,7 +238,7 @@ class McpServerTest {
                 .as("a protocol version that is not a string").isEqualTo(-32602);
         assertThat(called).as("nothing reached the tools").isEmpty();
 
-        McpServer broken = new McpServer((name, arguments) -> {
+        McpServer broken = new McpServer(McpTools.TOOLS, (name, arguments) -> {
             throw new IllegalStateException("the database went away");
         }, "0");
         assertThat(code(broken.handle(request(5, "tools/call", "{\"name\":\"findings\"}"))))

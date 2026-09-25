@@ -52,7 +52,7 @@ final class Text {
     static final String CONTENT_TYPE = "text/markdown; charset=utf-8";
 
     /** The longest statement a line carries unless {@code full} was asked for. */
-    private static final int STATEMENT = 200;
+    private static final int STATEMENT = Limits.STATEMENT_CHARS;
 
     /** A run of identical siblings longer than this collapses into one line. */
     private static final int COLLAPSE_AFTER = 3;

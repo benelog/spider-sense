@@ -38,6 +38,8 @@ public final class Limits {
     public static final int SQL_MAX = ReadOnlyQuery.LIMIT_MAX;
     /** The tingles the overview lists; not a parameter. */
     public static final int OVERVIEW_TINGLES = 50;
+    /** The longest statement a line of text carries unless {@code full} was asked for. */
+    public static final int STATEMENT_CHARS = 200;
 
     private Limits() {
     }

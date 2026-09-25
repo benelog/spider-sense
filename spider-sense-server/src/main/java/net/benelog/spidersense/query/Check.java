@@ -37,6 +37,29 @@ public final class Check {
             MAX_QUERIES_PER_REQUEST, MAX_SLOW_QUERIES, MAX_N_PLUS_ONE, MAX_LOG_ERRORS, MAX_REGRESSIONS,
             MIN_APDEX);
 
+    /**
+     * What a rule fails on, in one sentence: the description MCP publishes for the rule's argument
+     * (mcp.adoc#tools), kept here so a new rule cannot reach {@link #RULES} without one.
+     */
+    public static String describe(String rule) {
+        return switch (rule) {
+            case MAX_P95_MS -> "Fail when any endpoint's p95 is above this.";
+            case MAX_ERRORS -> "Fail when more occurrences than this were recorded.";
+            case MAX_ERROR_RATE -> "Fail when the share of failed requests is above this (0..1).";
+            case MAX_QUERIES_PER_REQUEST ->
+                    "Fail when any endpoint runs more database calls per request than this.";
+            case MAX_SLOW_QUERIES ->
+                    "Fail when more query calls than this ran over the slow-query threshold.";
+            case MAX_N_PLUS_ONE ->
+                    "Fail when more n-plus-one and n-plus-one-http findings than this were found.";
+            case MAX_LOG_ERRORS ->
+                    "Fail when more ERROR log records than this were found outside a failed trace.";
+            case MAX_REGRESSIONS -> "Fail when more resolved findings than this came back.";
+            case MIN_APDEX -> "Fail when the Apdex over the scope is below this.";
+            default -> throw new IllegalArgumentException("No such rule: " + rule);
+        };
+    }
+
     public static final String NO_REQUESTS = "no requests in the window";
 
     public record RuleCheck(String rule, double limit, @Nullable Double actual, boolean pass,
