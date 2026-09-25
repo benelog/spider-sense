@@ -69,13 +69,8 @@ public final class Findings {
     public static final String MEDIUM = "medium";
     public static final String LOW = "low";
 
-    /** The repeats within one trace that make a query group an N+1 (storage.adoc#reads). */
-    private static final int REPEATS = 5;
-
-    /** Repeats at which an N+1 stops being a nuisance and becomes the bug. */
-    private static final int LOUD_REPEATS = 20;
-
-    private static final int EVIDENCE_TRACES = 3;
+    /** The traces a finding names as its evidence (findings.adoc#fields). */
+    static final int EVIDENCE_TRACES = 3;
 
     /**
      * The traces a {@code slow-endpoint} or a {@code slow-job} reads the aggregated
@@ -810,10 +805,9 @@ public final class Findings {
 
     // --- n + 1 ---------------------------------------------------------------
 
-    /** One repeated statement under one entry span. */
-    private record Repeat(String traceId, String endpointId, String endpoint, String service,
-            String queryId, @Nullable String statement, String queryName, int repeats, double totalMs,
-            long start, Map<String, Object> attributes) {
+    /** What a statement's occurrence carries beyond the fold: its text, its name and its attributes. */
+    private record StatementRun(@Nullable String statement, String queryName,
+            Map<String, Object> attributes) {
     }
 
     /**
@@ -841,7 +835,7 @@ public final class Findings {
         }
 
         Queries.Ancestry ancestry = reads.ancestry();
-        Map<String, List<Repeat>> byEntry = new LinkedHashMap<>();
+        List<Repeats.Occurrence<StatementRun>> occurrences = new ArrayList<>();
         List<String> traceList = List.copyOf(traceIds);
         for (int from = 0; from < traceList.size(); from += CANDIDATE_CHUNK) {
             List<String> chunk = traceList.subList(from, Math.min(from + CANDIDATE_CHUNK, traceList.size()));
@@ -868,103 +862,70 @@ public final class Findings {
                         if (entry == null) {
                             return;
                         }
-                        String endpointId = Ids.endpointId(entry.service(), entry.endpoint());
-                        byEntry.computeIfAbsent(entry.spanId() + "\0" + queryId, key -> new ArrayList<>())
-                                .add(new Repeat(traceId, endpointId, entry.endpoint(), entry.service(),
-                                        queryId, rs.getString("db_statement"),
+                        Map<String, Object> attributes = evidence
+                                ? AttrJson.decode(rs.getString("attributes")) : Map.of();
+                        occurrences.add(new Repeats.Occurrence<>(traceId, entry.spanId(),
+                                Ids.endpointId(entry.service(), entry.endpoint()), entry.endpoint(),
+                                entry.service(), queryId, Rows.ms(rs, "duration_ns"),
+                                rs.getLong("start_ms"),
+                                // The extension captures the stack on the fifth repeat, so that one
+                                // span of the group knows where the statement is issued from.
+                                attributes.containsKey("code.stacktrace"),
+                                new StatementRun(rs.getString("db_statement"),
                                         queryName(rs.getString("db_operation"), rs.getString("db_table"),
                                                 rs.getString("db_statement")),
-                                        1, rs.getLong("duration_ns") / 1_000_000.0, rs.getLong("start_ms"),
-                                        evidence ? AttrJson.decode(rs.getString("attributes")) : Map.of()));
+                                        attributes)));
                     });
         }
-
-        Map<String, List<Repeat>> byEndpointAndQuery = new LinkedHashMap<>();
-        byEntry.values().forEach(spans -> {
-            if (spans.size() < REPEATS) {
-                return;
-            }
-            Repeat first = spans.get(0);
-            double totalMs = 0;
-            long start = Long.MAX_VALUE;
-            // The extension captures the stack on the fifth repeat, so that one span of the group
-            // knows where the statement is issued from; the others say nothing about it.
-            Map<String, Object> attributes = first.attributes();
-            boolean located = false;
-            for (Repeat span : spans) {
-                totalMs += span.totalMs();
-                start = Math.min(start, span.start());
-                if (!located && span.attributes() != null
-                        && span.attributes().containsKey("code.stacktrace")) {
-                    attributes = span.attributes();
-                    located = true;
-                }
-            }
-            byEndpointAndQuery
-                    .computeIfAbsent(first.endpointId() + "\0" + first.queryId(), key -> new ArrayList<>())
-                    .add(new Repeat(first.traceId(), first.endpointId(), first.endpoint(), first.service(),
-                            first.queryId(), first.statement(), first.queryName(), spans.size(), totalMs,
-                            start, attributes));
-        });
 
         Map<String, Long> requestsByEndpoint = new HashMap<>();
         // The catalog is one read per service, not one per repeated statement.
         Map<String, Map<String, List<Catalog.Table>>> catalogs = new HashMap<>();
         List<Ranked> found = new ArrayList<>();
-        byEndpointAndQuery.values().forEach(affected -> {
-            Repeat first = affected.get(0);
-            long requests = evidence ? requestsByEndpoint.computeIfAbsent(first.endpointId(),
-                    id -> requests(window, service, id)) : 0;
-            int[] repeats = new int[affected.size()];
-            double totalMs = 0;
-            for (int i = 0; i < affected.size(); i++) {
-                repeats[i] = affected.get(i).repeats();
-                totalMs += affected.get(i).totalMs();
-            }
-            Arrays.sort(repeats);
-            long median = repeats[(int) Math.ceil(0.5 * repeats.length) - 1];
-            long max = repeats[repeats.length - 1];
-            double msPerRequest = totalMs / affected.size();
-
-            Map<String, Object> numbers = new LinkedHashMap<>();
-            numbers.put("requests", requests);
-            numbers.put("affected", (long) affected.size());
-            numbers.put("medianRepeats", median);
-            numbers.put("maxRepeats", max);
-            numbers.put("msPerRequest", msPerRequest);
-
-            String severity = median >= LOUD_REPEATS || msPerRequest > tingles.slowRequestMs()
-                    ? HIGH : MEDIUM;
-            List<Repeat> newest = new ArrayList<>(affected);
-            newest.sort(Comparator.comparingLong(Repeat::start).reversed());
-            List<String> traces = new ArrayList<>();
+        for (List<Repeats.RequestRepeat<StatementRun>> affected : Repeats.foldPerEntry(occurrences)) {
+            Repeats.RepeatStats<StatementRun> stats = Repeats.RepeatStats.of(affected);
+            Repeats.Occurrence<StatementRun> first = stats.first();
+            String statement = first.detail().statement();
             List<String> code = List.of();
-            for (Repeat repeat : newest) {
-                if (traces.size() < EVIDENCE_TRACES && !traces.contains(repeat.traceId())) {
-                    traces.add(repeat.traceId());
-                }
-                if (evidence && code.isEmpty()) {
+            if (evidence) {
+                for (Repeats.RequestRepeat<StatementRun> repeat : stats.newest()) {
                     // The newest request that has a code location wins; none has one when the
                     // application ran without the extension, and then the finding names no line.
-                    code = frames.ofAttributes(repeat.attributes());
+                    code = frames.ofAttributes(repeat.located().detail().attributes());
+                    if (!code.isEmpty()) {
+                        break;
+                    }
                 }
             }
-            Finding finding = new Finding(
-                    id(N_PLUS_ONE, first.service(), first.endpointId() + "\0" + first.queryId()),
-                    N_PLUS_ONE, severity, first.service(),
-                    first.endpoint() + " runs " + first.queryName() + " " + median + " times per request",
-                    affected.size() + " of " + Numbers.plural(requests, "request") + " repeated it; "
-                            + counts(repeats) + " times; " + Numbers.millis(msPerRequest)
-                            + " per request in that statement",
-                    Subject.repeatedQuery(first.endpointId(), first.queryId()),
-                    numbers, first.statement(),
-                    code,
-                    List.copyOf(traces))
-                    .withSchema(evidence ? SchemaBlock.of(first.statement(),
+            Finding finding = repeated(N_PLUS_ONE, stats,
+                    requests(window, service, evidence, first.endpointId(), requestsByEndpoint),
+                    "runs " + first.detail().queryName(), "statement",
+                    Subject.repeatedQuery(first.endpointId(), first.groupKey()), statement, code)
+                    .withSchema(evidence ? SchemaBlock.of(statement,
                             catalogs.computeIfAbsent(first.service(), catalog::forService)) : null);
-            found.add(new Ranked(finding, affected.size() * (double) median));
-        });
+            found.add(new Ranked(finding, stats.impact()));
+        }
         return found;
+    }
+
+    /**
+     * An N+1 finding of either kind: everything but what the rule names is the shared
+     * fold's (findings.adoc#n-plus-one-http).
+     *
+     * @param action what the endpoint does that many times a request: {@code runs SELECT
+     *        order_line} or {@code calls GET localhost:8081/api/books/?}
+     * @param unit   what repeats, in the {@code why}: {@code statement} or {@code call}
+     */
+    private Finding repeated(String kind, Repeats.RepeatStats<?> stats, long requests,
+            String action, String unit, Subject subject, @Nullable String statement,
+            List<String> code) {
+        Repeats.Occurrence<?> first = stats.first();
+        return new Finding(
+                id(kind, first.service(), first.endpointId() + "\0" + first.groupKey()),
+                kind, stats.severity(tingles.slowRequestMs()), first.service(),
+                first.endpoint() + " " + action + " " + stats.median() + " times per request",
+                stats.why(requests, unit),
+                subject, stats.numbers(requests), statement, code, stats.evidenceTraces());
     }
 
     private List<String[]> candidates(Window window, @Nullable String service) {
@@ -977,9 +938,18 @@ public final class Findings {
         // Every pair of the window, not the most repeated few: affected and requests
         // must count the same population (findings.adoc#n-plus-one).
         return sql.query("SELECT trace_id, query_id FROM span WHERE " + where
-                        + " GROUP BY trace_id, query_id HAVING COUNT(*) >= " + REPEATS
+                        + " GROUP BY trace_id, query_id HAVING COUNT(*) >= " + Repeats.MIN_REPEATS
                         + " ORDER BY trace_id, query_id",
                 params, rs -> new String[]{rs.getString("trace_id"), rs.getString("query_id")});
+    }
+
+    /**
+     * The requests of an endpoint over the window, read once per endpoint for one run
+     * of a rule, and not at all when only the ids matter.
+     */
+    private long requests(Window window, @Nullable String service, boolean evidence,
+            String endpointId, Map<String, Long> byEndpoint) {
+        return evidence ? byEndpoint.computeIfAbsent(endpointId, id -> requests(window, service, id)) : 0;
     }
 
     private long requests(Window window, @Nullable String service, String endpointId) {
@@ -995,18 +965,6 @@ public final class Findings {
     // --- n + 1 over HTTP ------------------------------------------------------
 
     /**
-     * One repeated outbound call under one entry span.
-     *
-     * @param spanId  the call whose attributes give the code: the first that carries
-     *        {@code code.stacktrace}, else the first
-     * @param located whether that call carries {@code code.stacktrace}
-     */
-    private record CallRepeat(String traceId, String endpointId, String endpoint, String service,
-            String target, String call, int repeats, double totalMs, long start, String spanId,
-            boolean located) {
-    }
-
-    /**
      * The same outbound call, five or more times under one entry span.
      *
      * <p>The N+1 an ORM cannot cause: a loop that fetches one remote resource per
@@ -1018,89 +976,32 @@ public final class Findings {
     private List<Ranked> nPlusOneHttp(Window window, @Nullable String service, Reads reads,
             boolean evidence) {
         Queries.Ancestry ancestry = reads.ancestry();
-        Map<String, List<CallRepeat>> byEntry = new LinkedHashMap<>();
+        List<Repeats.Occurrence<Queries.OutboundCall>> occurrences = new ArrayList<>();
         for (Queries.OutboundCall span : reads.outboundHttp()) {
             Queries.Ancestry.Entry entry = ancestry.entryOf(span.spanId());
             if (entry == null) {
                 continue;
             }
-            byEntry.computeIfAbsent(entry.spanId() + "\0" + span.call(), key -> new ArrayList<>())
-                    .add(new CallRepeat(span.traceId(),
-                            Ids.endpointId(entry.service(), entry.endpoint()), entry.endpoint(),
-                            entry.service(), span.target(), span.call(), 1, span.durationMillis(),
-                            span.startMillis(), span.spanId(), span.located()));
-        }
-
-        Map<String, List<CallRepeat>> byEndpointAndCall = new LinkedHashMap<>();
-        byEntry.values().forEach(calls -> {
-            if (calls.size() < REPEATS) {
-                return;
-            }
-            CallRepeat first = calls.get(0);
-            double totalMs = 0;
-            long start = Long.MAX_VALUE;
             // The extension captures the stack on the fifth repeat, as it does for a statement.
-            CallRepeat located = first;
-            for (CallRepeat call : calls) {
-                totalMs += call.totalMs();
-                start = Math.min(start, call.start());
-                if (!located.located() && call.located()) {
-                    located = call;
-                }
-            }
-            byEndpointAndCall
-                    .computeIfAbsent(first.endpointId() + "\0" + first.call(), key -> new ArrayList<>())
-                    .add(new CallRepeat(first.traceId(), first.endpointId(), first.endpoint(),
-                            first.service(), first.target(), first.call(), calls.size(), totalMs,
-                            start, located.spanId(), located.located()));
-        });
+            occurrences.add(new Repeats.Occurrence<>(span.traceId(), entry.spanId(),
+                    Ids.endpointId(entry.service(), entry.endpoint()), entry.endpoint(),
+                    entry.service(), span.call(), span.durationMillis(), span.startMillis(),
+                    span.located(), span));
+        }
 
         Map<String, Long> requestsByEndpoint = new HashMap<>();
         List<Ranked> found = new ArrayList<>();
-        byEndpointAndCall.values().forEach(affected -> {
-            CallRepeat first = affected.get(0);
-            long requests = evidence ? requestsByEndpoint.computeIfAbsent(first.endpointId(),
-                    id -> requests(window, service, id)) : 0;
-            int[] repeats = new int[affected.size()];
-            double totalMs = 0;
-            for (int i = 0; i < affected.size(); i++) {
-                repeats[i] = affected.get(i).repeats();
-                totalMs += affected.get(i).totalMs();
-            }
-            Arrays.sort(repeats);
-            long median = repeats[(int) Math.ceil(0.5 * repeats.length) - 1];
-            long max = repeats[repeats.length - 1];
-            double msPerRequest = totalMs / affected.size();
-
-            Map<String, Object> numbers = new LinkedHashMap<>();
-            numbers.put("requests", requests);
-            numbers.put("affected", (long) affected.size());
-            numbers.put("medianRepeats", median);
-            numbers.put("maxRepeats", max);
-            numbers.put("msPerRequest", msPerRequest);
-
-            String severity = median >= LOUD_REPEATS || msPerRequest > tingles.slowRequestMs()
-                    ? HIGH : MEDIUM;
-            List<CallRepeat> newest = new ArrayList<>(affected);
-            newest.sort(Comparator.comparingLong(CallRepeat::start).reversed());
-            List<String> traces = new ArrayList<>();
-            for (CallRepeat repeat : newest) {
-                if (traces.size() < EVIDENCE_TRACES && !traces.contains(repeat.traceId())) {
-                    traces.add(repeat.traceId());
-                }
-            }
-            List<String> code = evidence ? callCode(newest) : List.of();
-            Finding finding = new Finding(
-                    id(N_PLUS_ONE_HTTP, first.service(), first.endpointId() + "\0" + first.call()),
-                    N_PLUS_ONE_HTTP, severity, first.service(),
-                    first.endpoint() + " calls " + first.call() + " " + median + " times per request",
-                    affected.size() + " of " + Numbers.plural(requests, "request") + " repeated it; "
-                            + counts(repeats) + " times; " + Numbers.millis(msPerRequest)
-                            + " per request in that call",
-                    Subject.repeatedCall(first.endpointId(), first.target()),
-                    numbers, null, code, List.copyOf(traces));
-            found.add(new Ranked(finding, affected.size() * (double) median));
-        });
+        for (List<Repeats.RequestRepeat<Queries.OutboundCall>> affected
+                : Repeats.foldPerEntry(occurrences)) {
+            Repeats.RepeatStats<Queries.OutboundCall> stats = Repeats.RepeatStats.of(affected);
+            Repeats.Occurrence<Queries.OutboundCall> first = stats.first();
+            Finding finding = repeated(N_PLUS_ONE_HTTP, stats,
+                    requests(window, service, evidence, first.endpointId(), requestsByEndpoint),
+                    "calls " + first.groupKey(), "call",
+                    Subject.repeatedCall(first.endpointId(), first.detail().target()), null,
+                    evidence ? callCode(stats.newest()) : List.of());
+            found.add(new Ranked(finding, stats.impact()));
+        }
         return found;
     }
 
@@ -1115,20 +1016,21 @@ public final class Findings {
      * <p>The attributes are read again by span id, one call at a time, so the window's
      * outbound calls are held without them.
      */
-    private List<String> callCode(List<CallRepeat> newest) {
+    private List<String> callCode(List<Repeats.RequestRepeat<Queries.OutboundCall>> newest) {
         int attempts = 0;
-        for (CallRepeat repeat : newest) {
-            if (!repeat.located()) {
+        for (Repeats.RequestRepeat<Queries.OutboundCall> repeat : newest) {
+            Queries.OutboundCall call = repeat.located().detail();
+            if (!call.located()) {
                 continue;
             }
-            List<String> code = frames.ofAttributes(attributesOf(repeat.traceId(), repeat.spanId()));
+            List<String> code = frames.ofAttributes(attributesOf(call.traceId(), call.spanId()));
             if (!code.isEmpty() || ++attempts >= CODE_ATTEMPTS) {
                 return code;
             }
         }
-        CallRepeat first = newest.get(0);
-        return first.located() ? List.of()
-                : frames.ofAttributes(attributesOf(first.traceId(), first.spanId()));
+        Queries.OutboundCall call = newest.get(0).located().detail();
+        return call.located() ? List.of()
+                : frames.ofAttributes(attributesOf(call.traceId(), call.spanId()));
     }
 
     // --- slow query ----------------------------------------------------------
@@ -2029,18 +1931,5 @@ public final class Findings {
         }
         int dot = type.lastIndexOf('.');
         return dot < 0 ? type : type.substring(dot + 1);
-    }
-
-    /** {@code 42, 42 and 41}: the repeats a person would read out, largest first. */
-    private static String counts(int[] repeats) {
-        List<String> largest = new ArrayList<>();
-        for (int i = repeats.length - 1; i >= 0 && largest.size() < 3; i--) {
-            largest.add(String.valueOf(repeats[i]));
-        }
-        if (largest.size() == 1) {
-            return largest.get(0);
-        }
-        String last = largest.remove(largest.size() - 1);
-        return String.join(", ", largest) + " and " + last;
     }
 }
