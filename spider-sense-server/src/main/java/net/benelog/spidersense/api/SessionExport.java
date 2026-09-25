@@ -16,9 +16,17 @@ import java.util.List;
 
 import net.benelog.spidersense.query.Window;
 import net.benelog.spidersense.server.Version;
-import net.benelog.spidersense.store.AttrJson;
+import net.benelog.spidersense.store.CatalogRow;
+import net.benelog.spidersense.store.LogRow;
+import net.benelog.spidersense.store.MarkRow;
+import net.benelog.spidersense.store.MetricRow;
+import net.benelog.spidersense.store.PointRow;
 import net.benelog.spidersense.store.Schema;
+import net.benelog.spidersense.store.SeriesRow;
+import net.benelog.spidersense.store.ServiceRow;
+import net.benelog.spidersense.store.SpanRow;
 import net.benelog.spidersense.store.Sql;
+import net.benelog.spidersense.store.TingleRow;
 import net.benelog.spidersilk.json.Json;
 import org.jspecify.annotations.Nullable;
 
@@ -35,7 +43,9 @@ import org.jspecify.annotations.Nullable;
  * <p>The keys are the column names of storage.adoc#schema in camelCase, and nothing is
  * derived: the point of the document is that importing it reproduces the rows,
  * so {@code entry}, {@code slow}, {@code endpointId} and the rest travel as they
- * are stored rather than being decided again on the other side.
+ * are stored rather than being decided again on the other side. Each row is
+ * written by the {@code toJson} of the store's row record for its table
+ * ({@link SpanRow} and the others), whose {@code fromJson} the importer reads it back with.
  */
 final class SessionExport {
 
@@ -82,15 +92,15 @@ final class SessionExport {
                 .put("service", service)
                 .toJson());
 
-        section(out, "services", connection, services(service), SessionExport::service);
-        section(out, "spans", connection, spans(window, service), SessionExport::span);
-        section(out, "logs", connection, logs(window, service), SessionExport::log);
-        section(out, "metrics", connection, metrics(), SessionExport::metric);
-        section(out, "metricSeries", connection, series(window, service), SessionExport::series);
-        section(out, "metricPoints", connection, points(window, service), SessionExport::point);
-        section(out, "tingles", connection, tingles(window, service), SessionExport::tingle);
-        section(out, "marks", connection, marks(window, service), SessionExport::mark);
-        section(out, "dbTables", connection, catalog(service), SessionExport::catalogRow);
+        section(out, "services", connection, services(service), rs -> ServiceRow.read(rs).toJson());
+        section(out, "spans", connection, spans(window, service), rs -> SpanRow.read(rs).toJson());
+        section(out, "logs", connection, logs(window, service), rs -> LogRow.read(rs).toJson());
+        section(out, "metrics", connection, metrics(), rs -> MetricRow.read(rs).toJson());
+        section(out, "metricSeries", connection, series(window, service), rs -> SeriesRow.read(rs).toJson());
+        section(out, "metricPoints", connection, points(window, service), rs -> PointRow.read(rs).toJson());
+        section(out, "tingles", connection, tingles(window, service), rs -> TingleRow.read(rs).toJson());
+        section(out, "marks", connection, marks(window, service), rs -> MarkRow.read(rs).toJson());
+        section(out, "dbTables", connection, catalog(service), rs -> CatalogRow.read(rs).toJson());
         out.write("}");
     }
 
@@ -133,73 +143,14 @@ final class SessionExport {
                 : new Select("SELECT * FROM service WHERE name = ? ORDER BY name", List.of(service));
     }
 
-    private static Json.JsonObject service(ResultSet rs) throws SQLException {
-        return Json.obj()
-                .put("name", rs.getString("name"))
-                .put("language", rs.getString("language"))
-                .put("pid", value(Sql.longOrNull(rs, "pid")))
-                .put("firstSeen", rs.getLong("first_seen"))
-                .put("lastSeen", rs.getLong("last_seen"))
-                .put("resource", Json.parse(orEmpty(rs.getString("resource"))));
-    }
-
     private static Select spans(Window window, @Nullable String service) {
         return windowed("SELECT * FROM span WHERE start_ms BETWEEN ? AND ?", "service",
                 " ORDER BY start_ms, id", window, service);
     }
 
-    private static Json.JsonObject span(ResultSet rs) throws SQLException {
-        return Json.obj()
-                .put("traceId", rs.getString("trace_id"))
-                .put("spanId", rs.getString("span_id"))
-                .put("parentSpanId", rs.getString("parent_span_id"))
-                .put("service", rs.getString("service"))
-                .put("name", rs.getString("name"))
-                .put("kind", rs.getString("kind"))
-                .put("startMs", rs.getLong("start_ms"))
-                .put("startNs", rs.getLong("start_ns"))
-                .put("durationNs", rs.getLong("duration_ns"))
-                .put("status", rs.getString("status"))
-                .put("statusMessage", rs.getString("status_message"))
-                .put("entry", rs.getBoolean("entry"))
-                .put("error", rs.getBoolean("error"))
-                .put("slow", rs.getBoolean("slow"))
-                .put("category", rs.getString("category"))
-                .put("endpoint", rs.getString("endpoint"))
-                .put("endpointId", rs.getString("endpoint_id"))
-                .put("httpMethod", rs.getString("http_method"))
-                .put("httpRoute", rs.getString("http_route"))
-                .put("httpStatus", value(Sql.longOrNull(rs, "http_status")))
-                .put("dbSystem", rs.getString("db_system"))
-                .put("dbStatement", rs.getString("db_statement"))
-                .put("dbNamespace", rs.getString("db_namespace"))
-                .put("dbOperation", rs.getString("db_operation"))
-                .put("dbTable", rs.getString("db_table"))
-                .put("queryId", rs.getString("query_id"))
-                .put("errorType", rs.getString("error_type"))
-                .put("errorMessage", rs.getString("error_message"))
-                .put("errorId", rs.getString("error_id"))
-                .put("scope", rs.getString("scope"))
-                .put("attributes", Json.parse(orEmpty(rs.getString("attributes"))))
-                .put("events", Json.parse(orEmptyArray(rs.getString("events"))));
-    }
-
     private static Select logs(Window window, @Nullable String service) {
         return windowed("SELECT * FROM log WHERE at_ms BETWEEN ? AND ?", "service",
                 " ORDER BY at_ms, id", window, service);
-    }
-
-    private static Json.JsonObject log(ResultSet rs) throws SQLException {
-        return Json.obj()
-                .put("atMs", rs.getLong("at_ms"))
-                .put("service", rs.getString("service"))
-                .put("severityNumber", rs.getInt("severity_number"))
-                .put("severity", rs.getString("severity"))
-                .put("body", rs.getString("body"))
-                .put("logger", rs.getString("logger"))
-                .put("traceId", rs.getString("trace_id"))
-                .put("spanId", rs.getString("span_id"))
-                .put("attributes", Json.parse(orEmpty(rs.getString("attributes"))));
     }
 
     /**
@@ -208,17 +159,6 @@ final class SessionExport {
      */
     private static Select metrics() {
         return new Select("SELECT * FROM metric ORDER BY service, name", List.of());
-    }
-
-    private static Json.JsonObject metric(ResultSet rs) throws SQLException {
-        return Json.obj()
-                .put("service", rs.getString("service"))
-                .put("name", rs.getString("name"))
-                .put("type", rs.getString("type"))
-                .put("unit", rs.getString("unit"))
-                .put("description", rs.getString("description"))
-                .put("monotonic", rs.getBoolean("monotonic"))
-                .put("temporality", rs.getString("temporality"));
     }
 
     /** Only the series with a point in the window; the others describe nothing here. */
@@ -235,14 +175,6 @@ final class SessionExport {
         return new Select(sql + " ORDER BY s.id", params);
     }
 
-    private static Json.JsonObject series(ResultSet rs) throws SQLException {
-        return Json.obj()
-                .put("id", rs.getLong("id"))
-                .put("service", rs.getString("service"))
-                .put("name", rs.getString("name"))
-                .put("attributes", Json.parse(orEmpty(rs.getString("attributes"))));
-    }
-
     private static Select points(Window window, @Nullable String service) {
         String sql = """
                 SELECT p.* FROM metric_point p JOIN metric_series s ON s.id = p.series_id
@@ -255,34 +187,9 @@ final class SessionExport {
         return new Select(sql + " ORDER BY p.series_id, p.at_ms", params);
     }
 
-    private static Json.JsonObject point(ResultSet rs) throws SQLException {
-        String buckets = rs.getString("buckets");
-        return Json.obj()
-                .put("seriesId", rs.getLong("series_id"))
-                .put("atMs", rs.getLong("at_ms"))
-                .put("value", value(doubleOrNull(rs, "value")))
-                .put("count", value(Sql.longOrNull(rs, "count")))
-                .put("sum", value(doubleOrNull(rs, "sum")))
-                .put("min", value(doubleOrNull(rs, "min")))
-                .put("max", value(doubleOrNull(rs, "max")))
-                .put("buckets", buckets == null ? null : Json.parse(buckets));
-    }
-
     private static Select tingles(Window window, @Nullable String service) {
         return windowed("SELECT * FROM tingle WHERE at_ms BETWEEN ? AND ?", "service",
                 " ORDER BY at_ms, id", window, service);
-    }
-
-    private static Json.JsonObject tingle(ResultSet rs) throws SQLException {
-        return Json.obj()
-                .put("atMs", rs.getLong("at_ms"))
-                .put("kind", rs.getString("kind"))
-                .put("service", rs.getString("service"))
-                .put("title", rs.getString("title"))
-                .put("detail", rs.getString("detail"))
-                .put("traceId", rs.getString("trace_id"))
-                .put("spanId", rs.getString("span_id"))
-                .put("durationMs", value(doubleOrNull(rs, "duration_ms")));
     }
 
     /**
@@ -299,14 +206,6 @@ final class SessionExport {
         return new Select(sql + " ORDER BY at_ms, id", params);
     }
 
-    private static Json.JsonObject mark(ResultSet rs) throws SQLException {
-        return Json.obj()
-                .put("atMs", rs.getLong("at_ms"))
-                .put("name", rs.getString("name"))
-                .put("service", rs.getString("service"))
-                .put("note", rs.getString("note"));
-    }
-
     /**
      * The index catalog of the services the document carries, windowed by service
      * and not by time: the extension reads a table's indexes once per process, so
@@ -321,26 +220,6 @@ final class SessionExport {
                         + " ORDER BY service, schema_name, table_name", List.of(service));
     }
 
-    /**
-     * {@code indexes} travels as the array it is; a stored text that does not
-     * parse travels as that text, since the export repairs nothing (the reader
-     * drops such a row, storage.adoc).
-     */
-    private static Json.JsonObject catalogRow(ResultSet rs) throws SQLException {
-        String indexes = orEmptyArray(rs.getString("indexes"));
-        Json.JsonObject row = Json.obj()
-                .put("service", rs.getString("service"))
-                .put("schemaName", rs.getString("schema_name"))
-                .put("tableName", rs.getString("table_name"))
-                .put("product", rs.getString("product"));
-        try {
-            row.put("indexes", Json.parse(indexes));
-        } catch (RuntimeException notJson) {
-            row.put("indexes", indexes);
-        }
-        return row.put("seenMs", rs.getLong("seen_ms"));
-    }
-
     // --- the plumbing --------------------------------------------------------------
 
     private static Select windowed(String sql, String serviceColumn, String order, Window window,
@@ -352,31 +231,5 @@ final class SessionExport {
             params.add(service);
         }
         return new Select(statement + order, params);
-    }
-
-    /**
-     * A nullable number as the JSON value it is: a number, or null — which
-     * {@code put(key, (JsonValue) null)} writes as {@code null}.
-     */
-    private static Json.JsonValue value(@Nullable Long number) {
-        return AttrJson.toJson(number, AttrJson.Rules.ANSWER);
-    }
-
-    /** The same for a double; a NaN or an infinity has no JSON syntax, so it is null. */
-    private static Json.JsonValue value(@Nullable Double number) {
-        return AttrJson.toJson(number, AttrJson.Rules.ANSWER);
-    }
-
-    private static @Nullable Double doubleOrNull(ResultSet rs, String column) throws SQLException {
-        double value = rs.getDouble(column);
-        return rs.wasNull() ? null : value;
-    }
-
-    private static String orEmpty(@Nullable String json) {
-        return json == null || json.isEmpty() ? AttrJson.EMPTY_OBJECT : json;
-    }
-
-    private static String orEmptyArray(@Nullable String json) {
-        return json == null || json.isEmpty() ? AttrJson.EMPTY_ARRAY : json;
     }
 }

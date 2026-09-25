@@ -244,6 +244,31 @@ class ExportImportTest {
     }
 
     /**
+     * Every key the export writes is one the import reads back into the same
+     * column: the document a store exports after importing a file is that file,
+     * byte for byte, but for when it was written.
+     */
+    @Test
+    void anImportedDocumentExportsAgainAsTheSameDocument() {
+        String[] document = new String[1];
+        serve(client -> {
+            fill(client);
+            document[0] = client.get("/api/export" + window()).body();
+        });
+
+        serve(client -> {
+            assertThat(postJson(client, "/api/import", document[0]).statusCode()).isEqualTo(200);
+            String again = client.get("/api/export" + window()).body();
+
+            assertThat(withoutExportedAt(again)).isEqualTo(withoutExportedAt(document[0]));
+        });
+    }
+
+    private static String withoutExportedAt(String document) {
+        return document.replaceFirst("\"exportedAt\":\\d+", "\"exportedAt\":0");
+    }
+
+    /**
      * A log line outside any span and a tingle without a trace have no trace to be
      * skipped with, so they are recognised by their own columns, and two identical
      * lines of the file stay two lines.
