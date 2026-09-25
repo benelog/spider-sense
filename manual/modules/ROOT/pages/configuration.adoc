@@ -8,7 +8,7 @@ The sources in order of precedence, highest first, are the `--key=value` argumen
 The environment variable of a key is its name in upper case with every `.` and `-` made `_`, so `spidersense.slow.query.ms` is `SPIDERSENSE_SLOW_QUERY_MS`.
 An environment variable that is set but empty counts as unset, so it hides neither the properties file nor the default.
 A numeric key whose value is not a number, such as `spidersense.slow.query.ms=1x`, is a warning on stderr, and that key alone takes its default; every other key keeps its value.
-The launcher's own numeric arguments are the exception: the standalone jar answers a malformed `--port`, `--retention.hours`, `--slow.request.ms` or `--slow.query.ms` as a usage error, printing `spider-sense: --slow.query.ms is not a number: 1x` on stderr and exiting `2` without starting.
+The launcher's own arguments are the exception: the standalone jar answers a numeric `--key=value` argument that is not a number, such as `--slow.query.ms=1x` or `--retention.spans=1x`, as a usage error, printing `spider-sense: --slow.query.ms is not a number: 1x` on stderr and exiting `2` without starting.
 
 [#properties]
 == Properties

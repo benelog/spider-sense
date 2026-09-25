@@ -129,9 +129,16 @@ public record Config(
                     // and reads them as spidersense.* properties, so the argument becomes the
                     // property. The value is kept as written, because an empty
                     // spidersense.ignore.endpoints means "ignore nothing" (configuration.adoc#ignored-endpoints).
-                    case "app.packages", "ignore.endpoints", "retention.spans",
-                            "ingest.max-spans-per-second", "source.dirs" ->
+                    case "app.packages", "ignore.endpoints", "source.dirs" ->
                             System.setProperty("spidersense." + key, value);
+                    // Numbers, so checked here: a typo is the same usage error as --port's,
+                    // not a stack trace from the server after the banner.
+                    case "retention.spans", "ingest.max-spans-per-second" -> {
+                        if (!value.isEmpty()) {
+                            long unused = Long.parseLong(value);
+                        }
+                        System.setProperty("spidersense." + key, value);
+                    }
                     default -> { /* unknown keys are ignored */ }
                 }
             } catch (NumberFormatException e) {
@@ -271,8 +278,10 @@ public record Config(
         try {
             return Integer.valueOf(v.trim());
         } catch (NumberFormatException e) {
+            // Passed on as the default rather than left unset, so the server does not read the
+            // same malformed property again and warn a second time.
             warnMalformed(name, v, String.valueOf(DEFAULT_RETENTION_HOURS));
-            return null;
+            return DEFAULT_RETENTION_HOURS;
         }
     }
 

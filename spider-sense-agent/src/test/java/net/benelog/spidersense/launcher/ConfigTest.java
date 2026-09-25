@@ -32,6 +32,12 @@ class ConfigTest {
                 .hasMessage("--port is not a number: abc");
         assertThatThrownBy(() -> Config.fromArgs(new String[] {"--slow.query.ms=1x"}))
                 .hasMessage("--slow.query.ms is not a number: 1x");
+        assertThatThrownBy(() -> Config.fromArgs(new String[] {"--retention.spans=1x"}))
+                .as("a key the server owns is checked before it is forwarded")
+                .hasMessage("--retention.spans is not a number: 1x");
+        assertThatThrownBy(() -> Config.fromArgs(new String[] {"--ingest.max-spans-per-second=abc"}))
+                .hasMessage("--ingest.max-spans-per-second is not a number: abc");
+        assertThat(System.getProperty("spidersense.retention.spans")).as("nothing forwarded").isNull();
     }
 
     @Test
@@ -240,7 +246,7 @@ class ConfigTest {
         assertThat(c.service()).isEqualTo("orders");
         assertThat(c.slowQueryMs()).as("the bad key alone takes its default").isEqualTo(100);
         assertThat(c.port()).isEqualTo(4000);
-        assertThat(c.retentionHours()).as("left to the server's default").isNull();
+        assertThat(c.retentionHours()).as("the default, passed on so the server does not warn again").isEqualTo(24);
         assertThat(c.slowRequestMs()).isEqualTo(250);
     }
 

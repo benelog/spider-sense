@@ -110,11 +110,44 @@ class ConfigTest {
         assertThat(config.databaseFile()).isNull();
     }
 
+    /** An argument is the caller's own statement, and the launcher has already refused a bad one. */
     @Test
-    void anUnparseableNumberIsRejectedAtStartupRatherThanIgnored() {
+    void anUnparseableNumberArgumentIsRejectedAtStartupRatherThanIgnored() {
         assertThat(org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
                 () -> Config.parse(new String[]{"--port=eight"})))
                 .hasMessageContaining("--port");
+    }
+
+    /**
+     * A malformed property or variable costs its own key and no other, with a warning: it must not
+     * stop the embedded UI of an application that is otherwise unaffected (configuration.adoc).
+     */
+    @Test
+    void aMalformedPropertyOrVariableWarnsAndFallsBackAlone() {
+        java.io.ByteArrayOutputStream captured = new java.io.ByteArrayOutputStream();
+        java.io.PrintStream stderr = System.err;
+        System.setProperty("spidersense.retention.spans", "1x");
+        System.setProperty("spidersense.retention.hours", "abc");
+        System.setProperty("spidersense.slow.query.ms", "77");
+        System.setErr(new java.io.PrintStream(captured, true, java.nio.charset.StandardCharsets.UTF_8));
+        try {
+            Config config = Config.parse(new String[0],
+                    java.util.Map.of("SPIDERSENSE_INGEST_MAX_SPANS_PER_SECOND", "abc")::get);
+
+            assertThat(config.retentionSpans()).isEqualTo(1_000_000);
+            assertThat(config.retentionHours()).isEqualTo(24);
+            assertThat(config.maxSpansPerSecond()).as("no cap, as when unset").isNull();
+            assertThat(config.slowQueryMs()).as("every other key keeps its value").isEqualTo(77);
+            assertThat(captured.toString(java.nio.charset.StandardCharsets.UTF_8))
+                    .contains("spidersense.retention.spans=1x is not a number; using 1000000")
+                    .contains("spidersense.retention.hours=abc is not a number; using 24")
+                    .contains("spidersense.ingest.max-spans-per-second=abc is not a number");
+        } finally {
+            System.setErr(stderr);
+            System.clearProperty("spidersense.retention.spans");
+            System.clearProperty("spidersense.retention.hours");
+            System.clearProperty("spidersense.slow.query.ms");
+        }
     }
 
     @Test

@@ -5,6 +5,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 
 
@@ -91,6 +92,7 @@ public record Config(
                 values.put(arg.substring(2), "true");
             }
         }
+        Set<String> given = Set.copyOf(values.keySet());
         for (String key : KEYS) {
             if (!values.containsKey(key) && System.getProperty("spidersense." + key) == null) {
                 String fromEnv = env.apply(envName("spidersense." + key));
@@ -99,17 +101,18 @@ public record Config(
                 }
             }
         }
+        Numbers numbers = new Numbers(values, given);
         boolean agent = AGENT.equalsIgnoreCase(string(values, "mode", STANDALONE));
         return new Config(
                 string(values, "host", "127.0.0.1"),
-                number(values, "port", 4000).intValue(),
+                numbers.number("port", 4000).intValue(),
                 agent ? AGENT : STANDALONE,
                 string(values, "db", DEFAULT_DB),
-                number(values, "retention.hours", 24L).intValue(),
-                number(values, "retention.spans", Sweeper.DEFAULT_RETENTION_SPANS),
-                optionalNumber(values, "ingest.max-spans-per-second"),
-                number(values, "slow.request.ms", 500L),
-                number(values, "slow.query.ms", 100L),
+                numbers.number("retention.hours", 24L).intValue(),
+                numbers.number("retention.spans", Sweeper.DEFAULT_RETENTION_SPANS),
+                numbers.optionalNumber("ingest.max-spans-per-second"),
+                numbers.number("slow.request.ms", 500L),
+                numbers.number("slow.query.ms", 100L),
                 // A standalone server runs inside no application, whatever service a
                 // properties file or a build tool names for the applications beside it.
                 agent ? embeddedService(values) : null,
@@ -228,25 +231,46 @@ public record Config(
         return value == null ? System.getProperty("spidersense." + key) : value;
     }
 
-    /** The same, but {@code null} when nobody said anything: an unset cap is not a cap of zero. */
-    private static @Nullable Long optionalNumber(Map<String, String> values, String key) {
-        String value = stringOrNull(values, key);
-        return value == null || value.isBlank() ? null : parse(key, value);
-    }
+    /**
+     * The numeric keys, read with the rule configuration.adoc gives: a malformed argument is a
+     * usage error, because the command line is the caller's own statement and the launcher has
+     * already refused a bad one; a malformed system property or environment variable is a
+     * warning on stderr, and that key alone takes its default, so a typo in one key never stops
+     * the embedded UI of an application that is otherwise unaffected.
+     *
+     * @param given the keys that came as {@code --key=value} arguments
+     */
+    private record Numbers(Map<String, String> values, Set<String> given) {
 
-    private static Long number(Map<String, String> values, String key, long fallback) {
-        String value = stringOrNull(values, key);
-        if (value == null) {
-            return fallback;
+        /** The number, else null when nobody said anything: an unset cap is not a cap of zero. */
+        @Nullable Long optionalNumber(String key) {
+            String value = stringOrNull(values, key);
+            if (value == null || value.isBlank()) {
+                return null;
+            }
+            return parse(key, value, null);
         }
-        return parse(key, value);
-    }
 
-    private static Long parse(String key, String value) {
-        try {
-            return Long.parseLong(value.trim());
-        } catch (NumberFormatException e) {
-            throw new IllegalArgumentException("Not a number for --" + key + ": " + value, e);
+        Long number(String key, long fallback) {
+            String value = stringOrNull(values, key);
+            if (value == null || (value.isBlank() && !given.contains(key))) {
+                return fallback;
+            }
+            Long parsed = parse(key, value, fallback);
+            return parsed == null ? fallback : parsed;
+        }
+
+        private @Nullable Long parse(String key, String value, @Nullable Long fallback) {
+            try {
+                return Long.parseLong(value.trim());
+            } catch (NumberFormatException e) {
+                if (given.contains(key)) {
+                    throw new IllegalArgumentException("Not a number for --" + key + ": " + value, e);
+                }
+                System.err.println("[spider-sense] spidersense." + key + "=" + value
+                        + " is not a number; using " + (fallback == null ? "no cap" : fallback));
+                return null;
+            }
         }
     }
 }
