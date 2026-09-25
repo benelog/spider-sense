@@ -146,9 +146,21 @@ public final class Stats {
             return new Node("user", "user", "Clients", null, false, 0, 0, 0, 0);
         }
 
+        private static final String SERVICE_PREFIX = "svc:";
+
         public static Node service(ServiceSummary summary) {
-            return new Node("svc:" + summary.name(), "service", summary.name(), summary.totals(),
+            return new Node(serviceId(summary.name()), "service", summary.name(), summary.totals(),
                     summary.hasJvm(), 0, 0, 0, 0);
+        }
+
+        /** The id of a service's node, which the edges name it by: {@code svc:<name>}. */
+        public static String serviceId(String name) {
+            return SERVICE_PREFIX + name;
+        }
+
+        /** The service a node id names, or null when the node is not a service. */
+        public static @Nullable String serviceOf(String id) {
+            return id.startsWith(SERVICE_PREFIX) ? id.substring(SERVICE_PREFIX.length()) : null;
         }
 
         public static Node target(String kind, String target, long calls, long errors,

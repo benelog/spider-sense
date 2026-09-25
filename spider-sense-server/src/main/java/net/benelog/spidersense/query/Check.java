@@ -38,12 +38,6 @@ public final class Check {
 
     public static final String NO_REQUESTS = "no requests in the window";
 
-    /**
-     * Every group and every finding of the window, not the top of it: a count
-     * that stops at a cut passes a rule it should fail.
-     */
-    private static final int EVERY = Integer.MAX_VALUE;
-
     public record RuleCheck(String rule, double limit, @Nullable Double actual, boolean pass,
             String detail) {
     }
@@ -110,7 +104,7 @@ public final class Check {
         List<List<Findings.Finding>> found = new ArrayList<>(1);
         Supplier<List<Findings.Finding>> ranked = () -> {
             if (found.isEmpty()) {
-                found.add(findings.ranked(window, service, EVERY));
+                found.add(findings.ranked(window, service, Queries.ALL_GROUPS));
             }
             return found.get(0);
         };
@@ -160,12 +154,12 @@ public final class Check {
                         + Numbers.plural(requests, "request") + " failed (" + Numbers.percent(actual) + ")");
             }
             case MAX_QUERIES_PER_REQUEST -> {
-                Map<String, Queries.DbWork> work = queries.databaseWork(window, service);
+                Map<String, Queries.DbWork> byEndpoint = queries.databaseWork(window, service);
                 Stats.EndpointStats worst = null;
                 double actual = 0;
                 for (Stats.EndpointStats each : endpoints) {
-                    Queries.DbWork database = work.getOrDefault(each.endpointId(), Queries.DbWork.NONE);
-                    double perRequest = each.calls() == 0 ? 0 : (double) database.calls() / each.calls();
+                    Queries.DbWork work = byEndpoint.getOrDefault(each.endpointId(), Queries.DbWork.NONE);
+                    double perRequest = work.callsPer(each.calls());
                     if (worst == null || perRequest > actual) {
                         worst = each;
                         actual = perRequest;
@@ -179,7 +173,7 @@ public final class Check {
             case MAX_SLOW_QUERIES -> {
                 long slow = 0;
                 if (endpoint == null) {
-                    for (Stats.QueryStats query : queries.queryGroups(window, service, "total", EVERY, null)) {
+                    for (Stats.QueryStats query : queries.queryGroups(window, service, "total", Queries.ALL_GROUPS, null)) {
                         slow += query.slowCalls();
                     }
                 } else {
@@ -279,8 +273,8 @@ public final class Check {
         long count = 0;
         // Only an endpoint scope needs where each group occurred.
         List<Stats.ErrorGroup> groups = endpoint == null
-                ? queries.errorGroups(window, service, EVERY, null)
-                : queries.errors(window, service, EVERY, null);
+                ? queries.errorGroups(window, service, Queries.ALL_GROUPS, null)
+                : queries.errors(window, service, Queries.ALL_GROUPS, null);
         for (Stats.ErrorGroup group : groups) {
             if (endpoint == null) {
                 count += group.count();

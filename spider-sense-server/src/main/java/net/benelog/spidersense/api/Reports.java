@@ -311,7 +311,7 @@ public final class Reports implements AutoCloseable {
     public @Nullable Report finding(Window window, @Nullable String service, String id,
             boolean full) {
         List<Findings.Finding> ranked =
-                findings.answer(window, service, Integer.MAX_VALUE, false).findings();
+                findings.answer(window, service, Queries.ALL_GROUPS, false).findings();
         for (int i = 0; i < ranked.size(); i++) {
             Findings.Finding finding = ranked.get(i);
             if (finding.id().equals(id)) {

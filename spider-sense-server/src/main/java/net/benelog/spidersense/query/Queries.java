@@ -15,6 +15,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.function.Supplier;
@@ -48,6 +49,13 @@ public final class Queries {
      * and the spans a time split reads, which stop at a whole trace under it.
      */
     private static final int MAX_DEPENDENCY_ROWS = 20_000;
+
+    /**
+     * The limit that asks for every group or finding of a window, not the top of it: a
+     * count or a comparison that stops at a cut passes a rule it should fail, or reads a
+     * group that falls just below the cut on one side as {@code new} or {@code gone}.
+     */
+    public static final int ALL_GROUPS = Integer.MAX_VALUE;
 
     private static final String PERCENTILES = """
             PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY duration_ns) AS p50_ns,
@@ -298,6 +306,25 @@ public final class Queries {
     public record DbWork(long calls, double totalMs, long slowCalls) {
 
         public static final DbWork NONE = new DbWork(0, 0, 0);
+
+        /**
+         * Database calls per request (or per run): what {@code dbCallsPerRequest},
+         * {@code check --max-queries-per-request} and {@code compare}'s {@code db/req}
+         * all report; zero when nothing was requested.
+         */
+        public double callsPer(long requests) {
+            return requests <= 0 ? 0 : (double) calls / requests;
+        }
+
+        /** Database time per request (or per run); zero when nothing was requested. */
+        public double msPer(long requests) {
+            return requests <= 0 ? 0 : totalMs / requests;
+        }
+
+        /** The database time's share of {@code totalMs}, at most one; zero when there was no time. */
+        public double shareOf(double totalMs) {
+            return totalMs <= 0 ? 0 : Math.min(1, this.totalMs / totalMs);
+        }
     }
 
     /**
@@ -435,7 +462,7 @@ public final class Queries {
 
     /** The same groups alone, with no callers and no schema block, for a finding's state. */
     List<Stats.QueryStats> slowQueryGroups(Window window, @Nullable String service) {
-        return queryGroups(window, service, "total", Integer.MAX_VALUE, null,
+        return queryGroups(window, service, "total", ALL_GROUPS, null,
                 "PERCENTILE_DISC(0.95) WITHIN GROUP (ORDER BY duration_ns) > "
                         + tingles.slowQueryMs() * 1_000_000L);
     }
@@ -1349,8 +1376,9 @@ public final class Queries {
         // A service with no request of its own, a worker whose jobs still call a
         // database, is on the map through the edges it starts: one node per service.
         for (Stats.Edge edge : edges) {
-            if (edge.from().startsWith("svc:")) {
-                named.add(edge.from().substring("svc:".length()));
+            String caller = Stats.Node.serviceOf(edge.from());
+            if (caller != null) {
+                named.add(caller);
             }
         }
 
@@ -1360,7 +1388,7 @@ public final class Queries {
             Stats.ServiceSummary summary = summaries.getOrDefault(name,
                     new Stats.ServiceSummary(name, null, false, 0, 0, Stats.Totals.EMPTY,
                             new long[window.bucketCount()], false));
-            nodes.put("svc:" + name, Stats.Node.service(summary));
+            nodes.put(Stats.Node.serviceId(name), Stats.Node.service(summary));
         }
         for (Stats.Node target : targets) {
             nodes.put(target.id(), target);
@@ -1408,13 +1436,13 @@ public final class Queries {
                         + " GROUP BY p.service, c.service",
                 List.of(window.from(), window.to()), rs -> {
                     long calls = rs.getLong("calls");
-                    return new Stats.Edge("svc:" + rs.getString("caller"),
-                            "svc:" + rs.getString("callee"), calls, rs.getLong("errors"),
+                    return new Stats.Edge(Stats.Node.serviceId(rs.getString("caller")),
+                            Stats.Node.serviceId(rs.getString("callee")), calls, rs.getLong("errors"),
                             calls == 0 ? 0 : Rows.ms(rs, "total_ns") / calls, Rows.ms(rs, "p95_ns"));
                 });
         for (Stats.Edge edge : edges) {
             // The caller is on the map even when it served no request of its own.
-            named.add(edge.from().substring("svc:".length()));
+            named.add(Objects.requireNonNull(Stats.Node.serviceOf(edge.from()), "a service edge"));
         }
         return edges;
     }
@@ -1432,7 +1460,7 @@ public final class Queries {
                         + " GROUP BY c.service",
                 List.of(window.from(), window.to()), rs -> {
                     long calls = rs.getLong("calls");
-                    return new Stats.Edge("user", "svc:" + rs.getString("callee"), calls,
+                    return new Stats.Edge("user", Stats.Node.serviceId(rs.getString("callee")), calls,
                             rs.getLong("errors"),
                             calls == 0 ? 0 : Rows.ms(rs, "total_ns") / calls, Rows.ms(rs, "p95_ns"));
                 });
@@ -1475,7 +1503,7 @@ public final class Queries {
         byCaller.forEach((key, group) -> {
             String[] parts = key.split("\0", 2);
             CallStats stats = CallStats.of(group);
-            edges.add(new Stats.Edge("svc:" + parts[1], parts[0], stats.calls(), stats.errors(),
+            edges.add(new Stats.Edge(Stats.Node.serviceId(parts[1]), parts[0], stats.calls(), stats.errors(),
                     stats.avgMs(), stats.p95Ms()));
         });
         return edges;
@@ -1565,6 +1593,12 @@ public final class Queries {
      */
     record Ancestry(Map<String, Entry> entries, Map<String, String> parents) {
 
+        /**
+         * How far up a parent chain the walk goes before it gives up: a guard against a
+         * cycle of parent ids, far deeper than any real chain of spans to an entry span.
+         */
+        private static final int MAX_PARENT_HOPS = 64;
+
         /** The entry span itself, so a finding can count the requests it affected. */
         record Entry(String spanId, String endpoint, String service) {
         }
@@ -1607,7 +1641,7 @@ public final class Queries {
 
         @Nullable Entry entryOf(@Nullable String spanId) {
             String current = spanId;
-            for (int depth = 0; current != null && depth < 64; depth++) {
+            for (int depth = 0; current != null && depth < MAX_PARENT_HOPS; depth++) {
                 Entry entry = entries.get(current);
                 if (entry != null) {
                     return entry;

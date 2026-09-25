@@ -25,7 +25,16 @@ public record ResponseBuckets(long slowRequestMs) {
 
     /** The three bounds in milliseconds, as {@code /api/status} reports them. */
     public long[] bounds() {
-        return new long[]{slowRequestMs / 4, slowRequestMs, slowRequestMs * 4};
+        return new long[]{slowRequestMs / 4, slowRequestMs, frustratedMs()};
+    }
+
+    /**
+     * {@code 4T}: past it a request frustrates rather than being tolerated, and a
+     * {@code slow-endpoint}, {@code slow-job} or {@code slow-external} whose p95 is
+     * past it is {@code high} (findings.adoc#slow-endpoint).
+     */
+    public long frustratedMs() {
+        return slowRequestMs * 4;
     }
 
     private long[] boundsNanos() {

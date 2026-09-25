@@ -91,6 +91,14 @@ public final class Findings {
     /** The title of a {@code log-error} carries this much of the message (findings.adoc#log-error). */
     private static final int MESSAGE_IN_TITLE = 80;
 
+    /** A {@code slow-query} whose p95 is this many times {@code slow.query.ms} is {@code high}. */
+    private static final int SLOW_QUERY_HIGH_FACTOR = 10;
+
+    /** The title of an N+1 or a {@code slow-query} names at most this much of a statement. */
+    private static final int STATEMENT_IN_TITLE = 60;
+
+    private static final double BYTES_PER_MIB = 1_048_576.0;
+
     /** The traces of a {@code slow-external} group the three slowest are picked from. */
     private static final int EVIDENCE_CANDIDATES = 200;
 
@@ -1055,16 +1063,15 @@ public final class Findings {
         List<Ranked> found = new ArrayList<>();
         for (Stats.QueryStats query : slow) {
             Map<String, Object> numbers = new LinkedHashMap<>();
+            String name = queryName(query.operation(), query.table(), query.statement());
             numbers.put("calls", query.calls());
             numbers.put("slowCalls", query.slowCalls());
-            numbers.put("p50Ms", query.p50Ms());
-            numbers.put("p95Ms", query.p95Ms());
-            numbers.put("maxMs", query.maxMs());
-            numbers.put("totalMs", query.totalMs());
+            new SlowGroup(query.service(), name, query.calls(), query.p50Ms(), query.p95Ms(),
+                    query.maxMs(), query.totalMs()).putPercentiles(numbers);
             numbers.put("callers", callers(query.callers()));
 
-            String name = queryName(query.operation(), query.table(), query.statement());
-            String severity = query.p95Ms() > 10 * tingles.slowQueryMs() ? HIGH : MEDIUM;
+            String severity = query.p95Ms() > SLOW_QUERY_HIGH_FACTOR * tingles.slowQueryMs()
+                    ? HIGH : MEDIUM;
             Finding finding = new Finding(
                     id(SLOW_QUERY, query.service(), query.queryId()),
                     SLOW_QUERY, severity, query.service(),
@@ -1109,54 +1116,93 @@ public final class Findings {
 
         List<Ranked> found = new ArrayList<>();
         for (Stats.EndpointStats endpoint : slow) {
+            SlowGroup group = SlowGroup.of(endpoint);
             Queries.DbWork work = databaseWork.getOrDefault(endpoint.endpointId(), Queries.DbWork.NONE);
-            double perRequest = endpoint.calls() == 0 ? 0 : (double) work.calls() / endpoint.calls();
-            double msPerRequest = endpoint.calls() == 0 ? 0 : work.totalMs() / endpoint.calls();
-            double share = endpoint.totalMs() <= 0 ? 0
-                    : Math.min(1, work.totalMs() / endpoint.totalMs());
-
-            List<String> sample = evidence ? traceIds(queries.tracesContaining(window,
-                    "endpoint_id = ?", endpoint.endpointId(), SAMPLE_TRACES, true)) : List.of();
-            List<String> traces = evidenceOf(sample);
-            Queries.TimeSplit split = queries.timeSplit(window, endpoint.service(), sample);
+            TimeEvidence time = timeEvidence(window, endpoint.service(), evidence
+                    ? traceIds(queries.tracesContaining(window, "endpoint_id = ?",
+                            endpoint.endpointId(), SAMPLE_TRACES, true))
+                    : List.of());
 
             Map<String, Object> numbers = new LinkedHashMap<>();
-            numbers.put("calls", endpoint.calls());
-            numbers.put("p50Ms", endpoint.p50Ms());
-            numbers.put("p95Ms", endpoint.p95Ms());
-            numbers.put("maxMs", endpoint.maxMs());
-            numbers.put("totalMs", endpoint.totalMs());
+            numbers.put("calls", group.count());
+            group.putPercentiles(numbers);
             numbers.put("apdex", endpoint.apdex());
-            numbers.put("dbCallsPerRequest", perRequest);
-            numbers.put("dbMsPerRequest", msPerRequest);
-            numbers.put("dbShare", share);
-            numbers.put("hotSpan", hotSpan(traces));
-            numbers.put("hotSpans", hotSpans(split));
-            numbers.put("breakdown", split.breakdown());
+            putDatabaseWork(numbers, group, work, "Request");
+            time.putInto(numbers);
 
-            String severity = endpoint.p95Ms() > 4 * tingles.slowRequestMs() ? HIGH : MEDIUM;
             Finding finding = new Finding(
                     id(SLOW_ENDPOINT, endpoint.service(), endpoint.endpointId()),
-                    SLOW_ENDPOINT, severity, endpoint.service(),
+                    SLOW_ENDPOINT, slowSeverity(group.p95Ms()), endpoint.service(),
                     endpoint.name() + " is slow",
-                    "p95 " + Numbers.millis(endpoint.p95Ms()) + " over "
-                            + Numbers.plural(endpoint.calls(), "call") + "; "
-                            + Numbers.number(perRequest) + " database calls and "
-                            + Numbers.millis(msPerRequest) + " per request, "
-                            + Numbers.percent(share) + " of the time",
+                    slowWhy(group, work, "call", "request"),
                     Subject.endpoint(endpoint.endpointId()),
-                    numbers, null, List.of(), traces);
+                    numbers, null, List.of(), time.traces());
             found.add(new Ranked(finding, endpoint.totalMs()));
         }
         return found;
     }
 
-    // --- slow job ------------------------------------------------------------
-
-    /** One job group over the window: the runs of one span name of one service. */
-    private record Job(String service, String name, long runs, double p50Ms, double p95Ms,
-            double maxMs, double totalMs) {
+    /**
+     * {@code high} past the Apdex "frustrated" bound, four times {@code slow.request.ms},
+     * {@code medium} otherwise: the rule {@code slow-endpoint}, {@code slow-job} and
+     * {@code slow-external} share (findings.adoc#slow-endpoint).
+     */
+    private String slowSeverity(double p95Ms) {
+        return p95Ms > queries.responseBuckets().frustratedMs() ? HIGH : MEDIUM;
     }
+
+    /**
+     * The database work of a group per request (or per run) and its share of the
+     * group's time, as {@code dbCallsPer…}, {@code dbMsPer…} and {@code dbShare}.
+     *
+     * @param per {@code Request} or {@code Run}, the end of the two keys
+     */
+    private static void putDatabaseWork(Map<String, Object> numbers, SlowGroup group,
+            Queries.DbWork work, String per) {
+        numbers.put("dbCallsPer" + per, work.callsPer(group.count()));
+        numbers.put("dbMsPer" + per, work.msPer(group.count()));
+        numbers.put("dbShare", work.shareOf(group.totalMs()));
+    }
+
+    /**
+     * {@code p95 812 ms over 40 calls; 12 database calls and 90 ms per request, 11% of
+     * the time}.
+     *
+     * @param counted what the group counts: {@code call} or {@code run}
+     * @param per     what the database work is per: {@code request} or {@code run}
+     */
+    private static String slowWhy(SlowGroup group, Queries.DbWork work, String counted,
+            String per) {
+        return "p95 " + Numbers.millis(group.p95Ms()) + " over "
+                + Numbers.plural(group.count(), counted) + "; "
+                + Numbers.number(work.callsPer(group.count())) + " database calls and "
+                + Numbers.millis(work.msPer(group.count())) + " per " + per + ", "
+                + Numbers.percent(work.shareOf(group.totalMs())) + " of the time";
+    }
+
+    /**
+     * Where the time of a slow group went, read from a sample of its slowest traces:
+     * the first {@link #EVIDENCE_TRACES} are the finding's own evidence, the first of
+     * them names the hot span, and the whole sample is split into the aggregated hot
+     * spans and the breakdown (findings.adoc#time).
+     */
+    private record TimeEvidence(List<String> traces, @Nullable Map<String, Object> hotSpan,
+            Queries.TimeSplit split) {
+
+        void putInto(Map<String, Object> numbers) {
+            numbers.put("hotSpan", hotSpan);
+            numbers.put("hotSpans", hotSpans(split));
+            numbers.put("breakdown", split.breakdown());
+        }
+    }
+
+    /** The time evidence of a sample; an empty sample, when only the ids matter, reads nothing. */
+    private TimeEvidence timeEvidence(Window window, String service, List<String> sample) {
+        List<String> traces = evidenceOf(sample);
+        return new TimeEvidence(traces, hotSpan(traces), queries.timeSplit(window, service, sample));
+    }
+
+    // --- slow job ------------------------------------------------------------
 
     /**
      * A job is a root {@code INTERNAL} span (design.adoc#endpoint-identity): a scheduled method, an
@@ -1168,14 +1214,14 @@ public final class Findings {
      * {@code slow-endpoint} measures over the requests of an endpoint.
      */
     private List<Ranked> slowJobs(Window window, @Nullable String service, boolean evidence) {
-        List<Job> slow = slowJobGroups(window, service);
+        List<SlowGroup> slow = slowJobGroups(window, service);
         if (slow.isEmpty()) {
             return List.of();
         }
         // Only the jobs that crossed the threshold become findings, so only they are
         // joined with their database spans, one service at a time.
         Map<String, Set<String>> slowNames = new LinkedHashMap<>();
-        for (Job job : slow) {
+        for (SlowGroup job : slow) {
             slowNames.computeIfAbsent(job.service(), name -> new LinkedHashSet<>()).add(job.name());
         }
         Map<String, Queries.DbWork> databaseWork = new HashMap<>();
@@ -1185,45 +1231,29 @@ public final class Findings {
         }
 
         List<Ranked> found = new ArrayList<>();
-        for (Job job : slow) {
+        for (SlowGroup job : slow) {
             String key = job.service() + "\0" + job.name();
             Queries.DbWork work = databaseWork.getOrDefault(key, Queries.DbWork.NONE);
-            double perRun = job.runs() == 0 ? 0 : (double) work.calls() / job.runs();
-            double msPerRun = job.runs() == 0 ? 0 : work.totalMs() / job.runs();
-            double share = job.totalMs() <= 0 ? 0 : Math.min(1, work.totalMs() / job.totalMs());
-
-            List<String> sample = evidence ? traceIds(queries.tracesContaining(window,
-                    "parent_span_id IS NULL AND s.kind = 'INTERNAL' AND s.service = ? AND s.name = ?",
-                    List.of(job.service(), job.name()), SAMPLE_TRACES, true)) : List.of();
-            List<String> traces = evidenceOf(sample);
-            Queries.TimeSplit split = queries.timeSplit(window, job.service(), sample);
+            TimeEvidence time = timeEvidence(window, job.service(), evidence
+                    ? traceIds(queries.tracesContaining(window,
+                            "parent_span_id IS NULL AND s.kind = 'INTERNAL' AND s.service = ? AND s.name = ?",
+                            List.of(job.service(), job.name()), SAMPLE_TRACES, true))
+                    : List.of());
 
             Map<String, Object> numbers = new LinkedHashMap<>();
-            numbers.put("runs", job.runs());
-            numbers.put("p50Ms", job.p50Ms());
-            numbers.put("p95Ms", job.p95Ms());
-            numbers.put("maxMs", job.maxMs());
-            numbers.put("totalMs", job.totalMs());
-            numbers.put("dbCallsPerRun", perRun);
-            numbers.put("dbMsPerRun", msPerRun);
-            numbers.put("dbShare", share);
-            numbers.put("hotSpan", hotSpan(traces));
-            numbers.put("hotSpans", hotSpans(split));
-            numbers.put("breakdown", split.breakdown());
+            numbers.put("runs", job.count());
+            job.putPercentiles(numbers);
+            putDatabaseWork(numbers, job, work, "Run");
+            time.putInto(numbers);
 
-            String severity = job.p95Ms() > 4 * tingles.slowRequestMs() ? HIGH : MEDIUM;
             Finding finding = new Finding(
                     id(SLOW_JOB, job.service(), job.name()),
-                    SLOW_JOB, severity, job.service(),
+                    SLOW_JOB, slowSeverity(job.p95Ms()), job.service(),
                     job.name() + " is slow",
-                    "p95 " + Numbers.millis(job.p95Ms()) + " over "
-                            + Numbers.plural(job.runs(), "run") + "; "
-                            + Numbers.number(perRun) + " database calls and "
-                            + Numbers.millis(msPerRun) + " per run, "
-                            + Numbers.percent(share) + " of the time",
+                    slowWhy(job, work, "run", "run"),
                     Subject.job(job.name()),
                     numbers, null,
-                    evidence ? frames.ofAttributes(newestRun(window, job)) : List.of(), traces);
+                    evidence ? frames.ofAttributes(newestRun(window, job)) : List.of(), time.traces());
             found.add(new Ranked(finding, job.totalMs()));
         }
         return found;
@@ -1236,7 +1266,7 @@ public final class Findings {
      * <p>Every one of them: the threshold is a {@code HAVING}, so a slow job that ranks
      * low by total time is still a finding (findings.adoc#slow-job).
      */
-    private List<Job> slowJobGroups(Window window, @Nullable String service) {
+    private List<SlowGroup> slowJobGroups(Window window, @Nullable String service) {
         List<Object> params = new ArrayList<>(List.of(window.from(), window.to()));
         String where = jobWhere(service, params);
         return sql.query("SELECT service, name, COUNT(*) AS runs,"
@@ -1247,7 +1277,7 @@ public final class Findings {
                         + " HAVING PERCENTILE_DISC(0.95) WITHIN GROUP (ORDER BY duration_ns) > "
                         + tingles.slowRequestMs() * 1_000_000L
                         + " ORDER BY total_ns DESC, service, name",
-                params, rs -> new Job(rs.getString("service"), rs.getString("name"),
+                params, rs -> new SlowGroup(rs.getString("service"), rs.getString("name"),
                         rs.getLong("runs"), Rows.ms(rs, "p50_ns"), Rows.ms(rs, "p95_ns"),
                         Rows.ms(rs, "max_ns"), Rows.ms(rs, "total_ns")));
     }
@@ -1260,7 +1290,7 @@ public final class Findings {
      * the window and stops at the first run, where a statement over every group
      * would read every span of the window.
      */
-    private @Nullable Map<String, Object> newestRun(Window window, Job job) {
+    private @Nullable Map<String, Object> newestRun(Window window, SlowGroup job) {
         List<Object> params = new ArrayList<>(List.of(window.from(), window.to()));
         String where = jobWhere(job.service(), params) + " AND name = ?";
         params.add(job.name());
@@ -1340,17 +1370,14 @@ public final class Findings {
         Map<String, Object> numbers = new LinkedHashMap<>();
         numbers.put("calls", (long) calls.size());
         numbers.put("errors", errors);
-        numbers.put("p50Ms", Queries.percentile(durations, 0.5));
-        numbers.put("p95Ms", p95Ms);
-        numbers.put("maxMs", durations[durations.length - 1]);
-        numbers.put("totalMs", totalMs);
+        new SlowGroup(service, name, calls.size(), Queries.percentile(durations, 0.5), p95Ms,
+                durations[durations.length - 1], totalMs).putPercentiles(numbers);
         numbers.put("callers", reads == null ? List.of()
                 : callers(externalCallers(reads, calls, service)));
 
-        String severity = p95Ms > 4 * tingles.slowRequestMs() ? HIGH : MEDIUM;
         Finding finding = new Finding(
                 id(SLOW_EXTERNAL, service, target + "\0" + name),
-                SLOW_EXTERNAL, severity, service,
+                SLOW_EXTERNAL, slowSeverity(p95Ms), service,
                 name + " " + target + " is slow",
                 "p95 " + Numbers.millis(p95Ms) + " over "
                         + Numbers.plural(calls.size(), "call") + ", "
@@ -1492,6 +1519,8 @@ public final class Findings {
                         + Numbers.number(worstPending) + " requests waiting",
                 Subject.pool(pool.name()),
                 numbers, null, List.of(), List.of());
+        // Ranked by the most waiting, then by the fullest: no pool has a million connections,
+        // so the waiting count dominates and the usage only breaks a tie.
         return new Ranked(finding, worstPending * 1_000_000 + usedMax);
     }
 
@@ -1660,8 +1689,8 @@ public final class Findings {
                 id(HEAP_PRESSURE, service, "heap"),
                 HEAP_PRESSURE, HIGH, service,
                 "heap at " + Numbers.percent(ratioMax) + " of its limit",
-                Numbers.number(usedMax / 1_048_576.0) + " MiB of "
-                        + Numbers.number(limit / 1_048_576.0) + " MiB in use at the worst point",
+                Numbers.number(usedMax / BYTES_PER_MIB) + " MiB of "
+                        + Numbers.number(limit / BYTES_PER_MIB) + " MiB in use at the worst point",
                 Subject.jvm("heap"),
                 numbers, null, List.of(), List.of());
         return new Ranked(finding, ratioMax);
@@ -1915,8 +1944,7 @@ public final class Findings {
         if (statement == null) {
             return "a query";
         }
-        String single = statement.replaceAll("\\s+", " ").trim();
-        return single.length() <= 60 ? single : single.substring(0, 60) + "…";
+        return cut(statement, STATEMENT_IN_TITLE);
     }
 
     /** {@code java.lang.IllegalStateException} is said as {@code IllegalStateException}. */
