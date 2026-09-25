@@ -12,8 +12,10 @@ import net.benelog.spidersense.query.Queries;
 import net.benelog.spidersense.query.SchemaBlock;
 import net.benelog.spidersense.query.Stats;
 import net.benelog.spidersense.query.Window;
+import net.benelog.spidersense.server.Version;
 import net.benelog.spidersense.store.Acks;
 import net.benelog.spidersense.store.AttrJson;
+import net.benelog.spidersense.store.Database;
 import net.benelog.spidersense.store.ExceptionChain;
 import net.benelog.spidersense.store.LogRecord;
 import net.benelog.spidersense.store.Marks;
@@ -151,6 +153,68 @@ public final class Codecs {
     }
 
     // --- the contract's objects ---------------------------------------------
+
+    /** {@code GET /api/status} (api.adoc#status). */
+    static Json.JsonObject status(StatusSnapshot status) {
+        Json.JsonObject otlp = Json.obj();
+        String endpoint = status.endpoint();
+        if (endpoint != null) {
+            otlp.put("traces", endpoint + "/v1/traces")
+                    .put("metrics", endpoint + "/v1/metrics")
+                    .put("logs", endpoint + "/v1/logs");
+        }
+        // ingest.maxSpansPerSecond is always present, null for no cap, so the UI can tell "no
+        // cap" from "old server".
+        Json.JsonObject ingest = Json.obj();
+        Long cap = status.maxSpansPerSecond();
+        if (cap == null) {
+            ingest.putNull("maxSpansPerSecond");
+        } else {
+            ingest.put("maxSpansPerSecond", cap.longValue());
+        }
+        Database.Storage storage = status.storage();
+        return Json.obj()
+                .put("name", Version.NAME)
+                .put("version", Version.CURRENT)
+                .put("mode", status.mode())
+                .put("startedAt", status.startedAt())
+                .put("now", status.now())
+                .put("endpoint", endpoint)
+                .put("otlp", otlp)
+                .put("embeddedService", status.embeddedService())
+                .put("thresholds", Json.obj()
+                        .put("slowRequestMs", status.slowRequestMs())
+                        .put("slowQueryMs", status.slowQueryMs())
+                        .put("responseBucketsMs", longs(status.responseBuckets().bounds())))
+                .put("ignore", Json.obj()
+                        .put("endpoints", strings(status.ignoredEndpoints())))
+                .put("codeFrames", Json.obj()
+                        .put("appPackages", strings(status.appPackages()))
+                        .put("frameworkPrefixes", strings(status.frameworkPrefixes())))
+                .put("jar", status.jar())
+                .put("retention", Json.obj()
+                        .put("hours", status.retentionHours())
+                        .put("spans", status.retentionSpans()))
+                .put("ingest", ingest)
+                .put("storage", Json.obj()
+                        .put("url", storage.url())
+                        .put("path", storage.path())
+                        .put("sizeBytes", storage.sizeBytes())
+                        .put("fallback", storage.fallback())
+                        .put("fallbackReason", storage.fallbackReason())
+                        .put("droppedBatches", status.droppedBatches())
+                        .put("droppedSpans", status.droppedSpans())
+                        .put("queued", status.queued()))
+                .put("counts", Json.obj()
+                        .put("spans", status.spans())
+                        .put("traces", status.traces())
+                        .put("logs", status.logs())
+                        .put("metricSeries", status.metricSeries())
+                        .put("services", status.services()))
+                .put("oldest", Json.obj()
+                        .put("span", status.oldestSpan())
+                        .put("log", status.oldestLog()));
+    }
 
     static Json.JsonObject totals(Stats.Totals totals) {
         return putTotals(Json.obj(), totals);

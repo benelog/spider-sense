@@ -19,7 +19,9 @@ import net.benelog.spidersense.query.Queries;
 import net.benelog.spidersense.query.SchemaBlock;
 import net.benelog.spidersense.query.Stats;
 import net.benelog.spidersense.query.Window;
+import net.benelog.spidersense.server.Version;
 import net.benelog.spidersense.store.Acks;
+import net.benelog.spidersense.store.Database;
 import net.benelog.spidersense.store.Ids;
 import net.benelog.spidersense.store.Importer;
 import net.benelog.spidersense.store.LogRecord;
@@ -183,6 +185,39 @@ final class Text {
 
     // --- status ---------------------------------------------------------------
 
+    /** {@code status} as the table of cli.adoc#status: the fields a reader asks about, in order. */
+    static String status(StatusSnapshot status) {
+        Map<String, @Nullable String> fields = new LinkedHashMap<>();
+        fields.put("name", Version.NAME + " " + Version.CURRENT);
+        fields.put("mode", status.mode());
+        fields.put("endpoint", status.endpoint());
+        fields.put("started", status.startedAt() <= 0 ? null : instantMillis(status.startedAt()));
+        fields.put("embedded service", status.embeddedService());
+        fields.put("thresholds", "slow request " + status.slowRequestMs() + " ms, slow query "
+                + status.slowQueryMs() + " ms");
+        fields.put("ignore", status.ignoredEndpoints().isEmpty() ? "none"
+                : String.join(", ", status.ignoredEndpoints()));
+        fields.put("retention", status.retentionHours() + " hours, " + status.retentionSpans() + " spans");
+        if (status.maxSpansPerSecond() != null) {
+            fields.put("ingest cap", status.maxSpansPerSecond() + " spans/s");
+        }
+        Database.Storage storage = status.storage();
+        fields.put("database", storage.path() == null ? storage.url() : storage.path());
+        fields.put("database size", storage.sizeBytes() + " bytes");
+        if (storage.fallback()) {
+            fields.put("fallback", storage.fallbackReason());
+        }
+        fields.put("dropped spans", String.valueOf(status.droppedSpans()));
+        fields.put("spans", String.valueOf(status.spans()));
+        fields.put("traces", String.valueOf(status.traces()));
+        fields.put("logs", String.valueOf(status.logs()));
+        fields.put("metric series", String.valueOf(status.metricSeries()));
+        fields.put("services", String.valueOf(status.services()));
+        fields.put("oldest span", status.oldestSpan() <= 0 ? null : instantMillis(status.oldestSpan()));
+        return status(fields);
+    }
+
+    /** A {@code field | value} table under the {@code status} heading. */
     static String status(Map<String, @Nullable String> fields) {
         StringBuilder text = new StringBuilder("# status\n\n");
         table(text, List.of("field", "value"));

@@ -2,7 +2,6 @@ package net.benelog.spidersense.api;
 
 import java.io.OutputStream;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.IntSupplier;
@@ -19,7 +18,6 @@ import net.benelog.spidersense.query.Stats;
 import net.benelog.spidersense.query.Verdict;
 import net.benelog.spidersense.query.Window;
 import net.benelog.spidersense.server.Config;
-import net.benelog.spidersense.server.Version;
 import net.benelog.spidersense.store.Acks;
 import net.benelog.spidersense.store.Database;
 import net.benelog.spidersense.store.IgnoredEndpoints;
@@ -200,96 +198,16 @@ public final class Reports implements AutoCloseable {
      * {@code file} and there is no endpoint to advertise.
      */
     public Report status(String mode, @Nullable String endpoint, long startedAt) {
-        Database.Storage storage = database.storage();
-        Json.JsonObject otlp = Json.obj();
-        if (endpoint != null) {
-            otlp.put("traces", endpoint + "/v1/traces")
-                    .put("metrics", endpoint + "/v1/metrics")
-                    .put("logs", endpoint + "/v1/logs");
-        }
-        Json.JsonObject json = Json.obj()
-                .put("name", Version.NAME)
-                .put("version", Version.CURRENT)
-                .put("mode", mode)
-                .put("startedAt", startedAt)
-                .put("now", clock.getAsLong())
-                .put("endpoint", endpoint)
-                .put("otlp", otlp)
-                .put("embeddedService", services.embeddedService())
-                .put("thresholds", Json.obj()
-                        .put("slowRequestMs", tingles.slowRequestMs())
-                        .put("slowQueryMs", tingles.slowQueryMs())
-                        .put("responseBucketsMs", Codecs.longs(queries.responseBuckets().bounds())))
-                .put("ignore", Json.obj()
-                        .put("endpoints", Codecs.strings(tingles.ignored().patterns())))
-                .put("codeFrames", Json.obj()
-                        .put("appPackages", Codecs.strings(frames.appPackages()))
-                        .put("frameworkPrefixes", Codecs.strings(CodeFrames.FRAMEWORK_PREFIXES)))
-                .put("jar", config.jar())
-                .put("retention", Json.obj()
-                        .put("hours", config.retentionHours())
-                        .put("spans", config.retentionSpans()))
-                .put("ingest", ingest())
-                .put("storage", Json.obj()
-                        .put("url", storage.url())
-                        .put("path", storage.path())
-                        .put("sizeBytes", storage.sizeBytes())
-                        .put("fallback", storage.fallback())
-                        .put("fallbackReason", storage.fallbackReason())
-                        .put("droppedBatches", store == null ? 0 : store.writer().droppedBatches())
-                        .put("droppedSpans", droppedSpans())
-                        .put("queued", store == null ? 0 : store.writer().queuedBatches()))
-                .put("counts", Json.obj()
-                        .put("spans", queries.spanCount())
-                        .put("traces", queries.traceCount())
-                        .put("logs", queries.logCount())
-                        .put("metricSeries", queries.metricSeriesCount())
-                        .put("services", services.count()))
-                .put("oldest", Json.obj()
-                        .put("span", queries.oldestSpan())
-                        .put("log", queries.oldestLog()));
-
-        Map<String, @Nullable String> fields = new LinkedHashMap<>();
-        fields.put("name", Version.NAME + " " + Version.CURRENT);
-        fields.put("mode", mode);
-        fields.put("endpoint", endpoint);
-        fields.put("started", startedAt <= 0 ? null : Text.instantMillis(startedAt));
-        fields.put("embedded service", services.embeddedService());
-        fields.put("thresholds", "slow request " + tingles.slowRequestMs() + " ms, slow query "
-                + tingles.slowQueryMs() + " ms");
-        fields.put("ignore", tingles.ignored().isEmpty() ? "none"
-                : String.join(", ", tingles.ignored().patterns()));
-        fields.put("retention", config.retentionHours() + " hours, " + config.retentionSpans() + " spans");
-        if (config.maxSpansPerSecond() != null) {
-            fields.put("ingest cap", config.maxSpansPerSecond() + " spans/s");
-        }
-        fields.put("database", storage.path() == null ? storage.url() : storage.path());
-        fields.put("database size", storage.sizeBytes() + " bytes");
-        if (storage.fallback()) {
-            fields.put("fallback", storage.fallbackReason());
-        }
-        fields.put("dropped spans", String.valueOf(droppedSpans()));
-        fields.put("spans", String.valueOf(queries.spanCount()));
-        fields.put("traces", String.valueOf(queries.traceCount()));
-        fields.put("logs", String.valueOf(queries.logCount()));
-        fields.put("metric series", String.valueOf(queries.metricSeriesCount()));
-        fields.put("services", String.valueOf(services.count()));
-        long oldest = queries.oldestSpan();
-        fields.put("oldest span", oldest <= 0 ? null : Text.instantMillis(oldest));
-        return new Report(json, Text.status(fields));
-    }
-
-    /**
-     * {@code ingest.maxSpansPerSecond}: the configured cap, or JSON null when there is
-     * none. The key is always present so the UI can tell "no cap" from "old server".
-     */
-    private Json.JsonObject ingest() {
-        Json.JsonObject json = Json.obj();
-        Long cap = config.maxSpansPerSecond();
-        if (cap == null) {
-            return json.putNull("maxSpansPerSecond");
-        }
-        return json.put("maxSpansPerSecond", cap.longValue());
+        StatusSnapshot status = new StatusSnapshot(mode, endpoint, startedAt, clock.getAsLong(),
+                services.embeddedService(), tingles.slowRequestMs(), tingles.slowQueryMs(),
+                queries.responseBuckets(), tingles.ignored().patterns(), frames.appPackages(),
+                CodeFrames.FRAMEWORK_PREFIXES, config.jar(), config.retentionHours(),
+                config.retentionSpans(), config.maxSpansPerSecond(), database.storage(),
+                store == null ? 0 : store.writer().droppedBatches(), droppedSpans(),
+                store == null ? 0 : store.writer().queuedBatches(),
+                queries.spanCount(), queries.traceCount(), queries.logCount(),
+                queries.metricSeriesCount(), services.count(), queries.oldestSpan(), queries.oldestLog());
+        return new Report(Codecs.status(status), Text.status(status));
     }
 
     /** Zero without a store: the CLI reads the file, it never received anything itself. */
