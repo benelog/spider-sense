@@ -114,10 +114,49 @@ class ConfigTest {
     }
 
     @Test
-    void unknownArgumentsAndBareFlagsAreIgnored() {
-        Config c = Config.fromArgs(new String[] {"--help", "-x", "--nonsense=1", "--port=4100", ""});
+    void bareFlagsAreIgnored() {
+        Config c = Config.fromArgs(new String[] {"--help", "-x", "--port=4100", ""});
         assertThat(c.port()).isEqualTo(4100);
         assertThat(c).isEqualTo(Config.defaults().withPort(4100));
+    }
+
+    /** A mistyped key would otherwise take its default with nothing to say so. */
+    @Test
+    void anUnknownKeyIsAUsageError() {
+        assertThatThrownBy(() -> Config.fromArgs(new String[] {"--prot=4100"}))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("unknown option: --prot; java -jar spider-sense.jar --help lists them");
+    }
+
+    /**
+     * {@code --help} lists every key the standalone jar takes, each of which it accepts, and points
+     * at the CLI's own {@code help} for the commands rather than repeating a subset of them.
+     */
+    @Test
+    void theHelpListsEveryKeyTheJarTakesAndNothingElse() {
+        java.io.ByteArrayOutputStream captured = new java.io.ByteArrayOutputStream();
+        java.io.PrintStream stdout = System.out;
+        System.setOut(new java.io.PrintStream(captured, true, java.nio.charset.StandardCharsets.UTF_8));
+        try {
+            SpiderSenseMain.printHelp();
+        } finally {
+            System.setOut(stdout);
+        }
+        String help = captured.toString(java.nio.charset.StandardCharsets.UTF_8);
+        List<String> keys = java.util.regex.Pattern.compile("(?m)^\\s+--([a-z.-]+)=").matcher(help)
+                .results().map(m -> m.group(1)).toList();
+
+        assertThat(help).contains("java -jar spider-sense.jar help");
+        assertThat(keys).containsExactlyInAnyOrder("port", "host", "collector", "service", "db",
+                "retention.hours", "retention.spans", "ingest.max-spans-per-second",
+                "slow.request.ms", "slow.query.ms", "app.packages", "ignore.endpoints",
+                "source.dirs", "open");
+        for (String key : keys) {
+            touched.add("spidersense." + key);
+            String value = key.equals("open") ? "true" : key.contains(".ms") || key.startsWith("retention")
+                    || key.startsWith("ingest") || key.equals("port") ? "1" : "x";
+            Config.fromArgs(new String[] {"--" + key + "=" + value});
+        }
     }
 
     @Test

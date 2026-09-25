@@ -133,11 +133,9 @@ public final class SpiderSenseMain {
                                                                         instrument an app, UI elsewhere
                   java -jar spider-sense.jar                             the collector and UI alone
                   java -jar spider-sense.jar <command> [options]         ask a running Spider Sense, or the
-                                                                        database file, from the terminal:
-                                                                        status, findings, trace <id>, traces,
-                                                                        endpoints, queries, errors, logs,
-                                                                        mark <name>, marks, compare, check, sql, init,
-                                                                        help
+                                                                        database file, from the terminal;
+                                                                        java -jar spider-sense.jar help
+                                                                        lists every command
 
                 Options (as --key=value here, as -Dspidersense.key=value under -javaagent, or as
                 spidersense.key=value lines in spider-sense.properties in the working directory,
@@ -149,10 +147,19 @@ public final class SpiderSenseMain {
                   --service=<name>                agent mode: sets otel.service.name
                   --db=~/db/spider-sense/sense    H2 database path or jdbc:h2: URL
                   --retention.hours=24            rows older than this are swept
+                  --retention.spans=1000000       the most spans kept; 0 for no cap
+                  --ingest.max-spans-per-second=  above this, new traces are dropped; unset for no cap
                   --slow.request.ms=500           a server span slower than this is a tingle
                   --slow.query.ms=100             a DB span slower than this is a tingle
+                  --app.packages=                 package prefixes that count as application code
+                  --ignore.endpoints=/actuator/**,/health,/healthz,/livez,/readyz
+                                                  endpoints that are not requests; empty for none
+                  --source.dirs=                  source roots for code frames; the default is
+                                                  src/main/java and src/main/kotlin here and one level down
                   --open=false                    agent mode: open the browser at startup
                   --help, --version
+
+                An option not in this list is a usage error.
 
                 Every otel.* property still works as the OpenTelemetry agent documents it;
                 Spider Sense only fills in defaults.""");

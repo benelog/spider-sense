@@ -80,8 +80,8 @@ public record Config(
     /**
      * The system properties overridden by {@code --key=value} arguments; the keys are those of the
      * table without the {@code spidersense.} prefix, e.g. {@code --port=4001}.
-     * Unknown keys and bare flags are ignored so {@code --help} and {@code --version} can be
-     * handled by the caller. {@code --app.packages}, {@code --ignore.endpoints},
+     * Bare flags are ignored so {@code --help} and {@code --version} can be handled by the
+     * caller; an unknown {@code --key=value} is a usage error, as a malformed number is. {@code --app.packages}, {@code --ignore.endpoints},
      * {@code --retention.spans}, {@code --ingest.max-spans-per-second} and
      * {@code --source.dirs} belong to the server
      * alone and are forwarded as the {@code spidersense.*} system property of the same name,
@@ -139,7 +139,10 @@ public record Config(
                         }
                         System.setProperty("spidersense." + key, value);
                     }
-                    default -> { /* unknown keys are ignored */ }
+                    // A typo would otherwise be invisible: the key would take its default
+                    // and nothing would say so.
+                    default -> throw new IllegalArgumentException("unknown option: --" + key
+                            + "; java -jar spider-sense.jar --help lists them");
                 }
             } catch (NumberFormatException e) {
                 throw new IllegalArgumentException("--" + key + " is not a number: " + value, e);
