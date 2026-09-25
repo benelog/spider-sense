@@ -341,20 +341,13 @@ public final class Writer implements AutoCloseable {
 
     // --- spans ---
 
-    static final String INSERT_SPAN = """
-            INSERT INTO span (trace_id, span_id, parent_span_id, service, name, kind, start_ms, start_ns,
-                duration_ns, status, status_message, entry, error, slow, category, endpoint, endpoint_id,
-                http_method, http_route, http_status, db_system, db_statement, db_namespace, db_operation,
-                db_table, query_id, error_type, error_message, error_id, scope, attributes, events)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""";
-
     Set<String> insertSpans(Connection connection, List<Batch> batches) throws SQLException {
         Set<String> touched = new LinkedHashSet<>();
-        try (PreparedStatement statement = connection.prepareStatement(INSERT_SPAN)) {
+        try (PreparedStatement statement = connection.prepareStatement(SpanRow.INSERT)) {
             int pending = 0;
             for (Batch batch : batches) {
                 for (SpanRecord span : batch.spans()) {
-                    bindSpan(statement, span);
+                    SpanRow.of(span, tingles).bind(statement);
                     statement.addBatch();
                     touched.add(span.traceId());
                     pending++;
@@ -367,73 +360,14 @@ public final class Writer implements AutoCloseable {
         return touched;
     }
 
-    private void bindSpan(PreparedStatement statement, SpanRecord span) throws SQLException {
-        boolean entry = tingles.isEntry(span);
-        boolean error = span.isError();
-        String statementText = span.dbStatement();
-        String endpoint = entry ? span.endpointName() : null;
-        String errorType = error ? span.errorType() : null;
-        String errorMessage = error ? span.errorMessage() : null;
-
-        int i = 1;
-        statement.setString(i++, span.traceId());
-        statement.setString(i++, span.spanId());
-        statement.setString(i++, span.parentSpanId());
-        statement.setString(i++, span.service());
-        statement.setString(i++, Columns.cut(span.name(), Columns.SPAN_NAME));
-        statement.setString(i++, span.kind());
-        statement.setLong(i++, span.startMillis());
-        statement.setLong(i++, span.startNanos());
-        statement.setLong(i++, span.durationNanos());
-        statement.setString(i++, span.status());
-        statement.setString(i++, Columns.cut(span.statusMessage(), Columns.STATUS_MESSAGE));
-        statement.setBoolean(i++, entry);
-        statement.setBoolean(i++, error);
-        statement.setBoolean(i++, tingles.isSlow(span));
-        statement.setString(i++, span.category());
-        statement.setString(i++, Columns.cut(endpoint, Columns.ENDPOINT));
-        statement.setString(i++, endpoint == null ? null : Ids.endpointId(span.service(), endpoint));
-        statement.setString(i++, Columns.cut(span.httpMethod(), Columns.HTTP_METHOD));
-        statement.setString(i++, Columns.cut(span.httpRoute(), Columns.HTTP_ROUTE));
-        Columns.setLong(statement, i++, span.httpStatus());
-        statement.setString(i++, Columns.cut(span.dbSystem(), Columns.DB_SYSTEM));
-        statement.setString(i++, statementText);
-        statement.setString(i++, Columns.cut(span.dbNamespace(), Columns.DB_NAMESPACE));
-        statement.setString(i++, Columns.cut(span.dbOperation(), Columns.DB_OPERATION));
-        statement.setString(i++, Columns.cut(span.dbTable(), Columns.DB_TABLE));
-        statement.setString(i++, statementText == null ? null
-                : Ids.queryId(span.service(), String.valueOf(span.dbSystem()), statementText));
-        statement.setString(i++, Columns.cut(errorType, Columns.ERROR_TYPE));
-        statement.setString(i++, Columns.cut(errorMessage, Columns.ERROR_MESSAGE));
-        statement.setString(i++, error
-                ? Ids.errorId(span.service(), String.valueOf(errorType), errorMessage, span.stacktrace())
-                : null);
-        statement.setString(i++, Columns.cut(span.scope(), Columns.SCOPE));
-        statement.setString(i++, AttrJson.encode(span.attributes(), Columns.JSON_TEXT));
-        statement.setString(i, AttrJson.encodeEvents(span.events(), Columns.JSON_TEXT));
-    }
-
     // --- logs, tingles, catalogs, services, metrics ---
 
-    static final String INSERT_LOG = """
-            INSERT INTO log (at_ms, service, severity_number, severity, body, logger, trace_id, span_id,
-                attributes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""";
-
     private void insertLogs(Connection connection, List<Batch> batches) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement(INSERT_LOG)) {
+        try (PreparedStatement statement = connection.prepareStatement(LogRow.INSERT)) {
             int pending = 0;
             for (Batch batch : batches) {
                 for (LogRecord log : batch.logs()) {
-                    int i = 1;
-                    statement.setLong(i++, log.at());
-                    statement.setString(i++, log.service());
-                    statement.setInt(i++, log.severityNumber());
-                    statement.setString(i++, Columns.cut(log.severity(), Columns.LOG_SEVERITY));
-                    statement.setString(i++, Columns.cut(log.body(), Columns.LOG_BODY));
-                    statement.setString(i++, Columns.cut(log.logger(), Columns.LOGGER));
-                    statement.setString(i++, log.traceId());
-                    statement.setString(i++, log.spanId());
-                    statement.setString(i, AttrJson.encode(log.attributes(), Columns.JSON_TEXT));
+                    LogRow.of(log).bind(statement);
                     statement.addBatch();
                     pending++;
                 }
@@ -444,24 +378,12 @@ public final class Writer implements AutoCloseable {
         }
     }
 
-    static final String INSERT_TINGLE = """
-            INSERT INTO tingle (at_ms, kind, service, title, detail, trace_id, span_id, duration_ms)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""";
-
     private void insertTingles(Connection connection, List<Batch> batches) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement(INSERT_TINGLE)) {
+        try (PreparedStatement statement = connection.prepareStatement(TingleRow.INSERT)) {
             int pending = 0;
             for (Batch batch : batches) {
                 for (Tingle tingle : batch.tingles()) {
-                    int i = 1;
-                    statement.setLong(i++, tingle.at());
-                    statement.setString(i++, tingle.kind());
-                    statement.setString(i++, tingle.service());
-                    statement.setString(i++, Columns.cut(tingle.title(), Columns.TINGLE_TITLE));
-                    statement.setString(i++, Columns.cut(tingle.detail(), Columns.TINGLE_DETAIL));
-                    statement.setString(i++, tingle.traceId());
-                    statement.setString(i++, tingle.spanId());
-                    statement.setDouble(i, tingle.durationMs());
+                    TingleRow.of(tingle).bind(statement);
                     statement.addBatch();
                     pending++;
                 }
@@ -471,10 +393,6 @@ public final class Writer implements AutoCloseable {
             }
         }
     }
-
-    static final String MERGE_CATALOG = """
-            MERGE INTO db_table (service, schema_name, table_name, product, indexes, seen_ms)
-            KEY (service, schema_name, table_name) VALUES (?, ?, ?, ?, ?, ?)""";
 
     /**
      * The catalog rows of a flush, merged in the flush's own transaction.
@@ -485,17 +403,11 @@ public final class Writer implements AutoCloseable {
      * (storage.adoc#writer).
      */
     private void mergeCatalogs(Connection connection, List<Batch> batches) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement(MERGE_CATALOG)) {
+        try (PreparedStatement statement = connection.prepareStatement(CatalogRow.MERGE)) {
             int pending = 0;
             for (Batch batch : batches) {
                 for (Batch.Catalog catalog : batch.catalogs()) {
-                    int i = 1;
-                    statement.setString(i++, Columns.cut(catalog.service(), Columns.SERVICE));
-                    statement.setString(i++, Columns.cut(catalog.schemaName(), Columns.CATALOG_NAME));
-                    statement.setString(i++, Columns.cut(catalog.table(), Columns.CATALOG_NAME));
-                    statement.setString(i++, Columns.cut(catalog.product(), Columns.DB_PRODUCT));
-                    statement.setString(i++, Columns.cut(catalog.indexes(), Columns.JSON_TEXT));
-                    statement.setLong(i, catalog.at());
+                    CatalogRow.of(catalog).bind(statement);
                     statement.addBatch();
                     pending++;
                 }
@@ -524,31 +436,16 @@ public final class Writer implements AutoCloseable {
             }
         }
         for (Batch.Sighting sighting : sightings.values()) {
-            Object sdkLanguage = sighting.resource().get("telemetry.sdk.language");
-            String language = sdkLanguage == null ? null : Columns.cut(String.valueOf(sdkLanguage), Columns.LANGUAGE);
-            Object pid = sighting.resource().get("process.pid");
-            String resource = AttrJson.encode(sighting.resource(), Columns.JSON_TEXT);
-            markRestart(connection, sighting, pid, startOf(batches, sighting));
-            try (PreparedStatement update = connection.prepareStatement(
-                    "UPDATE service SET language = ?, pid = ?, last_seen = ?, resource = ? WHERE name = ?")) {
-                update.setString(1, language);
-                Columns.setLong(update, 2, pid instanceof Number n ? n.longValue() : null);
-                update.setLong(3, sighting.at());
-                update.setString(4, resource);
-                update.setString(5, sighting.name());
+            ServiceRow row = ServiceRow.of(sighting);
+            markRestart(connection, row, startOf(batches, sighting));
+            try (PreparedStatement update = connection.prepareStatement(ServiceRow.UPDATE)) {
+                row.bindUpdate(update);
                 if (update.executeUpdate() > 0) {
                     continue;
                 }
             }
-            try (PreparedStatement insert = connection.prepareStatement(
-                    "INSERT INTO service (name, language, pid, first_seen, last_seen, resource)"
-                            + " VALUES (?, ?, ?, ?, ?, ?)")) {
-                insert.setString(1, sighting.name());
-                insert.setString(2, language);
-                Columns.setLong(insert, 3, pid instanceof Number n ? n.longValue() : null);
-                insert.setLong(4, sighting.at());
-                insert.setLong(5, sighting.at());
-                insert.setString(6, resource);
+            try (PreparedStatement insert = connection.prepareStatement(ServiceRow.INSERT)) {
+                row.bindInsert(insert);
                 insert.executeUpdate();
             }
         }
@@ -598,36 +495,28 @@ public final class Writer implements AutoCloseable {
      * A sighting without a {@code process.pid} marks nothing, since there is
      * nothing to compare.
      */
-    private void markRestart(Connection connection, Batch.Sighting sighting, @Nullable Object pid, long at)
-            throws SQLException {
-        if (!(pid instanceof Number number)) {
+    private void markRestart(Connection connection, ServiceRow service, long at) throws SQLException {
+        Long pid = service.pid();
+        if (pid == null) {
             return;
         }
-        String note = "pid " + number.longValue();
+        MarkRow mark = new MarkRow(at, Marks.START, service.name(), "pid " + pid);
         try (PreparedStatement select = connection.prepareStatement(
                 "SELECT COUNT(*) FROM mark WHERE name = ? AND service = ? AND note = ?")) {
-            select.setString(1, Marks.START);
-            select.setString(2, sighting.name());
-            select.setString(3, note);
+            select.setString(1, mark.name());
+            select.setString(2, mark.service());
+            select.setString(3, mark.note());
             try (ResultSet rs = select.executeQuery()) {
                 if (rs.next() && rs.getLong(1) > 0) {
                     return;
                 }
             }
         }
-        try (PreparedStatement insert = connection.prepareStatement(
-                "INSERT INTO mark (at_ms, name, service, note) VALUES (?, ?, ?, ?)")) {
-            insert.setLong(1, at);
-            insert.setString(2, Marks.START);
-            insert.setString(3, sighting.name());
-            insert.setString(4, note);
+        try (PreparedStatement insert = connection.prepareStatement(MarkRow.INSERT)) {
+            mark.bind(insert);
             insert.executeUpdate();
         }
     }
-
-    static final String MERGE_POINT = """
-            MERGE INTO metric_point (series_id, at_ms, value, count, sum, min, max, buckets)
-            KEY(series_id, at_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""";
 
     void writeMetrics(Connection connection, List<Batch> batches) throws SQLException {
         // Keyed by service as well as name: two services may export one name as
@@ -643,17 +532,9 @@ public final class Writer implements AutoCloseable {
         if (samples.isEmpty()) {
             return;
         }
-        try (PreparedStatement statement = connection.prepareStatement(
-                "MERGE INTO metric (service, name, type, unit, description, monotonic, temporality)"
-                        + " KEY(service, name) VALUES (?, ?, ?, ?, ?, ?, ?)")) {
+        try (PreparedStatement statement = connection.prepareStatement(MetricRow.MERGE)) {
             for (Batch.MetricSample sample : metadata.values()) {
-                statement.setString(1, sample.service());
-                statement.setString(2, sample.name());
-                statement.setString(3, sample.type());
-                statement.setString(4, Columns.cut(sample.unit(), Columns.METRIC_UNIT));
-                statement.setString(5, Columns.cut(sample.description(), Columns.METRIC_DESCRIPTION));
-                statement.setBoolean(6, sample.monotonic());
-                statement.setString(7, sample.temporality());
+                MetricRow.of(sample).bind(statement);
                 statement.addBatch();
             }
             statement.executeBatch();
@@ -663,43 +544,14 @@ public final class Writer implements AutoCloseable {
             series.add(Series.of(sample));
         }
         forgetDeletedSeries(connection, series);
-        try (PreparedStatement statement = connection.prepareStatement(MERGE_POINT)) {
+        try (PreparedStatement statement = connection.prepareStatement(PointRow.MERGE)) {
             for (int s = 0; s < samples.size(); s++) {
                 Batch.MetricSample sample = samples.get(s);
-                long seriesId = seriesId(connection, sample, series.get(s));
-                MetricPoint point = sample.point();
-                int i = 1;
-                statement.setLong(i++, seriesId);
-                statement.setLong(i++, point.at());
-                statement.setDouble(i++, point.value());
-                statement.setLong(i++, point.count());
-                statement.setDouble(i++, point.sum());
-                Columns.setDouble(statement, i++, point.min());
-                Columns.setDouble(statement, i++, point.max());
-                statement.setString(i, buckets(point));
+                PointRow.of(seriesId(connection, sample, series.get(s)), sample.point()).bind(statement);
                 statement.addBatch();
             }
             statement.executeBatch();
         }
-    }
-
-    private static @Nullable String buckets(MetricPoint point) {
-        double[] bounds = point.bounds();
-        long[] counts = point.bucketCounts();
-        if (!point.hasBuckets() || bounds == null || counts == null) {
-            return null;
-        }
-        StringBuilder json = new StringBuilder("{\"bounds\":[");
-        for (int i = 0; i < bounds.length; i++) {
-            json.append(i == 0 ? "" : ",").append(bounds[i]);
-        }
-        json.append("],\"counts\":[");
-        for (int i = 0; i < counts.length; i++) {
-            json.append(i == 0 ? "" : ",").append(counts[i]);
-        }
-        json.append("]}");
-        // Past the column, the point keeps its count, sum, min and max and loses only its buckets.
-        return json.length() <= Columns.BUCKETS ? json.toString() : null;
     }
 
     /**

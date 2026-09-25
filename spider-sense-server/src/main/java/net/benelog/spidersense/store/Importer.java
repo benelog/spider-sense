@@ -4,7 +4,6 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -169,7 +168,7 @@ public final class Importer {
     private static Set<String> traceIds(Json.JsonArray spans) {
         Set<String> ids = new LinkedHashSet<>();
         for (Json.JsonValue value : spans) {
-            String id = string(value.asObject(), "traceId");
+            String id = RowJson.string(value.asObject(), "traceId");
             if (id != null) {
                 ids.add(id);
             }
@@ -202,19 +201,18 @@ public final class Importer {
         long count = 0;
         long from = Long.MAX_VALUE;
         long to = Long.MIN_VALUE;
-        try (PreparedStatement statement = connection.prepareStatement(Writer.INSERT_SPAN)) {
+        try (PreparedStatement statement = connection.prepareStatement(SpanRow.INSERT)) {
             for (Json.JsonValue value : spans) {
-                Json.JsonObject span = value.asObject();
-                String traceId = string(span, "traceId");
+                SpanRow span = SpanRow.fromJson(value.asObject());
+                String traceId = span.traceId();
                 if (traceId == null || skip.contains(traceId)) {
                     continue;
                 }
-                bindSpan(statement, span);
+                span.bind(statement);
                 statement.addBatch();
                 touched.add(traceId);
-                long startMs = longOr(span, "startMs", 0);
-                from = Math.min(from, startMs);
-                to = Math.max(to, startMs);
+                from = Math.min(from, span.startMs());
+                to = Math.max(to, span.startMs());
                 count++;
             }
             if (count > 0) {
@@ -224,57 +222,7 @@ public final class Importer {
         return new Imported(count, touched, count > 0 ? from : 0, count > 0 ? to : 0);
     }
 
-    /**
-     * The row as the file holds it.
-     *
-     * <p>Every column is bound from the document, not derived: {@code entry} and
-     * {@code slow} were decided once, when the row was first written, and the
-     * session that exported them may have run with other thresholds (storage.adoc).
-     */
-    private static void bindSpan(PreparedStatement statement, Json.JsonObject span)
-            throws SQLException {
-        int i = 1;
-        statement.setString(i++, string(span, "traceId"));
-        statement.setString(i++, string(span, "spanId"));
-        statement.setString(i++, string(span, "parentSpanId"));
-        statement.setString(i++, string(span, "service"));
-        statement.setString(i++, Columns.cut(string(span, "name"), Columns.SPAN_NAME));
-        statement.setString(i++, string(span, "kind"));
-        statement.setLong(i++, longOr(span, "startMs", 0));
-        statement.setLong(i++, longOr(span, "startNs", 0));
-        statement.setLong(i++, longOr(span, "durationNs", 0));
-        statement.setString(i++, string(span, "status"));
-        statement.setString(i++, Columns.cut(string(span, "statusMessage"), Columns.STATUS_MESSAGE));
-        statement.setBoolean(i++, bool(span, "entry"));
-        statement.setBoolean(i++, bool(span, "error"));
-        statement.setBoolean(i++, bool(span, "slow"));
-        statement.setString(i++, string(span, "category"));
-        statement.setString(i++, Columns.cut(string(span, "endpoint"), Columns.ENDPOINT));
-        statement.setString(i++, string(span, "endpointId"));
-        statement.setString(i++, Columns.cut(string(span, "httpMethod"), Columns.HTTP_METHOD));
-        statement.setString(i++, Columns.cut(string(span, "httpRoute"), Columns.HTTP_ROUTE));
-        Columns.setLong(statement, i++, nullableLong(span, "httpStatus"));
-        statement.setString(i++, Columns.cut(string(span, "dbSystem"), Columns.DB_SYSTEM));
-        statement.setString(i++, string(span, "dbStatement"));
-        statement.setString(i++, Columns.cut(string(span, "dbNamespace"), Columns.DB_NAMESPACE));
-        statement.setString(i++, Columns.cut(string(span, "dbOperation"), Columns.DB_OPERATION));
-        statement.setString(i++, Columns.cut(string(span, "dbTable"), Columns.DB_TABLE));
-        statement.setString(i++, string(span, "queryId"));
-        statement.setString(i++, Columns.cut(string(span, "errorType"), Columns.ERROR_TYPE));
-        statement.setString(i++, Columns.cut(string(span, "errorMessage"), Columns.ERROR_MESSAGE));
-        statement.setString(i++, string(span, "errorId"));
-        statement.setString(i++, Columns.cut(string(span, "scope"), Columns.SCOPE));
-        statement.setString(i++, nested(span, "attributes", AttrJson.EMPTY_OBJECT));
-        statement.setString(i, nested(span, "events", AttrJson.EMPTY_ARRAY));
-    }
-
     // --- logs and tingles ------------------------------------------------------
-
-    /** The columns that make two log lines the same line; the attributes are left out. */
-    private static final String SAME_LOG = """
-            SELECT COUNT(*) FROM log WHERE service IS NOT DISTINCT FROM ? AND at_ms = ?
-                AND severity_number = ? AND body = ? AND logger IS NOT DISTINCT FROM ?
-                AND trace_id IS NOT DISTINCT FROM ? AND span_id IS NOT DISTINCT FROM ?""";
 
     /**
      * The file's log lines, less those of a skipped trace and those already stored.
@@ -287,32 +235,16 @@ public final class Importer {
     private static long insertLogs(Connection connection, Json.JsonArray logs, Set<String> skip)
             throws SQLException {
         long count = 0;
-        try (PreparedStatement statement = connection.prepareStatement(Writer.INSERT_LOG);
-                PreparedStatement same = connection.prepareStatement(SAME_LOG)) {
+        try (PreparedStatement statement = connection.prepareStatement(LogRow.INSERT);
+                PreparedStatement same = connection.prepareStatement(LogRow.SAME_LINE)) {
             StoredDuplicates stored = new StoredDuplicates(same);
             for (Json.JsonValue value : logs) {
-                Json.JsonObject log = value.asObject();
-                String traceId = string(log, "traceId");
-                if (traceId != null && skip.contains(traceId)) {
+                LogRow log = LogRow.fromJson(value.asObject());
+                String traceId = log.traceId();
+                if ((traceId != null && skip.contains(traceId)) || stored.takeOne(log.sameLine())) {
                     continue;
                 }
-                List<@Nullable Object> row = Arrays.asList(string(log, "service"), longOr(log, "atMs", 0),
-                        longOr(log, "severityNumber", 0),
-                        Columns.cut(or(string(log, "body"), ""), Columns.LOG_BODY),
-                        Columns.cut(string(log, "logger"), Columns.LOGGER), traceId, string(log, "spanId"));
-                if (stored.takeOne(row)) {
-                    continue;
-                }
-                int i = 1;
-                statement.setLong(i++, longOr(log, "atMs", 0));
-                statement.setString(i++, string(log, "service"));
-                statement.setInt(i++, (int) longOr(log, "severityNumber", 0));
-                statement.setString(i++, Columns.cut(string(log, "severity"), Columns.LOG_SEVERITY));
-                statement.setString(i++, Columns.cut(or(string(log, "body"), ""), Columns.LOG_BODY));
-                statement.setString(i++, Columns.cut(string(log, "logger"), Columns.LOGGER));
-                statement.setString(i++, traceId);
-                statement.setString(i++, string(log, "spanId"));
-                statement.setString(i, nested(log, "attributes", AttrJson.EMPTY_OBJECT));
+                log.bind(statement);
                 statement.addBatch();
                 count++;
             }
@@ -323,42 +255,20 @@ public final class Importer {
         return count;
     }
 
-    /** The columns that make two tingles the same one. */
-    private static final String SAME_TINGLE = """
-            SELECT COUNT(*) FROM tingle WHERE at_ms = ? AND kind IS NOT DISTINCT FROM ?
-                AND service IS NOT DISTINCT FROM ? AND title = ? AND detail = ?
-                AND trace_id IS NOT DISTINCT FROM ? AND span_id IS NOT DISTINCT FROM ?""";
-
     /** The file's tingles, less those of a skipped trace and those already stored, as for logs. */
     private static long insertTingles(Connection connection, Json.JsonArray tingles, Set<String> skip)
             throws SQLException {
         long count = 0;
-        try (PreparedStatement statement = connection.prepareStatement(Writer.INSERT_TINGLE);
-                PreparedStatement same = connection.prepareStatement(SAME_TINGLE)) {
+        try (PreparedStatement statement = connection.prepareStatement(TingleRow.INSERT);
+                PreparedStatement same = connection.prepareStatement(TingleRow.SAME_TINGLE)) {
             StoredDuplicates stored = new StoredDuplicates(same);
             for (Json.JsonValue value : tingles) {
-                Json.JsonObject tingle = value.asObject();
-                String traceId = string(tingle, "traceId");
-                if (traceId != null && skip.contains(traceId)) {
+                TingleRow tingle = TingleRow.fromJson(value.asObject());
+                String traceId = tingle.traceId();
+                if ((traceId != null && skip.contains(traceId)) || stored.takeOne(tingle.sameTingle())) {
                     continue;
                 }
-                List<@Nullable Object> row = Arrays.asList(longOr(tingle, "atMs", 0), string(tingle, "kind"),
-                        string(tingle, "service"),
-                        Columns.cut(or(string(tingle, "title"), ""), Columns.TINGLE_TITLE),
-                        Columns.cut(or(string(tingle, "detail"), ""), Columns.TINGLE_DETAIL), traceId,
-                        string(tingle, "spanId"));
-                if (stored.takeOne(row)) {
-                    continue;
-                }
-                int i = 1;
-                statement.setLong(i++, longOr(tingle, "atMs", 0));
-                statement.setString(i++, string(tingle, "kind"));
-                statement.setString(i++, string(tingle, "service"));
-                statement.setString(i++, Columns.cut(or(string(tingle, "title"), ""), Columns.TINGLE_TITLE));
-                statement.setString(i++, Columns.cut(or(string(tingle, "detail"), ""), Columns.TINGLE_DETAIL));
-                statement.setString(i++, traceId);
-                statement.setString(i++, string(tingle, "spanId"));
-                statement.setDouble(i, tingle.optDouble("durationMs", 0));
+                tingle.bind(statement);
                 statement.addBatch();
                 count++;
             }
@@ -421,30 +331,25 @@ public final class Importer {
     private static long insertMarks(Connection connection, Json.JsonArray marks) throws SQLException {
         long count = 0;
         for (Json.JsonValue value : marks) {
-            Json.JsonObject mark = value.asObject();
-            String name = string(mark, "name");
+            MarkRow mark = MarkRow.fromJson(value.asObject());
+            String name = mark.name();
             if (name == null || Marks.START.equals(name)) {
                 // A start mark claims a run of an application that is not running here,
                 // and would become the newest start of its service.
                 continue;
             }
-            long at = longOr(mark, "atMs", 0);
             try (PreparedStatement select = connection.prepareStatement(
                     "SELECT COUNT(*) FROM mark WHERE name = ? AND at_ms = ?")) {
                 select.setString(1, name);
-                select.setLong(2, at);
+                select.setLong(2, mark.atMs());
                 try (ResultSet rs = select.executeQuery()) {
                     if (rs.next() && rs.getLong(1) > 0) {
                         continue;
                     }
                 }
             }
-            try (PreparedStatement insert = connection.prepareStatement(
-                    "INSERT INTO mark (at_ms, name, service, note) VALUES (?, ?, ?, ?)")) {
-                insert.setLong(1, at);
-                insert.setString(2, name);
-                insert.setString(3, string(mark, "service"));
-                insert.setString(4, Columns.cut(string(mark, "note"), Columns.MARK_NOTE));
+            try (PreparedStatement insert = connection.prepareStatement(MarkRow.INSERT)) {
+                mark.bind(insert);
                 insert.executeUpdate();
             }
             count++;
@@ -463,21 +368,13 @@ public final class Importer {
     private static long mergeCatalog(Connection connection, Json.JsonArray tables)
             throws SQLException {
         long count = 0;
-        try (PreparedStatement statement = connection.prepareStatement(Writer.MERGE_CATALOG)) {
+        try (PreparedStatement statement = connection.prepareStatement(CatalogRow.MERGE)) {
             for (Json.JsonValue value : tables) {
-                Json.JsonObject table = value.asObject();
-                String service = string(table, "service");
-                String name = string(table, "tableName");
-                if (service == null || name == null) {
+                CatalogRow table = CatalogRow.fromJson(value.asObject());
+                if (table == null) {
                     continue;
                 }
-                int i = 1;
-                statement.setString(i++, Columns.cut(service, Columns.SERVICE));
-                statement.setString(i++, Columns.cut(or(string(table, "schemaName"), ""), Columns.CATALOG_NAME));
-                statement.setString(i++, Columns.cut(name, Columns.CATALOG_NAME));
-                statement.setString(i++, Columns.cut(string(table, "product"), Columns.DB_PRODUCT));
-                statement.setString(i++, Columns.cut(indexes(table), Columns.JSON_TEXT));
-                statement.setLong(i, longOr(table, "seenMs", 0));
+                table.bind(statement);
                 statement.addBatch();
                 count++;
             }
@@ -486,14 +383,6 @@ public final class Importer {
             }
         }
         return count;
-    }
-
-    /** The array as its text, or the text the export carried when the stored one did not parse. */
-    private static String indexes(Json.JsonObject table) {
-        if (table.has("indexes") && table.get("indexes").isString()) {
-            return table.get("indexes").asString();
-        }
-        return nested(table, "indexes", AttrJson.EMPTY_ARRAY);
     }
 
     // --- services ----------------------------------------------------------------
@@ -506,41 +395,30 @@ public final class Importer {
     private static void mergeServices(Connection connection, Json.JsonArray services)
             throws SQLException {
         for (Json.JsonValue value : services) {
-            Json.JsonObject service = value.asObject();
-            String name = string(service, "name");
-            if (name == null) {
+            ServiceRow service = ServiceRow.fromJson(value.asObject());
+            if (service == null) {
                 continue;
             }
-            long firstSeen = longOr(service, "firstSeen", 0);
-            long lastSeen = longOr(service, "lastSeen", firstSeen);
-            String resource = nested(service, "resource", AttrJson.EMPTY_OBJECT);
             // A stored row keeps its pid, language and resource: they describe the
             // process running here, not the one that ran the imported session.
-            SeenRange stored = storedSeenRange(connection, name);
+            SeenRange stored = storedSeenRange(connection, service.name());
             if (stored != null) {
                 // Updated only when it widens: an update locks the row the running
                 // writer updates on every flush of that service, until this commits.
-                if (firstSeen < stored.first() || lastSeen > stored.last()) {
+                if (service.firstSeen() < stored.first() || service.lastSeen() > stored.last()) {
                     try (PreparedStatement update = connection.prepareStatement(
                             "UPDATE service SET first_seen = LEAST(first_seen, ?),"
                                     + " last_seen = GREATEST(last_seen, ?) WHERE name = ?")) {
-                        update.setLong(1, firstSeen);
-                        update.setLong(2, lastSeen);
-                        update.setString(3, name);
+                        update.setLong(1, service.firstSeen());
+                        update.setLong(2, service.lastSeen());
+                        update.setString(3, service.name());
                         update.executeUpdate();
                     }
                 }
                 continue;
             }
-            try (PreparedStatement insert = connection.prepareStatement(
-                    "INSERT INTO service (name, language, pid, first_seen, last_seen, resource)"
-                            + " VALUES (?, ?, ?, ?, ?, ?)")) {
-                insert.setString(1, name);
-                insert.setString(2, Columns.cut(string(service, "language"), Columns.LANGUAGE));
-                Columns.setLong(insert, 3, nullableLong(service, "pid"));
-                insert.setLong(4, firstSeen);
-                insert.setLong(5, lastSeen);
-                insert.setString(6, resource);
+            try (PreparedStatement insert = connection.prepareStatement(ServiceRow.INSERT)) {
+                service.bindInsert(insert);
                 insert.executeUpdate();
             }
         }
@@ -567,32 +445,22 @@ public final class Importer {
     private static void insertMissingMetricMetadata(Connection connection, Json.JsonArray metrics)
             throws SQLException {
         for (Json.JsonValue value : metrics) {
-            Json.JsonObject metric = value.asObject();
-            String service = string(metric, "service");
-            String name = string(metric, "name");
-            if (service == null || name == null) {
+            MetricRow metric = MetricRow.fromJson(value.asObject());
+            if (metric == null) {
                 continue;
             }
             try (PreparedStatement select = connection.prepareStatement(
                     "SELECT COUNT(*) FROM metric WHERE service = ? AND name = ?")) {
-                select.setString(1, service);
-                select.setString(2, name);
+                select.setString(1, metric.service());
+                select.setString(2, metric.name());
                 try (ResultSet rs = select.executeQuery()) {
                     if (rs.next() && rs.getLong(1) > 0) {
                         continue;
                     }
                 }
             }
-            try (PreparedStatement insert = connection.prepareStatement(
-                    "INSERT INTO metric (service, name, type, unit, description, monotonic, temporality)"
-                            + " VALUES (?, ?, ?, ?, ?, ?, ?)")) {
-                insert.setString(1, service);
-                insert.setString(2, name);
-                insert.setString(3, or(string(metric, "type"), "gauge"));
-                insert.setString(4, Columns.cut(string(metric, "unit"), Columns.METRIC_UNIT));
-                insert.setString(5, Columns.cut(string(metric, "description"), Columns.METRIC_DESCRIPTION));
-                insert.setBoolean(6, bool(metric, "monotonic"));
-                insert.setString(7, string(metric, "temporality"));
+            try (PreparedStatement insert = connection.prepareStatement(MetricRow.INSERT)) {
+                metric.bind(insert);
                 insert.executeUpdate();
             }
         }
@@ -606,16 +474,12 @@ public final class Importer {
             throws SQLException {
         Map<Long, Long> ids = new HashMap<>();
         for (Json.JsonValue value : series) {
-            Json.JsonObject row = value.asObject();
-            String service = string(row, "service");
-            String name = string(row, "name");
-            if (service == null || name == null) {
+            SeriesRow row = SeriesRow.fromJson(value.asObject());
+            if (row == null) {
                 continue;
             }
-            String attributes = AttrJson.encodeSorted(
-                    AttrJson.decode(nested(row, "attributes", AttrJson.EMPTY_OBJECT)));
-            ids.put(longOr(row, "id", 0),
-                    MetricSeriesRows.lookupOrCreate(connection, service, name, attributes));
+            ids.put(row.id(), MetricSeriesRows.lookupOrCreate(connection, row.service(), row.name(),
+                    row.sortedAttributes()));
         }
         return ids;
     }
@@ -623,22 +487,14 @@ public final class Importer {
     private static long mergePoints(Connection connection, Json.JsonArray points,
             Map<Long, Long> series) throws SQLException {
         long count = 0;
-        try (PreparedStatement statement = connection.prepareStatement(Writer.MERGE_POINT)) {
+        try (PreparedStatement statement = connection.prepareStatement(PointRow.MERGE)) {
             for (Json.JsonValue value : points) {
-                Json.JsonObject point = value.asObject();
-                Long seriesId = series.get(longOr(point, "seriesId", -1));
+                PointRow point = PointRow.fromJson(value.asObject());
+                Long seriesId = series.get(point.seriesId());
                 if (seriesId == null) {
                     continue;
                 }
-                int i = 1;
-                statement.setLong(i++, seriesId);
-                statement.setLong(i++, longOr(point, "atMs", 0));
-                statement.setDouble(i++, point.optDouble("value", 0));
-                statement.setLong(i++, longOr(point, "count", 0));
-                statement.setDouble(i++, point.optDouble("sum", 0));
-                Columns.setDouble(statement, i++, point.optDouble("min", Double.NaN));
-                Columns.setDouble(statement, i++, point.optDouble("max", Double.NaN));
-                statement.setString(i, buckets(point));
+                point.inSeries(seriesId).bind(statement);
                 statement.addBatch();
                 count++;
             }
@@ -647,21 +503,6 @@ public final class Importer {
             }
         }
         return count;
-    }
-
-    /**
-     * The buckets as their column holds them, or null when they do not fit it:
-     * text cut partway through would not parse, so a point past the column keeps
-     * its count, sum, min and max and loses only its buckets, as the writer's does
-     * (storage.adoc#writer).
-     */
-    private static @Nullable String buckets(Json.JsonObject point) {
-        Json.JsonObject object = point.optObject("buckets");
-        if (object == null) {
-            return null;
-        }
-        String json = object.toJson();
-        return json.length() <= Columns.BUCKETS ? json : null;
     }
 
     // --- reading the document -------------------------------------------------------
@@ -684,37 +525,5 @@ public final class Importer {
     private static Json.@Nullable JsonObject window(Json.JsonObject document) {
         Json.JsonObject header = document.optObject("spiderSense");
         return header == null ? null : header.optObject("window");
-    }
-
-    private static @Nullable String string(Json.JsonObject object, String key) {
-        return AttrJson.optionalString(object, key);
-    }
-
-    /** A nullable integer column: JSON null stays null rather than becoming zero. */
-    private static @Nullable Long nullableLong(Json.JsonObject object, String key) {
-        if (!object.has(key) || object.get(key).isNull()) {
-            return null;
-        }
-        return object.get(key).asLong();
-    }
-
-    private static long longOr(Json.JsonObject object, String key, long fallback) {
-        return object.optLong(key, fallback);
-    }
-
-    private static boolean bool(Json.JsonObject object, String key) {
-        return object.optBoolean(key, false);
-    }
-
-    /** A nested object or array as the JSON text its column holds. */
-    private static String nested(Json.JsonObject object, String key, String fallback) {
-        if (!object.has(key) || object.get(key).isNull()) {
-            return fallback;
-        }
-        return object.get(key).toJson();
-    }
-
-    private static String or(@Nullable String value, String fallback) {
-        return value == null ? fallback : value;
     }
 }

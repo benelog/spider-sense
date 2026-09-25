@@ -74,23 +74,18 @@ public final class Marks {
             throw new IllegalArgumentException(
                     "A mark name is 1 to " + MAX_NAME + " characters of [A-Za-z0-9._-]: " + name);
         }
-        long when = at == null ? clock.getAsLong() : at;
-        String cutNote = Columns.cut(note, Columns.MARK_NOTE);
+        MarkRow row = new MarkRow(at == null ? clock.getAsLong() : at, name, service, note);
         long id = sql.withConnection(connection -> {
-            try (PreparedStatement statement = connection.prepareStatement(
-                    "INSERT INTO mark (at_ms, name, service, note) VALUES (?, ?, ?, ?)",
+            try (PreparedStatement statement = connection.prepareStatement(MarkRow.INSERT,
                     Statement.RETURN_GENERATED_KEYS)) {
-                statement.setLong(1, when);
-                statement.setString(2, name);
-                statement.setString(3, service);
-                statement.setString(4, cutNote);
+                row.bind(statement);
                 statement.executeUpdate();
                 try (ResultSet keys = statement.getGeneratedKeys()) {
                     return keys.next() ? keys.getLong(1) : 0L;
                 }
             }
         }, "insert mark");
-        return new Mark(id, when, name, service, cutNote);
+        return new Mark(id, row.atMs(), name, service, row.storedNote());
     }
 
     /** The newest marks, newest first. */
