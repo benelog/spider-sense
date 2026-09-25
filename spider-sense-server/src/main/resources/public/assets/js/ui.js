@@ -317,7 +317,7 @@ export function fillRows(wrap, rows, opts = {}) {
       const fresh = buildRow(columns, row, i, opts);
       node.className = fresh.className;
       node.replaceChildren(...fresh.childNodes);
-      if (opts.onRowClick) node.onclick = fresh.onclick;
+      if (opts.onRowClick) { node.onclick = fresh.onclick; node.onkeydown = fresh.onkeydown; }
     },
   });
   return wrap;
@@ -331,9 +331,12 @@ function buildRow(columns, row, i, opts) {
   if (opts.onRowClick) {
     tr.classList.add('clickable');
     tr.onclick = (e) => { if (!e.target.closest('button, a')) opts.onRowClick(row, e); };
-    tr.addEventListener('keydown', (e) => {
+    // Only the row's own keys: an Enter on a link or button inside it is that control's, and
+    // bubbles here too. A property, not a listener, so an update rebinds it to the new row.
+    tr.onkeydown = (e) => {
+      if (e.target !== e.currentTarget) return;
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); opts.onRowClick(row, e); }
-    });
+    };
   }
   for (const col of columns) {
     const td = h('td', {

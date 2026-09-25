@@ -263,6 +263,8 @@ The whole UI works at 360 px wide: a table scrolls horizontally inside its panel
 
 Every icon-only control has an `aria-label`.
 Colour is never the only carrier of meaning: an error also gets a bolt, and something slow also gets a ring or a turtle.
+A clickable table row takes the focus, and Enter or Space on the row does what a click does.
+Enter on a link or a button inside the row belongs to that control: the link opens, and the row does not act.
 
 [#no-external-requests]
 === No external requests
