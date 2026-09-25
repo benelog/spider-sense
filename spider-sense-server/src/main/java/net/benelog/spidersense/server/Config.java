@@ -6,8 +6,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
 import java.util.function.Function;
-
 
 import net.benelog.spidersense.store.IgnoredEndpoints;
 import net.benelog.spidersense.store.Sweeper;
@@ -40,7 +40,7 @@ import org.jspecify.annotations.Nullable;
  * @param ignoreEndpoints  comma-separated glob patterns; an entry span whose endpoint matches one
  *                         of them is written with {@code entry} false and is therefore not a
  *                         request (configuration.adoc#ignored-endpoints). An empty value ignores
- *                         nothing, which is why {@link #string} only falls back on {@code null}.
+ *                         nothing, which is why {@code Settings.string} only falls back on {@code null}.
  * @param sourceDirs       comma-separated source roots a code frame is resolved under, or null
  *                         for the default: {@code src/main/java} and {@code src/main/kotlin} of
  *                         the working directory and of each immediate subdirectory
@@ -49,6 +49,7 @@ import org.jspecify.annotations.Nullable;
  *                         from, which the launcher passes as {@code --jar} and the CLI finds in
  *                         {@code spidersense.jar}; null when nobody knows it (exploded classes,
  *                         a test), and only ever shown, as {@code /api/status.jar} (api.adoc#status)
+ * @param home             the user's home directory, which a {@code ~} in {@link #db} stands for
  */
 public record Config(
         String host,
@@ -64,22 +65,31 @@ public record Config(
         String appPackages,
         String ignoreEndpoints,
         @Nullable String sourceDirs,
-        @Nullable String jar) {
+        @Nullable String jar,
+        Path home) {
 
     public static final String AGENT = "agent";
     public static final String STANDALONE = "standalone";
     public static final String DEFAULT_DB = "~/db/spider-sense/sense";
 
+    /** The configuration this JVM was given: its arguments, system properties and environment. */
     public static Config parse(String[] args) {
-        return parse(args, System::getenv);
+        return parse(args, System::getProperty, System::getenv,
+                Path.of(System.getProperty("user.home", "")), System.err::println);
     }
 
     /**
-     * The same with the environment given, for a test: a key the arguments and the
-     * system properties leave unsaid is read from its {@code SPIDERSENSE_*} variable
-     * (configuration.adoc).
+     * The same with every outside source given, for a test: a key the arguments leave unsaid is
+     * read from its {@code spidersense.*} property, and a key neither says from its
+     * {@code SPIDERSENSE_*} variable (configuration.adoc).
+     *
+     * @param property the system properties, by name
+     * @param env      the environment variables, by name
+     * @param home     what {@code ~} in a database path means
+     * @param warn     where a malformed property or variable is reported
      */
-    static Config parse(String[] args, Function<String, @Nullable String> env) {
+    static Config parse(String[] args, Function<String, @Nullable String> property,
+            Function<String, @Nullable String> env, Path home, Consumer<String> warn) {
         Map<String, String> values = new HashMap<>();
         for (String arg : args) {
             if (!arg.startsWith("--")) {
@@ -94,20 +104,21 @@ public record Config(
         }
         Set<String> given = Set.copyOf(values.keySet());
         for (String key : KEYS) {
-            if (!values.containsKey(key) && System.getProperty("spidersense." + key) == null) {
+            if (!values.containsKey(key) && property.apply("spidersense." + key) == null) {
                 String fromEnv = env.apply(envName("spidersense." + key));
                 if (fromEnv != null && !fromEnv.isEmpty()) {
                     values.put(key, fromEnv);
                 }
             }
         }
-        Numbers numbers = new Numbers(values, given);
-        boolean agent = AGENT.equalsIgnoreCase(string(values, "mode", STANDALONE));
+        Settings settings = new Settings(values, given, property, warn);
+        Numbers numbers = new Numbers(settings);
+        boolean agent = AGENT.equalsIgnoreCase(settings.string("mode", STANDALONE));
         return new Config(
-                string(values, "host", "127.0.0.1"),
+                settings.string("host", "127.0.0.1"),
                 numbers.number("port", 4000).intValue(),
                 agent ? AGENT : STANDALONE,
-                string(values, "db", DEFAULT_DB),
+                settings.string("db", DEFAULT_DB),
                 numbers.number("retention.hours", 24L).intValue(),
                 numbers.number("retention.spans", Sweeper.DEFAULT_RETENTION_SPANS),
                 numbers.optionalNumber("ingest.max-spans-per-second"),
@@ -115,11 +126,12 @@ public record Config(
                 numbers.number("slow.query.ms", 100L),
                 // A standalone server runs inside no application, whatever service a
                 // properties file or a build tool names for the applications beside it.
-                agent ? embeddedService(values) : null,
-                string(values, "app.packages", ""),
-                string(values, "ignore.endpoints", IgnoredEndpoints.DEFAULT),
-                stringOrNull(values, "source.dirs"),
-                stringOrNull(values, "jar"));
+                agent ? embeddedService(values, property, env) : null,
+                settings.string("app.packages", ""),
+                settings.string("ignore.endpoints", IgnoredEndpoints.DEFAULT),
+                settings.stringOrNull("source.dirs"),
+                settings.stringOrNull("jar"),
+                home);
     }
 
     /** The keys {@link #parse} reads, each also from its environment variable. */
@@ -132,9 +144,15 @@ public record Config(
      * else the environment variable of the same name, else null.
      */
     public static @Nullable String setting(String property) {
-        String value = System.getProperty(property);
+        return setting(property, System::getProperty, System::getenv);
+    }
+
+    /** The same with the properties and the environment given. */
+    static @Nullable String setting(String name, Function<String, @Nullable String> property,
+            Function<String, @Nullable String> env) {
+        String value = property.apply(name);
         if (value == null) {
-            value = System.getenv(envName(property));
+            value = env.apply(envName(name));
         }
         return value == null || value.isEmpty() ? null : value;
     }
@@ -183,7 +201,7 @@ public record Config(
     public String jdbcUrl() {
         String url = db.startsWith("jdbc:")
                 ? db
-                : "jdbc:h2:" + expandHome(db) + ";AUTO_SERVER=TRUE";
+                : "jdbc:h2:" + expandHome(db, home) + ";AUTO_SERVER=TRUE";
         if (!url.toUpperCase(java.util.Locale.ROOT).contains("NON_KEYWORDS")) {
             url = url + ";NON_KEYWORDS=KEY,VALUE";
         }
@@ -202,44 +220,54 @@ public record Config(
         if (path.startsWith("file:")) {
             path = path.substring("file:".length());
         }
-        return Path.of(expandHome(path) + ".mv.db");
+        return Path.of(expandHome(path, home) + ".mv.db");
     }
 
-    private static String expandHome(String path) {
+    private static String expandHome(String path, Path home) {
         if (path.startsWith("~/") || path.equals("~")) {
-            return System.getProperty("user.home") + path.substring(1);
+            return home + path.substring(1);
         }
         return path;
     }
 
-    private static @Nullable String embeddedService(Map<String, String> values) {
+    private static @Nullable String embeddedService(Map<String, String> values,
+            Function<String, @Nullable String> property, Function<String, @Nullable String> env) {
         String named = values.get("embedded-service");
         if (named != null) {
             return named;
         }
-        String property = System.getProperty("spidersense.embedded-service");
-        if (property != null) {
-            return property;
+        String embedded = property.apply("spidersense.embedded-service");
+        if (embedded != null) {
+            return embedded;
         }
         // configuration.adoc#properties names the launcher's own property spidersense.service; when the
         // launcher was told the name that way, it is the same answer.
-        return setting("spidersense.service");
+        return setting("spidersense.service", property, env);
     }
 
     /**
-     * The argument, else the system property, else the fallback — and the fallback only when
-     * neither was given at all. An explicitly empty value stays empty, which is what
-     * {@code -Dspidersense.ignore.endpoints=} means.
+     * The arguments (with the environment already folded in below them) and the system properties.
+     *
+     * @param given the keys that came as {@code --key=value} arguments
      */
-    private static String string(Map<String, String> values, String key, String fallback) {
-        String value = stringOrNull(values, key);
-        return value == null ? fallback : value;
-    }
+    private record Settings(Map<String, String> values, Set<String> given,
+            Function<String, @Nullable String> property, Consumer<String> warn) {
 
-    /** The same with no fallback: null when neither channel said anything. */
-    private static @Nullable String stringOrNull(Map<String, String> values, String key) {
-        String value = values.get(key);
-        return value == null ? System.getProperty("spidersense." + key) : value;
+        /**
+         * The argument, else the system property, else the fallback — and the fallback only when
+         * neither was given at all. An explicitly empty value stays empty, which is what
+         * {@code -Dspidersense.ignore.endpoints=} means.
+         */
+        String string(String key, String fallback) {
+            String value = stringOrNull(key);
+            return value == null ? fallback : value;
+        }
+
+        /** The same with no fallback: null when neither channel said anything. */
+        @Nullable String stringOrNull(String key) {
+            String value = values.get(key);
+            return value == null ? property.apply("spidersense." + key) : value;
+        }
     }
 
     /**
@@ -248,14 +276,12 @@ public record Config(
      * already refused a bad one; a malformed system property or environment variable is a
      * warning on stderr, and that key alone takes its default, so a typo in one key never stops
      * the embedded UI of an application that is otherwise unaffected.
-     *
-     * @param given the keys that came as {@code --key=value} arguments
      */
-    private record Numbers(Map<String, String> values, Set<String> given) {
+    private record Numbers(Settings settings) {
 
         /** The number, else null when nobody said anything: an unset cap is not a cap of zero. */
         @Nullable Long optionalNumber(String key) {
-            String value = stringOrNull(values, key);
+            String value = settings.stringOrNull(key);
             if (value == null || value.isBlank()) {
                 return null;
             }
@@ -263,8 +289,8 @@ public record Config(
         }
 
         Long number(String key, long fallback) {
-            String value = stringOrNull(values, key);
-            if (value == null || (value.isBlank() && !given.contains(key))) {
+            String value = settings.stringOrNull(key);
+            if (value == null || (value.isBlank() && !settings.given().contains(key))) {
                 return fallback;
             }
             Long parsed = parse(key, value, fallback);
@@ -275,10 +301,10 @@ public record Config(
             try {
                 return Long.parseLong(value.trim());
             } catch (NumberFormatException e) {
-                if (given.contains(key)) {
+                if (settings.given().contains(key)) {
                     throw new IllegalArgumentException("Not a number for --" + key + ": " + value, e);
                 }
-                System.err.println("[spider-sense] spidersense." + key + "=" + value
+                settings.warn().accept("[spider-sense] spidersense." + key + "=" + value
                         + " is not a number; using " + (fallback == null ? "no cap" : fallback));
                 return null;
             }
