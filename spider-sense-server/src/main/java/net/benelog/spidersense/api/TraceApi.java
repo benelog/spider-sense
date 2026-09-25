@@ -32,6 +32,9 @@ public final class TraceApi {
     private static final int DETAIL_TRACES = 20;
     private static final int TOP_N = 10;
 
+    /** Every group of a service, which an endpoint's page filters down to its own. */
+    private static final int EVERY_GROUP = Integer.MAX_VALUE;
+
     private final Queries queries;
     private final Reports reports;
     private final Params params;
@@ -128,12 +131,21 @@ public final class TraceApi {
                 .put("breakdown", breakdown));
     }
 
-    /** The queries whose callers include this endpoint. */
+    /**
+     * The queries whose callers include this endpoint.
+     *
+     * <p>An endpoint is its service and its name (api.adoc#endpoint-identity), so only
+     * the groups of its service are read, every one of them rather than the top of a
+     * list, and a caller counts only when its service is the endpoint's too: two
+     * services that expose the same route never share their queries.
+     */
     private List<Stats.QueryStats> calledFrom(Window window, Stats.EndpointStats endpoint) {
         List<Stats.QueryStats> matching = new ArrayList<>();
-        for (Stats.QueryStats query : queries.queries(window, null, "total", 100, null)) {
+        for (Stats.QueryStats query : queries.queries(window, endpoint.service(), "total", EVERY_GROUP,
+                null)) {
             for (Stats.Caller caller : query.callers()) {
-                if (caller.endpoint().equals(endpoint.name())) {
+                if (caller.endpoint().equals(endpoint.name())
+                        && caller.service().equals(endpoint.service())) {
                     matching.add(query);
                     break;
                 }
@@ -142,9 +154,13 @@ public final class TraceApi {
         return matching;
     }
 
+    /** The error groups that occurred in this endpoint, read as {@link #calledFrom} reads the queries. */
     private List<Stats.ErrorGroup> failedIn(Window window, Stats.EndpointStats endpoint) {
         List<Stats.ErrorGroup> matching = new ArrayList<>();
-        for (Stats.ErrorGroup group : queries.errors(window, null, 100, null)) {
+        for (Stats.ErrorGroup group : queries.errors(window, endpoint.service(), EVERY_GROUP, null)) {
+            if (!group.service().equals(endpoint.service())) {
+                continue;
+            }
             for (Stats.EndpointCount count : group.endpoints()) {
                 if (count.name().equals(endpoint.name())) {
                     matching.add(group);

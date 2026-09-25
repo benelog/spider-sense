@@ -346,6 +346,68 @@ class ApiTest {
         });
     }
 
+    /** Two letters for {@code n}, so that no digit is normalised away and two names stay two groups. */
+    private static String letters(int n) {
+        return "" + (char) ('a' + n / 26) + (char) ('a' + n % 26);
+    }
+
+    /**
+     * An endpoint is its service and its name: two services with the same route never
+     * share their queries or errors, and a group of the endpoint that ranks below the
+     * first hundred of the window is still on its page (api.adoc#endpoints).
+     */
+    @Test
+    void anEndpointsQueriesAndErrorsAreItsServicesAndAllOfThem() {
+        serve((client, assembly) -> {
+            for (String service : List.of("svc-a", "svc-b")) {
+                String n = service.equals("svc-a") ? "1" : "2";
+                Span.Builder root = Otlp.failing(Otlp.span("%032x".formatted(Integer.parseInt(n)),
+                        "%016x".formatted(Integer.parseInt(n)), "GET /same/{id}",
+                        Span.SpanKind.SPAN_KIND_SERVER, NOW, 20,
+                        Otlp.attr("http.request.method", "GET"), Otlp.attr("http.route", "/same/{id}")),
+                        "java.lang." + (n.equals("1") ? "A" : "B") + "Error", "no", "at x");
+                Span.Builder query = Otlp.child(root, "%016x".formatted(10 + Integer.parseInt(n)),
+                        "SELECT t", Span.SpanKind.SPAN_KIND_CLIENT, NOW + 1, 1,
+                        Otlp.attr("db.system", "h2"),
+                        Otlp.attr("db.statement", "select " + service.replace("-", "_") + " from t"));
+                postProtobuf(client, "/v1/traces", Otlp.traces(Otlp.service(service), root, query).toByteArray());
+            }
+            // A hundred heavier query groups and a hundred more frequent error groups of svc-a,
+            // from another endpoint, rank the target's own group below the first hundred.
+            for (int t = 0; t < 2; t++) {
+                Span.Builder other = Otlp.span("%032x".formatted(100 + t), "%016x".formatted(100 + t),
+                        "GET /other", Span.SpanKind.SPAN_KIND_SERVER, NOW, 900,
+                        Otlp.attr("http.request.method", "GET"), Otlp.attr("http.route", "/other"));
+                List<Span.Builder> spans = new ArrayList<>(List.of(other));
+                for (int i = 0; i < 100; i++) {
+                    spans.add(Otlp.child(other, "%016x".formatted(1_000 + t * 1_000 + i), "SELECT t",
+                            Span.SpanKind.SPAN_KIND_CLIENT, NOW + 1, 5,
+                            Otlp.attr("db.system", "h2"),
+                            Otlp.attr("db.statement", "select col_" + letters(i) + " from t")));
+                    spans.add(Otlp.failing(Otlp.child(other, "%016x".formatted(5_000 + t * 1_000 + i),
+                            "work", Span.SpanKind.SPAN_KIND_INTERNAL, NOW + 1, 1),
+                            "java.lang.Filler" + letters(i) + "Error", "no", "at x"));
+                }
+                postProtobuf(client, "/v1/traces", Otlp.traces(Otlp.service("svc-a"),
+                        spans.toArray(new Span.Builder[0])).toByteArray());
+            }
+
+            String endpointId = net.benelog.spidersense.store.Ids.endpointId("svc-a", "GET /same/{id}");
+            Json.JsonObject detail = json(client.get("/api/endpoints/" + endpointId + windowQuery()));
+
+            List<String> statements = new ArrayList<>();
+            for (Json.JsonValue query : detail.getArray("queries")) {
+                statements.add(query.asObject().getString("statement"));
+            }
+            assertThat(statements).containsExactly("select svc_a from t");
+            List<String> types = new ArrayList<>();
+            for (Json.JsonValue error : detail.getArray("errors")) {
+                types.add(error.asObject().getString("type"));
+            }
+            assertThat(types).containsExactly("java.lang.AError");
+        });
+    }
+
     @Test
     void theOverviewAndTheScatterDescribeTheSameWindow() {
         serve((client, assembly) -> {
