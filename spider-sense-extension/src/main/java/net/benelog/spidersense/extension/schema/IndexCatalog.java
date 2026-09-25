@@ -35,8 +35,9 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>This class is a helper: the agent injects it into the class loader of the JDBC driver, beside
  * the advice that calls it, because advice never runs in the extension's own loader. That is why it
- * lives in a package of its own, why it references nothing but the JDK, the OpenTelemetry API and
- * {@link VirtualField}, and why every bit of its state is static — there is one copy of it per
+ * lives in a package of its own, why it references nothing but the JDK, the OpenTelemetry API,
+ * {@link VirtualField} and the helpers beside it ({@link Thresholds}, {@link Settings}), and why
+ * every bit of its state is static — there is one copy of it per
  * application class loader and nothing to hand it from outside.
  *
  * <p>It answers the one question a span processor cannot: which columns of the tables a statement
@@ -58,12 +59,13 @@ import org.jspecify.annotations.Nullable;
  */
 public final class IndexCatalog {
 
-    /** The same threshold and the same reading of it as {@code SlowQuerySpanProcessor}. */
-    static final String THRESHOLD_PROPERTY = "spidersense.slow.query.ms";
-    static final long DEFAULT_THRESHOLD_MS = 100;
-
-    /** What the sampler in the extension's own loader keys on; the two cannot share a constant. */
-    static final String LOOKUP_KEY = "spidersense.schema.lookup";
+    /**
+     * The baggage entry that marks a lookup, which {@code SchemaLookupSampler} keys on.
+     *
+     * <p>A compile-time constant, so the sampler in the extension's own loader names it without a
+     * runtime reference to this class: javac copies the value.
+     */
+    public static final String LOOKUP_KEY = "spidersense.schema.lookup";
 
     /** The instrumentation scope the server reads catalog records under. */
     static final String SCOPE_NAME = "spider-sense";
@@ -80,11 +82,11 @@ public final class IndexCatalog {
      * Read once, at class initialisation: this sits on the path of every statement the application
      * runs, and the value cannot change while it runs.
      *
-     * <p>{@code SlowQuerySpanProcessor} reads the same setting through the same {@link Settings},
-     * which is injected beside this class, so the two apply the one rule the server applies.
+     * <p>{@code SlowQuerySpanProcessor} reads the same {@link Thresholds}, which is injected beside
+     * this class, so the stack and the catalog of one statement are captured at one threshold.
      */
     private static final long THRESHOLD_NANOS =
-            TimeUnit.MILLISECONDS.toNanos(Math.max(0, configured()));
+            TimeUnit.MILLISECONDS.toNanos(Math.max(0, Thresholds.slowQueryMillis()));
 
     /** One entry per table that has been attempted, successfully or not; bounded by MAX_TABLES. */
     private static final Set<String> looked = ConcurrentHashMap.newKeySet();
@@ -407,11 +409,6 @@ public final class IndexCatalog {
     /** For tests: forget which tables have been looked up. */
     static void forget() {
         looked.clear();
-    }
-
-    private static long configured() {
-        return Settings.millis(THRESHOLD_PROPERTY, DEFAULT_THRESHOLD_MS, System::getProperty,
-                System::getenv);
     }
 
     // ---------------------------------------------------------------- the scanner

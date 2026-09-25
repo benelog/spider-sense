@@ -41,7 +41,8 @@ public final class SchemaInstrumentationModule extends InstrumentationModule {
             HELPER_PACKAGE + "IndexCatalog$TableRef",
             HELPER_PACKAGE + "IndexCatalog$CatalogTable",
             HELPER_PACKAGE + "IndexCatalog$Index",
-            HELPER_PACKAGE + "Settings"));
+            HELPER_PACKAGE + "Settings",
+            HELPER_PACKAGE + "Thresholds"));
 
     public SchemaInstrumentationModule() {
         super("spider-sense-schema");

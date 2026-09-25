@@ -7,7 +7,7 @@ import io.opentelemetry.context.Context;
 import io.opentelemetry.sdk.trace.ReadWriteSpan;
 import io.opentelemetry.sdk.trace.ReadableSpan;
 import io.opentelemetry.sdk.trace.internal.ExtendedSpanProcessor;
-import net.benelog.spidersense.extension.schema.Settings;
+import net.benelog.spidersense.extension.schema.Thresholds;
 import org.jspecify.annotations.Nullable;
 import java.util.Iterator;
 import java.util.concurrent.ConcurrentHashMap;
@@ -77,14 +77,6 @@ public final class SlowQuerySpanProcessor implements ExtendedSpanProcessor {
      */
     static final int MAX_TRACES = 1_000;
 
-    /** The same threshold the server calls a tingle, so what is captured is what gets reported. */
-    static final String THRESHOLD_PROPERTY = "spidersense.slow.query.ms";
-    static final long DEFAULT_THRESHOLD_MS = 100;
-
-    /** The same again for an outbound call: the threshold the server calls a slow request. */
-    static final String REQUEST_THRESHOLD_PROPERTY = "spidersense.slow.request.ms";
-    static final long DEFAULT_REQUEST_THRESHOLD_MS = 500;
-
     /** A finding wants a line to open, not a core dump. */
     static final int MAX_FRAMES = 64;
 
@@ -107,30 +99,22 @@ public final class SlowQuerySpanProcessor implements ExtendedSpanProcessor {
     private final ConcurrentMap<String, ConcurrentMap<String, Integer>> repeats =
             new ConcurrentHashMap<>();
 
-    /** The configured thresholds, read once: this runs on every span that ends. */
+    /**
+     * The configured thresholds, the ones the server reports at ({@link Thresholds}), read once:
+     * this runs on every span that ends.
+     */
     public SlowQuerySpanProcessor() {
-        this(configuredThresholdMillis(), configuredRequestThresholdMillis());
+        this(Thresholds.slowQueryMillis(), Thresholds.slowRequestMillis());
     }
 
     SlowQuerySpanProcessor(long thresholdMillis) {
-        this(thresholdMillis, DEFAULT_REQUEST_THRESHOLD_MS);
+        this(thresholdMillis, Thresholds.DEFAULT_SLOW_REQUEST_MS);
     }
 
     SlowQuerySpanProcessor(long thresholdMillis, long requestThresholdMillis) {
         this.thresholdNanos = TimeUnit.MILLISECONDS.toNanos(Math.max(0, thresholdMillis));
         this.requestThresholdNanos =
                 TimeUnit.MILLISECONDS.toNanos(Math.max(0, requestThresholdMillis));
-    }
-
-    /** The property, else its variable, by {@link Settings#propertyOrEnv}; the server's rule. */
-    static long configuredThresholdMillis() {
-        return Settings.millis(THRESHOLD_PROPERTY, DEFAULT_THRESHOLD_MS, System::getProperty,
-                System::getenv);
-    }
-
-    static long configuredRequestThresholdMillis() {
-        return Settings.millis(REQUEST_THRESHOLD_PROPERTY, DEFAULT_REQUEST_THRESHOLD_MS,
-                System::getProperty, System::getenv);
     }
 
     @Override

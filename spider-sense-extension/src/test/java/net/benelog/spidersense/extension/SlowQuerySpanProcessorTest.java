@@ -140,34 +140,6 @@ class SlowQuerySpanProcessorTest {
     }
 
     @Test
-    void theRequestThresholdComesFromTheSamePropertyTheServerUses() {
-        assertThat(SlowQuerySpanProcessor.configuredRequestThresholdMillis())
-                .isEqualTo(SlowQuerySpanProcessor.DEFAULT_REQUEST_THRESHOLD_MS);
-        System.setProperty(SlowQuerySpanProcessor.REQUEST_THRESHOLD_PROPERTY, "900");
-        try {
-            assertThat(SlowQuerySpanProcessor.configuredRequestThresholdMillis()).isEqualTo(900);
-        } finally {
-            System.clearProperty(SlowQuerySpanProcessor.REQUEST_THRESHOLD_PROPERTY);
-        }
-    }
-
-    @Test
-    void theThresholdComesFromTheSamePropertyTheServerUses() {
-        assertThat(SlowQuerySpanProcessor.configuredThresholdMillis())
-                .isEqualTo(SlowQuerySpanProcessor.DEFAULT_THRESHOLD_MS);
-        System.setProperty(SlowQuerySpanProcessor.THRESHOLD_PROPERTY, "250");
-        try {
-            assertThat(SlowQuerySpanProcessor.configuredThresholdMillis()).isEqualTo(250);
-            System.setProperty(SlowQuerySpanProcessor.THRESHOLD_PROPERTY, "not a number");
-            assertThat(SlowQuerySpanProcessor.configuredThresholdMillis())
-                    .as("nonsense falls back rather than throwing out of a static initialiser")
-                    .isEqualTo(SlowQuerySpanProcessor.DEFAULT_THRESHOLD_MS);
-        } finally {
-            System.clearProperty(SlowQuerySpanProcessor.THRESHOLD_PROPERTY);
-        }
-    }
-
-    @Test
     void theFramesOfTheSdkAndOfOurselvesAreDroppedFromTheTop() {
         StackTraceElement[] frames = {
                 new StackTraceElement("java.lang.Thread", "getStackTrace", "Thread.java", 1),

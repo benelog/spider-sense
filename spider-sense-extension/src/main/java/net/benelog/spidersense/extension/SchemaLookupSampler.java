@@ -8,6 +8,7 @@ import io.opentelemetry.sdk.trace.data.LinkData;
 import io.opentelemetry.sdk.trace.samplers.Sampler;
 import io.opentelemetry.sdk.trace.samplers.SamplingResult;
 import java.util.List;
+import net.benelog.spidersense.extension.schema.IndexCatalog;
 
 /**
  * Keeps the extension's own catalog queries out of the application's trace.
@@ -20,7 +21,7 @@ import java.util.List;
  * stops it, because the lookup runs inside the slow statement's call; this sampler is what keeps
  * that true whatever order the advice ends up in ({@code DatabaseCatalogIT} checks the result).
  *
- * <p>{@link net.benelog.spidersense.extension.schema.IndexCatalog} marks the thread for the length
+ * <p>{@link IndexCatalog} marks the thread for the length
  * of the lookup with the baggage entry {@value #LOOKUP_KEY}, which this sampler is the only reader
  * of: a span started under that entry is dropped, everything else goes to the sampler the agent was
  * configured with. Baggage is what carries the mark because it is already part of the context the
@@ -31,8 +32,11 @@ import java.util.List;
  */
 public final class SchemaLookupSampler implements Sampler {
 
-    /** The entry the lookup puts in the baggage; see {@code design.adoc#extension}. */
-    static final String LOOKUP_KEY = "spidersense.schema.lookup";
+    /**
+     * The entry the lookup puts in the baggage; see {@code design.adoc#extension}. A compile-time
+     * constant of the catalog's, so it is inlined here and loads nothing of the helper package.
+     */
+    static final String LOOKUP_KEY = IndexCatalog.LOOKUP_KEY;
 
     private final Sampler delegate;
 
