@@ -185,7 +185,13 @@ public final class Stats {
 
         public static Node target(String kind, String target, long calls, long errors,
                 double avgMs, double p95Ms) {
-            return new Node(kind + ":" + target, kind, target, null, false, calls, errors, avgMs, p95Ms);
+            return new Node(targetId(kind, target), kind, target, null, false, calls, errors, avgMs,
+                    p95Ms);
+        }
+
+        /** The id of a dependency's node: its kind and its target, {@code db:h2:orders}. */
+        public static String targetId(String kind, String target) {
+            return kind + ":" + target;
         }
 
         public boolean isService() {

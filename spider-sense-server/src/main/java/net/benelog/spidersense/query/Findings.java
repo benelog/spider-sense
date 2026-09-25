@@ -361,7 +361,7 @@ public final class Findings {
         for (Ranked each : found) {
             ids.add(each.finding().id());
         }
-        Map<String, Map<String, Ranked>> since = new HashMap<>();
+        Map<ResolvedIn, Map<String, Ranked>> since = new HashMap<>();
         Answer ranked = rank(found, acks.byId(ids),
                 (each, resolvedAt) -> recurrence(each, resolvedAt, window, since), limit, hideAcked);
         return labelled
@@ -524,7 +524,7 @@ public final class Findings {
      * share them.
      */
     private @Nullable Ranked recurrence(Ranked finding, long resolvedAt, Window window,
-            Map<String, Map<String, Ranked>> since) {
+            Map<ResolvedIn, Map<String, Ranked>> since) {
         if (resolvedAt < window.from()) {
             return finding;
         }
@@ -532,9 +532,13 @@ public final class Findings {
             return null;
         }
         String service = finding.finding().service();
-        Map<String, Ranked> after = since.computeIfAbsent(resolvedAt + " " + service,
+        Map<String, Ranked> after = since.computeIfAbsent(new ResolvedIn(resolvedAt, service),
                 key -> byId(Window.of(resolvedAt + 1, window.to()), service));
         return after.get(finding.finding().id());
+    }
+
+    /** A resolution instant and a service: the part of a window the rules are asked again over. */
+    private record ResolvedIn(long at, String service) {
     }
 
     /**
@@ -716,7 +720,7 @@ public final class Findings {
         long count;
         long firstSeen;
         long lastSeen;
-        final Map<String, long[]> byEndpoint = new LinkedHashMap<>();
+        final Map<String, Long> byEndpoint = new LinkedHashMap<>();
         /** The newest distinct trace ids, oldest first. */
         final LinkedHashSet<String> traces = new LinkedHashSet<>();
         @Nullable String attributes;
@@ -733,7 +737,7 @@ public final class Findings {
             }
             count++;
             lastSeen = at;
-            byEndpoint.computeIfAbsent(endpoint, name -> new long[1])[0]++;
+            byEndpoint.merge(endpoint, 1L, Long::sum);
             if (traceId != null) {
                 traces.remove(traceId);
                 traces.add(traceId);
@@ -790,7 +794,7 @@ public final class Findings {
         List<Ranked> found = new ArrayList<>();
         for (LogGroup group : byGroup.values()) {
             List<Stats.EndpointCount> endpoints = new ArrayList<>();
-            group.byEndpoint.forEach((name, count) -> endpoints.add(new Stats.EndpointCount(name, count[0])));
+            group.byEndpoint.forEach((name, count) -> endpoints.add(new Stats.EndpointCount(name, count)));
             endpoints.sort(Stats.EndpointCount.MOST_FIRST);
 
             Map<String, Object> numbers = new LinkedHashMap<>();
@@ -859,18 +863,17 @@ public final class Findings {
      */
     private List<Ranked> nPlusOne(Window window, @Nullable String service, Reads reads,
             boolean evidence) {
-        List<String[]> candidates = candidates(window, service);
+        List<Candidate> candidates = candidates(window, service);
         if (candidates.isEmpty()) {
             return List.of();
         }
         Set<String> traceIds = new LinkedHashSet<>();
         Set<String> queryIds = new LinkedHashSet<>();
-        Set<String> pairs = new LinkedHashSet<>();
-        for (String[] candidate : candidates) {
-            traceIds.add(candidate[0]);
-            queryIds.add(candidate[1]);
-            pairs.add(candidate[0] + "\0" + candidate[1]);
+        for (Candidate candidate : candidates) {
+            traceIds.add(candidate.traceId());
+            queryIds.add(candidate.queryId());
         }
+        Set<Candidate> pairs = Set.copyOf(candidates);
 
         Queries.Ancestry ancestry = reads.ancestry();
         List<Repeats.Occurrence<StatementRun>> occurrences = new ArrayList<>();
@@ -881,7 +884,7 @@ public final class Findings {
                     + " ORDER BY start_ms, span_id", where.params(), rs -> {
                         String traceId = rs.getString("trace_id");
                         String queryId = rs.getString("query_id");
-                        if (!pairs.contains(traceId + "\0" + queryId)) {
+                        if (!pairs.contains(new Candidate(traceId, queryId))) {
                             return;
                         }
                         Queries.Ancestry.Entry entry = ancestry.entryOf(rs.getString("span_id"));
@@ -954,14 +957,18 @@ public final class Findings {
                 subject, stats.numbers(requests), statement, code, stats.evidenceTraces());
     }
 
-    private List<String[]> candidates(Window window, @Nullable String service) {
+    /** A trace that ran a query group five or more times, over any number of entry spans. */
+    private record Candidate(String traceId, String queryId) {
+    }
+
+    private List<Candidate> candidates(Window window, @Nullable String service) {
         Where where = Where.window(window, service).and("query_id IS NOT NULL");
         // Every pair of the window, not the most repeated few: affected and requests
         // must count the same population (findings.adoc#n-plus-one).
         return sql.query("SELECT trace_id, query_id FROM span WHERE " + where.sql()
                         + " GROUP BY trace_id, query_id HAVING COUNT(*) >= " + Repeats.MIN_REPEATS
                         + " ORDER BY trace_id, query_id",
-                where.params(), rs -> new String[]{rs.getString("trace_id"), rs.getString("query_id")});
+                where.params(), rs -> new Candidate(rs.getString("trace_id"), rs.getString("query_id")));
     }
 
     /**
@@ -1297,22 +1304,24 @@ public final class Findings {
      * {@code PERCENTILE_DISC} gives the other rules.
      */
     private List<Ranked> slowExternal(Window window, Reads reads, boolean evidence) {
-        Map<String, List<Queries.OutboundCall>> byGroup = new LinkedHashMap<>();
+        Map<ExternalGroup, List<Queries.OutboundCall>> byGroup = new LinkedHashMap<>();
         for (Queries.OutboundCall span : reads.outboundHttp()) {
-            byGroup.computeIfAbsent(
-                    span.service() + "\0" + span.target() + "\0" + span.name(),
+            byGroup.computeIfAbsent(new ExternalGroup(span.service(), span.target(), span.name()),
                     key -> new ArrayList<>()).add(span);
         }
         List<Ranked> found = new ArrayList<>();
-        byGroup.forEach((key, calls) -> {
-            String[] parts = key.split("\0", 3);
-            Ranked ranked = external(window, evidence ? reads : null, parts[0], parts[1], parts[2],
-                    calls);
+        byGroup.forEach((group, calls) -> {
+            Ranked ranked = external(window, evidence ? reads : null, group.service(), group.target(),
+                    group.name(), calls);
             if (ranked != null) {
                 found.add(ranked);
             }
         });
         return found;
+    }
+
+    /** What a {@code slow-external} is about: one span name to one target, from one service. */
+    private record ExternalGroup(String service, String target, String name) {
     }
 
     /** One group; with no {@code reads} it is the id alone, with no callers and no evidence. */
@@ -1376,19 +1385,19 @@ public final class Findings {
     private static List<Stats.Caller> externalCallers(Reads reads, List<Queries.OutboundCall> calls,
             String service) {
         Queries.Ancestry ancestry = reads.ancestry();
-        Map<String, long[]> counts = new LinkedHashMap<>();
+        Map<String, Long> counts = new LinkedHashMap<>();
         Map<String, String> byService = new LinkedHashMap<>();
         for (Queries.OutboundCall call : calls) {
             Queries.Ancestry.Entry entry = ancestry.entryOf(call.spanId());
             String endpoint = entry == null ? "(no endpoint)" : entry.endpoint();
-            counts.computeIfAbsent(endpoint, name -> new long[1])[0]++;
+            counts.merge(endpoint, 1L, Long::sum);
             byService.putIfAbsent(endpoint, entry == null ? service : entry.service());
         }
         List<Stats.Caller> list = new ArrayList<>();
         counts.forEach((endpoint, count) ->
                 list.add(new Stats.Caller(endpoint,
                         Objects.requireNonNull(byService.get(endpoint), "every endpoint was named"),
-                        count[0])));
+                        count)));
         list.sort(Stats.Caller.MOST_FIRST);
         return list;
     }

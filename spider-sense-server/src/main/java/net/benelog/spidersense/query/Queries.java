@@ -15,7 +15,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.function.Supplier;
@@ -574,7 +573,7 @@ public final class Queries {
             ids.add(query.queryId());
         }
         Ancestry ancestry = ancestors.get();
-        Map<String, Map<String, long[]>> callers = new HashMap<>();
+        Map<String, Map<String, Long>> callers = new HashMap<>();
         Map<String, Map<String, String>> callerService = new HashMap<>();
         Where where = Where.window(window, null).andIn("query_id", ids);
         sql.forEach("SELECT query_id, trace_id, span_id, service FROM span WHERE " + where.sql(),
@@ -583,7 +582,7 @@ public final class Queries {
                     Ancestry.Entry entry = ancestry.entryOf(rs.getString("span_id"));
                     String name = entry == null ? "(no endpoint)" : entry.endpoint();
                     callers.computeIfAbsent(queryId, id -> new LinkedHashMap<>())
-                            .computeIfAbsent(name, n -> new long[1])[0]++;
+                            .merge(name, 1L, Long::sum);
                     callerService.computeIfAbsent(queryId, id -> new HashMap<>())
                             .putIfAbsent(name, entry == null ? rs.getString("service") : entry.service());
                 });
@@ -594,7 +593,7 @@ public final class Queries {
             callers.getOrDefault(query.queryId(), Map.of()).forEach((name, count) ->
                     list.add(new Stats.Caller(name,
                             callerService.getOrDefault(query.queryId(), Map.of())
-                                    .getOrDefault(name, query.service()), count[0])));
+                                    .getOrDefault(name, query.service()), count)));
             list.sort(Stats.Caller.MOST_FIRST);
             withCallers.add(query.withCallers(list));
         }
@@ -745,17 +744,16 @@ public final class Queries {
             Supplier<Ancestry> ancestors) {
         Ancestry ancestry = ancestors.get();
         Where where = Where.window(window, null).andIn("error_id", ids);
-        Map<String, Map<String, long[]>> counts = new LinkedHashMap<>();
+        Map<String, Map<String, Long>> counts = new LinkedHashMap<>();
         sql.forEach("SELECT error_id, span_id FROM span WHERE " + where.sql(), where.params(), rs -> {
             Ancestry.Entry entry = ancestry.entryOf(rs.getString("span_id"));
             counts.computeIfAbsent(rs.getString("error_id"), id -> new LinkedHashMap<>())
-                    .computeIfAbsent(entry == null ? "(no endpoint)" : entry.endpoint(),
-                            n -> new long[1])[0]++;
+                    .merge(entry == null ? "(no endpoint)" : entry.endpoint(), 1L, Long::sum);
         });
         Map<String, List<Stats.EndpointCount>> endpoints = new HashMap<>();
         counts.forEach((errorId, byEndpoint) -> {
             List<Stats.EndpointCount> list = new ArrayList<>();
-            byEndpoint.forEach((name, count) -> list.add(new Stats.EndpointCount(name, count[0])));
+            byEndpoint.forEach((name, count) -> list.add(new Stats.EndpointCount(name, count)));
             list.sort(Stats.EndpointCount.MOST_FIRST);
             endpoints.put(errorId, list);
         });
@@ -975,24 +973,29 @@ public final class Queries {
 
     // --- scatter -------------------------------------------------------------
 
+    /** One entry span as the scatter reads it, before its trace is asked for a slow query. */
+    private record ScatterRow(long startMs, long durationNs, String service, String endpoint,
+            String traceId, boolean error, boolean slow) {
+    }
+
     public List<Stats.ScatterPoint> scatter(Window window, @Nullable String service,
             @Nullable String endpointId, int limit) {
         Where where = Where.entries(window, service);
         if (endpointId != null) {
             where = where.and("endpoint_id = ?", endpointId);
         }
-        List<Object[]> rows = sql.query(
+        List<ScatterRow> rows = sql.query(
                 "SELECT start_ms, duration_ns, service, endpoint, name, trace_id, error, slow"
                         + " FROM span WHERE " + where.sql() + " ORDER BY start_ms DESC, id DESC LIMIT "
                         + Math.max(1, limit),
-                where.params(), rs -> new Object[]{rs.getLong("start_ms"), rs.getLong("duration_ns"),
+                where.params(), rs -> new ScatterRow(rs.getLong("start_ms"), rs.getLong("duration_ns"),
                         rs.getString("service"),
                         rs.getString("endpoint") != null ? rs.getString("endpoint") : rs.getString("name"),
-                        rs.getString("trace_id"), rs.getBoolean("error"), rs.getBoolean("slow")});
+                        rs.getString("trace_id"), rs.getBoolean("error"), rs.getBoolean("slow")));
 
         Set<String> traceIds = new HashSet<>();
-        for (Object[] row : rows) {
-            traceIds.add((String) row[4]);
+        for (ScatterRow row : rows) {
+            traceIds.add(row.traceId());
         }
         Set<String> withSlowQuery = traceIds.isEmpty() ? Set.of() : new HashSet<>(sql.query(
                 "SELECT DISTINCT trace_id FROM span WHERE db_statement IS NOT NULL AND slow"
@@ -1000,19 +1003,19 @@ public final class Queries {
                 Arrays.asList(traceIds.toArray()), rs -> rs.getString(1)));
 
         List<Stats.ScatterPoint> points = new ArrayList<>(rows.size());
-        for (Object[] row : rows) {
+        for (ScatterRow row : rows) {
             int flags = 0;
-            if ((Boolean) row[5]) {
+            if (row.error()) {
                 flags |= Stats.ScatterPoint.ERROR;
             }
-            if ((Boolean) row[6]) {
+            if (row.slow()) {
                 flags |= Stats.ScatterPoint.SLOW;
             }
-            if (withSlowQuery.contains((String) row[4])) {
+            if (withSlowQuery.contains(row.traceId())) {
                 flags |= Stats.ScatterPoint.SLOW_QUERY;
             }
-            points.add(new Stats.ScatterPoint((Long) row[0], Rows.ms((Long) row[1]), (String) row[2],
-                    (String) row[3], (String) row[4], flags));
+            points.add(new Stats.ScatterPoint(row.startMs(), Rows.ms(row.durationNs()), row.service(),
+                    row.endpoint(), row.traceId(), flags));
         }
         return points;
     }
@@ -1077,20 +1080,28 @@ public final class Queries {
         List<SpanRecord> spans = sql.query("SELECT " + Rows.SPAN_COLUMNS + " FROM span WHERE "
                 + where.sql() + " LIMIT " + MAX_DEPENDENCY_ROWS, where.params(), Rows::span);
 
-        Map<String, List<SpanRecord>> byTarget = new LinkedHashMap<>();
+        Map<TargetKey, List<SpanRecord>> byTarget = new LinkedHashMap<>();
         for (SpanRecord span : spans) {
-            byTarget.computeIfAbsent(span.category() + "\0" + target(span), k -> new ArrayList<>())
+            byTarget.computeIfAbsent(new TargetKey(span.category(), target(span)), k -> new ArrayList<>())
                     .add(span);
         }
         List<Stats.Dependency> dependencies = new ArrayList<>();
         byTarget.forEach((key, group) -> {
-            String[] parts = key.split("\0", 2);
             CallStats stats = CallStats.of(group);
-            dependencies.add(new Stats.Dependency(parts[0], parts[1], stats.calls(), stats.errors(),
-                    stats.avgMs(), stats.p95Ms()));
+            dependencies.add(new Stats.Dependency(key.category(), key.target(), stats.calls(),
+                    stats.errors(), stats.avgMs(), stats.p95Ms()));
         });
         dependencies.sort((a, b) -> Long.compare(b.calls(), a.calls()));
         return dependencies;
+    }
+
+    /** What an outbound span called and what kind of dependency it is: one group of calls. */
+    private record TargetKey(String category, String target) {
+
+        /** The id of the target's node on the map: {@code db:h2:orders}. */
+        String nodeId() {
+            return Stats.Node.targetId(category, target);
+        }
     }
 
     /**
@@ -1269,8 +1280,7 @@ public final class Queries {
             for (String bucket : BUCKETS) {
                 shares.put(bucket, 0.0);
             }
-            Map<String, double[]> hottest = new LinkedHashMap<>();
-            Map<String, String[]> named = new LinkedHashMap<>();
+            Map<String, HotSpanSum> hottest = new LinkedHashMap<>();
             for (SpanRecord span : spans) {
                 double selfMs = Rows.ms(self.getOrDefault(span.spanId(), 0L));
                 String parent = span.parentSpanId();
@@ -1291,11 +1301,8 @@ public final class Queries {
                 // reads the same in both; everything else is its summary, digits replaced.
                 String name = "http".equals(span.category()) && "CLIENT".equals(span.kind())
                         ? callName(span) : Ids.normaliseDigits(span.summary());
-                String key = span.category() + "\0" + name;
-                named.putIfAbsent(key, new String[]{name, span.category()});
-                double[] summed = hottest.computeIfAbsent(key, k -> new double[2]);
-                summed[0] += selfMs;
-                summed[1]++;
+                hottest.computeIfAbsent(span.category() + "\0" + name,
+                        key -> new HotSpanSum(name, span.category())).add(selfMs);
             }
             if (totalMs <= 0) {
                 return NONE;
@@ -1306,11 +1313,10 @@ public final class Queries {
             List<HotSpan> hotSpans = new ArrayList<>();
             // Keyed by category and summary, but named by the summary alone: two categories
             // never produce the same one, and the key is not what a reader wants to see.
-            named.forEach((key, name) -> {
-                double[] summed = hottest.getOrDefault(key, EMPTY_SUM);
-                hotSpans.add(new HotSpan(name[0], name[1], summed[0],
-                        Math.min(1, summed[0] / total), (long) summed[1]));
-            });
+            for (HotSpanSum summed : hottest.values()) {
+                hotSpans.add(new HotSpan(summed.name, summed.category, summed.selfMs,
+                        Math.min(1, summed.selfMs / total), summed.count));
+            }
             hotSpans.sort(Comparator.comparingDouble(HotSpan::selfMs).reversed()
                     .thenComparing(HotSpan::name));
             return new TimeSplit(
@@ -1388,7 +1394,23 @@ public final class Queries {
     /** The four shares of a breakdown, in the order they are written (findings.adoc#time). */
     private static final List<String> BUCKETS = List.of("db", "http", "internal", "self");
 
-    private static final double[] EMPTY_SUM = new double[2];
+    /** The self time and the spans of one summary, summed as a time split reads them. */
+    private static final class HotSpanSum {
+        final String name;
+        final String category;
+        double selfMs;
+        long count;
+
+        HotSpanSum(String name, String category) {
+            this.name = name;
+            this.category = category;
+        }
+
+        void add(double ms) {
+            selfMs += ms;
+            count++;
+        }
+    }
 
     /**
      * The aggregated answer to "where did the time go", over one sample of traces.
@@ -1440,10 +1462,10 @@ public final class Queries {
                 named.add(summary.name());
             }
         }
-        List<Stats.Edge> edges = new ArrayList<>(serviceEdges(window, named));
+        List<Stats.Edge> edges = new ArrayList<>(serviceEdges(window));
         edges.addAll(userEdges(window));
-        List<Stats.Node> targets = new ArrayList<>();
-        edges.addAll(targetEdges(window, targets));
+        Targets targets = targets(window);
+        edges.addAll(targets.edges());
         // A service with no request of its own, a worker whose jobs still call a
         // database, is on the map through the edges it starts: one node per service.
         for (Stats.Edge edge : edges) {
@@ -1461,7 +1483,7 @@ public final class Queries {
                             new long[window.bucketCount()], false));
             nodes.put(Stats.Node.serviceId(name), Stats.Node.service(summary));
         }
-        for (Stats.Node target : targets) {
+        for (Stats.Node target : targets.nodes()) {
             nodes.put(target.id(), target);
         }
 
@@ -1495,8 +1517,8 @@ public final class Queries {
     }
 
     /** One edge per pair of services whose spans are parent and child in a trace. */
-    private List<Stats.Edge> serviceEdges(Window window, Set<String> named) {
-        List<Stats.Edge> edges = sql.query(
+    private List<Stats.Edge> serviceEdges(Window window) {
+        return sql.query(
                 "SELECT p.service AS caller, c.service AS callee, COUNT(*) AS calls,"
                         + " SUM(CASE WHEN c.error THEN 1 ELSE 0 END) AS errors,"
                         + " SUM(c.duration_ns) AS total_ns,"
@@ -1511,11 +1533,6 @@ public final class Queries {
                             Stats.Node.serviceId(rs.getString("callee")), calls, rs.getLong("errors"),
                             calls == 0 ? 0 : Rows.ms(rs, "total_ns") / calls, Rows.ms(rs, "p95_ns"));
                 });
-        for (Stats.Edge edge : edges) {
-            // The caller is on the map even when it served no request of its own.
-            named.add(Objects.requireNonNull(Stats.Node.serviceOf(edge.from()), "a service edge"));
-        }
-        return edges;
     }
 
     /** Entry spans that nothing traced started: the traffic from outside. */
@@ -1537,12 +1554,20 @@ public final class Queries {
                 });
     }
 
+    /** The nodes of the dependencies nobody traces, and the edges of the services that call them. */
+    private record Targets(List<Stats.Node> nodes, List<Stats.Edge> edges) {
+    }
+
+    /** One service calling one dependency: an edge of the map. */
+    private record CallerKey(TargetKey target, String service) {
+    }
+
     /**
      * The databases, hosts and queues every service calls, and one edge per caller.
      * The outbound spans that turned out to be calls to another traced service are
      * left out: they are already {@code service → service} edges.
      */
-    private List<Stats.Edge> targetEdges(Window window, List<Stats.Node> nodes) {
+    private Targets targets(Window window) {
         Set<String> crossService = new HashSet<>(sql.query(
                 "SELECT DISTINCT c.parent_span_id FROM span c JOIN span p"
                         + " ON p.trace_id = c.trace_id AND p.span_id = c.parent_span_id"
@@ -1555,29 +1580,30 @@ public final class Queries {
         List<SpanRecord> spans = sql.query("SELECT " + Rows.SPAN_COLUMNS + " FROM span WHERE "
                 + where.sql() + " LIMIT " + MAX_DEPENDENCY_ROWS, where.params(), Rows::span);
 
-        Map<String, List<SpanRecord>> byTarget = new LinkedHashMap<>();
-        Map<String, List<SpanRecord>> byCaller = new LinkedHashMap<>();
+        Map<TargetKey, List<SpanRecord>> byTarget = new LinkedHashMap<>();
+        Map<CallerKey, List<SpanRecord>> byCaller = new LinkedHashMap<>();
         for (SpanRecord span : spans) {
             if (crossService.contains(span.spanId())) {
                 continue;
             }
-            String id = span.category() + ":" + target(span);
-            byTarget.computeIfAbsent(id, k -> new ArrayList<>()).add(span);
-            byCaller.computeIfAbsent(id + "\0" + span.service(), k -> new ArrayList<>()).add(span);
+            TargetKey target = new TargetKey(span.category(), target(span));
+            byTarget.computeIfAbsent(target, k -> new ArrayList<>()).add(span);
+            byCaller.computeIfAbsent(new CallerKey(target, span.service()), k -> new ArrayList<>())
+                    .add(span);
         }
-        byTarget.forEach((id, group) -> {
+        List<Stats.Node> nodes = new ArrayList<>();
+        byTarget.forEach((target, group) -> {
             CallStats stats = CallStats.of(group);
-            nodes.add(Stats.Node.target(group.get(0).category(), target(group.get(0)),
+            nodes.add(Stats.Node.target(target.category(), target.target(),
                     stats.calls(), stats.errors(), stats.avgMs(), stats.p95Ms()));
         });
         List<Stats.Edge> edges = new ArrayList<>();
-        byCaller.forEach((key, group) -> {
-            String[] parts = key.split("\0", 2);
+        byCaller.forEach((caller, group) -> {
             CallStats stats = CallStats.of(group);
-            edges.add(new Stats.Edge(Stats.Node.serviceId(parts[1]), parts[0], stats.calls(), stats.errors(),
-                    stats.avgMs(), stats.p95Ms()));
+            edges.add(new Stats.Edge(Stats.Node.serviceId(caller.service()), caller.target().nodeId(),
+                    stats.calls(), stats.errors(), stats.avgMs(), stats.p95Ms()));
         });
-        return edges;
+        return new Targets(nodes, edges);
     }
 
     /** Calls, errors, mean and p95 over a group of spans read row by row. */

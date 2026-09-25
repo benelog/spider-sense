@@ -43,7 +43,10 @@ public final class MetricQueries {
             return "ms".equals(unit) ? 1 : 1000;
         }
 
-        /** Whether a point is a running total since the process started, not the increment since the one before. */
+        /**
+         * Whether a point is a running total since the process started, rather than the
+         * increment since the one before.
+         */
         public boolean cumulative() {
             return !"DELTA".equals(temporality);
         }
@@ -119,18 +122,18 @@ public final class MetricQueries {
         }
         // Metadata is a service's own (storage.adoc#schema); a name several services
         // export is described by the first of them, in the order the list names them.
-        Map<String, String[]> metadata = new LinkedHashMap<>();
+        Map<String, Described> metadata = new LinkedHashMap<>();
         sql.forEach("SELECT service, name, type, unit, description FROM metric"
                 + (service == null ? "" : " WHERE service = ?") + " ORDER BY name, service",
                 service == null ? List.of() : List.of(service), rs -> {
-                    metadata.putIfAbsent(rs.getString("name"), new String[]{rs.getString("type"),
-                            rs.getString("unit"), rs.getString("description")});
+                    metadata.putIfAbsent(rs.getString("name"), new Described(rs.getString("type"),
+                            rs.getString("unit"), rs.getString("description")));
                 });
         List<MetricMeta> catalog = new ArrayList<>(servicesByName.size());
         servicesByName.forEach((name, names) -> {
-            String[] meta = metadata.getOrDefault(name, new String[]{"gauge", "", ""});
-            catalog.add(new MetricMeta(name, meta[0], meta[1], meta[2], List.copyOf(names),
-                    seriesByName.getOrDefault(name, 0)));
+            Described meta = metadata.getOrDefault(name, Described.UNKNOWN);
+            catalog.add(new MetricMeta(name, meta.type(), meta.unit(), meta.description(),
+                    List.copyOf(names), seriesByName.getOrDefault(name, 0)));
         });
         catalog.sort((a, b) -> a.name().compareTo(b.name()));
         return catalog;
@@ -193,6 +196,12 @@ public final class MetricQueries {
             }
         }
         return data;
+    }
+
+    /** How the catalog describes a metric name; a name with no metadata row is a gauge. */
+    private record Described(String type, String unit, String description) {
+
+        static final Described UNKNOWN = new Described("gauge", "", "");
     }
 
     /** One service's description of one metric name. */

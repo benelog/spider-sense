@@ -169,7 +169,8 @@ public final class Check {
             case MAX_SLOW_QUERIES -> {
                 long slow = 0;
                 if (endpoint == null) {
-                    for (Stats.QueryStats query : queries.queryGroups(window, service, "total", Queries.ALL_GROUPS, null)) {
+                    for (Stats.QueryStats query
+                            : queries.queryGroups(window, service, "total", Queries.ALL_GROUPS, null)) {
                         slow += query.slowCalls();
                     }
                 } else {
