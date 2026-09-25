@@ -68,7 +68,7 @@ final class ConfigFile {
             if (Files.isRegularFile(file)) {
                 return file;
             }
-            System.err.println(SpiderSenseAgent.PREFIX + PROPERTY + " names " + file
+            System.err.println(SpiderSenseAgent.LOG_PREFIX + PROPERTY + " names " + file
                     + ", which is not a file; ignoring it");
             return null;
         }
@@ -87,7 +87,7 @@ final class ConfigFile {
                 continue;
             }
             if (!KNOWN_KEYS.contains(key)) {
-                System.err.println(SpiderSenseAgent.PREFIX + file + ": " + key
+                System.err.println(SpiderSenseAgent.LOG_PREFIX + file + ": " + key
                         + " is not a Spider Sense property; applying it anyway");
             }
             // What every reader of the key would find without the file wins over the file: an

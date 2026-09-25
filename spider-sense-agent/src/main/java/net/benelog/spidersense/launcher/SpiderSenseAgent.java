@@ -18,7 +18,7 @@ import org.jspecify.annotations.Nullable;
  */
 public final class SpiderSenseAgent {
 
-    static final String PREFIX = "[spider-sense] ";
+    static final String LOG_PREFIX = "[spider-sense] ";
     static final String OTEL_AGENT_CLASS = "io.opentelemetry.javaagent.OpenTelemetryAgent";
 
     private SpiderSenseAgent() {
@@ -40,7 +40,7 @@ public final class SpiderSenseAgent {
         try {
             Path file = ConfigFile.apply();
             if (file != null) {
-                System.out.println(PREFIX + "configuration: " + file.toAbsolutePath());
+                System.out.println(LOG_PREFIX + "configuration: " + file.toAbsolutePath());
             }
             config = Config.fromSystemProperties().withMode(Config.AGENT);
         } catch (Throwable t) {
@@ -51,20 +51,20 @@ public final class SpiderSenseAgent {
         boolean exportNowhere = false;
         try {
             if (config.collector() != null) {
-                System.out.println(PREFIX + "forwarding to " + config.otlpEndpoint());
+                System.out.println(LOG_PREFIX + "forwarding to " + config.otlpEndpoint());
             } else {
                 Config serverConfig = config.withService(effectiveServiceName(config));
                 if (EmbeddedServer.start(serverConfig)) {
-                    System.out.println(PREFIX + "UI: " + config.baseUrl());
+                    System.out.println(LOG_PREFIX + "UI: " + config.baseUrl());
                     maybeOpenBrowser(config);
                 }
             }
         } catch (Throwable t) {
             warn("the embedded UI did not start; the application is unaffected", t);
             try {
-                exportNowhere = boundByAnother(t) && !spiderSenseAt(config.baseUrl());
+                exportNowhere = portInUse(t) && !spiderSenseAt(config.baseUrl());
                 if (exportNowhere) {
-                    System.err.println(PREFIX + "port " + config.port() + " is held by something that is not"
+                    System.err.println(LOG_PREFIX + "port " + config.port() + " is held by something that is not"
                             + " Spider Sense; telemetry is not exported. Set -Dspidersense.port= to a free port.");
                 }
             } catch (Throwable probe) {
@@ -208,11 +208,11 @@ public final class SpiderSenseAgent {
     static void warn(String what, Throwable t) {
         Throwable cause = t.getCause();
         // The cause says why: "Failed to start Jetty on port 4000" alone does not name the BindException.
-        System.err.println(PREFIX + what + ": " + t + (cause != null ? " (" + cause + ")" : ""));
+        System.err.println(LOG_PREFIX + what + ": " + t + (cause != null ? " (" + cause + ")" : ""));
     }
 
     /** Whether the embedded server failed because its port was taken. */
-    static boolean boundByAnother(Throwable failure) {
+    static boolean portInUse(Throwable failure) {
         for (Throwable t = failure; t != null; t = t.getCause()) {
             if (t instanceof java.net.BindException) {
                 return true;

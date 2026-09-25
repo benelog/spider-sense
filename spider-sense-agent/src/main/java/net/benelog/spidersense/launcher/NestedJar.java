@@ -146,8 +146,8 @@ final class NestedJar {
     }
 
     static boolean hasEntry(Path jar, String entry) {
-        try (JarFile jf = new JarFile(jar.toFile())) {
-            return jf.getEntry(entry) != null;
+        try (JarFile jarFile = new JarFile(jar.toFile())) {
+            return jarFile.getEntry(entry) != null;
         } catch (IOException e) {
             return false;
         }
@@ -177,14 +177,14 @@ final class NestedJar {
      * @throws IOException when the entry is missing, or {@code dir} belongs to another user
      */
     static Path extractFrom(Path jar, String name, Path dir, String prefix) throws IOException {
-        try (JarFile jf = new JarFile(jar.toFile())) {
-            JarEntry entry = jf.getJarEntry(name);
+        try (JarFile jarFile = new JarFile(jar.toFile())) {
+            JarEntry entry = jarFile.getJarEntry(name);
             if (entry == null) {
                 throw new IOException("no " + name + " inside " + jar);
             }
             ownDirectory(dir);
             long size = entry.getSize();
-            Path target = dir.resolve(prefix + "-" + crc(jf, entry) + ".jar");
+            Path target = dir.resolve(prefix + "-" + crc(jarFile, entry) + ".jar");
             if (isComplete(target, size)) {
                 // Touched, so that another build's prune sees it in use.
                 Files.setLastModifiedTime(target, FileTime.from(Instant.now()));
@@ -193,7 +193,7 @@ final class NestedJar {
             }
             Path temp = Files.createTempFile(dir, "nested-", ".jar.tmp");
             try {
-                try (InputStream in = jf.getInputStream(entry)) {
+                try (InputStream in = jarFile.getInputStream(entry)) {
                     Files.copy(in, temp, StandardCopyOption.REPLACE_EXISTING);
                 }
                 try {
@@ -224,11 +224,11 @@ final class NestedJar {
      * The entry's CRC-32 as eight hex digits: from the central directory, or computed from the
      * content when the jar does not record it.
      */
-    private static String crc(JarFile jf, JarEntry entry) throws IOException {
+    private static String crc(JarFile jarFile, JarEntry entry) throws IOException {
         long crc = entry.getCrc();
         if (crc < 0) {
             CRC32 sum = new CRC32();
-            try (InputStream in = new CheckedInputStream(jf.getInputStream(entry), sum)) {
+            try (InputStream in = new CheckedInputStream(jarFile.getInputStream(entry), sum)) {
                 in.transferTo(OutputStream.nullOutputStream());
             }
             crc = sum.getValue();

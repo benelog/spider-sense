@@ -78,9 +78,9 @@ class AgentDefaultsTest {
         } finally {
             other.stop(0);
         }
-        assertThat(SpiderSenseAgent.boundByAnother(
+        assertThat(SpiderSenseAgent.portInUse(
                 new IllegalStateException("Failed to start Jetty", new java.net.BindException("in use")))).isTrue();
-        assertThat(SpiderSenseAgent.boundByAnother(new IllegalStateException("no"))).isFalse();
+        assertThat(SpiderSenseAgent.portInUse(new IllegalStateException("no"))).isFalse();
     }
 
     @Test

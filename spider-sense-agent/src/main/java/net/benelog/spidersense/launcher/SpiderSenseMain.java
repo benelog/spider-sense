@@ -111,8 +111,8 @@ public final class SpiderSenseMain {
 
     static void printBanner(Config config) {
         String url = config.baseUrl();
-        StringBuilder b = new StringBuilder();
-        b.append("Spider Sense ").append(NestedJar.version())
+        StringBuilder banner = new StringBuilder();
+        banner.append("Spider Sense ").append(NestedJar.version())
                 .append(" — a local-development observability tool, standalone.\n")
                 .append("The UI is at ").append(url)
                 .append(" and it is also the OTLP/HTTP endpoint: ").append(url).append("/v1/traces")
@@ -125,7 +125,7 @@ public final class SpiderSenseMain {
                 .append("or attach this very jar to it:\n")
                 .append("  java -javaagent:spider-sense.jar -Dspidersense.collector=")
                 .append(url).append(" -jar app.jar\n");
-        System.out.println(b);
+        System.out.println(banner);
     }
 
     static void printHelp() {

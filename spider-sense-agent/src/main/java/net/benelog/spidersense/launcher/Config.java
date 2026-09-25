@@ -92,7 +92,7 @@ public record Config(
     /** Prints each of the warnings on stderr. */
     public static void printWarnings(Parsed parsed) {
         for (String warning : parsed.warnings()) {
-            System.err.println(SpiderSenseAgent.PREFIX + warning);
+            System.err.println(SpiderSenseAgent.LOG_PREFIX + warning);
         }
     }
 
@@ -139,18 +139,18 @@ public record Config(
         }
         List<String> warnings = new ArrayList<>();
         Values values = new Values(given, name -> propertyOrEnv(name, property, env), warnings);
-        Config d = defaults();
+        Config defaults = defaults();
         Config config = new Config(
-                values.integer(Key.PORT, d.port()),
-                values.string(Key.HOST, d.host()),
+                values.integer(Key.PORT, defaults.port()),
+                values.string(Key.HOST, defaults.host()),
                 values.optionalString(Key.COLLECTOR),
                 values.optionalString(Key.SERVICE),
                 values.optionalString(Key.DB),
                 values.optionalInteger(Key.RETENTION_HOURS, DEFAULT_RETENTION_HOURS),
-                values.number(Key.SLOW_REQUEST_MS, d.slowRequestMs()),
-                values.number(Key.SLOW_QUERY_MS, d.slowQueryMs()),
-                values.bool(Key.OPEN, d.open()),
-                values.string(Key.MODE, d.mode()));
+                values.number(Key.SLOW_REQUEST_MS, defaults.slowRequestMs()),
+                values.number(Key.SLOW_QUERY_MS, defaults.slowQueryMs()),
+                values.bool(Key.OPEN, defaults.open()),
+                values.string(Key.MODE, defaults.mode()));
         return new Parsed(config, Map.copyOf(serverProperties), List.copyOf(warnings));
     }
 
@@ -304,15 +304,16 @@ public record Config(
 
     /** The base URL to reach this Spider Sense on; {@code 0.0.0.0} is not an address to connect to. */
     public String baseUrl() {
-        String h = host;
-        if (h == null || h.isEmpty() || h.equals("0.0.0.0") || h.equals("::") || h.equals("[::]")) {
-            h = DEFAULT_HOST;
+        String callable = host;
+        if (callable == null || callable.isEmpty() || callable.equals("0.0.0.0")
+                || callable.equals("::") || callable.equals("[::]")) {
+            callable = DEFAULT_HOST;
         }
         // An IPv6 address goes into a URL in brackets: http://[::1]:4000.
-        if (h.contains(":") && !h.startsWith("[")) {
-            h = "[" + h + "]";
+        if (callable.contains(":") && !callable.startsWith("[")) {
+            callable = "[" + callable + "]";
         }
-        return "http://" + h + ":" + port;
+        return "http://" + callable + ":" + port;
     }
 
     /** Where the agent should export to: the forwarding collector if given, else our own UI. */
