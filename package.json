@@ -2,8 +2,10 @@
   "name": "spider-sense-docs",
   "private": true,
   "description": "Antora documentation site for Spider Sense",
+  "type": "module",
   "scripts": {
-    "docs": "antora --fetch antora-playbook.yml && node scripts/demo-site.mjs assemble build/site/demo"
+    "docs": "antora --fetch antora-playbook.yml && node scripts/demo-site.mjs assemble build/site/demo",
+    "test": "node --test 'spider-sense-server/src/test/js/**/*.test.js'"
   },
   "devDependencies": {
     "@antora/cli": "3.2.0",

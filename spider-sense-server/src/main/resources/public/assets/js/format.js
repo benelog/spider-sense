@@ -66,20 +66,20 @@ function sameDay(a, b) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
-/** HH:mm:ss within today, MMM d HH:mm:ss otherwise. */
-export function time(ts) {
+/** HH:mm:ss within the day of `now`, MMM d HH:mm:ss otherwise. */
+export function time(ts, now = Date.now()) {
   if (ts == null) return '-';
   const d = new Date(ts);
   const clock = pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
-  if (sameDay(d, new Date())) return clock;
+  if (sameDay(d, new Date(now))) return clock;
   return MONTHS[d.getMonth()] + ' ' + d.getDate() + ' ' + clock;
 }
 
 /** Same, with milliseconds; the Logs table uses it. */
-export function timeMs(ts) {
+export function timeMs(ts, now = Date.now()) {
   if (ts == null) return '-';
   const d = new Date(ts);
-  return time(ts) + '.' + pad(d.getMilliseconds(), 3);
+  return time(ts, now) + '.' + pad(d.getMilliseconds(), 3);
 }
 
 /** Clock only, for chart axes. */

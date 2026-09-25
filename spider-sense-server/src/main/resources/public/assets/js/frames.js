@@ -95,7 +95,7 @@ function rules() {
  * `package.Class.method(File.java:41)` from a stack trace line, without the module or class
  * loader in front of it and the jar a logging framework adds behind it, as CodeFrames does.
  */
-function frameOf(line) {
+export function frameOf(line) {
   const at = /^\s*at\s+(.+)$/.exec(line);
   if (!at) return null;
   let value = at[1].trim();
@@ -110,7 +110,7 @@ function frameOf(line) {
  * The package a framework frame is folded under: the framework prefix it matched, or, with an
  * allowlist, its first two segments. Null for an application frame.
  */
-function frameworkOf(frame, r) {
+export function frameworkOf(frame, r) {
   if (r.app.length) {
     if (r.app.some((p) => frame.startsWith(p))) return null;
     return frame.split('.').slice(0, 2).join('.');
@@ -145,7 +145,7 @@ function lineSpan(cls, text) {
 }
 
 /** `12 frames from org.springframework, org.apache`: the fold line's words. */
-function foldLabel(run) {
+export function foldLabel(run) {
   const packages = [];
   for (const item of run) if (!packages.includes(item.pkg)) packages.push(item.pkg);
   const named = packages.slice(0, 3).join(', ') + (packages.length > 3 ? ' +' + (packages.length - 3) : '');
