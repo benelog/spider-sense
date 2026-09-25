@@ -466,7 +466,10 @@ export function scatterChart(container, opts) {
     const visible = state.points.filter((p) => !state.hidden.has(p[2]));
     const xs = visible.map((p) => p[0] / 1000);
     const ys = visible.map((p) => p[1]);
-    const floor = state.logScale ? 0.1 : 0;
+    // The log axis starts under the fastest visible point, at 0.5 ms at the most, so no point
+    // falls below it; a point of 0 ms, which a log axis has no room for, sits on its bottom edge.
+    const fastest = ys.reduce((m, y) => Math.min(m, y), Infinity);
+    const floor = state.logScale ? Math.max(0.01, Math.min(0.5, fastest * 0.8)) : 0;
     // The linear axis stops at yMax so a few outliers do not flatten the rest; the log
     // scale has room for them, so it runs to the slowest point.
     const top = state.logScale ? Math.max(10, ...ys) * 1.05 : (state.yMax || Math.max(10, ...ys) * 1.05);
@@ -583,7 +586,7 @@ export function scatterChart(container, opts) {
           x: { time: true, range: () => [state.window.from / 1000, state.window.to / 1000] },
           y: {
             distr: state.logScale ? 3 : 1,
-            range: () => [state.logScale ? Math.max(0.1, 0.5) : 0, top],
+            range: () => [floor, top],
           },
         },
         series: [
