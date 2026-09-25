@@ -18,8 +18,8 @@ const CATEGORY_ICON = { http: 'trace', db: 'database', messaging: 'log', rpc: 's
 export function render(root, ctx) {
   const traceId = ctx.params.id;
   let data = null;
-  let view = ctx.query.view === 'profile' ? 'profile' : 'waterfall';
-  let profileSort = ctx.query.sort === 'elapsed' || ctx.query.sort === 'self' ? ctx.query.sort : 'start';
+  let view = router.queryParam(ctx.query, 'view', ['waterfall', 'profile'], 'waterfall');
+  let profileSort = router.queryParam(ctx.query, 'sort', ['start', 'elapsed', 'self'], 'start');
   let selectedSpan = ctx.query.span || null;
   const collapsed = new Set();
   let shape = '';
@@ -58,7 +58,7 @@ export function render(root, ctx) {
           label: 'View',
           options: [['waterfall', 'Waterfall'], ['profile', 'Profile']],
           value: view,
-          onChange: (id) => { view = id; router.setQuery({ view: id === 'waterfall' ? '' : id }); paintBody(); },
+          onChange: (id) => { view = id; router.setQuery({ view: id }, { defaults: { view: 'waterfall' } }); paintBody(); },
         }),
         h('a.btn', { href: api.exportUrl({ traceId: data.traceId || traceId }), download: 'trace-' + (data.traceId || traceId) + '.json' }, icon('download'), 'Export')));
   }
@@ -131,7 +131,7 @@ export function render(root, ctx) {
     const sortState = { key: profileSort, dir: chronological ? 'asc' : 'desc' };
     const onSort = (key) => {
       profileSort = key;
-      router.setQuery({ sort: key === 'start' ? '' : key });
+      router.setQuery({ sort: key }, { defaults: { sort: 'start' } });
       paintProfile();
     };
     fill(bodyBox, table([

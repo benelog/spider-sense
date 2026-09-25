@@ -2,7 +2,7 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, panel, table, chip, serviceColor, comparator, spinner, emptyState, snippetBlocks, seedServices } from '../ui.js';
+import { h, fill, panel, table, chip, serviceColor, comparator, sortFromQuery, nextSort, spinner, emptyState, snippetBlocks, seedServices } from '../ui.js';
 import { pageLoader } from '../page.js';
 import { sparkline } from '../charts.js';
 import { apdexCell } from '../buckets.js';
@@ -11,7 +11,7 @@ import { rate, pct } from '../format.js';
 
 export function render(root, ctx) {
   let rows = [];
-  let sort = { key: ctx.query.sort || 'requests', dir: ctx.query.dir === 'asc' ? 'asc' : 'desc' };
+  let sort = sortFromQuery(ctx.query, 'requests');
   let node = null;
 
   const body = h('div', spinner());
@@ -48,7 +48,7 @@ export function render(root, ctx) {
   }
 
   function onSort(key) {
-    sort = { key, dir: sort.key === key && sort.dir === 'desc' ? 'asc' : 'desc' };
+    sort = nextSort(sort, key);
     router.setQuery({ sort: key, dir: sort.dir });
     node = null;
     paint();

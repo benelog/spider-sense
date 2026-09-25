@@ -398,6 +398,16 @@ function alignClass(col) {
   return col.align === 'right' ? 'right' : col.align === 'center' ? 'center' : null;
 }
 
+/** A sortable table's `{ key, dir }` from the hash query's `sort` and `dir`, descending unless it says asc. */
+export function sortFromQuery(query, fallbackKey) {
+  return { key: (query || {}).sort || fallbackKey, dir: (query || {}).dir === 'asc' ? 'asc' : 'desc' };
+}
+
+/** The sort after a click on `key`'s header: descending first, and the other way on a second click. */
+export function nextSort(sort, key) {
+  return { key, dir: sort.key === key && sort.dir === 'desc' ? 'asc' : 'desc' };
+}
+
 /** Sort helper: returns a comparator for {key, dir} over numeric or string fields. */
 export function comparator(sort, accessors = {}) {
   const get = accessors[sort.key] || ((row) => row[sort.key]);

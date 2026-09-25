@@ -59,7 +59,7 @@ export function render(root, ctx) {
     q: q.q || '',
     minMs: q.minMs || '',
     maxMs: q.maxMs || '',
-    status: q.status || 'all',
+    status: router.queryParam(q, 'status', ['all', 'error', 'ok'], 'all'),
     endpointId: q.endpointId || '',
   };
   let rows = [];
@@ -84,7 +84,7 @@ export function render(root, ctx) {
     filter.maxMs = maxInput.value;
     filter.status = statusSelect.value;
     filter.endpointId = endpointSelect.value;
-    router.setQuery({ q: filter.q, minMs: filter.minMs, maxMs: filter.maxMs, status: filter.status === 'all' ? '' : filter.status, endpointId: filter.endpointId });
+    router.setQuery({ ...filter }, { defaults: { status: 'all' } });
     rows = [];
     list.load();
   }, 400);

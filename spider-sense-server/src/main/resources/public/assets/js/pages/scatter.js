@@ -22,7 +22,7 @@ export function render(root, ctx) {
 
   ctx.setTitle('Response time scatter');
 
-  let mode = ctx.query.mode === 'heatmap' ? 'heatmap' : 'dots';
+  let mode = router.queryParam(ctx.query, 'mode', ['dots', 'heatmap'], 'dots');
   let showOk = ctx.query.hide !== 'ok';
   let showErr = ctx.query.hide !== 'err';
 
@@ -64,7 +64,7 @@ export function render(root, ctx) {
     value: mode,
     onChange: (id) => {
       mode = id;
-      router.setQuery({ mode: id === 'dots' ? '' : id });
+      router.setQuery({ mode: id }, { defaults: { mode: 'dots' } });
       if (chart) chart.setMode(mode);
     },
   });

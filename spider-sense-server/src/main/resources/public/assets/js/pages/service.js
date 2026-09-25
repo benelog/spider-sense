@@ -4,7 +4,7 @@
 import * as api from '../api.js';
 import * as router from '../router.js';
 import {
-  h, fill, icon, panel, table, chip, methodChip, statusBar, comparator,
+  h, fill, icon, panel, table, chip, methodChip, statusBar, comparator, sortFromQuery, nextSort,
   spinner, serviceColor,
 } from '../ui.js';
 import { pageLoader, skeleton } from '../page.js';
@@ -95,7 +95,7 @@ export function endpointTable(rows, sortState, onSort) {
 
 export function render(root, ctx) {
   const name = ctx.params.name;
-  let sort = { key: ctx.query.sort || 'totalMs', dir: ctx.query.dir === 'asc' ? 'asc' : 'desc' };
+  let sort = sortFromQuery(ctx.query, 'totalMs');
   let endpoints = [];
   let endpointNode = null;
 
@@ -143,7 +143,7 @@ export function render(root, ctx) {
   }
 
   function onSort(key) {
-    sort = { key, dir: sort.key === key && sort.dir === 'desc' ? 'asc' : 'desc' };
+    sort = nextSort(sort, key);
     router.setQuery({ sort: key, dir: sort.dir });
     endpointNode = null;
     paintEndpoints();

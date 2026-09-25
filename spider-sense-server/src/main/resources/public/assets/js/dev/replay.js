@@ -8,7 +8,7 @@
 // traces, one trace, the logs, the marks, the acknowledgements) are queried from the
 // tables here, with the filters the API takes, so every trace of the recording opens
 // and nothing of it is a substitute.
-import { RANGES } from '../api.js';
+import { RANGES, DEFAULT_RANGE } from '../api.js';
 
 const named = document.documentElement.dataset.dolthub
   || new URLSearchParams(location.search).get('dolthub') || 'benelog/spider-sense-demo@main';
@@ -56,12 +56,13 @@ const manifest = await answer('/manifest');
 if (!manifest) throw new Error('no /manifest in the answer table of ' + named);
 const keys = new Set(manifest.keys || []);
 
+// The default range becomes the recording's window, and is the window when the manifest names none.
+const preset = RANGES.find((r) => r.id === DEFAULT_RANGE);
 const frozenNow = (manifest.window && manifest.window.to) || Date.now();
-const frozenFrom = (manifest.window && manifest.window.from) || frozenNow - 15 * 60 * 1000;
+const frozenFrom = (manifest.window && manifest.window.from) || frozenNow - preset.ms;
 Date.now = () => frozenNow;
 
 const minutes = Math.max(1, Math.round((frozenNow - frozenFrom) / 60000));
-const preset = RANGES.find((r) => r.id === '15m');
 if (preset) {
   preset.ms = frozenNow - frozenFrom;
   preset.label = 'The recording (' + minutes + ' min)';

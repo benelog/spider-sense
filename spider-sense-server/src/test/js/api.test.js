@@ -2,7 +2,7 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  state, windowFor, params, rangeOf, rangeIndex, requestSequence, sharedQuery,
+  state, windowFor, params, rangeOf, rangeIndex, requestSequence, sharedQuery, compactQuery, queryString, DEFAULT_RANGE,
 } from '../../main/resources/public/assets/js/api.js';
 
 const NOW = 1_700_000_000_000;
@@ -54,4 +54,15 @@ test('requestSequence keeps only the newest request current', () => {
   const second = startRequest();
   assert.equal(first(), false);
   assert.equal(second(), true);
+});
+
+test('compactQuery keeps only the entries that carry a value', () => {
+  assert.deepEqual(compactQuery({ a: 'x', b: '', c: null, d: undefined, e: false, f: 0, g: true }), { a: 'x', f: 0, g: true });
+  assert.deepEqual(compactQuery(null), {});
+  assert.equal(queryString({ q: 'a b', empty: '', n: 3 }), 'q=a+b&n=3');
+});
+
+test('the default range is the 15 minutes the top bar starts on', () => {
+  assert.equal(DEFAULT_RANGE, '15m');
+  assert.equal(state.range, DEFAULT_RANGE);
 });

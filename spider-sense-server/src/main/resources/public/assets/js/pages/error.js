@@ -42,7 +42,7 @@ export function render(root, ctx) {
     value: mode,
     onChange: (next) => {
       mode = next;
-      router.setQuery({ frames: next === 'all' ? 'all' : '' });
+      router.setQuery({ frames: next }, { defaults: { frames: 'app' } });
       paintStack();
     },
   });

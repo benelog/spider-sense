@@ -110,8 +110,8 @@ export function render(root, ctx) {
     router.setQuery({
       before: beforeSelect.value,
       after: afterSelect.value,
-      until: untilSelect.value === 'now' ? '' : untilSelect.value,
-    });
+      until: untilSelect.value,
+    }, { defaults: { until: 'now' } });
     load();
   }
 
@@ -137,7 +137,7 @@ export function render(root, ctx) {
     // the two newest marks are a choice like any other: it belongs in the URL
     if (enough && (!q.before || !q.after)) {
       pending = true;
-      router.setQuery({ before, after, until: until === 'now' ? '' : until });
+      router.setQuery({ before, after, until }, { defaults: { until: 'now' } });
       pending = false;
     }
     return { before, after, until: until === 'now' ? '' : until, enough };

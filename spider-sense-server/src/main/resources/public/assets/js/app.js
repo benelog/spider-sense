@@ -1,7 +1,7 @@
 // Boot: router, top-bar state, SSE, theme, keyboard shortcuts.
 
 import * as api from './api.js';
-import { RANGES, state } from './api.js';
+import { RANGES, DEFAULT_RANGE, state } from './api.js';
 import * as router from './router.js';
 import * as ui from './ui.js';
 import { h, fill, dialog, copyBlock, closeDrawer, drawerOpen } from './ui.js';
@@ -94,9 +94,9 @@ function toggleTheme() {
 
 function syncStateFromQuery(query) {
   state.service = query.service || '';
-  state.range = RANGES.some((r) => r.id === query.range) ? query.range : '15m';
+  state.range = router.queryParam(query, 'range', RANGES.map((r) => r.id), DEFAULT_RANGE);
   state.live = query.live === '1';
-  state.chart = query.chart === 'load' || query.chart === 'requests' ? query.chart : '';
+  state.chart = router.queryParam(query, 'chart', ['requests', 'load'], '');
   el.serviceSelect.value = state.service;
   el.rangeSelect.value = state.range;
   el.liveToggle.setAttribute('aria-pressed', String(state.live));
@@ -365,7 +365,7 @@ function onKey(e) {
     e.preventDefault();
     const i = api.rangeIndex(state.range);
     const next = RANGES[Math.min(RANGES.length - 1, Math.max(0, i + (e.key === ']' ? 1 : -1)))];
-    router.setQuery({ range: next.id === '15m' ? '' : next.id });
+    router.setQuery({ range: next.id }, { defaults: { range: DEFAULT_RANGE } });
   }
 }
 
@@ -408,7 +408,7 @@ async function boot() {
 
   el.themeToggle.addEventListener('click', toggleTheme);
   el.serviceSelect.addEventListener('change', () => router.setQuery({ service: el.serviceSelect.value }));
-  el.rangeSelect.addEventListener('change', () => router.setQuery({ range: el.rangeSelect.value === '15m' ? '' : el.rangeSelect.value }));
+  el.rangeSelect.addEventListener('change', () => router.setQuery({ range: el.rangeSelect.value }, { defaults: { range: DEFAULT_RANGE } }));
   el.liveToggle.addEventListener('click', () => router.setQuery({ live: state.live ? '' : '1' }));
   el.markBtn.addEventListener('click', markDialog);
   document.getElementById('send-data-btn').addEventListener('click', sendDataDialog);

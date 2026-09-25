@@ -13,7 +13,7 @@ import { dur, count, rate } from '../format.js';
 export function render(root, ctx) {
   const id = ctx.params.id;
   let data = null;
-  let activeTab = ctx.query.tab || 'slowest';
+  let activeTab = router.queryParam(ctx.query, 'tab', ['slowest', 'recent', 'queries', 'errors'], 'slowest');
 
   const head = h('div.trace-head');
   const headPanel = panel({}, head);
@@ -114,7 +114,7 @@ export function render(root, ctx) {
       { id: 'errors', label: 'Errors', count: TAB_ROWS.errors().length, render: () => tableOf('errors') },
     ], {
       active: activeTab,
-      onSelect: (tab) => { activeTab = tab; router.setQuery({ tab: tab === 'slowest' ? '' : tab }); },
+      onSelect: (tab) => { activeTab = tab; router.setQuery({ tab }, { defaults: { tab: 'slowest' } }); },
     });
     fill(tabsBody, tabNode);
   }

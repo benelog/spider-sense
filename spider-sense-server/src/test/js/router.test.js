@@ -1,7 +1,7 @@
 // router.js: the hash as a path and a query (ui.adoc#urls).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parse, href, detailPath, detailHref } from '../../main/resources/public/assets/js/router.js';
+import { parse, href, detailPath, detailHref, queryParam } from '../../main/resources/public/assets/js/router.js';
 import { state } from '../../main/resources/public/assets/js/api.js';
 
 test('parse splits the hash into a path and a query', () => {
@@ -48,4 +48,11 @@ test('detailHref carries the top bar query', () => {
     state.service = '';
     state.range = '15m';
   }
+});
+
+test('queryParam takes an allowed value and falls back on anything else', () => {
+  assert.equal(queryParam({ sort: 'p95' }, 'sort', ['total', 'p95'], 'total'), 'p95');
+  assert.equal(queryParam({ sort: 'nope' }, 'sort', ['total', 'p95'], 'total'), 'total');
+  assert.equal(queryParam({}, 'sort', ['total'], 'total'), 'total');
+  assert.equal(queryParam(null, 'severity', ['WARN'], ''), '');
 });

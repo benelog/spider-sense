@@ -2,7 +2,7 @@
 import './fake-dom.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { table } from '../../main/resources/public/assets/js/ui.js';
+import { table, sortFromQuery, nextSort } from '../../main/resources/public/assets/js/ui.js';
 
 const columns = [
   { key: 'name', label: 'Name', render: (r) => r.name },
@@ -102,4 +102,13 @@ test('a segmented switch presses one button and reports a change of choice only'
   node.set('load');
   assert.deepEqual(chosen, ['requests']);
   assert.equal(load.getAttribute('aria-pressed'), 'true');
+});
+
+test('a sort comes from the hash query, and a second click on its header turns it', () => {
+  assert.deepEqual(sortFromQuery({}, 'requests'), { key: 'requests', dir: 'desc' });
+  assert.deepEqual(sortFromQuery({ sort: 'p95Ms', dir: 'asc' }, 'requests'), { key: 'p95Ms', dir: 'asc' });
+  const sort = { key: 'p95Ms', dir: 'desc' };
+  assert.deepEqual(nextSort(sort, 'p95Ms'), { key: 'p95Ms', dir: 'asc' });
+  assert.deepEqual(nextSort({ key: 'p95Ms', dir: 'asc' }, 'p95Ms'), { key: 'p95Ms', dir: 'desc' });
+  assert.deepEqual(nextSort(sort, 'name'), { key: 'name', dir: 'desc' });
 });

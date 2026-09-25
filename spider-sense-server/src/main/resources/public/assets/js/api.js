@@ -8,10 +8,13 @@ export const RANGES = [
   { id: 'all', label: 'All data', ms: null },
 ];
 
+/** The range a hash without `range` means, and the one a link leaves out. */
+export const DEFAULT_RANGE = '15m';
+
 /** The top-bar state every page reads. Written only by app.js from the hash query. */
 export const state = {
   service: '',
-  range: '15m',
+  range: DEFAULT_RANGE,
   live: false,
   /** The Requests | Load choice, '' when no page has made one (pages.adoc#services). */
   chart: '',
@@ -24,31 +27,33 @@ export const state = {
 export function sharedQuery() {
   const q = {};
   if (state.service) q.service = state.service;
-  if (state.range !== '15m') q.range = state.range;
+  if (state.range !== DEFAULT_RANGE) q.range = state.range;
   if (state.live) q.live = '1';
   if (state.chart) q.chart = state.chart;
   return q;
 }
 
+/** The range with this id, or the default range. */
 export function rangeOf(id) {
-  return RANGES.find((r) => r.id === id) || RANGES[1];
+  return RANGES[rangeIndex(id)];
 }
 
+/** The position of the range with this id in RANGES, or of the default range. */
 export function rangeIndex(id) {
   const i = RANGES.findIndex((r) => r.id === id);
-  return i < 0 ? 1 : i;
+  return i < 0 ? RANGES.findIndex((r) => r.id === DEFAULT_RANGE) : i;
 }
 
 /**
  * The window the current range implies. `all` starts at /api/status.oldest.span, which the
  * shell re-reads before every route change and Live refresh under `all`; an empty store
- * answers 0 there, and then `all` is the last 15 minutes.
+ * answers 0 there, and then `all` is the default range.
  */
 export function windowFor(range = state.range, now = Date.now()) {
   const r = rangeOf(range);
   if (r.ms == null) {
     const oldest = state.status && state.status.oldest ? state.status.oldest.span : 0;
-    return { from: oldest > 0 ? oldest : now - 15 * 60 * 1000, to: now };
+    return { from: oldest > 0 ? oldest : now - rangeOf(DEFAULT_RANGE).ms, to: now };
   }
   return { from: now - r.ms, to: now };
 }
@@ -58,28 +63,44 @@ export function windowMs(range = state.range) {
   return w.to - w.from;
 }
 
-/** from/to/service plus whatever the caller adds; undefined and '' are dropped. */
+/**
+ * The service a read names: `opts.service` when the caller gives one, none when it gives null,
+ * and the top bar's otherwise.
+ */
+function serviceFor(opts = {}) {
+  if (opts.service === null) return '';
+  return opts.service !== undefined ? opts.service : state.service;
+}
+
+/** from/to/service plus whatever the caller adds; empty values are dropped (compactQuery). */
 export function params(extra = {}, opts = {}) {
   const w = opts.window || windowFor();
   const out = { from: w.from, to: w.to };
-  if (opts.service !== null) {
-    const service = opts.service !== undefined ? opts.service : state.service;
-    if (service) out.service = service;
-  }
-  for (const [k, v] of Object.entries(extra)) {
-    if (v === undefined || v === null || v === '') continue;
+  const service = serviceFor(opts);
+  if (service) out.service = service;
+  return { ...out, ...compactQuery(extra) };
+}
+
+/**
+ * The entries that carry a value: undefined, null, '' and false are left out, so a query built
+ * from optional filters names only the ones that are set. The hash and the API follow one rule.
+ */
+export function compactQuery(obj) {
+  const out = {};
+  for (const [k, v] of Object.entries(obj || {})) {
+    if (v === undefined || v === null || v === '' || v === false) continue;
     out[k] = v;
   }
   return out;
 }
 
+/** `a=1&b=x`, the entries compactQuery keeps, in their order. */
+export function queryString(obj) {
+  return new URLSearchParams(Object.entries(compactQuery(obj)).map(([k, v]) => [k, String(v)])).toString();
+}
+
 function qs(obj) {
-  const usp = new URLSearchParams();
-  for (const [k, v] of Object.entries(obj || {})) {
-    if (v === undefined || v === null || v === '') continue;
-    usp.set(k, String(v));
-  }
-  const s = usp.toString();
+  const s = queryString(obj);
   return s ? '?' + s : '';
 }
 
@@ -208,10 +229,7 @@ export function errorGroup(id, opts) { return getJSON('/api/errors/' + encodeURI
 export function logs(extra, opts) { return getJSON('/api/logs', params(extra, opts)); }
 
 export function metricCatalog(extra) {
-  const q = {};
-  const service = extra && extra.service !== undefined ? extra.service : state.service;
-  if (service) q.service = service;
-  return getJSON('/api/metrics', q);
+  return getJSON('/api/metrics', { service: serviceFor(extra) });
 }
 
 export function metricSeries(extra, opts) { return getJSON('/api/metrics/series', params(extra, opts)); }
@@ -260,8 +278,5 @@ export function createMark({ name, note, service } = {}) {
 
 /** The two windows are named by selectors, not by from/to, so the window is not sent. */
 export function compare({ before, after, until } = {}, opts = {}) {
-  const query = { before, after, until };
-  const service = opts.service !== undefined ? opts.service : state.service;
-  if (service) query.service = service;
-  return getJSON('/api/compare', query);
+  return getJSON('/api/compare', { before, after, until, service: serviceFor(opts) });
 }

@@ -1,6 +1,6 @@
 // Hash router: #/traces/<id>?service=x&range=1h
 
-import { sharedQuery } from './api.js';
+import { sharedQuery, compactQuery, queryString } from './api.js';
 
 const routes = [];
 let onChange = null;
@@ -58,15 +58,16 @@ function match(path) {
 
 export function currentRoute() { return current; }
 
-/** Build a hash string from a path and a query object (empty values dropped). */
+/** Build a hash string from a path and a query object (empty values dropped, as compactQuery does). */
 export function href(path, query = {}) {
-  const usp = new URLSearchParams();
-  for (const [k, v] of Object.entries(query)) {
-    if (v === undefined || v === null || v === '' || v === false) continue;
-    usp.set(k, String(v));
-  }
-  const qs = usp.toString();
+  const qs = queryString(query);
   return '#' + path + (qs ? '?' + qs : '');
+}
+
+/** A hash query value that must be one of `allowed`: the value, or `fallback` when it is anything else. */
+export function queryParam(query, name, allowed, fallback) {
+  const value = (query || {})[name];
+  return allowed.includes(value) ? value : fallback;
 }
 
 /**
@@ -95,14 +96,14 @@ export function go(path, query = {}, replace = false) {
   if (replace) handle();
 }
 
-/** Change only the query of the current route. */
-export function setQuery(patch, replace = true) {
+/**
+ * Change only the query of the current route. An empty value removes its key, and so does a value
+ * equal to its entry in `defaults`: a URL names only what differs from the page's defaults.
+ */
+export function setQuery(patch, { defaults = {}, replace = true } = {}) {
   const query = { ...current.query };
-  for (const [k, v] of Object.entries(patch)) {
-    if (v === undefined || v === null || v === '' || v === false) delete query[k];
-    else query[k] = String(v);
-  }
-  go(current.path, query, replace);
+  for (const [k, v] of Object.entries(patch)) query[k] = k in defaults && v === defaults[k] ? '' : v;
+  go(current.path, compactQuery(query), replace);
 }
 
 let lastKey = null;

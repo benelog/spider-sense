@@ -22,7 +22,7 @@ export function render(root, ctx) {
 
   const filter = {
     q: ctx.query.q || '',
-    severity: SEVERITIES.includes(ctx.query.severity) ? ctx.query.severity : '',
+    severity: router.queryParam(ctx.query, 'severity', SEVERITIES, ''),
     traceId: ctx.query.traceId || '',
   };
 

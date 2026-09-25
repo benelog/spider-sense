@@ -31,7 +31,7 @@ function unindexedCell(schema) {
 export function render(root, ctx) {
   let rows = [];
   let node = null;
-  let sort = SORTS.some((s) => s.id === ctx.query.sort) ? ctx.query.sort : 'total';
+  let sort = router.queryParam(ctx.query, 'sort', SORTS.map((s) => s.id), 'total');
   let text = ctx.query.q || '';
 
   const input = h('input', { type: 'search', placeholder: 'Filter statements', value: text, 'aria-label': 'Filter statements' });
@@ -46,7 +46,7 @@ export function render(root, ctx) {
   input.addEventListener('input', apply);
   sortSelect.addEventListener('change', () => {
     sort = sortSelect.value;
-    router.setQuery({ sort: sort === 'total' ? '' : sort });
+    router.setQuery({ sort }, { defaults: { sort: 'total' } });
     loader.load();
   });
 
