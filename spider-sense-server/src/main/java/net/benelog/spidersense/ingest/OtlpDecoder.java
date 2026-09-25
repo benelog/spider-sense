@@ -63,7 +63,7 @@ public final class OtlpDecoder {
      * @return the batch that was queued, for tests that want to see what was decoded
      */
     public Batch accept(ExportTraceServiceRequest request) {
-        long now = System.currentTimeMillis();
+        long now = store.clock().getAsLong();
         Batch batch = new Batch();
         for (ResourceSpans resourceSpans : request.getResourceSpansList()) {
             Map<String, Object> resource = Attrs.toMap(resourceSpans.getResource().getAttributesList());
@@ -171,7 +171,7 @@ public final class OtlpDecoder {
     // --- metrics ---
 
     public Batch accept(ExportMetricsServiceRequest request) {
-        long now = System.currentTimeMillis();
+        long now = store.clock().getAsLong();
         Batch batch = new Batch();
         for (ResourceMetrics resourceMetrics : request.getResourceMetricsList()) {
             Map<String, Object> resource = Attrs.toMap(resourceMetrics.getResource().getAttributesList());
@@ -300,7 +300,7 @@ public final class OtlpDecoder {
     // --- logs ---
 
     public Batch accept(ExportLogsServiceRequest request) {
-        long now = System.currentTimeMillis();
+        long now = store.clock().getAsLong();
         Batch batch = new Batch();
         for (ResourceLogs resourceLogs : request.getResourceLogsList()) {
             Map<String, Object> resource = Attrs.toMap(resourceLogs.getResource().getAttributesList());

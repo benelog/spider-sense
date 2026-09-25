@@ -7,6 +7,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 
 import io.opentelemetry.proto.trace.v1.Span;
 
@@ -33,7 +34,10 @@ import net.benelog.spidersilk.test.WebTest;
  */
 class McpApiTest {
 
-    private static final long NOW = System.currentTimeMillis() - 5_000;
+    /** Where the telemetry sits: a fixed instant, so a window never depends on how fast the run is. */
+    private static final long NOW = 1_700_000_000_000L;
+    /** The server's clock, five seconds after it, which is what since=5m counts back from. */
+    private final AtomicLong clock = new AtomicLong(NOW + 5_000);
     private static final String TRACE = "4bf92f3577b34da6a3ce929d0e0e4736";
 
     @BeforeAll
@@ -50,9 +54,9 @@ class McpApiTest {
         void run(TestClient client);
     }
 
-    private static void serve(Body body) {
+    private void serve(Body body) {
         Config config = TestStore.config();
-        SpiderSenseServer.Assembly assembly = SpiderSenseServer.assemble(config);
+        SpiderSenseServer.Assembly assembly = SpiderSenseServer.assemble(config, clock::get);
         try {
             WebTest.test(assembly.app(), client -> body.run(client));
         } finally {
@@ -215,6 +219,7 @@ class McpApiTest {
             assertThat(text(call(client, "mark", "{\"name\":\"before\",\"note\":\"the slow one\"}")))
                     .startsWith("mark before at ").contains("the slow one");
             ingest(client);
+            clock.addAndGet(1_000);
 
             assertThat(text(call(client, "compare",
                     "{\"before\":\"10m\",\"after\":\"before\"}")))

@@ -52,14 +52,16 @@ final class SessionExport {
      * caller owns it, because it is a servlet's output stream as often as it is a
      * file.
      *
-     * @param service one service, or null for every one of them
+     * @param service    one service, or null for every one of them
+     * @param exportedAt when the document says it was written, in epoch milliseconds
      */
-    static void write(Sql sql, Window window, @Nullable String service, OutputStream out) {
+    static void write(Sql sql, Window window, @Nullable String service, long exportedAt,
+            OutputStream out) {
         // Work always answers with something; there is nothing to answer with here.
         Boolean unused = sql.withConnection(connection -> {
             Writer text = new BufferedWriter(new OutputStreamWriter(out, StandardCharsets.UTF_8), 8192);
             try {
-                document(connection, window, service, text);
+                document(connection, window, service, exportedAt, text);
                 text.flush();
             } catch (IOException e) {
                 throw new UncheckedIOException("could not write the export", e);
@@ -69,13 +71,13 @@ final class SessionExport {
     }
 
     private static void document(Connection connection, Window window, @Nullable String service,
-            Writer text)
+            long exportedAt, Writer text)
             throws SQLException, IOException {
         text.write("{\"spiderSense\":");
         text.write(Json.obj()
                 .put("version", Version.CURRENT)
                 .put("schema", Schema.VERSION)
-                .put("exportedAt", System.currentTimeMillis())
+                .put("exportedAt", exportedAt)
                 .put("window", Json.obj().put("from", window.from()).put("to", window.to()))
                 .put("service", service)
                 .toJson());

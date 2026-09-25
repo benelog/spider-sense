@@ -31,7 +31,7 @@ public final class ApiRoutes {
     private final Reports reports;
     private final Params params;
     private final IntSupplier port;
-    private final long startedAt = System.currentTimeMillis();
+    private final long startedAt;
 
     public ApiRoutes(Config config, Store store, Queries queries, Reports reports, IntSupplier port) {
         this.config = config;
@@ -39,6 +39,7 @@ public final class ApiRoutes {
         this.queries = queries;
         this.reports = reports;
         this.params = new Params(reports.selectors());
+        this.startedAt = reports.now();
         this.port = port;
     }
 

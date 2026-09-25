@@ -27,6 +27,24 @@ class ReportsTest {
     private static final long NOW = 1_700_000_000_000L;
 
     @Test
+    void theClockGivenIsStatusNowTheDefaultEndAndTheExportTime() {
+        Config config = TestStore.config();
+        try (Store store = new Store(config.jdbcUrl(), config.databaseFile(), config.retentionHours(),
+                config.slowRequestMs(), config.slowQueryMs(), null);
+                Reports reports = Reports.readOnly(config, () -> NOW)) {
+            assertThat(reports.now()).isEqualTo(NOW);
+            assertThat(reports.status("file", null, 0).json().asObject().getLong("now")).isEqualTo(NOW);
+            assertThat(reports.selectors().window(null, null, "5m", null, null))
+                    .isEqualTo(Window.of(NOW - 300_000, NOW));
+
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            reports.export(Window.of(NOW - 300_000, NOW), null, out);
+            assertThat(Json.parse(out.toString(java.nio.charset.StandardCharsets.UTF_8)).asObject()
+                    .getObject("spiderSense").getLong("exportedAt")).isEqualTo(NOW);
+        }
+    }
+
+    @Test
     void readOnlyAnswersFromTheDatabaseWithNoServerRunning() {
         Config config = TestStore.config();
         try (Store store = new Store(config.jdbcUrl(), config.databaseFile(), config.retentionHours(),

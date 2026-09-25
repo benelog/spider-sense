@@ -6,6 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.IntSupplier;
+import java.util.function.LongSupplier;
 
 import net.benelog.spidersense.query.Check;
 import net.benelog.spidersense.query.CodeFrames;
@@ -92,11 +93,15 @@ public final class Reports implements AutoCloseable {
     private final Check check;
     private final Selectors selectors;
     private final ReadOnlyQuery readOnly;
+    private final LongSupplier clock;
 
-    /** The server's way: everything is already open, and the writer's counters exist. */
+    /**
+     * The server's way: everything is already open, the writer's counters exist, and the time is
+     * the store's clock.
+     */
     public Reports(Config config, Store store, IntSupplier port) {
         this(config, store.database(), store, port, store.tingles(), store.services(), store.marks(),
-                false);
+                false, store.clock());
     }
 
     /**
@@ -107,16 +112,26 @@ public final class Reports implements AutoCloseable {
      * same one the server would have given (storage.adoc).
      */
     public static Reports readOnly(Config config) {
+        return readOnly(config, System::currentTimeMillis);
+    }
+
+    /**
+     * The same with the time given: what {@code now}, {@code until}'s default and a mark with no
+     * moment of its own read, in epoch milliseconds.
+     */
+    public static Reports readOnly(Config config, LongSupplier clock) {
         Database database = Database.openExisting(config.jdbcUrl(), config.databaseFile());
         Sql sql = database.sql();
         return new Reports(config, database, null, config::port,
                 new Tingles(config.slowRequestMs(), config.slowQueryMs(),
                         IgnoredEndpoints.of(config.ignoreEndpoints())),
-                new ServiceRegistry(sql, config.embeddedService()), new Marks(sql), true);
+                new ServiceRegistry(sql, config.embeddedService()), new Marks(sql, clock), true, clock);
     }
 
     private Reports(Config config, Database database, @Nullable Store store, IntSupplier port,
-            Tingles tingles, ServiceRegistry services, Marks marks, boolean ownsDatabase) {
+            Tingles tingles, ServiceRegistry services, Marks marks, boolean ownsDatabase,
+            LongSupplier clock) {
+        this.clock = clock;
         this.config = config;
         this.database = database;
         this.store = store;
@@ -133,7 +148,7 @@ public final class Reports implements AutoCloseable {
         this.findings = new Findings(sql, queries, metrics, services, tingles, frames);
         this.compare = new Compare(queries);
         this.check = new Check(queries, findings, tingles);
-        this.selectors = new Selectors(marks);
+        this.selectors = new Selectors(marks, clock);
         this.readOnly = new ReadOnlyQuery(database);
     }
 
@@ -145,6 +160,11 @@ public final class Reports implements AutoCloseable {
 
     public Selectors selectors() {
         return selectors;
+    }
+
+    /** The time on this answer's clock, in epoch milliseconds. */
+    public long now() {
+        return clock.getAsLong();
     }
 
     /** The application frames of a stack trace, by the rules a finding's {@code code} follows. */
@@ -192,7 +212,7 @@ public final class Reports implements AutoCloseable {
                 .put("version", Version.CURRENT)
                 .put("mode", mode)
                 .put("startedAt", startedAt)
-                .put("now", System.currentTimeMillis())
+                .put("now", clock.getAsLong())
                 .put("endpoint", endpoint)
                 .put("otlp", otlp)
                 .put("embeddedService", services.embeddedService())
@@ -596,7 +616,7 @@ public final class Reports implements AutoCloseable {
      * same bytes.
      */
     public void export(Window window, @Nullable String service, OutputStream out) {
-        SessionExport.write(database.sql(), window, service, out);
+        SessionExport.write(database.sql(), window, service, clock.getAsLong(), out);
     }
 
     /** {@code spider-sense-<from>-<to>.json}: what the download is called. */

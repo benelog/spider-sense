@@ -28,7 +28,10 @@ import net.benelog.spidersilk.test.WebTest;
  */
 class AgentApiTest {
 
-    private static final long NOW = System.currentTimeMillis() - 5_000;
+    /** Where the telemetry sits: a fixed instant, so a window never depends on how fast the run is. */
+    private static final long NOW = 1_700_000_000_000L;
+    /** The server's clock, five seconds after it, which is what since=5m counts back from. */
+    private static final long CLOCK = NOW + 5_000;
     private static final String TRACE = "4bf92f3577b34da6a3ce929d0e0e4736";
     private static final String PROTOBUF = "application/x-protobuf";
 
@@ -48,7 +51,7 @@ class AgentApiTest {
 
     private static void serve(Body body) {
         Config config = TestStore.config();
-        SpiderSenseServer.Assembly assembly = SpiderSenseServer.assemble(config);
+        SpiderSenseServer.Assembly assembly = SpiderSenseServer.assemble(config, () -> CLOCK);
         try {
             WebTest.test(assembly.app(), client -> body.run(client, assembly));
         } finally {

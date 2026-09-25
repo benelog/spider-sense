@@ -17,6 +17,7 @@ import org.jspecify.annotations.Nullable;
 public final class Store implements AutoCloseable {
 
     private final Database database;
+    private final LongSupplier clock;
     private final Sql sql;
     private final EventBus events = new EventBus();
     private final Tingles tingles;
@@ -63,6 +64,7 @@ public final class Store implements AutoCloseable {
             long slowRequestMs, long slowQueryMs, @Nullable String embeddedService,
             @Nullable String ignoreEndpoints,
             long retentionSpans, IngestCap ingestCap, LongSupplier clock) {
+        this.clock = clock;
         this.database = Database.open(jdbcUrl, databaseFile);
         this.sql = database.sql();
         this.tingles = new Tingles(slowRequestMs, slowQueryMs, IgnoredEndpoints.of(ignoreEndpoints));
@@ -76,6 +78,11 @@ public final class Store implements AutoCloseable {
 
     public Sql sql() {
         return sql;
+    }
+
+    /** What this store reads the time from, which every reader of it shares. */
+    public LongSupplier clock() {
+        return clock;
     }
 
     public Database database() {
