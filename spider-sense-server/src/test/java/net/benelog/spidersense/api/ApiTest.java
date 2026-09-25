@@ -11,8 +11,6 @@ import java.util.List;
 
 import io.opentelemetry.proto.trace.v1.Span;
 
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import net.benelog.spidersense.Otlp;
@@ -27,9 +25,9 @@ import net.benelog.spidersilk.test.WebTest;
 /**
  * The contract in api.adoc, exercised through the real request path.
  *
- * <p>Ingest is write-behind, so the tests set {@code spidersense.sync} and the
- * OTLP handler flushes before it answers. Without it a POST followed by a GET
- * would be a race against the writer thread rather than a test.
+ * <p>Ingest is write-behind, so the tests' server is configured with
+ * {@code --await-writes} and the OTLP handler flushes before it answers. Without it a POST
+ * followed by a GET would be a race against the writer thread rather than a test.
  */
 class ApiTest {
 
@@ -40,23 +38,13 @@ class ApiTest {
     private static final String FAILING_TRACE = "4bf92f3577b34da6a3ce929d0e0e4737";
     private static final String PROTOBUF = "application/x-protobuf";
 
-    @BeforeAll
-    static void synchronousIngest() {
-        System.setProperty("spidersense.sync", "true");
-    }
-
-    @AfterAll
-    static void asynchronousIngestAgain() {
-        System.clearProperty("spidersense.sync");
-    }
-
     private interface Body {
         void run(TestClient client, SpiderSenseServer.Assembly assembly);
     }
 
     /** One assembled server per test, on an in-memory database of its own. */
     private static void serve(Body body) {
-        Config config = TestStore.config();
+        Config config = TestStore.config("--await-writes");
         SpiderSenseServer.Assembly assembly = SpiderSenseServer.assemble(config);
         try {
             WebTest.test(assembly.app(), client -> body.run(client, assembly));

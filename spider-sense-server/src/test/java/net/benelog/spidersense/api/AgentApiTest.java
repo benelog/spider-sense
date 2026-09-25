@@ -10,8 +10,6 @@ import java.util.List;
 
 import io.opentelemetry.proto.trace.v1.Span;
 
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import net.benelog.spidersense.Otlp;
@@ -35,22 +33,12 @@ class AgentApiTest {
     private static final String TRACE = "4bf92f3577b34da6a3ce929d0e0e4736";
     private static final String PROTOBUF = "application/x-protobuf";
 
-    @BeforeAll
-    static void synchronousIngest() {
-        System.setProperty("spidersense.sync", "true");
-    }
-
-    @AfterAll
-    static void asynchronousIngestAgain() {
-        System.clearProperty("spidersense.sync");
-    }
-
     private interface Body {
         void run(TestClient client, SpiderSenseServer.Assembly assembly);
     }
 
     private static void serve(Body body) {
-        Config config = TestStore.config();
+        Config config = TestStore.config("--await-writes");
         SpiderSenseServer.Assembly assembly = SpiderSenseServer.assemble(config, () -> CLOCK);
         try {
             WebTest.test(assembly.app(), client -> body.run(client, assembly));

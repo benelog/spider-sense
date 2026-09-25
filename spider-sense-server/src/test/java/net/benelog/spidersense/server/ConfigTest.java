@@ -42,6 +42,7 @@ class ConfigTest {
         assertThat(config.slowQueryMs()).isEqualTo(100);
         assertThat(config.db()).isEqualTo(Config.DEFAULT_DB);
         assertThat(config.jar()).isNull();
+        assertThat(config.awaitWrites()).as("ingest never waits for the disk unless a test asks").isFalse();
         assertThat(warnings).isEmpty();
     }
 
@@ -72,6 +73,11 @@ class ConfigTest {
         assertThat(config.slowRequestMs()).isEqualTo(250);
         assertThat(config.slowQueryMs()).isEqualTo(50);
         assertThat(config.embeddedService()).isEqualTo("silk-bookstore");
+    }
+
+    @Test
+    void aTestAsksForIngestThatWaitsForTheWriter() {
+        assertThat(parse("--await-writes").awaitWrites()).isTrue();
     }
 
     @Test

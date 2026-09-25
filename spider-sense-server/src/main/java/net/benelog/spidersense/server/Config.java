@@ -49,6 +49,10 @@ import org.jspecify.annotations.Nullable;
  *                         from, which the launcher passes as {@code --jar} and the CLI finds in
  *                         {@code spidersense.jar}; null when nobody knows it (exploded classes,
  *                         a test), and only ever shown, as {@code /api/status.jar} (api.adoc#status)
+ * @param awaitWrites      whether an OTLP request waits for the writer to store what it sent before
+ *                         it is answered; {@code --await-writes}, for tests that POST and then read,
+ *                         and never set in production, where the point of the queue is that a
+ *                         request does not wait for the disk
  * @param home             the user's home directory, which a {@code ~} in {@link #db} stands for
  */
 public record Config(
@@ -66,6 +70,7 @@ public record Config(
         String ignoreEndpoints,
         @Nullable String sourceDirs,
         @Nullable String jar,
+        boolean awaitWrites,
         Path home) {
 
     public static final String AGENT = "agent";
@@ -131,6 +136,7 @@ public record Config(
                 settings.string("ignore.endpoints", IgnoredEndpoints.DEFAULT),
                 settings.stringOrNull("source.dirs"),
                 settings.stringOrNull("jar"),
+                Boolean.parseBoolean(settings.string("await-writes", "false")),
                 home);
     }
 

@@ -8,8 +8,6 @@ import java.net.http.HttpResponse;
 
 import io.opentelemetry.proto.trace.v1.Span;
 
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import net.benelog.spidersense.Otlp;
@@ -40,23 +38,13 @@ class ExportImportTest {
     private static final String FAILING_TRACE = "4bf92f3577b34da6a3ce929d0e0e4737";
     private static final String PROTOBUF = "application/x-protobuf";
 
-    @BeforeAll
-    static void synchronousIngest() {
-        System.setProperty("spidersense.sync", "true");
-    }
-
-    @AfterAll
-    static void asynchronousIngestAgain() {
-        System.clearProperty("spidersense.sync");
-    }
-
     private interface Body {
         void run(TestClient client);
     }
 
     /** One assembled server per call, on an in-memory database of its own. */
     private static void serve(Body body) {
-        Config config = TestStore.config();
+        Config config = TestStore.config("--await-writes");
         SpiderSenseServer.Assembly assembly = SpiderSenseServer.assemble(config);
         try {
             WebTest.test(assembly.app(), body::run);

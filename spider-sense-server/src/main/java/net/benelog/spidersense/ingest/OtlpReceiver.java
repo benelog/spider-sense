@@ -36,22 +36,23 @@ public final class OtlpReceiver {
     private static final String PROTOBUF = "application/x-protobuf";
     private static final String JSON = "application/json";
 
-    /**
-     * Set by the tests: ingest is write-behind, so a test that POSTs and then GETs
-     * would otherwise race the writer thread. Never set in production, where the
-     * whole point of the queue is that the request does not wait for the disk.
-     */
-    private static final String SYNC_PROPERTY = "spidersense.sync";
-
     /** The most an export may hold once gunzipped; the OpenTelemetry Collector's own default is 20 MiB. */
     private static final int MAX_BODY = 64 * 1024 * 1024;
 
     private final OtlpDecoder decoder;
     private final Writer writer;
+    private final boolean awaitWrites;
 
-    public OtlpReceiver(OtlpDecoder decoder, Writer writer) {
+    /**
+     * @param awaitWrites whether a request waits until the writer has stored what it sent: set by
+     *                    the tests, because ingest is write-behind and a test that POSTs and then
+     *                    GETs would otherwise race the writer thread; never in production, where
+     *                    the whole point of the queue is that the request does not wait for the disk
+     */
+    public OtlpReceiver(OtlpDecoder decoder, Writer writer, boolean awaitWrites) {
         this.decoder = decoder;
         this.writer = writer;
+        this.awaitWrites = awaitWrites;
     }
 
     public void register(App app) {
@@ -92,14 +93,10 @@ public final class OtlpReceiver {
             return error(HttpStatus.BAD_REQUEST, "Undecodable OTLP body: " + e.getMessage());
         }
         accept.accept(request);
-        flushIfSynchronous();
-        return ok(encoding, response);
-    }
-
-    private void flushIfSynchronous() {
-        if (Boolean.getBoolean(SYNC_PROPERTY)) {
+        if (awaitWrites) {
             writer.awaitIdle(5_000);
         }
+        return ok(encoding, response);
     }
 
     private void parse(WebRequest req, String encoding, Message.Builder builder)
