@@ -3,6 +3,7 @@ package net.benelog.spidersense.launcher;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.function.Function;
 import org.jspecify.annotations.Nullable;
 
@@ -51,18 +52,16 @@ public record Config(
 
     /** Reads the {@code spidersense.*} system properties, falling back to the defaults. */
     public static Config fromSystemProperties() {
-        return fromSystemProperties(System::getenv);
+        return fromSystemProperties(System::getProperty, System::getenv);
     }
 
     /**
-     * The same with the environment given, for a test: each key is its system property,
-     * else its {@code SPIDERSENSE_*} variable (configuration.adoc).
+     * The same with the properties and the environment given, for a test: each key is read by
+     * {@link #propertyOrEnv(String, Function, Function)}.
      */
-    static Config fromSystemProperties(Function<String, @Nullable String> env) {
-        Function<String, @Nullable String> read = name -> {
-            String v = System.getProperty(name);
-            return emptyToNull(v != null ? v : env.apply(envName(name)));
-        };
+    static Config fromSystemProperties(Function<String, @Nullable String> property,
+            Function<String, @Nullable String> env) {
+        Function<String, @Nullable String> read = name -> propertyOrEnv(name, property, env);
         Config d = defaults();
         return new Config(
                 intProperty(read, "spidersense.port", d.port()),
@@ -236,13 +235,34 @@ public record Config(
         return property.toUpperCase(Locale.ROOT).replace('.', '_').replace('-', '_');
     }
 
+    /**
+     * The keys whose readers tell an empty value from an unset one: an empty
+     * {@code spidersense.ignore.endpoints} ignores nothing, an empty {@code spidersense.source.dirs}
+     * names no root. For every other key an empty property, such as {@code -Dspidersense.port=}
+     * left by an unset shell variable, is unset, so it hides nothing.
+     */
+    static final Set<String> EMPTY_IS_A_VALUE = Set.of(
+            "spidersense.ignore.endpoints",
+            "spidersense.source.dirs");
+
     /** The system property if set, else the matching environment variable, else {@code null}. */
     public static @Nullable String propertyOrEnv(String property) {
-        String v = System.getProperty(property);
-        if (v == null) {
-            v = System.getenv(envName(property));
+        return propertyOrEnv(property, System::getProperty, System::getenv);
+    }
+
+    /**
+     * The same with the properties and the environment given, by configuration.adoc's rule: an
+     * empty property is unset and the variable is next, except for the keys of
+     * {@link #EMPTY_IS_A_VALUE}, where the empty value is the answer; an empty variable is unset for
+     * every key.
+     */
+    static @Nullable String propertyOrEnv(String name, Function<String, @Nullable String> property,
+            Function<String, @Nullable String> env) {
+        String value = property.apply(name);
+        if (value != null && (!value.isEmpty() || EMPTY_IS_A_VALUE.contains(name))) {
+            return value;
         }
-        return emptyToNull(v);
+        return emptyToNull(env.apply(envName(name)));
     }
 
     private static @Nullable String emptyToNull(@Nullable String v) {

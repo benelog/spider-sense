@@ -111,14 +111,14 @@ public record Config(
         }
         Set<String> given = Set.copyOf(values.keySet());
         for (String key : KEYS) {
-            if (!values.containsKey(key) && property.apply("spidersense." + key) == null) {
-                String fromEnv = env.apply(envName("spidersense." + key));
-                if (fromEnv != null && !fromEnv.isEmpty()) {
-                    values.put(key, fromEnv);
+            if (!values.containsKey(key)) {
+                String setting = propertyOrEnv("spidersense." + key, property, env);
+                if (setting != null) {
+                    values.put(key, setting);
                 }
             }
         }
-        Settings settings = new Settings(values, given, property, warn);
+        Settings settings = new Settings(values, given, warn);
         NumericSettings numbers = new NumericSettings(settings);
         boolean agent = AGENT.equalsIgnoreCase(settings.string("mode", STANDALONE));
         return new Config(
@@ -142,10 +142,19 @@ public record Config(
                 home);
     }
 
-    /** The keys {@link #parse} reads, each also from its environment variable. */
+    /** The keys {@link #parse} reads, each also from its property and its environment variable. */
     private static final List<String> KEYS = List.of("host", "port", "mode", "db", "retention.hours",
             "retention.spans", "ingest.max-spans-per-second", "slow.request.ms", "slow.query.ms",
-            "embedded-service", "app.packages", "ignore.endpoints", "source.dirs", "jar");
+            "embedded-service", "app.packages", "ignore.endpoints", "source.dirs", "jar",
+            "await-writes");
+
+    /**
+     * The keys whose readers tell an empty value from an unset one: an empty
+     * {@code spidersense.ignore.endpoints} ignores nothing, an empty {@code spidersense.source.dirs}
+     * names no root (configuration.adoc).
+     */
+    static final Set<String> EMPTY_IS_A_VALUE =
+            Set.of("spidersense.ignore.endpoints", "spidersense.source.dirs");
 
     /**
      * The {@code spidersense.*} setting outside the arguments: the system property,
@@ -155,14 +164,20 @@ public record Config(
         return propertyOrEnv(property, System::getProperty, System::getenv);
     }
 
-    /** The same with the properties and the environment given. */
+    /**
+     * The same with the properties and the environment given, by configuration.adoc's rule: an
+     * empty property, such as the {@code -Dspidersense.port=} an unset shell variable leaves, is
+     * unset and the variable is next, except for the keys of {@link #EMPTY_IS_A_VALUE}, where the
+     * empty value is the answer; an empty variable is unset for every key.
+     */
     static @Nullable String propertyOrEnv(String name, Function<String, @Nullable String> property,
             Function<String, @Nullable String> env) {
         String value = property.apply(name);
-        if (value == null) {
-            value = env.apply(envName(name));
+        if (value != null && (!value.isEmpty() || EMPTY_IS_A_VALUE.contains(name))) {
+            return value;
         }
-        return value == null || value.isEmpty() ? null : value;
+        String variable = env.apply(envName(name));
+        return variable == null || variable.isEmpty() ? null : variable;
     }
 
     /** {@code spidersense.slow.query.ms} is {@code SPIDERSENSE_SLOW_QUERY_MS}. */
@@ -260,37 +275,31 @@ public record Config(
         if (named != null) {
             return named;
         }
-        String embedded = property.apply("spidersense.embedded-service");
-        if (embedded != null) {
-            return embedded;
-        }
         // configuration.adoc#properties names the launcher's own property spidersense.service; when the
         // launcher was told the name that way, it is the same answer.
         return propertyOrEnv("spidersense.service", property, env);
     }
 
     /**
-     * The arguments (with the environment already folded in below them) and the system properties.
+     * The arguments, with the properties and the environment already folded in below them.
      *
      * @param given the keys that came as {@code --key=value} arguments
      */
-    private record Settings(Map<String, String> values, Set<String> given,
-            Function<String, @Nullable String> property, Consumer<String> warn) {
+    private record Settings(Map<String, String> values, Set<String> given, Consumer<String> warn) {
 
         /**
-         * The argument, else the system property, else the fallback — and the fallback only when
-         * neither was given at all. An explicitly empty value stays empty, which is what
-         * {@code -Dspidersense.ignore.endpoints=} means.
+         * The argument, else the property or variable, else the fallback — and the fallback only
+         * when none was given at all. An explicitly empty value stays empty where it means
+         * something, which is what {@code -Dspidersense.ignore.endpoints=} is.
          */
         String string(String key, String fallback) {
             String value = stringOrNull(key);
             return value == null ? fallback : value;
         }
 
-        /** The same with no fallback: null when neither channel said anything. */
+        /** The same with no fallback: null when no channel said anything. */
         @Nullable String stringOrNull(String key) {
-            String value = values.get(key);
-            return value == null ? property.apply("spidersense." + key) : value;
+            return values.get(key);
         }
     }
 

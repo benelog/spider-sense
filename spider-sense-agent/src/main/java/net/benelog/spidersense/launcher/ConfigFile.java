@@ -18,7 +18,7 @@ import org.jspecify.annotations.Nullable;
  * {@code spider-sense.properties} in the working directory is read when it exists. Every
  * {@code spidersense.*} key in it becomes the system property of the same name, unless that
  * property or its environment variable is set already, and set to something but the empty
- * string where empty means unset (see {@link #EMPTY_IS_A_VALUE}): the command line is the more specific
+ * string where empty means unset (see {@link Config#EMPTY_IS_A_VALUE}): the command line is the more specific
  * statement and wins. Once the keys are system properties, the launcher, the server, the
  * extension and the CLI read them exactly as they read {@code -D}, so nothing else changes.
  *
@@ -52,16 +52,6 @@ final class ConfigFile {
             "spidersense.slow.query.ms",
             "spidersense.open",
             "spidersense.app.packages",
-            "spidersense.ignore.endpoints",
-            "spidersense.source.dirs");
-
-    /**
-     * The keys whose readers tell an empty value from an unset one: an empty
-     * {@code spidersense.ignore.endpoints} ignores nothing, an empty {@code spidersense.source.dirs}
-     * names no root. For every other key an empty property, such as {@code -Dspidersense.port=}
-     * left by an unset shell variable, is unset, so it hides nothing.
-     */
-    static final Set<String> EMPTY_IS_A_VALUE = Set.of(
             "spidersense.ignore.endpoints",
             "spidersense.source.dirs");
 
@@ -118,13 +108,10 @@ final class ConfigFile {
                 System.err.println(SpiderSenseAgent.PREFIX + file + ": " + key
                         + " is not a Spider Sense property; applying it anyway");
             }
-            String variable = env.apply(Config.envName(key));
-            // An empty variable is unset to every reader of it, so it hides nothing here either;
-            // an empty property hides the file's key only where an empty value means something.
-            String property = System.getProperty(key);
-            boolean propertySet = property != null
-                    && (!property.isEmpty() || EMPTY_IS_A_VALUE.contains(key));
-            if (propertySet || (variable != null && !variable.isEmpty())) {
+            // What every reader of the key would find without the file wins over the file: an
+            // empty variable hides nothing, and an empty property hides the file's key only where
+            // an empty value means something.
+            if (Config.propertyOrEnv(key, System::getProperty, env) != null) {
                 continue;
             }
             // Trimmed, as a -D value would be typed; an empty value is kept, because an empty

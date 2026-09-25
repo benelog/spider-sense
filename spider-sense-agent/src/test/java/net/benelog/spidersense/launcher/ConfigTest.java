@@ -66,13 +66,67 @@ class ConfigTest {
                 "SPIDERSENSE_PORT", "4001",
                 "SPIDERSENSE_COLLECTOR", "http://127.0.0.1:4000",
                 "SPIDERSENSE_SLOW_QUERY_MS", "25");
-        set("spidersense.slow.query.ms", "30");
+        java.util.Map<String, String> properties = java.util.Map.of("spidersense.slow.query.ms", "30");
 
-        Config c = Config.fromSystemProperties(env::get);
+        Config c = Config.fromSystemProperties(properties::get, env::get);
 
         assertThat(c.port()).isEqualTo(4001);
         assertThat(c.collector()).isEqualTo("http://127.0.0.1:4000");
         assertThat(c.slowQueryMs()).isEqualTo(30);
+    }
+
+    /**
+     * The case an unset shell variable makes: {@code -Dspidersense.slow.query.ms=} beside
+     * {@code SPIDERSENSE_SLOW_QUERY_MS=50} is 50, which the launcher passes to the server and the
+     * extension captures at.
+     */
+    @Test
+    void anEmptyPropertyLeavesTheVariableInForce() {
+        java.util.Map<String, String> properties = java.util.Map.of(
+                "spidersense.slow.query.ms", "", "spidersense.port", "");
+        java.util.Map<String, String> env = java.util.Map.of("SPIDERSENSE_SLOW_QUERY_MS", "50");
+
+        Config c = Config.fromSystemProperties(properties::get, env::get);
+
+        assertThat(c.slowQueryMs()).isEqualTo(50);
+        assertThat(c.port()).isEqualTo(Config.DEFAULT_PORT);
+        assertThat(c.toServerArgs()).contains("--slow.query.ms=50");
+    }
+
+    /**
+     * configuration.adoc's rule as a table: the property, else the variable; an empty variable is
+     * unset, and so is an empty property, except for the two keys where empty means something.
+     */
+    @Test
+    void aSettingIsThePropertyElseTheVariableAndEmptyIsUnset() {
+        record Row(String key, String property, String variable, String expected) {
+        }
+        String unset = null;
+        List<Row> rows = List.of(
+                new Row("spidersense.slow.query.ms", "250", "50", "250"),
+                new Row("spidersense.slow.query.ms", unset, "50", "50"),
+                new Row("spidersense.slow.query.ms", "", "50", "50"),
+                new Row("spidersense.slow.query.ms", "", "", unset),
+                new Row("spidersense.slow.query.ms", unset, "", unset),
+                new Row("spidersense.slow.query.ms", unset, unset, unset),
+                new Row("spidersense.source.dirs", "from-property", "from-env", "from-property"),
+                new Row("spidersense.source.dirs", unset, "from-env", "from-env"),
+                new Row("spidersense.source.dirs", "", "from-env", ""),
+                new Row("spidersense.source.dirs", unset, "", unset),
+                new Row("spidersense.ignore.endpoints", "", "/internal/**", ""),
+                new Row("spidersense.ignore.endpoints", unset, "", unset));
+        for (Row row : rows) {
+            java.util.Map<String, String> properties = new java.util.HashMap<>();
+            if (row.property() != null) {
+                properties.put(row.key(), row.property());
+            }
+            java.util.Map<String, String> env = new java.util.HashMap<>();
+            if (row.variable() != null) {
+                env.put(Config.envName(row.key()), row.variable());
+            }
+            assertThat(Config.propertyOrEnv(row.key(), properties::get, env::get)).as("%s", row)
+                    .isEqualTo(row.expected());
+        }
     }
 
     @Test

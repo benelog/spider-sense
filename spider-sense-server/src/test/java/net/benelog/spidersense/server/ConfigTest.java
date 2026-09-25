@@ -209,15 +209,57 @@ class ConfigTest {
         assertThat(config.slowRequestMs()).isEqualTo(600);
     }
 
+    /**
+     * configuration.adoc's rule as a table: the property, else the variable; an empty variable is
+     * unset, and so is an empty property, except for the two keys where empty means something.
+     */
     @Test
     void aSettingIsThePropertyElseTheVariableAndEmptyIsUnset() {
-        Map<String, String> env = Map.of("SPIDERSENSE_SOURCE_DIRS", "from-env");
+        record Row(String key, String property, String variable, String expected) {
+        }
+        String unset = null;
+        List<Row> rows = List.of(
+                new Row("spidersense.slow.query.ms", "250", "50", "250"),
+                new Row("spidersense.slow.query.ms", unset, "50", "50"),
+                new Row("spidersense.slow.query.ms", "", "50", "50"),
+                new Row("spidersense.slow.query.ms", "", "", unset),
+                new Row("spidersense.slow.query.ms", unset, "", unset),
+                new Row("spidersense.slow.query.ms", unset, unset, unset),
+                new Row("spidersense.source.dirs", "from-property", "from-env", "from-property"),
+                new Row("spidersense.source.dirs", unset, "from-env", "from-env"),
+                new Row("spidersense.source.dirs", "", "from-env", ""),
+                new Row("spidersense.source.dirs", unset, "", unset),
+                new Row("spidersense.ignore.endpoints", "", "/internal/**", ""),
+                new Row("spidersense.ignore.endpoints", unset, "", unset));
+        for (Row row : rows) {
+            Map<String, String> properties = new java.util.HashMap<>();
+            if (row.property() != null) {
+                properties.put(row.key(), row.property());
+            }
+            Map<String, String> env = new java.util.HashMap<>();
+            if (row.variable() != null) {
+                env.put(Config.envName(row.key()), row.variable());
+            }
+            assertThat(Config.propertyOrEnv(row.key(), properties::get, env::get)).as("%s", row)
+                    .isEqualTo(row.expected());
+        }
+    }
 
-        assertThat(Config.propertyOrEnv("spidersense.source.dirs", Map.of("spidersense.source.dirs", "from-property")::get,
-                env::get)).isEqualTo("from-property");
-        assertThat(Config.propertyOrEnv("spidersense.source.dirs", Map.<String, String>of()::get, env::get))
-                .isEqualTo("from-env");
-        assertThat(Config.propertyOrEnv("spidersense.source.dirs", Map.<String, String>of()::get,
-                Map.of("SPIDERSENSE_SOURCE_DIRS", "")::get)).isNull();
+    /**
+     * The case an unset shell variable makes: {@code -Dspidersense.slow.query.ms=} beside
+     * {@code SPIDERSENSE_SLOW_QUERY_MS=50} is 50, the threshold the extension captures at too.
+     */
+    @Test
+    void anEmptyPropertyLeavesTheVariableInForceExceptWhereEmptyMeansSomething() {
+        Config config = parse(
+                Map.of("spidersense.slow.query.ms", "", "spidersense.port", "",
+                        "spidersense.ignore.endpoints", ""),
+                Map.of("SPIDERSENSE_SLOW_QUERY_MS", "50",
+                        "SPIDERSENSE_IGNORE_ENDPOINTS", "/internal/**"));
+
+        assertThat(config.slowQueryMs()).isEqualTo(50);
+        assertThat(config.port()).isEqualTo(4000);
+        assertThat(config.ignoreEndpoints()).as("an empty list ignores nothing").isEmpty();
+        assertThat(warnings).isEmpty();
     }
 }
