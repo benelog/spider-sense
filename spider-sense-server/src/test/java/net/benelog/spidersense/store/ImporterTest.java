@@ -32,15 +32,17 @@ class ImporterTest {
     @TempDir
     Path dir;
 
+    private final Tingles tingles = new Tingles(500, 100, IgnoredEndpoints.of(IgnoredEndpoints.DEFAULT));
     private Database database;
     private Writer writer;
+    private Importer importer;
 
     @BeforeEach
     void open() {
         database = Database.open("jdbc:h2:" + dir.resolve("sense") + ";AUTO_SERVER=TRUE;NON_KEYWORDS=KEY,VALUE",
                 dir.resolve("sense.mv.db"));
-        writer = new Writer(database.sql(), new EventBus(),
-                new Tingles(500, 100, IgnoredEndpoints.of(IgnoredEndpoints.DEFAULT)));
+        writer = new Writer(database.sql(), new EventBus(), tingles);
+        importer = new Importer(database.sql(), tingles);
     }
 
     @AfterEach
@@ -87,7 +89,6 @@ class ImporterTest {
     @Test
     void aFlushOfTheRunningServiceIsNotHeldUpByAnImportOfIt() throws Exception {
         flush("orders", 1);
-        Importer importer = writer.importer();
 
         try (Connection other = database.sql().connection()) {
             other.setAutoCommit(false);
@@ -136,7 +137,6 @@ class ImporterTest {
                         .put("name", "jvm.memory.used").put("attributes", Json.obj())))
                 .put("metricPoints", Json.arr().add(Json.obj().put("seriesId", 7).put("atMs", AT - 86_400_000L)
                         .put("value", 2.0)));
-        Importer importer = writer.importer();
 
         try (Connection other = database.sql().connection()) {
             // Holds the service row, so the import waits just before its commit.
@@ -180,7 +180,7 @@ class ImporterTest {
                         .put("count", 3).put("sum", 0.3)
                         .put("buckets", Json.obj().put("bounds", bounds).put("counts", counts))));
 
-        assertThat(writer.importer().importDocument(document).metricPoints()).isEqualTo(1);
+        assertThat(importer.importDocument(document).metricPoints()).isEqualTo(1);
 
         assertThat(count("SELECT COUNT(*) FROM metric_point WHERE count = 3 AND buckets IS NULL"))
                 .isEqualTo(1);

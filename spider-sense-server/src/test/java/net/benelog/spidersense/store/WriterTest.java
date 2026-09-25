@@ -151,7 +151,7 @@ class WriterTest {
             connection.setAutoCommit(false);
             Set<String> touched = writer.insertSpans(connection, List.of(batch));
             long started = System.nanoTime();
-            writer.mergeTraces(connection, touched);
+            new TraceSummaries(500).merge(connection, touched);
             tookMs = (System.nanoTime() - started) / 1_000_000;
             connection.commit();
         }
@@ -287,11 +287,11 @@ class WriterTest {
             b.setAutoCommit(false);
             Set<String> touchedByA = first.insertSpans(a, List.of(orders));
             Set<String> touchedByB = second.insertSpans(b, List.of(bookstore));
-            first.mergeTraces(a, touchedByA);
+            new TraceSummaries(500).merge(a, touchedByA);
 
             var merging = java.util.concurrent.CompletableFuture.runAsync(() -> {
                 try {
-                    second.mergeTraces(b, touchedByB);
+                    new TraceSummaries(500).merge(b, touchedByB);
                     b.commit();
                 } catch (java.sql.SQLException e) {
                     throw new IllegalStateException(e);

@@ -19,7 +19,6 @@ import net.benelog.spidersense.query.Window;
 import net.benelog.spidersense.server.Config;
 import net.benelog.spidersense.store.Acks;
 import net.benelog.spidersense.store.Database;
-import net.benelog.spidersense.store.EventBus;
 import net.benelog.spidersense.store.IgnoredEndpoints;
 import net.benelog.spidersense.store.Importer;
 import net.benelog.spidersense.store.Marks;
@@ -28,7 +27,6 @@ import net.benelog.spidersense.store.ServiceRegistry;
 import net.benelog.spidersense.store.Sql;
 import net.benelog.spidersense.store.Store;
 import net.benelog.spidersense.store.Tingles;
-import net.benelog.spidersense.store.Writer;
 import net.benelog.spidersilk.json.Json;
 import org.jspecify.annotations.Nullable;
 
@@ -92,9 +90,6 @@ public final class Reports implements AutoCloseable {
     private final Check check;
     private final Selectors selectors;
     private final ReadOnlyQuery readOnly;
-
-    /** Created on the first import of a read-only open; the server's is the store's. */
-    private @Nullable Writer importWriter;
 
     /** The server's way: everything is already open, and the writer's counters exist. */
     public Reports(Config config, Store store, IntSupplier port) {
@@ -597,23 +592,12 @@ public final class Reports implements AutoCloseable {
     }
 
     /**
-     * The writer the import goes through.
-     *
-     * <p>With a store it is the store's, queue and all. Without one — the CLI
-     * writing into the file it opened — it is a writer of its own that is never
-     * started: an import is one transaction on this thread, so the write-behind
-     * loop would have nothing to do (storage.adoc).
+     * The importer, the store's with a store and one of its own without: the CLI
+     * writing into the file it opened needs no writer, because an import is one
+     * transaction on this thread rather than write-behind (storage.adoc).
      */
     private Importer importer() {
-        if (store != null) {
-            return store.importer();
-        }
-        Writer writer = importWriter;
-        if (writer == null) {
-            writer = new Writer(database.sql(), new EventBus(), tingles);
-            importWriter = writer;
-        }
-        return writer.importer();
+        return store != null ? store.importer() : new Importer(database.sql(), tingles);
     }
 
     public Report imported(Importer.Result result) {
@@ -638,10 +622,6 @@ public final class Reports implements AutoCloseable {
 
     @Override
     public void close() {
-        Writer writer = importWriter;
-        if (writer != null) {
-            writer.close();
-        }
         if (ownsDatabase) {
             database.close();
         }

@@ -56,6 +56,7 @@ public final class Writer implements AutoCloseable {
     private final Sql sql;
     private final EventBus events;
     private final Tingles tingles;
+    private final TraceSummaries traces;
     private final Thread thread;
 
     private final AtomicInteger queuedRecords = new AtomicInteger();
@@ -73,6 +74,7 @@ public final class Writer implements AutoCloseable {
         this.sql = sql;
         this.events = events;
         this.tingles = tingles;
+        this.traces = new TraceSummaries(tingles.slowRequestMs());
         this.thread = new Thread(this::loop, "spider-sense-writer");
         // Daemon: in agent mode the monitored application's main must be able to return.
         this.thread.setDaemon(true);
@@ -313,7 +315,7 @@ public final class Writer implements AutoCloseable {
             mergeCatalogs(c, batches);
             mergeServices(c, batches);
             insertMetrics(c, batches);
-            mergeTraces(c, touched);
+            traces.merge(c, touched);
             return Boolean.TRUE;
         });
     }
@@ -400,152 +402,6 @@ public final class Writer implements AutoCloseable {
         statement.setString(i++, cut(span.scope(), 255));
         statement.setString(i++, AttrJson.encode(span.attributes(), 65535));
         statement.setString(i, AttrJson.encodeEvents(span.events(), 65535));
-    }
-
-    // --- traces ---
-
-    private static final String MERGE_TRACE = """
-            MERGE INTO trace (trace_id, start_ms, end_ms, duration_ns, root_span_id, root_name, root_service,
-                root_kind, services, span_count, error_count, db_count, http_status, slow, error)
-            KEY(trace_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""";
-
-    /**
-     * A placeholder for a trace row, merged before the spans are read so that the
-     * row is locked for the rest of the transaction. The real values replace it
-     * before the commit, so no other connection ever sees it.
-     */
-    private static final String LOCK_TRACE = """
-            MERGE INTO trace (trace_id, start_ms, end_ms, duration_ns, root_name, root_service, root_kind,
-                services, span_count, error_count, db_count, slow, error)
-            KEY(trace_id) VALUES (?, 0, 0, 0, '', '', '', '[]', 0, 0, 0, FALSE, FALSE)""";
-
-    /** One row per span of the touched traces, enough to rebuild the summaries. */
-    private record TraceSpan(String traceId, String spanId, @Nullable String parentSpanId,
-            String service, String name, @Nullable String endpoint, String kind, long startMs,
-            long startNs, long durationNs, boolean error, boolean isDb, @Nullable Long httpStatus) {
-    }
-
-    void mergeTraces(Connection connection, Set<String> traceIds) throws SQLException {
-        if (traceIds.isEmpty()) {
-            return;
-        }
-        // Sorted, so two writers locking overlapping sets take the locks in one order.
-        List<String> ids = traceIds.stream().sorted().toList();
-        lockTraces(connection, ids);
-        Map<String, List<TraceSpan>> byTrace = new LinkedHashMap<>();
-        // In chunks: H2's cost for one IN list grows with the square of its length, and a
-        // flush after a burst, or an import, touches tens of thousands of traces.
-        for (int from = 0; from < ids.size(); from += TRACE_READ_CHUNK) {
-            readSpans(connection, ids.subList(from, Math.min(ids.size(), from + TRACE_READ_CHUNK)), byTrace);
-        }
-        try (PreparedStatement statement = connection.prepareStatement(MERGE_TRACE)) {
-            for (var entry : byTrace.entrySet()) {
-                bindTrace(statement, entry.getKey(), entry.getValue());
-                statement.addBatch();
-            }
-            if (!byTrace.isEmpty()) {
-                statement.executeBatch();
-            }
-        }
-    }
-
-    /** How many trace ids one read of the recompute names. */
-    private static final int TRACE_READ_CHUNK = 500;
-
-    private static void readSpans(Connection connection, List<String> ids, Map<String, List<TraceSpan>> byTrace)
-            throws SQLException {
-        String select = """
-                SELECT trace_id, span_id, parent_span_id, service, name, endpoint, kind, start_ms, start_ns,
-                       duration_ns, error, db_statement, http_status
-                FROM span WHERE trace_id IN (""" + Sql.placeholders(ids.size()) + ")";
-        try (PreparedStatement statement = connection.prepareStatement(select)) {
-            for (int i = 0; i < ids.size(); i++) {
-                statement.setString(i + 1, ids.get(i));
-            }
-            try (ResultSet rs = statement.executeQuery()) {
-                while (rs.next()) {
-                    TraceSpan span = new TraceSpan(rs.getString("trace_id"), rs.getString("span_id"),
-                            rs.getString("parent_span_id"), rs.getString("service"), rs.getString("name"),
-                            rs.getString("endpoint"), rs.getString("kind"), rs.getLong("start_ms"),
-                            rs.getLong("start_ns"), rs.getLong("duration_ns"), rs.getBoolean("error"),
-                            rs.getString("db_statement") != null, Sql.longOrNull(rs, "http_status"));
-                    byTrace.computeIfAbsent(span.traceId(), id -> new ArrayList<>()).add(span);
-                }
-            }
-        }
-    }
-
-    /**
-     * Locks the touched trace rows before their spans are read. Another process
-     * sharing the file may be flushing other spans of the same trace; without the
-     * lock each reads only its own uncommitted spans, and the one that commits
-     * second overwrites the row with half the trace. With it, the second waits for
-     * the first to commit and then reads every span.
-     */
-    private static void lockTraces(Connection connection, List<String> ids) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement(LOCK_TRACE)) {
-            for (String id : ids) {
-                statement.setString(1, id);
-                statement.addBatch();
-            }
-            statement.executeBatch();
-        }
-    }
-
-    private void bindTrace(PreparedStatement statement, String traceId, List<TraceSpan> spans)
-            throws SQLException {
-        Set<String> spanIds = new HashSet<>();
-        for (TraceSpan span : spans) {
-            spanIds.add(span.spanId());
-        }
-        long startMs = Long.MAX_VALUE;
-        long endMs = Long.MIN_VALUE;
-        long startNs = Long.MAX_VALUE;
-        long endNs = Long.MIN_VALUE;
-        int errorCount = 0;
-        int dbCount = 0;
-        Set<String> services = new LinkedHashSet<>();
-        TraceSpan root = null;
-        for (TraceSpan span : spans) {
-            startMs = Math.min(startMs, span.startMs());
-            endMs = Math.max(endMs, span.startMs() + span.durationNs() / 1_000_000L);
-            startNs = Math.min(startNs, span.startNs());
-            endNs = Math.max(endNs, span.startNs() + span.durationNs());
-            services.add(span.service());
-            if (span.error()) {
-                errorCount++;
-            }
-            if (span.isDb()) {
-                dbCount++;
-            }
-            boolean isRoot = span.parentSpanId() == null || !spanIds.contains(span.parentSpanId());
-            if (isRoot && (root == null || span.startNs() < root.startNs())) {
-                root = span;
-            }
-        }
-        if (root == null) {
-            root = spans.get(0);
-        }
-        long durationNs = Math.max(0, endNs - startNs);
-        double durationMs = durationNs / 1_000_000.0;
-        String rootName = root.endpoint() != null ? root.endpoint() : root.name();
-
-        int i = 1;
-        statement.setString(i++, traceId);
-        statement.setLong(i++, startMs);
-        statement.setLong(i++, endMs);
-        statement.setLong(i++, durationNs);
-        statement.setString(i++, root.spanId());
-        statement.setString(i++, cut(rootName, 1024));
-        statement.setString(i++, root.service());
-        statement.setString(i++, root.kind());
-        statement.setString(i++, AttrJson.encodeStrings(List.copyOf(services), 4096));
-        statement.setInt(i++, spans.size());
-        statement.setInt(i++, errorCount);
-        statement.setInt(i++, dbCount);
-        setLong(statement, i++, root.httpStatus());
-        statement.setBoolean(i++, durationMs > tingles.slowRequestMs());
-        statement.setBoolean(i, errorCount > 0);
     }
 
     // --- logs, tingles, catalogs, services, metrics ---
@@ -909,18 +765,6 @@ public final class Writer implements AutoCloseable {
         long id = MetricSeriesRows.lookupOrCreate(connection, sample.service(), sample.name(), series.attributes());
         seriesIds.put(series.key(), id);
         return id;
-    }
-
-    /**
-     * The other way rows reach these tables: an exported session document, read
-     * back through this writer's own insert and {@code trace} merge (cli.adoc#export-import).
-     *
-     * <p>It is a separate object rather than a method here because an import is
-     * not write-behind: it is one transaction on the calling thread, and it must
-     * be able to say what it wrote.
-     */
-    public Importer importer() {
-        return new Importer(sql, this);
     }
 
     /**

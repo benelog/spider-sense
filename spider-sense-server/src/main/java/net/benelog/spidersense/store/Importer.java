@@ -19,10 +19,13 @@ import org.jspecify.annotations.Nullable;
  * An exported session document, written back into the store
  * (cli.adoc#export-import).
  *
- * <p>It is the {@link Writer}'s other caller: the rows come from a file rather
- * than from an OTLP export, but they take the writer's own span insert and its
- * {@code trace} merge, so an imported trace is stored exactly as a received one
- * (storage.adoc). Nothing is recomputed — {@code entry}, {@code slow},
+ * <p>It is the other way rows reach the tables the {@link Writer} writes: the
+ * rows come from a file rather than from an OTLP export, but they take the
+ * writer's own span insert and its {@code trace} merge ({@link TraceSummaries}),
+ * so an imported trace is stored exactly as a received one (storage.adoc).
+ *
+ * <p>It is not write-behind: an import is one transaction on the calling thread,
+ * and it must be able to say what it wrote. Nothing is recomputed — {@code entry}, {@code slow},
  * {@code query_id} and the rest are columns the file carries, and recomputing
  * them against this machine's thresholds would make a re-import disagree with
  * the session it came from.
@@ -67,11 +70,15 @@ public final class Importer {
     private static final int CHUNK = 500;
 
     private final Sql sql;
-    private final Writer writer;
+    private final TraceSummaries traces;
 
-    Importer(Sql sql, Writer writer) {
+    /**
+     * @param tingles the rules whose slow-request threshold decides whether an
+     *                imported trace is slow, as the writer's decide a received one's
+     */
+    public Importer(Sql sql, Tingles tingles) {
         this.sql = sql;
-        this.writer = writer;
+        this.traces = new TraceSummaries(tingles.slowRequestMs());
     }
 
     /**
@@ -138,7 +145,7 @@ public final class Importer {
         Set<String> present = alreadyStored(connection, traceIds(spans));
 
         Imported imported = insertSpans(connection, spans, present);
-        writer.mergeTraces(connection, imported.traces());
+        traces.merge(connection, imported.traces());
         long logs = insertLogs(connection, array(document, "logs"), present);
         long tingles = insertTingles(connection, array(document, "tingles"), present);
         long marks = insertMarks(connection, array(document, "marks"));

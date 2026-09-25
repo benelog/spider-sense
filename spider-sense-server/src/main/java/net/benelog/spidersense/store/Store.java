@@ -97,7 +97,7 @@ public final class Store implements AutoCloseable {
 
     /** {@code POST /api/import}: an exported session document, written back (cli.adoc#export-import). */
     public Importer importer() {
-        return writer.importer();
+        return new Importer(sql, tingles);
     }
 
     public Sweeper sweeper() {
