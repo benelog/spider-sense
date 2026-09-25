@@ -218,8 +218,27 @@ public final class Schema {
     static final String[] DATA_TABLES =
             {"span", "trace", "log", "metric_point", "tingle", "mark", "ack", "db_table"};
 
+    /** What an open does with a database of another schema version, or of none. */
+    enum OnOtherVersion {
+
+        /**
+         * The server's open: a database of another version is dropped and
+         * recreated, one without a schema is created, and the reader user is
+         * created in either.
+         */
+        RECREATE,
+
+        /**
+         * The CLI's open: a database of another version, or without a schema, is
+         * refused and nothing is created in it, because a command that reads a file
+         * must never empty it under a running older server, nor change somebody
+         * else's database.
+         */
+        REFUSE
+    }
+
     static void create(Sql sql) {
-        create(sql, true);
+        create(sql, OnOtherVersion.RECREATE);
     }
 
     /**
@@ -231,13 +250,13 @@ public final class Schema {
      * must leave the database as it found it, without a table of this version
      * created in it.
      *
-     * @param upgrade whether a database of another version is dropped and recreated
-     *                (the server's way) or refused (the CLI's way: a command that
-     *                reads a file must never empty it under a running older server)
+     * @param onOtherVersion whether a database of another version is dropped and
+     *                       recreated or refused
      */
-    static void create(Sql sql, boolean upgrade) {
+    static void create(Sql sql, OnOtherVersion onOtherVersion) {
+        boolean recreate = onOtherVersion == OnOtherVersion.RECREATE;
         Long stored = storedVersion(sql);
-        if (stored == null && !upgrade) {
+        if (stored == null && !recreate) {
             // No meta: an H2 database Spider Sense never wrote, such as the application's own
             // named by a mistaken --db, or an empty one, such as jdbc:h2:mem:, which names no
             // file to check for. The CLI creates nothing in either: answering from a database it
@@ -248,7 +267,7 @@ public final class Schema {
                     + "no Spider Sense schema"
                     + "; point --db at the file an application under the agent or the standalone server writes");
         }
-        if (stored != null && stored != VERSION && !upgrade) {
+        if (stored != null && stored != VERSION && !recreate) {
             throw new IllegalStateException("the database is schema version " + stored
                     + " and this Spider Sense expects " + VERSION
                     + "; start an application or the standalone server with this version first"
@@ -270,7 +289,7 @@ public final class Schema {
             sql.update("MERGE INTO meta (key, value) KEY(key) VALUES (?, ?)",
                     java.util.List.of("schema_version", String.valueOf(VERSION)));
         }
-        if (upgrade) {
+        if (recreate) {
             reader(sql);
         }
     }

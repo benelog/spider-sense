@@ -55,7 +55,7 @@ final class SessionExport {
      */
     static void write(Sql sql, Window window, @Nullable String service, OutputStream out) {
         // Work always answers with something; there is nothing to answer with here.
-        Boolean unused = sql.with(connection -> {
+        Boolean unused = sql.withConnection(connection -> {
             Writer text = new BufferedWriter(new OutputStreamWriter(out, StandardCharsets.UTF_8), 8192);
             try {
                 document(connection, window, service, text);

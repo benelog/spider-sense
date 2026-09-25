@@ -227,7 +227,7 @@ class OtlpDecoderTest {
         assertThat(row.product()).isEqualTo("H2");
         assertThat(row.indexes()).isEqualTo(indexes);
         assertThat(row.at()).isEqualTo(1_700_000_000_000L);
-        assertThat(batch.records()).as("it is a record like any other for the flush counters")
+        assertThat(batch.recordCount()).as("it is a record like any other for the flush counters")
                 .isEqualTo(1);
 
         store.writer().awaitIdle(5_000);

@@ -71,11 +71,11 @@ public final class Database implements AutoCloseable {
     private static final long OPEN_RETRY_PAUSE_MS = 500;
 
     private Database(String url, @Nullable Path file, @Nullable String fallbackReason) {
-        this(url, file, fallbackReason, true);
+        this(url, file, fallbackReason, Schema.OnOtherVersion.RECREATE);
     }
 
     private Database(String url, @Nullable Path file, @Nullable String fallbackReason,
-            boolean upgrade) {
+            Schema.OnOtherVersion onOtherVersion) {
         this.url = url;
         this.file = file;
         this.fallbackReason = fallbackReason;
@@ -84,7 +84,7 @@ public final class Database implements AutoCloseable {
         this.sql = new Sql(pool);
         try {
             sizeCache(pool, url);
-            Schema.create(sql, upgrade);
+            Schema.create(sql, onOtherVersion);
         } catch (RuntimeException e) {
             pool.dispose();
             throw e;
@@ -129,7 +129,7 @@ public final class Database implements AutoCloseable {
                     + "; start an application with -javaagent:spider-sense.jar first");
         }
         try {
-            return new Database(url, file, null, false);
+            return new Database(url, file, null, Schema.OnOtherVersion.REFUSE);
         } catch (IllegalStateException e) {
             throw e;
         } catch (RuntimeException e) {
@@ -156,7 +156,7 @@ public final class Database implements AutoCloseable {
                 return new Database(url, file, null);
             } catch (RuntimeException e) {
                 last = e;
-                if (file == null || !raced(e) || System.currentTimeMillis() >= deadline) {
+                if (file == null || !isOpenRace(e) || System.currentTimeMillis() >= deadline) {
                     throw last;
                 }
                 LOG.log(System.Logger.Level.DEBUG, "Spider Sense retrying to open " + url + ": " + e.getMessage());
@@ -204,7 +204,7 @@ public final class Database implements AutoCloseable {
     }
 
     /** Whether a failure to open is the race with another process that a retry outlasts. */
-    static boolean raced(Throwable failure) {
+    static boolean isOpenRace(Throwable failure) {
         for (Throwable t = failure; t != null; t = t.getCause()) {
             int code = t instanceof SQLException sql ? sql.getErrorCode()
                     : t instanceof DbException db ? db.getErrorCode() : -1;
@@ -303,7 +303,7 @@ public final class Database implements AutoCloseable {
      * opens the file again. Joined to another process's engine through
      * {@code AUTO_SERVER}, it is one more remote session.
      */
-    Connection connectDirectly() throws SQLException {
+    Connection connectOutsidePool() throws SQLException {
         JdbcDataSource source = new JdbcDataSource();
         source.setURL(url);
         source.setUser("sa");

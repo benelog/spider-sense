@@ -326,7 +326,7 @@ class WriterTest {
         Batch next = decoder.accept(Otlp.gauge(Otlp.service("orders"), "jvm.memory.used", "By", AT + 1_000, 2));
         try (java.sql.Connection flush = database.sql().connection()) {
             flush.setAutoCommit(false);
-            writer.insertMetrics(flush, List.of(next));
+            writer.writeMetrics(flush, List.of(next));
 
             var sweep = java.util.concurrent.CompletableFuture.supplyAsync(
                     () -> Sweeper.deleteOrphanSeries(database.sql()));
@@ -472,7 +472,7 @@ class WriterTest {
 
         writer.flushNow();
 
-        assertThat(writer.queued()).as("left for nobody, rather than written into a closed file")
+        assertThat(writer.queuedBatches()).as("left for nobody, rather than written into a closed file")
                 .isEqualTo(1);
         database.close();
     }

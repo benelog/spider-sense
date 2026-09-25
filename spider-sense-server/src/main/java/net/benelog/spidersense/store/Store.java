@@ -130,7 +130,7 @@ public final class Store implements AutoCloseable {
     /** Records the sighting in {@code batch} and pushes a {@code service} event the first time. */
     public void sawService(Batch batch, String name, Map<String, Object> resource, long at) {
         batch.saw(new Batch.Sighting(name, resource, at));
-        if (services.seen(name, resource)) {
+        if (services.recordSighting(name, resource)) {
             events.publish("service", new ServiceInfo(name, resource, at, at, services.isEmbedded(name)));
         }
     }

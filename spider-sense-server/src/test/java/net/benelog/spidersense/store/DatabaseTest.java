@@ -117,11 +117,11 @@ class DatabaseTest {
 
     @Test
     void theRaceOfTwoProcessesOpeningOneFileIsWhatIsRetried() {
-        assertThat(Database.raced(new SQLException("Lock file recently modified", "HY000", 8000))).isTrue();
-        assertThat(Database.raced(new Sql.SqlException("create",
+        assertThat(Database.isOpenRace(new SQLException("Lock file recently modified", "HY000", 8000))).isTrue();
+        assertThat(Database.isOpenRace(new Sql.SqlException("create",
                 new SQLException("Table already exists", "42S01", 42101)))).isTrue();
-        assertThat(Database.raced(new SQLException("File corrupted", "90030", 90030))).isFalse();
-        assertThat(Database.raced(new IllegalStateException("no code"))).isFalse();
+        assertThat(Database.isOpenRace(new SQLException("File corrupted", "90030", 90030))).isFalse();
+        assertThat(Database.isOpenRace(new IllegalStateException("no code"))).isFalse();
     }
 
     /**
@@ -156,7 +156,7 @@ class DatabaseTest {
                             java.util.Optional.ofNullable(first.get()),
                             java.util.Optional.ofNullable(second.get())).stream()
                             .flatMap(java.util.Optional::stream).toList()) {
-                        if (!Database.raced(failure)) {
+                        if (!Database.isOpenRace(failure)) {
                             notRetried.add(String.valueOf(failure.getCause()));
                         }
                     }

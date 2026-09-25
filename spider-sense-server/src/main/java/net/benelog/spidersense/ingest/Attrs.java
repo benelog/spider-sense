@@ -81,7 +81,7 @@ public final class Attrs {
         if (value == null) {
             return "";
         }
-        return value instanceof String text ? text : AttrJson.json(value).toJson();
+        return value instanceof String text ? text : AttrJson.toJson(value).toJson();
     }
 
     /** The length of a valid trace id in bytes; 32 hex characters, which {@code CHAR(32)} holds. */

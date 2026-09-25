@@ -55,9 +55,10 @@ public final class Sweeper implements AutoCloseable {
      * describes a run no window can show any more (storage.adoc#retention): its indexes are
      * those of a schema that may since have changed.
      */
-    private static final String[][] TABLE_AND_COLUMN = {
-            {"span", "start_ms"}, {"trace", "start_ms"}, {"log", "at_ms"},
-            {"metric_point", "at_ms"}, {"tingle", "at_ms"}, {"db_table", "seen_ms"}};
+    private static final List<TimedTable> SWEPT_BY_AGE = List.of(
+            new TimedTable("span", "start_ms"), new TimedTable("trace", "start_ms"),
+            new TimedTable("log", "at_ms"), new TimedTable("metric_point", "at_ms"),
+            new TimedTable("tingle", "at_ms"), new TimedTable("db_table", "seen_ms"));
 
     /**
      * What the span cap deletes: everything the window shows, marks and catalog
@@ -65,9 +66,19 @@ public final class Sweeper implements AutoCloseable {
      * nothing, and a catalog row is one row per table; both go by the time
      * retention alone.
      */
-    private static final String[][] CAPPED_TABLE_AND_COLUMN = {
-            {"span", "start_ms"}, {"trace", "start_ms"}, {"log", "at_ms"},
-            {"metric_point", "at_ms"}, {"tingle", "at_ms"}};
+    private static final List<TimedTable> SWEPT_BY_CAP = List.of(
+            new TimedTable("span", "start_ms"), new TimedTable("trace", "start_ms"),
+            new TimedTable("log", "at_ms"), new TimedTable("metric_point", "at_ms"),
+            new TimedTable("tingle", "at_ms"));
+
+    /** A table and the time column its rows are swept by. */
+    private record TimedTable(String table, String timeColumn) {
+
+        /** Deletes the rows older than {@code cutoff}, returning how many. */
+        int deleteBefore(Sql sql, long cutoff) {
+            return sql.update("DELETE FROM " + table + " WHERE " + timeColumn + " < ?", List.of(cutoff));
+        }
+    }
 
     /**
      * Deletes the series rows with no point left, without racing a writer.
@@ -165,9 +176,8 @@ public final class Sweeper implements AutoCloseable {
     public int sweep() {
         long cutoff = clock.getAsLong() - retentionHours * HOUR_MS;
         int deleted = 0;
-        for (String[] table : TABLE_AND_COLUMN) {
-            deleted += sql.update("DELETE FROM " + table[0] + " WHERE " + table[1] + " < ?",
-                    List.of(cutoff));
+        for (TimedTable table : SWEPT_BY_AGE) {
+            deleted += table.deleteBefore(sql, cutoff);
         }
         // Every mark by age, except each service's newest start, which since=start
         // needs for as long as that process runs.
@@ -199,11 +209,10 @@ public final class Sweeper implements AutoCloseable {
             if (oldest == null) {
                 break;
             }
-            long cut = oldest + HOUR_MS;
+            long cutoff = oldest + HOUR_MS;
             int pruned = 0;
-            for (String[] table : CAPPED_TABLE_AND_COLUMN) {
-                pruned += sql.update("DELETE FROM " + table[0] + " WHERE " + table[1] + " < ?",
-                        List.of(cut));
+            for (TimedTable table : SWEPT_BY_CAP) {
+                pruned += table.deleteBefore(sql, cutoff);
             }
             if (pruned == 0) {
                 break;
@@ -212,7 +221,7 @@ public final class Sweeper implements AutoCloseable {
             deleted += pruned;
             LOG.log(System.Logger.Level.INFO,
                     "Spider Sense span cap: " + spans + " spans is over " + retentionSpans
-                            + ", deleted " + pruned + " rows older than " + cut);
+                            + ", deleted " + pruned + " rows older than " + cutoff);
         }
         return deleted;
     }

@@ -10,6 +10,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicLong;
 
 import net.benelog.spidersilk.json.Json;
 import org.h2.jdbc.JdbcException;
@@ -148,7 +149,7 @@ public final class Importer {
         long marks = insertMarks(connection, array(document, "marks"));
         long tables = mergeCatalog(connection, array(document, "dbTables"));
 
-        insertMetrics(connection, array(document, "metrics"));
+        insertMissingMetricMetadata(connection, array(document, "metrics"));
         Map<Long, Long> series = mapSeries(connection, array(document, "metricSeries"));
         long points = mergePoints(connection, array(document, "metricPoints"), series);
         mergeServices(connection, array(document, "services"));
@@ -244,15 +245,15 @@ public final class Importer {
         statement.setLong(i++, longOr(span, "durationNs", 0));
         statement.setString(i++, string(span, "status"));
         statement.setString(i++, Columns.cut(string(span, "statusMessage"), Columns.STATUS_MESSAGE));
-        statement.setBoolean(i++, flag(span, "entry"));
-        statement.setBoolean(i++, flag(span, "error"));
-        statement.setBoolean(i++, flag(span, "slow"));
+        statement.setBoolean(i++, bool(span, "entry"));
+        statement.setBoolean(i++, bool(span, "error"));
+        statement.setBoolean(i++, bool(span, "slow"));
         statement.setString(i++, string(span, "category"));
         statement.setString(i++, Columns.cut(string(span, "endpoint"), Columns.ENDPOINT));
         statement.setString(i++, string(span, "endpointId"));
         statement.setString(i++, Columns.cut(string(span, "httpMethod"), Columns.HTTP_METHOD));
         statement.setString(i++, Columns.cut(string(span, "httpRoute"), Columns.HTTP_ROUTE));
-        Columns.setLong(statement, i++, number(span, "httpStatus"));
+        Columns.setLong(statement, i++, nullableLong(span, "httpStatus"));
         statement.setString(i++, Columns.cut(string(span, "dbSystem"), Columns.DB_SYSTEM));
         statement.setString(i++, string(span, "dbStatement"));
         statement.setString(i++, Columns.cut(string(span, "dbNamespace"), Columns.DB_NAMESPACE));
@@ -288,7 +289,7 @@ public final class Importer {
         long count = 0;
         try (PreparedStatement statement = connection.prepareStatement(Writer.INSERT_LOG);
                 PreparedStatement same = connection.prepareStatement(SAME_LOG)) {
-            Stored stored = new Stored(same);
+            StoredDuplicates stored = new StoredDuplicates(same);
             for (Json.JsonValue value : logs) {
                 Json.JsonObject log = value.asObject();
                 String traceId = string(log, "traceId");
@@ -299,7 +300,7 @@ public final class Importer {
                         longOr(log, "severityNumber", 0),
                         Columns.cut(or(string(log, "body"), ""), Columns.LOG_BODY),
                         Columns.cut(string(log, "logger"), Columns.LOGGER), traceId, string(log, "spanId"));
-                if (stored.contains(row)) {
+                if (stored.takeOne(row)) {
                     continue;
                 }
                 int i = 1;
@@ -334,7 +335,7 @@ public final class Importer {
         long count = 0;
         try (PreparedStatement statement = connection.prepareStatement(Writer.INSERT_TINGLE);
                 PreparedStatement same = connection.prepareStatement(SAME_TINGLE)) {
-            Stored stored = new Stored(same);
+            StoredDuplicates stored = new StoredDuplicates(same);
             for (Json.JsonValue value : tingles) {
                 Json.JsonObject tingle = value.asObject();
                 String traceId = string(tingle, "traceId");
@@ -346,7 +347,7 @@ public final class Importer {
                         Columns.cut(or(string(tingle, "title"), ""), Columns.TINGLE_TITLE),
                         Columns.cut(or(string(tingle, "detail"), ""), Columns.TINGLE_DETAIL), traceId,
                         string(tingle, "spanId"));
-                if (stored.contains(row)) {
+                if (stored.takeOne(row)) {
                     continue;
                 }
                 int i = 1;
@@ -376,30 +377,34 @@ public final class Importer {
      * written, so the file's own duplicates are matched against the store and not
      * against each other.
      */
-    private static final class Stored {
+    private static final class StoredDuplicates {
 
         private final PreparedStatement count;
-        private final Map<List<@Nullable Object>, long[]> remaining = new HashMap<>();
+        private final Map<List<@Nullable Object>, AtomicLong> remainingByRow = new HashMap<>();
 
-        Stored(PreparedStatement count) {
+        StoredDuplicates(PreparedStatement count) {
             this.count = count;
         }
 
-        /** Whether one more row equal to {@code row} is already stored, which it then uses up. */
-        boolean contains(List<@Nullable Object> row) throws SQLException {
-            long[] left = remaining.get(row);
-            if (left == null) {
-                left = new long[]{stored(row)};
-                remaining.put(row, left);
+        /**
+         * Takes one of the stored rows equal to {@code row}, if one is left: true
+         * means the file's row is already stored and is skipped. Each call uses one
+         * up, so a second identical row of the file finds one fewer.
+         */
+        boolean takeOne(List<@Nullable Object> row) throws SQLException {
+            AtomicLong remaining = remainingByRow.get(row);
+            if (remaining == null) {
+                remaining = new AtomicLong(countStored(row));
+                remainingByRow.put(row, remaining);
             }
-            if (left[0] > 0) {
-                left[0]--;
+            if (remaining.get() > 0) {
+                remaining.decrementAndGet();
                 return true;
             }
             return false;
         }
 
-        private long stored(List<@Nullable Object> row) throws SQLException {
+        private long countStored(List<@Nullable Object> row) throws SQLException {
             Sql.bind(count, row);
             try (ResultSet rs = count.executeQuery()) {
                 return rs.next() ? rs.getLong(1) : 0;
@@ -511,11 +516,11 @@ public final class Importer {
             String resource = nested(service, "resource", AttrJson.EMPTY_OBJECT);
             // A stored row keeps its pid, language and resource: they describe the
             // process running here, not the one that ran the imported session.
-            long[] stored = sighting(connection, name);
+            SeenRange stored = storedSeenRange(connection, name);
             if (stored != null) {
                 // Updated only when it widens: an update locks the row the running
                 // writer updates on every flush of that service, until this commits.
-                if (firstSeen < stored[0] || lastSeen > stored[1]) {
+                if (firstSeen < stored.first() || lastSeen > stored.last()) {
                     try (PreparedStatement update = connection.prepareStatement(
                             "UPDATE service SET first_seen = LEAST(first_seen, ?),"
                                     + " last_seen = GREATEST(last_seen, ?) WHERE name = ?")) {
@@ -532,7 +537,7 @@ public final class Importer {
                             + " VALUES (?, ?, ?, ?, ?, ?)")) {
                 insert.setString(1, name);
                 insert.setString(2, Columns.cut(string(service, "language"), Columns.LANGUAGE));
-                Columns.setLong(insert, 3, number(service, "pid"));
+                Columns.setLong(insert, 3, nullableLong(service, "pid"));
                 insert.setLong(4, firstSeen);
                 insert.setLong(5, lastSeen);
                 insert.setString(6, resource);
@@ -541,13 +546,17 @@ public final class Importer {
         }
     }
 
+    /** A service row's {@code first_seen} and {@code last_seen}. */
+    private record SeenRange(long first, long last) {
+    }
+
     /** The stored {@code first_seen} and {@code last_seen} of a service, or null when it has no row. */
-    private static long @Nullable [] sighting(Connection connection, String name) throws SQLException {
+    private static @Nullable SeenRange storedSeenRange(Connection connection, String name) throws SQLException {
         try (PreparedStatement select = connection.prepareStatement(
                 "SELECT first_seen, last_seen FROM service WHERE name = ?")) {
             select.setString(1, name);
             try (ResultSet rs = select.executeQuery()) {
-                return rs.next() ? new long[]{rs.getLong(1), rs.getLong(2)} : null;
+                return rs.next() ? new SeenRange(rs.getLong(1), rs.getLong(2)) : null;
             }
         }
     }
@@ -555,7 +564,7 @@ public final class Importer {
     // --- metrics -------------------------------------------------------------------
 
     /** Metadata is a description of an instrument, so the stored one wins if there is one. */
-    private static void insertMetrics(Connection connection, Json.JsonArray metrics)
+    private static void insertMissingMetricMetadata(Connection connection, Json.JsonArray metrics)
             throws SQLException {
         for (Json.JsonValue value : metrics) {
             Json.JsonObject metric = value.asObject();
@@ -582,7 +591,7 @@ public final class Importer {
                 insert.setString(3, or(string(metric, "type"), "gauge"));
                 insert.setString(4, Columns.cut(string(metric, "unit"), Columns.METRIC_UNIT));
                 insert.setString(5, Columns.cut(string(metric, "description"), Columns.METRIC_DESCRIPTION));
-                insert.setBoolean(6, flag(metric, "monotonic"));
+                insert.setBoolean(6, bool(metric, "monotonic"));
                 insert.setString(7, string(metric, "temporality"));
                 insert.executeUpdate();
             }
@@ -682,7 +691,7 @@ public final class Importer {
     }
 
     /** A nullable integer column: JSON null stays null rather than becoming zero. */
-    private static @Nullable Long number(Json.JsonObject object, String key) {
+    private static @Nullable Long nullableLong(Json.JsonObject object, String key) {
         if (!object.has(key) || object.get(key).isNull()) {
             return null;
         }
@@ -693,7 +702,7 @@ public final class Importer {
         return object.optLong(key, fallback);
     }
 
-    private static boolean flag(Json.JsonObject object, String key) {
+    private static boolean bool(Json.JsonObject object, String key) {
         return object.optBoolean(key, false);
     }
 

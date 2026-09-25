@@ -95,11 +95,12 @@ public final class Batch {
         return catalogs;
     }
 
-    public int records() {
+    /** How many records the batch carries: spans, log records, metric points and catalog rows. */
+    public int recordCount() {
         return spans.size() + logs.size() + metrics.size() + catalogs.size();
     }
 
     public boolean isEmpty() {
-        return records() == 0 && services.isEmpty() && tingles.isEmpty();
+        return recordCount() == 0 && services.isEmpty() && tingles.isEmpty();
     }
 }

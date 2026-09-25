@@ -42,12 +42,13 @@ public final class ServiceRegistry {
     }
 
     /**
-     * Notes a sighting.
+     * Records a sighting, and adopts the service as the embedded one when it
+     * reports this process's own pid.
      *
-     * @return true the first time this process sees the service, which is when the
-     *         SSE stream sends a {@code service} event
+     * @return whether this is the first time this process sees the service, which
+     *         is when the SSE stream sends a {@code service} event
      */
-    public boolean seen(String name, Map<String, Object> resource) {
+    public boolean recordSighting(String name, Map<String, Object> resource) {
         boolean isNew = seen.putIfAbsent(name, Boolean.TRUE) == null;
         if (isNew && embedded == null) {
             adoptIfOurOwnProcess(name, resource);

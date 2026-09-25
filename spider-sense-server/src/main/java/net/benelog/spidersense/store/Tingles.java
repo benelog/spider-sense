@@ -95,7 +95,7 @@ public final class Tingles {
      * which propagated up a trace from producing one tingle per frame, while
      * still reporting the deep span that actually threw.
      */
-    public List<Tingle> of(SpanRecord span) {
+    public List<Tingle> raisedBy(SpanRecord span) {
         List<Tingle> produced = new ArrayList<>(2);
         double durationMs = span.durationMillis();
         long at = span.startMillis();

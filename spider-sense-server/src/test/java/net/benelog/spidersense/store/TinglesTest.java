@@ -20,7 +20,7 @@ class TinglesTest {
 
     @Test
     void anEntrySpanOverTheThresholdIsASlowRequest() {
-        List<Tingle> raised = tingles.of(span("SERVER", null, 1532, Map.of("http.route", "/orders/report"),
+        List<Tingle> raised = tingles.raisedBy(span("SERVER", null, 1532, Map.of("http.route", "/orders/report"),
                 List.of()));
 
         assertThat(raised).hasSize(1);
@@ -31,12 +31,12 @@ class TinglesTest {
 
     @Test
     void anEntrySpanUnderTheThresholdIsNothing() {
-        assertThat(tingles.of(span("SERVER", null, 499, Map.of(), List.of()))).isEmpty();
+        assertThat(tingles.raisedBy(span("SERVER", null, 499, Map.of(), List.of()))).isEmpty();
     }
 
     @Test
     void aSlowDatabaseSpanIsASlowQueryWithTheStatementAsItsDetail() {
-        List<Tingle> raised = tingles.of(span("CLIENT", "c".repeat(16), 240,
+        List<Tingle> raised = tingles.raisedBy(span("CLIENT", "c".repeat(16), 240,
                 Map.of("db.system", "h2", "db.statement", "select * from orders where name like ?"),
                 List.of()));
 
@@ -47,13 +47,13 @@ class TinglesTest {
 
     @Test
     void aFastDatabaseSpanIsNothing() {
-        assertThat(tingles.of(span("CLIENT", "c".repeat(16), 99,
+        assertThat(tingles.raisedBy(span("CLIENT", "c".repeat(16), 99,
                 Map.of("db.system", "h2", "db.statement", "select 1"), List.of()))).isEmpty();
     }
 
     @Test
     void anErrorTingleCarriesTypeAndMessage() {
-        List<Tingle> raised = tingles.of(span("SERVER", null, 10, Map.of(),
+        List<Tingle> raised = tingles.raisedBy(span("SERVER", null, 10, Map.of(),
                 List.of(new SpanRecord.SpanEvent("exception", 0, Map.of(
                         "exception.type", "java.lang.IllegalStateException",
                         "exception.message", "Order 42 is already shipped")))));
@@ -71,12 +71,12 @@ class TinglesTest {
         SpanRecord propagated = new SpanRecord("a".repeat(32), "b".repeat(16), "c".repeat(16), "orders",
                 "internal", "INTERNAL", 0, 1_000_000L, "ERROR", "boom", Map.of(), List.of(), "scope");
 
-        assertThat(tingles.of(propagated)).isEmpty();
+        assertThat(tingles.raisedBy(propagated)).isEmpty();
     }
 
     @Test
     void oneSpanCanRaiseBothASlowQueryAndAnError() {
-        List<Tingle> raised = tingles.of(span("SERVER", null, 900,
+        List<Tingle> raised = tingles.raisedBy(span("SERVER", null, 900,
                 Map.of("db.system", "h2", "db.statement", "select 1"),
                 List.of(new SpanRecord.SpanEvent("exception", 0,
                         Map.of("exception.type", "java.sql.SQLException")))));
@@ -101,7 +101,7 @@ class TinglesTest {
 
         assertThat(tingles.isSlowRequest(atThreshold)).isFalse();
         assertThat(tingles.isSlow(atThreshold)).isFalse();
-        assertThat(tingles.of(atThreshold)).isEmpty();
+        assertThat(tingles.raisedBy(atThreshold)).isEmpty();
         assertThat(tingles.isSlowRequest(past)).isTrue();
         assertThat(tingles.isSlowRequest(500.0)).isFalse();
         assertThat(tingles.isSlowRequest(500.001)).isTrue();

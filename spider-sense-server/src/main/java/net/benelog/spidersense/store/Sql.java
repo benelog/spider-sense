@@ -54,7 +54,7 @@ public final class Sql {
     }
 
     public <T> List<T> query(String sql, List<Object> params, RowMapper<T> mapper) {
-        return with(connection -> {
+        return withConnection(connection -> {
             try (PreparedStatement statement = connection.prepareStatement(sql)) {
                 bind(statement, params);
                 try (ResultSet rs = statement.executeQuery()) {
@@ -74,7 +74,7 @@ public final class Sql {
      */
     public void forEach(String sql, List<Object> params, RowReader reader) {
         // Work always answers with something; there is nothing to answer with here.
-        Boolean unused = with(connection -> {
+        Boolean unused = withConnection(connection -> {
             try (PreparedStatement statement = connection.prepareStatement(sql)) {
                 bind(statement, params);
                 try (ResultSet rs = statement.executeQuery()) {
@@ -99,7 +99,7 @@ public final class Sql {
     }
 
     public int update(String sql, List<Object> params) {
-        return with(connection -> {
+        return withConnection(connection -> {
             try (PreparedStatement statement = connection.prepareStatement(sql)) {
                 bind(statement, params);
                 return statement.executeUpdate();
@@ -110,7 +110,7 @@ public final class Sql {
     /** DDL and other statements with no parameters. */
     public void execute(String... statements) {
         // Work always answers with something; there is nothing to answer with here.
-        Boolean unused = with(connection -> {
+        Boolean unused = withConnection(connection -> {
             try (Statement statement = connection.createStatement()) {
                 for (String each : statements) {
                     statement.execute(each);
@@ -121,7 +121,7 @@ public final class Sql {
     }
 
     /** Borrows a connection for work that spans several statements. */
-    public <T> T with(Work<T> work, String description) {
+    public <T> T withConnection(Work<T> work, String description) {
         try (Connection connection = dataSource.getConnection()) {
             return work.apply(connection);
         } catch (SQLException e) {
@@ -134,7 +134,7 @@ public final class Sql {
      * {@link #inTransaction(Connection, Work)}.
      */
     public <T> T transaction(Work<T> work, String description) {
-        return with(connection -> inTransaction(connection, work), description);
+        return withConnection(connection -> inTransaction(connection, work), description);
     }
 
     /**

@@ -216,7 +216,7 @@ public final class Reports implements AutoCloseable {
                         .put("fallbackReason", storage.fallbackReason())
                         .put("droppedBatches", store == null ? 0 : store.writer().droppedBatches())
                         .put("droppedSpans", droppedSpans())
-                        .put("queued", store == null ? 0 : store.writer().queued()))
+                        .put("queued", store == null ? 0 : store.writer().queuedBatches()))
                 .put("counts", Json.obj()
                         .put("spans", queries.spanCount())
                         .put("traces", queries.traceCount())

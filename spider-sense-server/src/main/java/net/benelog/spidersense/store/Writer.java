@@ -50,7 +50,7 @@ public final class Writer implements AutoCloseable {
 
     private final BlockingQueue<Batch> queue = new ArrayBlockingQueue<>(QUEUE_CAPACITY);
     private final Map<String, Long> seriesIds = new ConcurrentHashMap<>();
-    private final AtomicLong dropped = new AtomicLong();
+    private final AtomicLong droppedBatches = new AtomicLong();
     private final Object flushLock = new Object();
     private final Object wakeUp = new Object();
 
@@ -111,9 +111,9 @@ public final class Writer implements AutoCloseable {
             if (queue.poll() == null) {
                 return;
             }
-            dropped.incrementAndGet();
+            droppedBatches.incrementAndGet();
         }
-        int queued = queuedRecords.addAndGet(batch.records());
+        int queued = queuedRecords.addAndGet(batch.recordCount());
         if (queued >= FLUSH_RECORDS) {
             synchronized (wakeUp) {
                 wakeUp.notifyAll();
@@ -122,10 +122,10 @@ public final class Writer implements AutoCloseable {
     }
 
     public long droppedBatches() {
-        return dropped.get();
+        return droppedBatches.get();
     }
 
-    public int queued() {
+    public int queuedBatches() {
         return queue.size();
     }
 
@@ -190,9 +190,9 @@ public final class Writer implements AutoCloseable {
             }
             Throwable failure = null;
             for (int attempt = 0; attempt < EXIT_ATTEMPTS; attempt++) {
-                try (Connection connection = database.connectDirectly()) {
+                try (Connection connection = database.connectOutsidePool()) {
                     if (!batches.isEmpty()) {
-                        write(connection, batches);
+                        writeInTransaction(connection, batches);
                         batches = List.of();
                     }
                     database.shutdownEngine(connection);
@@ -220,9 +220,9 @@ public final class Writer implements AutoCloseable {
                 Thread.currentThread().interrupt();
                 break;
             }
-            flushSurviving();
+            flushLoggingFailure();
         }
-        flushSurviving();
+        flushLoggingFailure();
     }
 
     /**
@@ -230,7 +230,7 @@ public final class Writer implements AutoCloseable {
      * dropped with nothing saying why. What a flush itself cannot store it already
      * reports; this catches what escapes that, such as a listener's failure.
      */
-    private void flushSurviving() {
+    private void flushLoggingFailure() {
         try {
             flush();
         } catch (RuntimeException | Error e) {
@@ -253,7 +253,7 @@ public final class Writer implements AutoCloseable {
             }
             List<Batch> stored;
             try {
-                write(batches);
+                writeThroughPool(batches);
                 stored = batches;
             } catch (SQLException | RuntimeException | StackOverflowError e) {
                 // A StackOverflowError too: an absurdly nested attribute value overflows the
@@ -283,7 +283,7 @@ public final class Writer implements AutoCloseable {
         List<Batch> stored = new ArrayList<>(batches.size());
         for (int b = 0; b < batches.size(); b++) {
             try {
-                write(List.of(batches.get(b)));
+                writeThroughPool(List.of(batches.get(b)));
                 stored.add(batches.get(b));
             } catch (SQLException | RuntimeException | StackOverflowError e) {
                 if (exiting) {
@@ -301,10 +301,10 @@ public final class Writer implements AutoCloseable {
      * committed: a failure to hand the connection back after that loses nothing,
      * so it is not reported as a failed write.
      */
-    private void write(List<Batch> batches) throws SQLException {
+    private void writeThroughPool(List<Batch> batches) throws SQLException {
         Connection connection = sql.connection();
         try {
-            write(connection, batches);
+            writeInTransaction(connection, batches);
         } finally {
             try {
                 connection.close();
@@ -314,7 +314,8 @@ public final class Writer implements AutoCloseable {
         }
     }
 
-    private void write(Connection connection, List<Batch> batches) throws SQLException {
+    /** One flush as one transaction on {@code connection}, pooled or not, which stays open. */
+    private void writeInTransaction(Connection connection, List<Batch> batches) throws SQLException {
         // Work always answers with something; there is nothing to answer with here.
         Boolean unused = Sql.inTransaction(connection, c -> {
             Set<String> touched = insertSpans(c, batches);
@@ -322,7 +323,7 @@ public final class Writer implements AutoCloseable {
             insertTingles(c, batches);
             mergeCatalogs(c, batches);
             mergeServices(c, batches);
-            insertMetrics(c, batches);
+            writeMetrics(c, batches);
             traces.merge(c, touched);
             return Boolean.TRUE;
         });
@@ -554,12 +555,12 @@ public final class Writer implements AutoCloseable {
     }
 
     /** How far before its receipt a run's first record may have started (a metric export interval). */
-    private static final long START_LEAD_MS = 60_000;
+    private static final long START_MARK_MAX_LEAD_MS = 60_000;
 
     /**
      * When a sighting's run began, as far as this flush tells: the earliest span
      * start, log record or metric point of its service, never after the sighting's
-     * receipt and never more than {@link #START_LEAD_MS} before it. An exporter
+     * receipt and never more than {@link #START_MARK_MAX_LEAD_MS} before it. An exporter
      * batches for seconds, so the first requests of a run arrive after they began,
      * and a start mark at the receipt would leave them out of {@code since=start}.
      */
@@ -582,7 +583,7 @@ public final class Writer implements AutoCloseable {
                 }
             }
         }
-        return Math.max(start, sighting.at() - START_LEAD_MS);
+        return Math.max(start, sighting.at() - START_MARK_MAX_LEAD_MS);
     }
 
     /**
@@ -628,7 +629,7 @@ public final class Writer implements AutoCloseable {
             MERGE INTO metric_point (series_id, at_ms, value, count, sum, min, max, buckets)
             KEY(series_id, at_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""";
 
-    void insertMetrics(Connection connection, List<Batch> batches) throws SQLException {
+    void writeMetrics(Connection connection, List<Batch> batches) throws SQLException {
         // Keyed by service as well as name: two services may export one name as
         // different instruments, and each one's points mean what its own metadata says.
         Map<String, Batch.MetricSample> metadata = new LinkedHashMap<>();
@@ -701,8 +702,11 @@ public final class Writer implements AutoCloseable {
         return json.length() <= Columns.BUCKETS ? json.toString() : null;
     }
 
-    /** What identifies a sample's series: its cache key, and the hash and attributes of its row. */
-    private record Series(String key, String hash, String attributes) {
+    /**
+     * What identifies a sample's series: the key {@link #seriesIds} caches its id
+     * under, and the {@code attr_hash} and attributes of its row.
+     */
+    private record Series(String cacheKey, String attrHash, String attributesJson) {
 
         static Series of(Batch.MetricSample sample) {
             String attributes = AttrJson.encodeSorted(sample.attributes());
@@ -725,9 +729,9 @@ public final class Writer implements AutoCloseable {
     private void forgetDeletedSeries(Connection connection, List<Series> series) throws SQLException {
         Map<Long, String> cached = new LinkedHashMap<>();
         for (Series one : series) {
-            Long id = seriesIds.get(one.key());
+            Long id = seriesIds.get(one.cacheKey());
             if (id != null) {
-                cached.put(id, one.key());
+                cached.put(id, one.cacheKey());
             }
         }
         for (List<Long> chunk : Sql.chunks(List.copyOf(cached.keySet()))) {
@@ -756,12 +760,12 @@ public final class Writer implements AutoCloseable {
     /** Series ids are looked up once and cached; a JVM exports the same few hundred forever. */
     private long seriesId(Connection connection, Batch.MetricSample sample, Series series)
             throws SQLException {
-        Long cached = seriesIds.get(series.key());
+        Long cached = seriesIds.get(series.cacheKey());
         if (cached != null) {
             return cached;
         }
-        long id = MetricSeriesRows.lookupOrCreate(connection, sample.service(), sample.name(), series.attributes());
-        seriesIds.put(series.key(), id);
+        long id = MetricSeriesRows.lookupOrCreate(connection, sample.service(), sample.name(), series.attributesJson());
+        seriesIds.put(series.cacheKey(), id);
         return id;
     }
 

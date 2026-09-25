@@ -31,8 +31,11 @@ public final class Marks {
     public record Mark(long id, long at, String name, @Nullable String service, @Nullable String note) {
     }
 
+    /** The most characters a mark's name may have, which is the column's width. */
+    public static final int MAX_NAME = 64;
+
     /** What a mark may be called; the same expression api.adoc#marks states. */
-    public static final Pattern NAME = Pattern.compile("[A-Za-z0-9._-]{1,64}");
+    public static final Pattern NAME = Pattern.compile("[A-Za-z0-9._-]{1," + MAX_NAME + "}");
 
     /** The name the writer uses for an automatic mark. */
     public static final String START = "start";
@@ -69,11 +72,11 @@ public final class Marks {
             @Nullable Long at) {
         if (name == null || !NAME.matcher(name).matches()) {
             throw new IllegalArgumentException(
-                    "A mark name is 1 to 64 characters of [A-Za-z0-9._-]: " + name);
+                    "A mark name is 1 to " + MAX_NAME + " characters of [A-Za-z0-9._-]: " + name);
         }
         long when = at == null ? clock.getAsLong() : at;
         String cutNote = Columns.cut(note, Columns.MARK_NOTE);
-        long id = sql.with(connection -> {
+        long id = sql.withConnection(connection -> {
             try (PreparedStatement statement = connection.prepareStatement(
                     "INSERT INTO mark (at_ms, name, service, note) VALUES (?, ?, ?, ?)",
                     Statement.RETURN_GENERATED_KEYS)) {

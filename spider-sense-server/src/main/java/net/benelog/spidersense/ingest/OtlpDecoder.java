@@ -81,7 +81,7 @@ public final class OtlpDecoder {
                         continue;
                     }
                     batch.add(record);
-                    batch.addTingles(store.tingles().of(record));
+                    batch.addTingles(store.tingles().raisedBy(record));
                 }
             }
         }

@@ -219,11 +219,7 @@ public final class AttrJson {
      * elements, never Java's {@code [a, b]}, and a map is an object, however deep
      * either nests.
      */
-    public static Json.JsonValue json(@Nullable Object value) {
-        return toJson(value);
-    }
-
-    private static Json.JsonValue toJson(@Nullable Object value) {
+    public static Json.JsonValue toJson(@Nullable Object value) {
         Json.JsonObject holder = Json.obj();
         switch (value) {
             case null -> holder.putNull("v");

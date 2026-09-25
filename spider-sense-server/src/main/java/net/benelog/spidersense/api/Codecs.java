@@ -134,7 +134,7 @@ public final class Codecs {
                 holder.put("v", array);
             }
             // A key/value list, not yet stored: its JSON text, as it reads once it is.
-            case Map<?, ?> map -> holder.put("v", AttrJson.json(map).toJson());
+            case Map<?, ?> map -> holder.put("v", AttrJson.toJson(map).toJson());
             default -> holder.put("v", String.valueOf(value));
         }
         return holder.get("v");
