@@ -43,7 +43,10 @@ import org.jspecify.annotations.Nullable;
  */
 public final class Queries {
 
-    /** A guard on the one query that reads whole rows rather than an aggregate. */
+    /**
+     * A guard on the reads of whole rows rather than an aggregate: the dependency scan,
+     * and the spans a time split reads, which stop at a whole trace under it.
+     */
     private static final int MAX_DEPENDENCY_ROWS = 20_000;
 
     private static final String PERCENTILES = """
@@ -1170,6 +1173,43 @@ public final class Queries {
         public static final TimeSplit NONE = new TimeSplit(List.of(), Map.of());
     }
 
+    /**
+     * The traces of the sample whose spans of {@code service} are read: in the
+     * sample's order, each whole, until the next would take the read past
+     * {@value #MAX_DEPENDENCY_ROWS} spans (findings.adoc#time).
+     *
+     * <p>A trace read in part would make the children of every parent cut off top
+     * spans, which inflates the total the shares are taken over and moves database
+     * time into {@code self}; a whole trace fewer keeps every share true of the traces
+     * it names. The first trace is always read, as the trace page reads it.
+     */
+    private List<String> wholeTraces(Window window, String service, List<String> traceIds) {
+        if (traceIds.isEmpty()) {
+            return List.of();
+        }
+        List<Object> params = new ArrayList<>(List.of(window.from(), window.to(), service));
+        params.addAll(traceIds);
+        Map<String, Long> counts = new HashMap<>();
+        sql.forEach("SELECT trace_id, COUNT(*) AS spans FROM span"
+                        + " WHERE start_ms BETWEEN ? AND ? AND service = ? AND trace_id IN ("
+                        + Sql.placeholders(traceIds.size()) + ") GROUP BY trace_id",
+                params, rs -> counts.put(rs.getString("trace_id"), rs.getLong("spans")));
+        List<String> whole = new ArrayList<>();
+        long read = 0;
+        for (String traceId : traceIds) {
+            long spans = counts.getOrDefault(traceId, 0L);
+            if (spans == 0) {
+                continue;
+            }
+            if (!whole.isEmpty() && read + spans > MAX_DEPENDENCY_ROWS) {
+                break;
+            }
+            whole.add(traceId);
+            read += spans;
+        }
+        return whole;
+    }
+
     /** How many summaries a {@link TimeSplit} names (findings.adoc#time). */
     private static final int HOT_SPANS = 3;
 
@@ -1194,14 +1234,15 @@ public final class Queries {
      * on an outbound call land in {@code http} where the caller can see it.
      */
     public TimeSplit timeSplit(Window window, String service, List<String> traceIds) {
-        if (traceIds.isEmpty()) {
+        List<String> whole = wholeTraces(window, service, traceIds);
+        if (whole.isEmpty()) {
             return TimeSplit.NONE;
         }
         List<Object> params = new ArrayList<>(List.of(window.from(), window.to(), service));
-        params.addAll(traceIds);
+        params.addAll(whole);
         List<SpanRecord> spans = sql.query("SELECT " + Rows.SPAN_COLUMNS + " FROM span"
                         + " WHERE start_ms BETWEEN ? AND ? AND service = ? AND trace_id IN ("
-                        + Sql.placeholders(traceIds.size()) + ") LIMIT " + MAX_DEPENDENCY_ROWS,
+                        + Sql.placeholders(whole.size()) + ")",
                 params, Rows::span);
         if (spans.isEmpty()) {
             return TimeSplit.NONE;

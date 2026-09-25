@@ -1,6 +1,7 @@
 package net.benelog.spidersense.query;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -430,6 +431,40 @@ class QueriesTest {
                 .extracting(Stats.TraceSummary::traceId).containsExactly(traceId(1), traceId(2));
         assertThat(queries.tracesContaining(window, "name = ?", List.of("GET /orders"), 2, false))
                 .extracting(Stats.TraceSummary::traceId).containsExactly(traceId(1), traceId(2));
+    }
+
+    /**
+     * A trace of {@code queries} one-millisecond statements under a root of {@code rootMs},
+     * the root exported last as a server span ends last, so a read cut short misses it first.
+     */
+    private void traceWithQueries(int n, long rootMs, int queries) {
+        Span.Builder root = Otlp.span(traceId(n), spanId(n), "GET /orders", Span.SpanKind.SPAN_KIND_SERVER,
+                NOW, rootMs, Otlp.attr("http.request.method", "GET"), Otlp.attr("http.route", "/orders"));
+        List<Span.Builder> spans = new ArrayList<>();
+        for (int i = 0; i < queries; i++) {
+            spans.add(Otlp.child(root, "%016x".formatted(n * 1_000_000L + i + 1), "SELECT orders",
+                    Span.SpanKind.SPAN_KIND_CLIENT, NOW, 1,
+                    Otlp.attr("db.system", "h2"), Otlp.attr("db.statement", "select * from orders where id = ?")));
+        }
+        spans.add(root);
+        decoder.accept(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
+    }
+
+    /**
+     * A sample whose spans pass the cap is read whole trace by whole trace: the second
+     * trace is left out rather than read in part, so the shares describe the first.
+     */
+    @Test
+    void aTimeSplitReadsWholeTracesAndStopsBeforeTheCap() {
+        traceWithQueries(1, 30_000, 14_999);
+        traceWithQueries(2, 10_000, 9_999);
+        flush();
+
+        Queries.TimeSplit split = queries.timeSplit(window, "orders", List.of(traceId(1), traceId(2)));
+
+        assertThat(split.breakdown().get("db")).isCloseTo(14_999 / 30_000.0, within(1e-9));
+        assertThat(split.breakdown().get("self")).isCloseTo(15_001 / 30_000.0, within(1e-9));
+        assertThat(split.hotSpans().get(0).count()).isEqualTo(14_999);
     }
 
     /** Siblings that start in the same nanosecond are listed by span id, whatever order they arrived in. */

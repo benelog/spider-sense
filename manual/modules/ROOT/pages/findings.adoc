@@ -263,6 +263,8 @@ One trace is an anecdote, so a `slow-endpoint` and a `slow-job` also answer "whe
 Both are computed over the finding's sample: the 20 slowest traces of the endpoint or the job in the window, of which the first three are the `traces` the finding carries.
 The sample is twenty traces rather than every trace because the answer is read out of the spans themselves rather than out of an aggregate, and the slowest twenty are where a slow endpoint's time is.
 A share is therefore a share of those traces' summed duration, while the finding's own `totalMs` stays the window's.
+Each trace is read whole or not at all: when the service's spans in the twenty pass 20,000, the sample stops at the last whole trace under that count, slowest first, and the slowest is always read.
+A trace read in part would turn the children of every parent it missed into top spans and move their time into the wrong share.
 Only the spans of the finding's own service count, which is the rule `dbShare` already uses.
 The database work of a downstream service belongs to that service's own endpoint.
 Leaving the downstream server span out makes the wait on an outbound call land in `http`, where the caller can see it.
