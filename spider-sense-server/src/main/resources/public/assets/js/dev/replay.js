@@ -9,6 +9,7 @@
 // tables here, with the filters the API takes, so every trace of the recording opens
 // and nothing of it is a substitute.
 import { RANGES, DEFAULT_RANGE } from '../api.js';
+import { realFetch, reply, replyText, shimFetch, EventSourceStub } from './shim.js';
 
 const named = document.documentElement.dataset.dolthub
   || new URLSearchParams(location.search).get('dolthub') || 'benelog/spider-sense-demo@main';
@@ -32,8 +33,6 @@ async function sql(query) {
   }
   return body.rows || [];
 }
-
-const realFetch = globalThis.fetch.bind(globalThis);
 
 // --- the answers -------------------------------------------------------------------
 
@@ -307,18 +306,7 @@ async function logs(params) {
 
 // --- the shim ----------------------------------------------------------------------
 
-function reply(body, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'content-type': 'application/json' },
-  });
-}
-
-globalThis.fetch = async (input, init) => {
-  const url = typeof input === 'string' ? input : input.url;
-  const u = new URL(url, location.href);
-  if (!u.pathname.startsWith('/api/')) return realFetch(input, init);
-  const method = ((init && init.method) || (typeof input !== 'string' && input.method) || 'GET').toUpperCase();
+shimFetch(async (u, method) => {
   if (method !== 'GET') return reply({ error: 'This is a recording of the demo; nothing on it can be changed.' }, 405);
   const params = u.searchParams;
   const path = u.pathname;
@@ -344,7 +332,7 @@ globalThis.fetch = async (input, init) => {
       const text = await answerText(found.key);
       return text === null
         ? reply({ error: 'Not in the recording: ' + found.asked }, 404)
-        : new Response(text, { status: 200, headers: { 'content-type': 'text/markdown; charset=utf-8' } });
+        : replyText(text);
     }
     const body = await answer(found.key);
     return body === null ? reply({ error: 'Not in the recording: ' + found.asked }, 404) : reply(body);
@@ -352,18 +340,10 @@ globalThis.fetch = async (input, init) => {
     console.warn('[demo] ' + path + ': ' + e.message);
     return reply({ error: e.message }, 502);
   }
-};
+});
 
-class SnapshotEventSource {
-  constructor() { this.readyState = SnapshotEventSource.CLOSED; this.onerror = null; }
-  addEventListener() {}
-  removeEventListener() {}
-  close() {}
-}
-SnapshotEventSource.CONNECTING = 0;
-SnapshotEventSource.OPEN = 1;
-SnapshotEventSource.CLOSED = 2;
-globalThis.EventSource = SnapshotEventSource;
+// A recording has no live stream: the events source stays closed and never delivers.
+globalThis.EventSource = EventSourceStub;
 
 const note = document.createElement('div');
 note.className = 'snapshot-note';

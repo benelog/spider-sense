@@ -1,6 +1,8 @@
 // A fetch and EventSource shim that answers every endpoint in api.adoc with
 // generated data. Loaded only when the page URL carries ?mock=1.
 
+import { reply, replyText, bodyOf, shimFetch, EventSourceStub } from './shim.js';
+
 const START = Date.now() - 15 * 60 * 1000;
 const VERSION = '0.1.0';
 
@@ -25,44 +27,29 @@ const hash = (s) => {
 
 // --- the world ----------------------------------------------------------
 
-const SERVICES = [
-  {
-    name: 'silk-bookstore',
+/** A Java service under the OpenTelemetry agent on this machine, as its resource describes it. */
+function javaService(name, pid) {
+  return {
+    name,
     language: 'java',
     embedded: false,
     hasJvm: true,
     resource: {
-      'service.name': 'silk-bookstore',
+      'service.name': name,
       'telemetry.sdk.name': 'opentelemetry',
       'telemetry.sdk.language': 'java',
       'telemetry.sdk.version': '1.54.0',
       'process.runtime.name': 'OpenJDK 64-Bit Server VM',
       'process.runtime.version': '21.0.4+7',
-      'process.pid': '48211',
+      'process.pid': pid,
       'host.name': 'benelog-dev',
       'host.arch': 'amd64',
       'os.type': 'linux',
     },
-  },
-  {
-    name: 'spring-orders',
-    language: 'java',
-    embedded: false,
-    hasJvm: true,
-    resource: {
-      'service.name': 'spring-orders',
-      'telemetry.sdk.name': 'opentelemetry',
-      'telemetry.sdk.language': 'java',
-      'telemetry.sdk.version': '1.54.0',
-      'process.runtime.name': 'OpenJDK 64-Bit Server VM',
-      'process.runtime.version': '21.0.4+7',
-      'process.pid': '48377',
-      'host.name': 'benelog-dev',
-      'host.arch': 'amd64',
-      'os.type': 'linux',
-    },
-  },
-];
+  };
+}
+
+const SERVICES = [javaService('silk-bookstore', '48211'), javaService('spring-orders', '48377')];
 
 const QUERIES = [
   { service: 'silk-bookstore', system: 'h2', namespace: 'bookstore', operation: 'SELECT', table: 'books', statement: 'select id, title, author, price from books where id = ?', base: 1.4, jitter: 0.8 },
@@ -421,7 +408,7 @@ const listeners = new Set();
 let spanTotal = traces.reduce((n, t) => n + t.spanCount, 0);
 
 function emit(type, data) {
-  for (const es of listeners) es._dispatch(type, data);
+  for (const es of listeners) es.dispatch(type, data);
 }
 
 setInterval(() => {
@@ -1754,13 +1741,37 @@ function strip(group) {
 
 // --- shims --------------------------------------------------------------
 
-const realFetch = globalThis.fetch.bind(globalThis);
+/**
+ * The two notes a finding can carry (findings.adoc#resolutions), kept in one map: POST sets
+ * the note, DELETE removes it only when the finding carries that kind of note.
+ */
+const FINDING_NOTES = [
+  { path: /^\/api\/findings\/([^/]+)\/resolve$/, fields: { resolved: true }, carries: (note) => !!note.resolved, missing: 'No such resolution: ' },
+  { path: /^\/api\/findings\/([^/]+)\/ack$/, fields: {}, carries: (note) => !note.resolved, missing: 'No such acknowledgement: ' },
+];
 
-globalThis.fetch = async function mockFetch(input, init) {
-  const url = new URL(typeof input === 'string' ? input : input.url, location.href);
-  const method = ((init && init.method) || (typeof input !== 'string' && input.method) || 'GET').toUpperCase();
-  if (!url.pathname.startsWith('/api/')) return realFetch(input, init);
+/** POST or DELETE on a finding's ack or resolution, or null when the request is not one. */
+function findingNote(url, method, init) {
+  if (method !== 'POST' && method !== 'DELETE') return null;
+  for (const kind of FINDING_NOTES) {
+    const m = kind.path.exec(url.pathname);
+    if (!m) continue;
+    const findingId = decodeURIComponent(m[1]);
+    if (method === 'POST') {
+      const body = bodyOf(init);
+      const note = { at: Date.now(), note: body.note ? String(body.note) : null, ...kind.fields };
+      acks.set(findingId, note);
+      return reply({ findingId, at: note.at, note: note.note }, 201);
+    }
+    const note = acks.get(findingId);
+    if (!note || !kind.carries(note)) return reply({ error: kind.missing + findingId }, 404);
+    acks.delete(findingId);
+    return new Response(null, { status: 204 });
+  }
+  return null;
+}
 
+shimFetch(async (url, method, init) => {
   if (url.pathname === '/api/data' && method === 'DELETE') {
     traces.length = 0;
     logs.length = 0;
@@ -1770,63 +1781,21 @@ globalThis.fetch = async function mockFetch(input, init) {
     return new Response(null, { status: 204 });
   }
 
-  const resolvePath = /^\/api\/findings\/([^/]+)\/resolve$/.exec(url.pathname);
-  if (resolvePath && method === 'POST') {
-    let body = {};
-    try { body = JSON.parse((init && init.body) || '{}') || {}; } catch (e) { body = {}; }
-    const findingId = decodeURIComponent(resolvePath[1]);
-    const resolution = { at: Date.now(), note: body.note ? String(body.note) : null, resolved: true };
-    acks.set(findingId, resolution);
-    return new Response(JSON.stringify({ findingId, at: resolution.at, note: resolution.note }), {
-      status: 201, headers: { 'content-type': 'application/json; charset=utf-8' },
-    });
-  }
-  if (resolvePath && method === 'DELETE') {
-    const findingId = decodeURIComponent(resolvePath[1]);
-    if (!(acks.get(findingId) || {}).resolved) {
-      return new Response(JSON.stringify({ error: 'No such resolution: ' + findingId }),
-        { status: 404, headers: { 'content-type': 'application/json; charset=utf-8' } });
-    }
-    acks.delete(findingId);
-    return new Response(null, { status: 204 });
-  }
-
-  const ackPath = /^\/api\/findings\/([^/]+)\/ack$/.exec(url.pathname);
-  if (ackPath && method === 'POST') {
-    let body = {};
-    try { body = JSON.parse((init && init.body) || '{}') || {}; } catch (e) { body = {}; }
-    const findingId = decodeURIComponent(ackPath[1]);
-    const ack = { at: Date.now(), note: body.note ? String(body.note) : null };
-    acks.set(findingId, ack);
-    return new Response(JSON.stringify({ findingId, at: ack.at, note: ack.note }), {
-      status: 201, headers: { 'content-type': 'application/json; charset=utf-8' },
-    });
-  }
-  if (ackPath && method === 'DELETE') {
-    const findingId = decodeURIComponent(ackPath[1]);
-    if ((acks.get(findingId) || {}).resolved || !acks.delete(findingId)) {
-      return new Response(JSON.stringify({ error: 'No such acknowledgement: ' + findingId }),
-        { status: 404, headers: { 'content-type': 'application/json; charset=utf-8' } });
-    }
-    return new Response(null, { status: 204 });
-  }
+  const noted = findingNote(url, method, init);
+  if (noted) return noted;
 
   if (url.pathname === '/api/marks' && method === 'POST') {
-    let body = {};
-    try { body = JSON.parse((init && init.body) || '{}') || {}; } catch (e) { body = {}; }
+    const body = bodyOf(init);
     const name = String(body.name || '');
     if (!/^[A-Za-z0-9._-]{1,64}$/.test(name)) {
-      return new Response(JSON.stringify({ error: 'a mark name matches [A-Za-z0-9._-]{1,64}' }),
-        { status: 400, headers: { 'content-type': 'application/json; charset=utf-8' } });
+      return reply({ error: 'a mark name matches [A-Za-z0-9._-]{1,64}' }, 400);
     }
     const mark = {
       id: ++markId, at: body.at ? +body.at : Date.now(), name,
       service: body.service || null, note: body.note || null,
     };
     marks.push(mark);
-    return new Response(JSON.stringify(mark), {
-      status: 201, headers: { 'content-type': 'application/json; charset=utf-8' },
-    });
+    return reply(mark, 201);
   }
 
   const query = Object.fromEntries(url.searchParams.entries());
@@ -1837,48 +1806,21 @@ globalThis.fetch = async function mockFetch(input, init) {
     const result = handler(m, query);
     const status = result && result.status ? result.status : 200;
     const body = result && result.status ? result.body : result;
-    if (query.format === 'text' && status === 200) {
-      return new Response(textStandIn(url.pathname, body), {
-        status, headers: { 'content-type': 'text/markdown; charset=utf-8' },
-      });
-    }
-    return new Response(JSON.stringify(body), {
-      status,
-      headers: { 'content-type': 'application/json; charset=utf-8' },
-    });
+    if (query.format === 'text' && status === 200) return replyText(textStandIn(url.pathname, body), status);
+    return reply(body, status);
   }
-  return new Response(JSON.stringify({ error: 'not found: ' + url.pathname }), {
-    status: 404, headers: { 'content-type': 'application/json; charset=utf-8' },
-  });
-};
+  return reply({ error: 'not found: ' + url.pathname }, 404);
+});
 
-class MockEventSource {
+/** The live stream: open, with the counters at once, and every emit() after. */
+class MockEventSource extends EventSourceStub {
   constructor(url) {
-    this.url = url;
-    this.readyState = 1;
-    this._handlers = new Map();
+    super(url, EventSourceStub.OPEN);
     listeners.add(this);
     setTimeout(() => emit('stats', { at: Date.now(), spans: spanTotal, traces: traces.length, logs: logs.length, perSecond: { spans: 11.2, logs: 2.4 } }), 300);
   }
-  addEventListener(type, fn) {
-    if (!this._handlers.has(type)) this._handlers.set(type, new Set());
-    this._handlers.get(type).add(fn);
-  }
-  removeEventListener(type, fn) {
-    const set = this._handlers.get(type);
-    if (set) set.delete(fn);
-  }
-  _dispatch(type, data) {
-    const set = this._handlers.get(type);
-    if (!set) return;
-    const ev = { type, data: JSON.stringify(data) };
-    for (const fn of set) { try { fn(ev); } catch (e) { console.error(e); } }
-  }
-  close() { this.readyState = 2; listeners.delete(this); }
+  close() { super.close(); listeners.delete(this); }
 }
-MockEventSource.CONNECTING = 0;
-MockEventSource.OPEN = 1;
-MockEventSource.CLOSED = 2;
 globalThis.EventSource = MockEventSource;
 
 console.info('[spider-sense] mock data: %d traces, %d logs, %d services', traces.length, logs.length, SERVICES.length);
