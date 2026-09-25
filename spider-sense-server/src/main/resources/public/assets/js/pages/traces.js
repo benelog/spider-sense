@@ -43,7 +43,7 @@ export function traceTable(rows, opts = {}) {
   const rowOpts = {
     rowKey: (r) => r.traceId,
     rowClass: (r) => (r.error ? 'is-error' : r.slow ? 'is-slow' : ''),
-    onRowClick: opts.onRowClick || ((r) => router.go('/traces/' + r.traceId, api.sharedQuery())),
+    onRowClick: opts.onRowClick || ((r) => router.openDetail('traces', r.traceId)),
     empty: opts.empty || 'No trace matches this window and filter.',
   };
   const node = table(columns, { rows, ...rowOpts });

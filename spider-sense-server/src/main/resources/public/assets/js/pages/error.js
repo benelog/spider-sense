@@ -7,6 +7,7 @@ import { pageLoader, skeleton } from '../page.js';
 import { timeSeries, legend } from '../charts.js';
 import { codeFrame, foldedStack, framesMode, framesToggle } from '../frames.js';
 import { copyButtons, cliLine } from '../copyas.js';
+import { countColumn } from '../columns.js';
 import { traceTable } from './traces.js';
 import { count, rel, bothTimes, full, splitType } from '../format.js';
 
@@ -59,8 +60,8 @@ export function render(root, ctx) {
   // The two tables are built once, and a Live refresh gives them new rows, so a focused row
   // and a scrolled table survive it (ui.adoc#live-refresh).
   const endpointsTable = table([
-    { key: 'name', label: 'Endpoint', sortable: false, cls: 'wide', render: (x) => h('span.cell-ellipsis', { title: x.name }, x.name) },
-    { key: 'count', label: 'Count', align: 'right', sortable: false, width: '72px', render: (x) => count(x.count) },
+    { key: 'name', label: 'Endpoint', cls: 'wide', render: (x) => h('span.cell-ellipsis', { title: x.name }, x.name) },
+    countColumn('count', 'Count'),
   ], {
     rowKey: (x) => x.name,
     empty: 'No endpoint recorded.',
@@ -88,7 +89,7 @@ export function render(root, ctx) {
       e.sample ? h('div.row', { style: { gap: '12px' } },
         h('span.muted', { style: { fontSize: '11px' } }, 'sample'),
         idButton(e.sample.traceId, 'Copy trace id'),
-        h('a.link-btn', { href: router.href('/traces/' + e.sample.traceId, api.sharedQuery()) }, 'Open trace'),
+        h('a.link-btn', { href: router.detailHref('traces', e.sample.traceId) }, 'Open trace'),
         h('span.muted', { style: { fontSize: '11px' }, title: bothTimes(e.sample.at) }, full(e.sample.at))) : null,
       copyButtons({
         markdown: () => ({ path: '/api/errors/' + encodeURIComponent(id), query: api.params({}, { window: loaded.window, service: null }) }),

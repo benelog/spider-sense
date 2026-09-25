@@ -2,10 +2,10 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, icon, panel, table, chip, serviceChip, debounce, spinner } from '../ui.js';
+import { h, fill, icon, panel, table, chip, debounce, spinner } from '../ui.js';
 import { pageLoader } from '../page.js';
-import { oneLineSql } from '../sql.js';
-import { dur, count, rel, bothTimes } from '../format.js';
+import { statementColumn, serviceColumn, seenColumn, durationColumn, countColumn } from '../columns.js';
+import { count } from '../format.js';
 
 const SORTS = [
   { id: 'total', label: 'Total time' },
@@ -56,24 +56,24 @@ export function render(root, ctx) {
     body));
 
   const columns = [
-    { key: 'statement', label: 'Statement', sortable: false, cls: 'wide', render: (q) => h('span.cell-ellipsis.mono', { title: q.statement }, oneLineSql(q.statement, 220)) },
+    statementColumn(220),
     { key: 'system', label: 'System', sortable: false, width: '68px', render: (q) => (q.system ? chip(q.system) : h('span.muted', '-')) },
     { key: 'operation', label: 'Op', sortable: false, width: '68px', render: (q) => h('span.mono', q.operation || '-') },
     { key: 'table', label: 'Table', sortable: false, width: '110px', render: (q) => h('span.cell-ellipsis.mono.muted', { title: q.table || '' }, q.table || '-') },
     { key: 'unindexed', label: 'Unindexed', sortable: false, width: '140px', render: (q) => unindexedCell(q.schema) },
-    { key: 'service', label: 'Service', sortable: false, width: '150px', render: (q) => serviceChip(q.service) },
-    { key: 'calls', label: 'Calls', align: 'right', sortable: false, width: '70px', render: (q) => count(q.calls) },
-    { key: 'avgMs', label: 'avg', align: 'right', sortable: false, width: '74px', render: (q) => dur(q.avgMs) },
-    { key: 'p95Ms', label: 'p95', align: 'right', sortable: false, width: '74px', render: (q) => dur(q.p95Ms) },
-    { key: 'maxMs', label: 'max', align: 'right', sortable: false, width: '74px', render: (q) => dur(q.maxMs) },
-    { key: 'totalMs', label: 'Total', align: 'right', sortable: false, width: '84px', render: (q) => dur(q.totalMs) },
+    serviceColumn(),
+    countColumn('calls', 'Calls', '70px'),
+    durationColumn('avgMs', 'avg'),
+    durationColumn('p95Ms', 'p95'),
+    durationColumn('maxMs', 'max'),
+    durationColumn('totalMs', 'Total', '84px'),
     { key: 'slowCalls', label: 'Slow', align: 'right', sortable: false, width: '62px', render: (q) => (q.slowCalls ? h('span.accent', count(q.slowCalls)) : h('span.muted', '0')) },
-    { key: 'lastSeen', label: 'Last seen', align: 'right', sortable: false, width: '88px', render: (q) => h('span', { title: bothTimes(q.lastSeen) }, rel(q.lastSeen)) },
+    seenColumn('lastSeen', 'Last seen', '88px'),
   ];
 
   const opts = {
     rowKey: (q) => q.queryId,
-    onRowClick: (q) => router.go('/queries/' + encodeURIComponent(q.queryId), api.sharedQuery()),
+    onRowClick: (q) => router.openDetail('queries', q.queryId),
     empty: 'No database call in this window.',
   };
 

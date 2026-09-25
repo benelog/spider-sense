@@ -1,5 +1,7 @@
 // Hash router: #/traces/<id>?service=x&range=1h
 
+import { sharedQuery } from './api.js';
+
 const routes = [];
 let onChange = null;
 let current = { path: '/', params: {}, query: {} };
@@ -65,6 +67,24 @@ export function href(path, query = {}) {
   }
   const qs = usp.toString();
   return '#' + path + (qs ? '?' + qs : '');
+}
+
+/**
+ * The page of one thing: `/traces/<id>`, `/errors/<id>` and so on, the id always encoded, since an
+ * endpoint or a service name can hold a slash or a percent sign (ui.adoc#urls).
+ */
+export function detailPath(kind, id) {
+  return '/' + kind + '/' + encodeURIComponent(id);
+}
+
+/** A link to that page, carrying the top bar's query. */
+export function detailHref(kind, id) {
+  return href(detailPath(kind, id), sharedQuery());
+}
+
+/** Go to that page, carrying the top bar's query. */
+export function openDetail(kind, id) {
+  go(detailPath(kind, id), sharedQuery());
 }
 
 /** Navigate, keeping the shared top-bar query unless overridden. */

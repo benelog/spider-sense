@@ -86,9 +86,9 @@ export function kindChip(kind) {
 export function findingTarget(finding) {
   const subject = finding.subject || {};
   const shared = api.sharedQuery();
-  if (subject.endpointId) return { path: '/endpoints/' + encodeURIComponent(subject.endpointId), query: shared };
-  if (subject.queryId) return { path: '/queries/' + encodeURIComponent(subject.queryId), query: shared };
-  if (subject.errorId) return { path: '/errors/' + encodeURIComponent(subject.errorId), query: shared };
+  if (subject.endpointId) return { path: router.detailPath('endpoints', subject.endpointId), query: shared };
+  if (subject.queryId) return { path: router.detailPath('queries', subject.queryId), query: shared };
+  if (subject.errorId) return { path: router.detailPath('errors', subject.errorId), query: shared };
   if (subject.pool || subject.jvm) return { path: '/jvm', query: { ...shared, service: finding.service || shared.service } };
   if (subject.logger) {
     return {
@@ -97,7 +97,7 @@ export function findingTarget(finding) {
     };
   }
   const trace = (finding.traces || [])[0];
-  if (trace) return { path: '/traces/' + encodeURIComponent(trace), query: shared };
+  if (trace) return { path: router.detailPath('traces', trace), query: shared };
   return null;
 }
 
@@ -408,7 +408,7 @@ export function evidence(finding, onChange, listWindow) {
       traces.length
         ? h('span.row', { style: { gap: '6px' } }, h('span.muted', 'Traces'),
           traces.map((id) => h('a.mono', {
-            href: router.href('/traces/' + id, api.sharedQuery()),
+            href: router.detailHref('traces', id),
             title: id,
           }, shortId(id, 12))))
         : null,

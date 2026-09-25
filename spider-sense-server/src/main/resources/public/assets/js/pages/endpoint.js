@@ -5,10 +5,10 @@ import * as router from '../router.js';
 import { h, fill, panel, table, chip, methodChip, statusBar, tabs, spinner, serviceChip, breakdownBar, breakdownLead } from '../ui.js';
 import { pageLoader, skeleton } from '../page.js';
 import { redCharts } from './service.js';
-import { histogramBars, apdexClass, fmtApdex } from '../buckets.js';
+import { histogramBars, apdexCell } from '../buckets.js';
 import { traceTable } from './traces.js';
-import { oneLineSql } from '../sql.js';
-import { dur, count, rate, rel, bothTimes, truncate } from '../format.js';
+import { statementColumn, errorTypeColumn, messageColumn, seenColumn, durationColumn, countColumn } from '../columns.js';
+import { dur, count, rate } from '../format.js';
 
 export function render(root, ctx) {
   const id = ctx.params.id;
@@ -36,7 +36,7 @@ export function render(root, ctx) {
       h('div.row', { style: { marginLeft: 'auto', gap: '18px' } },
         item('calls', count(e.calls)),
         item('rps', rate(e.rps || 0)),
-        item('apdex', h('span', { class: apdexClass(e.apdex) === 'is-bad' ? 'bad' : apdexClass(e.apdex) === 'is-warn' ? 'warned' : '' }, fmtApdex(e.apdex))),
+        item('apdex', apdexCell(e.apdex)),
         item('p95', dur(e.p95Ms)),
         item('max', dur(e.maxMs)),
         item('errors', e.errors ? h('span.bad', count(e.errors)) : '0'),
@@ -68,27 +68,27 @@ export function render(root, ctx) {
       tables[tab] = traceTable(rows, { empty: 'No trace in this window.' });
     } else if (tab === 'queries') {
       tables[tab] = table([
-        { key: 'statement', label: 'Statement', sortable: false, cls: 'wide', render: (q) => h('span.cell-ellipsis.mono', { title: q.statement }, oneLineSql(q.statement, 160)) },
-        { key: 'system', label: 'System', sortable: false, width: '70px', render: (q) => (q.system ? chip(q.system) : h('span.muted', '-')) },
-        { key: 'calls', label: 'Calls', align: 'right', sortable: false, width: '66px', render: (q) => count(q.calls) },
-        { key: 'avgMs', label: 'avg', align: 'right', sortable: false, width: '74px', render: (q) => dur(q.avgMs) },
-        { key: 'p95Ms', label: 'p95', align: 'right', sortable: false, width: '74px', render: (q) => dur(q.p95Ms) },
-        { key: 'totalMs', label: 'Total', align: 'right', sortable: false, width: '82px', render: (q) => dur(q.totalMs) },
+        statementColumn(160),
+        { key: 'system', label: 'System', width: '70px', render: (q) => (q.system ? chip(q.system) : h('span.muted', '-')) },
+        countColumn('calls', 'Calls', '66px'),
+        durationColumn('avgMs', 'avg'),
+        durationColumn('p95Ms', 'p95'),
+        durationColumn('totalMs', 'Total', '82px'),
       ], {
         rowKey: (q) => q.queryId,
-        onRowClick: (q) => router.go('/queries/' + encodeURIComponent(q.queryId), api.sharedQuery()),
+        onRowClick: (q) => router.openDetail('queries', q.queryId),
         empty: 'This endpoint made no database call in this window.',
         rows,
       });
     } else {
       tables[tab] = table([
-        { key: 'type', label: 'Type', sortable: false, cls: 'wide', render: (e) => h('span.cell-ellipsis.mono', { title: e.type }, e.type) },
-        { key: 'message', label: 'Message', sortable: false, cls: 'wide', render: (e) => h('span.cell-ellipsis', { title: e.message }, truncate(e.message, 100)) },
-        { key: 'count', label: 'Count', align: 'right', sortable: false, width: '66px', render: (e) => h('span.bad', count(e.count)) },
-        { key: 'lastSeen', label: 'Last seen', align: 'right', sortable: false, width: '90px', render: (e) => h('span', { title: bothTimes(e.lastSeen) }, rel(e.lastSeen)) },
+        errorTypeColumn(),
+        messageColumn(100),
+        { key: 'count', label: 'Count', align: 'right', width: '66px', render: (e) => h('span.bad', count(e.count)) },
+        seenColumn('lastSeen', 'Last seen', '90px'),
       ], {
         rowKey: (e) => e.errorId,
-        onRowClick: (e) => router.go('/errors/' + encodeURIComponent(e.errorId), api.sharedQuery()),
+        onRowClick: (e) => router.openDetail('errors', e.errorId),
         empty: 'No error in this window.',
         rows,
       });

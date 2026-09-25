@@ -69,7 +69,7 @@ export function render(root, ctx) {
     {
       key: 'traceId', label: 'Trace', sortable: false, width: '88px',
       render: (l) => (l.traceId
-        ? h('a.mono', { href: router.href('/traces/' + l.traceId, api.sharedQuery()), title: l.traceId, onclick: (e) => e.stopPropagation() }, shortId(l.traceId))
+        ? h('a.mono', { href: router.detailHref('traces', l.traceId), title: l.traceId, onclick: (e) => e.stopPropagation() }, shortId(l.traceId))
         : h('span.muted', '-')),
     },
   ];

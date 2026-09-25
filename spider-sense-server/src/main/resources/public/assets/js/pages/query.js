@@ -1,7 +1,6 @@
 // One query group: the statement, stats, a calls/p95 chart, callers and slowest traces.
 
 import * as api from '../api.js';
-import * as router from '../router.js';
 import { h, fill, panel, stat, table, chip, serviceChip, copyBlock } from '../ui.js';
 import { pageLoader, skeleton } from '../page.js';
 import { timeSeries, legend } from '../charts.js';
@@ -9,6 +8,7 @@ import { formatSql } from '../sql.js';
 import { traceTable } from './traces.js';
 import { schemaLines } from './findings.js';
 import { copyButtons, cliLine } from '../copyas.js';
+import { serviceColumn, countColumn } from '../columns.js';
 import { dur, count, rel, bothTimes } from '../format.js';
 
 export function render(root, ctx) {
@@ -25,9 +25,9 @@ export function render(root, ctx) {
   // The two tables are built once, and a Live refresh gives them new rows, so a focused row
   // and a scrolled table survive it (ui.adoc#live-refresh).
   const callersTable = table([
-    { key: 'endpoint', label: 'Endpoint', sortable: false, cls: 'wide', render: (c) => h('span.cell-ellipsis', { title: c.endpoint }, c.endpoint) },
-    { key: 'service', label: 'Service', sortable: false, width: '150px', render: (c) => serviceChip(c.service) },
-    { key: 'calls', label: 'Calls', align: 'right', sortable: false, width: '72px', render: (c) => count(c.calls) },
+    { key: 'endpoint', label: 'Endpoint', cls: 'wide', render: (c) => h('span.cell-ellipsis', { title: c.endpoint }, c.endpoint) },
+    serviceColumn(),
+    countColumn('calls', 'Calls'),
   ], {
     rowKey: (c) => c.service + '|' + c.endpoint,
     empty: 'No caller recorded.',

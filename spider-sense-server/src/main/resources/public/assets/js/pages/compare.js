@@ -7,7 +7,8 @@ import { h, fill, panel, table, chip, serviceChip, markDialog, copyBlock, spinne
 import { pageLoader } from '../page.js';
 import { oneLineSql } from '../sql.js';
 import { fmtApdex } from '../buckets.js';
-import { count, dur, rate, time, truncate, splitType } from '../format.js';
+import { errorTypeColumn, messageColumn, serviceColumn } from '../columns.js';
+import { count, dur, rate, time } from '../format.js';
 
 const VERDICTS = ['worse', 'new', 'same', 'better', 'gone'];
 
@@ -18,7 +19,7 @@ export function verdictChip(verdict) {
 }
 
 /** `before → after`, with `—` for the side that has no data. */
-function cell(before, after, format) {
+function beforeAfterCell(before, after, format) {
   const fmt = (v) => (v === null || v === undefined ? '—' : format(v));
   return h('span.ba',
     h('span.ba-before', fmt(before)),
@@ -26,13 +27,10 @@ function cell(before, after, format) {
     h('span.ba-after', fmt(after)));
 }
 
-function side(row, key) {
-  const s = row && row[key];
-  return s === null || s === undefined ? null : s;
-}
-
-function value(s, key) {
-  return s ? s[key] : null;
+/** One measure of a row's two sides, `before → after`. */
+function sidesColumn(key, label, format) {
+  const sideValue = (side) => (side ? side[key] : null);
+  return { key, label, align: 'right', render: (r) => beforeAfterCell(sideValue(r.before), sideValue(r.after), format) };
 }
 
 /** More than a fifth bigger and bigger by at least 10 ms: Compare.java's bounds for a p95. */
@@ -158,46 +156,40 @@ export function render(root, ctx) {
   // --- the tables ---------------------------------------------------------
 
   const endpointColumns = [
-    { key: 'verdict', label: '', sortable: false, width: '78px', render: (r) => verdictChip(r.verdict) },
+    { key: 'verdict', label: '', width: '78px', render: (r) => verdictChip(r.verdict) },
     {
-      key: 'name', label: 'Endpoint', sortable: false, cls: 'wide',
+      key: 'name', label: 'Endpoint', cls: 'wide',
       render: (r) => h('span.row', { style: { gap: '8px' } },
         h('span.cell-ellipsis', { title: r.name }, r.name), serviceChip(r.service)),
     },
-    { key: 'calls', label: 'Calls', align: 'right', sortable: false, render: (r) => cell(value(side(r, 'before'), 'calls'), value(side(r, 'after'), 'calls'), count) },
-    { key: 'errors', label: 'Errors', align: 'right', sortable: false, render: (r) => cell(value(side(r, 'before'), 'errors'), value(side(r, 'after'), 'errors'), count) },
-    { key: 'p50Ms', label: 'p50', align: 'right', sortable: false, render: (r) => cell(value(side(r, 'before'), 'p50Ms'), value(side(r, 'after'), 'p50Ms'), dur) },
-    { key: 'p95Ms', label: 'p95', align: 'right', sortable: false, render: (r) => cell(value(side(r, 'before'), 'p95Ms'), value(side(r, 'after'), 'p95Ms'), dur) },
-    { key: 'maxMs', label: 'max', align: 'right', sortable: false, render: (r) => cell(value(side(r, 'before'), 'maxMs'), value(side(r, 'after'), 'maxMs'), dur) },
-    { key: 'dbCallsPerRequest', label: 'db calls / req', align: 'right', sortable: false, render: (r) => cell(value(side(r, 'before'), 'dbCallsPerRequest'), value(side(r, 'after'), 'dbCallsPerRequest'), rate) },
-    { key: 'dbMsPerRequest', label: 'db ms / req', align: 'right', sortable: false, render: (r) => cell(value(side(r, 'before'), 'dbMsPerRequest'), value(side(r, 'after'), 'dbMsPerRequest'), dur) },
+    sidesColumn('calls', 'Calls', count),
+    sidesColumn('errors', 'Errors', count),
+    sidesColumn('p50Ms', 'p50', dur),
+    sidesColumn('p95Ms', 'p95', dur),
+    sidesColumn('maxMs', 'max', dur),
+    sidesColumn('dbCallsPerRequest', 'db calls / req', rate),
+    sidesColumn('dbMsPerRequest', 'db ms / req', dur),
   ];
 
   const queryColumns = [
-    { key: 'verdict', label: '', sortable: false, width: '78px', render: (r) => verdictChip(r.verdict) },
+    { key: 'verdict', label: '', width: '78px', render: (r) => verdictChip(r.verdict) },
     {
-      key: 'statement', label: 'Statement', sortable: false, cls: 'wide',
+      key: 'statement', label: 'Statement', cls: 'wide',
       render: (r) => h('span.row', { style: { gap: '8px' } },
         h('span.cell-ellipsis.mono', { title: r.statement }, oneLineSql(r.statement || '')), serviceChip(r.service)),
     },
-    { key: 'calls', label: 'Calls', align: 'right', sortable: false, render: (r) => cell(value(side(r, 'before'), 'calls'), value(side(r, 'after'), 'calls'), count) },
-    { key: 'callsPerRequest', label: 'Calls / req', align: 'right', sortable: false, render: (r) => cell(value(side(r, 'before'), 'callsPerRequest'), value(side(r, 'after'), 'callsPerRequest'), rate) },
-    { key: 'p95Ms', label: 'p95', align: 'right', sortable: false, render: (r) => cell(value(side(r, 'before'), 'p95Ms'), value(side(r, 'after'), 'p95Ms'), dur) },
-    { key: 'totalMs', label: 'Total', align: 'right', sortable: false, render: (r) => cell(value(side(r, 'before'), 'totalMs'), value(side(r, 'after'), 'totalMs'), dur) },
+    sidesColumn('calls', 'Calls', count),
+    sidesColumn('callsPerRequest', 'Calls / req', rate),
+    sidesColumn('p95Ms', 'p95', dur),
+    sidesColumn('totalMs', 'Total', dur),
   ];
 
   const errorColumns = [
-    { key: 'verdict', label: '', sortable: false, width: '78px', render: (r) => verdictChip(r.verdict) },
-    {
-      key: 'type', label: 'Type', sortable: false, width: '260px',
-      render: (r) => {
-        const { pkg, name } = splitType(r.type);
-        return h('span.mono.cell-ellipsis', { title: r.type }, h('span.muted', pkg), name);
-      },
-    },
-    { key: 'message', label: 'Message', sortable: false, cls: 'wide', render: (r) => h('span.cell-ellipsis', { title: r.message }, truncate(r.message || '', 160)) },
-    { key: 'service', label: 'Service', sortable: false, width: '150px', render: (r) => serviceChip(r.service) },
-    { key: 'count', label: 'Count', align: 'right', sortable: false, width: '120px', render: (r) => cell(r.before, r.after, count) },
+    { key: 'verdict', label: '', width: '78px', render: (r) => verdictChip(r.verdict) },
+    errorTypeColumn({ width: '260px' }),
+    messageColumn(160),
+    serviceColumn(),
+    { key: 'count', label: 'Count', align: 'right', width: '120px', render: (r) => beforeAfterCell(r.before, r.after, count) },
   ];
 
   const nodes = {};
@@ -225,17 +217,17 @@ export function render(root, ctx) {
 
     const endpoints = paintTable('endpoints', 'Endpoints', endpointColumns, (data && data.endpoints) || [], {
       rowKey: (r) => r.endpointId,
-      onRowClick: (r) => router.go('/endpoints/' + encodeURIComponent(r.endpointId), api.sharedQuery()),
+      onRowClick: (r) => router.openDetail('endpoints', r.endpointId),
       empty: 'No endpoint in either window.',
     });
     const queries = paintTable('queries', 'Queries', queryColumns, (data && data.queries) || [], {
       rowKey: (r) => r.queryId,
-      onRowClick: (r) => router.go('/queries/' + encodeURIComponent(r.queryId), api.sharedQuery()),
+      onRowClick: (r) => router.openDetail('queries', r.queryId),
       empty: 'No query in either window.',
     });
     const errors = paintTable('errors', 'Errors', errorColumns, (data && data.errors) || [], {
       rowKey: (r) => r.errorId,
-      onRowClick: (r) => router.go('/errors/' + encodeURIComponent(r.errorId), api.sharedQuery()),
+      onRowClick: (r) => router.openDetail('errors', r.errorId),
       empty: 'No error in either window.',
     });
     if (!built) {

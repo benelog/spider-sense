@@ -2,10 +2,11 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, panel, table, chip, serviceChip, spinner } from '../ui.js';
+import { h, fill, panel, table, chip, spinner } from '../ui.js';
 import { pageLoader } from '../page.js';
+import { errorTypeColumn, messageColumn, serviceColumn, seenColumn } from '../columns.js';
 import { sparkline, themeColors } from '../charts.js';
-import { count, rel, bothTimes, truncate, splitType } from '../format.js';
+import { count } from '../format.js';
 
 export function render(root, ctx) {
   let node = null;
@@ -16,15 +17,9 @@ export function render(root, ctx) {
   root.appendChild(panel({ title: 'Errors' }, body));
 
   const columns = [
-    {
-      key: 'type', label: 'Type', sortable: false, width: '260px',
-      render: (e) => {
-        const { pkg, name } = splitType(e.type);
-        return h('span.mono.cell-ellipsis', { title: e.type }, h('span.muted', pkg), name);
-      },
-    },
-    { key: 'message', label: 'Message', sortable: false, cls: 'wide', render: (e) => h('span.cell-ellipsis', { title: e.message }, truncate(e.message, 160)) },
-    { key: 'service', label: 'Service', sortable: false, width: '150px', render: (e) => serviceChip(e.service) },
+    errorTypeColumn({ width: '260px' }),
+    messageColumn(160),
+    serviceColumn(),
     { key: 'count', label: 'Count', align: 'right', sortable: false, width: '68px', render: (e) => h('span.bad', count(e.count)) },
     {
       key: 'endpoints', label: 'Endpoints', sortable: false, width: '220px',
@@ -39,13 +34,13 @@ export function render(root, ctx) {
       key: 'series', label: 'Occurrences', sortable: false, width: '130px',
       render: (e) => sparkline(e.series || [], { color: errColor, label: (e.type || 'error') + ' occurrences over the window' }),
     },
-    { key: 'firstSeen', label: 'First seen', align: 'right', sortable: false, width: '92px', render: (e) => h('span', { title: bothTimes(e.firstSeen) }, rel(e.firstSeen)) },
-    { key: 'lastSeen', label: 'Last seen', align: 'right', sortable: false, width: '92px', render: (e) => h('span', { title: bothTimes(e.lastSeen) }, rel(e.lastSeen)) },
+    seenColumn('firstSeen', 'First seen'),
+    seenColumn(),
   ];
 
   const opts = {
     rowKey: (e) => e.errorId,
-    onRowClick: (e) => router.go('/errors/' + encodeURIComponent(e.errorId), api.sharedQuery()),
+    onRowClick: (e) => router.openDetail('errors', e.errorId),
     empty: 'No error in this window.',
   };
 

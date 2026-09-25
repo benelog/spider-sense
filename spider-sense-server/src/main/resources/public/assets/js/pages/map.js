@@ -488,7 +488,7 @@ export function render(root, ctx) {
       h('div', h('div.sub-head', { style: { marginBottom: '6px' } }, 'Response summary'), histogramBars(n.histogram)),
       h('div', h('div.sub-head', { style: { marginBottom: '6px' } }, 'Load'), chartBody),
       h('div.row', { style: { gap: '8px' } },
-        h('a.btn', { href: router.href('/services/' + encodeURIComponent(n.name), q) }, 'Service'),
+        h('a.btn', { href: router.href(router.detailPath('services', n.name), q) }, 'Service'),
         h('a.btn', { href: router.href('/scatter', q) }, 'Scatter'),
         h('a.btn', { href: router.href('/traces', q) }, 'Traces')),
     ];

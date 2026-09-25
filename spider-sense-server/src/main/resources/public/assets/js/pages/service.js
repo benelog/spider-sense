@@ -9,11 +9,11 @@ import {
 } from '../ui.js';
 import { pageLoader, skeleton } from '../page.js';
 import { timeSeries, legend } from '../charts.js';
-import { histogramBars, apdexClass, fmtApdex } from '../buckets.js';
+import { histogramBars, apdexCell } from '../buckets.js';
 import { chartMode, loadToggle, throughputSpec, throughputLegend } from '../loadchart.js';
 import { statTiles } from './overview.js';
-import { oneLineSql } from '../sql.js';
-import { dur, count, rate, pct, rel, bothTimes, truncate } from '../format.js';
+import { statementColumn, errorTypeColumn, messageColumn, seenColumn, durationColumn, countColumn } from '../columns.js';
+import { count, rate, rel, bothTimes } from '../format.js';
 
 /**
  * The three RED charts, shared with the Endpoint page. The first carries the
@@ -96,24 +96,21 @@ export function endpointTable(rows, sortState, onSort) {
   const columns = [
     { key: 'method', label: 'Method', width: '68px', render: (e) => methodChip(e.method) || h('span.muted', '-') },
     { key: 'route', label: 'Endpoint', cls: 'wide', render: (e) => h('span.cell-ellipsis', { title: e.name }, e.route || e.name) },
-    { key: 'calls', label: 'Calls', align: 'right', width: '72px', render: (e) => count(e.calls) },
+    countColumn('calls', 'Calls'),
     { key: 'rps', label: 'rps', align: 'right', width: '62px', render: (e) => rate(e.rps || 0) },
-    {
-      key: 'apdex', label: 'Apdex', align: 'right', width: '66px',
-      render: (e) => h('span', { class: apdexClass(e.apdex) === 'is-bad' ? 'bad' : apdexClass(e.apdex) === 'is-warn' ? 'warned' : '' }, fmtApdex(e.apdex)),
-    },
-    { key: 'avgMs', label: 'avg', align: 'right', width: '74px', render: (e) => dur(e.avgMs) },
-    { key: 'p50Ms', label: 'p50', align: 'right', width: '74px', render: (e) => dur(e.p50Ms) },
-    { key: 'p95Ms', label: 'p95', align: 'right', width: '74px', render: (e) => dur(e.p95Ms) },
-    { key: 'p99Ms', label: 'p99', align: 'right', width: '74px', render: (e) => dur(e.p99Ms) },
-    { key: 'maxMs', label: 'max', align: 'right', width: '74px', render: (e) => dur(e.maxMs) },
+    { key: 'apdex', label: 'Apdex', align: 'right', width: '66px', render: (e) => apdexCell(e.apdex) },
+    durationColumn('avgMs', 'avg'),
+    durationColumn('p50Ms', 'p50'),
+    durationColumn('p95Ms', 'p95'),
+    durationColumn('p99Ms', 'p99'),
+    durationColumn('maxMs', 'max'),
     { key: 'errors', label: 'Errors', align: 'right', width: '66px', render: (e) => (e.errors ? h('span.bad', count(e.errors)) : h('span.muted', '0')) },
     { key: 'statusCodes', label: 'Status', sortable: false, width: '80px', render: (e) => statusBar(e.statusCodes) },
-    { key: 'totalMs', label: 'Total time', align: 'right', width: '92px', render: (e) => dur(e.totalMs) },
+    durationColumn('totalMs', 'Total time', '92px'),
   ];
   const opts = {
     rowKey: (e) => e.endpointId,
-    onRowClick: (e) => router.go('/endpoints/' + encodeURIComponent(e.endpointId), api.sharedQuery()),
+    onRowClick: (e) => router.openDetail('endpoints', e.endpointId),
     empty: 'No endpoint in this window.',
   };
   const node = table(columns, { ...opts, rows, sort: sortState, onSort });
@@ -188,26 +185,26 @@ export function render(root, ctx) {
   // The three tables under the endpoints are built once, and a Live refresh gives them new
   // rows, so a focused row and a scrolled table survive it (ui.adoc#live-refresh).
   const queriesTable = table([
-    { key: 'statement', label: 'Statement', sortable: false, cls: 'wide', render: (q) => h('span.cell-ellipsis.mono', { title: q.statement }, oneLineSql(q.statement, 140)) },
-    { key: 'calls', label: 'Calls', align: 'right', sortable: false, width: '62px', render: (q) => count(q.calls) },
-    { key: 'avgMs', label: 'avg', align: 'right', sortable: false, width: '72px', render: (q) => dur(q.avgMs) },
-    { key: 'p95Ms', label: 'p95', align: 'right', sortable: false, width: '72px', render: (q) => dur(q.p95Ms) },
-    { key: 'totalMs', label: 'Total', align: 'right', sortable: false, width: '80px', render: (q) => dur(q.totalMs) },
+    statementColumn(140),
+    countColumn('calls', 'Calls', '62px'),
+    durationColumn('avgMs', 'avg', '72px'),
+    durationColumn('p95Ms', 'p95', '72px'),
+    durationColumn('totalMs', 'Total', '80px'),
   ], {
     rowKey: (q) => q.queryId,
-    onRowClick: (q) => router.go('/queries/' + encodeURIComponent(q.queryId), api.sharedQuery()),
+    onRowClick: (q) => router.openDetail('queries', q.queryId),
     empty: 'No database call in this window.',
   });
   fill(queriesBody, queriesTable);
 
   const errorsTable = table([
-    { key: 'type', label: 'Type', sortable: false, cls: 'wide', render: (e) => h('span.cell-ellipsis.mono', { title: e.type }, shortType(e.type)) },
-    { key: 'message', label: 'Message', sortable: false, cls: 'wide', render: (e) => h('span.cell-ellipsis', { title: e.message }, truncate(e.message, 90)) },
-    { key: 'count', label: 'Count', align: 'right', sortable: false, width: '62px', render: (e) => h('span.bad', count(e.count)) },
-    { key: 'lastSeen', label: 'Last seen', align: 'right', sortable: false, width: '86px', render: (e) => h('span', { title: bothTimes(e.lastSeen) }, rel(e.lastSeen)) },
+    errorTypeColumn({ short: true }),
+    messageColumn(90),
+    { key: 'count', label: 'Count', align: 'right', width: '62px', render: (e) => h('span.bad', count(e.count)) },
+    seenColumn('lastSeen', 'Last seen', '86px'),
   ], {
     rowKey: (e) => e.errorId,
-    onRowClick: (e) => router.go('/errors/' + encodeURIComponent(e.errorId), api.sharedQuery()),
+    onRowClick: (e) => router.openDetail('errors', e.errorId),
     empty: 'No error in this window.',
   });
   fill(errorsBody, errorsTable);
@@ -215,10 +212,10 @@ export function render(root, ctx) {
   const depsTable = table([
     { key: 'kind', label: 'Kind', sortable: false, width: '80px', render: (d) => h('span.row', { style: { gap: '6px' } }, icon(d.kind === 'db' ? 'database' : d.kind === 'http' ? 'trace' : 'service'), d.kind) },
     { key: 'target', label: 'Target', sortable: false, cls: 'wide', render: (d) => h('span.cell-ellipsis.mono', { title: d.target }, d.target) },
-    { key: 'calls', label: 'Calls', align: 'right', sortable: false, width: '72px', render: (d) => count(d.calls) },
-    { key: 'errors', label: 'Errors', align: 'right', sortable: false, width: '66px', render: (d) => (d.errors ? h('span.bad', count(d.errors)) : h('span.muted', '0')) },
-    { key: 'avgMs', label: 'avg', align: 'right', sortable: false, width: '74px', render: (d) => dur(d.avgMs) },
-    { key: 'p95Ms', label: 'p95', align: 'right', sortable: false, width: '74px', render: (d) => dur(d.p95Ms) },
+    countColumn('calls', 'Calls'),
+    { key: 'errors', label: 'Errors', align: 'right', width: '66px', render: (d) => (d.errors ? h('span.bad', count(d.errors)) : h('span.muted', '0')) },
+    durationColumn('avgMs', 'avg'),
+    durationColumn('p95Ms', 'p95'),
   ], {
     rowKey: (d) => d.kind + '|' + d.target,
     empty: 'This service called nothing else in this window.',
@@ -253,10 +250,4 @@ export function render(root, ctx) {
 
   loader.load();
   return { refresh: loader.load, destroy: () => { loader.destroy(); red.destroy(); } };
-}
-
-function shortType(type) {
-  if (!type) return '-';
-  const i = type.lastIndexOf('.');
-  return i < 0 ? type : type.slice(i + 1);
 }

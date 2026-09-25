@@ -47,6 +47,12 @@ export function apdexClass(value) {
   return '';
 }
 
+/** An Apdex in a cell or a card: two decimals, coloured as `apdexClass` grades it. */
+export function apdexCell(value, tag = 'span') {
+  const grade = apdexClass(value);
+  return h(tag, { class: grade === 'is-bad' ? 'bad' : grade === 'is-warn' ? 'warned' : null }, fmtApdex(value));
+}
+
 /** Two decimals, one less than the API carries; '-' when there was no request. */
 export function fmtApdex(value) {
   if (value == null || Number.isNaN(value)) return '-';

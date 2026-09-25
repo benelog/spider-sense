@@ -5,7 +5,7 @@ import * as router from '../router.js';
 import { h, fill, icon, panel, stat, chip, serviceChip, serviceColor, renderList, emptyState, snippetBlocks, seedServices } from '../ui.js';
 import { pageLoader, skeleton } from '../page.js';
 import { timeSeries, sparkline, legend } from '../charts.js';
-import { histogramBars, apdexClass, fmtApdex } from '../buckets.js';
+import { histogramBars, apdexClass, apdexCell, fmtApdex } from '../buckets.js';
 import { chartMode, loadToggle, throughputSpec, throughputLegend } from '../loadchart.js';
 import { severityDot, kindChip, goToFinding } from './findings.js';
 import { dur, count, rate, pct, rel, bothTimes } from '../format.js';
@@ -128,10 +128,10 @@ export function render(root, ctx) {
       style: { borderLeftColor: color },
       tabindex: 0,
       role: 'link',
-      onclick: () => router.go('/services/' + encodeURIComponent(s.name), api.sharedQuery()),
+      onclick: () => router.openDetail('services', s.name),
       // Only the card's own Enter: one on the JVM link inside it is the link's.
       onkeydown: (e) => {
-        if (e.key === 'Enter' && e.target === e.currentTarget) router.go('/services/' + encodeURIComponent(s.name), api.sharedQuery());
+        if (e.key === 'Enter' && e.target === e.currentTarget) router.openDetail('services', s.name);
       },
     },
       h('div.sc-head',
@@ -143,7 +143,7 @@ export function render(root, ctx) {
         h('div', h('b', rate(s.rps || 0)), 'rps'),
         h('div', h('b', dur(s.p95Ms)), 'p95'),
         h('div', h('b', { class: s.errorRate > 0.01 ? 'bad' : '' }, pct(s.errorRate || 0)), 'errors'),
-        h('div', h('b', { class: apdexClass(s.apdex) === 'is-bad' ? 'bad' : apdexClass(s.apdex) === 'is-warn' ? 'warned' : '' }, fmtApdex(s.apdex)), 'apdex')),
+        h('div', apdexCell(s.apdex, 'b'), 'apdex')),
       h('div.sc-foot',
         sparkline(s.sparkline || [], { color, label: s.name + ' requests per bucket' }),
         s.hasJvm ? h('a.link-btn', {
@@ -172,8 +172,8 @@ export function render(root, ctx) {
       tabindex: 0,
       role: 'link',
       title: KIND_LABEL[t.kind] || t.kind,
-      onclick: () => t.traceId && router.go('/traces/' + t.traceId, api.sharedQuery()),
-      onkeydown: (e) => { if (e.key === 'Enter' && t.traceId) router.go('/traces/' + t.traceId, api.sharedQuery()); },
+      onclick: () => t.traceId && router.openDetail('traces', t.traceId),
+      onkeydown: (e) => { if (e.key === 'Enter' && t.traceId) router.openDetail('traces', t.traceId); },
     },
       h('span.t-icon', icon(KIND_ICON[t.kind] || 'bolt')),
       h('div.t-title', serviceChip(t.service), h('span', t.title)),

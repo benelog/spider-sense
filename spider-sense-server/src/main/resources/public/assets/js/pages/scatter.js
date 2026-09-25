@@ -215,7 +215,7 @@ export function render(root, ctx) {
         paintSelection();
         loadTraces();
       },
-      onPick: (p) => router.go('/traces/' + p[4], api.sharedQuery()),
+      onPick: (p) => router.openDetail('traces', p[4]),
     });
   }
 
