@@ -2,6 +2,8 @@ package net.benelog.spidersense.ingest;
 
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.Map;
+import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -32,6 +34,15 @@ public final class OtlpJson {
     }
 
     /**
+     * The id members, in both spellings, and the length a hex value of each has: a trace id is 16
+     * bytes, a span id 8. The one table the tree walk and the text pass both read.
+     */
+    private static final Map<String, Integer> ID_HEX_LENGTH = Map.of(
+            "traceId", 32, "trace_id", 32,
+            "spanId", 16, "span_id", 16,
+            "parentSpanId", 16, "parent_span_id", 16);
+
+    /**
      * Merges an OTLP/JSON document into {@code builder}, accepting hex ids and
      * base64 ids alike.
      *
@@ -55,7 +66,8 @@ public final class OtlpJson {
      * every quote is escaped, so a key followed by an unescaped quote is a real member.
      */
     private static final Pattern ID_MEMBER = Pattern.compile(
-            "\"(traceId|trace_id|spanId|span_id|parentSpanId|parent_span_id)\"(\\s*:\\s*)\"([0-9A-Fa-f]{16,32})\"");
+            "\"(" + String.join("|", new TreeSet<>(ID_HEX_LENGTH.keySet()))
+                    + ")\"(\\s*:\\s*)\"([0-9A-Fa-f]{16,32})\"");
 
     /** {@link #hexIdsToBase64} over the text, for a document the tree cannot be built from. */
     static String hexIdsToBase64InText(String json) {
@@ -109,17 +121,12 @@ public final class OtlpJson {
     }
 
     private static boolean isIdField(String key) {
-        return isTraceId(key) || key.equals("spanId") || key.equals("span_id")
-                || key.equals("parentSpanId") || key.equals("parent_span_id");
-    }
-
-    private static boolean isTraceId(String key) {
-        return key.equals("traceId") || key.equals("trace_id");
+        return ID_HEX_LENGTH.containsKey(key);
     }
 
     private static String convertIfHex(String key, String value) {
-        int hexLength = isTraceId(key) ? 32 : 16;
-        if (value.length() != hexLength || !isHex(value)) {
+        Integer hexLength = ID_HEX_LENGTH.get(key);
+        if (hexLength == null || value.length() != hexLength || !isHex(value)) {
             return value;
         }
         return Base64.getEncoder().encodeToString(HexFormat.of().parseHex(value));
