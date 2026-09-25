@@ -159,6 +159,9 @@ Every row carries a verdict, decided in this order.
 * `better` when the same measure shrinks by that much, or when errors disappear.
 * `same` otherwise.
 
+Every reason for `worse` is asked before any reason for `better`.
+An endpoint whose errors disappeared while its p95 grew past both bounds is therefore `worse`: that is a failure swallowed behind a slow retry, not a fix.
+
 Endpoints are sorted worst first: `worse`, then `new`, `same`, `better`, `gone`, each group by total time descending, then by id.
 Queries and errors are sorted the same way.
 

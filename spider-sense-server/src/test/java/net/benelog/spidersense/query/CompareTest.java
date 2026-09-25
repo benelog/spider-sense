@@ -80,6 +80,20 @@ class CompareTest {
         assertThat(verdicts.get("GET /gone")).isEqualTo(Compare.GONE);
     }
 
+    /**
+     * Every reason for worse is asked before any reason for better: an endpoint that stopped
+     * failing behind a slow retry is worse, and one that stopped failing at the same speed is better.
+     */
+    @Test
+    void anEndpointThatStoppedFailingButGrewSlowerIsWorse() {
+        Compare.Side failing = new Compare.Side(3, 1, 100, 100, 100, 0, 0);
+
+        assertThat(Compare.verdict(failing, new Compare.Side(3, 0, 900, 900, 900, 0, 0)))
+                .isEqualTo(Compare.WORSE);
+        assertThat(Compare.verdict(failing, new Compare.Side(3, 0, 100, 105, 105, 0, 0)))
+                .isEqualTo(Compare.BETTER);
+    }
+
     @Test
     void theWorstIsFirstAndASideThatIsMissingIsNull() {
         send(entry("/slower", BEFORE + 1000, 100), entry("/gone", BEFORE + 1000, 100));

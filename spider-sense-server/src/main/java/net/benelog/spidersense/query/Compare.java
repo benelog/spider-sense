@@ -142,9 +142,9 @@ public final class Compare {
 
     /**
      * The order marks-and-compare.adoc#verdicts gives, and it is an order rather than a set
-     * of independent tests: an endpoint that grew slower but stopped failing is {@code worse} only
-     * if its errors did not disappear, and the errors are asked about first because
-     * a failing endpoint is worse than a slow one whatever the percentile says.
+     * of independent tests: every reason for {@code worse} is asked before any reason for
+     * {@code better}, so an endpoint that stopped failing but grew slower past the bound is
+     * {@code worse}. A change that swallows a failure behind a slow retry is what that catches.
      */
     static String verdict(@Nullable Side before, @Nullable Side after) {
         if (before == null) {
@@ -156,11 +156,11 @@ public final class Compare {
         if (after.errors() > before.errors()) {
             return WORSE;
         }
-        if (before.errors() > 0 && after.errors() == 0) {
-            return BETTER;
-        }
         if (grew(before.p95Ms(), after.p95Ms(), ABSOLUTE_MS)) {
             return WORSE;
+        }
+        if (before.errors() > 0 && after.errors() == 0) {
+            return BETTER;
         }
         if (grew(after.p95Ms(), before.p95Ms(), ABSOLUTE_MS)) {
             return BETTER;
