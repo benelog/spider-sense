@@ -287,7 +287,7 @@ The one exception is the recording, whose database is what it shows (<<recording
 [#size]
 === Size
 
-The whole UI is under 400 KB uncompressed, excluding uPlot.
+The whole UI is under 500 KB uncompressed, excluding uPlot.
 The mock under `dev/` counts toward that, since it is served too.
 
 [#mock]
