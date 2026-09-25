@@ -147,6 +147,11 @@ class Chart {
 
 export { Chart };
 
+/** A tooltip's left edge, centred on `anchor` and kept 4 px inside a box `width` wide. */
+export function tipLeft(anchor, tipWidth, width) {
+  return Math.min(Math.max(anchor - tipWidth / 2, 4), width - tipWidth - 4) + 'px';
+}
+
 function tooltipFor(container) {
   let tip = container.querySelector('.chart-tip');
   if (!tip) {
@@ -350,7 +355,7 @@ export function timeSeries(container, spec) {
             tip.innerHTML = `<div class="t">${fmt.clock(u.data[0][idx] * 1000)}</div>${rows.join('')}`;
             tip.classList.add('show');
             const w2 = tip.offsetWidth;
-            tip.style.left = Math.min(Math.max(left - w2 / 2, 4), u.width - w2 - 4) + 'px';
+            tip.style.left = tipLeft(left, w2, u.width);
             tip.style.top = Math.max(4, top - tip.offsetHeight - 12) + 'px';
           }],
           setSize: [(u) => { const tip = container.querySelector('.chart-tip'); if (tip) tip.classList.remove('show'); }],
@@ -523,6 +528,8 @@ export function scatterChart(container, opts) {
     // falls below it; a point of 0 ms, which a log axis has no room for, sits on its bottom edge.
     const fastest = ys.reduce((m, y) => Math.min(m, y), Infinity);
     const floor = view.logScale ? Math.max(0.01, Math.min(0.5, fastest * 0.8)) : 0;
+    /** A point's y position, a 0 ms point on the log axis' floor; `canvas` in canvas pixels. */
+    const yOf = (plot, p, canvas = false) => plot.valToPos(Math.max(p[POINT.MS], floor || 0.0001), 'y', canvas);
     // The linear axis stops at yMax so a few outliers do not flatten the rest; the log
     // scale has room for them, so it runs to the slowest point.
     const top = view.logScale ? Math.max(10, ...ys) * 1.05 : (view.yMax || Math.max(10, ...ys) * 1.05);
@@ -544,7 +551,7 @@ export function scatterChart(container, opts) {
       let max = 0;
       for (const p of visible) {
         const x = u.valToPos(p[POINT.START] / 1000, 'x');
-        const y = u.valToPos(Math.max(p[POINT.MS], floor || 0.0001), 'y');
+        const y = yOf(u, p);
         if (x < -0.5 || x > width + 0.5 || y < -0.5 || y > height + 0.5) continue;
         const c = Math.min(cols - 1, Math.max(0, Math.floor(x / cellW)));
         const r = Math.min(ROWS - 1, Math.max(0, Math.floor(y / cellH)));
@@ -599,7 +606,7 @@ export function scatterChart(container, opts) {
         let c = colorFor.get(p[POINT.SERVICE]);
         if (!c) { c = serviceColor(p[POINT.SERVICE]); colorFor.set(p[POINT.SERVICE], c); }
         const x = u.valToPos(p[POINT.START] / 1000, 'x', true);
-        const y = u.valToPos(Math.max(p[POINT.MS], floor || 0.0001), 'y', true);
+        const y = yOf(u, p, true);
         if (y < t - 4) continue;
         ctx.fillStyle = c;
         ctx.globalAlpha = 0.85;
@@ -621,7 +628,7 @@ export function scatterChart(container, opts) {
       for (const p of pts) {
         if (!isError(p)) continue;
         const x = u.valToPos(p[POINT.START] / 1000, 'x', true);
-        const y = u.valToPos(Math.max(p[POINT.MS], floor || 0.0001), 'y', true);
+        const y = yOf(u, p, true);
         if (y < t - 4) continue;
         const r = 3.6 * devicePixelRatio;
         ctx.beginPath();
@@ -680,7 +687,7 @@ export function scatterChart(container, opts) {
           for (const p of view.points) {
             if (view.hidden.has(p[POINT.SERVICE])) continue;
             const x = plot.valToPos(p[POINT.START] / 1000, 'x');
-            const y = plot.valToPos(Math.max(p[POINT.MS], floor || 0.0001), 'y');
+            const y = yOf(plot, p);
             const d = (x - px) * (x - px) + (y - py) * (y - py);
             if (d < bestD) { bestD = d; best = p; }
           }
@@ -704,7 +711,7 @@ export function scatterChart(container, opts) {
             (cell.errors ? `<span class="k">Errors</span><span class="v">${fmt.count(cell.errors)}</span>` : '');
           tip.classList.add('show');
           const tw = tip.offsetWidth;
-          tip.style.left = Math.min(Math.max((cell.c + 0.5) * bins.cellW - tw / 2, 4), rect.width - tw - 4) + 'px';
+          tip.style.left = tipLeft((cell.c + 0.5) * bins.cellW, tw, rect.width);
           tip.style.top = Math.max(4, cell.r * bins.cellH - tip.offsetHeight - 10) + 'px';
         };
 
@@ -719,9 +726,9 @@ export function scatterChart(container, opts) {
           tip.classList.add('show');
           const rect = over.getBoundingClientRect();
           const left = plot.valToPos(p[POINT.START] / 1000, 'x');
-          const topPos = plot.valToPos(Math.max(p[POINT.MS], floor || 0.0001), 'y');
+          const topPos = yOf(plot, p);
           const tw = tip.offsetWidth;
-          tip.style.left = Math.min(Math.max(left - tw / 2, 4), rect.width - tw - 4) + 'px';
+          tip.style.left = tipLeft(left, tw, rect.width);
           tip.style.top = Math.max(4, topPos - tip.offsetHeight - 14) + 'px';
         });
         over.addEventListener('mouseleave', () => tip.classList.remove('show'));

@@ -1,7 +1,7 @@
 // charts.js: the legend a chart's spec implies, and the series alignment of the JVM and Metrics pages.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { legendItems, alignedTimes, alignTo, stackColumns } from '../../main/resources/public/assets/js/charts.js';
+import { legendItems, alignedTimes, alignTo, stackColumns, tipLeft } from '../../main/resources/public/assets/js/charts.js';
 import { throughputSpec } from '../../main/resources/public/assets/js/throughput.js';
 
 test('the legend lists the series under their legend label, leaving out the hidden ones', () => {
@@ -57,4 +57,10 @@ test('bars take one slot per stack and one per unstacked bar series', () => {
   ]);
   assert.deepEqual([...slotOf], [[0, 0], [2, 1], [3, 0]]);
   assert.equal(bars, 2);
+});
+
+test('a tooltip is centred on its anchor and kept 4 px inside the chart', () => {
+  assert.equal(tipLeft(200, 100, 600), '150px');
+  assert.equal(tipLeft(10, 100, 600), '4px');
+  assert.equal(tipLeft(590, 100, 600), '496px');
 });
