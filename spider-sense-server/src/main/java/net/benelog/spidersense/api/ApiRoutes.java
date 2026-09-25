@@ -118,7 +118,8 @@ public final class ApiRoutes {
      * megabytes at most, the import is one transaction anyway, and half a document
      * would leave nothing to answer with. A document of another schema version is
      * a {@code 400} naming both, because there is no honest way to write rows of a
-     * shape this version does not have.
+     * shape this version does not have. A value the store refuses, one too long for
+     * its column, is a {@code 400} too: the file is at fault, not the server.
      */
     public WebResponse importDocument(WebRequest req) {
         Json.JsonObject document;
@@ -131,7 +132,7 @@ public final class ApiRoutes {
         }
         try {
             return Params.answer(req, reports.imported(reports.importDocument(document)));
-        } catch (Importer.WrongSchema e) {
+        } catch (Importer.WrongSchema | Importer.BadDocument e) {
             return Params.problem(req, e.getMessage());
         } catch (Json.JsonException e) {
             // A row of the wrong shape (a span that is not an object, a number that

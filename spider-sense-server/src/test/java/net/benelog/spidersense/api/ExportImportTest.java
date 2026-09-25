@@ -401,4 +401,33 @@ class ExportImportTest {
                     .startsWith("Undecodable import document");
         });
     }
+
+    /**
+     * A hand-edited or corrupted file: a trace id one character too long, a kind no
+     * export writes. The store refuses the value; the answer is a 400 that says so,
+     * and nothing of the document is written.
+     */
+    @Test
+    void aDocumentWhoseValuesDoNotFitTheirColumnsIsRefused() {
+        serve(client -> {
+            Json.JsonObject span = Json.obj().put("traceId", TRACE + "0").put("spanId", ROOT)
+                    .put("service", "spring-orders").put("name", "GET /orders").put("kind", "INTERNAL_SPAN")
+                    .put("startMs", NOW).put("startNs", NOW * 1_000_000L).put("durationNs", 1_000_000L)
+                    .put("status", "UNSET").put("category", "http");
+            String document = Json.obj()
+                    .put("spiderSense", Json.obj().put("schema", Schema.VERSION))
+                    .put("services", Json.arr().add(Json.obj().put("name", "spring-orders")
+                            .put("firstSeen", NOW).put("lastSeen", NOW)))
+                    .put("spans", Json.arr().add(span))
+                    .toJson();
+
+            HttpResponse<String> response = postJson(client, "/api/import", document);
+
+            assertThat(response.statusCode()).isEqualTo(400);
+            assertThat(Json.parse(response.body()).asObject().getString("error"))
+                    .contains("does not fit").containsIgnoringCase("too long");
+            assertThat(rows(client, "SELECT COUNT(*) FROM span")).isZero();
+            assertThat(rows(client, "SELECT COUNT(*) FROM service")).isZero();
+        });
+    }
 }

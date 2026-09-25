@@ -13,6 +13,7 @@ import java.util.Map;
 import java.util.Set;
 
 import net.benelog.spidersilk.json.Json;
+import org.h2.jdbc.JdbcException;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -49,6 +50,17 @@ public final class Importer {
     public static final class WrongSchema extends RuntimeException {
         public WrongSchema(String message) {
             super(message);
+        }
+    }
+
+    /**
+     * A document whose values the store refuses: one too long for its column, a
+     * required one missing. It is the file's fault, not the server's, so it is a
+     * {@code 400} naming what H2 refused, and nothing of the document is written.
+     */
+    public static final class BadDocument extends IllegalArgumentException {
+        BadDocument(String message, Throwable cause) {
+            super(message, cause);
         }
     }
 
@@ -99,8 +111,28 @@ public final class Importer {
                 connection.setAutoCommit(true);
             }
         } catch (SQLException e) {
+            SQLException refused = refusedValue(e);
+            if (refused != null) {
+                throw new BadDocument("a value of the document does not fit the store: "
+                        + (refused instanceof JdbcException h2 ? h2.getOriginalMessage() : refused.getMessage()), e);
+            }
             throw new Sql.SqlException("could not import the document", e);
         }
+    }
+
+    /**
+     * The failure of a value rather than of the database: SQLSTATE class 22, a data
+     * exception such as a value too long for its column, or 23, a constraint such
+     * as a required column left null. A batch reports it as its next exception.
+     */
+    private static @Nullable SQLException refusedValue(SQLException failure) {
+        for (SQLException e = failure; e != null; e = e.getNextException()) {
+            String state = e.getSQLState();
+            if (state != null && (state.startsWith("22") || state.startsWith("23"))) {
+                return e;
+            }
+        }
+        return null;
     }
 
     /**

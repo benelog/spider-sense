@@ -877,6 +877,7 @@ Those describe the process running here, not the one that ran the imported sessi
 
 A document whose `schema` is not this version's is a `400` naming both versions.
 A document that is not JSON, or whose rows are not the shapes `export` writes, is a `400` naming what did not decode, and nothing of it is written.
+So is a document with a value the store refuses, such as a trace id longer than 32 characters or a required column left out, and the `400` carries H2's own message.
 Acknowledgements and resolutions are not exported, because they are the reader's rather than the session's.
 
 [#sql]
