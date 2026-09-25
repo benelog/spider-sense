@@ -37,7 +37,9 @@ public final class SchemaInstrumentationModule extends InstrumentationModule {
      */
     private static final List<String> HELPERS = Collections.unmodifiableList(Arrays.asList(
             HELPER_PACKAGE + "IndexCatalog",
-            HELPER_PACKAGE + "IndexCatalog$Word",
+            HELPER_PACKAGE + "IndexCatalog$Token",
+            HELPER_PACKAGE + "IndexCatalog$TableRef",
+            HELPER_PACKAGE + "IndexCatalog$CatalogTable",
             HELPER_PACKAGE + "IndexCatalog$Index",
             HELPER_PACKAGE + "Settings"));
 

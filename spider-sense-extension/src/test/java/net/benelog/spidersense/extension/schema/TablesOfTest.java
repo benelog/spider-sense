@@ -45,10 +45,10 @@ class TablesOfTest {
 
     @Test
     void aQuotedNameIsUnquotedAndKeptAsWritten() {
-        List<IndexCatalog.Word> refs = IndexCatalog.refsOf("select * from \"Items\" i");
+        List<IndexCatalog.TableRef> refs = IndexCatalog.tableRefsOf("select * from \"Items\" i");
 
-        assertThat(refs).extracting(ref -> ref.text).containsExactly("Items");
-        assertThat(refs.get(0).quoted).as("quoted, so it is never case-folded").isTrue();
+        assertThat(refs).extracting(IndexCatalog.TableRef::name).containsExactly("Items");
+        assertThat(refs.get(0).quoted()).as("quoted, so it is never case-folded").isTrue();
     }
 
     @Test

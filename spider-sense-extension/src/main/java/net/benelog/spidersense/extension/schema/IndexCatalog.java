@@ -120,7 +120,7 @@ public final class IndexCatalog {
             if (text == null) {
                 return;
             }
-            List<Word> tables = refsOf(text);
+            List<TableRef> tables = tableRefsOf(text);
             if (tables.isEmpty()) {
                 return;
             }
@@ -160,15 +160,15 @@ public final class IndexCatalog {
     }
 
     /** One attempt per table per process, recorded before the attempt so a failure is not retried. */
-    private static void lookUpAll(Connection connection, List<Word> tables) throws SQLException {
+    private static void lookUpAll(Connection connection, List<TableRef> tables) throws SQLException {
         DatabaseMetaData meta = connection.getMetaData();
         String url = meta.getURL();
         String catalog = catalogOf(connection);
-        for (Word table : tables) {
+        for (TableRef table : tables) {
             if (looked.size() >= MAX_TABLES) {
                 return;
             }
-            if (!looked.add(url + "\0" + table.text)) {
+            if (!looked.add(url + "\0" + table.name())) {
                 continue;
             }
             lookUp(meta, catalog, table);
@@ -183,29 +183,27 @@ public final class IndexCatalog {
      * would carry forever. A name found in several schemas is emitted once per schema, because the
      * statement does not say which one it meant and both answers are facts.
      */
-    private static void lookUp(DatabaseMetaData meta, @Nullable String catalog, Word table)
+    private static void lookUp(DatabaseMetaData meta, @Nullable String catalog, TableRef table)
             throws SQLException {
         String schema = null;
-        String name = table.text;
+        String name = table.name();
         int dot = name.lastIndexOf('.');
         if (dot > 0 && dot < name.length() - 1) {
-            schema = fold(meta, name.substring(0, dot), table.quoted);
+            schema = fold(meta, name.substring(0, dot), table.quoted());
             name = name.substring(dot + 1);
         }
-        name = fold(meta, name, table.quoted);
-        List<Word> found = new ArrayList<>();
+        name = fold(meta, name, table.quoted());
+        List<CatalogTable> found = new ArrayList<>();
         try (ResultSet rows = meta.getTables(catalog, schema, pattern(meta, name), null)) {
             while (rows.next()) {
                 if (!indexed(rows.getString("TABLE_TYPE"))) {
                     continue;
                 }
-                // Word is the pair this needs twice over: here the schema and the table as the
-                // database spells them, in the scanner a name and whether it was quoted.
-                found.add(new Word(rows.getString("TABLE_NAME"), false, rows.getString("TABLE_SCHEM")));
+                found.add(new CatalogTable(rows.getString("TABLE_SCHEM"), rows.getString("TABLE_NAME")));
             }
         }
-        for (Word row : found) {
-            emit(meta, catalog, row.schema, row.text);
+        for (CatalogTable row : found) {
+            emit(meta, catalog, row.schema(), row.name());
         }
     }
 
@@ -439,10 +437,10 @@ public final class IndexCatalog {
 
     /** The table names of a statement, distinct and in the order they appear. */
     static List<String> tablesOf(String sql) {
-        List<Word> refs = refsOf(sql);
+        List<TableRef> refs = tableRefsOf(sql);
         List<String> names = new ArrayList<>(refs.size());
-        for (Word ref : refs) {
-            names.add(ref.text);
+        for (TableRef ref : refs) {
+            names.add(ref.name());
         }
         return names;
     }
@@ -457,46 +455,46 @@ public final class IndexCatalog {
      * parser and is not meant to be one — what it cannot read it does not name, and a name it reads
      * wrongly is dropped by the {@code getTables} lookup that follows.
      */
-    static List<Word> refsOf(String sql) {
-        List<Word> found = new ArrayList<>();
+    static List<TableRef> tableRefsOf(String sql) {
+        List<TableRef> found = new ArrayList<>();
         if (sql == null || sql.isEmpty()) {
             return found;
         }
-        List<Word> words = words(sql);
+        List<Token> words = tokens(sql);
         Set<String> seen = new HashSet<>();
         for (int i = 0; i < words.size(); i++) {
-            Word word = words.get(i);
-            if (word.quoted) {
+            Token word = words.get(i);
+            if (word.quoted()) {
                 continue;
             }
-            String keyword = word.text.toLowerCase(Locale.ROOT);
+            String keyword = word.text().toLowerCase(Locale.ROOT);
             boolean list = keyword.equals("from");
             if (!list && !keyword.equals("join") && !keyword.equals("into") && !keyword.equals("update")) {
                 continue;
             }
             int at = i + 1;
             while (at < words.size()) {
-                Word first = words.get(at);
+                Token first = words.get(at);
                 if (!isName(first) || isKeyword(first)) {
                     // A subquery, a parameter or a keyword: nothing to name here.
                     break;
                 }
-                StringBuilder text = new StringBuilder(first.text);
-                boolean quoted = first.quoted;
+                StringBuilder text = new StringBuilder(first.text());
+                boolean quoted = first.quoted();
                 at++;
                 while (at + 1 < words.size()
-                        && ".".equals(words.get(at).text)
+                        && ".".equals(words.get(at).text())
                         && isName(words.get(at + 1))) {
-                    text.append('.').append(words.get(at + 1).text);
-                    quoted |= words.get(at + 1).quoted;
+                    text.append('.').append(words.get(at + 1).text());
+                    quoted |= words.get(at + 1).quoted();
                     at += 2;
                 }
                 String name = text.toString();
                 if (seen.add(name)) {
-                    found.add(new Word(name, quoted));
+                    found.add(new TableRef(name, quoted));
                 }
                 at = afterAlias(words, at);
-                if (!list || at >= words.size() || !",".equals(words.get(at).text)) {
+                if (!list || at >= words.size() || !",".equals(words.get(at).text())) {
                     break;
                 }
                 at++;
@@ -507,28 +505,24 @@ public final class IndexCatalog {
     }
 
     /** Past the table's alias, whether it was written with {@code as} or without one at all. */
-    private static int afterAlias(List<Word> words, int at) {
+    private static int afterAlias(List<Token> words, int at) {
         if (at >= words.size()) {
             return at;
         }
-        Word next = words.get(at);
-        if (!next.quoted && "as".equalsIgnoreCase(next.text)) {
+        Token next = words.get(at);
+        if (!next.quoted() && "as".equalsIgnoreCase(next.text())) {
             at++;
             return at < words.size() && isName(words.get(at)) ? at + 1 : at;
         }
         return isName(next) && !isKeyword(next) ? at + 1 : at;
     }
 
-    private static boolean isName(Word word) {
-        if (word.quoted) {
-            return true;
-        }
-        char c = word.text.charAt(0);
-        return Character.isLetter(c) || c == '_' || c == '$' || c == '#';
+    private static boolean isName(Token token) {
+        return token.quoted() || isNameStart(token.text().charAt(0));
     }
 
-    private static boolean isKeyword(Word word) {
-        return !word.quoted && KEYWORDS.contains(word.text.toLowerCase(Locale.ROOT));
+    private static boolean isKeyword(Token token) {
+        return !token.quoted() && KEYWORDS.contains(token.text().toLowerCase(Locale.ROOT));
     }
 
     /**
@@ -539,8 +533,8 @@ public final class IndexCatalog {
      * it is ever read as a keyword or a name. Every other character that is not part of an
      * identifier is a word of its own, which is all the scanner above needs of punctuation.
      */
-    private static List<Word> words(String sql) {
-        List<Word> words = new ArrayList<>();
+    private static List<Token> tokens(String sql) {
+        List<Token> words = new ArrayList<>();
         int length = sql.length();
         int i = 0;
         while (i < length) {
@@ -559,25 +553,25 @@ public final class IndexCatalog {
                 i = Math.min(length, i + 2);
             } else if (c == '\'') {
                 i = afterLiteral(sql, i);
-                words.add(new Word("'", false));
+                words.add(new Token("'", false));
             } else if (c == '"' || c == '`' || c == '[') {
                 StringBuilder text = new StringBuilder();
                 i = readQuoted(sql, i, text);
-                words.add(new Word(text.toString(), true));
+                words.add(new Token(text.toString(), true));
             } else if (isNameStart(c)) {
                 int start = i;
                 while (i < length && isNamePart(sql.charAt(i))) {
                     i++;
                 }
-                words.add(new Word(sql.substring(start, i), false));
+                words.add(new Token(sql.substring(start, i), false));
             } else if (Character.isDigit(c)) {
                 int start = i;
                 while (i < length && (Character.isLetterOrDigit(sql.charAt(i)) || sql.charAt(i) == '.')) {
                     i++;
                 }
-                words.add(new Word(sql.substring(start, i), false));
+                words.add(new Token(sql.substring(start, i), false));
             } else {
-                words.add(new Word(String.valueOf(c), false));
+                words.add(new Token(String.valueOf(c), false));
                 i++;
             }
         }
@@ -629,25 +623,21 @@ public final class IndexCatalog {
         return length;
     }
 
-    /** A word of a statement, or a table the catalog answered with: text, and how to read it. */
-    static final class Word {
-        final String text;
-        final boolean quoted;
-        final @Nullable String schema;
+    /**
+     * A word of a statement as the scanner reads it: an identifier, a keyword or one character, and
+     * whether it was written quoted, which makes it a name and never a keyword.
+     */
+    record Token(String text, boolean quoted) {
+    }
 
-        Word(String text, boolean quoted) {
-            this(text, quoted, null);
-        }
+    /**
+     * A table a statement names, as written ({@code schema.table} kept whole), and whether any part
+     * of it was quoted, which decides whether it may be case-folded before it is looked up.
+     */
+    record TableRef(String name, boolean quoted) {
+    }
 
-        Word(String text, boolean quoted, @Nullable String schema) {
-            this.text = text;
-            this.quoted = quoted;
-            this.schema = schema;
-        }
-
-        @Override
-        public String toString() {
-            return text;
-        }
+    /** A table the catalog answered with, its schema and its name as the database spells them. */
+    record CatalogTable(@Nullable String schema, String name) {
     }
 }
