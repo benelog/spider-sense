@@ -16,9 +16,9 @@ import org.jspecify.annotations.Nullable;
 /**
  * One command line, parsed: {@code <command> [argument] [--options]}.
  *
- * <p>The table of what each command accepts lives here rather than in the
- * dispatcher, because both modes — HTTP and the H2 file — read the same options
- * and must disagree about nothing. An option a command does not take is a usage
+ * <p>What each command accepts is its row of {@link Command}, which both modes —
+ * HTTP and the H2 file — answer from, so they read the same options and
+ * disagree about nothing. An option a command does not take is a usage
  * error rather than a silently ignored word: an agent that mistyped
  * {@code --sinse} should be told, not answered for the last 15 minutes.
  */
@@ -32,6 +32,13 @@ final class Options {
     }
 
     static final String HELP = "help";
+    static final String STATUS = "status";
+    static final String TRACES = "traces";
+    static final String ENDPOINTS = "endpoints";
+    static final String QUERIES = "queries";
+    static final String ERRORS = "errors";
+    static final String LOGS = "logs";
+    static final String MARKS = "marks";
     static final String INIT = "init";
     static final String MCP = "mcp";
     static final String CHECK = "check";
@@ -48,60 +55,21 @@ final class Options {
     static final String EXPORT = "export";
     static final String IMPORT = "import";
 
-    /** Options every command takes: where to read from, and how to print it. */
+    /**
+     * Options every command that reads a window takes: where to read from, and how to print it.
+     *
+     * <p>Here and not in {@link Command}, whose rows are built before a static field of its own is
+     * set; nothing in this class's initialisation refers to {@code Command}, so either may load first.
+     */
     private static final Set<String> COMMON = Set.of("url", "db", "json", "service",
             "slow.request.ms", "slow.query.ms", "app.packages");
 
     /** The rule flags of {@code check}, in the order api.adoc#check names their parameters. */
     private static final Map<String, String> RULES = ruleParameters();
 
-    private static final Map<String, Set<String>> COMMANDS = Map.ofEntries(
-            Map.entry("status", with()),
-            Map.entry(FINDINGS, with("since", "until", "limit", "full", "hide-acked", "no-git")),
-            Map.entry(ACK, with("note")),
-            Map.entry(UNACK, with()),
-            Map.entry(RESOLVE, with("note")),
-            Map.entry(UNRESOLVE, with()),
-            Map.entry(TRACE, with("full", "diff")),
-            Map.entry("traces", with("since", "until", "limit", "full", "status", "min-ms", "q")),
-            Map.entry("endpoints", with("since", "until")),
-            Map.entry("queries", with("since", "until", "limit", "full")),
-            Map.entry("errors", with("since", "until", "limit", "full")),
-            Map.entry("logs", with("since", "until", "limit", "severity", "q", "trace")),
-            Map.entry(MARK, with("note")),
-            Map.entry("marks", with("limit")),
-            Map.entry(COMPARE, with("before", "after", "until", "full")),
-            Map.entry(CHECK, with(checkFlags())),
-            Map.entry(SQL, with("limit", "full")),
-            Map.entry(EXPORT, with("since", "until", "out")),
-            // import names a file and a store to write it into; a window and a
-            // service belong to the export that made it, not to reading it back.
-            Map.entry(IMPORT, Set.of("url", "db", "json")),
-            // init reads nothing, so none of the common options mean anything to it:
-            // --url, --db and the thresholds are all about a window it never opens.
-            Map.entry(INIT, Set.of("dir", "jar", "no-skill", "mcp")),
-            // mcp is not one question but a session of them, so a window, a format and
-            // a service belong to each message rather than to the command: only where
-            // to read is decided here (mcp.adoc#stdio).
-            Map.entry(MCP, Set.of("url", "db")),
-            Map.entry(TAIL, Set.of("url", "json", "service", "kind", "until-traces",
-                    "timeout")),
-            Map.entry(HELP, with()));
-
-    /** The commands that take one word of their own, and what that word is called. */
-    private static final Map<String, String> ARGUMENT = Map.of(
-            TRACE, "a trace id",
-            MARK, "a mark name",
-            ACK, "a finding id",
-            UNACK, "a finding id",
-            RESOLVE, "a finding id",
-            UNRESOLVE, "a finding id",
-            SQL, "a statement",
-            IMPORT, "a file to read");
-
     /** Every command the parser takes, which a test runs in both modes. */
     static Set<String> commands() {
-        return COMMANDS.keySet();
+        return new LinkedHashSet<>(Command.names());
     }
 
     private final String command;
@@ -120,10 +88,12 @@ final class Options {
             throw new Usage("a command is needed");
         }
         String command = args[0];
-        Set<String> allowed = COMMANDS.get(command);
-        if (allowed == null) {
+        Command row = Command.named(command);
+        if (row == null) {
             throw new Usage("unknown command: " + command);
         }
+        Set<String> allowed = row.options();
+        String label = row.argument();
         String argument = null;
         Map<String, String> values = new LinkedHashMap<>();
         for (int i = 1; i < args.length; i++) {
@@ -135,14 +105,14 @@ final class Options {
                     throw new Usage("unknown option for " + command + ": --" + key);
                 }
                 values.put(key, equals < 0 ? "true" : arg.substring(equals + 1));
-            } else if (argument == null && ARGUMENT.containsKey(command)) {
+            } else if (argument == null && label != null) {
                 argument = arg;
             } else {
                 throw new Usage("unexpected argument: " + arg);
             }
         }
-        if (ARGUMENT.containsKey(command) && argument == null) {
-            throw new Usage(command + " needs " + ARGUMENT.get(command));
+        if (label != null && argument == null) {
+            throw new Usage(command + " needs " + label);
         }
         if (COMPARE.equals(command) && !(values.containsKey("before") && values.containsKey("after"))) {
             throw new Usage("compare needs both --before and --after, as marks or time selectors");
@@ -224,13 +194,15 @@ final class Options {
         return asked;
     }
 
-    private static Set<String> with(String... names) {
+    /** The common options and the command's own. */
+    static Set<String> with(String... names) {
         Set<String> set = new LinkedHashSet<>(COMMON);
         set.addAll(List.of(names));
         return Set.copyOf(set);
     }
 
-    private static String[] checkFlags() {
+    /** The options of {@code check}: its rule flags, its window and its endpoint. */
+    static String[] checkFlags() {
         List<String> flags = new ArrayList<>(RULES.keySet());
         flags.add("since");
         flags.add("until");

@@ -8,14 +8,10 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
-import net.benelog.spidersense.api.Limits;
 import net.benelog.spidersense.api.Reports;
-import net.benelog.spidersense.query.Queries;
 import net.benelog.spidersense.query.Selectors;
 import net.benelog.spidersense.query.Window;
 import net.benelog.spidersense.server.Config;
-import net.benelog.spidersense.store.Marks;
-import net.benelog.spidersilk.json.Json;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -101,44 +97,11 @@ final class Local {
             Output.printReport(out, options, Reports.unresolve(options.requiredArgument()));
             return Cli.OK;
         }
-        Reports.Report report = switch (options.command()) {
-            case "status" -> reports.status("file", null, 0);
-            case "findings" -> reports.findings(window(options, reports, service), service,
-                    new Reports.FindingsAsk(options.limit(Limits.FINDINGS, Limits.FINDINGS_MAX),
-                            options.flag("full"), options.flag("hide-acked")));
-            case Options.ACK -> reports.ack(
-                    reports.ack(options.requiredArgument(), options.valueOrNull("note")));
-            case Options.RESOLVE -> reports.resolve(
-                    reports.resolve(options.requiredArgument(), options.valueOrNull("note")));
-            case Options.TRACE -> options.has("diff")
-                    ? reports.traceDiff(options.requiredArgument(), options.value("diff", ""),
-                            options.flag("full"))
-                    : reports.trace(options.requiredArgument(), options.flag("full"));
-            case "traces" -> reports.traces(new Queries.TraceFilter(
-                    window(options, reports, service), service, null,
-                    options.optionalLong("min-ms"), null,
-                    options.valueOrNull("status"), options.valueOrNull("q"), null,
-                    options.limit(Limits.CLI_TRACES, Limits.TRACES_MAX)), options.flag("full"));
-            case "endpoints" -> reports.endpoints(window(options, reports, service), service);
-            case "queries" -> reports.queries(window(options, reports, service), service, null,
-                    options.limit(Limits.QUERIES, Limits.QUERIES_MAX), options.flag("full"));
-            case "errors" -> reports.errors(window(options, reports, service), service,
-                    options.limit(Limits.ERRORS, Limits.ERRORS_MAX), options.flag("full"));
-            case "logs" -> reports.logs(new Queries.LogFilter(
-                    window(options, reports, service), service,
-                    options.valueOrNull("severity"), options.valueOrNull("q"),
-                    options.valueOrNull("trace"), null,
-                    options.limit(Limits.LOGS, Limits.LOGS_MAX)));
-            case Options.MARK -> mark(options, reports, service);
-            case "marks" -> reports.marks(options.limit(Limits.MARKS, Limits.MARKS_MAX));
-            case Options.COMPARE -> reports.compare(options.valueOrNull("before"), options.valueOrNull("after"),
-                    options.valueOrNull("until"), service, options.flag("full"));
-            case Options.SQL -> reports.sql(options.requiredArgument(),
-                    options.limit(Limits.SQL, Limits.SQL_MAX), options.flag("full"));
-            case Options.IMPORT -> reports.imported(
-                    reports.importDocument(Json.parse(Sessions.read(options.requiredArgument())).asObject()));
-            default -> throw new Options.Usage("unknown command: " + options.command());
-        };
+        Command command = Command.named(options.command());
+        if (command == null) {
+            throw new Options.Usage("unknown command: " + options.command());
+        }
+        Reports.Report report = command.answer(options, reports, service);
         if (report == null) {
             err.println("spider-sense: No such trace: " + options.requiredArgument());
             return Cli.NOT_FOUND;
@@ -179,13 +142,8 @@ final class Local {
         return Cli.OK;
     }
 
-    private static Reports.Report mark(Options options, Reports reports, @Nullable String service) {
-        Marks.Mark mark = reports.mark(options.requiredArgument(), options.valueOrNull("note"), service);
-        return reports.mark(mark);
-    }
-
-
-    private static Window window(Options options, Reports reports, @Nullable String service) {
+    /** The window every windowed command reads, resolved against the store's clock. */
+    static Window window(Options options, Reports reports, @Nullable String service) {
         return reports.selectors().window(null, null,
                 options.value("since", Selectors.DEFAULT_SINCE), options.valueOrNull("until"), service);
     }

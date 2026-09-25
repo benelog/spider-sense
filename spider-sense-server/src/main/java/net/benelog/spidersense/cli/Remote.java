@@ -17,7 +17,6 @@ import java.time.Duration;
 import java.util.Map;
 
 import net.benelog.spidersense.api.AgentApi;
-import net.benelog.spidersense.api.Limits;
 import net.benelog.spidersense.api.Reports;
 import net.benelog.spidersense.query.Selectors;
 import net.benelog.spidersilk.json.Json;
@@ -142,8 +141,10 @@ final class Remote {
             return importFile(options, base, out, err);
         }
         HttpRequest.Builder request = request(base, path(options));
-        String body = body(options);
-        if (Options.UNACK.equals(options.command()) || Options.UNRESOLVE.equals(options.command())) {
+        // A statement and a mark are what the caller says rather than what it asks about, so they
+        // travel in a body; everything else is a window and some filters (api.adoc).
+        String body = command(options).bodyOf(options);
+        if (command(options).method() == Command.Method.DELETE) {
             request.DELETE();
         } else if (body == null) {
             request.GET();
@@ -269,58 +270,23 @@ final class Remote {
     }
 
     /**
-     * The URL of one command, with every parameter the command takes.
+     * The URL of one command, with every parameter the command takes: its row of
+     * {@link Command}, then {@code full} and the format.
      *
      * <p>The limits are the CLI's own, not the server's defaults, so that a
      * command prints the same list whether it was answered over HTTP or read from
      * the file.
      */
     static String path(Options options) {
-        String format = options.flag("json") ? "json" : "text";
-        Query query = switch (options.command()) {
-            case "status" -> new Query("/api/status");
-            case "findings" -> window(options, new Query("/api/findings"))
-                    .add("limit", options.limit(Limits.FINDINGS, Limits.FINDINGS_MAX))
-                    .add("hideAcked", options.flag("hide-acked") ? "true" : null);
-            case Options.ACK, Options.UNACK ->
-                    new Query("/api/findings/" + encode(options.requiredArgument()) + "/ack");
-            case Options.RESOLVE, Options.UNRESOLVE ->
-                    new Query("/api/findings/" + encode(options.requiredArgument()) + "/resolve");
-            case Options.TRACE -> new Query("/api/traces/" + encode(options.requiredArgument()))
-                    .add("diff", options.valueOrNull("diff"));
-            case "traces" -> window(options, new Query("/api/traces"))
-                    .add("status", options.valueOrNull("status"))
-                    .add("minMs", options.valueOrNull("min-ms"))
-                    .add("q", options.valueOrNull("q"))
-                    .add("limit", options.limit(Limits.CLI_TRACES, Limits.TRACES_MAX));
-            case "endpoints" -> window(options, new Query("/api/endpoints"));
-            case "queries" -> window(options, new Query("/api/queries"))
-                    .add("limit", options.limit(Limits.QUERIES, Limits.QUERIES_MAX));
-            case "errors" -> window(options, new Query("/api/errors"))
-                    .add("limit", options.limit(Limits.ERRORS, Limits.ERRORS_MAX));
-            case "logs" -> window(options, new Query("/api/logs"))
-                    .add("severity", options.valueOrNull("severity"))
-                    .add("q", options.valueOrNull("q"))
-                    .add("traceId", options.valueOrNull("trace"))
-                    .add("limit", options.limit(Limits.LOGS, Limits.LOGS_MAX));
-            case Options.MARK -> new Query("/api/marks");
-            case "marks" -> new Query("/api/marks").add("limit", options.limit(Limits.MARKS, Limits.MARKS_MAX));
-            case Options.COMPARE -> new Query("/api/compare")
-                    .add("before", options.valueOrNull("before"))
-                    .add("after", options.valueOrNull("after"))
-                    .add("until", options.valueOrNull("until"))
-                    .add("service", options.valueOrNull("service"));
-            case Options.CHECK -> check(options);
-            case Options.SQL -> new Query("/api/sql");
-            default -> throw new Options.Usage("unknown command: " + options.command());
-        };
+        Query query = command(options).pathOf(options);
         if (options.flag("full")) {
             query.add("full", "true");
         }
-        return query.add("format", format).toString();
+        return query.add("format", options.flag("json") ? "json" : "text").toString();
     }
 
-    private static Query check(Options options) {
+    /** {@code check}'s path: the window, the endpoint, and each rule asked for. */
+    static Query check(Options options) {
         Query query = window(options, new Query("/api/check"))
                 .add("endpoint", options.valueOrNull("endpoint"));
         for (Map.Entry<String, Double> rule : options.rules().entrySet()) {
@@ -329,36 +295,20 @@ final class Remote {
         return query;
     }
 
-    private static Query window(Options options, Query query) {
+    /** The window and the service every windowed command sends. */
+    static Query window(Options options, Query query) {
         return query
                 .add("since", options.value("since", Selectors.DEFAULT_SINCE))
                 .add("until", options.valueOrNull("until"))
                 .add("service", options.valueOrNull("service"));
     }
 
-    /**
-     * The JSON body of the two commands that post one, or null for a {@code GET}.
-     *
-     * <p>A statement and a mark are what the caller says rather than what it asks
-     * about, so they travel in a body; everything else is a window and some
-     * filters, which are query parameters (api.adoc).
-     */
-    private static @Nullable String body(Options options) {
-        return switch (options.command()) {
-            case Options.MARK -> Json.obj()
-                    .put("name", options.requiredArgument())
-                    .put("note", options.valueOrNull("note"))
-                    .put("service", options.valueOrNull("service"))
-                    .toJson();
-            case Options.ACK, Options.RESOLVE -> Json.obj()
-                    .put("note", options.valueOrNull("note"))
-                    .toJson();
-            case Options.SQL -> Json.obj()
-                    .put("sql", options.requiredArgument())
-                    .put("limit", options.limit(Limits.SQL, Limits.SQL_MAX))
-                    .toJson();
-            default -> null;
-        };
+    private static Command command(Options options) {
+        Command command = Command.named(options.command());
+        if (command == null) {
+            throw new Options.Usage("unknown command: " + options.command());
+        }
+        return command;
     }
 
     /**
@@ -417,12 +367,12 @@ final class Remote {
                 : String.valueOf(value);
     }
 
-    private static String encode(@Nullable String value) {
+    static String encode(@Nullable String value) {
         return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
     }
 
     /** A URL with its query string, built in the order the parameters are added. */
-    private static final class Query {
+    static final class Query {
 
         private final StringBuilder url;
         private boolean started;

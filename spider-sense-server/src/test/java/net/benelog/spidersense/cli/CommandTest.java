@@ -1,0 +1,45 @@
+package net.benelog.spidersense.cli;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.util.List;
+
+import org.junit.jupiter.api.Test;
+
+/** The command table against the help that lists it and against itself. */
+class CommandTest {
+
+    /** A command added to the table and not to the help, or the other way round, fails here. */
+    @Test
+    void theHelpListsEveryCommandInTheOrderOfTheTable() {
+        List<String> listed = Help.TEXT.lines()
+                .dropWhile(line -> !line.equals("Commands:"))
+                .skip(1)
+                .takeWhile(line -> !line.isEmpty())
+                .filter(line -> line.startsWith("  ") && !line.startsWith("   "))
+                .map(line -> line.trim().split("[ \\[]", 2)[0])
+                .toList();
+
+        assertThat(listed).isEqualTo(Command.names());
+    }
+
+    @Test
+    void aRowSentOverHttpHasAPathAndAPostHasABody() {
+        for (Command command : Command.ALL) {
+            if (command.method() == null) {
+                assertThat(command.path()).as(command.commandName()).isNull();
+                continue;
+            }
+            assertThat(command.path()).as(command.commandName()).isNotNull();
+            assertThat(command.body() != null).as(command.commandName())
+                    .isEqualTo(command.method() == Command.Method.POST);
+        }
+    }
+
+    @Test
+    void everyNameIsOneRow() {
+        assertThat(Command.names()).doesNotHaveDuplicates();
+        assertThat(Command.named("findings")).isNotNull();
+        assertThat(Command.named("finding")).isNull();
+    }
+}
