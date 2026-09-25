@@ -141,7 +141,7 @@ export function render(root, ctx) {
     fill(body, panel({}, emptyState(
       'Compare needs two marks: one before the change and one after it. Mark a moment, exercise the application, change the code, mark again.',
       h('div', { style: { display: 'grid', gap: '10px', justifyItems: 'center', width: 'min(640px, 100%)' } },
-        h('button.btn.btn-primary', { type: 'button', onclick: () => markDialog({ onDone: () => load() }) }, 'Mark this moment'),
+        h('button.btn.btn-primary', { type: 'button', onclick: () => markDialog({ onDone: () => loadMarks() }) }, 'Mark this moment'),
         copyBlock('java -jar spider-sense.jar mark before')))));
   }
 
@@ -258,12 +258,18 @@ export function render(root, ctx) {
     select.addEventListener('change', () => apply());
   }
 
-  // The marks may still be in flight when the page opens; they arrive with the shell.
-  api.marks(50).then((res) => {
-    if (destroyed) return;
-    api.state.marks = res.marks || api.state.marks;
-    load();
-  }).catch(() => { if (!destroyed) load(); });
+  // The page reads the marks from the shared state, which the shell fetches on a route
+  // change and a Live tick only: the page fetches them itself when it opens (they may
+  // still be in flight) and after its own Mark button made one.
+  function loadMarks() {
+    return api.marks(50).then((res) => {
+      if (destroyed) return;
+      api.state.marks = res.marks || api.state.marks;
+      load();
+    }).catch(() => { if (!destroyed) load(); });
+  }
+
+  loadMarks();
 
   return {
     refresh: () => { if (!destroyed) load(); },
