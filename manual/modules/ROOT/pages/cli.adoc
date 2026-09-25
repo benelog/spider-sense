@@ -628,6 +628,7 @@ In that path the thresholds are the defaults, or whatever `--slow.request.ms`, `
 
 The file must exist and carry this version's schema.
 The CLI never creates a database and never upgrades one, because `AUTO_SERVER=TRUE` may have joined the database of an older Spider Sense that is still running, and recreating the tables would empty it under that server.
+A `jdbc:` URL that names no file, such as `jdbc:h2:mem:scratch`, has no file to check, so the database behind it must hold this version's schema already; an empty one is exit `2` with `the database holds no Spider Sense schema` on stderr.
 A missing file is exit `2` and, on stderr:
 
 [source]

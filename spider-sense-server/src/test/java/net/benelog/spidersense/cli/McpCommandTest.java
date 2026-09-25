@@ -64,7 +64,7 @@ class McpCommandTest {
 
     @Test
     void aSessionOverStdinAnswersOneJsonLinePerRequestAndNothingElse() {
-        String db = "--db=" + TestStore.memoryUrl();
+        String db = "--db=" + TestStore.writtenUrl();
         String findings = "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":"
                 + "{\"name\":\"findings\",\"arguments\":{\"since\":\"1h\"}}}";
 
@@ -102,7 +102,7 @@ class McpCommandTest {
      */
     @Test
     void aMarkIsRecordedInTheFileJustAsTheCliRecordsItThere() {
-        String db = "--db=" + TestStore.memoryUrl();
+        String db = "--db=" + TestStore.writtenUrl();
         String mark = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":"
                 + "{\"name\":\"mark\",\"arguments\":{\"name\":\"before\",\"note\":\"the slow one\"}}}";
         String since = "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":"
@@ -125,7 +125,7 @@ class McpCommandTest {
      */
     @Test
     void sqlOverAFileWithNoReaderUserIsAToolErrorAndNotAProtocolError() {
-        String db = "--db=" + TestStore.memoryUrl();
+        String db = "--db=" + TestStore.writtenUrlWithoutReader();
         String sql = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":"
                 + "{\"name\":\"sql\",\"arguments\":{\"sql\":\"SELECT 1\"}}}";
 
@@ -142,7 +142,7 @@ class McpCommandTest {
     /** The {@code resolve} tool writes to the file as the CLI's {@code resolve} does. */
     @Test
     void aResolutionIsRecordedInTheFileJustAsTheCliRecordsItThere() {
-        String db = "--db=" + TestStore.memoryUrl();
+        String db = "--db=" + TestStore.writtenUrl();
         String resolve = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":"
                 + "{\"name\":\"resolve\",\"arguments\":{\"findingId\":\"n-plus-one:0011223344ff\","
                 + "\"note\":\"fetch join\"}}}";
@@ -187,7 +187,7 @@ class McpCommandTest {
      */
     @Test
     void nothingListeningFallsBackToTheFileAndSaysSoOnStderrOnce() {
-        String memory = TestStore.memoryUrl();
+        String memory = TestStore.writtenUrl();
         System.setProperty("spidersense.db", memory);
         try {
             String closed = closedUrl();
@@ -283,7 +283,7 @@ class McpCommandTest {
         assertThat(run("", "mcp", "--since=5m").err())
                 .startsWith("spider-sense: unknown option for mcp: --since");
         assertThat(run("", "mcp", "--json").exit()).isEqualTo(2);
-        assertThat(run("", "mcp", "--db=" + TestStore.memoryUrl()).exit())
+        assertThat(run("", "mcp", "--db=" + TestStore.writtenUrl()).exit())
                 .as("end of input is the end of the session").isZero();
     }
 

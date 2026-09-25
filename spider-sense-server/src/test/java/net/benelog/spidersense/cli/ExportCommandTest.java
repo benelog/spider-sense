@@ -116,7 +116,7 @@ class ExportCommandTest {
         assertThat(document.getArray("spans")).hasSize(8);
         assertThat(document.getObject("spiderSense").has("schema")).isTrue();
 
-        String db = "--db=" + TestStore.memoryUrl();
+        String db = "--db=" + TestStore.writtenUrl();
         Run first = run("import", file.toString(), db);
         assertThat(first.exit()).isZero();
         assertThat(first.out()).startsWith("imported 8 spans, 0 logs, 0 metric points, ");
@@ -143,7 +143,7 @@ class ExportCommandTest {
 
         assertThat(gunzip(packed)).startsWith("{\"spiderSense\":");
 
-        String db = "--db=" + TestStore.memoryUrl();
+        String db = "--db=" + TestStore.writtenUrl();
         Run imported = run("import", packed.toString(), db);
         assertThat(imported.exit()).isZero();
         assertThat(imported.out()).startsWith("imported 8 spans, ");
@@ -157,7 +157,7 @@ class ExportCommandTest {
 
     @Test
     void importSaysWhichFileIsMissingRatherThanImportingNothing() {
-        Run missing = run("import", "/no/such/session.json", "--db=" + TestStore.memoryUrl());
+        Run missing = run("import", "/no/such/session.json", "--db=" + TestStore.writtenUrl());
         assertThat(missing.exit()).isEqualTo(2);
         assertThat(missing.err()).contains("no such file");
     }

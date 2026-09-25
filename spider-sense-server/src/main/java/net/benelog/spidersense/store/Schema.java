@@ -234,12 +234,15 @@ public final class Schema {
      */
     static void create(Sql sql, boolean upgrade) {
         Long stored = storedVersion(sql);
-        if (stored == null && !upgrade && sql.count("SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES"
-                + " WHERE TABLE_SCHEMA = 'PUBLIC'", java.util.List.of()) > 0) {
-            // Tables but no meta: an H2 database Spider Sense never wrote, such as the
-            // application's own named by a mistaken --db. The CLI creates nothing in it; an
-            // empty database has nothing to spoil and gets this version's tables.
-            throw new IllegalStateException("the database holds tables but no Spider Sense schema"
+        if (stored == null && !upgrade) {
+            // No meta: an H2 database Spider Sense never wrote, such as the application's own
+            // named by a mistaken --db, or an empty one, such as jdbc:h2:mem:, which names no
+            // file to check for. The CLI creates nothing in either: answering from a database it
+            // just made would say "no requests" where the truth is "wrong database".
+            boolean tables = sql.count("SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES"
+                    + " WHERE TABLE_SCHEMA = 'PUBLIC'", java.util.List.of()) > 0;
+            throw new IllegalStateException("the database holds " + (tables ? "tables but " : "")
+                    + "no Spider Sense schema"
                     + "; point --db at the file an application under the agent or the standalone server writes");
         }
         if (stored != null && stored != VERSION && !upgrade) {

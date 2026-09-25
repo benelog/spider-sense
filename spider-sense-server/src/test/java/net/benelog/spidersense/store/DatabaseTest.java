@@ -220,10 +220,33 @@ class DatabaseTest {
      */
     @Test
     void theCliOpenCreatesNoReaderUser() {
-        try (Database cli = Database.openExisting(TestStore.memoryUrl(), null)) {
-            assertThatThrownBy(cli::reader)
+        String url = TestStore.memoryUrl();
+        try (Database older = Database.open(url, null)) {
+            older.sql().execute("DROP USER " + Schema.READER);
+            try (Database cli = Database.openExisting(url, null)) {
+                assertThatThrownBy(cli::reader)
+                        .isInstanceOf(IllegalStateException.class)
+                        .hasMessageContaining("the database has no read-only user yet");
+            }
+        }
+    }
+
+    /**
+     * A JDBC URL with no file behind it, such as {@code jdbc:h2:mem:}, has no existence to
+     * check, and the CLI's open creates no schema in the empty database it gets: it refuses.
+     */
+    @Test
+    void theCliOpenRefusesAnEmptyDatabaseAndCreatesNothingInIt() throws SQLException {
+        String url = TestStore.memoryUrl();
+        try (Connection keep = java.sql.DriverManager.getConnection(url, "sa", "")) {
+            assertThatThrownBy(() -> Database.openExisting(url, null))
                     .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("the database has no read-only user yet");
+                    .hasMessageContaining("no Spider Sense schema");
+            try (ResultSet tables = keep.createStatement().executeQuery(
+                    "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'PUBLIC'")) {
+                tables.next();
+                assertThat(tables.getLong(1)).isZero();
+            }
         }
     }
 
