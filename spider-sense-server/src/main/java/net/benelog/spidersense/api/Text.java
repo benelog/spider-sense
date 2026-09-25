@@ -102,12 +102,18 @@ final class Text {
      */
     static String heading(String what, Window window, @Nullable String service,
             @Nullable Long requests, int acked, int resolved) {
+        return headingOf(what, window, scope(service), requests, acked, resolved);
+    }
+
+    /** The heading with its scope already said, which {@code check} extends with an endpoint. */
+    private static String headingOf(String what, Window window, String scope,
+            @Nullable Long requests, int acked, int resolved) {
         StringBuilder line = new StringBuilder("# ").append(what).append("  ")
-                .append(instant(window.from())).append(" → ").append(clock(window.to()))
+                .append(interval(window.from(), window.to()))
                 .append("  (").append(range(window)).append(", ")
-                .append(service == null ? "all services" : service);
+                .append(scope);
         if (requests != null) {
-            line.append(", ").append(requests).append(requests == 1 ? " request" : " requests");
+            line.append(", ").append(plural(requests, "request"));
         }
         if (acked > 0) {
             line.append(", ").append(acked).append(" acked");
@@ -127,14 +133,28 @@ final class Text {
     static String empty(String what, Window window, long requests,
             @Nullable String otlpEndpoint) {
         String line = "no " + what + " since " + instant(window.from())
-                + " (" + range(window) + ", " + requests + (requests == 1 ? " request" : " requests")
-                + ")\n";
+                + " (" + range(window) + ", " + plural(requests, "request") + ")\n";
         if (requests == 0 && otlpEndpoint != null) {
             line = line + "\nNothing has been received in this window."
                     + " Send OpenTelemetry data to " + otlpEndpoint + "/v1/traces"
                     + " (metrics and logs beside it).\n";
         }
         return line;
+    }
+
+    /** {@code 2026-09-17T10:00:00+09:00 → 10:15:00}: two instants, the second as a time of day. */
+    static String interval(long from, long to) {
+        return instant(from) + " → " + clock(to);
+    }
+
+    /** {@code all services}, or the one service an answer is narrowed to. */
+    static String scope(@Nullable String service) {
+        return service == null ? "all services" : service;
+    }
+
+    /** {@code 1 request}, {@code 3 requests}: a count as written, with its noun. */
+    static String plural(long n, String noun) {
+        return n + " " + (n == 1 ? noun : noun + "s");
     }
 
     static String instant(long at) {
@@ -394,12 +414,12 @@ final class Text {
         if (!(numbers.get(HOT_SPAN) instanceof Map<?, ?> hot)) {
             return null;
         }
-        Object selfMs = hot.get("selfMs");
-        Object share = hot.get("share");
-        return "hot span: " + collapse(String.valueOf(hot.get("name")))
-                + " · " + (selfMs instanceof Number self ? Numbers.millis(self.doubleValue()) : "—")
-                + " self · "
-                + (share instanceof Number part ? Numbers.percent(part.doubleValue()) : "—");
+        return "hot span: " + hotSpanLine(hot) + " self · " + percent(hot.get("share"));
+    }
+
+    /** {@code SELECT order_line · 312.4 ms}: a hot span's name and its self time. */
+    private static String hotSpanLine(Map<?, ?> hot) {
+        return collapse(String.valueOf(hot.get("name"))) + " · " + millis(hot.get("selfMs"));
     }
 
     /**
@@ -421,8 +441,7 @@ final class Text {
                 if (!(each instanceof Map<?, ?> hot)) {
                     continue;
                 }
-                text.append(indent).append(collapse(String.valueOf(hot.get("name"))))
-                        .append(" · ").append(millis(hot.get("selfMs")))
+                text.append(indent).append(hotSpanLine(hot))
                         .append(" · ").append(percent(hot.get("share")))
                         .append(" · ×").append(scalar(hot.get("count"))).append('\n');
                 indent = "              ";
@@ -518,12 +537,10 @@ final class Text {
                 .append(Numbers.count(result.tingles())).append(" tingles, ")
                 .append(Numbers.count(result.marks())).append(" marks");
         if (result.skippedTraces() > 0) {
-            line.append(" (").append(Numbers.count(result.skippedTraces()))
-                    .append(result.skippedTraces() == 1 ? " trace" : " traces")
+            line.append(" (").append(Numbers.plural(result.skippedTraces(), "trace"))
                     .append(" already present)");
         }
-        return line.append(" from ").append(instant(result.from()))
-                .append(" → ").append(clock(result.to())).append('\n').toString();
+        return line.append(" from ").append(interval(result.from(), result.to())).append('\n').toString();
     }
 
     static String mark(Marks.Mark mark) {
@@ -571,11 +588,9 @@ final class Text {
     static String compare(Compare.Comparison comparison, @Nullable String service,
             boolean full) {
         StringBuilder text = new StringBuilder("# compare  ")
-                .append(instant(comparison.before().from())).append(" → ")
-                .append(clock(comparison.before().to())).append("  vs  ")
-                .append(instant(comparison.after().from())).append(" → ")
-                .append(clock(comparison.after().to()))
-                .append("  (").append(service == null ? "all services" : service).append(")\n\n");
+                .append(interval(comparison.before().from(), comparison.before().to())).append("  vs  ")
+                .append(interval(comparison.after().from(), comparison.after().to()))
+                .append("  (").append(scope(service)).append(")\n\n");
 
         Stats.Totals before = comparison.beforeTotals();
         Stats.Totals after = comparison.afterTotals();
@@ -659,12 +674,9 @@ final class Text {
 
     static String check(Check.CheckResult result, Window window, @Nullable String service,
             @Nullable String endpoint) {
-        StringBuilder text = new StringBuilder("# check  ").append(result.verdict().word()).append("  ")
-                .append(instant(window.from())).append(" → ").append(clock(window.to()))
-                .append("  (").append(range(window)).append(", ")
-                .append(service == null ? "all services" : service)
-                .append(endpoint == null ? "" : ", " + endpoint)
-                .append(", ").append(result.requests()).append(" requests)\n\n");
+        StringBuilder text = new StringBuilder(headingOf("check  " + result.verdict().word(), window,
+                scope(service) + (endpoint == null ? "" : ", " + endpoint), result.requests(), 0, 0))
+                .append('\n');
         if (result.reason() != null) {
             text.append(result.reason()).append('\n').append('\n');
         }
@@ -701,8 +713,8 @@ final class Text {
         StringBuilder text = new StringBuilder(heading("traces", window, service, requests));
         text.append('\n');
         // The table is a page of the newest; the count says how many the window holds.
-        text.append(traces.size() < total ? traces.size() + " of " + total : String.valueOf(total))
-                .append(total == 1 ? " trace" : " traces").append(", newest first\n\n");
+        text.append(traces.size() < total ? traces.size() + " of " : "").append(plural(total, "trace"))
+                .append(", newest first\n\n");
         table(text, List.of("start", "duration", "trace", "root", "service", "spans", "db", "errors",
                 "status"));
         for (Stats.TraceSummary trace : traces) {
@@ -848,19 +860,27 @@ final class Text {
         }
         StringBuilder text = new StringBuilder(heading("logs", window, service, null));
         text.append('\n')
-                .append(logs.size() < total ? logs.size() + " of " + total : String.valueOf(total))
-                .append(total == 1 ? " line" : " lines").append(", newest first\n\n");
+                .append(logs.size() < total ? logs.size() + " of " : "").append(plural(total, "line"))
+                .append(", newest first\n\n");
         for (LogRecord log : logs) {
-            text.append(clockMillis(log.at())).append("  ")
-                    .append(pad(log.severity(), 6)).append(' ')
-                    .append(or(log.logger())).append("  ")
-                    .append(oneLine(log.body()));
-            if (log.traceId() != null) {
-                text.append("  trace ").append(log.traceId());
-            }
-            text.append('\n');
+            text.append(logLine(log, true));
         }
         return text.toString();
+    }
+
+    /**
+     * {@code 10:15:02.123  ERROR  com.acme.Orders  Payment failed  trace 4bf9…}: one log record on
+     * one line, its trace id at the end when it has one and the list is not already one trace's.
+     */
+    private static String logLine(LogRecord log, boolean withTrace) {
+        StringBuilder line = new StringBuilder(clockMillis(log.at())).append("  ")
+                .append(pad(log.severity(), 6)).append(' ')
+                .append(or(log.logger())).append("  ")
+                .append(oneLine(log.body()));
+        if (withTrace && log.traceId() != null) {
+            line.append("  trace ").append(log.traceId());
+        }
+        return line.append('\n').toString();
     }
 
     static String services(Window window, List<Stats.ServiceSummary> services, long requests,
@@ -940,7 +960,7 @@ final class Text {
                 .append(Numbers.millis(trace.durationMs())).append("  ")
                 .append(String.join(" → ", trace.services())).append("  ")
                 .append(trace.spans().size()).append(" spans, ").append(dbCount).append(" db, ")
-                .append(errorCount).append(errorCount == 1 ? " error" : " errors").append("\n\n");
+                .append(plural(errorCount, "error")).append("\n\n");
         text.append(pad("offset", OFFSET_WIDTH)).append(pad("duration", DURATION_WIDTH))
                 .append("span\n");
 
@@ -969,9 +989,7 @@ final class Text {
         if (!trace.logs().isEmpty()) {
             text.append("\nlogs (").append(trace.logs().size()).append(")\n");
             for (LogRecord log : trace.logs()) {
-                text.append(clockMillis(log.at())).append("  ").append(pad(log.severity(), 6))
-                        .append(' ').append(or(log.logger())).append("  ")
-                        .append(oneLine(log.body())).append('\n');
+                text.append(logLine(log, false));
             }
         }
         return text.toString();

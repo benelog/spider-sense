@@ -175,4 +175,26 @@ class TextTest {
         assertThat(rows(text).get(0)).isEqualTo("| A\\|B | C |");
         assertThat(rows(text).get(2)).isEqualTo("| " + "x".repeat(199) + "\\|… | line break |");
     }
+
+    @Test
+    void aCheckOverOneRequestSaysOneRequestLikeEveryOtherHeading() {
+        Check.CheckResult one = new Check.CheckResult(true, 1, null, List.of());
+        Check.CheckResult many = new Check.CheckResult(false, 12, null, List.of());
+
+        assertThat(Text.check(one, WINDOW, null, null).lines().findFirst().orElseThrow())
+                .startsWith("# check  pass  ").endsWith("(1m, all services, 1 request)");
+        assertThat(Text.check(many, WINDOW, "orders", "GET /a").lines().findFirst().orElseThrow())
+                .startsWith("# check  fail  ").endsWith("(1m, orders, GET /a, 12 requests)");
+        assertThat(Text.check(one, WINDOW, null, null)).contains("1 request)\n\n| rule |");
+    }
+
+    @Test
+    void theSmallPiecesOfAHeading() {
+        assertThat(Text.plural(1, "request")).isEqualTo("1 request");
+        assertThat(Text.plural(1234, "request")).isEqualTo("1234 requests");
+        assertThat(Text.scope(null)).isEqualTo("all services");
+        assertThat(Text.scope("orders")).isEqualTo("orders");
+        assertThat(Text.interval(WINDOW.from(), WINDOW.to()))
+                .isEqualTo(Text.instant(WINDOW.from()) + " → " + Text.clock(WINDOW.to()));
+    }
 }
