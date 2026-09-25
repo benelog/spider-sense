@@ -2,7 +2,8 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, icon, panel, table, chip, serviceChip, debounce, spinner, errorBox } from '../ui.js';
+import { h, fill, icon, panel, table, chip, serviceChip, debounce, spinner } from '../ui.js';
+import { pageLoader } from '../page.js';
 import { oneLineSql } from '../sql.js';
 import { dur, count, rel, bothTimes } from '../format.js';
 
@@ -28,8 +29,6 @@ function unindexedCell(schema) {
 }
 
 export function render(root, ctx) {
-  let destroyed = false;
-  const latest = api.requestSequence();
   let rows = [];
   let node = null;
   let sort = SORTS.some((s) => s.id === ctx.query.sort) ? ctx.query.sort : 'total';
@@ -48,7 +47,7 @@ export function render(root, ctx) {
   sortSelect.addEventListener('change', () => {
     sort = sortSelect.value;
     router.setQuery({ sort: sort === 'total' ? '' : sort });
-    load();
+    loader.load();
   });
 
   const body = h('div', spinner());
@@ -93,18 +92,13 @@ export function render(root, ctx) {
     }
   }
 
-  async function load() {
-    const current = latest();
-    try {
-      const res = await api.queries({ sort, limit: 100 });
-      if (destroyed || !current()) return;
-      rows = res.queries || [];
-      paint();
-    } catch (e) {
-      if (!destroyed && current()) { node = null; fill(body, errorBox(e, load)); }
-    }
-  }
+  const loader = pageLoader({
+    fetch: () => api.queries({ sort, limit: 100 }),
+    paint: (res) => { rows = res.queries || []; paint(); },
+    body,
+    onError: () => { node = null; },
+  });
 
-  load();
-  return { refresh: load, destroy: () => { destroyed = true; apply.cancel(); } };
+  loader.load();
+  return { refresh: loader.load, destroy: () => { loader.destroy(); apply.cancel(); } };
 }

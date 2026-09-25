@@ -5,8 +5,9 @@ import * as api from '../api.js';
 import * as router from '../router.js';
 import {
   h, fill, icon, panel, table, chip, methodChip, statusBar, comparator,
-  spinner, errorBox, serviceColor,
+  spinner, serviceColor,
 } from '../ui.js';
+import { pageLoader, skeleton } from '../page.js';
 import { timeSeries, legend } from '../charts.js';
 import { histogramBars, apdexClass, fmtApdex } from '../buckets.js';
 import { chartMode, loadToggle, throughputSpec, throughputLegend } from '../loadchart.js';
@@ -121,8 +122,6 @@ export function endpointTable(rows, sortState, onSort) {
 
 export function render(root, ctx) {
   const name = ctx.params.name;
-  let destroyed = false;
-  const latest = api.requestSequence();
   let sort = { key: ctx.query.sort || 'totalMs', dir: ctx.query.dir === 'asc' ? 'asc' : 'desc' };
   let endpoints = [];
   let endpointNode = null;
@@ -146,15 +145,7 @@ export function render(root, ctx) {
   const resourcePanel = h('section.panel',
     h('details.collapsible', h('summary', 'Resource attributes'), resourceBody));
 
-  const page = h('div', { style: { display: 'grid', gap: 'var(--gap)' } }, spinner());
-  root.appendChild(page);
-
-  let built = false;
-  function build() {
-    if (built) return;
-    built = true;
-    fill(page, headPanel, statsRow, red, endpointPanel, half, depsPanel, resourcePanel);
-  }
+  const layout = skeleton(root, () => [headPanel, statsRow, red, endpointPanel, half, depsPanel, resourcePanel]);
 
   function paintHead(summary, resource) {
     const r = resource || {};
@@ -242,12 +233,10 @@ export function render(root, ctx) {
         : h('span.muted', 'No resource attribute.')));
   }
 
-  async function load() {
-    const current = latest();
-    try {
-      const data = await api.service(name);
-      if (destroyed || !current()) return;
-      build();
+  const loader = pageLoader({
+    fetch: () => api.service(name),
+    paint: (data) => {
+      layout.build();
       paintHead(data.service || {}, data.resource);
       fill(statsRow, statTiles(data.service || {}, (api.state.status || {}).thresholds));
       red.syncMode();
@@ -258,15 +247,12 @@ export function render(root, ctx) {
       errorsTable.setRows(data.errors || []);
       depsTable.setRows(data.dependencies || []);
       paintResource(data.resource);
-    } catch (e) {
-      if (destroyed || !current()) return;
-      built = false;
-      fill(page, errorBox(e, load));
-    }
-  }
+    },
+    body: layout,
+  });
 
-  load();
-  return { refresh: load, destroy: () => { destroyed = true; red.destroy(); } };
+  loader.load();
+  return { refresh: loader.load, destroy: () => { loader.destroy(); red.destroy(); } };
 }
 
 function shortType(type) {

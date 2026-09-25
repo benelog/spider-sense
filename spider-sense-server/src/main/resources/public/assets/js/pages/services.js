@@ -2,14 +2,13 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, panel, table, chip, serviceColor, comparator, spinner, errorBox, emptyState, snippetBlocks, seedServices } from '../ui.js';
+import { h, fill, panel, table, chip, serviceColor, comparator, spinner, emptyState, snippetBlocks, seedServices } from '../ui.js';
+import { pageLoader } from '../page.js';
 import { sparkline } from '../charts.js';
 import { apdexClass, fmtApdex } from '../buckets.js';
 import { dur, count, rate, pct, rel, bothTimes } from '../format.js';
 
 export function render(root, ctx) {
-  let destroyed = false;
-  const latest = api.requestSequence();
   let rows = [];
   let sort = { key: ctx.query.sort || 'requests', dir: ctx.query.dir === 'asc' ? 'asc' : 'desc' };
   let node = null;
@@ -63,11 +62,9 @@ export function render(root, ctx) {
     }
   }
 
-  async function load() {
-    const current = latest();
-    try {
-      const res = await api.services();
-      if (destroyed || !current()) return;
+  const loader = pageLoader({
+    fetch: () => api.services(),
+    paint: (res) => {
       rows = res.services || [];
       seedServices(rows.map((s) => s.name));
       if (!rows.length) {
@@ -76,11 +73,11 @@ export function render(root, ctx) {
         return;
       }
       paint();
-    } catch (e) {
-      if (!destroyed && current()) { node = null; fill(body, errorBox(e, load)); }
-    }
-  }
+    },
+    body,
+    onError: () => { node = null; },
+  });
 
-  load();
-  return { refresh: load, destroy: () => { destroyed = true; } };
+  loader.load();
+  return { refresh: loader.load, destroy: loader.destroy };
 }

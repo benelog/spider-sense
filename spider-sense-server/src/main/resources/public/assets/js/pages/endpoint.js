@@ -2,7 +2,8 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, panel, table, chip, methodChip, statusBar, tabs, spinner, errorBox, serviceChip, breakdownBar, breakdownLead } from '../ui.js';
+import { h, fill, panel, table, chip, methodChip, statusBar, tabs, spinner, serviceChip, breakdownBar, breakdownLead } from '../ui.js';
+import { pageLoader, skeleton } from '../page.js';
 import { redCharts } from './service.js';
 import { histogramBars, apdexClass, fmtApdex } from '../buckets.js';
 import { traceTable } from './traces.js';
@@ -11,8 +12,6 @@ import { dur, count, rate, rel, bothTimes, truncate } from '../format.js';
 
 export function render(root, ctx) {
   const id = ctx.params.id;
-  let destroyed = false;
-  const latest = api.requestSequence();
   let data = null;
   let activeTab = ctx.query.tab || 'slowest';
 
@@ -22,15 +21,7 @@ export function render(root, ctx) {
   const tabsBody = h('div', spinner());
   const tabsPanel = panel({}, tabsBody);
 
-  const page = h('div', { style: { display: 'grid', gap: 'var(--gap)' } }, spinner());
-  root.appendChild(page);
-
-  let built = false;
-  function build() {
-    if (built) return;
-    built = true;
-    fill(page, headPanel, red, tabsPanel);
-  }
+  const layout = skeleton(root, () => [headPanel, red, tabsPanel]);
 
   function paintHead(e) {
     const breakdown = (data && data.breakdown) || {};
@@ -128,26 +119,21 @@ export function render(root, ctx) {
     fill(tabsBody, tabNode);
   }
 
-  async function load() {
-    const current = latest();
-    try {
-      const res = await api.endpoint(id);
-      if (destroyed || !current()) return;
+  const loader = pageLoader({
+    fetch: () => api.endpoint(id),
+    paint: (res) => {
       data = res;
-      build();
+      layout.build();
       const e = data.endpoint || {};
       ctx.setTitle(e.name || 'Endpoint');
       paintHead(e);
       red.syncMode();
       red.apply(data.series || {});
       paintTabs();
-    } catch (err) {
-      if (destroyed || !current()) return;
-      built = false;
-      fill(page, errorBox(err, load));
-    }
-  }
+    },
+    body: layout,
+  });
 
-  load();
-  return { refresh: load, destroy: () => { destroyed = true; red.destroy(); } };
+  loader.load();
+  return { refresh: loader.load, destroy: () => { loader.destroy(); red.destroy(); } };
 }

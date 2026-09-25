@@ -3,12 +3,13 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, panel, table, chip, serviceChip, copyBlock, spinner, errorBox, emptyState, snippetBlocks, dialog, toast, breakdownBar, breakdownLead } from '../ui.js';
+import { h, fill, panel, table, chip, serviceChip, copyBlock, spinner, emptyState, snippetBlocks, dialog, toast, breakdownBar, breakdownLead } from '../ui.js';
 import { formatSql } from '../sql.js';
 import { fmtApdex } from '../buckets.js';
 import { count, dur, rate, pct, bytes, time, bothTimes, truncate, shortId } from '../format.js';
 import { codeFrame } from '../frames.js';
 import { copyButtons, cliLine } from '../copyas.js';
+import { pageLoader } from '../page.js';
 
 const KIND_LABEL = {
   regression: 'regression',
@@ -428,10 +429,7 @@ export function windowName() {
 }
 
 export function render(root, ctx) {
-  let destroyed = false;
-  const latest = api.requestSequence();
   let rows = [];
-  let requests = 0;
   let listWindow = null;
   let node = null;
   // The open rows, kept across a table rebuilt after an error or an empty window.
@@ -461,7 +459,7 @@ export function render(root, ctx) {
       node = table(columns, {
         rowKey: (f) => f.id,
         rowClass: (f) => (setAside(f) ? 'is-acked' : null),
-        detail: (f) => evidence(f, load, () => listWindow),
+        detail: (f) => evidence(f, loader.load, () => listWindow),
         detailKey: ackSignature,
         detailClass: 'f-detail',
         expanded,
@@ -472,15 +470,12 @@ export function render(root, ctx) {
     node.setRows(rows);
   }
 
-  async function load() {
-    const current = latest();
-    try {
-      const res = await api.findings({ limit: 100 });
-      if (destroyed || !current()) return;
+  const loader = pageLoader({
+    fetch: () => api.findings({ limit: 100 }),
+    paint: (res) => {
       rows = res.findings || [];
-      requests = res.requests || 0;
       listWindow = res.window || api.windowFor();
-      if (!rows.length && !requests) {
+      if (!rows.length && !res.requests) {
         node = null;
         const s = api.state.status || {};
         fill(body, emptyState(
@@ -491,11 +486,11 @@ export function render(root, ctx) {
         return;
       }
       paint();
-    } catch (e) {
-      if (!destroyed && current()) { node = null; fill(body, errorBox(e, load)); }
-    }
-  }
+    },
+    body,
+    onError: () => { node = null; },
+  });
 
-  load();
-  return { refresh: load, destroy: () => { destroyed = true; } };
+  loader.load();
+  return { refresh: loader.load, destroy: loader.destroy };
 }

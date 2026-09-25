@@ -4,8 +4,9 @@ import * as api from '../api.js';
 import * as router from '../router.js';
 import {
   h, fill, icon, panel, table, chip, serviceChip, serviceColor, severityChip, idButton,
-  drawer, closeDrawer, spinner, errorBox,
+  drawer, closeDrawer, spinner,
 } from '../ui.js';
+import { pageLoader, skeleton } from '../page.js';
 import { formatSql, stackTrace } from '../sql.js';
 import { dur, count, timeMs, bothTimes, offset, full } from '../format.js';
 
@@ -16,13 +17,11 @@ const CATEGORY_ICON = { http: 'trace', db: 'database', messaging: 'log', rpc: 's
 
 export function render(root, ctx) {
   const traceId = ctx.params.id;
-  let destroyed = false;
   let data = null;
   let view = ctx.query.view === 'profile' ? 'profile' : 'waterfall';
   let profileSort = ctx.query.sort === 'elapsed' || ctx.query.sort === 'self' ? ctx.query.sort : 'start';
   let selectedSpan = ctx.query.span || null;
   const collapsed = new Set();
-  const latest = api.requestSequence();
   let shape = '';
 
   const head = h('div.trace-head');
@@ -33,15 +32,7 @@ export function render(root, ctx) {
   const logsPanel = h('section.panel#trace-logs',
     h('div.panel-head', h('h2.panel-title', 'Logs')), logsBox);
 
-  const page = h('div', { style: { display: 'grid', gap: 'var(--gap)' } }, spinner());
-  root.appendChild(page);
-
-  let built = false;
-  function build() {
-    if (built) return;
-    built = true;
-    fill(page, headPanel, bodyPanel, logsPanel);
-  }
+  const layout = skeleton(root, () => [headPanel, bodyPanel, logsPanel]);
 
   // --- model ------------------------------------------------------------
 
@@ -344,48 +335,46 @@ export function render(root, ctx) {
    * services, so one opened early is incomplete. The refetch repaints only when the trace
    * changed, keeping the collapsed spans, the selected span, its open drawer and the focus.
    */
-  async function load(live = false) {
-    const current = latest();
-    try {
-      const next = await api.trace(traceId);
-      if (destroyed || !current()) return;
-      const nextShape = shapeOf(next);
-      if (live && built && nextShape === shape) return;
-      shape = nextShape;
-      data = next;
-      const focused = live && document.activeElement && bodyBox.contains(document.activeElement)
-        ? document.activeElement.closest('[data-key]') : null;
-      build();
-      ctx.setTitle(((data.spans || [])[0] || {}).name || 'Trace');
-      paintHead();
-      paintBody();
-      paintLogs();
-      if (focused) {
-        const again = bodyBox.querySelector('[data-key="' + CSS.escape(focused.dataset.key) + '"]');
-        if (again) again.focus();
+  function paint(next, live = false) {
+    const nextShape = shapeOf(next);
+    if (live && layout.built && nextShape === shape) return;
+    shape = nextShape;
+    data = next;
+    const focused = live && document.activeElement && bodyBox.contains(document.activeElement)
+      ? document.activeElement.closest('[data-key]') : null;
+    layout.build();
+    ctx.setTitle(((data.spans || [])[0] || {}).name || 'Trace');
+    paintHead();
+    paintBody();
+    paintLogs();
+    if (focused) {
+      const again = bodyBox.querySelector('[data-key="' + CSS.escape(focused.dataset.key) + '"]');
+      if (again) again.focus();
+    }
+    if (selectedSpan) {
+      const span = (data.spans || []).find((s) => s.spanId === selectedSpan);
+      if (span && live) {
+        for (const row of bodyBox.querySelectorAll('.wf-row, tbody tr')) row.classList.toggle('selected', row.dataset.key === span.spanId);
+        const open = document.querySelector('.drawer .drawer-body');
+        if (open) fill(open, spanBody(span));
+      } else if (span) {
+        openSpan(span);
       }
-      if (selectedSpan) {
-        const span = (data.spans || []).find((s) => s.spanId === selectedSpan);
-        if (span && live) {
-          for (const row of bodyBox.querySelectorAll('.wf-row, tbody tr')) row.classList.toggle('selected', row.dataset.key === span.spanId);
-          const open = document.querySelector('.drawer .drawer-body');
-          if (open) fill(open, spanBody(span));
-        } else if (span) {
-          openSpan(span);
-        }
-      }
-    } catch (e) {
-      if (destroyed || !current()) return;
-      if (live && built) return;   // the trace on screen stays; the next tick asks again
-      built = false;
-      fill(page, errorBox(e, () => load()));
     }
   }
 
-  load();
+  const loader = pageLoader({
+    fetch: () => api.trace(traceId),
+    paint,
+    body: layout,
+    // A Live refresh that fails keeps the trace on screen; the next tick asks again.
+    onError: (e, live) => !(live && layout.built),
+  });
+
+  loader.load();
   return {
-    refresh: () => { if (api.state.live) load(true); },
+    refresh: () => { if (api.state.live) loader.load(true); },
     onEscape: () => closeDrawer(),
-    destroy: () => { destroyed = true; closeDrawer(true); },
+    destroy: () => { loader.destroy(); closeDrawer(true); },
   };
 }

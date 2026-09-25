@@ -2,7 +2,8 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, panel, stat, table, chip, serviceChip, copyBlock, spinner, errorBox } from '../ui.js';
+import { h, fill, panel, stat, table, chip, serviceChip, copyBlock } from '../ui.js';
+import { pageLoader, skeleton } from '../page.js';
 import { timeSeries, legend } from '../charts.js';
 import { formatSql } from '../sql.js';
 import { traceTable } from './traces.js';
@@ -12,8 +13,6 @@ import { dur, count, rel, bothTimes } from '../format.js';
 
 export function render(root, ctx) {
   const id = ctx.params.id;
-  let destroyed = false;
-  const latest = api.requestSequence();
   let chart = null;
   let loaded = null;
 
@@ -40,72 +39,63 @@ export function render(root, ctx) {
     panel({ title: 'Callers' }, callersBody),
     panel({ title: 'Slowest traces' }, tracesBody));
 
-  const page = h('div', { style: { display: 'grid', gap: 'var(--gap)' } }, spinner());
-  root.appendChild(page);
+  const layout = skeleton(root, () => [headPanel, statsRow, chartPanel, half]);
 
-  let built = false;
-  function build() {
-    if (built) return;
-    built = true;
-    fill(page, headPanel, statsRow, chartPanel, half);
+  function paint({ win, data }) {
+    const q = data.query || {};
+    loaded = { window: win, service: q.service };
+    layout.build();
+    ctx.setTitle((q.operation || 'Query') + (q.table ? ' ' + q.table : ''));
+    fill(head,
+      h('div.row', { style: { gap: '8px' } },
+        q.system ? chip(q.system) : null,
+        q.namespace ? chip(q.namespace, { title: 'db.namespace' }) : null,
+        q.operation ? chip(q.operation) : null,
+        q.table ? chip(q.table, { title: 'db.sql.table' }) : null,
+        serviceChip(q.service),
+        h('span.muted', { style: { marginLeft: 'auto', fontSize: '11px' }, title: bothTimes(q.lastSeen) }, 'last seen ' + rel(q.lastSeen))),
+      copyBlock(formatSql(q.statement || '')),
+      schemaLines(q.schema),
+      h('div.row', copyButtons({
+        markdown: () => ({ path: '/api/queries/' + encodeURIComponent(id), query: api.params({}, { window: loaded.window, service: null }) }),
+        cli: () => cliLine('queries', loaded.window, loaded.service),
+      })));
+
+    fill(statsRow,
+      stat(count(q.calls), '', 'calls'),
+      stat(dur(q.avgMs), '', 'average'),
+      stat(dur(q.p50Ms), '', 'p50'),
+      stat(dur(q.p95Ms), '', 'p95'),
+      stat(dur(q.maxMs), '', 'max'),
+      stat(dur(q.totalMs), '', 'total time'),
+      stat(count(q.slowCalls), '', 'slow calls', { class: q.slowCalls ? 'is-warn' : '' }));
+
+    const series = data.series || {};
+    const spec = {
+      height: 180,
+      t: series.t || [],
+      series: [
+        { label: 'Calls', values: series.calls || [], color: 'silk', type: 'bar' },
+        { label: 'p95', values: series.p95Ms || [], color: 'accent', type: 'line', scale: 'ms', width: 2 },
+      ],
+      axes: [{ scale: 'y', label: 'Calls' }, { scale: 'ms', side: 1, label: 'p95 (ms)', color: 'accent' }],
+    };
+    fill(chartLegend, legend([{ label: 'Calls per bucket', color: 'silk' }, { label: 'p95, right axis', color: 'accent' }]));
+    if (chart) chart.update(spec); else chart = timeSeries(chartBody, spec);
+
+    callersTable.setRows(q.callers || []);
+    tracesTable.setRows(data.traces || []);
   }
 
-  async function load() {
-    const current = latest();
-    try {
+  const loader = pageLoader({
+    fetch: async () => {
       const win = api.windowFor();
-      const data = await api.query(id, { window: win });
-      if (destroyed || !current()) return;
-      const q = data.query || {};
-      loaded = { window: win, service: q.service };
-      build();
-      ctx.setTitle((q.operation || 'Query') + (q.table ? ' ' + q.table : ''));
-      fill(head,
-        h('div.row', { style: { gap: '8px' } },
-          q.system ? chip(q.system) : null,
-          q.namespace ? chip(q.namespace, { title: 'db.namespace' }) : null,
-          q.operation ? chip(q.operation) : null,
-          q.table ? chip(q.table, { title: 'db.sql.table' }) : null,
-          serviceChip(q.service),
-          h('span.muted', { style: { marginLeft: 'auto', fontSize: '11px' }, title: bothTimes(q.lastSeen) }, 'last seen ' + rel(q.lastSeen))),
-        copyBlock(formatSql(q.statement || '')),
-        schemaLines(q.schema),
-        h('div.row', copyButtons({
-          markdown: () => ({ path: '/api/queries/' + encodeURIComponent(id), query: api.params({}, { window: loaded.window, service: null }) }),
-          cli: () => cliLine('queries', loaded.window, loaded.service),
-        })));
+      return { win, data: await api.query(id, { window: win }) };
+    },
+    paint,
+    body: layout,
+  });
 
-      fill(statsRow,
-        stat(count(q.calls), '', 'calls'),
-        stat(dur(q.avgMs), '', 'average'),
-        stat(dur(q.p50Ms), '', 'p50'),
-        stat(dur(q.p95Ms), '', 'p95'),
-        stat(dur(q.maxMs), '', 'max'),
-        stat(dur(q.totalMs), '', 'total time'),
-        stat(count(q.slowCalls), '', 'slow calls', { class: q.slowCalls ? 'is-warn' : '' }));
-
-      const series = data.series || {};
-      const spec = {
-        height: 180,
-        t: series.t || [],
-        series: [
-          { label: 'Calls', values: series.calls || [], color: 'silk', type: 'bar' },
-          { label: 'p95', values: series.p95Ms || [], color: 'accent', type: 'line', scale: 'ms', width: 2 },
-        ],
-        axes: [{ scale: 'y', label: 'Calls' }, { scale: 'ms', side: 1, label: 'p95 (ms)', color: 'accent' }],
-      };
-      fill(chartLegend, legend([{ label: 'Calls per bucket', color: 'silk' }, { label: 'p95, right axis', color: 'accent' }]));
-      if (chart) chart.update(spec); else chart = timeSeries(chartBody, spec);
-
-      callersTable.setRows(q.callers || []);
-      tracesTable.setRows(data.traces || []);
-    } catch (e) {
-      if (destroyed || !current()) return;
-      built = false;
-      fill(page, errorBox(e, load));
-    }
-  }
-
-  load();
-  return { refresh: load, destroy: () => { destroyed = true; if (chart) chart.destroy(); } };
+  loader.load();
+  return { refresh: loader.load, destroy: () => { loader.destroy(); if (chart) chart.destroy(); } };
 }

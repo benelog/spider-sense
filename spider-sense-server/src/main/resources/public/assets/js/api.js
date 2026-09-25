@@ -108,10 +108,10 @@ export function getJSON(path, query) {
 
 /**
  * One stream of a page's loads, newest wins. Each call starts a request and returns a check that
- * stays true only until the next call starts one:
+ * stays true only until the next call starts one (page.js#pageLoader is the one user):
  *
- *   const latest = api.requestSequence();
- *   async function load() { const current = latest(); const res = await api.x(); if (!current()) return; ... }
+ *   const startRequest = api.requestSequence();
+ *   async function load() { const isNewest = startRequest(); const res = await api.x(); if (!isNewest()) return; ... }
  *
  * The window's `to` moves with the clock, so two loads of the same view are two URLs, and a slow
  * answer to an older range or filter would otherwise paint over the newer one.

@@ -2,7 +2,8 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, panel, stat, table, serviceChip, idButton, spinner, errorBox } from '../ui.js';
+import { h, fill, panel, stat, table, serviceChip, idButton } from '../ui.js';
+import { pageLoader, skeleton } from '../page.js';
 import { timeSeries, legend } from '../charts.js';
 import { codeFrame, foldedStack, framesMode, framesToggle } from '../frames.js';
 import { copyButtons, cliLine } from '../copyas.js';
@@ -23,8 +24,6 @@ function exceptionChain(chain, mode) {
 
 export function render(root, ctx) {
   const id = ctx.params.id;
-  let destroyed = false;
-  const latest = api.requestSequence();
   let chart = null;
   let mode = framesMode(ctx.query);
   let lastChain = null;
@@ -73,77 +72,68 @@ export function render(root, ctx) {
     panel({ title: 'Endpoints' }, endpointsBody),
     panel({ title: 'Recent traces' }, tracesBody));
 
-  const page = h('div', { style: { display: 'grid', gap: 'var(--gap)' } }, spinner());
-  root.appendChild(page);
+  const layout = skeleton(root, () => [headPanel, statsRow, chartPanel, stackPanel, half]);
 
-  let built = false;
-  function build() {
-    if (built) return;
-    built = true;
-    fill(page, headPanel, statsRow, chartPanel, stackPanel, half);
+  function paint({ win, data }) {
+    const e = data.error || {};
+    loaded = { window: win, service: e.service };
+    layout.build();
+    const { pkg, name } = splitType(e.type);
+    ctx.setTitle(name || 'Error');
+    fill(head,
+      h('div.row', { style: { gap: '8px' } },
+        h('span.mono', { style: { fontSize: '14px' } }, h('span.muted', pkg), h('b', name)),
+        serviceChip(e.service)),
+      h('div', { style: { color: 'var(--err)' } }, e.message || ''),
+      e.sample ? h('div.row', { style: { gap: '12px' } },
+        h('span.muted', { style: { fontSize: '11px' } }, 'sample'),
+        idButton(e.sample.traceId, 'Copy trace id'),
+        h('a.link-btn', { href: router.href('/traces/' + e.sample.traceId, api.sharedQuery()) }, 'Open trace'),
+        h('span.muted', { style: { fontSize: '11px' }, title: bothTimes(e.sample.at) }, full(e.sample.at))) : null,
+      copyButtons({
+        markdown: () => ({ path: '/api/errors/' + encodeURIComponent(id), query: api.params({}, { window: loaded.window, service: null }) }),
+        cli: () => cliLine('errors', loaded.window, loaded.service),
+      }));
+
+    fill(statsRow,
+      stat(count(e.count), '', 'occurrences', { class: 'is-bad' }),
+      stat(rel(e.firstSeen), '', 'first seen', { title: bothTimes(e.firstSeen) }),
+      stat(rel(e.lastSeen), '', 'last seen', { title: bothTimes(e.lastSeen) }),
+      stat(count((e.endpoints || []).length), '', 'endpoints'));
+
+    const series = data.series || {};
+    const spec = {
+      height: 160,
+      t: series.t || [],
+      series: [{ label: 'Errors', values: series.count || [], color: 'err', type: 'bar' }],
+      axes: [{ scale: 'y' }],
+    };
+    fill(chartLegend, legend([{ label: 'Occurrences per bucket', color: 'err' }]));
+    if (chart) chart.update(spec); else chart = timeSeries(chartBody, spec);
+
+    const code = data.code || [];
+    lastChain = data.chain || [];
+    fill(stackBody,
+      code.length
+        ? h('div.f-code', { style: { marginBottom: '12px' } }, h('div.sub-head', 'Code'),
+          code.map((frame) => codeFrame(frame)))
+        : null,
+      stackTraceBox);
+    paintStack();
+
+    endpointsTable.setRows(e.endpoints || []);
+    tracesTable.setRows(data.traces || []);
   }
 
-  async function load() {
-    const current = latest();
-    try {
+  const loader = pageLoader({
+    fetch: async () => {
       const win = api.windowFor();
-      const data = await api.errorGroup(id, { window: win });
-      if (destroyed || !current()) return;
-      const e = data.error || {};
-      loaded = { window: win, service: e.service };
-      build();
-      const { pkg, name } = splitType(e.type);
-      ctx.setTitle(name || 'Error');
-      fill(head,
-        h('div.row', { style: { gap: '8px' } },
-          h('span.mono', { style: { fontSize: '14px' } }, h('span.muted', pkg), h('b', name)),
-          serviceChip(e.service)),
-        h('div', { style: { color: 'var(--err)' } }, e.message || ''),
-        e.sample ? h('div.row', { style: { gap: '12px' } },
-          h('span.muted', { style: { fontSize: '11px' } }, 'sample'),
-          idButton(e.sample.traceId, 'Copy trace id'),
-          h('a.link-btn', { href: router.href('/traces/' + e.sample.traceId, api.sharedQuery()) }, 'Open trace'),
-          h('span.muted', { style: { fontSize: '11px' }, title: bothTimes(e.sample.at) }, full(e.sample.at))) : null,
-        copyButtons({
-          markdown: () => ({ path: '/api/errors/' + encodeURIComponent(id), query: api.params({}, { window: loaded.window, service: null }) }),
-          cli: () => cliLine('errors', loaded.window, loaded.service),
-        }));
+      return { win, data: await api.errorGroup(id, { window: win }) };
+    },
+    paint,
+    body: layout,
+  });
 
-      fill(statsRow,
-        stat(count(e.count), '', 'occurrences', { class: 'is-bad' }),
-        stat(rel(e.firstSeen), '', 'first seen', { title: bothTimes(e.firstSeen) }),
-        stat(rel(e.lastSeen), '', 'last seen', { title: bothTimes(e.lastSeen) }),
-        stat(count((e.endpoints || []).length), '', 'endpoints'));
-
-      const series = data.series || {};
-      const spec = {
-        height: 160,
-        t: series.t || [],
-        series: [{ label: 'Errors', values: series.count || [], color: 'err', type: 'bar' }],
-        axes: [{ scale: 'y' }],
-      };
-      fill(chartLegend, legend([{ label: 'Occurrences per bucket', color: 'err' }]));
-      if (chart) chart.update(spec); else chart = timeSeries(chartBody, spec);
-
-      const code = data.code || [];
-      lastChain = data.chain || [];
-      fill(stackBody,
-        code.length
-          ? h('div.f-code', { style: { marginBottom: '12px' } }, h('div.sub-head', 'Code'),
-            code.map((frame) => codeFrame(frame)))
-          : null,
-        stackTraceBox);
-      paintStack();
-
-      endpointsTable.setRows(e.endpoints || []);
-      tracesTable.setRows(data.traces || []);
-    } catch (err) {
-      if (destroyed || !current()) return;
-      built = false;
-      fill(page, errorBox(err, load));
-    }
-  }
-
-  load();
-  return { refresh: load, destroy: () => { destroyed = true; if (chart) chart.destroy(); } };
+  loader.load();
+  return { refresh: loader.load, destroy: () => { loader.destroy(); if (chart) chart.destroy(); } };
 }

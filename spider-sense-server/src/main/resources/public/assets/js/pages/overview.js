@@ -2,7 +2,8 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, icon, panel, stat, chip, serviceChip, serviceColor, renderList, spinner, errorBox, emptyState, snippetBlocks, seedServices } from '../ui.js';
+import { h, fill, icon, panel, stat, chip, serviceChip, serviceColor, renderList, emptyState, snippetBlocks, seedServices } from '../ui.js';
+import { pageLoader, skeleton } from '../page.js';
 import { timeSeries, sparkline, legend } from '../charts.js';
 import { histogramBars, apdexClass, fmtApdex } from '../buckets.js';
 import { chartMode, loadToggle, throughputSpec, throughputLegend } from '../loadchart.js';
@@ -28,8 +29,6 @@ export function statTiles(totals, thresholds) {
 }
 
 export function render(root, ctx) {
-  let destroyed = false;
-  const latest = api.requestSequence();
   let chart = null;
   let tingles = [];
 
@@ -69,16 +68,7 @@ export function render(root, ctx) {
   const tingleBody = h('div.tingles');
   const tinglePanel = panel({ title: 'Tingles' }, tingleBody);
 
-  const page = h('div', { style: { display: 'grid', gap: 'var(--gap)' } });
-  root.appendChild(page);
-  fill(page, spinner());
-
-  let built = false;
-  function build() {
-    if (built) return;
-    built = true;
-    fill(page, statsRow, findingsPanel, chartRow, servicesPanel, tinglePanel);
-  }
+  const layout = skeleton(root, () => [statsRow, findingsPanel, chartRow, servicesPanel, tinglePanel]);
 
   function paintStats(totals, thresholds) {
     fill(statsRow, statTiles(totals, thresholds));
@@ -191,58 +181,54 @@ export function render(root, ctx) {
       h('div.t-detail', t.detail || ''));
   }
 
-  async function load() {
-    const current = latest();
-    try {
-      const [data, found] = await Promise.all([
-        api.overview(),
-        // hideAcked: the top five are the unacknowledged ones (pages.adoc#overview).
-        api.findings({ limit: 5, hideAcked: true }).catch(() => ({ findings: [] })),
-      ]);
-      if (destroyed || !current()) return;
-      findings = found.findings || [];
-      const services = data.services || [];
-      const requests = (data.totals || {}).requests || 0;
-      if (!requests) {
-        built = false;
-        const s = api.state.status || {};
-        const neverSeen = !services.length;
-        fill(page, panel({}, emptyState(
-          neverSeen
-            ? 'Nothing has arrived yet. Attach Spider Sense to an application, or point any OTLP/HTTP sender at this collector.'
-            : 'No request in this time range. Send some traffic, or widen the range in the top bar.',
-          h('div', { style: { display: 'grid', gap: '10px', justifyItems: 'center', width: '100%' } },
-            neverSeen ? h('img.empty-hero', { src: 'assets/logo.svg', alt: '', width: '96', height: '96' }) : null,
-            snippetBlocks(s.endpoint || location.origin)))));
-        return;
-      }
-      build();
-      // a same-page hash change only calls refresh(), so `chart` is re-read here
-      const wanted = chartMode(router.currentRoute().query, 'requests');
-      if (wanted !== mode) { mode = wanted; paintModeToggle(); }
-      paintStats(data.totals || {}, (api.state.status || {}).thresholds);
-      paintFindings(findings);
-      paintChart(data.series || {});
-      fill(summaryBody, histogramBars((data.totals || {}).histogram));
-      paintServices(services);
-      tingles = data.tingles || [];
-      paintTingles();
-    } catch (e) {
-      if (destroyed || !current()) return;
-      built = false;
-      fill(page, errorBox(e, load));
+  function paint([data, found]) {
+    findings = found.findings || [];
+    const services = data.services || [];
+    const requests = (data.totals || {}).requests || 0;
+    if (!requests) {
+      const s = api.state.status || {};
+      const neverSeen = !services.length;
+      layout.replace(panel({}, emptyState(
+        neverSeen
+          ? 'Nothing has arrived yet. Attach Spider Sense to an application, or point any OTLP/HTTP sender at this collector.'
+          : 'No request in this time range. Send some traffic, or widen the range in the top bar.',
+        h('div', { style: { display: 'grid', gap: '10px', justifyItems: 'center', width: '100%' } },
+          neverSeen ? h('img.empty-hero', { src: 'assets/logo.svg', alt: '', width: '96', height: '96' }) : null,
+          snippetBlocks(s.endpoint || location.origin)))));
+      return;
     }
+    layout.build();
+    // a same-page hash change only calls refresh(), so `chart` is re-read here
+    const wanted = chartMode(router.currentRoute().query, 'requests');
+    if (wanted !== mode) { mode = wanted; paintModeToggle(); }
+    paintStats(data.totals || {}, (api.state.status || {}).thresholds);
+    paintFindings(findings);
+    paintChart(data.series || {});
+    fill(summaryBody, histogramBars((data.totals || {}).histogram));
+    paintServices(services);
+    tingles = data.tingles || [];
+    paintTingles();
   }
 
-  load();
+  const loader = pageLoader({
+    fetch: () => Promise.all([
+      api.overview(),
+      // hideAcked: the top five are the unacknowledged ones (pages.adoc#overview).
+      api.findings({ limit: 5, hideAcked: true }).catch(() => ({ findings: [] })),
+    ]),
+    paint,
+    body: layout,
+  });
+
+  loader.load();
 
   return {
-    refresh: load,
+    refresh: loader.load,
     onTingle: (t) => {
-      if (!built) return;
+      if (!layout.built) return;
       tingles = [{ ...t, fresh: true }, ...tingles].slice(0, 50);
       paintTingles();
     },
-    destroy: () => { destroyed = true; if (chart) chart.destroy(); },
+    destroy: () => { loader.destroy(); if (chart) chart.destroy(); },
   };
 }

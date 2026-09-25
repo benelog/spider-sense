@@ -2,14 +2,12 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, icon, panel, renderList, debounce, spinner, errorBox, emptyState, seriesColor } from '../ui.js';
+import { h, fill, icon, panel, renderList, debounce, spinner, emptyState, seriesColor } from '../ui.js';
+import { pageLoader } from '../page.js';
 import { timeSeries, legend, alignedTimes, alignTo } from '../charts.js';
 import { count } from '../format.js';
 
 export function render(root, ctx) {
-  let destroyed = false;
-  const latest = api.requestSequence();
-  const latestSeries = api.requestSequence();
   let catalog = [];
   let selected = ctx.query.metric || '';
   let rateOn = ctx.query.rate === '1';
@@ -31,7 +29,7 @@ export function render(root, ctx) {
       rateOn = !rateOn;
       rateBtn.setAttribute('aria-pressed', String(rateOn));
       router.setQuery({ rate: rateOn ? '1' : '' });
-      loadSeries();
+      seriesLoader.load();
     },
   }, 'Per second');
   rateBtn.hidden = true;
@@ -91,12 +89,17 @@ export function render(root, ctx) {
     selected = name;
     router.setQuery({ metric: name });
     paintCatalog();
-    loadSeries();
+    seriesLoader.load();
   }
 
-  async function loadSeries() {
-    const current = latestSeries();
-    if (!selected) {
+  /** The selected metric's series; null when none is selected. */
+  async function fetchSeries() {
+    if (!selected) return null;
+    return { name: selected, data: await api.metricSeries({ name: selected, rate: rateOn ? 'true' : '' }) };
+  }
+
+  function paintSeries(res) {
+    if (!res) {
       detailTitle.textContent = 'Metric';
       rateBtn.hidden = true;
       countPanel.hidden = true;
@@ -104,53 +107,49 @@ export function render(root, ctx) {
       fill(chartLegend);
       return;
     }
-    try {
-      const meta = catalog.find((m) => m.name === selected) || {};
-      const data = await api.metricSeries({ name: selected, rate: rateOn ? 'true' : '' });
-      if (destroyed || !current()) return;
-      const series = data.series || [];
-      detailTitle.textContent = selected + (data.unit ? ' (' + data.unit + ')' : '');
-      rateBtn.hidden = data.type !== 'sum';
-      if (!series.length) {
-        fill(chartBody, emptyState('No point for this metric in the window.'));
-        fill(chartLegend);
-        countPanel.hidden = true;
-        return;
-      }
-      const labels = series.map(labelOf);
-      const isHistogram = data.type === 'histogram';
-      const t = alignedTimes(series);
-      const at = (s, key) => alignTo(t, s, key);
-      const spec = {
-        height: 260,
-        t,
-        series: series.flatMap((s, i) => {
-          const base = [{ label: labels[i], values: at(s, 'v'), color: seriesColor(i), type: 'line', width: 1.8 }];
-          if (isHistogram && s.p95) base.push({ label: labels[i] + ' p95', values: at(s, 'p95'), color: seriesColor(i), type: 'line', width: 1.2, dash: [4, 3] });
-          return base;
-        }),
-        axes: [{ scale: 'y', label: data.unit || '' }],
-      };
-      fill(chartLegend, legend(series.map((s, i) => ({ label: labels[i], color: seriesColor(i) }))
-        .concat(isHistogram ? [{ label: 'dashed: p95', color: 'silk' }] : [])));
-      if (chart) chart.update(spec); else chart = timeSeries(chartBody, spec);
+    const { name, data } = res;
+    const series = data.series || [];
+    detailTitle.textContent = name + (data.unit ? ' (' + data.unit + ')' : '');
+    rateBtn.hidden = data.type !== 'sum';
+    if (!series.length) {
+      fill(chartBody, emptyState('No point for this metric in the window.'));
+      fill(chartLegend);
+      countPanel.hidden = true;
+      return;
+    }
+    const labels = series.map(labelOf);
+    const isHistogram = data.type === 'histogram';
+    const t = alignedTimes(series);
+    const at = (s, key) => alignTo(t, s, key);
+    const spec = {
+      height: 260,
+      t,
+      series: series.flatMap((s, i) => {
+        const base = [{ label: labels[i], values: at(s, 'v'), color: seriesColor(i), type: 'line', width: 1.8 }];
+        if (isHistogram && s.p95) base.push({ label: labels[i] + ' p95', values: at(s, 'p95'), color: seriesColor(i), type: 'line', width: 1.2, dash: [4, 3] });
+        return base;
+      }),
+      axes: [{ scale: 'y', label: data.unit || '' }],
+    };
+    fill(chartLegend, legend(series.map((s, i) => ({ label: labels[i], color: seriesColor(i) }))
+      .concat(isHistogram ? [{ label: 'dashed: p95', color: 'silk' }] : [])));
+    if (chart) chart.update(spec); else chart = timeSeries(chartBody, spec);
 
-      if (isHistogram && series.some((s) => s.count)) {
-        countPanel.hidden = false;
-        const countSpec = {
-          height: 130,
-          t,
-          series: series.map((s, i) => ({ label: labels[i], values: at(s, 'count'), color: seriesColor(i), type: 'bar' })),
-          axes: [{ scale: 'y', label: 'Count' }],
-        };
-        if (countChart) countChart.update(countSpec); else countChart = timeSeries(countBody, countSpec);
-      } else {
-        countPanel.hidden = true;
-      }
-    } catch (e) {
-      if (!destroyed && current()) fill(chartBody, errorBox(e, loadSeries));
+    if (isHistogram && series.some((s) => s.count)) {
+      countPanel.hidden = false;
+      const countSpec = {
+        height: 130,
+        t,
+        series: series.map((s, i) => ({ label: labels[i], values: at(s, 'count'), color: seriesColor(i), type: 'bar' })),
+        axes: [{ scale: 'y', label: 'Count' }],
+      };
+      if (countChart) countChart.update(countSpec); else countChart = timeSeries(countBody, countSpec);
+    } else {
+      countPanel.hidden = true;
     }
   }
+
+  const seriesLoader = pageLoader({ fetch: fetchSeries, paint: paintSeries, body: chartBody });
 
   function labelOf(s) {
     const attrs = Object.entries(s.attributes || {});
@@ -158,11 +157,9 @@ export function render(root, ctx) {
     return api.state.service ? text : (s.service ? s.service + ' · ' + text : text);
   }
 
-  async function load() {
-    const current = latest();
-    try {
-      const res = await api.metricCatalog({});
-      if (destroyed || !current()) return;
+  const catalogLoader = pageLoader({
+    fetch: () => api.metricCatalog({}),
+    paint: (res) => {
       catalog = (res.metrics || []).slice().sort((a, b) => a.name.localeCompare(b.name));
       if (!catalog.length) {
         fill(listBox, h('div', { style: { padding: '18px', textAlign: 'center' } }, h('span.muted', 'No metric has arrived yet.')));
@@ -175,19 +172,19 @@ export function render(root, ctx) {
       }
       if (!selected || !catalog.some((m) => m.name === selected)) selected = catalog[0].name;
       paintCatalog();
-      await loadSeries();
-    } catch (e) {
-      if (!destroyed && current()) fill(listBox, errorBox(e, load));
-    }
-  }
+      seriesLoader.load();
+    },
+    body: listBox,
+  });
 
-  load();
+  catalogLoader.load();
   return {
     // The catalog is the top bar's service's, and grows while metrics arrive: a refresh, which
     // a service change is too, reloads it before the selected metric's series.
-    refresh: () => load(),
+    refresh: () => catalogLoader.load(),
     destroy: () => {
-      destroyed = true;
+      catalogLoader.destroy();
+      seriesLoader.destroy();
       applySearch.cancel();
       if (chart) chart.destroy();
       if (countChart) countChart.destroy();

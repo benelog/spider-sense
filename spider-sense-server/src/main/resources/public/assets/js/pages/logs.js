@@ -2,7 +2,8 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, icon, panel, table, serviceChip, severityChip, debounce, spinner, errorBox, emptyState, snippetBlocks } from '../ui.js';
+import { h, fill, icon, panel, table, serviceChip, severityChip, debounce, spinner, emptyState, snippetBlocks } from '../ui.js';
+import { pageLoader } from '../page.js';
 import { stackTrace } from '../sql.js';
 import { timeMs, bothTimes, count, shortId } from '../format.js';
 
@@ -10,8 +11,6 @@ const SEVERITIES = ['TRACE', 'DEBUG', 'INFO', 'WARN', 'ERROR'];
 const LIMIT = 200;
 
 export function render(root, ctx) {
-  let destroyed = false;
-  const latest = api.requestSequence();
   let rows = [];
   let total = 0;
   let node = null;
@@ -40,7 +39,7 @@ export function render(root, ctx) {
     filter.traceId = traceInput.value.trim();
     router.setQuery({ q: filter.q, severity: filter.severity, traceId: filter.traceId });
     rows = [];
-    load();
+    loader.load();
   }, 400);
   input.addEventListener('input', apply);
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') apply.flush(); });
@@ -123,55 +122,55 @@ export function render(root, ctx) {
    * `cursor` is the last row's `{ before: at, beforeId: id }` when loading more. Without one,
    * the newest page replaces the rows, except under a Live tick after Load more, which merges it.
    */
-  async function load(cursor) {
-    const current = latest();
+  async function fetchLogs(cursor) {
     const key = viewKey();
     const tail = !cursor && pagedBack && key === loadedFor && rows.length > 0;
     const w = api.windowFor();
-    try {
-      const res = await api.logs({
-        q: filter.q, severity: filter.severity, traceId: filter.traceId, limit: LIMIT,
-        before: cursor && cursor.before, beforeId: cursor && cursor.beforeId,
-      }, { window: w });
-      if (destroyed || !current()) return;
-      const incoming = res.logs || [];
-      total = res.total || incoming.length;
-      const kept = tail ? merged(incoming, w.from) : null;
-      if (cursor) {
-        const seen = new Set(rows.map((l) => l.id));
-        rows = rows.concat(incoming.filter((l) => !seen.has(l.id)));
-        pagedBack = true;
-      } else if (kept) {
-        rows = kept;
-      } else {
-        rows = incoming;
-        pagedBack = false;
-      }
-      loadedFor = key;
-      if (!rows.length && !filter.q && !filter.severity && !filter.traceId
-          && !((api.state.status || {}).counts || {}).logs) {
-        node = null;
-        fill(body, emptyState('No log record has arrived yet. The OpenTelemetry agent exports logs when the logs exporter is on.',
-          snippetBlocks((api.state.status || {}).endpoint || location.origin)));
-        foot.hidden = true;
-        return;
-      }
-      paint();
-    } catch (e) {
-      if (!destroyed && current()) { node = null; fill(body, errorBox(e, () => load())); }
-    }
+    const res = await api.logs({
+      q: filter.q, severity: filter.severity, traceId: filter.traceId, limit: LIMIT,
+      before: cursor && cursor.before, beforeId: cursor && cursor.beforeId,
+    }, { window: w });
+    return { res, key, tail, w };
   }
+
+  function paintLogs({ res, key, tail, w }, cursor) {
+    const incoming = res.logs || [];
+    total = res.total || incoming.length;
+    const kept = tail ? merged(incoming, w.from) : null;
+    if (cursor) {
+      const seen = new Set(rows.map((l) => l.id));
+      rows = rows.concat(incoming.filter((l) => !seen.has(l.id)));
+      pagedBack = true;
+    } else if (kept) {
+      rows = kept;
+    } else {
+      rows = incoming;
+      pagedBack = false;
+    }
+    loadedFor = key;
+    if (!rows.length && !filter.q && !filter.severity && !filter.traceId
+        && !((api.state.status || {}).counts || {}).logs) {
+      node = null;
+      fill(body, emptyState('No log record has arrived yet. The OpenTelemetry agent exports logs when the logs exporter is on.',
+        snippetBlocks((api.state.status || {}).endpoint || location.origin)));
+      foot.hidden = true;
+      return;
+    }
+    paint();
+  }
+
+  const loader = pageLoader({ fetch: fetchLogs, paint: paintLogs, body, onError: () => { node = null; } });
 
   function loadMore() {
     const last = rows[rows.length - 1];
-    if (last) load({ before: last.at, beforeId: last.id });
+    if (last) loader.load({ before: last.at, beforeId: last.id });
   }
 
-  load();
+  loader.load();
 
   return {
     // Live tail: new lines arrive at the top; the scroll position is left alone.
-    refresh: () => { if (!expanded.size || window.scrollY < 40) load(); },
-    destroy: () => { destroyed = true; apply.cancel(); },
+    refresh: () => { if (!expanded.size || window.scrollY < 40) loader.load(); },
+    destroy: () => { loader.destroy(); apply.cancel(); },
   };
 }

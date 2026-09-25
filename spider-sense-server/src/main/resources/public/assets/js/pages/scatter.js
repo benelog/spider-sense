@@ -4,14 +4,12 @@
 import * as api from '../api.js';
 import * as router from '../router.js';
 import { h, fill, panel, spinner, errorBox, serviceColor, seedServices, emptyState, snippetBlocks } from '../ui.js';
+import { pageLoader } from '../page.js';
 import { scatterChart, legend } from '../charts.js';
 import { traceTable } from './traces.js';
 import { count, dur, clock } from '../format.js';
 
 export function render(root, ctx) {
-  let destroyed = false;
-  const latest = api.requestSequence();
-  const latestTraces = api.requestSequence();
   let points = [];
   let chart = null;
   let selection = null;
@@ -174,9 +172,9 @@ export function render(root, ctx) {
     loadTraces();
   }
 
-  async function loadTraces() {
-    const current = latestTraces();
-    try {
+  /** The traces under the chart: the window's, or the selection's, filtered as the toggles are. */
+  const traceList = pageLoader({
+    fetch: () => {
       const extra = { limit: 50 };
       if (showOk !== showErr) extra.status = showErr ? 'error' : 'ok';
       let opts;
@@ -185,8 +183,9 @@ export function render(root, ctx) {
         extra.maxMs = Math.round(selection.maxMs);
         opts = { window: { from: selection.from, to: selection.to } };
       }
-      const res = await api.traces(extra, opts);
-      if (destroyed || !current()) return;
+      return api.traces(extra, opts);
+    },
+    paint: (res) => {
       const rows = res.traces || [];
       if (!listNode) {
         listNode = traceTable(rows, { empty: 'No trace in this selection.' });
@@ -194,10 +193,11 @@ export function render(root, ctx) {
       } else {
         listNode.setRows(rows);
       }
-    } catch (e) {
-      if (!destroyed && current()) { listNode = null; fill(listBody, errorBox(e, loadTraces)); }
-    }
-  }
+    },
+    body: listBody,
+    onError: () => { listNode = null; },
+  });
+  const loadTraces = () => traceList.load();
 
   function makeChart(window) {
     if (chart) { chart.destroy(); chart = null; }
@@ -219,41 +219,45 @@ export function render(root, ctx) {
     });
   }
 
-  async function load(incremental) {
+  /** The whole window's points, for the service and range the top bar shows. */
+  const loader = pageLoader({
+    fetch: async () => ({ requested: scope(), res: await api.scatter({ limit: 5000 }) }),
+    paint: ({ requested, res }) => {
+      loadedFor = requested;
+      // Only a full load can be cut; the 10 s a Live merge asks for leaves the cut set as it was.
+      truncated = !!res.truncated;
+      points = res.points || [];
+      const w = (res.window && res.window.from) ? res.window : api.windowFor();
+      if (!points.length && !(api.state.status && api.state.status.counts && api.state.status.counts.spans)) {
+        fill(chartBody, emptyState('No request has been recorded yet.', snippetBlocks((api.state.status || {}).endpoint || location.origin)));
+        fill(counts);
+        return;
+      }
+      paintBar();
+      makeChart(w);
+    },
+    body: chartBody,
+  });
+
+  /**
+   * The last 10 s merged into the points on screen, every 2 s under Live. A merge never
+   * supersedes a full load; it is dropped when the service or the range changed meanwhile.
+   */
+  async function mergeRecent() {
     const requested = scope();
-    // A Live merge never supersedes a full load; it is dropped by scope instead (below).
-    const current = incremental ? () => true : latest();
     try {
       const now = Date.now();
-      const opts = incremental ? { window: { from: now - 10000, to: now } } : undefined;
-      const res = await api.scatter({ limit: 5000 }, opts);
-      if (destroyed || !current()) return;
-      const incoming = res.points || [];
-      if (incremental) {
-        if (requested !== loadedFor) return;   // asked for a service or range no longer shown
-        const seen = new Set(points.map((p) => p[4]));
-        const fresh = incoming.filter((p) => !seen.has(p[4]));
-        const w = api.windowFor();
-        points = points.concat(fresh).filter((p) => p[0] >= w.from);
-        paintBar();
-        // The axis follows the merged points, as the ▲ note paintBar just wrote does.
-        if (chart) chart.setPoints(shown(), w, yMaxOf());
-      } else {
-        loadedFor = requested;
-        // Only a full load can be cut; the 10 s a Live merge asks for leaves the cut set as it was.
-        truncated = !!res.truncated;
-        points = incoming;
-        const w = (res.window && res.window.from) ? res.window : api.windowFor();
-        if (!points.length && !(api.state.status && api.state.status.counts && api.state.status.counts.spans)) {
-          fill(chartBody, emptyState('No request has been recorded yet.', snippetBlocks((api.state.status || {}).endpoint || location.origin)));
-          fill(counts);
-          return;
-        }
-        paintBar();
-        makeChart(w);
-      }
+      const res = await api.scatter({ limit: 5000 }, { window: { from: now - 10000, to: now } });
+      if (loader.isDestroyed() || requested !== loadedFor) return;
+      const seen = new Set(points.map((p) => p[4]));
+      const fresh = (res.points || []).filter((p) => !seen.has(p[4]));
+      const w = api.windowFor();
+      points = points.concat(fresh).filter((p) => p[0] >= w.from);
+      paintBar();
+      // The axis follows the merged points, as the ▲ note paintBar just wrote does.
+      if (chart) chart.setPoints(shown(), w, yMaxOf());
     } catch (e) {
-      if (!destroyed && current()) fill(chartBody, errorBox(e, () => load()));
+      if (!loader.isDestroyed()) fill(chartBody, errorBox(e, () => loader.load()));
     }
   }
 
@@ -261,10 +265,10 @@ export function render(root, ctx) {
     clearInterval(liveTimer);
     liveTimer = null;
     if (!api.state.live) return;
-    liveTimer = setInterval(() => load(true), 2000);
+    liveTimer = setInterval(mergeRecent, 2000);
   }
 
-  load().then(() => { if (!destroyed) loadTraces(); });
+  loader.load().then(() => { if (!loader.isDestroyed()) loadTraces(); });
   startLive();
 
   return {
@@ -273,12 +277,13 @@ export function render(root, ctx) {
       // The 2 s timer owns the refresh while Live is on, but it only merges the last 10 s of the
       // same service and range: a change of either reloads the whole window and its traces.
       if (api.state.live && loadedFor === scope()) return;
-      load();
+      loader.load();
       loadTraces();
     },
     onEscape: () => { if (selection) clearSelection(); },
     destroy: () => {
-      destroyed = true;
+      loader.destroy();
+      traceList.destroy();
       clearInterval(liveTimer);
       if (chart) chart.destroy();
     },

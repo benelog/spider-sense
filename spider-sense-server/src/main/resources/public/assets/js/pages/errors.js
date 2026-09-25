@@ -2,14 +2,12 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, panel, table, chip, serviceChip, spinner, errorBox } from '../ui.js';
+import { h, fill, panel, table, chip, serviceChip, spinner } from '../ui.js';
+import { pageLoader } from '../page.js';
 import { sparkline, themeColors } from '../charts.js';
 import { count, rel, bothTimes, truncate, splitType } from '../format.js';
 
 export function render(root, ctx) {
-  let destroyed = false;
-  const latest = api.requestSequence();
-  let rows = [];
   let node = null;
   // Read at each paint, so a theme flip gives the next refresh its colour.
   let errColor = themeColors().err;
@@ -51,7 +49,8 @@ export function render(root, ctx) {
     empty: 'No error in this window.',
   };
 
-  function paint() {
+  function paint(res) {
+    const rows = res.errors || [];
     errColor = themeColors().err;
     if (!node) {
       node = table(columns, { ...opts, rows });
@@ -61,18 +60,13 @@ export function render(root, ctx) {
     }
   }
 
-  async function load() {
-    const current = latest();
-    try {
-      const res = await api.errors({ limit: 100 });
-      if (destroyed || !current()) return;
-      rows = res.errors || [];
-      paint();
-    } catch (e) {
-      if (!destroyed && current()) { node = null; fill(body, errorBox(e, load)); }
-    }
-  }
+  const loader = pageLoader({
+    fetch: () => api.errors({ limit: 100 }),
+    paint,
+    body,
+    onError: () => { node = null; },
+  });
 
-  load();
-  return { refresh: load, destroy: () => { destroyed = true; } };
+  loader.load();
+  return { refresh: loader.load, destroy: loader.destroy };
 }

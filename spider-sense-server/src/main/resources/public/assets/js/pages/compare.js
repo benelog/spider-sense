@@ -3,7 +3,8 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, panel, table, chip, serviceChip, markDialog, copyBlock, spinner, errorBox, emptyState } from '../ui.js';
+import { h, fill, panel, table, chip, serviceChip, markDialog, copyBlock, spinner, emptyState } from '../ui.js';
+import { pageLoader } from '../page.js';
 import { oneLineSql } from '../sql.js';
 import { fmtApdex } from '../buckets.js';
 import { count, dur, rate, time, truncate, splitType } from '../format.js';
@@ -84,9 +85,7 @@ function markOptions(marks) {
 }
 
 export function render(root, ctx) {
-  let destroyed = false;
   let data = null;
-  let lastKey = '';
   let built = false;
   let pending = false;
 
@@ -245,24 +244,24 @@ export function render(root, ctx) {
     }
   }
 
-  async function load() {
-    if (pending) return;
-    const chosen = paintSelects();
-    if (!chosen.enough) { needMarks(); return; }
-    const key = [chosen.before, chosen.after, chosen.until, api.state.service].join('|');
-    lastKey = key;
-    try {
-      const res = await api.compare({ before: chosen.before, after: chosen.after, until: chosen.until || undefined });
-      if (destroyed || lastKey !== key) return;
-      data = res;
-      paint();
-    } catch (e) {
-      if (destroyed || lastKey !== key) return;
+  // Newest wins: a slow answer to the selectors before the last change never paints over it.
+  const loader = pageLoader({
+    fetch: (chosen) => api.compare({ before: chosen.before, after: chosen.after, until: chosen.until || undefined }),
+    paint: (res) => { data = res; paint(); },
+    body,
+    retry: () => load(),
+    onError: () => {
       delete nodes.endpoints; delete nodes.queries; delete nodes.errors;
       built = false;
       tiles.hidden = true;
-      fill(body, errorBox(e, load));
-    }
+    },
+  });
+
+  function load() {
+    if (pending) return;
+    const chosen = paintSelects();
+    if (!chosen.enough) { needMarks(); return; }
+    loader.load(chosen);
   }
 
   for (const select of [beforeSelect, afterSelect, untilSelect]) {
@@ -274,16 +273,16 @@ export function render(root, ctx) {
   // still be in flight) and after its own Mark button made one.
   function loadMarks() {
     return api.marks(50).then((res) => {
-      if (destroyed) return;
+      if (loader.isDestroyed()) return;
       api.state.marks = res.marks || api.state.marks;
       load();
-    }).catch(() => { if (!destroyed) load(); });
+    }).catch(() => { if (!loader.isDestroyed()) load(); });
   }
 
   loadMarks();
 
   return {
-    refresh: () => { if (!destroyed) load(); },
-    destroy: () => { destroyed = true; },
+    refresh: () => { if (!loader.isDestroyed()) load(); },
+    destroy: loader.destroy,
   };
 }

@@ -4,9 +4,10 @@
 import * as api from '../api.js';
 import * as router from '../router.js';
 import {
-  h, fill, panel, stat, spinner, errorBox, emptyState, snippetBlocks,
+  h, fill, panel, stat, spinner, emptyState, snippetBlocks,
   drawer, closeDrawer, seedServices,
 } from '../ui.js';
+import { pageLoader } from '../page.js';
 import { timeSeries } from '../charts.js';
 import { throughputSpec } from '../loadchart.js';
 import { histogramBars, bucketVars, apdexClass, fmtApdex } from '../buckets.js';
@@ -181,8 +182,6 @@ export function layout(nodes, edges) {
 }
 
 export function render(root, ctx) {
-  let destroyed = false;
-  const latest = api.requestSequence();
   let data = null;
   let layoutKey = null;
   let placed = null;
@@ -498,11 +497,11 @@ export function render(root, ctx) {
   async function loadDrawerChart(name, container) {
     try {
       const res = await api.service(name);
-      if (destroyed || !container.isConnected) return;
+      if (loader.isDestroyed() || !container.isConnected) return;
       // The drawer slides in on the next frame; the chart is measured after that,
       // so it is built against the drawer's real width rather than a default.
       await new Promise((r) => requestAnimationFrame(() => r()));
-      if (destroyed || !container.isConnected) return;
+      if (loader.isDestroyed() || !container.isConnected) return;
       drawerChart = timeSeries(container, throughputSpec(res.series || {}, 'load', { height: 160 }));
     } catch (e) {
       if (container.isConnected) fill(container, h('span.muted', 'The load chart could not be read.'));
@@ -528,46 +527,41 @@ export function render(root, ctx) {
 
   // --- loading ----------------------------------------------------------
 
-  async function load() {
-    const current = latest();
-    try {
-      const res = await api.map();
-      if (destroyed || !current()) return;
-      data = res;
-      const nodes = data.nodes || [];
-      const edges = data.edges || [];
-      if (!edges.length) {
-        layoutKey = null;
-        nodeRefs.clear();
-        edgeRefs.clear();
-        fill(svgBox, emptyState(
-          nodes.length
-            ? 'No call has been traced between these nodes in this window. Send some traffic, or widen the range in the top bar.'
-            : 'Nothing has been traced yet. Attach Spider Sense to an application, or point any OTLP/HTTP sender at this collector.',
-          snippetBlocks((api.state.status || {}).endpoint || location.origin)));
-        return;
-      }
-      // The edges are part of the layout: a call between services moves a node to a later
-      // column, and an edge that comes or goes is drawn or removed. Live only renumbers the rest.
-      const key = nodes.map((n) => n.id).sort().join('|') + '#' + edges.map(edgeKey).sort().join('|');
-      if (key !== layoutKey) {
-        layoutKey = key;
-        draw();
-      } else {
-        update();
-      }
-    } catch (e) {
-      if (!destroyed && current()) { layoutKey = null; fill(svgBox, errorBox(e, load)); }
+  function paint(res) {
+    data = res;
+    const nodes = data.nodes || [];
+    const edges = data.edges || [];
+    if (!edges.length) {
+      layoutKey = null;
+      nodeRefs.clear();
+      edgeRefs.clear();
+      fill(svgBox, emptyState(
+        nodes.length
+          ? 'No call has been traced between these nodes in this window. Send some traffic, or widen the range in the top bar.'
+          : 'Nothing has been traced yet. Attach Spider Sense to an application, or point any OTLP/HTTP sender at this collector.',
+        snippetBlocks((api.state.status || {}).endpoint || location.origin)));
+      return;
+    }
+    // The edges are part of the layout: a call between services moves a node to a later
+    // column, and an edge that comes or goes is drawn or removed. Live only renumbers the rest.
+    const key = nodes.map((n) => n.id).sort().join('|') + '#' + edges.map(edgeKey).sort().join('|');
+    if (key !== layoutKey) {
+      layoutKey = key;
+      draw();
+    } else {
+      update();
     }
   }
 
-  load();
+  const loader = pageLoader({ fetch: () => api.map(), paint, body: svgBox, onError: () => { layoutKey = null; } });
+
+  loader.load();
 
   return {
-    refresh: load,
+    refresh: loader.load,
     onEscape: () => closeDrawer(),
     destroy: () => {
-      destroyed = true;
+      loader.destroy();
       removeEventListener('resize', sizePanel);
       if (drawerChart) drawerChart.destroy();
       closeDrawer(true);

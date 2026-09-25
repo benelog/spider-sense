@@ -2,7 +2,8 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, icon, panel, table, serviceChip, statusChip, durationBar, debounce, spinner, errorBox, emptyState, snippetBlocks } from '../ui.js';
+import { h, fill, icon, panel, table, serviceChip, statusChip, durationBar, debounce, spinner, emptyState, snippetBlocks } from '../ui.js';
+import { pageLoader } from '../page.js';
 import { dur, count, time, bothTimes, shortId } from '../format.js';
 
 /** A trace table shared by the Traces, Endpoint, Query and Error pages. */
@@ -63,10 +64,6 @@ export function render(root, ctx) {
   };
   let rows = [];
   let total = 0;
-  let destroyed = false;
-  const latest = api.requestSequence();
-  const latestEndpoints = api.requestSequence();
-  let endpointOptions = [];
   // The service the endpoint filter belongs to: an endpoint is one route of one service.
   let endpointService = api.state.service || '';
 
@@ -89,7 +86,7 @@ export function render(root, ctx) {
     filter.endpointId = endpointSelect.value;
     router.setQuery({ q: filter.q, minMs: filter.minMs, maxMs: filter.maxMs, status: filter.status === 'all' ? '' : filter.status, endpointId: filter.endpointId });
     rows = [];
-    load();
+    list.load();
   }, 400);
 
   input.addEventListener('input', apply);
@@ -136,36 +133,34 @@ export function render(root, ctx) {
     foot.hidden = rows.length >= total || rows.length === 0;
   }
 
-  async function loadEndpoints() {
-    const current = latestEndpoints();
-    if (!api.state.service) { endpointSelect.hidden = true; return; }
-    try {
-      const res = await api.endpoints({});
-      if (destroyed || !current()) return;
-      endpointOptions = res.endpoints || [];
+  /** The endpoint filter offers the top bar's service's endpoints, and is hidden without one. */
+  const endpoints = pageLoader({
+    fetch: async () => (api.state.service ? api.endpoints({}) : null),
+    paint: (res) => {
+      if (!res) { endpointSelect.hidden = true; return; }
+      const options = res.endpoints || [];
       const value = endpointSelect.value || filter.endpointId;
       fill(endpointSelect, h('option', { value: '' }, 'Any endpoint'),
-        endpointOptions.map((e) => h('option', { value: e.endpointId }, e.name)));
-      endpointSelect.value = endpointOptions.some((e) => e.endpointId === value) ? value : '';
+        options.map((e) => h('option', { value: e.endpointId }, e.name)));
+      endpointSelect.value = options.some((e) => e.endpointId === value) ? value : '';
       endpointSelect.hidden = false;
-    } catch (e) { if (current()) endpointSelect.hidden = true; }
-  }
+    },
+    onError: () => { endpointSelect.hidden = true; return false; },
+  });
 
   /** `cursor` is the last row's `{ before: start, beforeId: traceId }` when loading more. */
-  async function load(cursor) {
-    const current = latest();
-    try {
-      const res = await api.traces({
-        q: filter.q,
-        minMs: filter.minMs,
-        maxMs: filter.maxMs,
-        status: filter.status === 'all' ? '' : filter.status,
-        endpointId: filter.endpointId,
-        limit: 50,
-        before: cursor && cursor.before,
-        beforeId: cursor && cursor.beforeId,
-      });
-      if (destroyed || !current()) return;
+  const list = pageLoader({
+    fetch: (cursor) => api.traces({
+      q: filter.q,
+      minMs: filter.minMs,
+      maxMs: filter.maxMs,
+      status: filter.status === 'all' ? '' : filter.status,
+      endpointId: filter.endpointId,
+      limit: 50,
+      before: cursor && cursor.before,
+      beforeId: cursor && cursor.beforeId,
+    }),
+    paint: (res, cursor) => {
       const incoming = res.traces || [];
       total = res.total || incoming.length;
       if (cursor) {
@@ -175,18 +170,18 @@ export function render(root, ctx) {
         rows = incoming;
       }
       paint();
-    } catch (e) {
-      if (!destroyed && current()) fill(body, errorBox(e, () => load()));
-    }
-  }
+    },
+    body,
+    onError: () => { tableNode = null; },
+  });
 
   function loadMore() {
     const last = rows[rows.length - 1];
-    if (last) load({ before: last.start, beforeId: last.traceId });
+    if (last) list.load({ before: last.start, beforeId: last.traceId });
   }
 
-  loadEndpoints();
-  load();
+  endpoints.load();
+  list.load();
 
   return {
     refresh: () => {
@@ -203,8 +198,8 @@ export function render(root, ctx) {
           return;
         }
       }
-      if (!rows.length || !document.querySelector('.drawer')) { loadEndpoints(); load(); }
+      if (!rows.length || !document.querySelector('.drawer')) { endpoints.load(); list.load(); }
     },
-    destroy: () => { destroyed = true; apply.cancel(); },
+    destroy: () => { list.destroy(); endpoints.destroy(); apply.cancel(); },
   };
 }
