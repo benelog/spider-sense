@@ -53,7 +53,7 @@ public class SpiderSensePlugin implements Plugin<Project> {
     /** The name of both the extension and the configuration. */
     public static final String NAME = "spiderSense";
 
-    /** The group the two tasks are in. */
+    /** The group the three tasks are in. */
     public static final String GROUP = "spider sense";
 
     /** The launcher's main class: the standalone server and the CLI in one entry point. */
@@ -157,9 +157,9 @@ public class SpiderSensePlugin implements Plugin<Project> {
             Provider<Boolean> attached = enabled.zip(extension.getAttachTo(),
                     (on, names) -> on && names.contains(name));
             FileCollection jar = objects.fileCollection()
-                    .from(new JarSource(attached, namedJar, configuration));
-            ((JavaForkOptions) task).getJvmArgumentProviders().add(new SpiderSenseArguments(
-                    jar, systemProperties, attached, true, configuration.getName()));
+                    .from(JarSource.whenAttached(attached, namedJar, configuration));
+            ((JavaForkOptions) task).getJvmArgumentProviders().add(SpiderSenseArguments.javaagent(
+                    jar, systemProperties, attached, configuration.getName()));
         };
         project.getTasks().withType(JavaExec.class).configureEach(attachOne);
         project.getTasks().withType(Test.class).configureEach(attachOne);
@@ -186,14 +186,13 @@ public class SpiderSensePlugin implements Plugin<Project> {
     private void registerTasks(Project project, ObjectFactory objects, SpiderSenseExtension extension,
             Provider<File> namedJar, Configuration configuration, Provider<List<String>> systemProperties,
             Provider<List<String>> checkArguments, File projectDir) {
-        Provider<Boolean> always = objects.property(Boolean.class).value(true);
-        FileCollection jar = objects.fileCollection().from(new JarSource(null, namedJar, configuration));
+        FileCollection jar = objects.fileCollection().from(JarSource.always(namedJar, configuration));
         Provider<String> url = baseUrl(extension);
 
         project.getTasks().register(NAME, JavaExec.class, task -> {
             task.setGroup(GROUP);
             task.setDescription("Runs Spider Sense standalone, or a CLI command given with --args");
-            run(task, jar, systemProperties, always, configuration.getName(), url);
+            configureJarRun(task, jar, systemProperties, configuration.getName(), url);
         });
 
         // init writes the CLAUDE.md block and installs the skills, and both the
@@ -202,13 +201,14 @@ public class SpiderSensePlugin implements Plugin<Project> {
         project.getTasks().register(NAME + "Init", JavaExec.class, task -> {
             task.setGroup(GROUP);
             task.setDescription("Writes the Spider Sense block into CLAUDE.md and installs the agent skills");
-            SpiderSenseArguments options = run(task, jar, systemProperties, always, configuration.getName(), url);
-            Provider<List<String>> initArguments = always.map(ignored -> List.of(
+            SpiderSenseArguments options = configureJarRun(task, jar, systemProperties, configuration.getName(), url);
+            // Mapped from a fixed provider so the jar is resolved when the task runs, not now.
+            Provider<List<String>> initArguments = objects.property(Boolean.class).value(true).map(ignored -> List.of(
                     "init",
                     "--dir=" + projectDir.getAbsolutePath(),
-                    "--jar=" + options.theJar().getAbsolutePath()));
-            task.getArgumentProviders().add(new SpiderSenseArguments(
-                    objects.fileCollection(), initArguments, always, false, configuration.getName()));
+                    "--jar=" + options.singleJar().getAbsolutePath()));
+            task.getArgumentProviders().add(
+                    SpiderSenseArguments.programArguments(objects.fileCollection(), initArguments));
         });
 
         // check is the same run with the block's rules as its command line, and
@@ -218,23 +218,34 @@ public class SpiderSensePlugin implements Plugin<Project> {
         project.getTasks().register(NAME + "Check", JavaExec.class, task -> {
             task.setGroup(GROUP);
             task.setDescription("Runs the Spider Sense check and fails the build when the verdict is fail");
-            run(task, jar, systemProperties, always, configuration.getName(), url);
-            task.getArgumentProviders().add(new SpiderSenseArguments(
-                    objects.fileCollection(), checkArguments, always, false, configuration.getName()));
+            configureJarRun(task, jar, systemProperties, configuration.getName(), url);
+            task.getArgumentProviders().add(
+                    SpiderSenseArguments.programArguments(objects.fileCollection(), checkArguments));
             task.setIgnoreExitValue(true);
             task.doLast(new FailOnVerdict(extension.getCheck().getFailOnNoRequests()));
         });
     }
 
-    /** The setup the two tasks share: the jar as the class path, the launcher, the block's options, and the URL. */
-    private SpiderSenseArguments run(JavaExec task, FileCollection jar, Provider<List<String>> systemProperties,
-            Provider<Boolean> always, String configuration, Provider<String> url) {
-        SpiderSenseArguments options = new SpiderSenseArguments(jar, systemProperties, always, false, configuration);
+    /** The setup the three tasks share: the jar as the class path, the launcher, the block's options, and the URL. */
+    private static SpiderSenseArguments configureJarRun(JavaExec task, FileCollection jar,
+            Provider<List<String>> systemProperties, String configuration, Provider<String> url) {
+        SpiderSenseArguments options = SpiderSenseArguments.jvmOptions(jar, systemProperties, configuration);
         task.setClasspath(jar);
         task.getMainClass().set(MAIN_CLASS);
         task.getJvmArgumentProviders().add(options);
         task.doFirst(new SetSenseUrl(url));
         return options;
+    }
+
+    /**
+     * The address a client calls for a bind address: loopback for a wildcard, which
+     * is not an address to call, and an IPv6 address in the brackets a URL needs.
+     */
+    static String callableHost(String host) {
+        if (host.equals("0.0.0.0") || host.equals("::") || host.equals("[::]")) {
+            return "127.0.0.1";
+        }
+        return host.contains(":") && !host.startsWith("[") ? "[" + host + "]" : host;
     }
 
     /**
@@ -248,20 +259,9 @@ public class SpiderSensePlugin implements Plugin<Project> {
      * the task gets imply, which includes a {@code configFile}, and a URL made
      * of the defaults here would override the file's port.
      */
-    /**
-     * The address a client calls for a bind address: loopback for a wildcard, which
-     * is not an address to call, and an IPv6 address in the brackets a URL needs.
-     */
-    static String callable(String host) {
-        if (host.equals("0.0.0.0") || host.equals("::") || host.equals("[::]")) {
-            return "127.0.0.1";
-        }
-        return host.contains(":") && !host.startsWith("[") ? "[" + host + "]" : host;
-    }
-
-    private Provider<String> baseUrl(SpiderSenseExtension extension) {
+    static Provider<String> baseUrl(SpiderSenseExtension extension) {
         Provider<String> hostAndPort = extension.getHost().orElse("127.0.0.1").zip(extension.getPort().orElse(4000),
-                (host, port) -> "http://" + callable(host) + ":" + port);
+                (host, port) -> "http://" + callableHost(host) + ":" + port);
         Provider<String> whenNamed = extension.getHost().map(host -> true)
                 .orElse(extension.getPort().map(port -> true))
                 .flatMap(named -> hostAndPort);
@@ -274,7 +274,7 @@ public class SpiderSensePlugin implements Plugin<Project> {
      * left unset contributes nothing, which is how the jar's own default stays
      * the default.
      */
-    private Provider<List<String>> systemProperties(ObjectFactory objects, SpiderSenseExtension extension) {
+    static Provider<List<String>> systemProperties(ObjectFactory objects, SpiderSenseExtension extension) {
         ListProperty<String> arguments = objects.listProperty(String.class);
         arguments.addAll(option("config", extension.getConfigFile().map(file -> file.getAsFile().getAbsolutePath())));
         arguments.addAll(option("service", extension.getService()));
@@ -311,14 +311,15 @@ public class SpiderSensePlugin implements Plugin<Project> {
 
     /**
      * The command line of {@code spiderSenseCheck}: {@code check}, the window
-     * and the scope, then one argument per rule the block set, in the order the
-     * documentation's table lists them. A rule left unset says nothing, which is
-     * how the CLI's own default set stays the default.
+     * and the scope, then one argument per rule the block set, in the order of
+     * {@link SpiderSenseCheckExtension#rules()}, which is the documentation's
+     * table. A rule left unset says nothing, which is how the CLI's own default
+     * set stays the default.
      *
      * <p>{@code -PspiderSense.check.since} wins over the block, so one run can
      * judge a different window — a mark, say — without the build file knowing.
      */
-    private Provider<List<String>> checkArguments(ObjectFactory objects, ProviderFactory providers,
+    static Provider<List<String>> checkArguments(ObjectFactory objects, ProviderFactory providers,
             SpiderSenseCheckExtension check) {
         ListProperty<String> arguments = objects.listProperty(String.class);
         arguments.add("check");
@@ -326,15 +327,7 @@ public class SpiderSensePlugin implements Plugin<Project> {
         arguments.addAll(flag("until", check.getUntil()));
         arguments.addAll(flag("service", check.getService()));
         arguments.addAll(flag("endpoint", check.getEndpoint()));
-        arguments.addAll(flag("max-p95-ms", check.getMaxP95Ms()));
-        arguments.addAll(flag("max-errors", check.getMaxErrors()));
-        arguments.addAll(flag("max-error-rate", check.getMaxErrorRate()));
-        arguments.addAll(flag("max-queries-per-request", check.getMaxQueriesPerRequest()));
-        arguments.addAll(flag("max-slow-queries", check.getMaxSlowQueries()));
-        arguments.addAll(flag("max-n-plus-one", check.getMaxNPlusOne()));
-        arguments.addAll(flag("max-log-errors", check.getMaxLogErrors()));
-        arguments.addAll(flag("max-regressions", check.getMaxRegressions()));
-        arguments.addAll(flag("min-apdex", check.getMinApdex()));
+        check.rules().forEach((name, rule) -> arguments.addAll(flag(name, rule)));
         return arguments;
     }
 
@@ -347,7 +340,7 @@ public class SpiderSensePlugin implements Plugin<Project> {
      * build's locale, and no exponent for a small threshold. {@code toString}
      * would do for a {@code Long}; a {@code Double} needs saying.
      */
-    private static String plainly(Object value) {
+    static String plainly(Object value) {
         if (value instanceof Double number) {
             return BigDecimal.valueOf(number).stripTrailingZeros().toPlainString();
         }
@@ -382,20 +375,33 @@ public class SpiderSensePlugin implements Plugin<Project> {
      * dependency on {@code :spider-sense-agent} — while a plain {@link File}
      * would say nothing and force the configuration to resolve too early.
      *
-     * <p>{@code attached} null is the two Spider Sense tasks, which always want
-     * the jar; otherwise an unattached task returns nothing here, and so nothing
-     * is resolved and nothing is built for it.
+     * <p>The three Spider Sense tasks always want the jar ({@link #always});
+     * for a task that may attach it ({@link #whenAttached}), an unattached task
+     * gets nothing here, and so nothing is resolved and nothing is built for it.
      */
     static final class JarSource implements Callable<Object> {
 
+        /** Null for always. */
         private final @Nullable Provider<Boolean> attached;
         private final Provider<File> namedJar;
         private final Configuration configuration;
 
-        JarSource(@Nullable Provider<Boolean> attached, Provider<File> namedJar, Configuration configuration) {
+        private JarSource(@Nullable Provider<Boolean> attached, Provider<File> namedJar,
+                Configuration configuration) {
             this.attached = attached;
             this.namedJar = namedJar;
             this.configuration = configuration;
+        }
+
+        /** The jar, for a task that runs it. */
+        static JarSource always(Provider<File> namedJar, Configuration configuration) {
+            return new JarSource(null, namedJar, configuration);
+        }
+
+        /** The jar when {@code attached} holds, else nothing, for a task that attaches it. */
+        static JarSource whenAttached(Provider<Boolean> attached, Provider<File> namedJar,
+                Configuration configuration) {
+            return new JarSource(attached, namedJar, configuration);
         }
 
         @Override
@@ -432,16 +438,26 @@ public class SpiderSensePlugin implements Plugin<Project> {
 
     /**
      * Turns the CLI's exit code into the build's verdict, after the CLI has
-     * printed its own rendering: {@code 1} is a failed check, {@code 3} a window
-     * with no request in it, which is not a pass unless the build says it is,
-     * and anything else is the check not having run at all — no Spider Sense at
-     * the URL, or a scope that is not there.
+     * printed its own rendering: {@link #CHECK_FAILED} is a failed check,
+     * {@link #NO_REQUESTS} a window with no request in it, which is not a pass
+     * unless the build says it is, and anything else is the check not having run
+     * at all — no Spider Sense at the URL, or a scope that is not there.
      *
      * <p>A named action holding one provider and reading the result off the task
      * it is given: no {@code Project} is captured, so the configuration cache
      * can store it.
      */
     static final class FailOnVerdict implements Action<Task> {
+
+        // The CLI's exit codes (check.adoc#exit-codes), which the plugin cannot
+        // take from the CLI's own constants: the jar is a runtime input, not a
+        // dependency.
+        /** {@code check} passed. */
+        static final int PASSED = 0;
+        /** At least one rule was over its limit. */
+        static final int CHECK_FAILED = 1;
+        /** There was no request to judge. */
+        static final int NO_REQUESTS = 3;
 
         private final Provider<Boolean> failOnNoRequests;
 
@@ -452,16 +468,20 @@ public class SpiderSensePlugin implements Plugin<Project> {
         @Override
         public void execute(Task task) {
             int exit = ((JavaExec) task).getExecutionResult().get().getExitValue();
-            switch (exit) {
-                case 0 -> { }
-                case 1 -> throw new GradleException("Spider Sense check failed");
-                case 3 -> {
-                    if (failOnNoRequests.get()) {
-                        throw new GradleException("Spider Sense check had no request to judge");
-                    }
-                }
-                default -> throw new GradleException("Spider Sense check could not run (exit " + exit + ")");
+            String failure = failure(exit, failOnNoRequests.get());
+            if (failure != null) {
+                throw new GradleException(failure);
             }
+        }
+
+        /** Why the build fails for this exit code, or null when it does not. */
+        static @Nullable String failure(int exit, boolean failOnNoRequests) {
+            return switch (exit) {
+                case PASSED -> null;
+                case CHECK_FAILED -> "Spider Sense check failed";
+                case NO_REQUESTS -> failOnNoRequests ? "Spider Sense check had no request to judge" : null;
+                default -> "Spider Sense check could not run (exit " + exit + ")";
+            };
         }
     }
 }

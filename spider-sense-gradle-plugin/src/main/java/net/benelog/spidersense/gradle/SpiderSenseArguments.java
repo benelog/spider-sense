@@ -11,6 +11,7 @@ import org.gradle.process.CommandLineArgumentProvider;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The arguments the plugin contributes to a forked JVM, computed when the task
@@ -26,28 +27,55 @@ import java.util.List;
  * where it was resolved to — a Gradle cache directory here, a build directory
  * there — says nothing about what it contains.
  *
- * <p>{@code attached} false means this task is not one of {@code attachTo}, or
- * Spider Sense is switched off: nothing is contributed, and because the file
- * collection is built from the same decision, no jar is resolved either.
- * {@code agent} false serves the two Spider Sense tasks, which run the jar
- * rather than attach it: they take the {@code -Dspidersense.*} options, or the
- * {@code init} command line, and no {@code -javaagent}.
+ * <p>It serves three roles, one factory each: {@link #javaagent} for a task in
+ * {@code attachTo}, {@link #jvmOptions} for the three Spider Sense tasks, which
+ * run the jar rather than attach it and so take the {@code -Dspidersense.*}
+ * options and no {@code -javaagent}, and {@link #programArguments} for the
+ * command line of {@code spiderSenseInit} and {@code spiderSenseCheck}.
  */
 public class SpiderSenseArguments implements CommandLineArgumentProvider {
 
     private final FileCollection jar;
     private final Provider<List<String>> arguments;
-    private final Provider<Boolean> attached;
+    /** Null for always; see {@link #javaagent} for what false means. */
+    private final @Nullable Provider<Boolean> attached;
     private final boolean agent;
     private final String configuration;
 
-    SpiderSenseArguments(FileCollection jar, Provider<List<String>> arguments, Provider<Boolean> attached,
-            boolean agent, String configuration) {
+    private SpiderSenseArguments(FileCollection jar, Provider<List<String>> arguments,
+            @Nullable Provider<Boolean> attached, boolean agent, String configuration) {
         this.jar = jar;
         this.arguments = arguments;
         this.attached = attached;
         this.agent = agent;
         this.configuration = configuration;
+    }
+
+    /**
+     * {@code -javaagent:} and the block's {@code -Dspidersense.*} options, for a
+     * task that runs the application.
+     *
+     * @param attached      false when the block does not list this task to attach
+     *                      to, or Spider Sense is switched off: nothing is
+     *                      contributed, and because the file collection is built
+     *                      from the same decision, no jar is resolved either
+     * @param configuration the configuration the jar is resolved through, named
+     *                      when it does not resolve to exactly one file
+     */
+    static SpiderSenseArguments javaagent(FileCollection jar, Provider<List<String>> systemProperties,
+            Provider<Boolean> attached, String configuration) {
+        return new SpiderSenseArguments(jar, systemProperties, attached, true, configuration);
+    }
+
+    /** The block's {@code -Dspidersense.*} options alone, for a task that runs the jar itself. */
+    static SpiderSenseArguments jvmOptions(FileCollection jar, Provider<List<String>> systemProperties,
+            String configuration) {
+        return new SpiderSenseArguments(jar, systemProperties, null, false, configuration);
+    }
+
+    /** A command line after the main class, which needs no jar of its own. */
+    static SpiderSenseArguments programArguments(FileCollection none, Provider<List<String>> arguments) {
+        return new SpiderSenseArguments(none, arguments, null, false, "");
     }
 
     /** The Spider Sense jar, or nothing when this task is not attached. */
@@ -57,16 +85,19 @@ public class SpiderSenseArguments implements CommandLineArgumentProvider {
         return jar;
     }
 
-    /** The arguments that follow the agent: one per property of the block that has a value. */
+    /**
+     * The arguments that follow the agent, if any: one per property of the block
+     * that has a value, or the command line of a Spider Sense task.
+     */
     @Input
     public List<String> getArguments() {
-        return attached.get() ? arguments.get() : List.of();
+        return isAttached() ? arguments.get() : List.of();
     }
 
     /** Whether this task gets anything at all. */
     @Input
     public boolean isAttached() {
-        return attached.get();
+        return attached == null || attached.get();
     }
 
     /** Whether {@code -javaagent:} leads the list. */
@@ -77,12 +108,12 @@ public class SpiderSenseArguments implements CommandLineArgumentProvider {
 
     @Override
     public Iterable<String> asArguments() {
-        if (!attached.get()) {
+        if (!isAttached()) {
             return List.of();
         }
         List<String> all = new ArrayList<>();
         if (agent) {
-            all.add("-javaagent:" + theJar().getAbsolutePath());
+            all.add("-javaagent:" + singleJar().getAbsolutePath());
         }
         all.addAll(arguments.get());
         return all;
@@ -92,7 +123,7 @@ public class SpiderSenseArguments implements CommandLineArgumentProvider {
      * The one jar, or an error that names the configuration rather than a stack
      * trace about a file collection. Nothing asks for it until the task runs.
      */
-    File theJar() {
+    File singleJar() {
         List<File> files = List.copyOf(jar.getFiles());
         if (files.size() != 1) {
             throw new SingleJarExpected(configuration, files);

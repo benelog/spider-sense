@@ -162,10 +162,10 @@ class SpiderSensePluginTest {
 
     @Test
     void aWildcardOrIpv6BindAddressBecomesOneToCall() {
-        assertThat(SpiderSensePlugin.callable("0.0.0.0")).isEqualTo("127.0.0.1");
-        assertThat(SpiderSensePlugin.callable("::")).isEqualTo("127.0.0.1");
-        assertThat(SpiderSensePlugin.callable("::1")).isEqualTo("[::1]");
-        assertThat(SpiderSensePlugin.callable("localhost")).isEqualTo("localhost");
+        assertThat(SpiderSensePlugin.callableHost("0.0.0.0")).isEqualTo("127.0.0.1");
+        assertThat(SpiderSensePlugin.callableHost("::")).isEqualTo("127.0.0.1");
+        assertThat(SpiderSensePlugin.callableHost("::1")).isEqualTo("[::1]");
+        assertThat(SpiderSensePlugin.callableHost("localhost")).isEqualTo("localhost");
     }
 
     @Test

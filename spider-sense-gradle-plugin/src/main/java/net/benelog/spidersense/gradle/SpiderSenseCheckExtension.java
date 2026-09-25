@@ -2,7 +2,10 @@ package net.benelog.spidersense.gradle;
 
 import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.provider.Property;
+import org.gradle.api.provider.Provider;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
 import javax.inject.Inject;
 
 /**
@@ -96,6 +99,26 @@ public abstract class SpiderSenseCheckExtension {
     /** {@code minApdex = 0.9}: as {@link #setMaxErrorRate(Number)}. */
     public void setMinApdex(Number value) {
         minApdex.set(value == null ? null : value.doubleValue());
+    }
+
+    /**
+     * Every rule by the CLI flag it becomes, without the {@code --}, in the order
+     * of the rule table in {@code check.adoc#rules}: what {@code spiderSenseCheck}
+     * passes, and what the plugin's test compares with that table, so a rule
+     * added to the CLI and not here fails the build.
+     */
+    public Map<String, Provider<?>> rules() {
+        Map<String, Provider<?>> rules = new LinkedHashMap<>();
+        rules.put("max-p95-ms", getMaxP95Ms());
+        rules.put("max-errors", getMaxErrors());
+        rules.put("max-error-rate", getMaxErrorRate());
+        rules.put("max-queries-per-request", getMaxQueriesPerRequest());
+        rules.put("max-slow-queries", getMaxSlowQueries());
+        rules.put("max-n-plus-one", getMaxNPlusOne());
+        rules.put("max-log-errors", getMaxLogErrors());
+        rules.put("max-regressions", getMaxRegressions());
+        rules.put("min-apdex", getMinApdex());
+        return rules;
     }
 
     /**
