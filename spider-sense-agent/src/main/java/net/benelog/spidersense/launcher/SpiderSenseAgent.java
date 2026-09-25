@@ -4,6 +4,7 @@ import java.lang.instrument.Instrumentation;
 import java.lang.reflect.Method;
 import java.net.URI;
 import java.nio.file.Path;
+import java.util.concurrent.Callable;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -34,6 +35,7 @@ public final class SpiderSenseAgent {
 
     private static synchronized void install(String agentArgs, Instrumentation inst, String phase) {
         Config config = Config.defaults();
+        Settings settings = Settings.SYSTEM;
 
         // 1. Configuration: the properties file first, so that the system properties it fills in
         // are read exactly as the ones from the command line.
@@ -53,7 +55,7 @@ public final class SpiderSenseAgent {
             if (config.collector() != null) {
                 System.out.println(LOG_PREFIX + "forwarding to " + config.otlpEndpoint());
             } else {
-                Config serverConfig = config.withService(effectiveServiceName(config));
+                Config serverConfig = config.withService(effectiveServiceName(config, settings));
                 if (EmbeddedServer.start(serverConfig)) {
                     System.out.println(LOG_PREFIX + "UI: " + config.baseUrl());
                     maybeOpenBrowser(config);
@@ -77,11 +79,11 @@ public final class SpiderSenseAgent {
             if (exportNowhere) {
                 // Set first, so the otlp defaults below find them set: exporting to a foreign
                 // port would fail on every interval for the life of the process.
-                setDefault("otel.traces.exporter", "none");
-                setDefault("otel.metrics.exporter", "none");
-                setDefault("otel.logs.exporter", "none");
+                setDefault(settings, "otel.traces.exporter", "none");
+                setDefault(settings, "otel.metrics.exporter", "none");
+                setDefault(settings, "otel.logs.exporter", "none");
             }
-            applyOtelDefaults(config);
+            applyOtelDefaults(config, settings, NestedJar::extensionJar);
         } catch (Throwable t) {
             warn("could not set the OpenTelemetry defaults", t);
         }
@@ -103,29 +105,36 @@ public final class SpiderSenseAgent {
      * default, and {@code spidersense.service} otherwise. The collector uses it to recognise the
      * service it is embedded in, drop the UI's own traffic and mark its starts.
      */
-    static @Nullable String effectiveServiceName(Config config) {
-        String told = Config.propertyOrEnv("otel.service.name");
+    static @Nullable String effectiveServiceName(Config config, Settings settings) {
+        String told = settings.get("otel.service.name");
         return told != null ? told : config.service();
     }
 
-    static void applyOtelDefaults(Config config) {
-        setDefault("otel.exporter.otlp.protocol", "http/protobuf");
-        setDefault("otel.exporter.otlp.endpoint", config.otlpEndpoint());
+    /**
+     * Fills in the OpenTelemetry defaults a local tool wants, each only where {@code settings} has
+     * nothing yet, and adds our class loader and our extension to the agent's lists.
+     *
+     * @param extensionJar where our extension is on disk, or {@code null} when there is none; in
+     *                     production {@link NestedJar#extensionJar()}
+     */
+    static void applyOtelDefaults(Config config, Settings settings, Callable<@Nullable Path> extensionJar) {
+        setDefault(settings, "otel.exporter.otlp.protocol", "http/protobuf");
+        setDefault(settings, "otel.exporter.otlp.endpoint", config.otlpEndpoint());
         if (config.service() != null) {
             // Otherwise the agent's own default (unknown_service:java) stands, and the UI shows the
             // main-class hint from the resource attributes instead.
-            setDefault("otel.service.name", config.service());
+            setDefault(settings, "otel.service.name", config.service());
         }
         // A local tool should show a request within a second or two.
-        setDefault("otel.bsp.schedule.delay", "1000");
-        setDefault("otel.blrp.schedule.delay", "1000");
-        setDefault("otel.metric.export.interval", "5000");
-        setDefault("otel.traces.exporter", "otlp");
-        setDefault("otel.metrics.exporter", "otlp");
-        setDefault("otel.logs.exporter", "otlp");
-        setDefault("otel.instrumentation.runtime-telemetry.enabled", "true");
-        excludeOurClassLoader();
-        addOurExtension();
+        setDefault(settings, "otel.bsp.schedule.delay", "1000");
+        setDefault(settings, "otel.blrp.schedule.delay", "1000");
+        setDefault(settings, "otel.metric.export.interval", "5000");
+        setDefault(settings, "otel.traces.exporter", "otlp");
+        setDefault(settings, "otel.metrics.exporter", "otlp");
+        setDefault(settings, "otel.logs.exporter", "otlp");
+        setDefault(settings, "otel.instrumentation.runtime-telemetry.enabled", "true");
+        excludeOurClassLoader(settings);
+        addOurExtension(settings, extensionJar);
     }
 
     /**
@@ -135,11 +144,11 @@ public final class SpiderSenseAgent {
      * <p>Not having it is a warning and no more. A finding without a code location is still a
      * finding, and nothing here may stand between the application and its {@code main}.
      */
-    private static void addOurExtension() {
+    private static void addOurExtension(Settings settings, Callable<@Nullable Path> extensionJar) {
         try {
-            Path extension = NestedJar.extensionJar();
+            Path extension = extensionJar.call();
             if (extension != null) {
-                addExtension(extension.toString());
+                addExtension(settings, extension.toString());
             }
         } catch (Throwable t) {
             warn("the stack-trace extension is not available; findings will have no code location "
@@ -151,8 +160,8 @@ public final class SpiderSenseAgent {
      * Appends a path to {@code otel.javaagent.extensions}, the same shape as the exclusion list: a
      * user who names extensions of their own keeps them.
      */
-    static void addExtension(String path) {
-        appendToList("otel.javaagent.extensions", path);
+    static void addExtension(Settings settings, String path) {
+        appendToList(settings, "otel.javaagent.extensions", path);
     }
 
     /**
@@ -161,27 +170,27 @@ public final class SpiderSenseAgent {
      * dropping their exclusions would be a surprise and dropping ours would show the UI monitoring
      * itself.
      */
-    private static void excludeOurClassLoader() {
-        appendToList("otel.javaagent.exclude-class-loaders", SenseClassLoader.class.getName());
+    private static void excludeOurClassLoader(Settings settings) {
+        appendToList(settings, "otel.javaagent.exclude-class-loaders", SenseClassLoader.class.getName());
     }
 
     /**
      * Adds {@code item} to the comma-separated list in {@code key}, read from the property or its
      * environment variable, unless it is there already; an unset list becomes {@code item} alone.
      */
-    static void appendToList(String key, String item) {
-        String existing = Config.propertyOrEnv(key);
+    static void appendToList(Settings settings, String key, String item) {
+        String existing = settings.get(key);
         if (existing == null) {
-            System.setProperty(key, item);
+            settings.set(key, item);
         } else if (!existing.contains(item)) {
-            System.setProperty(key, existing + "," + item);
+            settings.set(key, existing + "," + item);
         }
     }
 
-    /** Sets a system property only when neither it nor its environment variable is set already. */
-    static void setDefault(String property, @Nullable String value) {
-        if (value != null && Config.propertyOrEnv(property) == null) {
-            System.setProperty(property, value);
+    /** Sets a property only when neither it nor its environment variable is set already. */
+    static void setDefault(Settings settings, String property, @Nullable String value) {
+        if (value != null && settings.get(property) == null) {
+            settings.set(property, value);
         }
     }
 

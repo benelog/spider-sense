@@ -41,11 +41,19 @@ final class ConfigFile {
     }
 
     /**
-     * Reads the file and applies it to the system properties. Returns the file that was read, or
-     * {@code null} when there was none.
+     * Reads the file and applies it to this JVM's system properties. Returns the file that was
+     * read, or {@code null} when there was none.
      */
     static @Nullable Path apply() {
-        Path file = locate();
+        return apply(Paths.get(""), Settings.SYSTEM);
+    }
+
+    /**
+     * The same with the working directory and the settings given, which a test can stand in for:
+     * the file is looked for from {@code workingDir} and its keys are written to {@code settings}.
+     */
+    static @Nullable Path apply(Path workingDir, Settings settings) {
+        Path file = locate(workingDir, settings);
         if (file == null) {
             return null;
         }
@@ -56,15 +64,18 @@ final class ConfigFile {
             SpiderSenseAgent.warn("could not read " + file + "; ignoring it", e);
             return null;
         }
-        apply(properties, file);
+        apply(properties, file, settings);
         return file;
     }
 
-    /** The named file, which must exist, else the default one, which may not. */
-    static @Nullable Path locate() {
-        String named = Config.propertyOrEnv(PROPERTY);
+    /**
+     * The file {@value #PROPERTY} names, which must exist, else {@value #DEFAULT_NAME}, which may
+     * not; a relative path is taken from {@code workingDir}.
+     */
+    static @Nullable Path locate(Path workingDir, Settings settings) {
+        String named = settings.get(PROPERTY);
         if (named != null) {
-            Path file = Paths.get(named.trim());
+            Path file = workingDir.resolve(named.trim());
             if (Files.isRegularFile(file)) {
                 return file;
             }
@@ -72,16 +83,12 @@ final class ConfigFile {
                     + ", which is not a file; ignoring it");
             return null;
         }
-        Path file = Paths.get(DEFAULT_NAME);
+        Path file = workingDir.resolve(DEFAULT_NAME);
         return Files.isRegularFile(file) ? file : null;
     }
 
-    static void apply(Properties properties, Path file) {
-        apply(properties, file, System::getenv);
-    }
-
-    /** The same, with the environment read through {@code env}, which a test can stand in for. */
-    static void apply(Properties properties, Path file, java.util.function.Function<String, @Nullable String> env) {
+    /** Writes each {@code spidersense.*} key of {@code properties} to {@code settings} unless it is set there already. */
+    static void apply(Properties properties, Path file, Settings settings) {
         for (String key : properties.stringPropertyNames()) {
             if (!key.startsWith(Key.PROPERTY_PREFIX)) {
                 continue;
@@ -93,12 +100,12 @@ final class ConfigFile {
             // What every reader of the key would find without the file wins over the file: an
             // empty variable hides nothing, and an empty property hides the file's key only where
             // an empty value means something.
-            if (Config.propertyOrEnv(key, System::getProperty, env) != null) {
+            if (settings.get(key) != null) {
                 continue;
             }
             // Trimmed, as a -D value would be typed; an empty value is kept, because an empty
             // spidersense.ignore.endpoints means "ignore nothing".
-            System.setProperty(key, properties.getProperty(key).trim());
+            settings.set(key, properties.getProperty(key).trim());
         }
     }
 }

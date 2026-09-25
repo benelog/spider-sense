@@ -3,44 +3,37 @@ package net.benelog.spidersense.launcher;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
-import org.junit.jupiter.api.AfterEach;
+import java.util.HashMap;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+/** The OpenTelemetry defaults, filled into a map rather than this JVM's system properties. */
 class AgentDefaultsTest {
-
-    private static final List<String> KEYS = List.of(
-            "otel.exporter.otlp.protocol",
-            "otel.exporter.otlp.endpoint",
-            "otel.service.name",
-            "otel.bsp.schedule.delay",
-            "otel.blrp.schedule.delay",
-            "otel.metric.export.interval",
-            "otel.traces.exporter",
-            "otel.metrics.exporter",
-            "otel.logs.exporter",
-            "otel.instrumentation.runtime-telemetry.enabled",
-            "otel.javaagent.exclude-class-loaders",
-            "otel.javaagent.extensions");
 
     @TempDir
     Path dir;
 
-    @AfterEach
-    void clear() {
-        KEYS.forEach(System::clearProperty);
-        System.clearProperty(NestedJar.EXTENSION_JAR_PROPERTY);
+    /** The properties the defaults are written to. */
+    private final Map<String, String> properties = new HashMap<>();
+
+    /** The environment behind them. */
+    private final Map<String, String> env = new HashMap<>();
+
+    private final Settings settings = Settings.of(properties::get, env::get, properties::put);
+
+    /** Tests run from exploded classes; production finds the extension with NestedJar.extensionJar. */
+    private Path extensionJar() {
+        return dir.resolve("extension.jar");
     }
 
-    /** Tests run from exploded classes, so the override is the only way to have an extension. */
-    private String pretendExtensionJar() throws IOException {
-        Path jar = dir.resolve("extension.jar");
-        Files.writeString(jar, "pretend extension jar");
-        System.setProperty(NestedJar.EXTENSION_JAR_PROPERTY, jar.toString());
-        return jar.toString();
+    private void applyWithoutExtension(Config config) {
+        SpiderSenseAgent.applyOtelDefaults(config, settings, () -> null);
+    }
+
+    private void applyWithExtension(Config config) {
+        SpiderSenseAgent.applyOtelDefaults(config, settings, this::extensionJar);
     }
 
     /**
@@ -50,10 +43,13 @@ class AgentDefaultsTest {
     @Test
     void theEmbeddedServiceIsTheOneTheExporterNames() {
         Config config = Config.defaults().withService("orders-project");
-        assertThat(SpiderSenseAgent.effectiveServiceName(config)).isEqualTo("orders-project");
+        assertThat(SpiderSenseAgent.effectiveServiceName(config, settings)).isEqualTo("orders-project");
 
-        System.setProperty("otel.service.name", "orders-api");
-        assertThat(SpiderSenseAgent.effectiveServiceName(config)).isEqualTo("orders-api");
+        env.put("OTEL_SERVICE_NAME", "orders-worker");
+        assertThat(SpiderSenseAgent.effectiveServiceName(config, settings)).isEqualTo("orders-worker");
+
+        properties.put("otel.service.name", "orders-api");
+        assertThat(SpiderSenseAgent.effectiveServiceName(config, settings)).isEqualTo("orders-api");
     }
 
     /** Only a Spider Sense on the port is worth exporting to; anything else is foreign. */
@@ -85,82 +81,89 @@ class AgentDefaultsTest {
 
     @Test
     void fillsInTheDefaultsForALocalTool() {
-        SpiderSenseAgent.applyOtelDefaults(Config.defaults().withPort(4010));
+        applyWithoutExtension(Config.defaults().withPort(4010));
 
-        assertThat(System.getProperty("otel.exporter.otlp.protocol")).isEqualTo("http/protobuf");
-        assertThat(System.getProperty("otel.exporter.otlp.endpoint")).isEqualTo("http://127.0.0.1:4010");
-        assertThat(System.getProperty("otel.bsp.schedule.delay")).isEqualTo("1000");
-        assertThat(System.getProperty("otel.blrp.schedule.delay")).isEqualTo("1000");
-        assertThat(System.getProperty("otel.metric.export.interval")).isEqualTo("5000");
-        assertThat(System.getProperty("otel.traces.exporter")).isEqualTo("otlp");
-        assertThat(System.getProperty("otel.metrics.exporter")).isEqualTo("otlp");
-        assertThat(System.getProperty("otel.logs.exporter")).isEqualTo("otlp");
-        assertThat(System.getProperty("otel.instrumentation.runtime-telemetry.enabled")).isEqualTo("true");
-        assertThat(System.getProperty("otel.javaagent.exclude-class-loaders"))
-                .isEqualTo("net.benelog.spidersense.launcher.SenseClassLoader");
-        assertThat(System.getProperty("otel.service.name")).as("left to the agent's own default").isNull();
-        assertThat(System.getProperty("otel.javaagent.extensions"))
-                .as("nothing to point at from exploded classes, and that is not an error").isNull();
+        assertThat(properties).containsExactlyInAnyOrderEntriesOf(Map.of(
+                "otel.exporter.otlp.protocol", "http/protobuf",
+                "otel.exporter.otlp.endpoint", "http://127.0.0.1:4010",
+                "otel.bsp.schedule.delay", "1000",
+                "otel.blrp.schedule.delay", "1000",
+                "otel.metric.export.interval", "5000",
+                "otel.traces.exporter", "otlp",
+                "otel.metrics.exporter", "otlp",
+                "otel.logs.exporter", "otlp",
+                "otel.instrumentation.runtime-telemetry.enabled", "true",
+                "otel.javaagent.exclude-class-loaders", "net.benelog.spidersense.launcher.SenseClassLoader"));
+        assertThat(properties).as("otel.service.name is left to the agent's own default, and with no"
+                + " extension to point at, otel.javaagent.extensions is not an error but unset")
+                .doesNotContainKeys("otel.service.name", "otel.javaagent.extensions");
     }
 
     @Test
-    void pointsTheAgentAtOurOwnExtension() throws IOException {
-        String jar = pretendExtensionJar();
+    void pointsTheAgentAtOurOwnExtension() {
+        applyWithExtension(Config.defaults());
 
-        SpiderSenseAgent.applyOtelDefaults(Config.defaults());
-
-        assertThat(System.getProperty("otel.javaagent.extensions")).isEqualTo(jar);
+        assertThat(properties).containsEntry("otel.javaagent.extensions", extensionJar().toString());
     }
 
     @Test
-    void addsToAUserExtensionListInsteadOfReplacingIt() throws IOException {
-        String jar = pretendExtensionJar();
-        System.setProperty("otel.javaagent.extensions", "/opt/acme/their-extension.jar");
+    void aMissingExtensionIsAWarningAndTheOtherDefaultsStand() {
+        SpiderSenseAgent.applyOtelDefaults(Config.defaults(), settings, () -> {
+            throw new IOException("spidersense.extensionJar points at a file that does not exist");
+        });
 
-        SpiderSenseAgent.applyOtelDefaults(Config.defaults());
+        assertThat(properties).doesNotContainKey("otel.javaagent.extensions")
+                .containsEntry("otel.traces.exporter", "otlp");
+    }
 
-        assertThat(System.getProperty("otel.javaagent.extensions"))
-                .isEqualTo("/opt/acme/their-extension.jar," + jar);
+    @Test
+    void addsToAUserExtensionListInsteadOfReplacingIt() {
+        properties.put("otel.javaagent.extensions", "/opt/acme/their-extension.jar");
+
+        applyWithExtension(Config.defaults());
+
+        assertThat(properties).containsEntry("otel.javaagent.extensions",
+                "/opt/acme/their-extension.jar," + extensionJar());
 
         // And is idempotent.
-        SpiderSenseAgent.applyOtelDefaults(Config.defaults());
-        assertThat(System.getProperty("otel.javaagent.extensions"))
-                .isEqualTo("/opt/acme/their-extension.jar," + jar);
+        applyWithExtension(Config.defaults());
+        assertThat(properties).containsEntry("otel.javaagent.extensions",
+                "/opt/acme/their-extension.jar," + extensionJar());
     }
 
     @Test
     void exportsToTheCollectorWhenForwarding() {
-        SpiderSenseAgent.applyOtelDefaults(
+        applyWithoutExtension(
                 Config.parse(new String[] {"--collector=http://box:4000/", "--service=orders"},
                         key -> null, key -> null).config());
 
-        assertThat(System.getProperty("otel.exporter.otlp.endpoint")).isEqualTo("http://box:4000");
-        assertThat(System.getProperty("otel.service.name")).isEqualTo("orders");
+        assertThat(properties).containsEntry("otel.exporter.otlp.endpoint", "http://box:4000")
+                .containsEntry("otel.service.name", "orders");
     }
 
     @Test
     void neverOverridesWhatTheUserSet() {
-        System.setProperty("otel.exporter.otlp.protocol", "grpc");
-        System.setProperty("otel.traces.exporter", "none");
+        properties.put("otel.exporter.otlp.protocol", "grpc");
+        env.put("OTEL_TRACES_EXPORTER", "none");
 
-        SpiderSenseAgent.applyOtelDefaults(Config.defaults());
+        applyWithoutExtension(Config.defaults());
 
-        assertThat(System.getProperty("otel.exporter.otlp.protocol")).isEqualTo("grpc");
-        assertThat(System.getProperty("otel.traces.exporter")).isEqualTo("none");
+        assertThat(properties).containsEntry("otel.exporter.otlp.protocol", "grpc")
+                .as("the variable is what the agent reads").doesNotContainKey("otel.traces.exporter");
     }
 
     @Test
     void addsToAUserExclusionListInsteadOfReplacingIt() {
-        System.setProperty("otel.javaagent.exclude-class-loaders", "com.example.Loader");
+        env.put("OTEL_JAVAAGENT_EXCLUDE_CLASS_LOADERS", "com.example.Loader");
 
-        SpiderSenseAgent.applyOtelDefaults(Config.defaults());
+        applyWithoutExtension(Config.defaults());
 
-        assertThat(System.getProperty("otel.javaagent.exclude-class-loaders"))
-                .isEqualTo("com.example.Loader,net.benelog.spidersense.launcher.SenseClassLoader");
+        assertThat(properties).containsEntry("otel.javaagent.exclude-class-loaders",
+                "com.example.Loader,net.benelog.spidersense.launcher.SenseClassLoader");
 
         // And is idempotent.
-        SpiderSenseAgent.applyOtelDefaults(Config.defaults());
-        assertThat(System.getProperty("otel.javaagent.exclude-class-loaders"))
-                .isEqualTo("com.example.Loader,net.benelog.spidersense.launcher.SenseClassLoader");
+        applyWithoutExtension(Config.defaults());
+        assertThat(properties).containsEntry("otel.javaagent.exclude-class-loaders",
+                "com.example.Loader,net.benelog.spidersense.launcher.SenseClassLoader");
     }
 }
