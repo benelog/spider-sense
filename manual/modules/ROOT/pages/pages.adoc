@@ -258,6 +258,7 @@ Drag a rectangle in either mode to list the traces inside it, in a table beneath
 The table asks `/api/traces` with `from`, `to`, `minMs` and `maxMs` from the rectangle, plus the current service, plus `status=error` or `status=ok` when only one of Success and Failed is on.
 `Esc` clears the selection.
 With Live on, points stream in from the right every 2 seconds, from a refetch of the last 10 seconds merged in and deduplicated by trace id, and the x-axis slides.
+The y-axis maximum and the `▲ n above` note follow the merged points, and the "truncated" notice stays until a full load of the window is not cut.
 A change of service or range reloads the whole window and the trace list, Live or not.
 
 [#traces]

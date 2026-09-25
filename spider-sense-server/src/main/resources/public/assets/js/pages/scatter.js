@@ -51,7 +51,7 @@ export function render(root, ctx) {
         errBtn.setAttribute('aria-pressed', String(showErr));
         router.setQuery({ hide: showOk && showErr ? '' : showOk ? 'err' : 'ok' });
         paintBar();
-        if (chart) { chart.setPoints(shown()); chart.setYMax(yMaxOf()); }
+        if (chart) chart.setPoints(shown(), null, yMaxOf());
         loadTraces();
       },
     }, label);
@@ -228,7 +228,6 @@ export function render(root, ctx) {
       const opts = incremental ? { window: { from: now - 10000, to: now } } : undefined;
       const res = await api.scatter({ limit: 5000 }, opts);
       if (destroyed || !current()) return;
-      truncated = !!res.truncated;
       const incoming = res.points || [];
       if (incremental) {
         if (requested !== loadedFor) return;   // asked for a service or range no longer shown
@@ -237,9 +236,12 @@ export function render(root, ctx) {
         const w = api.windowFor();
         points = points.concat(fresh).filter((p) => p[0] >= w.from);
         paintBar();
-        if (chart) chart.setPoints(shown(), w);
+        // The axis follows the merged points, as the ▲ note paintBar just wrote does.
+        if (chart) chart.setPoints(shown(), w, yMaxOf());
       } else {
         loadedFor = requested;
+        // Only a full load can be cut; the 10 s a Live merge asks for leaves the cut set as it was.
+        truncated = !!res.truncated;
         points = incoming;
         const w = (res.window && res.window.from) ? res.window : api.windowFor();
         if (!points.length && !(api.state.status && api.state.status.counts && api.state.status.counts.spans)) {

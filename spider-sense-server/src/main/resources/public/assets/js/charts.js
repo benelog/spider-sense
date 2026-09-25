@@ -678,9 +678,10 @@ export function scatterChart(container, opts) {
     };
   }, opts.height || 380);
 
-  chart.setPoints = (points, window) => {
+  chart.setPoints = (points, window, yMax) => {
     state.points = points;
     if (window) state.window = window;
+    if (yMax !== undefined) state.yMax = yMax;
     chart.rebuild();
   };
   chart.setMode = (mode) => { state.mode = mode === 'heatmap' ? 'heatmap' : 'dots'; chart.rebuild(); };
