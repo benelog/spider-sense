@@ -660,8 +660,9 @@ public final class Findings {
                     Subject.error(group.errorId()),
                     numbers, null,
                     frames.ofStacktrace(stacktrace),
-                    evidence ? traceIds(queries.tracesContaining(window, "error_id = ?",
-                            group.errorId(), EVIDENCE_TRACES, false)) : List.of());
+                    evidence ? traceIds(queries.tracesContaining(window,
+                            Queries.SpanMatch.error(group.errorId()), EVIDENCE_TRACES,
+                            Queries.TraceOrder.NEWEST)) : List.of());
             found.add(new Ranked(finding, group.count()));
         }
         return found;
@@ -1057,8 +1058,9 @@ public final class Findings {
                     Subject.query(query.queryId()),
                     numbers, query.statement(),
                     frames.ofAttributes(samples.get(query.queryId())),
-                    evidence ? traceIds(queries.tracesContaining(window, "query_id = ?",
-                            query.queryId(), EVIDENCE_TRACES, true)) : List.of())
+                    evidence ? traceIds(queries.tracesContaining(window,
+                            Queries.SpanMatch.query(query.queryId()), EVIDENCE_TRACES,
+                            Queries.TraceOrder.SLOWEST)) : List.of())
                     // The group already carries the block /api/queries shows; a finding
                     // and a query row never disagree about the same statement.
                     .withSchema(query.schema());
@@ -1071,7 +1073,7 @@ public final class Findings {
 
     private List<Ranked> slowEndpoints(Window window, @Nullable String service, boolean evidence) {
         List<Stats.EndpointStats> slow = new ArrayList<>();
-        for (Stats.EndpointStats endpoint : queries.endpoints(window, service, null, false)) {
+        for (Stats.EndpointStats endpoint : queries.endpointsWithoutStatusCodes(window, service)) {
             if (endpoint.p95Ms() > tingles.slowRequestMs()) {
                 slow.add(endpoint);
             }
@@ -1093,8 +1095,9 @@ public final class Findings {
             SlowGroup group = SlowGroup.of(endpoint);
             Queries.DbWork work = databaseWork.getOrDefault(endpoint.endpointId(), Queries.DbWork.NONE);
             TimeEvidence time = timeEvidence(window, endpoint.service(), evidence
-                    ? traceIds(queries.tracesContaining(window, "endpoint_id = ?",
-                            endpoint.endpointId(), SAMPLE_TRACES, true))
+                    ? traceIds(queries.tracesContaining(window,
+                            Queries.SpanMatch.endpoint(endpoint.endpointId()), SAMPLE_TRACES,
+                            Queries.TraceOrder.SLOWEST))
                     : List.of());
 
             Map<String, Object> numbers = new LinkedHashMap<>();
@@ -1210,8 +1213,8 @@ public final class Findings {
             Queries.DbWork work = databaseWork.getOrDefault(key, Queries.DbWork.NONE);
             TimeEvidence time = timeEvidence(window, job.service(), evidence
                     ? traceIds(queries.tracesContaining(window,
-                            "parent_span_id IS NULL AND s.kind = 'INTERNAL' AND s.service = ? AND s.name = ?",
-                            List.of(job.service(), job.name()), SAMPLE_TRACES, true))
+                            Queries.SpanMatch.job(job.service(), job.name()), SAMPLE_TRACES,
+                            Queries.TraceOrder.SLOWEST))
                     : List.of());
 
             Map<String, Object> numbers = new LinkedHashMap<>();

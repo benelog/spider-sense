@@ -427,9 +427,11 @@ class QueriesTest {
 
         assertThat(queries.slowestOf(window, List.of(traceId(3), traceId(1), traceId(2)), 2))
                 .extracting(Stats.TraceSummary::traceId).containsExactly(traceId(1), traceId(2));
-        assertThat(queries.tracesContaining(window, "name = ?", List.of("GET /orders"), 2, true))
+        assertThat(queries.tracesContaining(window, Queries.SpanMatch.named("GET /orders"), 2,
+                Queries.TraceOrder.SLOWEST))
                 .extracting(Stats.TraceSummary::traceId).containsExactly(traceId(1), traceId(2));
-        assertThat(queries.tracesContaining(window, "name = ?", List.of("GET /orders"), 2, false))
+        assertThat(queries.tracesContaining(window, Queries.SpanMatch.named("GET /orders"), 2,
+                Queries.TraceOrder.NEWEST))
                 .extracting(Stats.TraceSummary::traceId).containsExactly(traceId(1), traceId(2));
     }
 
@@ -498,9 +500,11 @@ class QueriesTest {
         flush();
 
         List<String> lowest = List.of(traceId(1), traceId(2), traceId(3));
-        assertThat(queries.tracesContaining(window, "name = ?", List.of("GET /orders"), 3, true))
+        assertThat(queries.tracesContaining(window, Queries.SpanMatch.named("GET /orders"), 3,
+                Queries.TraceOrder.SLOWEST))
                 .extracting(Stats.TraceSummary::traceId).containsExactlyElementsOf(lowest);
-        assertThat(queries.tracesContaining(window, "name = ?", List.of("GET /orders"), 3, false))
+        assertThat(queries.tracesContaining(window, Queries.SpanMatch.named("GET /orders"), 3,
+                Queries.TraceOrder.NEWEST))
                 .extracting(Stats.TraceSummary::traceId).containsExactlyElementsOf(lowest);
     }
 
@@ -610,10 +614,12 @@ class QueriesTest {
                 early, Otlp.child(early, spanId(12), "lookup", Span.SpanKind.SPAN_KIND_INTERNAL, NOW + 1_000, 5)));
         flush();
 
-        assertThat(queries.tracesContaining(window, "name = ?", "lookup", 10, false))
+        assertThat(queries.tracesContaining(window, Queries.SpanMatch.named("lookup"), 10,
+                Queries.TraceOrder.NEWEST))
                 .as("the span of the first trace starts after the window ends")
                 .extracting(Stats.TraceSummary::traceId).containsExactly(traceId(2));
-        assertThat(queries.tracesContaining(Window.of(NOW - 60_000, NOW + 70_000), "name = ?", "lookup", 10, false))
+        assertThat(queries.tracesContaining(Window.of(NOW - 60_000, NOW + 70_000),
+                Queries.SpanMatch.named("lookup"), 10, Queries.TraceOrder.NEWEST))
                 .extracting(Stats.TraceSummary::traceId).containsExactly(traceId(1), traceId(2));
     }
 }

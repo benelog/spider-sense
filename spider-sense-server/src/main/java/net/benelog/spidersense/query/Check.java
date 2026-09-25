@@ -256,7 +256,7 @@ public final class Check {
     /** The endpoints the scope covers: one, or every endpoint of the window. */
     private List<Stats.EndpointStats> scope(Window window, @Nullable String service,
             @Nullable String endpoint) {
-        List<Stats.EndpointStats> endpoints = queries.endpoints(window, service, null);
+        List<Stats.EndpointStats> endpoints = queries.endpointsWithoutStatusCodes(window, service);
         if (endpoint == null) {
             return endpoints;
         }

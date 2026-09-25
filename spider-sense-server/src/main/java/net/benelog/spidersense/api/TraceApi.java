@@ -110,7 +110,8 @@ public final class TraceApi {
         }
         Stats.EndpointStats endpoint = found.get(0);
         List<Stats.TraceSummary> slowest =
-                queries.tracesContaining(window, "endpoint_id = ?", endpointId, DETAIL_TRACES, true);
+                queries.tracesContaining(window, Queries.SpanMatch.endpoint(endpointId),
+                        DETAIL_TRACES, Queries.TraceOrder.SLOWEST);
         List<String> sample = new ArrayList<>(slowest.size());
         for (Stats.TraceSummary trace : slowest) {
             sample.add(trace.traceId());
@@ -127,7 +128,7 @@ public final class TraceApi {
                 .put("errors", Codecs.errorGroups(failedIn(window, endpoint)))
                 .put("traces", Codecs.traceSummaries(slowest))
                 .put("recent", Codecs.traceSummaries(queries.tracesContaining(window,
-                        "endpoint_id = ?", endpointId, DETAIL_TRACES, false)))
+                        Queries.SpanMatch.endpoint(endpointId), DETAIL_TRACES, Queries.TraceOrder.NEWEST)))
                 .put("breakdown", breakdown));
     }
 
@@ -248,7 +249,7 @@ public final class TraceApi {
                         .put("calls", Codecs.longs(buckets.requests()))
                         .put("p95Ms", Codecs.doubles(buckets.p95Ms(), buckets.requests())))
                 .put("traces", Codecs.traceSummaries(queries.tracesContaining(window,
-                        "query_id = ?", queryId, DETAIL_TRACES, true))));
+                        Queries.SpanMatch.query(queryId), DETAIL_TRACES, Queries.TraceOrder.SLOWEST))));
     }
 
     public WebResponse errors(WebRequest req) {
@@ -283,7 +284,7 @@ public final class TraceApi {
                         .put("t", Codecs.longs(buckets.t()))
                         .put("count", Codecs.longs(buckets.requests())))
                 .put("traces", Codecs.traceSummaries(queries.tracesContaining(window,
-                        "error_id = ?", errorId, DETAIL_TRACES, false))));
+                        Queries.SpanMatch.error(errorId), DETAIL_TRACES, Queries.TraceOrder.NEWEST))));
     }
 
     /**

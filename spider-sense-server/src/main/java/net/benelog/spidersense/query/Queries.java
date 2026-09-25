@@ -250,21 +250,29 @@ public final class Queries {
 
     // --- endpoints -----------------------------------------------------------
 
+    /** The endpoints of the window, heaviest first, each with its status codes. */
     public List<Stats.EndpointStats> endpoints(Window window, @Nullable String service,
             @Nullable String endpointId) {
-        return endpoints(window, service, endpointId, true);
+        Where where = endpointWhere(window, service, endpointId);
+        return endpoints(window, where, statusCodes(where));
     }
 
     /**
-     * The same, with or without the status codes, which are a second scan of the
-     * window's entry spans and which no finding reads.
+     * The same, with no status codes, which are a second scan of the window's entry
+     * spans and which no finding, check rule or comparison reads.
      */
-    List<Stats.EndpointStats> endpoints(Window window, @Nullable String service,
-            @Nullable String endpointId, boolean withStatusCodes) {
+    List<Stats.EndpointStats> endpointsWithoutStatusCodes(Window window, @Nullable String service) {
+        return endpoints(window, endpointWhere(window, service, null), Map.of());
+    }
+
+    private static Where endpointWhere(Window window, @Nullable String service,
+            @Nullable String endpointId) {
         Where where = Where.entries(window, service).and("endpoint_id IS NOT NULL");
-        if (endpointId != null) {
-            where = where.and("endpoint_id = ?", endpointId);
-        }
+        return endpointId == null ? where : where.and("endpoint_id = ?", endpointId);
+    }
+
+    private List<Stats.EndpointStats> endpoints(Window window, Where where,
+            Map<String, Map<String, Long>> statusCodes) {
         String query = "SELECT endpoint_id, service, MAX(endpoint) AS name, MAX(http_method) AS method,"
                 + " MAX(http_route) AS route, MAX(kind) AS kind, COUNT(*) AS calls,"
                 + " " + SpanSql.ERRORS + " AS errors, SUM(duration_ns) AS total_ns,"
@@ -272,7 +280,6 @@ public final class Queries {
                 + " FROM span WHERE " + where.sql()
                 + " GROUP BY endpoint_id, service ORDER BY total_ns DESC, endpoint_id";
 
-        Map<String, Map<String, Long>> statusCodes = withStatusCodes ? statusCodes(where) : Map.of();
         double seconds = window.rangeSeconds();
         return sql.query(query, where.params(), rs -> {
             String id = rs.getString("endpoint_id");
@@ -886,16 +893,53 @@ public final class Queries {
         }
     }
 
-    /** The slowest traces that contain a span matching {@code predicate}. */
-    public List<Stats.TraceSummary> tracesContaining(Window window, String predicate, String value,
-            int limit, boolean slowest) {
-        return tracesContaining(window, predicate, List.of(value), limit, slowest);
+    /**
+     * Which spans a trace must contain: those of one endpoint, query group, error group
+     * or job.
+     *
+     * <p>Each carries its own SQL over the span aliased {@code s} and its parameters, so a
+     * caller names a group rather than writing a predicate.
+     */
+    public static final class SpanMatch {
+
+        private final String predicate;
+        private final List<Object> params;
+
+        private SpanMatch(String predicate, Object... params) {
+            this.predicate = predicate;
+            this.params = List.of(params);
+        }
+
+        public static SpanMatch endpoint(String endpointId) {
+            return new SpanMatch("s.endpoint_id = ?", endpointId);
+        }
+
+        public static SpanMatch query(String queryId) {
+            return new SpanMatch("s.query_id = ?", queryId);
+        }
+
+        public static SpanMatch error(String errorId) {
+            return new SpanMatch("s.error_id = ?", errorId);
+        }
+
+        /** The runs of one job: its root {@code INTERNAL} spans (design.adoc#endpoint-identity). */
+        public static SpanMatch job(String service, String name) {
+            return new SpanMatch(SpanSql.job("s.") + " AND s.service = ? AND s.name = ?", service, name);
+        }
+
+        /** Spans by name alone, which no answer asks for and a test of the ordering does. */
+        static SpanMatch named(String name) {
+            return new SpanMatch("s.name = ?", name);
+        }
     }
 
-    /** The same, for a predicate that binds more than one value (a job's service and name). */
-    public List<Stats.TraceSummary> tracesContaining(Window window, String predicate,
-            List<Object> values, int limit, boolean slowest) {
-        List<Object> params = new ArrayList<>(values);
+    /** Which traces come first: the slowest, or the newest; the trace id breaks a tie. */
+    public enum TraceOrder { SLOWEST, NEWEST }
+
+    /** The traces of the window that contain a span the match names, in the order asked for. */
+    public List<Stats.TraceSummary> tracesContaining(Window window, SpanMatch match, int limit,
+            TraceOrder order) {
+        List<Object> params = new ArrayList<>(match.params);
         params.add(window.from());
         params.add(window.to());
         Where where = new Where("t.start_ms BETWEEN ? AND ?", window.from(), window.to())
@@ -903,11 +947,12 @@ public final class Queries {
                 // the spans by the predicate's index once instead of probing every trace.
                 // The span's own window makes that read a range of the (…, start_ms) index,
                 // the window's share of the group rather than its whole history (storage.adoc).
-                .and("t.trace_id IN (SELECT s.trace_id FROM span s WHERE s." + predicate
+                .and("t.trace_id IN (SELECT s.trace_id FROM span s WHERE " + match.predicate
                         + " AND s.start_ms BETWEEN ? AND ?)", params.toArray());
         // The trace id breaks a tie, so the same window names the same evidence (findings.adoc).
-        String order = slowest ? "t.duration_ns DESC, t.trace_id" : "t.start_ms DESC, t.trace_id";
-        return sql.query("SELECT * FROM trace t WHERE " + where.sql() + " ORDER BY " + order
+        String orderBy = order == TraceOrder.SLOWEST
+                ? "t.duration_ns DESC, t.trace_id" : "t.start_ms DESC, t.trace_id";
+        return sql.query("SELECT * FROM trace t WHERE " + where.sql() + " ORDER BY " + orderBy
                 + " LIMIT " + Math.max(1, limit), where.params(), Rows::trace);
     }
 

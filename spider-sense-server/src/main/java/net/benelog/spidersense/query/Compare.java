@@ -239,7 +239,7 @@ public final class Compare {
 
     private Map<String, Stats.EndpointStats> endpoints(Window window, @Nullable String service) {
         Map<String, Stats.EndpointStats> byId = new LinkedHashMap<>();
-        for (Stats.EndpointStats endpoint : queries.endpoints(window, service, null)) {
+        for (Stats.EndpointStats endpoint : queries.endpointsWithoutStatusCodes(window, service)) {
             byId.put(endpoint.endpointId(), endpoint);
         }
         return byId;
