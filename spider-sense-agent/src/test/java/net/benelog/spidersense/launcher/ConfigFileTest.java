@@ -23,6 +23,7 @@ class ConfigFileTest {
             "spidersense.service",
             "spidersense.slow.query.ms",
             "spidersense.ignore.endpoints",
+            "spidersense.source.dirs",
             "spidersense.prot");
 
     @TempDir
@@ -82,6 +83,30 @@ class ConfigFileTest {
 
         assertThat(System.getProperty("spidersense.port")).isEqualTo("4001");
         assertThat(System.getProperty("spidersense.host")).as("a set variable still wins").isNull();
+    }
+
+    /**
+     * {@code -Dspidersense.port=${SENSE_PORT}} with the variable unset is an empty property, which
+     * every reader of the port takes as unset, so the file's value stands; an empty
+     * {@code ignore.endpoints} or {@code source.dirs} is a value of its own and still wins.
+     */
+    @Test
+    void anEmptyPropertyHidesTheFileOnlyWhereEmptyMeansSomething() throws IOException {
+        Path file = file("spidersense.port=4001", "spidersense.service=orders",
+                "spidersense.ignore.endpoints=/ping", "spidersense.source.dirs=src");
+        System.setProperty(ConfigFile.PROPERTY, file.toString());
+        System.setProperty("spidersense.port", "");
+        System.setProperty("spidersense.service", "");
+        System.setProperty("spidersense.ignore.endpoints", "");
+        System.setProperty("spidersense.source.dirs", "");
+
+        ConfigFile.apply();
+
+        assertThat(System.getProperty("spidersense.port")).isEqualTo("4001");
+        assertThat(System.getProperty("spidersense.service")).isEqualTo("orders");
+        assertThat(Config.fromSystemProperties().port()).isEqualTo(4001);
+        assertThat(System.getProperty("spidersense.ignore.endpoints")).as("ignore nothing").isEmpty();
+        assertThat(System.getProperty("spidersense.source.dirs")).as("no root").isEmpty();
     }
 
     @Test
