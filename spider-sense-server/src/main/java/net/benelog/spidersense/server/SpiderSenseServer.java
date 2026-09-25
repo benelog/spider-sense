@@ -98,9 +98,11 @@ public final class SpiderSenseServer implements AutoCloseable {
                 IngestCap.of(config.maxSpansPerSecond()), clock);
         AtomicInteger boundPort = new AtomicInteger(config.port());
 
-        Queries queries = new Queries(store.sql(), store.tingles(), store.services());
-        MetricQueries metrics = new MetricQueries(store.sql());
         Reports reports = new Reports(config, store, boundPort::get);
+        // One graph: the handlers that render JSON themselves read through the same Queries the
+        // Reports-backed routes do.
+        Queries queries = reports.queries();
+        MetricQueries metrics = reports.metrics();
 
         App app = new App();
         app.beforeRequest(req -> LocalRequests.refuseForeign(req, config.host()));

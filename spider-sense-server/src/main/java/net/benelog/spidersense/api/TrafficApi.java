@@ -227,7 +227,8 @@ public final class TrafficApi {
 
     public WebResponse queries(WebRequest req) {
         return Params.answer(req, reports.queries(params.window(req), Params.service(req),
-                req.queryParamOrNull("sort"), Params.limit(req, Limits.QUERIES, Limits.QUERIES_MAX), Params.full(req)));
+                req.queryParamOrNull("sort"), Params.limit(req, Limits.QUERIES, Limits.QUERIES_MAX),
+                Params.full(req)));
     }
 
     public WebResponse query(WebRequest req) {
@@ -237,13 +238,13 @@ public final class TrafficApi {
             return textOr404(reports.queryText(window, Params.service(req), queryId, Params.full(req)),
                     "No such query in this window: " + queryId);
         }
-        List<Stats.QueryStats> found = queries.queries(window, null, "total", 1, queryId);
-        if (found.isEmpty()) {
+        Stats.QueryStats query = reports.queryStats(window, queryId);
+        if (query == null) {
             throw new HttpException(HttpStatus.NOT_FOUND, "No such query in this window: " + queryId);
         }
         Stats.Buckets buckets = queries.queryBuckets(window, queryId);
         return WebResponse.json(Json.obj()
-                .put("query", Codecs.query(found.get(0)))
+                .put("query", Codecs.query(query))
                 .put("series", Json.obj()
                         .put("t", Codecs.longs(buckets.t()))
                         .put("calls", Codecs.longs(buckets.requests()))
@@ -264,11 +265,10 @@ public final class TrafficApi {
             return textOr404(reports.errorText(window, Params.service(req), errorId, Params.full(req)),
                     "No such error in this window: " + errorId);
         }
-        List<Stats.ErrorGroup> found = queries.errors(window, null, 1, errorId);
-        if (found.isEmpty()) {
+        Stats.ErrorGroup group = reports.errorGroup(window, errorId);
+        if (group == null) {
             throw new HttpException(HttpStatus.NOT_FOUND, "No such error in this window: " + errorId);
         }
-        Stats.ErrorGroup group = found.get(0);
         Stats.Buckets buckets = queries.errorBuckets(window, errorId);
         // The sample's application frames, the ones a finding's code would carry, so
         // the page can show their source without a framework list of its own (pages.adoc#code-frames).

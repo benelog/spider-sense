@@ -160,6 +160,15 @@ public final class Reports implements AutoCloseable {
         return selectors;
     }
 
+    /** The reads every answer is made of, which the server's JSON-only handlers share. */
+    public Queries queries() {
+        return queries;
+    }
+
+    public MetricQueries metrics() {
+        return metrics;
+    }
+
     /** The time on this answer's clock, in epoch milliseconds. */
     public long now() {
         return clock.getAsLong();
@@ -210,6 +219,11 @@ public final class Reports implements AutoCloseable {
         return new Report(Codecs.status(status), Text.status(status));
     }
 
+    /** How many requests the window holds, which every list's heading and empty answer say. */
+    private long requests(Window window, @Nullable String service) {
+        return queries.totals(window, service).requests();
+    }
+
     /** Zero without a store: the CLI reads the file, it never received anything itself. */
     private long droppedSpans() {
         return store == null ? 0 : store.droppedSpans();
@@ -239,7 +253,7 @@ public final class Reports implements AutoCloseable {
         boolean full = ask.full();
         Findings.Answer answer = findings.answer(window, service, ask.limit(), ask.hideAcked());
         List<Findings.Finding> found = answer.findings();
-        long requests = queries.totals(window, service).requests();
+        long requests = requests(window, service);
         Json.JsonObject json = Json.obj()
                 .put("window", Codecs.window(window))
                 .put("requests", requests)
@@ -264,7 +278,7 @@ public final class Reports implements AutoCloseable {
         for (int i = 0; i < ranked.size(); i++) {
             Findings.Finding finding = ranked.get(i);
             if (finding.id().equals(id)) {
-                long requests = queries.totals(window, service).requests();
+                long requests = requests(window, service);
                 Json.JsonObject json = Json.obj()
                         .put("window", Codecs.window(window))
                         .put("requests", requests)
@@ -398,7 +412,7 @@ public final class Reports implements AutoCloseable {
                 .put("traces", Codecs.traceSummaries(traces))
                 .put("total", total)
                 .put("window", Codecs.window(filter.window()));
-        long requests = queries.totals(filter.window(), filter.service()).requests();
+        long requests = requests(filter.window(), filter.service());
         return new Report(json, Text.traces(filter.window(), filter.service(), traces, total, requests,
                 otlpEndpoint()));
     }
@@ -442,7 +456,7 @@ public final class Reports implements AutoCloseable {
 
     public Report endpoints(Window window, @Nullable String service) {
         List<Stats.EndpointStats> endpoints = queries.endpoints(window, service, null);
-        long requests = queries.totals(window, service).requests();
+        long requests = requests(window, service);
         return new Report(Json.obj().put("endpoints", Codecs.endpoints(endpoints)),
                 Text.endpoints(window, service, endpoints, requests, otlpEndpoint()));
     }
@@ -450,7 +464,7 @@ public final class Reports implements AutoCloseable {
     public Report queries(Window window, @Nullable String service, @Nullable String sort, int limit,
             boolean full) {
         List<Stats.QueryStats> list = queries.queries(window, service, sort, limit, null);
-        long requests = queries.totals(window, service).requests();
+        long requests = requests(window, service);
         return new Report(Json.obj().put("queries", Codecs.queries(list)),
                 Text.queries(window, service, list, requests, full, otlpEndpoint()));
     }
@@ -462,7 +476,7 @@ public final class Reports implements AutoCloseable {
      */
     public Report errors(Window window, @Nullable String service, int limit, boolean full) {
         List<Stats.ErrorGroup> list = queries.errors(window, service, limit, null);
-        long requests = queries.totals(window, service).requests();
+        long requests = requests(window, service);
         List<String> ids = new ArrayList<>(list.size());
         list.forEach(group -> ids.add(group.errorId()));
         Map<String, long[]> series = queries.errorSeries(window, ids);
@@ -479,12 +493,15 @@ public final class Reports implements AutoCloseable {
      */
     public @Nullable String errorText(Window window, @Nullable String service, String errorId,
             boolean full) {
+        Stats.ErrorGroup group = errorGroup(window, errorId);
+        return group == null ? null
+                : Text.error(window, service, group, requests(window, service), full, frames);
+    }
+
+    /** One error group over the window, whatever the service, or null when it did not occur in it. */
+    public Stats.@Nullable ErrorGroup errorGroup(Window window, String errorId) {
         List<Stats.ErrorGroup> found = queries.errors(window, null, 1, errorId);
-        if (found.isEmpty()) {
-            return null;
-        }
-        long requests = queries.totals(window, service).requests();
-        return Text.error(window, service, found.get(0), requests, full, frames);
+        return found.isEmpty() ? null : found.get(0);
     }
 
     /**
@@ -495,12 +512,14 @@ public final class Reports implements AutoCloseable {
      */
     public @Nullable String queryText(Window window, @Nullable String service, String queryId,
             boolean full) {
+        Stats.QueryStats query = queryStats(window, queryId);
+        return query == null ? null : Text.query(window, service, query, requests(window, service), full);
+    }
+
+    /** One query group over the window, whatever the service, or null when it had no call in it. */
+    public Stats.@Nullable QueryStats queryStats(Window window, String queryId) {
         List<Stats.QueryStats> found = queries.queries(window, null, "total", 1, queryId);
-        if (found.isEmpty()) {
-            return null;
-        }
-        long requests = queries.totals(window, service).requests();
-        return Text.query(window, service, found.get(0), requests, full);
+        return found.isEmpty() ? null : found.get(0);
     }
 
     public Report logs(Queries.LogFilter filter) {
@@ -510,7 +529,7 @@ public final class Reports implements AutoCloseable {
                 .put("logs", Codecs.logs(logs))
                 .put("total", total);
         // Only an empty answer says the count, and only a window with no request says to send some.
-        long requests = logs.isEmpty() ? queries.totals(filter.window(), filter.service()).requests() : 0;
+        long requests = logs.isEmpty() ? requests(filter.window(), filter.service()) : 0;
         return new Report(json, Text.logs(filter.window(), filter.service(), logs, total, requests,
                 otlpEndpoint()));
     }
@@ -584,7 +603,7 @@ public final class Reports implements AutoCloseable {
 
     public Report services(Window window) {
         List<Stats.ServiceSummary> summaries = queries.services(window);
-        long requests = queries.totals(window, null).requests();
+        long requests = requests(window, null);
         return new Report(Json.obj().put("services", Codecs.serviceSummaries(summaries)),
                 Text.services(window, summaries, requests, otlpEndpoint()));
     }
