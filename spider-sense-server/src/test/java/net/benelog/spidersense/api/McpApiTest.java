@@ -121,7 +121,6 @@ class McpApiTest {
         });
     }
 
-    /** The point of the whole adapter: one answer, two interfaces. */
     /** The Streamable HTTP transport: a revision named in the header that the server does not speak is a 400. */
     @Test
     void anUnsupportedProtocolVersionHeaderIs400() {

@@ -461,10 +461,6 @@ class CliTest {
     }
 
     /**
-     * The direct-file path answers too — once a server of this version has created
-     * the reader user. A database that predates it says so rather than answering.
-     */
-    /**
      * A JDBC URL that names no file has no existence to check, and the CLI creates no database
      * behind it to answer "0 requests" from: it says the database is not Spider Sense's.
      */
