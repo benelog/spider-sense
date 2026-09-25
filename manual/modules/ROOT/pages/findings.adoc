@@ -212,6 +212,7 @@ A subquery's `where` counts as well, and the clause it interrupts goes on after 
 The type of a cast is not a column (`where id = ?::uuid` and `cast(? as timestamp with time zone)` name no type word), and neither is an upsert's conflict target, the unique key the write collides on (`on conflict (id) do update`, `on duplicate key update`).
 Neither is the unit of an interval (`interval ? day`, `interval ? day to second`), the zone of an `at time zone`, or the search string and modifier of a MySQL full-text search (`against (? in boolean mode)`).
 A locking clause names no table and no column (`for update skip locked`, `for no key update of o1_0`, `for share`).
+An array constructor names no column either (`where o.id = any(array[?, ?])` names `orders.id`), and brackets quote a name only around a name's characters (`[Unit Price]`).
 Inside `extract`, `trim`, `substring` and `overlay`, `from` and `for` separate arguments rather than opening a table list, so `extract(year from created_at)` names `created_at`, and the date part that `extract`, `dateadd` or `timestampdiff` takes first is no column.
 Nor is a word of a comment, which the agent's sanitiser keeps (`-- …` to the end of the line, `/* … */`, an optimizer hint, an sqlcommenter suffix).
 A name the select list gives with `as` is not a column when the `order by` sorts by it (`price * qty as total … order by total`), and `except`, `intersect` and `minus` end the clause before them as `union` does.

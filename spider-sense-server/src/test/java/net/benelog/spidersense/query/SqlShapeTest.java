@@ -235,6 +235,20 @@ class SqlShapeTest {
                 .containsExactly("orders.created_at", "orders.paid_at");
     }
 
+    /** PostgreSQL's array constructor and a subscript are no bracket-quoted names. */
+    @Test
+    void anArrayConstructorIsNoColumn() {
+        String any = "select * from orders o where o.id = any(array[?, ?])";
+        assertThat(SqlShape.of(any).readable()).isTrue();
+        assertThat(predicates(any)).containsExactly("orders.id");
+        assertThat(predicates("select * from orders o where o.tags && array[?] and o.status = ?"))
+                .containsExactly("orders.tags", "orders.status");
+        assertThat(predicates("select * from orders where tags[1] = ? and codes && ?::text[]"))
+                .containsExactly("orders.tags", "orders.codes");
+        assertThat(predicates("select * from [Order Details] where [Unit Price] > ?"))
+                .containsExactly("order details.unit price");
+    }
+
     @Test
     void aMultiWordCastTypeIsNotAColumn() {
         assertThat(predicates("select * from items where created > cast(? as timestamp with time zone)"

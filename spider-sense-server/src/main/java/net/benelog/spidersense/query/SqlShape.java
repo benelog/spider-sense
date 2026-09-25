@@ -234,6 +234,10 @@ final class SqlShape {
                 i = skipOperand(tokens, i + 3);     // "created_at at time zone ?" names no column "zone"
                 continue;
             }
+            if (token.isWord("array") && i + 1 < tokens.size() && tokens.get(i + 1).is("[")) {
+                i = skipBrackets(tokens, i + 2);     // "any(array[?, ?])": a constructor, no column
+                continue;
+            }
             if (token.isWord("against") && followedByParenthesis(tokens, i)) {
                 // MySQL's full-text search string and its modifier
                 // ("against (? in boolean mode)"); the columns are match()'s.
@@ -324,8 +328,7 @@ final class SqlShape {
 
     /**
      * Past the type a {@code ::} cast names: its words, its precision
-     * ({@code ::numeric(10, 2)}) and its array brackets ({@code ::int[]}, which
-     * read as a bracket-quoted name).
+     * ({@code ::numeric(10, 2)}) and its array brackets ({@code ::int[]}).
      */
     private static int skipType(List<Token> tokens, int start) {
         int i = start;
@@ -333,6 +336,10 @@ final class SqlShape {
             Token token = tokens.get(i);
             if (token.is("(") && i > start) {
                 i = skipGroup(tokens, i + 1);
+                continue;
+            }
+            if (token.is("[") && i > start) {
+                i = skipBrackets(tokens, i + 1);
                 continue;
             }
             String word = token.keyword();
@@ -607,6 +614,21 @@ final class SqlShape {
         return i;
     }
 
+    /** @return the index just past the {@code ]} that matches the {@code [} before {@code start} */
+    private static int skipBrackets(List<Token> tokens, int start) {
+        int depth = 1;
+        int i = start;
+        while (i < tokens.size() && depth > 0) {
+            if (tokens.get(i).is("[")) {
+                depth++;
+            } else if (tokens.get(i).is("]")) {
+                depth--;
+            }
+            i++;
+        }
+        return i;
+    }
+
     // --- tokens --------------------------------------------------------------
 
     /**
@@ -698,7 +720,30 @@ final class SqlShape {
 
         private static boolean starts(String statement, int i) {
             char c = statement.charAt(i);
-            return Character.isLetter(c) || c == '_' || c == '"' || c == '`' || c == '[';
+            return Character.isLetter(c) || c == '_' || c == '"' || c == '`'
+                    || (c == '[' && bracketName(statement, i));
+        }
+
+        /**
+         * Whether the {@code [} at {@code i} quotes a name ({@code [Order Details]})
+         * rather than opening an array ({@code array[?, ?]}, {@code ::int[]},
+         * {@code tags[1]}): its content has a letter and nothing a name is not made of.
+         */
+        private static boolean bracketName(String statement, int i) {
+            int end = statement.indexOf(']', i + 1);
+            if (end < 0) {
+                return false;
+            }
+            boolean letter = false;
+            for (int at = i + 1; at < end; at++) {
+                char c = statement.charAt(at);
+                if (Character.isLetter(c) || c == '_') {
+                    letter = true;
+                } else if (!Character.isDigit(c) && c != ' ' && c != '$' && c != '#' && c != '@') {
+                    return false;
+                }
+            }
+            return letter;
         }
 
         /** A name and the {@code .}-chained parts that belong to it. */
