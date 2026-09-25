@@ -128,6 +128,40 @@ class WriterTest {
         database.close();
     }
 
+    /**
+     * A flush after a burst, or an import, touches tens of thousands of traces. Their
+     * spans are read back in chunks, because one {@code IN} list of every id costs H2
+     * the square of its length: 20,000 traces took about ten seconds that way, and the
+     * writer fell behind the queue.
+     */
+    @Test
+    void theRecomputeOfTwentyThousandTracesReadsTheirSpansInChunks() throws Exception {
+        Database database = Database.open(fileUrl(), dir.resolve("sense.mv.db"));
+        Writer writer = writer(database);
+        int traces = 20_000;
+        Batch batch = new Batch();
+        for (int i = 0; i < traces; i++) {
+            batch.add(new SpanRecord("%032x".formatted(i + 1), "%016x".formatted(1), null, "orders",
+                    "GET /orders", "SERVER", AT * 1_000_000L, AT * 1_000_000L + 5_000_000L, "UNSET", null,
+                    java.util.Map.of(), List.of(), "test"));
+        }
+
+        long tookMs;
+        try (java.sql.Connection connection = database.sql().connection()) {
+            connection.setAutoCommit(false);
+            Set<String> touched = writer.insertSpans(connection, List.of(batch));
+            long started = System.nanoTime();
+            writer.mergeTraces(connection, touched);
+            tookMs = (System.nanoTime() - started) / 1_000_000;
+            connection.commit();
+        }
+
+        assertThat(database.sql().count("SELECT COUNT(*) FROM trace WHERE span_count = 1", List.of()))
+                .isEqualTo(traces);
+        assertThat(tookMs).as("the recompute of %d traces, in ms", traces).isLessThan(4_000);
+        database.close();
+    }
+
     /** A service or metric name longer than its column is stored cut, the same in every table. */
     @Test
     void aNameLongerThanItsColumnIsCutRatherThanLosingTheFlush() {

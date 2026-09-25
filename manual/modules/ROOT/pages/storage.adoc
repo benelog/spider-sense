@@ -252,6 +252,7 @@ A failed flush is rolled back whole before that, whatever failed, a stack overfl
 The catalog rows of a flush are merged in the same transaction.
 After each flush the writer recomputes the `trace` rows of the trace ids the flush touched (`MERGE INTO trace ... SELECT ... FROM span WHERE trace_id IN (...) GROUP BY trace_id`), because a trace's spans arrive in several exports and from several services.
 It locks those rows first, by merging a placeholder in trace id order, and only then reads their spans.
+The spans are read 500 trace ids at a time, because H2's cost for one `IN` list grows with the square of its length, and a flush after a burst or an import touches tens of thousands of traces.
 Another process sharing the file may be flushing the other half of the same trace; the lock makes the second writer wait for the first one's commit and read every span, where it would otherwise overwrite the row with its own half.
 It then publishes the flush's tingles and counts to the SSE stream.
 The `service` row is merged on every flush that carries the service.

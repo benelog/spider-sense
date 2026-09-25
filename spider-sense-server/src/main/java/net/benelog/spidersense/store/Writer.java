@@ -449,6 +449,27 @@ public final class Writer implements AutoCloseable {
         List<String> ids = traceIds.stream().sorted().toList();
         lockTraces(connection, ids);
         Map<String, List<TraceSpan>> byTrace = new LinkedHashMap<>();
+        // In chunks: H2's cost for one IN list grows with the square of its length, and a
+        // flush after a burst, or an import, touches tens of thousands of traces.
+        for (int from = 0; from < ids.size(); from += TRACE_READ_CHUNK) {
+            readSpans(connection, ids.subList(from, Math.min(ids.size(), from + TRACE_READ_CHUNK)), byTrace);
+        }
+        try (PreparedStatement statement = connection.prepareStatement(MERGE_TRACE)) {
+            for (var entry : byTrace.entrySet()) {
+                bindTrace(statement, entry.getKey(), entry.getValue());
+                statement.addBatch();
+            }
+            if (!byTrace.isEmpty()) {
+                statement.executeBatch();
+            }
+        }
+    }
+
+    /** How many trace ids one read of the recompute names. */
+    private static final int TRACE_READ_CHUNK = 500;
+
+    private static void readSpans(Connection connection, List<String> ids, Map<String, List<TraceSpan>> byTrace)
+            throws SQLException {
         String select = """
                 SELECT trace_id, span_id, parent_span_id, service, name, endpoint, kind, start_ms, start_ns,
                        duration_ns, error, db_statement, http_status
@@ -466,15 +487,6 @@ public final class Writer implements AutoCloseable {
                             rs.getString("db_statement") != null, Sql.longOrNull(rs, "http_status"));
                     byTrace.computeIfAbsent(span.traceId(), id -> new ArrayList<>()).add(span);
                 }
-            }
-        }
-        try (PreparedStatement statement = connection.prepareStatement(MERGE_TRACE)) {
-            for (var entry : byTrace.entrySet()) {
-                bindTrace(statement, entry.getKey(), entry.getValue());
-                statement.addBatch();
-            }
-            if (!byTrace.isEmpty()) {
-                statement.executeBatch();
             }
         }
     }
