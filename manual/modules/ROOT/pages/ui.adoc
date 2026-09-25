@@ -69,6 +69,7 @@ The palette uses the same tokens as the Spider Silk badges, extended for a dark 
 
 Dark is the default.
 `prefers-color-scheme: light` switches to the light palette, and so does a toggle in the top bar, which is persisted in `localStorage`.
+A browser that refuses the storage starts on the default and keeps a toggle until the page is reloaded.
 The accent colour marks the primary actions, the active page in the sidebar, and what is slow.
 
 Text is set in the system UI font stack.

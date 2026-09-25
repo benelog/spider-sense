@@ -57,6 +57,18 @@ let tingleCount = 0;
 
 const THEME_KEY = 'spidersense.theme';
 
+/**
+ * The remembered theme. Every access to the storage is wrapped in `try`: a browser that
+ * refuses site data throws on any touch of `localStorage`, and keeps the default theme.
+ */
+function storedTheme() {
+  try { return localStorage.getItem(THEME_KEY) || ''; } catch (e) { return ''; }
+}
+
+function storeTheme(theme) {
+  try { localStorage.setItem(THEME_KEY, theme); } catch (e) { /* the choice lasts until reload */ }
+}
+
 function applyTheme(theme) {
   document.documentElement.dataset.theme = theme || '';
   const dark = theme ? theme === 'dark' : !matchMedia('(prefers-color-scheme: light)').matches;
@@ -74,7 +86,7 @@ function toggleTheme() {
     ? document.documentElement.dataset.theme === 'dark'
     : !matchMedia('(prefers-color-scheme: light)').matches;
   const next = dark ? 'light' : 'dark';
-  localStorage.setItem(THEME_KEY, next);
+  storeTheme(next);
   applyTheme(next);
 }
 
@@ -388,7 +400,7 @@ async function boot() {
   fill(editorSelect, EDITORS.map((x) => h('option', { value: x.id }, x.label)));
   editorSelect.value = editor();
   editorSelect.addEventListener('change', () => setEditor(editorSelect.value));
-  applyTheme(localStorage.getItem(THEME_KEY) || '');
+  applyTheme(storedTheme());
 
   el.themeToggle.addEventListener('click', toggleTheme);
   el.serviceSelect.addEventListener('change', () => router.setQuery({ service: el.serviceSelect.value }));
