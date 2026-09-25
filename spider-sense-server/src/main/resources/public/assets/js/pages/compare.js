@@ -62,7 +62,7 @@ export function verdictOf(kind, before, after) {
 
 function compareTile(caption, before, after, format, verdict) {
   const fmt = (v) => (v === null || v === undefined ? '—' : format(v));
-  return h('div.stat.cmp-tile', { class: 'stat cmp-tile is-' + (verdict || 'same') },
+  return h('div.stat.cmp-tile', { class: 'is-' + (verdict || 'same') },
     h('div.cmp-tile-value',
       h('span.cmp-before', fmt(before)),
       h('span.cmp-arrow', '→'),

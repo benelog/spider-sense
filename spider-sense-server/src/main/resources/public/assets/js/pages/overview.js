@@ -142,7 +142,7 @@ export function render(root, ctx) {
     },
       h('span.t-icon', icon(TINGLE_ICON[t.kind] || 'bolt')),
       h('div.t-title', serviceChip(t.service), h('span', t.title)),
-      h('span.t-when', { class: 't-when', title: bothTimes(t.at) }, rel(t.at)),
+      h('span.t-when', { title: bothTimes(t.at) }, rel(t.at)),
       h('div.t-detail', t.detail || ''));
   }
 

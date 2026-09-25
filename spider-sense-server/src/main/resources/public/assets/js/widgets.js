@@ -148,7 +148,7 @@ const KIND_LABEL = {
 
 export function severityDot(severity) {
   const s = severity || 'low';
-  return h('span.sev-dot', { class: 'sev-dot sev-' + s, title: s + ' severity' });
+  return h('span.sev-dot', { class: 'sev-' + s, title: s + ' severity' });
 }
 
 export function kindChip(kind) {

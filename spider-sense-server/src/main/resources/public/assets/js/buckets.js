@@ -82,13 +82,13 @@ export function histogramBars(histogram, opts = {}) {
   const values = (histogram || []).slice(0, 5);
   while (values.length < 5) values.push(0);
   const total = values.reduce((a, b) => a + (b || 0), 0);
-  if (!total) return h('span.muted', { class: 'muted hist-empty' }, '-');
+  if (!total) return h('span.muted.hist-empty', '-');
   const labels = bucketLabels();
   const colors = bucketVars();
   const max = Math.max(...values.map((v) => v || 0), 1);
   const title = histogramTitle(values);
   return h('div.hist', {
-    class: 'hist' + (opts.compact ? ' compact' : ''),
+    class: opts.compact ? 'compact' : null,
     title: opts.compact ? title : null,
     role: 'img',
     'aria-label': 'Response summary. ' + title.replace(/\n/g, ', '),

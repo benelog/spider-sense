@@ -82,10 +82,10 @@ export function render(root, ctx) {
     const startPct = Math.max(0, ((startMsOf(span) - t0) / total) * 100);
     const widthPct = Math.max(0.4, Math.min(100 - startPct, (span.durationMs / total) * 100));
     const bar = h('span.wf-bar', {
-      class: 'wf-bar' + (span.error ? ' err' : ''),
+      class: span.error ? 'err' : null,
       style: { left: startPct + '%', width: widthPct + '%', background: span.error ? undefined : serviceColor(span.service) },
     });
-    const label = h('span.wf-dur', { class: 'wf-dur' + (span.error ? ' bad' : '') }, dur(span.durationMs));
+    const label = h('span.wf-dur', { class: span.error ? 'bad' : null }, dur(span.durationMs));
     const toggle = hasChildren
       ? h('button.wf-toggle', {
         type: 'button',
@@ -102,7 +102,7 @@ export function render(root, ctx) {
       }, icon('chevron'))
       : h('span.wf-spacer');
     const row = h('div.wf-row', {
-      class: 'wf-row' + (span.slow ? ' slow' : '') + (selectedSpan === span.spanId ? ' selected' : ''),
+      class: [span.slow && 'slow', selectedSpan === span.spanId && 'selected'],
       dataset: { key: span.spanId },
       tabindex: 0,
       onclick: () => openSpan(span),

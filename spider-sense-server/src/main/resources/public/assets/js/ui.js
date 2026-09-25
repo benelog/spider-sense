@@ -7,6 +7,7 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 
 /**
  * h('div.panel#main', { class: 'x', onclick: fn, dataset: {...} }, ...children)
+ * `class` (a string or an array, empty entries dropped) adds to the spec's classes, each class once.
  * Children may be nodes, strings, numbers, arrays, null or undefined.
  */
 export function h(spec, attrs, ...children) {
@@ -35,7 +36,7 @@ export function h(spec, attrs, ...children) {
 function applyAttrs(node, attrs) {
   for (const [k, v] of Object.entries(attrs)) {
     if (v === undefined || v === null || v === false) continue;
-    if (k === 'class') node.className = Array.isArray(v) ? v.filter(Boolean).join(' ') : v;
+    if (k === 'class') node.className = mergedClasses(node.className, v);
     else if (k === 'style' && typeof v === 'object') Object.assign(node.style, v);
     else if (k === 'dataset') Object.assign(node.dataset, v);
     else if (k === 'text') node.textContent = v;
@@ -43,6 +44,12 @@ function applyAttrs(node, attrs) {
     else if (v === true) node.setAttribute(k, '');
     else node.setAttribute(k, String(v));
   }
+}
+
+/** The spec's classes followed by the attribute's, each once. */
+function mergedClasses(specClasses, value) {
+  const added = Array.isArray(value) ? value.filter(Boolean).join(' ') : String(value);
+  return [...new Set((specClasses + ' ' + added).split(/\s+/).filter(Boolean))].join(' ');
 }
 
 export function append(node, children) {
@@ -152,7 +159,7 @@ export function resetServiceColors() {
 // --- chips --------------------------------------------------------------
 
 export function chip(text, opts = {}) {
-  const node = h('span.chip', { class: ['chip', opts.class].filter(Boolean).join(' '), title: opts.title || null }, text);
+  const node = h('span.chip', { class: opts.class, title: opts.title || null }, text);
   if (opts.color) {
     node.classList.add('chip-dot');
     node.prepend(h('span.dot', { style: { background: opts.color } }));
@@ -173,7 +180,7 @@ export function methodChip(method) {
 export function statusChip(code) {
   if (code == null) return h('span.muted', '-');
   const klass = code >= 500 ? 'bad' : code >= 400 ? 'warn' : 'ok';
-  return h('span.status-code', { class: 'status-code ' + klass }, String(code));
+  return h('span.status-code', { class: klass }, String(code));
 }
 
 export function severityChip(severity) {
@@ -222,7 +229,7 @@ export function copyBlock(text, opts = {}) {
   const pre = h('pre.code', text);
   const btn = h('button.btn.btn-ghost.copy-block', { type: 'button' }, icon('copy'), 'Copy');
   btn.addEventListener('click', () => copyText(text));
-  return h('div.code-block', { class: ['code-block', opts.class].filter(Boolean).join(' ') }, pre, btn);
+  return h('div.code-block', { class: opts.class }, pre, btn);
 }
 
 /** The "how to send data" snippets, used by the dialog and by empty states. */
@@ -447,11 +454,11 @@ export function panel(title, opts = {}, ...children) {
   const head = title || opts.actions
     ? h('div.panel-head', h('h2.panel-title', title || ''), opts.actions ? h('div.panel-actions', opts.actions) : null)
     : null;
-  return h('section.panel', { class: ['panel', opts.class].filter(Boolean).join(' ') }, head, ...children);
+  return h('section.panel', { class: opts.class }, head, ...children);
 }
 
 export function stat(value, unit, caption, opts = {}) {
-  return h('div.stat', { class: ['stat', opts.class].filter(Boolean).join(' '), title: opts.title || null },
+  return h('div.stat', { class: opts.class, title: opts.title || null },
     h('div.stat-value', h('span.stat-number', value), unit ? h('span.stat-unit', unit) : null),
     h('div.stat-caption', caption));
 }
@@ -728,7 +735,7 @@ export function debounce(fn, ms) {
 /** A proportional bar for a duration cell. */
 export function durationBar(value, max, klass) {
   const w = max > 0 ? Math.max(1, Math.min(100, (value / max) * 100)) : 0;
-  return h('span.dbar', { class: ['dbar', klass].filter(Boolean).join(' ') },
+  return h('span.dbar', { class: klass },
     h('span.dbar-fill', { style: { width: w + '%' } }));
 }
 
