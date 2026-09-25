@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import net.benelog.spidersense.query.Check;
 import net.benelog.spidersense.query.CodeFrames;
 import net.benelog.spidersense.query.Compare;
+import net.benelog.spidersense.query.Findings;
 import net.benelog.spidersense.query.Stats;
 import net.benelog.spidersense.query.Window;
 import net.benelog.spidersense.store.Acks;
@@ -87,6 +88,32 @@ class TextTest {
                 .contains("org.h2.Jdbc\\|Exception")
                 .contains("Table \"X\" not found; SQL statement: SELECT a \\| b FROM x [42102-224]")
                 .contains("GET /a\\|b ×3");
+    }
+
+    /** A finding's why and its numbers are one line each, whatever the message carried. */
+    @Test
+    void aFindingsWhyAndNumbersStayOnTheirLines() {
+        Map<String, Object> endpoint = new LinkedHashMap<>();
+        endpoint.put("name", "GET /a");
+        endpoint.put("count", 3L);
+        Map<String, Object> numbers = new LinkedHashMap<>();
+        numbers.put("count", 3L);
+        numbers.put("message", H2_MESSAGE);
+        numbers.put("endpoints", List.of(endpoint));
+        numbers.put("notes", List.of("one\ntwo"));
+        Findings.Finding finding = new Findings.Finding("error:abcdefabcdef", "error", "high", "svc",
+                "Table \"X\" not found", "3 occurrences in GET /a; " + H2_MESSAGE,
+                new Findings.Subject(null, null, "abcdefabcdef", null, null, null, null, null),
+                numbers, null, List.of(), List.of());
+
+        String text = Text.findings(WINDOW, null, 3, List.of(finding), false, "http://localhost:4000");
+
+        assertTablesHoldTheirShape(text);
+        assertThat(text)
+                .contains("\n1. error:abcdefabcdef — 3 occurrences in GET /a; Table \"X\" not found;"
+                        + " SQL statement: SELECT a | b FROM x [42102-224]\n")
+                .contains("\n   count 3, message Table \"X\" not found; SQL statement: SELECT a | b FROM x"
+                        + " [42102-224], endpoints [name GET /a count 3], notes one two\n");
     }
 
     @Test

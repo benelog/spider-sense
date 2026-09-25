@@ -255,8 +255,10 @@ final class Text {
 
     private static void findingEvidence(StringBuilder text, int n, Findings.Finding finding,
             boolean full) {
+        // The why and the numbers carry what the application wrote (an exception message,
+        // a log body), so each is kept to its one line.
         text.append('\n').append(n).append(". ").append(finding.id()).append(" — ")
-                .append(finding.why()).append('\n');
+                .append(collapse(finding.why())).append('\n');
         text.append("   ").append(numbers(finding.numbers())).append('\n');
         String hot = hotSpan(finding.numbers());
         if (hot != null) {
@@ -359,7 +361,7 @@ final class Text {
         }
         Object selfMs = hot.get("selfMs");
         Object share = hot.get("share");
-        return "hot span: " + hot.get("name")
+        return "hot span: " + collapse(String.valueOf(hot.get("name")))
                 + " · " + (selfMs instanceof Number self ? Numbers.millis(self.doubleValue()) : "—")
                 + " self · "
                 + (share instanceof Number part ? Numbers.percent(part.doubleValue()) : "—");
@@ -384,7 +386,7 @@ final class Text {
                 if (!(each instanceof Map<?, ?> hot)) {
                     continue;
                 }
-                text.append(indent).append(hot.get("name"))
+                text.append(indent).append(collapse(String.valueOf(hot.get("name"))))
                         .append(" · ").append(millis(hot.get("selfMs")))
                         .append(" · ").append(percent(hot.get("share")))
                         .append(" · ×").append(scalar(hot.get("count"))).append('\n');
@@ -441,11 +443,12 @@ final class Text {
                         map.forEach((key, each) -> inner.add(key + " " + scalar(String.valueOf(key), each)));
                         parts.add("[" + String.join(" ", inner) + "]");
                     } else {
-                        parts.add(String.valueOf(element));
+                        parts.add(collapse(String.valueOf(element)));
                     }
                 }
                 yield String.join(" ", parts);
             }
+            case String text -> collapse(text);
             default -> String.valueOf(value);
         };
     }
