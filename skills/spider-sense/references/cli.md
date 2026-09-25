@@ -17,7 +17,7 @@ The launcher treats a first argument that does not start with `-` as a command a
 | `unack <finding id>` | withdraws that acknowledgement; exit code `4` when there was none |
 | `resolve <finding id> [--note=…]` | marks a finding fixed: it is set aside, its severity reading `resolved`, until it occurs again, and then it is a `regression`, first in the list |
 | `unresolve <finding id>` | withdraws that resolution; exit code `4` when there was none |
-| `trace <traceId> [--full]` | one trace as a tree |
+| `trace <traceId> [--full] [--diff=<traceId>]` | one trace as a tree, or with `--diff` two traces aligned in one tree, span by span |
 | `traces [--status=error\|ok] [--min-ms=] [--q=] [--limit=20]` | the newest traces |
 | `endpoints`, `queries`, `errors` | the tables of the window |
 | `logs [--severity=WARN] [--q=] [--trace=<traceId>]` | log lines |
@@ -25,6 +25,7 @@ The launcher treats a first argument that does not start with `-` as a command a
 | `marks` | lists marks |
 | `compare --before=<selector> --after=<selector> [--until=<selector>]` | the two windows side by side |
 | `check [--max-p95-ms=] [--max-errors=] [--max-error-rate=] [--max-queries-per-request=] [--max-slow-queries=] [--max-n-plus-one=] [--max-log-errors=] [--max-regressions=] [--min-apdex=] [--endpoint=]` | pass or fail, in the exit code |
+| `tail [--kind=slow-request\|slow-query\|error] [--service=<name>] [--until-traces=<n>] [--timeout=<duration>]` | tingles as they arrive, one line each; it needs a running Spider Sense, because there is no file to tail |
 | `sql "<statement>" [--limit=200]` | one read-only statement over the store, for a question no other command answers ([sql.md](sql.md)) |
 | `export [--out=<file>]` | the window as one JSON document, to the file or to stdout; a name ending in `.gz` is gzipped |
 | `import <file>` | that document back into the store, and one line saying what arrived |
@@ -114,7 +115,7 @@ java -jar spider-sense.jar mcp [--url=<base url>] [--db=<path or jdbc url>]
 
 It reads newline-delimited JSON-RPC on stdin and writes it on stdout, nothing else on stdout, and ends at end of input.
 `initialize`, `ping` and `tools/list` are answered in the process; a tool call goes to the Spider Sense at `--url` when one answers and to the H2 file when none does, exactly as every command here decides it, so MCP still answers after the application has crashed.
-The tools are `findings`, `trace`, `mark`, `compare`, `check` and `sql`, their arguments are the options of the same name, and each answers the same Markdown the matching command prints over the same window.
+The tools are `findings`, `trace`, `mark`, `resolve`, `compare`, `check` and `sql`, their arguments are the options of the same name, and each answers the same Markdown the matching command prints over the same window.
 
 `java -jar spider-sense.jar init --mcp` writes that server into the project's `.mcp.json` as `mcpServers.spider-sense`, keeping every other entry, and prints a last line saying so; a host that reaches a running Spider Sense over HTTP instead is configured by hand with `{"type": "http", "url": "http://127.0.0.1:4000/mcp"}`.
 Do not enable both the CLI and MCP in one host: two tools that give the same answer make the model choose between them and cost the schema twice.
@@ -444,7 +445,7 @@ $ echo $?
 1
 ```
 
-With no rule given the defaults are `--max-errors=0`, `--max-n-plus-one=0` and `--max-p95-ms=<slow.request.ms>`.
+With no rule given the defaults are `--max-errors=0`, `--max-n-plus-one=0`, `--max-regressions=0` and `--max-p95-ms=<slow.request.ms>`.
 Named rules replace them, and every rule named is evaluated:
 
 ```
@@ -468,7 +469,7 @@ Rules and the value each one measures:
 | `--max-errors` | error groups' occurrences summed |
 | `--max-error-rate` | failed entry spans over entry spans |
 | `--max-queries-per-request` | database spans per entry span, the highest of any endpoint |
-| `--max-slow-queries` | query calls over `slow.query.ms` |
+| `--max-slow-queries` | query calls over `slow.query.ms`; with `--endpoint`, the ones that endpoint's own requests made |
 | `--max-n-plus-one` | `n-plus-one` and `n-plus-one-http` findings |
 | `--max-log-errors` | `log-error` findings' uncovered records summed |
 | `--max-regressions` | `regression` findings: resolved findings that came back; `0` in the default set |
@@ -486,7 +487,10 @@ Spider Sense: ask a running Spider Sense, or the database file, from the termina
 
 Commands:
   status                       what is running, where the database is, how much it holds
-  findings [--hide-acked]      the findings of the window
+  findings [--hide-acked] [--no-git]
+                               the findings of the window; under each code frame,
+                               the suspect change git names (uncommitted, or the
+                               commit that last changed the line)
   ack <finding id> [--note=<text>]
                                accepts a known finding, so it is ranked last
   unack <finding id>           withdraws that acknowledgement
@@ -541,6 +545,7 @@ Common options:
   --json               the JSON of the HTTP API instead of the text
   --full               whole statements, every repeated span
   --hide-acked         findings only: leave acknowledged findings out
+  --no-git             findings only: no suspect-change line under the code frames
 
 A selector is a duration (30s, 5m, 2h, 1d), epoch milliseconds, a mark name,
 start (the newest automatic start mark) or now.

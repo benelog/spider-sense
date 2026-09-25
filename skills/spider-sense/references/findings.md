@@ -5,7 +5,9 @@ java -jar spider-sense.jar findings [--since=] [--until=] [--service=] [--limit=
 ```
 
 A finding is one thing worth fixing, found by rules over the window.
-Findings are ranked by severity (`high` before `medium` before `low`), then by impact within a kind, then by id, so the list is stable between two calls over the same data.
+Findings are ranked by severity (`high` before `medium` before `low`), then by kind, then by impact within a kind, then by id, so the list is stable between two calls over the same data.
+The kind order is `regression`, `error`, `n-plus-one`, `n-plus-one-http`, `slow-query`, `slow-endpoint`, `slow-job`, `slow-external`, `log-error`, `pool-exhausted`, `gc-pause`, `heap-pressure`, `thread-growth`, the order of the table below.
+A `regression` is always `high`, so regressions come first, ranked among themselves by the order of their original kinds before their impact.
 The list is bounded: 20 by default, 100 at most.
 
 ## The rules
