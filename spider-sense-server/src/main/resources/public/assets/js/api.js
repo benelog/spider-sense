@@ -11,7 +11,10 @@ export const RANGES = [
 /** The range a hash without `range` means, and the one a link leaves out. */
 export const DEFAULT_RANGE = '15m';
 
-/** The top-bar state every page reads. Written only by app.js from the hash query. */
+/**
+ * The top-bar state every page reads. app.js writes it from the hash query and /api/status and
+ * keeps `marks` fresh; the Compare page refreshes `marks` too when it opens (pages/compare.js).
+ */
 export const state = {
   service: '',
   range: DEFAULT_RANGE,
@@ -56,11 +59,6 @@ export function windowFor(range = state.range, now = Date.now()) {
     return { from: oldest > 0 ? oldest : now - rangeOf(DEFAULT_RANGE).ms, to: now };
   }
   return { from: now - r.ms, to: now };
-}
-
-export function windowMs(range = state.range) {
-  const w = windowFor(range);
-  return w.to - w.from;
 }
 
 /**

@@ -3,7 +3,7 @@
 
 import { clock, clockShort, durBare, count as fmtCount } from './format.js';
 import { state } from './api.js';
-import { panel, readSeriesColors, serviceColor as uiServiceColor, seedServices } from './ui.js';
+import { panel, readSeriesColors, serviceColor } from './ui.js';
 
 const uPlot = globalThis.uPlot;
 
@@ -152,7 +152,7 @@ class Chart {
 
 export { Chart };
 
-function tooltipFor(plot, container) {
+function tooltipFor(container) {
   let tip = container.querySelector('.chart-tip');
   if (!tip) {
     tip = document.createElement('div');
@@ -232,7 +232,7 @@ export function alignTo(t, s, key) {
  * }
  */
 export function timeSeries(container, spec) {
-  const chart = new Chart(container, (w, h, colors) => {
+  const chart = new Chart(container, (width, height, colors) => {
     const xs = (spec.t || []).map((ms) => ms / 1000);
     // Stacking: a series with `stack: <key>` sits on the previous series carrying the
     // same key, so its data column holds the cumulative value.
@@ -278,7 +278,7 @@ export function timeSeries(container, spec) {
       const s = spec.series[specIndex];
       const color = resolveColor(s.color, colors);
       const scale = s.scale || 'y';
-      scales[scale] = scales[scale] || { range: rangeFor(scale, spec) };
+      scales[scale] = scales[scale] || { range: rangeFor(scale) };
       if (s.type === 'bar') {
         const idx = slotOf.get(specIndex);
         series.push({
@@ -332,7 +332,7 @@ export function timeSeries(container, spec) {
         hooks: {
           draw: [(u) => drawMarks(u, colors)],
           setCursor: [(u) => {
-            const tip = tooltipFor(u, container);
+            const tip = tooltipFor(container);
             const { idx, left, top } = u.cursor;
             if (idx == null || left < 0) { tip.classList.remove('show'); return; }
             const rows = spec.series.map((s, i) => {
@@ -361,7 +361,7 @@ export function timeSeries(container, spec) {
   return chart;
 }
 
-function rangeFor(scale, spec) {
+function rangeFor(scale) {
   if (scale === 'pct') return (u, min, max) => [0, Math.max(1, max * 1.15)];
   // A count scale never shrinks below [0, 1], so a series that stays at 0 still
   // gets whole-number ticks rather than thirds.
@@ -458,30 +458,30 @@ export function chartBox({ title, actions, legend: withLegend = true } = {}) {
 
 /** An inline SVG sparkline: no library, no interaction, 120x28 by default. */
 export function sparkline(values, opts = {}) {
-  const w = opts.width || 120, h = opts.height || 28;
+  const width = opts.width || 120, height = opts.height || 28;
   const ns = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(ns, 'svg');
   svg.setAttribute('class', 'sparkline');
-  svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
-  svg.setAttribute('width', String(w));
-  svg.setAttribute('height', String(h));
+  svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+  svg.setAttribute('width', String(width));
+  svg.setAttribute('height', String(height));
   svg.setAttribute('role', 'img');
   svg.setAttribute('aria-label', opts.label || 'Requests per bucket');
   const vals = (values || []).map((v) => (v == null ? 0 : v));
   if (vals.length < 2) {
     const line = document.createElementNS(ns, 'line');
-    line.setAttribute('x1', '0'); line.setAttribute('x2', String(w));
-    line.setAttribute('y1', String(h - 1)); line.setAttribute('y2', String(h - 1));
+    line.setAttribute('x1', '0'); line.setAttribute('x2', String(width));
+    line.setAttribute('y1', String(height - 1)); line.setAttribute('y2', String(height - 1));
     line.setAttribute('class', 'spark-flat');
     svg.appendChild(line);
     return svg;
   }
   const max = Math.max(1, ...vals);
-  const step = w / (vals.length - 1);
-  const y = (v) => h - 1 - (v / max) * (h - 3);
+  const step = width / (vals.length - 1);
+  const y = (v) => height - 1 - (v / max) * (height - 3);
   const pts = vals.map((v, i) => `${(i * step).toFixed(2)},${y(v).toFixed(2)}`);
   const area = document.createElementNS(ns, 'path');
-  area.setAttribute('d', `M0,${h} L${pts.join(' L')} L${w},${h} Z`);
+  area.setAttribute('d', `M0,${height} L${pts.join(' L')} L${width},${height} Z`);
   area.setAttribute('class', 'spark-area');
   svg.appendChild(area);
   const path = document.createElementNS(ns, 'path');
@@ -499,7 +499,8 @@ export function sparkline(values, opts = {}) {
  * opts: { height, mode, logScale, yMax, hidden:Set(service), onSelect(rect), onPick(point) }
  */
 export function scatterChart(container, opts) {
-  const state = {
+  // The scatter's own view state; `state` would shadow the shared state drawMarks reads.
+  const view = {
     points: opts.points || [],
     mode: opts.mode === 'heatmap' ? 'heatmap' : 'dots',
     logScale: !!opts.logScale,
@@ -508,18 +509,18 @@ export function scatterChart(container, opts) {
     yMax: opts.yMax,
   };
 
-  const chart = new Chart(container, (w, h, colors) => {
-    const visible = state.points.filter((p) => !state.hidden.has(p[2]));
+  const chart = new Chart(container, (width, height, colors) => {
+    const visible = view.points.filter((p) => !view.hidden.has(p[2]));
     const xs = visible.map((p) => p[0] / 1000);
     const ys = visible.map((p) => p[1]);
     // The log axis starts under the fastest visible point, at 0.5 ms at the most, so no point
     // falls below it; a point of 0 ms, which a log axis has no room for, sits on its bottom edge.
     const fastest = ys.reduce((m, y) => Math.min(m, y), Infinity);
-    const floor = state.logScale ? Math.max(0.01, Math.min(0.5, fastest * 0.8)) : 0;
+    const floor = view.logScale ? Math.max(0.01, Math.min(0.5, fastest * 0.8)) : 0;
     // The linear axis stops at yMax so a few outliers do not flatten the rest; the log
     // scale has room for them, so it runs to the slowest point.
-    const top = state.logScale ? Math.max(10, ...ys) * 1.05 : (state.yMax || Math.max(10, ...ys) * 1.05);
-    const data = [xs.length ? xs : [state.window.from / 1000, state.window.to / 1000], xs.length ? ys : [null, null]];
+    const top = view.logScale ? Math.max(10, ...ys) * 1.05 : (view.yMax || Math.max(10, ...ys) * 1.05);
+    const data = [xs.length ? xs : [view.window.from / 1000, view.window.to / 1000], xs.length ? ys : [null, null]];
 
     // The heatmap's cells, in CSS pixels, recomputed on every draw so the hover can
     // read the same bins the canvas shows.
@@ -576,7 +577,7 @@ export function scatterChart(container, opts) {
     };
 
     const drawPoints = (u) => {
-      if (state.mode === 'heatmap') { drawHeatmap(u); return; }
+      if (view.mode === 'heatmap') { drawHeatmap(u); return; }
       bins = null;
       const ctx = u.ctx;
       const { left, top: t, width, height } = u.bbox;
@@ -590,7 +591,7 @@ export function scatterChart(container, opts) {
       for (const p of pts) {
         if (p[5] & 1) continue;
         let c = colorFor.get(p[2]);
-        if (!c) { c = serviceColorOf(p[2]); colorFor.set(p[2], c); }
+        if (!c) { c = serviceColor(p[2]); colorFor.set(p[2], c); }
         const x = u.valToPos(p[0] / 1000, 'x', true);
         const y = u.valToPos(Math.max(p[1], floor || 0.0001), 'y', true);
         if (y < t - 4) continue;
@@ -629,9 +630,9 @@ export function scatterChart(container, opts) {
       data,
       opts: {
         scales: {
-          x: { time: true, range: () => [state.window.from / 1000, state.window.to / 1000] },
+          x: { time: true, range: () => [view.window.from / 1000, view.window.to / 1000] },
           y: {
-            distr: state.logScale ? 3 : 1,
+            distr: view.logScale ? 3 : 1,
             range: () => [floor, top],
           },
         },
@@ -665,13 +666,13 @@ export function scatterChart(container, opts) {
       },
       after: (plot) => {
         const over = plot.over;
-        const tip = tooltipFor(plot, container);
+        const tip = tooltipFor(container);
         const pick = (ev) => {
           const rect = over.getBoundingClientRect();
           const px = ev.clientX - rect.left, py = ev.clientY - rect.top;
           let best = null, bestD = 144;
-          for (const p of state.points) {
-            if (state.hidden.has(p[2])) continue;
+          for (const p of view.points) {
+            if (view.hidden.has(p[2])) continue;
             const x = plot.valToPos(p[0] / 1000, 'x');
             const y = plot.valToPos(Math.max(p[1], floor || 0.0001), 'y');
             const d = (x - px) * (x - px) + (y - py) * (y - py);
@@ -702,12 +703,12 @@ export function scatterChart(container, opts) {
         };
 
         over.addEventListener('mousemove', (ev) => {
-          if (state.mode === 'heatmap') { showHeatmapTip(ev); return; }
+          if (view.mode === 'heatmap') { showHeatmapTip(ev); return; }
           const p = pick(ev);
           if (!p) { tip.classList.remove('show'); over.style.cursor = 'crosshair'; return; }
           over.style.cursor = 'pointer';
           tip.innerHTML = `<div class="t">${escapeHtml(p[3])}</div>` +
-            `<span class="k"><i style="background:${serviceColorOf(p[2])}"></i>${escapeHtml(p[2])}</span><span class="v">${durBare(p[1])} ms</span>` +
+            `<span class="k"><i style="background:${serviceColor(p[2])}"></i>${escapeHtml(p[2])}</span><span class="v">${durBare(p[1])} ms</span>` +
             `<span class="k">Time</span><span class="v">${clock(p[0])}</span>`;
           tip.classList.add('show');
           const rect = over.getBoundingClientRect();
@@ -719,7 +720,7 @@ export function scatterChart(container, opts) {
         });
         over.addEventListener('mouseleave', () => tip.classList.remove('show'));
         over.addEventListener('click', (ev) => {
-          if (state.mode === 'heatmap') return;      // a cell is not one trace
+          if (view.mode === 'heatmap') return;      // a cell is not one trace
           const p = pick(ev);
           if (p && opts.onPick) opts.onPick(p);
         });
@@ -728,21 +729,16 @@ export function scatterChart(container, opts) {
   }, opts.height || 380);
 
   chart.setPoints = (points, window, yMax) => {
-    state.points = points;
-    if (window) state.window = window;
-    if (yMax !== undefined) state.yMax = yMax;
+    view.points = points;
+    if (window) view.window = window;
+    if (yMax !== undefined) view.yMax = yMax;
     chart.rebuild();
   };
-  chart.setMode = (mode) => { state.mode = mode === 'heatmap' ? 'heatmap' : 'dots'; chart.rebuild(); };
-  chart.setLogScale = (on) => { state.logScale = on; chart.rebuild(); };
-  chart.setHidden = (hidden) => { state.hidden = hidden; chart.rebuild(); };
-  chart.setYMax = (v) => { state.yMax = v; chart.rebuild(); };
+  chart.setMode = (mode) => { view.mode = mode === 'heatmap' ? 'heatmap' : 'dots'; chart.rebuild(); };
+  chart.setLogScale = (on) => { view.logScale = on; chart.rebuild(); };
+  chart.setHidden = (hidden) => { view.hidden = hidden; chart.rebuild(); };
+  chart.setYMax = (v) => { view.yMax = v; chart.rebuild(); };
   chart.clearSelect = () => { if (chart.plot) chart.plot.setSelect({ left: 0, top: 0, width: 0, height: 0 }, false); };
-  chart.state = state;
+  chart.view = view;
   return chart;
 }
-
-/** The same first-seen assignment the rest of the UI uses. */
-function serviceColorOf(name) { return uiServiceColor(name); }
-
-export { seedServices as seedServiceColors };

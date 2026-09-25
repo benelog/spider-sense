@@ -6,7 +6,7 @@ import * as router from './router.js';
 import * as ui from './ui.js';
 import { h, fill, dialog, copyBlock, closeDrawer, drawerOpen } from './ui.js';
 import { EDITORS, editor, setEditor } from './frames.js';
-import { retheme, redrawAll, seedServiceColors } from './charts.js';
+import { retheme, redrawAll } from './charts.js';
 import { rate as fmtRate, count as fmtCount, bytes } from './format.js';
 
 import * as overview from './pages/overview.js';
@@ -329,7 +329,7 @@ function connectEvents() {
   events.addEventListener('service', () => {
     api.services().then((res) => {
       const names = (res.services || []).map((s) => s.name);
-      seedServiceColors(names);
+      ui.seedServices(names);
       fillServiceSelect(names);
     }).catch(() => {});
   });
@@ -422,7 +422,7 @@ async function boot() {
     if (!document.documentElement.dataset.theme) applyTheme('');
   });
 
-  for (const [pattern] of PAGES) router.register(pattern, null);
+  for (const [pattern] of PAGES) router.register(pattern);
 
   try {
     await api.refreshStatus();
@@ -434,7 +434,7 @@ async function boot() {
   try {
     const res = await api.services();
     const names = (res.services || []).map((s) => s.name);
-    seedServiceColors(names);
+    ui.seedServices(names);
     fillServiceSelect(names);
   } catch (e) { /* the page will show its own error */ }
 

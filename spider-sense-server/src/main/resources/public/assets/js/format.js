@@ -38,24 +38,12 @@ export function pct(fraction) {
   return NUM1.format(fraction * 100) + '%';
 }
 
-/** A number already in percent units. */
-export function pctValue(value) {
-  if (value == null || Number.isNaN(value)) return '-';
-  return NUM1.format(value) + '%';
-}
-
 export function bytes(n) {
   if (n == null || Number.isNaN(n)) return '-';
   const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
   let v = n, i = 0;
   while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
   return (v >= 100 || i === 0 ? NUM.format(Math.round(v)) : NUM1.format(v)) + ' ' + units[i];
-}
-
-/** MiB, for JVM memory axes. */
-export function mib(n) {
-  if (n == null || Number.isNaN(n)) return '-';
-  return NUM1.format(n / (1024 * 1024));
 }
 
 function pad(n, width = 2) { return String(n).padStart(width, '0'); }
@@ -136,14 +124,6 @@ export function splitType(type) {
 export function truncate(s, max) {
   if (s == null) return '';
   return s.length <= max ? s : s.slice(0, max - 1) + '…';
-}
-
-/** A duration for the range chips: 900000 -> "15 min". */
-export function span(ms) {
-  if (ms < 60000) return Math.round(ms / 1000) + ' s';
-  if (ms < 3600000) return Math.round(ms / 60000) + ' min';
-  if (ms < 86400000) return NUM1.format(ms / 3600000).replace('.0', '') + ' h';
-  return NUM1.format(ms / 86400000).replace('.0', '') + ' d';
 }
 
 /** A signed offset inside a trace: "+12.3 ms". */

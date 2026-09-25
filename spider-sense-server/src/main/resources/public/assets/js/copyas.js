@@ -32,7 +32,7 @@ export function copyButtons({ markdown, cli }) {
     md.disabled = true;
     try {
       const { path, query } = markdown();
-      await copyText(await getText(path, query), md);
+      await copyText(await getText(path, query));
     } catch (err) {
       toast(errorText(err));
     } finally {
@@ -40,6 +40,6 @@ export function copyButtons({ markdown, cli }) {
     }
   });
   const line = h('button.btn.btn-ghost', { type: 'button', title: 'The command that answers the same window' }, 'Copy CLI line');
-  line.addEventListener('click', (e) => { e.stopPropagation(); copyText(cli(), line); });
+  line.addEventListener('click', (e) => { e.stopPropagation(); copyText(cli()); });
   return h('span.row.copy-as', { style: { gap: '6px' } }, md, line);
 }

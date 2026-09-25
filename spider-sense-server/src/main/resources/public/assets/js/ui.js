@@ -38,7 +38,6 @@ function applyAttrs(node, attrs) {
     if (k === 'class') node.className = Array.isArray(v) ? v.filter(Boolean).join(' ') : v;
     else if (k === 'style' && typeof v === 'object') Object.assign(node.style, v);
     else if (k === 'dataset') Object.assign(node.dataset, v);
-    else if (k === 'html') node.innerHTML = v;
     else if (k === 'text') node.textContent = v;
     else if (k.startsWith('on') && typeof v === 'function') node.addEventListener(k.slice(2), v);
     else if (v === true) node.setAttribute(k, '');
@@ -159,19 +158,15 @@ export function severityChip(severity) {
   return h('span.sev', { 'data-sev': s }, s);
 }
 
-export function mono(text, opts = {}) {
-  return h('span.mono', { title: opts.title || null, class: ['mono', opts.class].filter(Boolean).join(' ') }, text);
-}
-
 /** A trace or span id that copies itself when clicked. */
 export function idButton(id, label = 'Copy id') {
   const btn = h('button.id-copy', { type: 'button', title: id + ' — click to copy', 'aria-label': label },
     h('span.mono', id), icon('copy'));
-  btn.addEventListener('click', (e) => { e.stopPropagation(); copyText(id, btn); });
+  btn.addEventListener('click', (e) => { e.stopPropagation(); copyText(id); });
   return btn;
 }
 
-export async function copyText(text, anchor) {
+export async function copyText(text) {
   let ok = true;
   try {
     if (navigator.clipboard && isSecureContext) await navigator.clipboard.writeText(text);
@@ -183,7 +178,7 @@ export async function copyText(text, anchor) {
     try { ok = document.execCommand('copy'); } catch (e2) { ok = false; }
     ta.remove();
   }
-  toast(ok ? 'Copied' : 'Copy failed', anchor);
+  toast(ok ? 'Copied' : 'Copy failed');
   return ok;
 }
 
@@ -203,7 +198,7 @@ export function toast(message) {
 export function copyBlock(text, opts = {}) {
   const pre = h('pre.code', text);
   const btn = h('button.btn.btn-ghost.copy-block', { type: 'button' }, icon('copy'), 'Copy');
-  btn.addEventListener('click', () => copyText(text, btn));
+  btn.addEventListener('click', () => copyText(text));
   return h('div.code-block', { class: ['code-block', opts.class].filter(Boolean).join(' ') }, pre, btn);
 }
 
@@ -674,14 +669,6 @@ export function segmented({ label, options, value, onChange }) {
   return node;
 }
 
-/** Remember and restore the scroll position of the main scroller across a re-render. */
-export function keepScroll(node, work) {
-  const top = node ? node.scrollTop : 0;
-  const left = node ? node.scrollLeft : 0;
-  work();
-  if (node) { node.scrollTop = top; node.scrollLeft = left; }
-}
-
 export function debounce(fn, ms) {
   let t = null;
   const wrapped = (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
@@ -697,7 +684,6 @@ export function durationBar(value, max, klass) {
     h('span.dbar-fill', { style: { width: w + '%' } }));
 }
 
-/** 2xx / 4xx / 5xx mini bar. */
 /**
  * Where an endpoint's or a job's time went, as one stacked bar (pages.adoc#time-breakdown):
  * `db`, `http`, `internal` and `self`, each segment sized by its share.
@@ -731,6 +717,7 @@ export function breakdownLead(breakdown) {
   return lead && lead[1] > 0 ? lead : null;
 }
 
+/** 2xx / 4xx / 5xx mini bar. */
 export function statusBar(statusCodes) {
   const entries = Object.entries(statusCodes || {});
   const total = entries.reduce((s, [, n]) => s + n, 0);

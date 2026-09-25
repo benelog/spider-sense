@@ -18,9 +18,9 @@ function compile(pattern) {
   return { re: new RegExp('^' + source + '$'), names };
 }
 
-/** register('/traces/:id', handler) */
-export function register(pattern, handler) {
-  routes.push({ ...compile(pattern), pattern, handler });
+/** register('/traces/:id'): the patterns of app.js's page table, matched in order. */
+export function register(pattern) {
+  routes.push({ ...compile(pattern), pattern });
 }
 
 export function parse(hash) {
