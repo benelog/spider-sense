@@ -58,7 +58,7 @@ final class LocalRequests {
 
     static boolean acceptedHost(String name, String bindHost) {
         String bound = name(bindHost);
-        if (bound.isEmpty() || "0.0.0.0".equals(bound) || "::".equals(bound)) {
+        if (Config.isWildcard(bound)) {
             return true;
         }
         return loopback(name) || name.equals(bound);

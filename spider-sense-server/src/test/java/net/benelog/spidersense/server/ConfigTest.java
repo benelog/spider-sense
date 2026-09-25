@@ -128,6 +128,27 @@ class ConfigTest {
         assertThat(parse("--host=192.168.0.7").endpoint(4000)).isEqualTo("http://192.168.0.7:4000");
     }
 
+    /** The one table the advertised endpoint, the host check and the CLI's default URL share. */
+    @Test
+    void aBindAddressBecomesAHostToCall() {
+        for (String wildcard : new String[]{"", " ", "0.0.0.0", "::", "[::]"}) {
+            assertThat(Config.isWildcard(wildcard)).as(wildcard).isTrue();
+            assertThat(Config.callableHost(wildcard)).as(wildcard).isEqualTo("127.0.0.1");
+        }
+        assertThat(Config.isWildcard("127.0.0.1")).isFalse();
+        assertThat(Config.callableHost("::1")).isEqualTo("[::1]");
+        assertThat(Config.callableHost("[::1]")).isEqualTo("[::1]");
+        assertThat(Config.callableHost("192.168.0.7")).isEqualTo("192.168.0.7");
+    }
+
+    @Test
+    void aLeadingTildeIsTheHomeDirectory() {
+        assertThat(Config.expandHome("~/src", HOME)).isEqualTo("/home/tester/src");
+        assertThat(Config.expandHome("~", HOME)).isEqualTo("/home/tester");
+        assertThat(Config.expandHome("~other/src", HOME)).isEqualTo("~other/src");
+        assertThat(Config.expandHome("/opt/src", HOME)).isEqualTo("/opt/src");
+    }
+
     @Test
     void aPathBecomesAnAutoServerUrlWithTheHomeExpanded() {
         Config config = parse("--db=~/db/other/sense");

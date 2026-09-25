@@ -76,6 +76,8 @@ public record Config(
     public static final String AGENT = "agent";
     public static final String STANDALONE = "standalone";
     public static final String DEFAULT_DB = "~/db/spider-sense/sense";
+    public static final String DEFAULT_HOST = "127.0.0.1";
+    public static final int DEFAULT_PORT = 4000;
 
     /** The configuration this JVM was given: its arguments, system properties and environment. */
     public static Config parse(String[] args) {
@@ -120,8 +122,8 @@ public record Config(
         Numbers numbers = new Numbers(settings);
         boolean agent = AGENT.equalsIgnoreCase(settings.string("mode", STANDALONE));
         return new Config(
-                settings.string("host", "127.0.0.1"),
-                numbers.number("port", 4000).intValue(),
+                settings.string("host", DEFAULT_HOST),
+                numbers.number("port", DEFAULT_PORT).intValue(),
                 agent ? AGENT : STANDALONE,
                 settings.string("db", DEFAULT_DB),
                 numbers.number("retention.hours", 24L).intValue(),
@@ -179,15 +181,25 @@ public record Config(
      * so it is advertised as {@code 127.0.0.1}, as the launcher's banner does.
      */
     public String endpoint(int boundPort) {
-        String h = host;
-        if (h.isEmpty() || h.equals("0.0.0.0") || h.equals("::") || h.equals("[::]")) {
-            h = "127.0.0.1";
-        }
-        // An IPv6 address goes into a URL in brackets: http://[::1]:4000.
-        if (h.contains(":") && !h.startsWith("[")) {
-            h = "[" + h + "]";
-        }
-        return "http://" + h + ":" + boundPort;
+        return "http://" + callableHost(host) + ":" + boundPort;
+    }
+
+    /**
+     * Whether a bind address means every interface: {@code 0.0.0.0}, {@code ::}, {@code [::]}, or
+     * none said.
+     */
+    public static boolean isWildcard(String host) {
+        String h = host.trim();
+        return h.isEmpty() || h.equals("0.0.0.0") || h.equals("::") || h.equals("[::]");
+    }
+
+    /**
+     * The host to connect to for a bind address, as a URL writes it: a wildcard is
+     * {@link #DEFAULT_HOST}, and an IPv6 address goes in brackets ({@code http://[::1]:4000}).
+     */
+    public static String callableHost(String host) {
+        String h = isWildcard(host) ? DEFAULT_HOST : host;
+        return h.contains(":") && !h.startsWith("[") ? "[" + h + "]" : h;
     }
 
     /**
@@ -229,7 +241,13 @@ public record Config(
         return Path.of(expandHome(path, home) + ".mv.db");
     }
 
-    private static String expandHome(String path, Path home) {
+    /** The path with a leading {@code ~} read as this JVM's home directory. */
+    public static String expandHome(String path) {
+        return expandHome(path, Path.of(System.getProperty("user.home", "")));
+    }
+
+    /** The path with a leading {@code ~} read as {@code home}. */
+    public static String expandHome(String path, Path home) {
         if (path.startsWith("~/") || path.equals("~")) {
             return home + path.substring(1);
         }

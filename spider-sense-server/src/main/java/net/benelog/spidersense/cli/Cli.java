@@ -40,7 +40,7 @@ public final class Cli {
      * Where a Spider Sense is when nobody said; {@code SPIDERSENSE_URL} overrides it, and so do
      * the {@code spidersense.*} properties, see {@link #configuredUrl}.
      */
-    static final String DEFAULT_URL = "http://127.0.0.1:4000";
+    static final String DEFAULT_URL = "http://" + Config.DEFAULT_HOST + ":" + Config.DEFAULT_PORT;
 
     private Cli() {
     }
@@ -206,13 +206,8 @@ public final class Cli {
         if (host == null && port == null) {
             return DEFAULT_URL;
         }
-        if (host == null || host.equals("0.0.0.0") || host.equals("::") || host.equals("[::]")) {
-            host = "127.0.0.1";
-        }
-        if (host.contains(":") && !host.startsWith("[")) {
-            host = "[" + host + "]";     // an IPv6 address, which a URL brackets
-        }
-        return "http://" + host + ":" + (port == null ? "4000" : port);
+        return "http://" + Config.callableHost(host == null ? "" : host) + ":"
+                + (port == null ? String.valueOf(Config.DEFAULT_PORT) : port);
     }
 
     private static @Nullable String value(java.util.Properties properties, String key) {

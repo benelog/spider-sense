@@ -88,7 +88,7 @@ public final class SourceRoots {
             for (String each : configured.split(",", -1)) {
                 String dir = each.trim();
                 if (!dir.isEmpty()) {
-                    candidates.add(base.resolve(expandHome(dir)));
+                    candidates.add(base.resolve(Config.expandHome(dir)));
                 }
             }
         }
@@ -204,13 +204,6 @@ public final class SourceRoots {
         } catch (IOException | RuntimeException e) {
             return List.of();
         }
-    }
-
-    private static String expandHome(String path) {
-        if (path.equals("~") || path.startsWith("~/")) {
-            return System.getProperty("user.home") + path.substring(1);
-        }
-        return path;
     }
 
     /** A frame's file relative to a root ({@code orders/OrderService.java}) and its line. */
