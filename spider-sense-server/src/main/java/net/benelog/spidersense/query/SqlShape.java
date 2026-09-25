@@ -107,6 +107,40 @@ final class SqlShape {
             "day_microsecond", "hour_minute", "hour_second", "hour_microsecond", "minute_second",
             "minute_microsecond", "second_microsecond");
 
+    /**
+     * The functions whose parentheses {@code from} separates arguments in rather
+     * than opening a table list ({@code extract(year from created_at)},
+     * {@code trim(both from name)}, {@code substring(name from ? for ?)}).
+     */
+    private static final Set<String> FROM_FUNCTIONS = Set.of("extract", "trim", "substring", "overlay");
+
+    /** The functions whose parentheses {@code for} separates arguments in. */
+    private static final Set<String> FOR_FUNCTIONS = Set.of("substring", "overlay");
+
+    /**
+     * The functions whose first argument is a date part, not a column:
+     * {@code extract(year from …)}, {@code timestampdiff(day, …)},
+     * {@code dateadd(day, ?, …)}.
+     */
+    private static final Set<String> FIELD_FUNCTIONS = Set.of(
+            "extract", "timestampdiff", "timestampadd", "datediff", "dateadd", "datepart", "datename",
+            "datetrunc");
+
+    /** What {@code trim(…)} may say before the string it trims. */
+    private static final Set<String> TRIM_WORDS = Set.of("both", "leading", "trailing");
+
+    /** The functions after whose {@code as} comes a type, up to the closing parenthesis. */
+    private static final Set<String> CAST_FUNCTIONS = Set.of("cast", "try_cast", "safe_cast");
+
+    /**
+     * The words after {@code for} that make it a locking or result clause
+     * ({@code for update}, {@code for no key update}, {@code for share},
+     * {@code for read only}, {@code for xml}); such a clause names no table
+     * and no column.
+     */
+    private static final Set<String> LOCKING_WORDS = Set.of(
+            "update", "share", "no", "key", "read", "fetch", "xml", "json", "browse");
+
     private enum Region { NONE, PREDICATE, ORDER }
 
     private final List<TableRef> tables = new ArrayList<>();
@@ -154,19 +188,42 @@ final class SqlShape {
         // The region each open parenthesis interrupted: a subquery's "select"
         // ends the region inside it, never the one around it.
         Deque<Region> outer = new ArrayDeque<>();
+        // The word before each open parenthesis, "" for none: inside
+        // "extract(" a "from" is an argument separator, not a table list.
+        Deque<String> calls = new ArrayDeque<>();
         int i = 0;
         while (i < tokens.size()) {
             Token token = tokens.get(i);
             if (token.is("(")) {
                 outer.push(region);
-                i++;
+                String call = i > 0 ? callee(tokens.get(i - 1)) : "";
+                calls.push(call);
+                i = skipLeadingWord(tokens, i + 1, call);
                 continue;
             }
             if (token.is(")")) {
                 if (!outer.isEmpty()) {
                     region = outer.pop();
+                    calls.pop();
                 }
                 i++;
+                continue;
+            }
+            String call = calls.isEmpty() ? "" : calls.getFirst();
+            if ((token.isWord("from") && FROM_FUNCTIONS.contains(call))
+                    || (token.isWord("for") && FOR_FUNCTIONS.contains(call))
+                    || (token.isWord("placing") && call.equals("overlay"))) {
+                i++;     // an argument separator: "extract(year from created_at)"
+                continue;
+            }
+            if (token.isWord("as") && CAST_FUNCTIONS.contains(call)) {
+                i = skipToClose(tokens, i + 1);     // "cast(? as timestamp with time zone)"
+                continue;
+            }
+            if (token.isWord("for") && i + 1 < tokens.size()
+                    && tokens.get(i + 1).kind() == Token.Kind.NAME
+                    && LOCKING_WORDS.contains(tokens.get(i + 1).text())) {
+                i = skipToClose(tokens, i + 1);     // "for update of o1_0 skip locked"
                 continue;
             }
             if (token.is("::")) {
@@ -338,6 +395,50 @@ final class SqlShape {
             return followedByParenthesis(tokens, start) ? skipGroup(tokens, start + 2) : start + 1;
         }
         return start;
+    }
+
+    /** The word a parenthesis follows, the function it calls when it is one; "" for none. */
+    private static String callee(Token token) {
+        return token.kind() == Token.Kind.NAME && !token.quoted() && token.parts().size() == 1
+                ? token.text() : "";
+    }
+
+    /**
+     * Past the first argument of a call when it is a word and no column: the
+     * date part of {@code extract(year from …)} or {@code dateadd(day, …)}, the
+     * {@code both} of {@code trim(both from …)}.
+     *
+     * @param start the index just past the {@code (}
+     */
+    private static int skipLeadingWord(List<Token> tokens, int start, String call) {
+        if (start >= tokens.size()) {
+            return start;
+        }
+        Token first = tokens.get(start);
+        if (first.kind() != Token.Kind.NAME || first.quoted() || first.parts().size() != 1) {
+            return start;
+        }
+        if (call.equals("trim") && TRIM_WORDS.contains(first.text())) {
+            return start + 1;
+        }
+        if (FIELD_FUNCTIONS.contains(call) && start + 1 < tokens.size()
+                && (tokens.get(start + 1).is(",") || tokens.get(start + 1).isWord("from"))) {
+            return start + 1;
+        }
+        return start;
+    }
+
+    /**
+     * Up to the {@code )} that closes the parenthesis the scan is in, or to the
+     * end of the statement, passing over any group on the way; the {@code )} is
+     * left for the scan, which closes the region with it.
+     */
+    private static int skipToClose(List<Token> tokens, int start) {
+        int i = start;
+        while (i < tokens.size() && !tokens.get(i).is(")")) {
+            i = tokens.get(i).is("(") ? skipGroup(tokens, i + 1) : i + 1;
+        }
+        return i;
     }
 
     private static boolean wordAt(List<Token> tokens, int i, String word) {

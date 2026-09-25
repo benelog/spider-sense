@@ -190,6 +190,62 @@ class SqlShapeTest {
         assertThat(predicates(statement)).containsExactly("orders.total");
     }
 
+    /** A locking clause names no table: its "update" opens no table list, its "of" names an alias. */
+    @Test
+    void aLockingClauseNamesNoTable() {
+        String skipLocked = "select * from orders where id = ? for update skip locked";
+        assertThat(tables(skipLocked)).containsExactly("orders");
+        assertThat(predicates(skipLocked)).containsExactly("orders.id");
+
+        String hibernate = "select o1_0.id from orders o1_0 where o1_0.status=? for no key update of o1_0";
+        assertThat(SqlShape.of(hibernate).readable()).isTrue();
+        assertThat(tables(hibernate)).containsExactly("orders");
+        assertThat(predicates(hibernate)).containsExactly("orders.status");
+
+        assertThat(tables("select * from orders where id = ? for update nowait")).containsExactly("orders");
+        assertThat(tables("select * from orders where id = ? for share")).containsExactly("orders");
+
+        String queue = "update jobs set state = ? where id = (select j.id from jobs j where j.state = ?"
+                + " order by j.id limit ? for update skip locked) returning id";
+        assertThat(tables(queue)).containsExactly("jobs");
+        assertThat(predicates(queue)).containsExactly("jobs.id", "jobs.state");
+    }
+
+    /** Inside extract, trim, substring and overlay, "from" and "for" separate arguments. */
+    @Test
+    void aFromInsideAFunctionSeparatesItsArguments() {
+        String extract = "select * from orders where extract(year from created_at) = ?";
+        assertThat(tables(extract)).containsExactly("orders");
+        assertThat(predicates(extract)).containsExactly("orders.created_at");
+
+        String trim = "select * from orders where trim(both from name) = ?";
+        assertThat(tables(trim)).containsExactly("orders");
+        assertThat(predicates(trim)).containsExactly("orders.name");
+
+        assertThat(predicates("select * from orders where substring(code from ? for ?) = ?"
+                + " and overlay(name placing ? from ? for ?) = ?"))
+                .containsExactly("orders.code", "orders.name");
+
+        String selected = "select extract(month from o.created_at), o.id from orders o where o.status = ?";
+        assertThat(tables(selected)).containsExactly("orders");
+        assertThat(predicates(selected)).containsExactly("orders.status");
+
+        assertThat(predicates("select * from orders where timestampdiff(day, created_at, now()) > ?"
+                + " and dateadd(hour, ?, paid_at) < ?"))
+                .containsExactly("orders.created_at", "orders.paid_at");
+    }
+
+    @Test
+    void aMultiWordCastTypeIsNotAColumn() {
+        assertThat(predicates("select * from items where created > cast(? as timestamp with time zone)"
+                + " and name = ?"))
+                .containsExactly("items.created", "items.name");
+        assertThat(predicates("select * from items where price > cast(? as double precision)"))
+                .containsExactly("items.price");
+        assertThat(predicates("select * from items where cast(code as varchar(10)) = ? and id = ?"))
+                .containsExactly("items.code", "items.id");
+    }
+
     @Test
     void theTypeOfADoubleColonCastIsNotAColumn() {
         assertThat(predicates("select * from items where id = ?::uuid and name = ?"))
