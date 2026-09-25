@@ -290,9 +290,18 @@ public final class Findings {
 
     public Findings(Sql sql, Queries queries, MetricQueries metrics, ServiceRegistry services,
             Tingles tingles, CodeFrames frames) {
+        this(sql, queries, metrics, services, tingles, frames, new Acks(sql), queries.catalog());
+    }
+
+    /**
+     * @param acks    what a reader decided about a finding, which the ranking applies
+     * @param catalog the index catalog an {@code n-plus-one}'s schema block reads
+     */
+    public Findings(Sql sql, Queries queries, MetricQueries metrics, ServiceRegistry services,
+            Tingles tingles, CodeFrames frames, Acks acks, Catalog catalog) {
         this.sql = sql;
-        this.acks = new Acks(sql);
-        this.catalog = queries.catalog();
+        this.acks = acks;
+        this.catalog = catalog;
         this.queries = queries;
         this.metrics = metrics;
         this.services = services;
@@ -352,12 +361,39 @@ public final class Findings {
         for (Ranked each : found) {
             ids.add(each.finding().id());
         }
-        Map<String, Acks.Ack> decided = acks.byId(ids);
+        Map<String, Map<String, Ranked>> since = new HashMap<>();
+        Answer ranked = rank(found, acks.byId(ids),
+                (each, resolvedAt) -> recurrence(each, resolvedAt, window, since), limit, hideAcked);
+        return labelled
+                ? new Answer(states(ranked.findings(), window), ranked.acked(), ranked.resolved())
+                : ranked;
+    }
 
+    /** How a resolved finding is asked for again after its resolution. */
+    @FunctionalInterface
+    interface Recurrence {
+
+        /** The finding as it occurred after {@code resolvedAt}, or null when it did not. */
+        @Nullable Ranked after(Ranked finding, long resolvedAt);
+    }
+
+    /**
+     * The findings with what a reader decided applied, ordered and cut at the limit
+     * (findings.adoc#acknowledgements, #resolutions).
+     *
+     * <p>An acknowledged finding and a resolved one that did not come back are set aside,
+     * after every open one; a resolved finding that came back is a {@code regression},
+     * ranked with the open ones. The partition is stable, and the counts are taken before
+     * the limit.
+     *
+     * @param decided   the acknowledgements and resolutions, by finding id
+     * @param hideAcked whether what is set aside is left out rather than ranked last
+     */
+    static Answer rank(List<Ranked> found, Map<String, Acks.Ack> decided, Recurrence recurrence,
+            int limit, boolean hideAcked) {
         // A resolved finding that occurred again after its resolution is a
         // regression, ranked above everything; one that did not stays itself, with
         // the resolution attached, and is set aside with the acknowledged ones.
-        Map<String, Map<String, Ranked>> since = new HashMap<>();
         List<Ranked> ranked = new ArrayList<>();
         int acked = 0;
         int resolved = 0;
@@ -371,7 +407,7 @@ public final class Findings {
                         each.impact()));
             } else {
                 Resolution resolution = new Resolution(row.at(), row.note());
-                Ranked back = recurrence(each, row.at(), window, since);
+                Ranked back = recurrence.after(each, row.at());
                 if (back == null) {
                     resolved++;
                     ranked.add(new Ranked(each.finding().withResolution(resolution), each.impact()));
@@ -396,9 +432,6 @@ public final class Findings {
         page.addAll(aside);
         if (page.size() > limit) {
             page = new ArrayList<>(page.subList(0, Math.max(0, limit)));
-        }
-        if (labelled) {
-            page = states(page, window);
         }
         return new Answer(page, acked, resolved);
     }

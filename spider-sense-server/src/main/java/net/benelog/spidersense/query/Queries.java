@@ -69,11 +69,16 @@ public final class Queries {
     private final Catalog catalog;
 
     public Queries(Sql sql, Tingles tingles, ServiceRegistry services) {
+        this(sql, tingles, services, new Catalog(sql));
+    }
+
+    /** @param catalog the index catalog the schema blocks read (findings.adoc#schema) */
+    public Queries(Sql sql, Tingles tingles, ServiceRegistry services, Catalog catalog) {
         this.sql = sql;
         this.tingles = tingles;
         this.services = services;
         this.responseBuckets = new ResponseBuckets(tingles.slowRequestMs());
-        this.catalog = new Catalog(sql);
+        this.catalog = catalog;
     }
 
     /** The index catalog, for the rules that answer over the same tables (findings.adoc#schema). */
