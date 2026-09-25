@@ -94,6 +94,14 @@ class Element extends Node {
     return event;
   }
   click() { return this.dispatch('click'); }
+  focus() { document.activeElement = this; }
+  select() {}
+  showModal() { this.open = true; }
+  close(returnValue = '') {
+    this.open = false;
+    this.returnValue = returnValue;
+    this.dispatch('close');
+  }
   matches(selector) { return selector.split(',').some((s) => this.tagName === s.trim().toUpperCase()); }
   closest(selector) {
     for (let n = this; n instanceof Element; n = n.parentNode) if (n.matches(selector)) return n;
@@ -108,11 +116,17 @@ class Element extends Node {
   }
 }
 
+/** An input's value starts as its value attribute, as a browser's does. */
+class Input extends Element {
+  get value() { return this.typed !== undefined ? this.typed : (this.getAttribute('value') || ''); }
+  set value(v) { this.typed = String(v); }
+}
+
 function dashed(key) { return String(key).replace(/[A-Z]/g, (c) => '-' + c.toLowerCase()); }
 function camel(key) { return key.replace(/-([a-z])/g, (m, c) => c.toUpperCase()); }
 
 const document = {
-  createElement: (tag) => new Element(tag),
+  createElement: (tag) => (tag === 'input' ? new Input(tag) : new Element(tag)),
   createElementNS: (ns, tag) => new Element(tag),
   createTextNode: (text) => new Text(text),
   createDocumentFragment: () => new Fragment(),
@@ -123,6 +137,7 @@ const document = {
 };
 
 globalThis.document = document;
+globalThis.requestAnimationFrame = (fn) => { fn(); return 0; };
 globalThis.getComputedStyle = () => ({ getPropertyValue: () => '' });
 
 export { document, Element, Text };

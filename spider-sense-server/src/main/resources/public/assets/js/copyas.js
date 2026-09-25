@@ -2,7 +2,7 @@
 // an agent from a page, as the bytes the agent would have read itself.
 
 import { getText, state } from './api.js';
-import { h, copyText, toast } from './ui.js';
+import { h, copyText, toast, errorText } from './ui.js';
 
 /** The jar the CLI line names: /api/status.jar, else the name the manual uses. */
 function jar() {
@@ -34,7 +34,7 @@ export function copyButtons({ markdown, cli }) {
       const { path, query } = markdown();
       await copyText(await getText(path, query), md);
     } catch (err) {
-      toast(String(err && err.message ? err.message : err));
+      toast(errorText(err));
     } finally {
       md.disabled = false;
     }

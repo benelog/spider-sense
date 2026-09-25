@@ -3,7 +3,7 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, panel, table, chip, serviceChip, copyBlock, spinner, emptyState, snippetBlocks, dialog, toast, breakdownBar, breakdownLead } from '../ui.js';
+import { h, fill, panel, table, chip, serviceChip, copyBlock, spinner, emptyState, snippetBlocks, formDialog, errorText, toast, breakdownBar, breakdownLead } from '../ui.js';
 import { formatSql } from '../sql.js';
 import { fmtApdex } from '../buckets.js';
 import { count, dur, rate, pct, bytes, time, bothTimes, truncate, shortId } from '../format.js';
@@ -152,93 +152,44 @@ function breakdownLine(breakdown) {
 }
 
 /**
- * The Acknowledge dialog (ui.adoc#dialogs): one optional note, then the POST.
+ * The Acknowledge and Resolve dialogs (ui.adoc#dialogs): one optional note, then the POST.
  *
- * <p>Small on purpose — an acknowledgement is a sentence about why a finding is
- * accepted, and the finding itself is on the screen behind it.
+ * <p>Small on purpose — the note is a sentence about why a finding is accepted or what the fix
+ * was, and the finding itself is on the screen behind it.
  */
-function ackDialog(finding, onDone) {
-  const noteInput = h('input', {
-    type: 'text', placeholder: 'optional', autocomplete: 'off',
-    'aria-label': 'Note', style: { width: '100%' },
-  });
-  const problem = h('div.form-error', { role: 'alert' });
-  problem.hidden = true;
-
-  const ok = h('button.btn.btn-primary', { type: 'button' }, 'Acknowledge');
-  const dlg = dialog({
+const DECISIONS = {
+  ack: {
     title: 'Acknowledge this finding',
-    body: h('div.mark-form',
-      h('p.muted', finding.title || finding.id),
-      h('label', h('span', 'Note'), noteInput),
-      h('p.muted', 'It stays in the list, ranked after everything else, until it is withdrawn.'),
-      problem),
-    actions: [h('button.btn', { type: 'button', onclick: () => dlg.close() }, 'Cancel'), ok],
-  });
-
-  async function submit() {
-    if (ok.disabled) return;     // in flight already: a second Enter would POST again
-    ok.disabled = true;
-    try {
-      await api.ackFinding(finding.id, noteInput.value.trim());
-      dlg.close();
-      toast('Acknowledged ' + finding.id);
-      if (onDone) onDone();
-    } catch (e) {
-      ok.disabled = false;
-      problem.hidden = false;
-      problem.textContent = String(e && e.message ? e.message : e);
-    }
-  }
-
-  ok.addEventListener('click', submit);
-  noteInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } });
-  requestAnimationFrame(() => noteInput.focus());
-  return dlg;
-}
-
-/**
- * The Resolve dialog (ui.adoc#dialogs): one optional note, then the POST; the finding
- * is reported as a regression if it comes back.
- */
-function resolveDialog(finding, onDone) {
-  const noteInput = h('input', {
-    type: 'text', placeholder: 'optional, such as what the fix was', autocomplete: 'off',
-    'aria-label': 'Note', style: { width: '100%' },
-  });
-  const problem = h('div.form-error', { role: 'alert' });
-  problem.hidden = true;
-
-  const ok = h('button.btn.btn-primary', { type: 'button' }, 'Resolve');
-  const dlg = dialog({
+    outro: 'It stays in the list, ranked after everything else, until it is withdrawn.',
+    placeholder: 'optional',
+    submitLabel: 'Acknowledge',
+    call: api.ackFinding,
+    done: 'Acknowledged ',
+  },
+  resolve: {
     title: 'Resolve this finding',
-    body: h('div.mark-form',
-      h('p.muted', finding.title || finding.id),
-      h('label', h('span', 'Note'), noteInput),
-      h('p.muted', 'If it occurs again it is reported as a regression, ranked above everything else.'),
-      problem),
-    actions: [h('button.btn', { type: 'button', onclick: () => dlg.close() }, 'Cancel'), ok],
-  });
+    outro: 'If it occurs again it is reported as a regression, ranked above everything else.',
+    placeholder: 'optional, such as what the fix was',
+    submitLabel: 'Resolve',
+    call: api.resolveFinding,
+    done: 'Resolved ',
+  },
+};
 
-  async function submit() {
-    if (ok.disabled) return;     // in flight already: a second Enter would POST again
-    ok.disabled = true;
-    try {
-      await api.resolveFinding(finding.id, noteInput.value.trim());
-      dlg.close();
-      toast('Resolved ' + finding.id);
+function decisionDialog(kind, finding, onDone) {
+  const d = DECISIONS[kind];
+  return formDialog({
+    title: d.title,
+    intro: finding.title || finding.id,
+    fields: [{ name: 'note', label: 'Note', placeholder: d.placeholder }],
+    outro: d.outro,
+    submitLabel: d.submitLabel,
+    submit: ({ note }) => d.call(finding.id, note),
+    done: () => {
+      toast(d.done + finding.id);
       if (onDone) onDone();
-    } catch (e) {
-      ok.disabled = false;
-      problem.hidden = false;
-      problem.textContent = String(e && e.message ? e.message : e);
-    }
-  }
-
-  ok.addEventListener('click', submit);
-  noteInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } });
-  requestAnimationFrame(() => noteInput.focus());
-  return dlg;
+    },
+  });
 }
 
 /** A button that withdraws something and reloads the page. */
@@ -253,7 +204,7 @@ function withdrawButton(label, done, call, onChange) {
         if (onChange) onChange();
       } catch (e) {
         button.disabled = false;
-        toast(String(e && e.message ? e.message : e));
+        toast(errorText(e));
       }
     },
   }, label);
@@ -280,10 +231,10 @@ function ackLine(finding, onChange) {
   }
   return h('div.f-ack',
     h('button.btn.btn-ghost', {
-      type: 'button', onclick: () => resolveDialog(finding, onChange),
+      type: 'button', onclick: () => decisionDialog('resolve', finding, onChange),
     }, 'Resolve'),
     h('button.btn.btn-ghost', {
-      type: 'button', onclick: () => ackDialog(finding, onChange),
+      type: 'button', onclick: () => decisionDialog('ack', finding, onChange),
     }, 'Acknowledge'));
 }
 

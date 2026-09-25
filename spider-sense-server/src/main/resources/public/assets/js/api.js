@@ -108,6 +108,34 @@ export class ApiError extends Error {
   constructor(message, status) { super(message); this.name = 'ApiError'; this.status = status; }
 }
 
+/**
+ * One request and its answer's text. `query` goes into the URL as compactQuery leaves it and
+ * `body` is sent as JSON. A status outside 2xx throws an ApiError whose message is the server's
+ * `error` sentence when the answer carries one, and the status line otherwise, whatever the verb.
+ */
+async function request(method, path, { query, body, accept = 'application/json' } = {}) {
+  const init = { method, headers: { accept } };
+  if (body !== undefined) {
+    init.headers['content-type'] = 'application/json';
+    init.body = JSON.stringify(body);
+  }
+  const res = await fetch(path + qs(query), init);
+  const text = await res.text();
+  if (!res.ok) throw errorFrom(res, text);
+  return text;
+}
+
+function errorFrom(res, text) {
+  let message = res.status + ' ' + res.statusText;
+  try { message = JSON.parse(text).error || message; } catch (e) { /* no JSON body: the status line says it */ }
+  return new ApiError(message, res.status);
+}
+
+/** The answer as JSON, or null for an empty or unreadable one. */
+function parsed(text) {
+  try { return JSON.parse(text); } catch (e) { return null; }
+}
+
 const inflight = new Map();
 
 /** GET with in-flight de-duplication: the same URL asked twice at once is fetched once. */
@@ -115,14 +143,7 @@ export function getJSON(path, query) {
   const url = path + qs(query);
   const pending = inflight.get(url);
   if (pending) return pending;
-  const promise = fetch(url, { headers: { accept: 'application/json' } })
-    .then(async (res) => {
-      let body = null;
-      try { body = await res.json(); } catch (e) { body = null; }
-      if (!res.ok) throw new ApiError((body && body.error) || res.status + ' ' + res.statusText, res.status);
-      return body;
-    })
-    .finally(() => { inflight.delete(url); });
+  const promise = request('GET', url).then(parsed).finally(() => { inflight.delete(url); });
   inflight.set(url, promise);
   return promise;
 }
@@ -147,32 +168,19 @@ export function requestSequence() {
 
 /** GET a text rendering (api.adoc#text-rendering): format=text, the body as it came. */
 export function getText(path, query) {
-  return fetch(path + qs({ ...query, format: 'text' }), { headers: { accept: 'text/markdown' } })
-    .then(async (res) => {
-      const body = await res.text();
-      if (!res.ok) {
-        let message = res.status + ' ' + res.statusText;
-        try { message = JSON.parse(body).error || message; } catch (e) { /* the text is the message */ }
-        throw new ApiError(message, res.status);
-      }
-      return body;
-    });
+  return request('GET', path, { query: { ...query, format: 'text' }, accept: 'text/markdown' });
 }
 
 // --- status and control -------------------------------------------------
 
 /** POST with a JSON body; the agent-facing endpoints are the only writers. */
 export function postJSON(path, body) {
-  return fetch(path, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', accept: 'application/json' },
-    body: JSON.stringify(body || {}),
-  }).then(async (res) => {
-    let parsed = null;
-    try { parsed = await res.json(); } catch (e) { parsed = null; }
-    if (!res.ok) throw new ApiError((parsed && parsed.error) || res.status + ' ' + res.statusText, res.status);
-    return parsed;
-  });
+  return request('POST', path, { body: body || {} }).then(parsed);
+}
+
+/** DELETE, answering null; a refusal throws an ApiError as every other request does. */
+function del(path) {
+  return request('DELETE', path).then(() => null);
 }
 
 export function status() { return getJSON('/api/status'); }
@@ -184,12 +192,7 @@ export async function refreshStatus() {
 
 /** DELETE /api/data; a refusal (a lock on the shared file, a Host check) throws an ApiError. */
 export function clearData() {
-  return fetch('/api/data', { method: 'DELETE' }).then(async (res) => {
-    if (res.ok) return null;
-    let message = res.status + ' ' + res.statusText;
-    try { message = (await res.json()).error || message; } catch (e) { /* no JSON body */ }
-    throw new ApiError(message, res.status);
-  });
+  return del('/api/data');
 }
 
 export function exportUrl(extra = {}) {
@@ -240,32 +243,26 @@ export function jvm(extra, opts) { return getJSON('/api/jvm', params(extra, opts
 
 export function findings(extra, opts) { return getJSON('/api/findings', params({ limit: 100, ...extra }, opts)); }
 
+const findingPath = (id, decision) => '/api/findings/' + encodeURIComponent(id) + '/' + decision;
+
 /** Accepts a known finding, so the list stays about what is new (findings.adoc#acknowledgements). */
 export function ackFinding(id, note) {
-  return postJSON('/api/findings/' + encodeURIComponent(id) + '/ack', { note: note || null });
+  return postJSON(findingPath(id, 'ack'), { note: note || null });
 }
 
 /** Withdraws that; 404 means there was nothing to withdraw. */
 export function unackFinding(id) {
-  return fetch('/api/findings/' + encodeURIComponent(id) + '/ack', { method: 'DELETE' })
-    .then((res) => {
-      if (!res.ok) throw new ApiError(res.status + ' ' + res.statusText, res.status);
-      return null;
-    });
+  return del(findingPath(id, 'ack'));
 }
 
 /** Marks a finding fixed; if it comes back it is a regression (findings.adoc#resolutions). */
 export function resolveFinding(id, note) {
-  return postJSON('/api/findings/' + encodeURIComponent(id) + '/resolve', { note: note || null });
+  return postJSON(findingPath(id, 'resolve'), { note: note || null });
 }
 
 /** Withdraws that; 404 means there was nothing to withdraw. */
 export function unresolveFinding(id) {
-  return fetch('/api/findings/' + encodeURIComponent(id) + '/resolve', { method: 'DELETE' })
-    .then((res) => {
-      if (!res.ok) throw new ApiError(res.status + ' ' + res.statusText, res.status);
-      return null;
-    });
+  return del(findingPath(id, 'resolve'));
 }
 
 export function acks(limit = 200) { return getJSON('/api/acks', { limit }); }

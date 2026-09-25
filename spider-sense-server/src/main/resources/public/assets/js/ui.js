@@ -443,7 +443,7 @@ export function spinner() { return h('div.loading', h('span.spin'), 'Loading'); 
 export function errorBox(err, retry) {
   return h('div.error-box',
     icon('bolt'),
-    h('div', h('div.error-title', 'Request failed'), h('div.muted', String(err && err.message ? err.message : err))),
+    h('div', h('div.error-title', 'Request failed'), h('div.muted', errorText(err))),
     retry ? h('button.btn', { type: 'button', onclick: retry }, 'Try again') : null);
 }
 
@@ -507,6 +507,80 @@ export function dialog({ title, body, actions, onClose }) {
   return dlg;
 }
 
+/** What a failure says: an Error's message, or the thrown value itself. */
+export function errorText(e) {
+  return String(e && e.message ? e.message : e);
+}
+
+/**
+ * A small form in a dialog (ui.adoc#dialogs): a line of text, the fields, another line, and one
+ * button that submits. Enter in a field submits too. A submit in flight ignores another one, since
+ * a held Enter repeats; a field whose `validate` returns a sentence, or a refusal from `submit`,
+ * shows that sentence under the fields and keeps the dialog open. After `submit` resolves the
+ * dialog closes and `done(result, values)` runs.
+ *
+ * fields: [{ name, label, value, placeholder, attrs }]
+ */
+export function formDialog({ title, intro, outro, fields, submitLabel, submit, done, onClose }) {
+  const inputs = fields.map((f) => h('input', {
+    type: 'text', value: f.value || null, placeholder: f.placeholder || null, autocomplete: 'off',
+    'aria-label': f.label, style: { width: '100%' }, ...(f.attrs || {}),
+  }));
+  const problem = h('div.form-error', { role: 'alert' });
+  problem.hidden = true;
+  const ok = h('button.btn.btn-primary', { type: 'button' }, submitLabel);
+  const dlg = dialog({
+    title,
+    body: h('div.mark-form',
+      intro ? h('p.muted', intro) : null,
+      fields.map((f, i) => h('label', h('span', f.label), inputs[i])),
+      outro ? h('p.muted', outro) : null,
+      problem),
+    actions: [h('button.btn', { type: 'button', onclick: () => dlg.close() }, 'Cancel'), ok],
+    onClose,
+  });
+
+  const refuse = (sentence) => {
+    problem.hidden = false;
+    problem.textContent = sentence;
+  };
+
+  async function run() {
+    if (ok.disabled) return;
+    const values = {};
+    for (let i = 0; i < fields.length; i++) {
+      const value = inputs[i].value.trim();
+      const invalid = fields[i].validate ? fields[i].validate(value) : null;
+      if (invalid) {
+        refuse(invalid);
+        inputs[i].focus();
+        return;
+      }
+      values[fields[i].name] = value;
+    }
+    ok.disabled = true;
+    try {
+      const result = await submit(values);
+      dlg.close();
+      if (done) done(result, values);
+    } catch (e) {
+      ok.disabled = false;
+      refuse(errorText(e));
+    }
+  }
+
+  ok.addEventListener('click', run);
+  for (const input of inputs) {
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); run(); } });
+  }
+  requestAnimationFrame(() => { inputs[0].focus(); inputs[0].select(); });
+  return dlg;
+}
+
+/** A mark's name: 1 to 64 letters, digits, dots, underscores and dashes, as store/Marks.java allows. */
+const MARK_NAME_CHARS = '[A-Za-z0-9._-]{1,64}';
+const MARK_NAME = new RegExp('^' + MARK_NAME_CHARS + '$');
+
 /**
  * The Mark dialog (ui.adoc#dialogs): a named moment, the person's half of the agent's
  * loop. The name is prefilled `before` until the window already has one, so the
@@ -522,61 +596,29 @@ export function markDialog(opts = {}) {
   const named = (api.state.marks || []).some(
     (m) => m.name === 'before' && m.at >= window_.from && m.at <= window_.to);
   const service = api.state.service || '';
-  const nameInput = h('input', {
-    type: 'text', value: named ? 'after' : 'before', required: true,
-    pattern: '[A-Za-z0-9._-]{1,64}', maxlength: '64', autocomplete: 'off',
-    spellcheck: 'false', 'aria-label': 'Mark name', style: { width: '100%' },
-  });
-  const noteInput = h('input', {
-    type: 'text', placeholder: 'optional', autocomplete: 'off',
-    'aria-label': 'Note', style: { width: '100%' },
-  });
-  const problem = h('div.form-error', { role: 'alert' });
-  problem.hidden = true;
-
-  const ok = h('button.btn.btn-primary', { type: 'button' }, 'Mark');
-  const dlg = dialog({
+  const dlg = formDialog({
     title: 'Mark this moment',
-    body: h('div.mark-form',
-      h('label', h('span', 'Name'), nameInput),
-      h('label', h('span', 'Note'), noteInput),
-      h('p.muted', service
-        ? 'The mark is recorded for ' + service + ', the service the top bar filters by.'
-        : 'The mark is recorded for every service. Filter by a service to mark only that one.'),
-      problem),
-    actions: [h('button.btn', { type: 'button', onclick: () => dlg.close() }, 'Cancel'), ok],
+    fields: [
+      {
+        name: 'name', label: 'Name', value: named ? 'after' : 'before',
+        attrs: { required: true, pattern: MARK_NAME_CHARS, maxlength: '64', spellcheck: 'false', 'aria-label': 'Mark name' },
+        validate: (name) => (MARK_NAME.test(name) ? null
+          : 'A name is 1 to 64 of the characters A-Z, a-z, 0-9, dot, underscore and dash.'),
+      },
+      { name: 'note', label: 'Note', placeholder: 'optional' },
+    ],
+    outro: service
+      ? 'The mark is recorded for ' + service + ', the service the top bar filters by.'
+      : 'The mark is recorded for every service. Filter by a service to mark only that one.',
+    submitLabel: 'Mark',
+    submit: ({ name, note }) => api.createMark({ name, note, service }),
+    done: (mark, { name }) => {
+      toast('Marked ' + name);
+      if (opts.onDone) opts.onDone(mark);
+    },
     onClose: () => { if (openMarkDialog === dlg) openMarkDialog = null; },
   });
   openMarkDialog = dlg;
-
-  async function submit() {
-    // In flight already: a held Enter repeats, and each repeat would POST another mark.
-    if (ok.disabled) return;
-    const name = nameInput.value.trim();
-    if (!/^[A-Za-z0-9._-]{1,64}$/.test(name)) {
-      problem.hidden = false;
-      problem.textContent = 'A name is 1 to 64 of the characters A-Z, a-z, 0-9, dot, underscore and dash.';
-      nameInput.focus();
-      return;
-    }
-    ok.disabled = true;
-    try {
-      const mark = await api.createMark({ name, note: noteInput.value.trim(), service });
-      dlg.close();
-      toast('Marked ' + name);
-      if (opts.onDone) opts.onDone(mark);
-    } catch (e) {
-      ok.disabled = false;
-      problem.hidden = false;
-      problem.textContent = String(e && e.message ? e.message : e);
-    }
-  }
-
-  ok.addEventListener('click', submit);
-  for (const input of [nameInput, noteInput]) {
-    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } });
-  }
-  requestAnimationFrame(() => { nameInput.focus(); nameInput.select(); });
   return dlg;
 }
 

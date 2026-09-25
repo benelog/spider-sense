@@ -270,7 +270,7 @@ function clearDataDialog() {
             await api.clearData();
           } catch (e) {
             // Nothing was deleted, so the page stays as it is.
-            ui.toast('Data not cleared: ' + (e && e.message ? e.message : e));
+            ui.toast('Data not cleared: ' + ui.errorText(e));
             return;
           }
           await api.refreshStatus().then(paintFoot).catch(() => {});
