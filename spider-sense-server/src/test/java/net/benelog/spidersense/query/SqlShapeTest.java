@@ -53,6 +53,20 @@ class SqlShapeTest {
                 .containsExactly("items.name", "items.sku");
     }
 
+    /** MySQL's "#" runs to the end of the line, and PostgreSQL nests block comments. */
+    @Test
+    void aHashCommentAndANestedBlockCommentAreNoColumns() {
+        assertThat(predicates("select * from items where id = ? # mysql comment here"))
+                .containsExactly("items.id");
+        assertThat(predicates("select * from items where id = ? #note\nand sku = ?"))
+                .containsExactly("items.id", "items.sku");
+        assertThat(predicates("select * from items where id = ? /* outer /* inner */ tail */ and sku = ?"))
+                .containsExactly("items.id", "items.sku");
+        assertThat(predicates("select * from items where data #>> ? = ? and sku = ?"))
+                .as("PostgreSQL's #>> is an operator, not a comment")
+                .containsExactly("items.data", "items.sku");
+    }
+
     @Test
     void aSelectListAliasInTheOrderByIsNoColumn() {
         assertThat(predicates("select id, name, price * qty as total from items where name = ? order by total desc"))

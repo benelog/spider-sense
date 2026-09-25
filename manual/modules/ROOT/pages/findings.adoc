@@ -214,7 +214,8 @@ Neither is the unit of an interval (`interval ? day`, `interval ? day to second`
 A locking clause names no table and no column (`for update skip locked`, `for no key update of o1_0`, `for share`).
 An array constructor names no column either (`where o.id = any(array[?, ?])` names `orders.id`), and brackets quote a name only around a name's characters (`[Unit Price]`).
 Inside `extract`, `trim`, `substring` and `overlay`, `from` and `for` separate arguments rather than opening a table list, so `extract(year from created_at)` names `created_at`, and the date part that `extract`, `dateadd` or `timestampdiff` takes first is no column.
-Nor is a word of a comment, which the agent's sanitiser keeps (`-- …` to the end of the line, `/* … */`, an optimizer hint, an sqlcommenter suffix).
+Nor is a word of a comment, which the agent's sanitiser keeps (`-- …` or MySQL's `# …` to the end of the line, `/* … */` with the comments PostgreSQL nests inside it, an optimizer hint, an sqlcommenter suffix).
+A `#` that begins one of PostgreSQL's operators (`#>`, `#>>`, `#-`, `##`) starts no comment.
 A name the select list gives with `as` is not a column when the `order by` sorts by it (`price * qty as total … order by total`), and `except`, `intersect` and `minus` end the clause before them as `union` does.
 A keyword that is also a common column name (`date`, `time`, `timestamp`, `first`, `last`, `next`, `row`, `rows`, `only`, `interval`) is that column in a `where` or `on` clause when a comparison follows it (`where date = ?`), and the keyword anywhere else.
 

@@ -669,14 +669,13 @@ final class SqlShape {
                 char c = statement.charAt(i);
                 if (Character.isWhitespace(c)) {
                     i++;
-                } else if (statement.startsWith("--", i)) {
+                } else if (statement.startsWith("--", i) || lineComment(statement, i)) {
                     // A comment is kept by the agent's sanitizer (a hint, an sqlcommenter
                     // suffix); its words are no names of the statement.
                     int end = statement.indexOf('\n', i);
                     i = end < 0 ? length : end + 1;
                 } else if (statement.startsWith("/*", i)) {
-                    int end = statement.indexOf("*/", i + 2);
-                    i = end < 0 ? length : end + 2;
+                    i = blockComment(statement, i);
                 } else if (c == '\'') {
                     i = literal(statement, i);
                 } else if (c == '?') {
@@ -700,6 +699,40 @@ final class SqlShape {
                 }
             }
             return tokens;
+        }
+
+        /**
+         * Whether a MySQL {@code #} comment starts at {@code i}. PostgreSQL's
+         * operators that begin with {@code #} ({@code #>}, {@code #>>},
+         * {@code #-}, {@code ##}) are not one.
+         */
+        private static boolean lineComment(String statement, int i) {
+            if (statement.charAt(i) != '#') {
+                return false;
+            }
+            char next = i + 1 < statement.length() ? statement.charAt(i + 1) : ' ';
+            return next != '>' && next != '-' && next != '#';
+        }
+
+        /** Past a block comment, counting the nested ones PostgreSQL allows. */
+        private static int blockComment(String statement, int start) {
+            int depth = 0;
+            int i = start;
+            while (i < statement.length()) {
+                if (statement.startsWith("/*", i)) {
+                    depth++;
+                    i += 2;
+                } else if (statement.startsWith("*/", i)) {
+                    depth--;
+                    i += 2;
+                    if (depth == 0) {
+                        return i;
+                    }
+                } else {
+                    i++;
+                }
+            }
+            return i;
         }
 
         /** Past a string literal, {@code ''} included. */
