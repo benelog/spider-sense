@@ -119,7 +119,7 @@ final class TraceSummaries {
         statement.setInt(i++, trace.spanCount());
         statement.setInt(i++, trace.errorCount());
         statement.setInt(i++, trace.dbCount());
-        Writer.setLong(statement, i++, trace.httpStatus());
+        Columns.setLong(statement, i++, trace.httpStatus());
         statement.setBoolean(i++, trace.slow());
         statement.setBoolean(i, trace.error());
     }

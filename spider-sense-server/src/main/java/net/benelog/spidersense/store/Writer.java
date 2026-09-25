@@ -379,37 +379,37 @@ public final class Writer implements AutoCloseable {
         statement.setString(i++, span.spanId());
         statement.setString(i++, span.parentSpanId());
         statement.setString(i++, span.service());
-        statement.setString(i++, cut(span.name(), 1024));
+        statement.setString(i++, Columns.cut(span.name(), Columns.SPAN_NAME));
         statement.setString(i++, span.kind());
         statement.setLong(i++, span.startMillis());
         statement.setLong(i++, span.startNanos());
         statement.setLong(i++, span.durationNanos());
         statement.setString(i++, span.status());
-        statement.setString(i++, cut(span.statusMessage(), 4096));
+        statement.setString(i++, Columns.cut(span.statusMessage(), Columns.STATUS_MESSAGE));
         statement.setBoolean(i++, entry);
         statement.setBoolean(i++, error);
         statement.setBoolean(i++, tingles.isSlow(span));
         statement.setString(i++, span.category());
-        statement.setString(i++, cut(endpoint, 1024));
+        statement.setString(i++, Columns.cut(endpoint, Columns.ENDPOINT));
         statement.setString(i++, endpoint == null ? null : Ids.endpointId(span.service(), endpoint));
-        statement.setString(i++, cut(span.httpMethod(), 16));
-        statement.setString(i++, cut(span.httpRoute(), 1024));
-        setLong(statement, i++, span.httpStatus());
-        statement.setString(i++, cut(span.dbSystem(), 64));
+        statement.setString(i++, Columns.cut(span.httpMethod(), Columns.HTTP_METHOD));
+        statement.setString(i++, Columns.cut(span.httpRoute(), Columns.HTTP_ROUTE));
+        Columns.setLong(statement, i++, span.httpStatus());
+        statement.setString(i++, Columns.cut(span.dbSystem(), Columns.DB_SYSTEM));
         statement.setString(i++, statementText);
-        statement.setString(i++, cut(span.dbNamespace(), 255));
-        statement.setString(i++, cut(span.dbOperation(), 64));
-        statement.setString(i++, cut(span.dbTable(), 255));
+        statement.setString(i++, Columns.cut(span.dbNamespace(), Columns.DB_NAMESPACE));
+        statement.setString(i++, Columns.cut(span.dbOperation(), Columns.DB_OPERATION));
+        statement.setString(i++, Columns.cut(span.dbTable(), Columns.DB_TABLE));
         statement.setString(i++, statementText == null ? null
                 : Ids.queryId(span.service(), String.valueOf(span.dbSystem()), statementText));
-        statement.setString(i++, cut(errorType, 512));
-        statement.setString(i++, cut(errorMessage, 4096));
+        statement.setString(i++, Columns.cut(errorType, Columns.ERROR_TYPE));
+        statement.setString(i++, Columns.cut(errorMessage, Columns.ERROR_MESSAGE));
         statement.setString(i++, error
                 ? Ids.errorId(span.service(), String.valueOf(errorType), errorMessage, span.stacktrace())
                 : null);
-        statement.setString(i++, cut(span.scope(), 255));
-        statement.setString(i++, AttrJson.encode(span.attributes(), 65535));
-        statement.setString(i, AttrJson.encodeEvents(span.events(), 65535));
+        statement.setString(i++, Columns.cut(span.scope(), Columns.SCOPE));
+        statement.setString(i++, AttrJson.encode(span.attributes(), Columns.JSON_TEXT));
+        statement.setString(i, AttrJson.encodeEvents(span.events(), Columns.JSON_TEXT));
     }
 
     // --- logs, tingles, catalogs, services, metrics ---
@@ -427,12 +427,12 @@ public final class Writer implements AutoCloseable {
                     statement.setLong(i++, log.at());
                     statement.setString(i++, log.service());
                     statement.setInt(i++, log.severityNumber());
-                    statement.setString(i++, cut(log.severity(), 8));
-                    statement.setString(i++, cut(log.body(), 65535));
-                    statement.setString(i++, cut(log.logger(), 512));
+                    statement.setString(i++, Columns.cut(log.severity(), Columns.LOG_SEVERITY));
+                    statement.setString(i++, Columns.cut(log.body(), Columns.LOG_BODY));
+                    statement.setString(i++, Columns.cut(log.logger(), Columns.LOGGER));
                     statement.setString(i++, log.traceId());
                     statement.setString(i++, log.spanId());
-                    statement.setString(i, AttrJson.encode(log.attributes(), 65535));
+                    statement.setString(i, AttrJson.encode(log.attributes(), Columns.JSON_TEXT));
                     statement.addBatch();
                     pending++;
                 }
@@ -456,8 +456,8 @@ public final class Writer implements AutoCloseable {
                     statement.setLong(i++, tingle.at());
                     statement.setString(i++, tingle.kind());
                     statement.setString(i++, tingle.service());
-                    statement.setString(i++, cut(tingle.title(), 1024));
-                    statement.setString(i++, cut(tingle.detail(), 4096));
+                    statement.setString(i++, Columns.cut(tingle.title(), Columns.TINGLE_TITLE));
+                    statement.setString(i++, Columns.cut(tingle.detail(), Columns.TINGLE_DETAIL));
                     statement.setString(i++, tingle.traceId());
                     statement.setString(i++, tingle.spanId());
                     statement.setDouble(i, tingle.durationMs());
@@ -489,11 +489,11 @@ public final class Writer implements AutoCloseable {
             for (Batch batch : batches) {
                 for (Batch.Catalog catalog : batch.catalogs()) {
                     int i = 1;
-                    statement.setString(i++, cut(catalog.service(), 255));
-                    statement.setString(i++, cut(catalog.schemaName(), 255));
-                    statement.setString(i++, cut(catalog.table(), 255));
-                    statement.setString(i++, cut(catalog.product(), 64));
-                    statement.setString(i++, cut(catalog.indexes(), 65535));
+                    statement.setString(i++, Columns.cut(catalog.service(), Columns.SERVICE));
+                    statement.setString(i++, Columns.cut(catalog.schemaName(), Columns.CATALOG_NAME));
+                    statement.setString(i++, Columns.cut(catalog.table(), Columns.CATALOG_NAME));
+                    statement.setString(i++, Columns.cut(catalog.product(), Columns.DB_PRODUCT));
+                    statement.setString(i++, Columns.cut(catalog.indexes(), Columns.JSON_TEXT));
                     statement.setLong(i, catalog.at());
                     statement.addBatch();
                     pending++;
@@ -524,14 +524,14 @@ public final class Writer implements AutoCloseable {
         }
         for (Batch.Sighting sighting : sightings.values()) {
             Object sdkLanguage = sighting.resource().get("telemetry.sdk.language");
-            String language = sdkLanguage == null ? null : cut(String.valueOf(sdkLanguage), 64);
+            String language = sdkLanguage == null ? null : Columns.cut(String.valueOf(sdkLanguage), Columns.LANGUAGE);
             Object pid = sighting.resource().get("process.pid");
-            String resource = AttrJson.encode(sighting.resource(), 65535);
+            String resource = AttrJson.encode(sighting.resource(), Columns.JSON_TEXT);
             markRestart(connection, sighting, pid, startOf(batches, sighting));
             try (PreparedStatement update = connection.prepareStatement(
                     "UPDATE service SET language = ?, pid = ?, last_seen = ?, resource = ? WHERE name = ?")) {
                 update.setString(1, language);
-                setLong(update, 2, pid instanceof Number n ? n.longValue() : null);
+                Columns.setLong(update, 2, pid instanceof Number n ? n.longValue() : null);
                 update.setLong(3, sighting.at());
                 update.setString(4, resource);
                 update.setString(5, sighting.name());
@@ -544,7 +544,7 @@ public final class Writer implements AutoCloseable {
                             + " VALUES (?, ?, ?, ?, ?, ?)")) {
                 insert.setString(1, sighting.name());
                 insert.setString(2, language);
-                setLong(insert, 3, pid instanceof Number n ? n.longValue() : null);
+                Columns.setLong(insert, 3, pid instanceof Number n ? n.longValue() : null);
                 insert.setLong(4, sighting.at());
                 insert.setLong(5, sighting.at());
                 insert.setString(6, resource);
@@ -649,8 +649,8 @@ public final class Writer implements AutoCloseable {
                 statement.setString(1, sample.service());
                 statement.setString(2, sample.name());
                 statement.setString(3, sample.type());
-                statement.setString(4, cut(sample.unit(), 64));
-                statement.setString(5, cut(sample.description(), 1024));
+                statement.setString(4, Columns.cut(sample.unit(), Columns.METRIC_UNIT));
+                statement.setString(5, Columns.cut(sample.description(), Columns.METRIC_DESCRIPTION));
                 statement.setBoolean(6, sample.monotonic());
                 statement.setString(7, sample.temporality());
                 statement.addBatch();
@@ -673,8 +673,8 @@ public final class Writer implements AutoCloseable {
                 statement.setDouble(i++, point.value());
                 statement.setLong(i++, point.count());
                 statement.setDouble(i++, point.sum());
-                setDouble(statement, i++, point.min());
-                setDouble(statement, i++, point.max());
+                Columns.setDouble(statement, i++, point.min());
+                Columns.setDouble(statement, i++, point.max());
                 statement.setString(i, buckets(point));
                 statement.addBatch();
             }
@@ -698,11 +698,8 @@ public final class Writer implements AutoCloseable {
         }
         json.append("]}");
         // Past the column, the point keeps its count, sum, min and max and loses only its buckets.
-        return json.length() <= BUCKETS_MAX ? json.toString() : null;
+        return json.length() <= Columns.BUCKETS ? json.toString() : null;
     }
-
-    /** The width of {@code metric_point.buckets}. */
-    static final int BUCKETS_MAX = 8192;
 
     /** What identifies a sample's series: its cache key, and the hash and attributes of its row. */
     private record Series(String key, String hash, String attributes) {
@@ -781,30 +778,5 @@ public final class Writer implements AutoCloseable {
             deleteAll.run();
             seriesIds.clear();
         }
-    }
-
-    static void setLong(PreparedStatement statement, int index, @Nullable Long value)
-            throws SQLException {
-        if (value == null) {
-            statement.setNull(index, java.sql.Types.BIGINT);
-        } else {
-            statement.setLong(index, value);
-        }
-    }
-
-    /** A double, or NULL for NaN, which a histogram's absent min or max is. */
-    static void setDouble(PreparedStatement statement, int index, double value) throws SQLException {
-        if (Double.isNaN(value)) {
-            statement.setNull(index, java.sql.Types.DOUBLE);
-        } else {
-            statement.setDouble(index, value);
-        }
-    }
-
-    static @Nullable String cut(@Nullable String value, int max) {
-        if (value == null) {
-            return null;
-        }
-        return value.length() <= max ? value : value.substring(0, max);
     }
 }

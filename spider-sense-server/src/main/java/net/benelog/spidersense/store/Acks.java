@@ -58,8 +58,6 @@ public final class Acks {
      */
     public static final int MAX_ID = 64;
 
-    private static final int MAX_NOTE = 1024;
-
     private final Sql sql;
     private final LongSupplier clock;
 
@@ -96,7 +94,7 @@ public final class Acks {
     private Ack decide(@Nullable String findingId, @Nullable String note, boolean resolved) {
         String id = checked(findingId);
         long at = clock.getAsLong();
-        String cutNote = note != null && note.length() > MAX_NOTE ? note.substring(0, MAX_NOTE) : note;
+        String cutNote = Columns.cut(note, Columns.ACK_NOTE);
         sql.update("MERGE INTO ack (finding_id, at_ms, note, resolved) KEY(finding_id) VALUES (?, ?, ?, ?)",
                 Arrays.asList(id, at, cutNote, resolved));
         return new Ack(id, at, cutNote, resolved);

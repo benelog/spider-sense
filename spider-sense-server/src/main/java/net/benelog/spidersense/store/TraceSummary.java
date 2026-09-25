@@ -23,12 +23,6 @@ record TraceSummary(String traceId, long startMs, long endMs, long durationNs, S
         String rootName, String rootService, String rootKind, String services, int spanCount,
         int errorCount, int dbCount, @Nullable Long httpStatus, boolean slow, boolean error) {
 
-    /** The width of {@code trace.root_name}. */
-    static final int ROOT_NAME_MAX = 1024;
-
-    /** The width of {@code trace.services}. */
-    static final int SERVICES_MAX = 4096;
-
     /** One span row of a trace, the columns its summary is rebuilt from. */
     record Span(String traceId, String spanId, @Nullable String parentSpanId, String service, String name,
             @Nullable String endpoint, String kind, long startMs, long startNs, long durationNs,
@@ -88,12 +82,12 @@ record TraceSummary(String traceId, long startMs, long endMs, long durationNs, S
         long durationNs = Math.max(0, endNs - startNs);
         double durationMs = durationNs / 1_000_000.0;
         String rootName = root.endpoint() != null ? root.endpoint() : root.name();
-        if (rootName.length() > ROOT_NAME_MAX) {
-            rootName = rootName.substring(0, ROOT_NAME_MAX);
+        if (rootName.length() > Columns.TRACE_ROOT_NAME) {
+            rootName = rootName.substring(0, Columns.TRACE_ROOT_NAME);
         }
-        return new TraceSummary(root.traceId(), startMs, endMs, durationNs, root.spanId(),
-                rootName, root.service(), root.kind(),
-                AttrJson.encodeStrings(List.copyOf(services), SERVICES_MAX), spans.size(), errorCount, dbCount,
-                root.httpStatus(), Tingles.isSlowRequest(durationMs, slowRequestMs), errorCount > 0);
+        return new TraceSummary(root.traceId(), startMs, endMs, durationNs, root.spanId(), rootName,
+                root.service(), root.kind(), AttrJson.encodeStrings(List.copyOf(services), Columns.TRACE_SERVICES),
+                spans.size(), errorCount, dbCount, root.httpStatus(),
+                Tingles.isSlowRequest(durationMs, slowRequestMs), errorCount > 0);
     }
 }

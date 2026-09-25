@@ -46,8 +46,6 @@ public final class Marks {
     static final String NOT_NEWEST_START = "NOT (o.name = '" + START + "' AND o.at_ms = (SELECT MAX(m.at_ms)"
             + " FROM mark m WHERE m.name = '" + START + "' AND m.service IS NOT DISTINCT FROM o.service))";
 
-    private static final int MAX_NOTE = 1024;
-
     private final Sql sql;
     private final LongSupplier clock;
 
@@ -74,7 +72,7 @@ public final class Marks {
                     "A mark name is 1 to 64 characters of [A-Za-z0-9._-]: " + name);
         }
         long when = at == null ? clock.getAsLong() : at;
-        String cutNote = note != null && note.length() > MAX_NOTE ? note.substring(0, MAX_NOTE) : note;
+        String cutNote = Columns.cut(note, Columns.MARK_NOTE);
         long id = sql.with(connection -> {
             try (PreparedStatement statement = connection.prepareStatement(
                     "INSERT INTO mark (at_ms, name, service, note) VALUES (?, ?, ?, ?)",

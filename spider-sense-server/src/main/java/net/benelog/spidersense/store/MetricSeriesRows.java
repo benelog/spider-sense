@@ -47,7 +47,7 @@ final class MetricSeriesRows {
             insert.setString(1, service);
             insert.setString(2, name);
             insert.setString(3, hash);
-            insert.setString(4, Writer.cut(attributes, 4096));
+            insert.setString(4, Columns.cut(attributes, Columns.SERIES_ATTRIBUTES));
             insert.executeUpdate();
             try (ResultSet keys = insert.getGeneratedKeys()) {
                 if (keys.next()) {

@@ -10,6 +10,9 @@ import org.jspecify.annotations.Nullable;
  * future version that changes a table bumps {@link #VERSION} and drops what it
  * finds: the contents are a cache of a development session, not a record worth
  * migrating.
+ *
+ * <p>The widths of the text columns are named in {@link Columns}, which every
+ * writing path cuts its values to; a width changed here changes there too.
  */
 public final class Schema {
 

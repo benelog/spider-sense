@@ -119,7 +119,7 @@ class TraceSummaryTest {
 
         TraceSummary trace = TraceSummary.of(spans, 500);
 
-        assertThat(trace.services().length()).isLessThanOrEqualTo(TraceSummary.SERVICES_MAX);
+        assertThat(trace.services().length()).isLessThanOrEqualTo(Columns.TRACE_SERVICES);
         List<String> services = AttrJson.decodeStrings(trace.services());
         assertThat(services).hasSize(20).doesNotHaveDuplicates();
         assertThat(services.get(0)).startsWith("000");

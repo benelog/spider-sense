@@ -237,32 +237,32 @@ public final class Importer {
         statement.setString(i++, string(span, "spanId"));
         statement.setString(i++, string(span, "parentSpanId"));
         statement.setString(i++, string(span, "service"));
-        statement.setString(i++, Writer.cut(string(span, "name"), 1024));
+        statement.setString(i++, Columns.cut(string(span, "name"), Columns.SPAN_NAME));
         statement.setString(i++, string(span, "kind"));
         statement.setLong(i++, longOr(span, "startMs", 0));
         statement.setLong(i++, longOr(span, "startNs", 0));
         statement.setLong(i++, longOr(span, "durationNs", 0));
         statement.setString(i++, string(span, "status"));
-        statement.setString(i++, Writer.cut(string(span, "statusMessage"), 4096));
+        statement.setString(i++, Columns.cut(string(span, "statusMessage"), Columns.STATUS_MESSAGE));
         statement.setBoolean(i++, flag(span, "entry"));
         statement.setBoolean(i++, flag(span, "error"));
         statement.setBoolean(i++, flag(span, "slow"));
         statement.setString(i++, string(span, "category"));
-        statement.setString(i++, Writer.cut(string(span, "endpoint"), 1024));
+        statement.setString(i++, Columns.cut(string(span, "endpoint"), Columns.ENDPOINT));
         statement.setString(i++, string(span, "endpointId"));
-        statement.setString(i++, Writer.cut(string(span, "httpMethod"), 16));
-        statement.setString(i++, Writer.cut(string(span, "httpRoute"), 1024));
-        Writer.setLong(statement, i++, number(span, "httpStatus"));
-        statement.setString(i++, Writer.cut(string(span, "dbSystem"), 64));
+        statement.setString(i++, Columns.cut(string(span, "httpMethod"), Columns.HTTP_METHOD));
+        statement.setString(i++, Columns.cut(string(span, "httpRoute"), Columns.HTTP_ROUTE));
+        Columns.setLong(statement, i++, number(span, "httpStatus"));
+        statement.setString(i++, Columns.cut(string(span, "dbSystem"), Columns.DB_SYSTEM));
         statement.setString(i++, string(span, "dbStatement"));
-        statement.setString(i++, Writer.cut(string(span, "dbNamespace"), 255));
-        statement.setString(i++, Writer.cut(string(span, "dbOperation"), 64));
-        statement.setString(i++, Writer.cut(string(span, "dbTable"), 255));
+        statement.setString(i++, Columns.cut(string(span, "dbNamespace"), Columns.DB_NAMESPACE));
+        statement.setString(i++, Columns.cut(string(span, "dbOperation"), Columns.DB_OPERATION));
+        statement.setString(i++, Columns.cut(string(span, "dbTable"), Columns.DB_TABLE));
         statement.setString(i++, string(span, "queryId"));
-        statement.setString(i++, Writer.cut(string(span, "errorType"), 512));
-        statement.setString(i++, Writer.cut(string(span, "errorMessage"), 4096));
+        statement.setString(i++, Columns.cut(string(span, "errorType"), Columns.ERROR_TYPE));
+        statement.setString(i++, Columns.cut(string(span, "errorMessage"), Columns.ERROR_MESSAGE));
         statement.setString(i++, string(span, "errorId"));
-        statement.setString(i++, Writer.cut(string(span, "scope"), 255));
+        statement.setString(i++, Columns.cut(string(span, "scope"), Columns.SCOPE));
         statement.setString(i++, nested(span, "attributes", AttrJson.EMPTY_OBJECT));
         statement.setString(i, nested(span, "events", AttrJson.EMPTY_ARRAY));
     }
@@ -296,8 +296,9 @@ public final class Importer {
                     continue;
                 }
                 List<@Nullable Object> row = Arrays.asList(string(log, "service"), longOr(log, "atMs", 0),
-                        longOr(log, "severityNumber", 0), Writer.cut(or(string(log, "body"), ""), 65535),
-                        Writer.cut(string(log, "logger"), 512), traceId, string(log, "spanId"));
+                        longOr(log, "severityNumber", 0),
+                        Columns.cut(or(string(log, "body"), ""), Columns.LOG_BODY),
+                        Columns.cut(string(log, "logger"), Columns.LOGGER), traceId, string(log, "spanId"));
                 if (stored.contains(row)) {
                     continue;
                 }
@@ -305,9 +306,9 @@ public final class Importer {
                 statement.setLong(i++, longOr(log, "atMs", 0));
                 statement.setString(i++, string(log, "service"));
                 statement.setInt(i++, (int) longOr(log, "severityNumber", 0));
-                statement.setString(i++, Writer.cut(string(log, "severity"), 8));
-                statement.setString(i++, Writer.cut(or(string(log, "body"), ""), 65535));
-                statement.setString(i++, Writer.cut(string(log, "logger"), 512));
+                statement.setString(i++, Columns.cut(string(log, "severity"), Columns.LOG_SEVERITY));
+                statement.setString(i++, Columns.cut(or(string(log, "body"), ""), Columns.LOG_BODY));
+                statement.setString(i++, Columns.cut(string(log, "logger"), Columns.LOGGER));
                 statement.setString(i++, traceId);
                 statement.setString(i++, string(log, "spanId"));
                 statement.setString(i, nested(log, "attributes", AttrJson.EMPTY_OBJECT));
@@ -341,8 +342,10 @@ public final class Importer {
                     continue;
                 }
                 List<@Nullable Object> row = Arrays.asList(longOr(tingle, "atMs", 0), string(tingle, "kind"),
-                        string(tingle, "service"), Writer.cut(or(string(tingle, "title"), ""), 1024),
-                        Writer.cut(or(string(tingle, "detail"), ""), 4096), traceId, string(tingle, "spanId"));
+                        string(tingle, "service"),
+                        Columns.cut(or(string(tingle, "title"), ""), Columns.TINGLE_TITLE),
+                        Columns.cut(or(string(tingle, "detail"), ""), Columns.TINGLE_DETAIL), traceId,
+                        string(tingle, "spanId"));
                 if (stored.contains(row)) {
                     continue;
                 }
@@ -350,8 +353,8 @@ public final class Importer {
                 statement.setLong(i++, longOr(tingle, "atMs", 0));
                 statement.setString(i++, string(tingle, "kind"));
                 statement.setString(i++, string(tingle, "service"));
-                statement.setString(i++, Writer.cut(or(string(tingle, "title"), ""), 1024));
-                statement.setString(i++, Writer.cut(or(string(tingle, "detail"), ""), 4096));
+                statement.setString(i++, Columns.cut(or(string(tingle, "title"), ""), Columns.TINGLE_TITLE));
+                statement.setString(i++, Columns.cut(or(string(tingle, "detail"), ""), Columns.TINGLE_DETAIL));
                 statement.setString(i++, traceId);
                 statement.setString(i++, string(tingle, "spanId"));
                 statement.setDouble(i, tingle.optDouble("durationMs", 0));
@@ -436,7 +439,7 @@ public final class Importer {
                 insert.setLong(1, at);
                 insert.setString(2, name);
                 insert.setString(3, string(mark, "service"));
-                insert.setString(4, Writer.cut(string(mark, "note"), 1024));
+                insert.setString(4, Columns.cut(string(mark, "note"), Columns.MARK_NOTE));
                 insert.executeUpdate();
             }
             count++;
@@ -464,11 +467,11 @@ public final class Importer {
                     continue;
                 }
                 int i = 1;
-                statement.setString(i++, Writer.cut(service, 255));
-                statement.setString(i++, Writer.cut(or(string(table, "schemaName"), ""), 255));
-                statement.setString(i++, Writer.cut(name, 255));
-                statement.setString(i++, Writer.cut(string(table, "product"), 64));
-                statement.setString(i++, Writer.cut(indexes(table), 65535));
+                statement.setString(i++, Columns.cut(service, Columns.SERVICE));
+                statement.setString(i++, Columns.cut(or(string(table, "schemaName"), ""), Columns.CATALOG_NAME));
+                statement.setString(i++, Columns.cut(name, Columns.CATALOG_NAME));
+                statement.setString(i++, Columns.cut(string(table, "product"), Columns.DB_PRODUCT));
+                statement.setString(i++, Columns.cut(indexes(table), Columns.JSON_TEXT));
                 statement.setLong(i, longOr(table, "seenMs", 0));
                 statement.addBatch();
                 count++;
@@ -528,8 +531,8 @@ public final class Importer {
                     "INSERT INTO service (name, language, pid, first_seen, last_seen, resource)"
                             + " VALUES (?, ?, ?, ?, ?, ?)")) {
                 insert.setString(1, name);
-                insert.setString(2, Writer.cut(string(service, "language"), 64));
-                Writer.setLong(insert, 3, number(service, "pid"));
+                insert.setString(2, Columns.cut(string(service, "language"), Columns.LANGUAGE));
+                Columns.setLong(insert, 3, number(service, "pid"));
                 insert.setLong(4, firstSeen);
                 insert.setLong(5, lastSeen);
                 insert.setString(6, resource);
@@ -577,8 +580,8 @@ public final class Importer {
                 insert.setString(1, service);
                 insert.setString(2, name);
                 insert.setString(3, or(string(metric, "type"), "gauge"));
-                insert.setString(4, Writer.cut(string(metric, "unit"), 64));
-                insert.setString(5, Writer.cut(string(metric, "description"), 1024));
+                insert.setString(4, Columns.cut(string(metric, "unit"), Columns.METRIC_UNIT));
+                insert.setString(5, Columns.cut(string(metric, "description"), Columns.METRIC_DESCRIPTION));
                 insert.setBoolean(6, flag(metric, "monotonic"));
                 insert.setString(7, string(metric, "temporality"));
                 insert.executeUpdate();
@@ -624,8 +627,8 @@ public final class Importer {
                 statement.setDouble(i++, point.optDouble("value", 0));
                 statement.setLong(i++, longOr(point, "count", 0));
                 statement.setDouble(i++, point.optDouble("sum", 0));
-                Writer.setDouble(statement, i++, point.optDouble("min", Double.NaN));
-                Writer.setDouble(statement, i++, point.optDouble("max", Double.NaN));
+                Columns.setDouble(statement, i++, point.optDouble("min", Double.NaN));
+                Columns.setDouble(statement, i++, point.optDouble("max", Double.NaN));
                 statement.setString(i, buckets(point));
                 statement.addBatch();
                 count++;
@@ -649,7 +652,7 @@ public final class Importer {
             return null;
         }
         String json = object.toJson();
-        return json.length() <= Writer.BUCKETS_MAX ? json : null;
+        return json.length() <= Columns.BUCKETS ? json : null;
     }
 
     // --- reading the document -------------------------------------------------------
