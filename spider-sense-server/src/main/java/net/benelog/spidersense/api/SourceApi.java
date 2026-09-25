@@ -34,10 +34,7 @@ public final class SourceApi {
         if (frame == null || frame.isBlank()) {
             throw new HttpException(HttpStatus.BAD_REQUEST, "source needs a frame");
         }
-        SourceRoots.Snippet snippet = roots.read(frame);
-        if (snippet == null) {
-            throw new HttpException(HttpStatus.NOT_FOUND, "No source for frame: " + frame);
-        }
+        SourceRoots.Snippet snippet = Params.found(roots.read(frame), "No source for frame: " + frame);
         return WebResponse.json(Json.obj()
                 .put("frame", frame.trim())
                 .put("file", snippet.file().toString())

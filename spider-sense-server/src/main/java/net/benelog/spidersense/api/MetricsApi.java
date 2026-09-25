@@ -47,7 +47,7 @@ public final class MetricsApi {
     public WebResponse series(WebRequest req) {
         String name = req.queryParam("name");
         Window window = params.window(req);
-        boolean rate = req.queryParam("rate", Boolean::parseBoolean, false);
+        boolean rate = Params.flag(req, "rate");
         List<MetricQueries.SeriesData> series = metrics.series(name, Params.service(req),
                 Params.attributeFilters(req), window);
 

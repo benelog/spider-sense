@@ -8,6 +8,7 @@ import java.util.Map;
 import net.benelog.spidersense.ingest.ErrorBody;
 import net.benelog.spidersense.query.Selectors;
 import net.benelog.spidersense.query.Window;
+import net.benelog.spidersilk.HttpException;
 import net.benelog.spidersilk.HttpStatus;
 import net.benelog.spidersilk.WebRequest;
 import net.benelog.spidersilk.WebResponse;
@@ -74,7 +75,20 @@ final class Params {
 
     /** {@code full=true} keeps statements whole and expands collapsed spans. */
     static boolean full(WebRequest req) {
-        return req.queryParam("full", Boolean::parseBoolean, false);
+        return flag(req, "full");
+    }
+
+    /** A boolean parameter, false unless it says {@code true}. */
+    static boolean flag(WebRequest req, String name) {
+        return req.queryParam(name, Boolean::parseBoolean, false);
+    }
+
+    /** The value, or the {@code 404} that says what was not found. */
+    static <T> T found(@Nullable T value, String missing) {
+        if (value == null) {
+            throw new HttpException(HttpStatus.NOT_FOUND, missing);
+        }
+        return value;
     }
 
     /** One answer, rendered the way this request asked for it and no other way. */

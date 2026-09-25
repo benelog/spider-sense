@@ -31,6 +31,11 @@ public final class AttrJson {
     private AttrJson() {
     }
 
+    /** An optional whole-number member: absent and JSON null both read as null. */
+    public static @Nullable Long optionalLong(Json.JsonObject object, String key) {
+        return object.has(key) && !object.get(key).isNull() ? object.getLong(key) : null;
+    }
+
     /**
      * An optional string member: absent, JSON null and a missing key all read as null.
      *

@@ -80,10 +80,8 @@ public final class TrafficApi {
     public WebResponse service(WebRequest req) {
         String name = req.pathParam("name");
         Window window = params.window(req);
-        Stats.ServiceSummary summary = queries.service(name, window);
-        if (summary == null) {
-            throw new HttpException(HttpStatus.NOT_FOUND, "No such service: " + name);
-        }
+        Stats.ServiceSummary summary = Params.found(queries.service(name, window),
+                "No such service: " + name);
         Json.JsonObject resource = Json.obj();
         queries.resource(name).forEach(resource::put);
         return WebResponse.json(Json.obj()
@@ -197,11 +195,8 @@ public final class TrafficApi {
                 throw new HttpException(HttpStatus.NOT_FOUND, "No such trace: " + e.traceId());
             }
         }
-        Reports.Report report = reports.trace(traceId, Params.full(req));
-        if (report == null) {
-            throw new HttpException(HttpStatus.NOT_FOUND, "No such trace: " + traceId);
-        }
-        return Params.answer(req, report);
+        return Params.answer(req, Params.found(reports.trace(traceId, Params.full(req)),
+                "No such trace: " + traceId));
     }
 
     public WebResponse scatter(WebRequest req) {
@@ -238,10 +233,8 @@ public final class TrafficApi {
             return textOr404(reports.queryText(window, Params.service(req), queryId, Params.full(req)),
                     "No such query in this window: " + queryId);
         }
-        Stats.QueryStats query = reports.queryStats(window, queryId);
-        if (query == null) {
-            throw new HttpException(HttpStatus.NOT_FOUND, "No such query in this window: " + queryId);
-        }
+        Stats.QueryStats query = Params.found(reports.queryStats(window, queryId),
+                "No such query in this window: " + queryId);
         Stats.Buckets buckets = queries.queryBuckets(window, queryId);
         return WebResponse.json(Json.obj()
                 .put("query", Codecs.query(query))
@@ -265,10 +258,8 @@ public final class TrafficApi {
             return textOr404(reports.errorText(window, Params.service(req), errorId, Params.full(req)),
                     "No such error in this window: " + errorId);
         }
-        Stats.ErrorGroup group = reports.errorGroup(window, errorId);
-        if (group == null) {
-            throw new HttpException(HttpStatus.NOT_FOUND, "No such error in this window: " + errorId);
-        }
+        Stats.ErrorGroup group = Params.found(reports.errorGroup(window, errorId),
+                "No such error in this window: " + errorId);
         Stats.Buckets buckets = queries.errorBuckets(window, errorId);
         // The sample's application frames, the ones a finding's code would carry, so
         // the page can show their source without a framework list of its own (pages.adoc#code-frames).
@@ -292,10 +283,7 @@ public final class TrafficApi {
      * the JSON form answers when the group is not in the window.
      */
     private static WebResponse textOr404(@Nullable String text, String missing) {
-        if (text == null) {
-            throw new HttpException(HttpStatus.NOT_FOUND, missing);
-        }
-        return WebResponse.text(text).contentType(Text.CONTENT_TYPE);
+        return WebResponse.text(Params.found(text, missing)).contentType(Text.CONTENT_TYPE);
     }
 
     public WebResponse logs(WebRequest req) {

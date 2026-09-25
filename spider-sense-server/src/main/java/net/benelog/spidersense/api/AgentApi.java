@@ -2,6 +2,7 @@ package net.benelog.spidersense.api;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.function.Supplier;
 
 import net.benelog.spidersense.ingest.ErrorBody;
 import net.benelog.spidersense.query.Check;
@@ -76,7 +77,7 @@ public final class AgentApi {
         Window window = params.window(req);
         return Params.answer(req, reports.findings(window, Params.service(req), new Reports.FindingsAsk(
                 Params.limit(req, Limits.FINDINGS, Limits.FINDINGS_MAX), Params.full(req),
-                req.queryParam("hideAcked", Boolean::parseBoolean, false))));
+                Params.flag(req, "hideAcked"))));
     }
 
     /**
@@ -85,12 +86,8 @@ public final class AgentApi {
      */
     public WebResponse finding(WebRequest req) {
         String id = req.pathParam("id");
-        Reports.Report report = reports.finding(params.window(req), Params.service(req), id,
-                Params.full(req));
-        if (report == null) {
-            throw new HttpException(HttpStatus.NOT_FOUND, "No such finding in this window: " + id);
-        }
-        return Params.answer(req, report);
+        return Params.answer(req, Params.found(reports.finding(params.window(req), Params.service(req), id,
+                Params.full(req)), "No such finding in this window: " + id));
     }
 
     /**
@@ -102,25 +99,14 @@ public final class AgentApi {
      */
     public WebResponse ack(WebRequest req) {
         String note = note(req);
-        Acks.Ack ack;
-        try {
-            ack = reports.ackStore().ack(req.pathParam("id"), note);
-        } catch (IllegalArgumentException e) {
-            throw badRequest(e);
-        }
+        Acks.Ack ack = withStoreRules(() -> reports.ackStore().ack(req.pathParam("id"), note));
         return Params.answer(req, reports.ack(ack)).status(HttpStatus.CREATED);
     }
 
     /** {@code 204} when there was one to withdraw, {@code 404} when there was not. */
     public WebResponse unack(WebRequest req) {
         String id = req.pathParam("id");
-        boolean removed;
-        try {
-            removed = reports.ackStore().unack(id);
-        } catch (IllegalArgumentException e) {
-            throw badRequest(e);
-        }
-        if (!removed) {
+        if (!withStoreRules(() -> reports.ackStore().unack(id))) {
             throw new HttpException(HttpStatus.NOT_FOUND, "No such acknowledgement: " + id);
         }
         return WebResponse.noContent();
@@ -132,25 +118,14 @@ public final class AgentApi {
      */
     public WebResponse resolve(WebRequest req) {
         String note = note(req);
-        Acks.Ack resolution;
-        try {
-            resolution = reports.ackStore().resolve(req.pathParam("id"), note);
-        } catch (IllegalArgumentException e) {
-            throw badRequest(e);
-        }
+        Acks.Ack resolution = withStoreRules(() -> reports.ackStore().resolve(req.pathParam("id"), note));
         return Params.answer(req, reports.resolve(resolution)).status(HttpStatus.CREATED);
     }
 
     /** {@code 204} when there was one to withdraw, {@code 404} when there was not. */
     public WebResponse unresolve(WebRequest req) {
         String id = req.pathParam("id");
-        boolean removed;
-        try {
-            removed = reports.ackStore().unresolve(id);
-        } catch (IllegalArgumentException e) {
-            throw badRequest(e);
-        }
-        if (!removed) {
+        if (!withStoreRules(() -> reports.ackStore().unresolve(id))) {
             throw new HttpException(HttpStatus.NOT_FOUND, "No such resolution: " + id);
         }
         return WebResponse.noContent();
@@ -185,12 +160,8 @@ public final class AgentApi {
 
     public WebResponse mark(WebRequest req) {
         MarkBody body = req.bodyJson(MarkBody::read);
-        Marks.Mark mark;
-        try {
-            mark = reports.markStore().create(body.name(), body.service(), body.note(), body.at());
-        } catch (IllegalArgumentException e) {
-            throw badRequest(e);
-        }
+        Marks.Mark mark = withStoreRules(
+                () -> reports.markStore().create(body.name(), body.service(), body.note(), body.at()));
         return Params.answer(req, reports.mark(mark)).status(HttpStatus.CREATED);
     }
 
@@ -207,7 +178,7 @@ public final class AgentApi {
             return new MarkBody(AttrJson.optionalString(body, "name"),
                     AttrJson.optionalString(body, "note"),
                     AttrJson.optionalString(body, "service"),
-                    body.has("at") && !body.get("at").isNull() ? body.getLong("at") : null);
+                    AttrJson.optionalLong(body, "at"));
         }
     }
 
@@ -260,10 +231,9 @@ public final class AgentApi {
 
         static SqlBody read(Json.JsonValue json) {
             Json.JsonObject body = json.asObject();
-            long limit = body.has("limit") && !body.get("limit").isNull()
-                    ? body.getLong("limit")
-                    : ReadOnlyQuery.LIMIT;
-            return new SqlBody(AttrJson.optionalString(body, "sql"), limit);
+            Long limit = AttrJson.optionalLong(body, "limit");
+            return new SqlBody(AttrJson.optionalString(body, "sql"),
+                    limit == null ? ReadOnlyQuery.LIMIT : limit);
         }
     }
 
@@ -279,6 +249,18 @@ public final class AgentApi {
             throw new NumberFormatException("not a finite decimal number: " + value);
         }
         return threshold;
+    }
+
+    /**
+     * A write to the store, with the {@code IllegalArgumentException} it throws for a value it
+     * refuses (a name too long, a note too long) answered as the caller's {@code 400}.
+     */
+    private static <T> T withStoreRules(Supplier<T> write) {
+        try {
+            return write.get();
+        } catch (IllegalArgumentException e) {
+            throw badRequest(e);
+        }
     }
 
     /** The rejection an {@code IllegalArgumentException} from the store means. */
