@@ -344,6 +344,9 @@ It runs the same `Queries` without a writer or a sweeper.
 Its open refuses a missing file, and refuses another `schema_version` instead of dropping the tables, since the database it joined may belong to an older server that is still writing to it.
 The commands that write are `mark`, `ack` and `unack`, `resolve` and `unresolve`, and `import`, and they write through the same connection with plain statements.
 `import` alone inserts spans, and it does so through the `Writer`'s own insert and `trace` merge, so an imported trace is stored exactly as a received one (xref:cli.adoc#export-import[Export and import]).
+An import is one transaction, and a written row stays locked until it commits.
+It therefore writes the rows a running writer also writes, the `metric`, `metric_series` and `service` rows, last, just before the commit, and updates a `service` row only when it widens the row's first or last sighting.
+A running application's flushes then never wait out H2's lock timeout behind an import of its own earlier session.
 
 [#retention]
 == Retention

@@ -103,14 +103,20 @@ public final class Importer {
         }
     }
 
+    /**
+     * The sections in the order that holds the rows a running writer also writes
+     * for the shortest time.
+     *
+     * <p>A write locks its row until the commit, and the live writer of a service
+     * this document also carries updates that service's row, its metric rows and its
+     * series rows on every flush. Written first, they would stay locked through the
+     * spans and the trace recompute, seconds to minutes, and every flush of that
+     * service would wait out H2's lock timeout and be lost. So the rows only this
+     * import touches come first, and the shared ones last, just before the commit.
+     */
     private Result write(Connection connection, Json.JsonObject document) throws SQLException {
         Json.JsonArray spans = array(document, "spans");
         Set<String> present = alreadyStored(connection, traceIds(spans));
-
-        mergeServices(connection, array(document, "services"));
-        insertMetrics(connection, array(document, "metrics"));
-        Map<Long, Long> series = mapSeries(connection, array(document, "metricSeries"));
-        long points = mergePoints(connection, array(document, "metricPoints"), series);
 
         Imported imported = insertSpans(connection, spans, present);
         writer.mergeTraces(connection, imported.traces());
@@ -118,6 +124,11 @@ public final class Importer {
         long tingles = insertTingles(connection, array(document, "tingles"), present);
         long marks = insertMarks(connection, array(document, "marks"));
         long tables = mergeCatalog(connection, array(document, "dbTables"));
+
+        insertMetrics(connection, array(document, "metrics"));
+        Map<Long, Long> series = mapSeries(connection, array(document, "metricSeries"));
+        long points = mergePoints(connection, array(document, "metricPoints"), series);
+        mergeServices(connection, array(document, "services"));
 
         long from = imported.count() > 0 ? imported.from() : windowFrom(document);
         long to = imported.count() > 0 ? imported.to() : windowTo(document);
@@ -481,15 +492,21 @@ public final class Importer {
             // A stored row keeps its pid, language and resource: they describe the
             // process running here, and a pid the writer does not recognise would
             // make its next flush of that service insert a start mark at now.
-            try (PreparedStatement update = connection.prepareStatement(
-                    "UPDATE service SET first_seen = LEAST(first_seen, ?),"
-                            + " last_seen = GREATEST(last_seen, ?) WHERE name = ?")) {
-                update.setLong(1, firstSeen);
-                update.setLong(2, lastSeen);
-                update.setString(3, name);
-                if (update.executeUpdate() > 0) {
-                    continue;
+            long[] stored = sighting(connection, name);
+            if (stored != null) {
+                // Updated only when it widens: an update locks the row the running
+                // writer updates on every flush of that service, until this commits.
+                if (firstSeen < stored[0] || lastSeen > stored[1]) {
+                    try (PreparedStatement update = connection.prepareStatement(
+                            "UPDATE service SET first_seen = LEAST(first_seen, ?),"
+                                    + " last_seen = GREATEST(last_seen, ?) WHERE name = ?")) {
+                        update.setLong(1, firstSeen);
+                        update.setLong(2, lastSeen);
+                        update.setString(3, name);
+                        update.executeUpdate();
+                    }
                 }
+                continue;
             }
             try (PreparedStatement insert = connection.prepareStatement(
                     "INSERT INTO service (name, language, pid, first_seen, last_seen, resource)"
@@ -501,6 +518,17 @@ public final class Importer {
                 insert.setLong(5, lastSeen);
                 insert.setString(6, resource);
                 insert.executeUpdate();
+            }
+        }
+    }
+
+    /** The stored {@code first_seen} and {@code last_seen} of a service, or null when it has no row. */
+    private static long @Nullable [] sighting(Connection connection, String name) throws SQLException {
+        try (PreparedStatement select = connection.prepareStatement(
+                "SELECT first_seen, last_seen FROM service WHERE name = ?")) {
+            select.setString(1, name);
+            try (ResultSet rs = select.executeQuery()) {
+                return rs.next() ? new long[]{rs.getLong(1), rs.getLong(2)} : null;
             }
         }
     }
