@@ -22,6 +22,8 @@ export function render(root, ctx) {
   let profileSort = ctx.query.sort === 'elapsed' || ctx.query.sort === 'self' ? ctx.query.sort : 'start';
   let selectedSpan = ctx.query.span || null;
   const collapsed = new Set();
+  const latest = api.requestSequence();
+  let shape = '';
 
   const head = h('div.trace-head');
   const headPanel = panel({}, head);
@@ -332,29 +334,57 @@ export function render(root, ctx) {
     ], { rows: logs, rowKey: (l) => l.id, empty: 'No log carries this trace id.' }));
   }
 
-  async function load() {
+  /** What a late export changes: the spans, the extent, the services and the logs. */
+  function shapeOf(d) {
+    return [(d.spans || []).length, d.start, d.durationMs, (d.services || []).join(','), (d.logs || []).length].join('|');
+  }
+
+  /**
+   * `live` is a Live refresh: a trace's spans arrive in several exports and from several
+   * services, so one opened early is incomplete. The refetch repaints only when the trace
+   * changed, keeping the collapsed spans, the selected span, its open drawer and the focus.
+   */
+  async function load(live = false) {
+    const current = latest();
     try {
-      data = await api.trace(traceId);
-      if (destroyed) return;
+      const next = await api.trace(traceId);
+      if (destroyed || !current()) return;
+      const nextShape = shapeOf(next);
+      if (live && built && nextShape === shape) return;
+      shape = nextShape;
+      data = next;
+      const focused = live && document.activeElement && bodyBox.contains(document.activeElement)
+        ? document.activeElement.closest('[data-key]') : null;
       build();
       ctx.setTitle(((data.spans || [])[0] || {}).name || 'Trace');
       paintHead();
       paintBody();
       paintLogs();
+      if (focused) {
+        const again = bodyBox.querySelector('[data-key="' + CSS.escape(focused.dataset.key) + '"]');
+        if (again) again.focus();
+      }
       if (selectedSpan) {
         const span = (data.spans || []).find((s) => s.spanId === selectedSpan);
-        if (span) openSpan(span);
+        if (span && live) {
+          for (const row of bodyBox.querySelectorAll('.wf-row, tbody tr')) row.classList.toggle('selected', row.dataset.key === span.spanId);
+          const open = document.querySelector('.drawer .drawer-body');
+          if (open) fill(open, spanBody(span));
+        } else if (span) {
+          openSpan(span);
+        }
       }
     } catch (e) {
-      if (destroyed) return;
+      if (destroyed || !current()) return;
+      if (live && built) return;   // the trace on screen stays; the next tick asks again
       built = false;
-      fill(page, errorBox(e, load));
+      fill(page, errorBox(e, () => load()));
     }
   }
 
   load();
   return {
-    refresh: () => { /* a trace is immutable once it is complete */ },
+    refresh: () => { if (api.state.live) load(true); },
     onEscape: () => closeDrawer(),
     destroy: () => { destroyed = true; closeDrawer(true); },
   };

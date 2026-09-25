@@ -284,6 +284,8 @@ A filter or a window that matches nothing leaves the table, with one row that sa
 
 A trace opens with its root name, the trace id in monospace (click it to copy), the start time, the total duration, the services, the span count and the error count.
 The buttons are the *Waterfall* / *Profile* toggle, *Export* (`/api/export?traceId=`), and a log count that jumps to the log records.
+With Live on the page refetches the trace and repaints it when spans or logs arrived since, because a trace's spans come in several exports and from several services, so a trace opened from a fresh tingle completes on screen.
+The collapsed spans, the selected span and its drawer stay.
 
 [#waterfall]
 === Waterfall
