@@ -85,20 +85,7 @@ public final class Sweeper implements AutoCloseable {
      * @return the number of series deleted
      */
     static int deleteOrphanSeries(Sql sql) {
-        return sql.with(connection -> {
-            boolean autoCommit = connection.getAutoCommit();
-            connection.setAutoCommit(false);
-            try {
-                int deleted = deleteOrphanSeries(connection);
-                connection.commit();
-                return deleted;
-            } catch (SQLException | RuntimeException e) {
-                connection.rollback();
-                throw e;
-            } finally {
-                connection.setAutoCommit(autoCommit);
-            }
-        }, "the orphan series sweep");
+        return sql.transaction(connection -> deleteOrphanSeries(connection), "the orphan series sweep");
     }
 
     /**

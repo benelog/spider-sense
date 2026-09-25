@@ -386,9 +386,7 @@ public final class Database implements AutoCloseable {
      */
     public void deleteAll() {
         // Work always answers with something; there is nothing to answer with here.
-        Boolean unused = sql.with(connection -> {
-            boolean autoCommit = connection.getAutoCommit();
-            connection.setAutoCommit(false);
+        Boolean unused = sql.transaction(connection -> {
             try (Statement statement = connection.createStatement()) {
                 for (String table : Schema.DATA_TABLES) {
                     statement.executeUpdate(switch (table) {
@@ -397,15 +395,9 @@ public final class Database implements AutoCloseable {
                         default -> "DELETE FROM " + table;
                     });
                 }
-                Sweeper.deleteOrphanSeries(connection);
-                connection.commit();
-                return Boolean.TRUE;
-            } catch (SQLException | RuntimeException e) {
-                connection.rollback();
-                throw e;
-            } finally {
-                connection.setAutoCommit(autoCommit);
             }
+            Sweeper.deleteOrphanSeries(connection);
+            return Boolean.TRUE;
         }, "DELETE /api/data");
     }
 

@@ -305,33 +305,17 @@ public final class Writer implements AutoCloseable {
     }
 
     private void write(Connection connection, List<Batch> batches) throws SQLException {
-        connection.setAutoCommit(false);
-        try {
-            Set<String> touched = insertSpans(connection, batches);
-            insertLogs(connection, batches);
-            insertTingles(connection, batches);
-            mergeCatalogs(connection, batches);
-            mergeServices(connection, batches);
-            insertMetrics(connection, batches);
-            mergeTraces(connection, touched);
-            connection.commit();
-        } catch (SQLException | RuntimeException | Error e) {
-            // An Error too: a StackOverflowError from an absurdly nested attribute leaves
-            // the statements already run in the transaction, and the reset of auto-commit
-            // below would commit them, half a flush that the retry then writes again.
-            try {
-                connection.rollback();
-            } catch (SQLException rollback) {
-                e.addSuppressed(rollback);
-            }
-            throw e;
-        } finally {
-            try {
-                connection.setAutoCommit(true);
-            } catch (SQLException e) {
-                LOG.log(System.Logger.Level.DEBUG, "Spider Sense could not reset auto-commit: " + e.getMessage());
-            }
-        }
+        // Work always answers with something; there is nothing to answer with here.
+        Boolean unused = Sql.inTransaction(connection, c -> {
+            Set<String> touched = insertSpans(c, batches);
+            insertLogs(c, batches);
+            insertTingles(c, batches);
+            mergeCatalogs(c, batches);
+            mergeServices(c, batches);
+            insertMetrics(c, batches);
+            mergeTraces(c, touched);
+            return Boolean.TRUE;
+        });
     }
 
     private void publish(List<Batch> batches) {

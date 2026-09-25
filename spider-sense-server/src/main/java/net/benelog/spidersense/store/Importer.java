@@ -97,19 +97,7 @@ public final class Importer {
     public Result importDocument(Json.JsonObject document) {
         checkSchema(document);
         try (Connection connection = sql.connection()) {
-            connection.setAutoCommit(false);
-            try {
-                Result result = write(connection, document);
-                connection.commit();
-                return result;
-            } catch (SQLException | RuntimeException | Error e) {
-                // An Error too, such as a StackOverflowError: the reset of auto-commit below
-                // would otherwise commit the half of the document written before it.
-                connection.rollback();
-                throw e;
-            } finally {
-                connection.setAutoCommit(true);
-            }
+            return Sql.inTransaction(connection, c -> write(c, document));
         } catch (SQLException e) {
             SQLException refused = refusedValue(e);
             if (refused != null) {

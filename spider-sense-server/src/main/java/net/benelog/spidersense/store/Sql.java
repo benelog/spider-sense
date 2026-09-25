@@ -45,6 +45,8 @@ public final class Sql {
         }
     }
 
+    private static final System.Logger LOG = System.getLogger(Sql.class.getName());
+
     private final DataSource dataSource;
 
     public Sql(DataSource dataSource) {
@@ -124,6 +126,49 @@ public final class Sql {
             return work.apply(connection);
         } catch (SQLException e) {
             throw new SqlException("SQL failed: " + description, e);
+        }
+    }
+
+    /**
+     * Borrows a connection and runs {@code work} in one transaction on it, see
+     * {@link #inTransaction(Connection, Work)}.
+     */
+    public <T> T transaction(Work<T> work, String description) {
+        return with(connection -> inTransaction(connection, work), description);
+    }
+
+    /**
+     * Runs {@code work} in one transaction on a connection the caller holds:
+     * committed when it returns, rolled back when it throws, and the connection's
+     * auto-commit set back to what it was either way.
+     *
+     * <p>An {@link Error} rolls back too. A {@link StackOverflowError} from an
+     * absurdly nested attribute leaves the statements already run in the
+     * transaction, and the reset of auto-commit would commit them: half a flush,
+     * or half an imported document. A rollback that fails is added to the failure
+     * as suppressed rather than replacing it, and a reset of auto-commit that fails
+     * loses nothing once the transaction has ended, so it is only logged.
+     */
+    public static <T> T inTransaction(Connection connection, Work<T> work) throws SQLException {
+        boolean autoCommit = connection.getAutoCommit();
+        connection.setAutoCommit(false);
+        try {
+            T result = work.apply(connection);
+            connection.commit();
+            return result;
+        } catch (SQLException | RuntimeException | Error e) {
+            try {
+                connection.rollback();
+            } catch (SQLException rollback) {
+                e.addSuppressed(rollback);
+            }
+            throw e;
+        } finally {
+            try {
+                connection.setAutoCommit(autoCommit);
+            } catch (SQLException e) {
+                LOG.log(System.Logger.Level.DEBUG, "Spider Sense could not reset auto-commit: " + e.getMessage());
+            }
         }
     }
 
