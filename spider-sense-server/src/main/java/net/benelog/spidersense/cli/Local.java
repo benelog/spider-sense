@@ -29,6 +29,9 @@ import org.jspecify.annotations.Nullable;
  */
 final class Local {
 
+    /** The mode {@code status} reports when the file answers: no server, so no endpoint and no start. */
+    static final String FILE_MODE = "file";
+
     private Local() {
     }
 
@@ -41,7 +44,7 @@ final class Local {
      */
     static Config config(Options options) {
         List<String> args = new ArrayList<>();
-        for (String key : List.of("db", "slow.request.ms", "slow.query.ms", "app.packages")) {
+        for (String key : Options.SETTINGS) {
             if (options.has(key)) {
                 args.add("--" + key + "=" + options.value(key, ""));
             }
@@ -50,7 +53,7 @@ final class Local {
     }
 
     /** What the fallback line on stderr names: the {@code .mv.db}, or the URL of a memory database. */
-    static String describe(Config config) {
+    static String databaseDescription(Config config) {
         Path file = config.databaseFile();
         return file == null ? config.jdbcUrl() : file.toString();
     }
@@ -60,7 +63,7 @@ final class Local {
      * agent must never mistake yesterday's database for a live one (cli.adoc#invocation).
      */
     static String fallbackNotice(String base, Config config) {
-        return "(no Spider Sense at " + base + "; reading " + describe(config) + " directly)";
+        return "(no Spider Sense at " + base + "; reading " + databaseDescription(config) + " directly)";
     }
 
     static int run(Options options, PrintStream out, PrintStream err) {

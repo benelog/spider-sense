@@ -18,8 +18,7 @@ class RemoteTest {
         RuntimeException failure = Remote.failure(new HttpTimeoutException("request timed out"), BASE);
 
         assertThat(failure).isInstanceOf(Remote.Busy.class);
-        assertThat(((Remote.Busy) failure).said())
-                .isEqualTo("the Spider Sense at http://127.0.0.1:4000 did not answer within 2 minutes");
+        assertThat(failure).hasMessage("the Spider Sense at http://127.0.0.1:4000 did not answer within 2 minutes");
     }
 
     @Test

@@ -56,13 +56,18 @@ final class Options {
     static final String IMPORT = "import";
 
     /**
+     * The common options that are the server's settings, which {@link Local} hands the in-process
+     * reader because there is no server to ask: the database and the thresholds.
+     */
+    static final List<String> SETTINGS = List.of("db", "slow.request.ms", "slow.query.ms", "app.packages");
+
+    /**
      * Options every command that reads a window takes: where to read from, and how to print it.
      *
-     * <p>Here and not in {@link Command}, whose rows are built before a static field of its own is
-     * set; nothing in this class's initialisation refers to {@code Command}, so either may load first.
+     * <p>{@link Command}'s rows are built from it, and nothing in this class's initialisation refers
+     * to {@code Command}, so either class may load first.
      */
-    private static final Set<String> COMMON = Set.of("url", "db", "json", "service",
-            "slow.request.ms", "slow.query.ms", "app.packages");
+    private static final Set<String> COMMON = common();
 
     /** The rule flags of {@code check}, in the order api.adoc#check names their parameters. */
     private static final Map<String, String> RULES = ruleParameters();
@@ -192,6 +197,12 @@ final class Options {
             }
         });
         return asked;
+    }
+
+    private static Set<String> common() {
+        Set<String> common = new LinkedHashSet<>(List.of("url", "json", "service"));
+        common.addAll(SETTINGS);
+        return Set.copyOf(common);
     }
 
     /** The common options and the command's own. */

@@ -43,7 +43,7 @@ record Command(String commandName, Set<String> options, @Nullable String argumen
     static final List<Command> ALL = List.of(
             new Command(Options.STATUS, with(), null, Method.GET,
                 options -> new Remote.Query("/api/status"), null,
-                (options, reports, service) -> reports.status("file", null, 0)),
+                (options, reports, service) -> reports.status(Local.FILE_MODE, null, 0)),
 
             new Command(Options.FINDINGS, with("since", "until", "limit", "full", "hide-acked", "no-git"), null, Method.GET,
                 options -> Remote.window(options, new Remote.Query("/api/findings"))

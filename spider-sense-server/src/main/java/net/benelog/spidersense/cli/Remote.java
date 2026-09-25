@@ -53,20 +53,9 @@ final class Remote {
      */
     static final class Busy extends RuntimeException {
 
-        private final String said;
-
+        /** Its message is the one line the CLI prints and an MCP tool call fails with. */
         Busy(String base) {
-            super(line(base));
-            this.said = line(base);
-        }
-
-        private static String line(String base) {
-            return "the Spider Sense at " + base + " did not answer within " + READ.toMinutes() + " minutes";
-        }
-
-        /** The one line the CLI prints and an MCP tool call fails with. */
-        String said() {
-            return said;
+            super("the Spider Sense at " + base + " did not answer within " + READ.toMinutes() + " minutes");
         }
     }
 

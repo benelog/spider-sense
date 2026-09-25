@@ -20,6 +20,7 @@ import java.util.Set;
 
 import net.benelog.spidersense.query.Selectors;
 import net.benelog.spidersense.store.AttrJson;
+import net.benelog.spidersense.store.Tingle;
 import net.benelog.spidersilk.json.Json;
 import org.jspecify.annotations.Nullable;
 
@@ -42,7 +43,7 @@ import org.jspecify.annotations.Nullable;
 final class Tail {
 
     /** The kinds a tingle can be; {@code --kind} takes one of them (api.adoc#tingle). */
-    private static final Set<String> KINDS = Set.of("slow-request", "slow-query", "error");
+    private static final Set<String> KINDS = Set.of(Tingle.SLOW_REQUEST, Tingle.SLOW_QUERY, Tingle.ERROR);
 
     private static final DateTimeFormatter CLOCK = DateTimeFormatter.ofPattern("HH:mm:ss.SSS");
 

@@ -107,7 +107,7 @@ final class Mcp {
                 return Remote.post(forwardTo, "/mcp", line);
             } catch (Remote.Busy e) {
                 // Running, only slow: this call fails and the next one asks it again.
-                String said = e.said();
+                String said = String.valueOf(e.getMessage());
                 return server.handle(line, (name, arguments) -> McpServer.ToolResult.failed(said));
             } catch (Remote.Refused e) {
                 // Running, and it refused this one message: the same.

@@ -152,7 +152,7 @@ public final class Cli {
         try {
             return Remote.run(options, base, out, err);
         } catch (Remote.Busy e) {
-            err.println("spider-sense: " + e.said());
+            err.println("spider-sense: " + e.getMessage());
             return USAGE;
         } catch (Remote.Unreachable e) {
             if (named != null) {
