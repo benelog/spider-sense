@@ -88,6 +88,20 @@ public final class Stats {
             String statement, long calls, long errors,
             double avgMs, double p50Ms, double p95Ms, double maxMs, double totalMs, long slowCalls,
             List<Caller> callers, long lastSeen, @Nullable SchemaBlock schema) {
+
+        /** The same group, with the endpoints that issued it. */
+        public QueryStats withCallers(List<Caller> found) {
+            return new QueryStats(queryId, service, system, namespace, operation, table, statement,
+                    calls, errors, avgMs, p50Ms, p95Ms, maxMs, totalMs, slowCalls, found, lastSeen,
+                    schema);
+        }
+
+        /** The same group, with the block its statement and the catalog produced. */
+        public QueryStats withSchema(@Nullable SchemaBlock block) {
+            return new QueryStats(queryId, service, system, namespace, operation, table, statement,
+                    calls, errors, avgMs, p50Ms, p95Ms, maxMs, totalMs, slowCalls, callers, lastSeen,
+                    block);
+        }
     }
 
     public record EndpointCount(String name, long count) {
@@ -108,6 +122,12 @@ public final class Stats {
     public record ErrorGroup(String errorId, String service, @Nullable String type,
             @Nullable String message, long count,
             long firstSeen, long lastSeen, List<EndpointCount> endpoints, @Nullable ErrorSample sample) {
+
+        /** The same group, with where it occurred and its newest occurrence. */
+        public ErrorGroup withDetail(List<EndpointCount> occurredIn, @Nullable ErrorSample newest) {
+            return new ErrorGroup(errorId, service, type, message, count, firstSeen, lastSeen,
+                    occurredIn, newest);
+        }
     }
 
     public record TraceSummary(String traceId, long start, double durationMs, String rootName,

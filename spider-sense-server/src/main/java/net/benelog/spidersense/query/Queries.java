@@ -546,11 +546,7 @@ public final class Queries {
         for (Stats.QueryStats query : stats) {
             SchemaBlock block = SchemaBlock.of(query.statement(),
                     byService.computeIfAbsent(query.service(), catalog::forService));
-            withSchema.add(new Stats.QueryStats(query.queryId(), query.service(), query.system(),
-                    query.namespace(), query.operation(), query.table(), query.statement(),
-                    query.calls(), query.errors(), query.avgMs(), query.p50Ms(), query.p95Ms(),
-                    query.maxMs(), query.totalMs(), query.slowCalls(), query.callers(),
-                    query.lastSeen(), block));
+            withSchema.add(query.withSchema(block));
         }
         return withSchema;
     }
@@ -595,10 +591,7 @@ public final class Queries {
                             callerService.getOrDefault(query.queryId(), Map.of())
                                     .getOrDefault(name, query.service()), count[0])));
             list.sort(Stats.Caller.MOST_FIRST);
-            withCallers.add(new Stats.QueryStats(query.queryId(), query.service(), query.system(),
-                    query.namespace(), query.operation(), query.table(), query.statement(), query.calls(),
-                    query.errors(), query.avgMs(), query.p50Ms(), query.p95Ms(), query.maxMs(),
-                    query.totalMs(), query.slowCalls(), list, query.lastSeen(), query.schema()));
+            withCallers.add(query.withCallers(list));
         }
         return withCallers;
     }
@@ -693,9 +686,8 @@ public final class Queries {
 
         List<Stats.ErrorGroup> complete = new ArrayList<>(groups.size());
         for (Stats.ErrorGroup group : groups) {
-            complete.add(new Stats.ErrorGroup(group.errorId(), group.service(), group.type(),
-                    group.message(), group.count(), group.firstSeen(), group.lastSeen(),
-                    endpoints.getOrDefault(group.errorId(), List.of()), samples.get(group.errorId())));
+            complete.add(group.withDetail(endpoints.getOrDefault(group.errorId(), List.of()),
+                    samples.get(group.errorId())));
         }
         return complete;
     }
