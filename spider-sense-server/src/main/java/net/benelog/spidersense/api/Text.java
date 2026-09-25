@@ -94,15 +94,15 @@ final class Text {
                 new Column<>("total", query -> Numbers.millis(query.totalMs())),
                 new Column<>("callers", Text::callers),
                 new Column<>("unindexed", query -> unindexed(query.schema())),
-                new Column<>("statement", query -> shortened(query.statement(), full)));
+                new Column<>("statement", query -> cutToStatement(query.statement(), full)));
     }
 
     /** The columns of the errors table, one error group's included. */
     private static final List<Column<Stats.ErrorGroup>> ERROR_COLUMNS = List.of(
             new Column<>("id", Stats.ErrorGroup::errorId),
             new Column<>("service", Stats.ErrorGroup::service),
-            new Column<>("type", group -> or(group.type())),
-            new Column<>("message", group -> or(group.message())),
+            new Column<>("type", group -> orDash(group.type())),
+            new Column<>("message", group -> orDash(group.message())),
             new Column<>("count", group -> Numbers.count(group.count())),
             new Column<>("first", group -> clockMillis(group.firstSeen())),
             new Column<>("last", group -> clockMillis(group.lastSeen())),
@@ -112,8 +112,8 @@ final class Text {
             new Column<>("start", trace -> clockMillis(trace.start())),
             new Column<>("duration", trace -> Numbers.millis(trace.durationMs())),
             new Column<>("trace", Stats.TraceSummary::traceId),
-            new Column<>("root", trace -> or(trace.rootName())),
-            new Column<>("service", trace -> or(trace.rootService())),
+            new Column<>("root", trace -> orDash(trace.rootName())),
+            new Column<>("service", trace -> orDash(trace.rootService())),
             new Column<>("spans", trace -> String.valueOf(trace.spanCount())),
             new Column<>("db", trace -> String.valueOf(trace.dbCount())),
             new Column<>("errors", trace -> String.valueOf(trace.errorCount())),
@@ -121,7 +121,7 @@ final class Text {
                     ? "—" : String.valueOf(trace.httpStatus())));
 
     private static final List<Column<Stats.EndpointStats>> ENDPOINT_COLUMNS = List.of(
-            new Column<>("endpoint", endpoint -> or(endpoint.name())),
+            new Column<>("endpoint", endpoint -> orDash(endpoint.name())),
             new Column<>("id", Stats.EndpointStats::endpointId),
             new Column<>("service", Stats.EndpointStats::service),
             new Column<>("calls", endpoint -> Numbers.count(endpoint.calls())),
@@ -134,7 +134,7 @@ final class Text {
 
     private static final List<Column<Stats.ServiceSummary>> SERVICE_COLUMNS = List.of(
             new Column<>("service", Stats.ServiceSummary::name),
-            new Column<>("language", summary -> or(summary.language())),
+            new Column<>("language", summary -> orDash(summary.language())),
             new Column<>("embedded", summary -> summary.embedded() ? "yes" : "no"),
             new Column<>("requests", summary -> Numbers.count(summary.totals().requests())),
             new Column<>("errors", summary -> Numbers.count(summary.totals().errors())),
@@ -147,7 +147,7 @@ final class Text {
     /** The endpoint rows of a compare: each number as {@code before → after}. */
     private static final List<Column<Compare.EndpointDiff>> COMPARE_ENDPOINT_COLUMNS = List.of(
             new Column<>("verdict", Compare.EndpointDiff::verdict),
-            new Column<>("endpoint", diff -> or(diff.name())),
+            new Column<>("endpoint", diff -> orDash(diff.name())),
             new Column<>("id", Compare.EndpointDiff::endpointId),
             endpointPair("calls", Compare.Side::calls, Text::count),
             endpointPair("errors", Compare.Side::errors, Text::count),
@@ -169,7 +169,7 @@ final class Text {
                 queryPair("calls/req", Compare.QuerySide::callsPerRequest, Text::number),
                 queryPair("p95", Compare.QuerySide::p95Ms, Text::millis),
                 queryPair("total", Compare.QuerySide::totalMs, Text::millis),
-                new Column<>("statement", diff -> shortened(diff.statement(), full)));
+                new Column<>("statement", diff -> cutToStatement(diff.statement(), full)));
     }
 
     private static <V> Column<Compare.QueryDiff> queryPair(String header, Function<Compare.QuerySide, V> field,
@@ -409,7 +409,7 @@ final class Text {
         // The why and the numbers carry what the application wrote (an exception message,
         // a log body), so each is kept to its one line.
         text.append('\n').append(rank).append(". ").append(finding.id()).append(" — ")
-                .append(collapse(finding.why())).append('\n');
+                .append(singleLine(finding.why())).append('\n');
         text.append("   ").append(numbers(finding.numbers())).append('\n');
         String hot = hotSpan(finding.numbers());
         if (hot != null) {
@@ -417,7 +417,7 @@ final class Text {
         }
         whereTheTimeWent(text, finding.numbers());
         if (finding.statement() != null) {
-            text.append("   ").append(statement(finding.statement(), full)).append('\n');
+            text.append("   ").append(statementLine(finding.statement(), full)).append('\n');
         }
         schema(text, finding.schema());
         for (String frame : finding.code()) {
@@ -515,7 +515,7 @@ final class Text {
 
     /** {@code SELECT order_line · 312.4 ms}: a hot span's name and its self time. */
     private static String hotSpanLine(Map<?, ?> hot) {
-        return collapse(String.valueOf(hot.get("name"))) + " · " + millis(hot.get("selfMs"));
+        return singleLine(String.valueOf(hot.get("name"))) + " · " + millis(hot.get("selfMs"));
     }
 
     /**
@@ -594,12 +594,12 @@ final class Text {
                                 inner.add(key + " " + formatByKey(String.valueOf(key), each)));
                         parts.add("[" + String.join(" ", inner) + "]");
                     } else {
-                        parts.add(collapse(String.valueOf(element)));
+                        parts.add(singleLine(String.valueOf(element)));
                     }
                 }
                 yield String.join(" ", parts);
             }
-            case String text -> collapse(text);
+            case String text -> singleLine(text);
             default -> String.valueOf(value);
         };
     }
@@ -613,7 +613,7 @@ final class Text {
         StringBuilder text = new StringBuilder("# marks\n\n");
         table(text, List.of("at", "name", "service", "note"));
         for (Marks.Mark mark : marks) {
-            row(text, List.of(instantMillis(mark.at()), mark.name(), or(mark.service()), or(mark.note())));
+            row(text, List.of(instantMillis(mark.at()), mark.name(), orDash(mark.service()), orDash(mark.note())));
         }
         return text.toString();
     }
@@ -643,7 +643,7 @@ final class Text {
     static String mark(Marks.Mark mark) {
         return "mark " + mark.name() + " at " + instantMillis(mark.at())
                 + (mark.service() == null ? "" : " (" + mark.service() + ")")
-                + (mark.note() == null ? "" : " — " + oneLine(mark.note())) + "\n";
+                + (mark.note() == null ? "" : " — " + escapedLine(mark.note())) + "\n";
     }
 
     // --- acknowledgements -----------------------------------------------------
@@ -651,7 +651,7 @@ final class Text {
     /** One line, as a mark's is: what happened, to which finding, and why. */
     static String ack(Acks.Ack ack) {
         return "acked " + ack.findingId()
-                + (ack.note() == null ? "" : " — " + oneLine(ack.note())) + "\n";
+                + (ack.note() == null ? "" : " — " + escapedLine(ack.note())) + "\n";
     }
 
     static String unack(String findingId) {
@@ -660,7 +660,7 @@ final class Text {
 
     static String resolve(Acks.Ack resolution) {
         return "resolved " + resolution.findingId()
-                + (resolution.note() == null ? "" : " — " + oneLine(resolution.note())) + "\n";
+                + (resolution.note() == null ? "" : " — " + escapedLine(resolution.note())) + "\n";
     }
 
     static String unresolve(String findingId) {
@@ -675,7 +675,7 @@ final class Text {
         StringBuilder text = new StringBuilder("# acks\n\n");
         table(text, List.of("at", "finding", "note"));
         for (Acks.Ack ack : acks) {
-            row(text, List.of(instantMillis(ack.at()), ack.findingId(), or(ack.note())));
+            row(text, List.of(instantMillis(ack.at()), ack.findingId(), orDash(ack.note())));
         }
         return text.toString();
     }
@@ -717,7 +717,7 @@ final class Text {
         } else {
             table(text, List.of("verdict", "id", "type", "message", "before", "after"));
             for (Compare.ErrorDiff diff : comparison.errors()) {
-                row(text, List.of(diff.verdict(), diff.errorId(), or(diff.type()), or(diff.message()),
+                row(text, List.of(diff.verdict(), diff.errorId(), orDash(diff.type()), orDash(diff.message()),
                         String.valueOf(diff.before()), String.valueOf(diff.after())));
             }
         }
@@ -920,8 +920,8 @@ final class Text {
     private static String logLine(LogRecord log, boolean withTrace) {
         StringBuilder line = new StringBuilder(clockMillis(log.at())).append("  ")
                 .append(pad(log.severity(), 6)).append(' ')
-                .append(or(log.logger())).append("  ")
-                .append(oneLine(log.body()));
+                .append(orDash(log.logger())).append("  ")
+                .append(escapedLine(log.body()));
         if (withTrace && log.traceId() != null) {
             line.append("  trace ").append(log.traceId());
         }
@@ -1079,18 +1079,18 @@ final class Text {
                 lines.add(new TraceLine(depth, first, spanText(first, parentService),
                         offset(first, startNs), total, run,
                         first.dbStatement() == null ? List.of()
-                                : List.of(statement(first.dbStatement(), full))));
+                                : List.of(statementLine(first.dbStatement(), full))));
                 i += run;
                 continue;
             }
             List<String> under = new ArrayList<>();
             if (first.dbStatement() != null && (full || tingles.isSlow(first))) {
-                under.add(statement(first.dbStatement(), full));
+                under.add(statementLine(first.dbStatement(), full));
             }
             if (first.isError()) {
                 String message = first.errorMessage();
                 under.add("exception " + Findings.simpleName(first.errorType())
-                        + (message == null || message.isBlank() ? "" : ": " + oneLine(message)));
+                        + (message == null || message.isBlank() ? "" : ": " + escapedLine(message)));
                 under.addAll(frames.of(first.stacktrace(), first.attributes()));
             }
             lines.add(new TraceLine(depth, first, spanText(first, parentService),
@@ -1347,13 +1347,13 @@ final class Text {
             case Boolean flag -> String.valueOf(flag);
             case Long number -> String.valueOf(number);
             case Double number -> String.valueOf(number);
-            default -> shortened(String.valueOf(value), full);
+            default -> cutToStatement(String.valueOf(value), full);
         };
     }
 
     /** A statement on a line of its own: one line, cut at 200 characters unless {@code full}. */
-    static String statement(@Nullable String statement, boolean full) {
-        return statement == null ? "—" : escapeBars(shortened(statement, full));
+    static String statementLine(@Nullable String statement, boolean full) {
+        return statement == null ? "—" : escapeBars(cutToStatement(statement, full));
     }
 
     /**
@@ -1361,20 +1361,20 @@ final class Text {
      * {@code full}, with its bars left alone: {@link #row} escapes a cell once,
      * after the cut, so the cut never splits an escape.
      */
-    private static String shortened(@Nullable String value, boolean full) {
+    private static String cutToStatement(@Nullable String value, boolean full) {
         if (value == null) {
             return "—";
         }
-        String single = collapse(value);
+        String single = singleLine(value);
         return full || single.length() <= STATEMENT ? single : single.substring(0, STATEMENT) + "…";
     }
 
     /** Free text on a line of its own, or inside one: no newline, and no bar a table could split on. */
-    static String oneLine(@Nullable String value) {
-        return value == null ? "—" : escapeBars(collapse(value));
+    static String escapedLine(@Nullable String value) {
+        return value == null ? "—" : escapeBars(singleLine(value));
     }
 
-    private static String collapse(String value) {
+    private static String singleLine(String value) {
         return value.replaceAll("\\s+", " ").trim();
     }
 
@@ -1388,12 +1388,12 @@ final class Text {
      * the application wrote — an exception message with its newlines, a note, a
      * span name, a service name — and one newline or bar in it breaks the row.
      */
-    private static String cell(String value) {
-        String single = collapse(value);
+    private static String tableCell(String value) {
+        String single = singleLine(value);
         return single.isEmpty() ? "—" : escapeBars(single);
     }
 
-    private static String or(@Nullable String value) {
+    private static String orDash(@Nullable String value) {
         return value == null || value.isBlank() ? "—" : value;
     }
 
@@ -1414,11 +1414,11 @@ final class Text {
         row(text, rule);
     }
 
-    /** One row of a table, every cell made safe for it by {@link #cell(String)}. */
+    /** One row of a table, every cell made safe for it by {@link #tableCell(String)}. */
     private static void row(StringBuilder text, List<String> cells) {
         text.append('|');
         for (String each : cells) {
-            text.append(' ').append(cell(each)).append(" |");
+            text.append(' ').append(tableCell(each)).append(" |");
         }
         text.append('\n');
     }
