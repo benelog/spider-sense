@@ -176,10 +176,31 @@ public final class Sql {
         return dataSource.getConnection();
     }
 
-    public static void bind(PreparedStatement statement, List<Object> params) throws SQLException {
+    /** Binds {@code params} to the statement's placeholders, in order. */
+    public static void bind(PreparedStatement statement, List<?> params) throws SQLException {
         for (int i = 0; i < params.size(); i++) {
             statement.setObject(i + 1, params.get(i));
         }
+    }
+
+    /**
+     * How many values one {@code IN (...)} list of the store names.
+     *
+     * <p>H2's cost for one {@code IN} list grows with the square of its length, and
+     * a flush after a burst, or an import, names tens of thousands of ids: 20,000
+     * traces in one list took about ten seconds to read back, and the writer fell
+     * behind its queue. A list of ids that may be that long is read in chunks of
+     * this size.
+     */
+    public static final int IN_LIST_CHUNK = 500;
+
+    /** {@code values} in consecutive chunks of at most {@link #IN_LIST_CHUNK}, as views of it. */
+    public static <T> List<List<T>> chunks(List<T> values) {
+        List<List<T>> chunks = new ArrayList<>((values.size() + IN_LIST_CHUNK - 1) / IN_LIST_CHUNK);
+        for (int from = 0; from < values.size(); from += IN_LIST_CHUNK) {
+            chunks.add(values.subList(from, Math.min(values.size(), from + IN_LIST_CHUNK)));
+        }
+        return chunks;
     }
 
     /** {@code ?, ?, ?} for an {@code IN} list of {@code count} values. */

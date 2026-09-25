@@ -69,9 +69,6 @@ public final class Sweeper implements AutoCloseable {
             {"span", "start_ms"}, {"trace", "start_ms"}, {"log", "at_ms"},
             {"metric_point", "at_ms"}, {"tingle", "at_ms"}};
 
-    /** How many series one lock and delete of the orphan sweep names. */
-    private static final int ORPHAN_CHUNK = 500;
-
     /**
      * Deletes the series rows with no point left, without racing a writer.
      *
@@ -103,18 +100,17 @@ public final class Sweeper implements AutoCloseable {
             }
         }
         int deleted = 0;
-        for (int from = 0; from < candidates.size(); from += ORPHAN_CHUNK) {
-            List<Long> chunk = candidates.subList(from, Math.min(candidates.size(), from + ORPHAN_CHUNK));
+        for (List<Long> chunk : Sql.chunks(candidates)) {
             String in = Sql.placeholders(chunk.size());
             try (PreparedStatement lock = connection.prepareStatement(
                     "SELECT id FROM metric_series WHERE id IN (" + in + ") FOR UPDATE")) {
-                Sql.bind(lock, List.copyOf(chunk));
+                Sql.bind(lock, chunk);
                 lock.executeQuery().close();
             }
             try (PreparedStatement delete = connection.prepareStatement(
                     "DELETE FROM metric_series WHERE id IN (" + in + ")"
                             + " AND id NOT IN (SELECT series_id FROM metric_point)")) {
-                Sql.bind(delete, List.copyOf(chunk));
+                Sql.bind(delete, chunk);
                 deleted += delete.executeUpdate();
             }
         }

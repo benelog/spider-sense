@@ -704,9 +704,6 @@ public final class Writer implements AutoCloseable {
     /** The width of {@code metric_point.buckets}. */
     static final int BUCKETS_MAX = 8192;
 
-    /** How many cached ids one statement checks. */
-    private static final int SERIES_CHECK_CHUNK = 500;
-
     /** What identifies a sample's series: its cache key, and the hash and attributes of its row. */
     private record Series(String key, String hash, String attributes) {
 
@@ -736,18 +733,14 @@ public final class Writer implements AutoCloseable {
                 cached.put(id, one.key());
             }
         }
-        List<Long> ids = List.copyOf(cached.keySet());
-        for (int from = 0; from < ids.size(); from += SERIES_CHECK_CHUNK) {
-            List<Long> chunk = ids.subList(from, Math.min(ids.size(), from + SERIES_CHECK_CHUNK));
+        for (List<Long> chunk : Sql.chunks(List.copyOf(cached.keySet()))) {
             Set<Long> present = new HashSet<>();
             try (PreparedStatement select = connection.prepareStatement(
                     // Locked: the orphan sweep locks a series before it deletes it, so the
                     // points this flush adds are committed before the sweep looks again.
                     "SELECT id FROM metric_series WHERE id IN (" + Sql.placeholders(chunk.size())
                             + ") FOR UPDATE")) {
-                for (int i = 0; i < chunk.size(); i++) {
-                    select.setLong(i + 1, chunk.get(i));
-                }
+                Sql.bind(select, chunk);
                 try (ResultSet rs = select.executeQuery()) {
                     while (rs.next()) {
                         present.add(rs.getLong(1));

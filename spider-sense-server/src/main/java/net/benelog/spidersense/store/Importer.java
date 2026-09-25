@@ -66,9 +66,6 @@ public final class Importer {
         }
     }
 
-    /** How many ids go into one {@code IN (...)} list. */
-    private static final int CHUNK = 500;
-
     private final Sql sql;
     private final TraceSummaries traces;
 
@@ -183,15 +180,11 @@ public final class Importer {
     private static Set<String> alreadyStored(Connection connection, Set<String> ids)
             throws SQLException {
         Set<String> present = new LinkedHashSet<>();
-        List<String> all = List.copyOf(ids);
-        for (int start = 0; start < all.size(); start += CHUNK) {
-            List<String> chunk = all.subList(start, Math.min(all.size(), start + CHUNK));
+        for (List<String> chunk : Sql.chunks(List.copyOf(ids))) {
             String select = "SELECT DISTINCT trace_id FROM span WHERE trace_id IN ("
                     + Sql.placeholders(chunk.size()) + ")";
             try (PreparedStatement statement = connection.prepareStatement(select)) {
-                for (int i = 0; i < chunk.size(); i++) {
-                    statement.setString(i + 1, chunk.get(i));
-                }
+                Sql.bind(statement, chunk);
                 try (ResultSet rs = statement.executeQuery()) {
                     while (rs.next()) {
                         present.add(rs.getString(1));
@@ -404,9 +397,7 @@ public final class Importer {
         }
 
         private long stored(List<@Nullable Object> row) throws SQLException {
-            for (int i = 0; i < row.size(); i++) {
-                count.setObject(i + 1, row.get(i));
-            }
+            Sql.bind(count, row);
             try (ResultSet rs = count.executeQuery()) {
                 return rs.next() ? rs.getLong(1) : 0;
             }

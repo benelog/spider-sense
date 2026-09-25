@@ -35,9 +35,6 @@ final class TraceSummaries {
                 services, span_count, error_count, db_count, slow, error)
             KEY(trace_id) VALUES (?, 0, 0, 0, '', '', '', '[]', 0, 0, 0, FALSE, FALSE)""";
 
-    /** How many trace ids one read of the recompute names. */
-    private static final int TRACE_READ_CHUNK = 500;
-
     private final long slowRequestMs;
 
     /** @param slowRequestMs what a trace must take longer than to be slow, as a request must */
@@ -54,10 +51,9 @@ final class TraceSummaries {
         List<String> ids = traceIds.stream().sorted().toList();
         lock(connection, ids);
         Map<String, List<TraceSummary.Span>> byTrace = new LinkedHashMap<>();
-        // In chunks: H2's cost for one IN list grows with the square of its length, and a
-        // flush after a burst, or an import, touches tens of thousands of traces.
-        for (int from = 0; from < ids.size(); from += TRACE_READ_CHUNK) {
-            readSpans(connection, ids.subList(from, Math.min(ids.size(), from + TRACE_READ_CHUNK)), byTrace);
+        // In chunks: a flush after a burst, or an import, touches tens of thousands of traces.
+        for (List<String> chunk : Sql.chunks(ids)) {
+            readSpans(connection, chunk, byTrace);
         }
         try (PreparedStatement statement = connection.prepareStatement(MERGE_TRACE)) {
             for (List<TraceSummary.Span> spans : byTrace.values()) {
@@ -77,9 +73,7 @@ final class TraceSummaries {
                        duration_ns, error, db_statement, http_status
                 FROM span WHERE trace_id IN (""" + Sql.placeholders(ids.size()) + ")";
         try (PreparedStatement statement = connection.prepareStatement(select)) {
-            for (int i = 0; i < ids.size(); i++) {
-                statement.setString(i + 1, ids.get(i));
-            }
+            Sql.bind(statement, ids);
             try (ResultSet rs = statement.executeQuery()) {
                 while (rs.next()) {
                     TraceSummary.Span span = new TraceSummary.Span(rs.getString("trace_id"),

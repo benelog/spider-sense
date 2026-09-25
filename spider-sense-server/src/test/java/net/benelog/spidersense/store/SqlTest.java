@@ -70,4 +70,15 @@ class SqlTest {
 
         assertThat(marks()).isEqualTo(1);
     }
+
+    @Test
+    void aListIsChunkedIntoInLists() {
+        List<Integer> values = java.util.stream.IntStream.range(0, 1_001).boxed().toList();
+
+        List<List<Integer>> chunks = Sql.chunks(values);
+
+        assertThat(chunks).extracting(List::size).containsExactly(500, 500, 1);
+        assertThat(chunks.get(1).get(0)).isEqualTo(500);
+        assertThat(Sql.chunks(List.of())).isEmpty();
+    }
 }
