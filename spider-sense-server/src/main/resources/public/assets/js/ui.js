@@ -134,6 +134,11 @@ export function seedServices(names) {
   for (const n of names || []) serviceColor(n);
 }
 
+/** Forget every service's colour, so the next one seen takes the first slot again; for tests. */
+export function resetServiceColors() {
+  serviceSlots.clear();
+}
+
 // --- chips --------------------------------------------------------------
 
 export function chip(text, opts = {}) {

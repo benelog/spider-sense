@@ -6,7 +6,8 @@ const routes = [];
 let onChange = null;
 let current = { path: '/', params: {}, query: {} };
 
-function compile(pattern) {
+/** A route pattern as a regular expression over the encoded path and the names of its parameters. */
+export function compile(pattern) {
   const names = [];
   const source = pattern
     .split('/')
@@ -41,10 +42,11 @@ function decodeParam(raw) {
 }
 
 /**
+ * The first of `routes` (compiled patterns, in order) that matches `path`, and its parameters, or null.
  * Matched against the path as the hash carries it, still percent-encoded, and each parameter
  * decoded once: `50%25%20off` is `50% off`, and an encoded `%2F` stays inside its segment.
  */
-function match(path) {
+export function match(routes, path) {
   for (const route of routes) {
     const m = route.re.exec(path);
     if (m) {
@@ -113,7 +115,7 @@ let lastKey = null;
 
 function handle() {
   const { path, query } = parse(location.hash);
-  const found = match(path);
+  const found = match(routes, path);
   if (!found) {
     if (path !== '/') { replace('/', query); return; }
     return;
