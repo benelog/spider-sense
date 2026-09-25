@@ -273,7 +273,7 @@ With `diff=<traceId>` it answers the two traces aligned instead, as xref:cli.ado
 {
   "traceId": "…", "start": ..., "end": ..., "durationMs": ...,
   "services": ["…"],
-  "spans": [ <Span> ],       // sorted by start, parents before children; a parentSpanId not present in the trace is shown as a root
+  "spans": [ <Span> ],       // sorted by start then span id, parents before children; a parentSpanId not present in the trace is shown as a root
   "logs": [ <LogRecord> ]    // logs carrying this traceId, oldest first
 }
 ----

@@ -761,7 +761,7 @@ public final class Queries {
 
     public @Nullable TraceDetail trace(String traceId) {
         List<SpanRecord> spans = sql.query(
-                "SELECT " + Rows.SPAN_COLUMNS + " FROM span WHERE trace_id = ? ORDER BY start_ns",
+                "SELECT " + Rows.SPAN_COLUMNS + " FROM span WHERE trace_id = ? ORDER BY start_ns, span_id",
                 List.of(traceId), Rows::span);
         if (spans.isEmpty()) {
             return null;
@@ -780,7 +780,12 @@ public final class Queries {
                 Math.max(0, end - start) / 1_000_000.0, List.copyOf(serviceNames), sorted(spans), logs);
     }
 
-    /** Parents before children, each group by start; the waterfall draws in this order. */
+    /**
+     * Parents before children, each group by start; the waterfall draws in this order.
+     *
+     * <p>Siblings that start in the same nanosecond are ordered by their span id, so two
+     * readings of one trace list its spans alike (cli.adoc#text-rendering).
+     */
     private static List<SpanRecord> sorted(List<SpanRecord> spans) {
         Map<String, List<SpanRecord>> children = new LinkedHashMap<>();
         Set<String> ids = new HashSet<>();
@@ -795,13 +800,16 @@ public final class Queries {
                 children.computeIfAbsent(span.parentSpanId(), id -> new ArrayList<>()).add(span);
             }
         }
-        roots.sort((a, b) -> Long.compare(a.startNanos(), b.startNanos()));
+        roots.sort(BY_START);
         List<SpanRecord> ordered = new ArrayList<>(spans.size());
         for (SpanRecord root : roots) {
             append(ordered, root, children);
         }
         return ordered;
     }
+
+    private static final Comparator<SpanRecord> BY_START =
+            Comparator.comparingLong(SpanRecord::startNanos).thenComparing(SpanRecord::spanId);
 
     private static void append(List<SpanRecord> ordered, SpanRecord span,
             Map<String, List<SpanRecord>> children) {
@@ -810,7 +818,7 @@ public final class Queries {
         if (kids == null) {
             return;
         }
-        kids.sort((a, b) -> Long.compare(a.startNanos(), b.startNanos()));
+        kids.sort(BY_START);
         for (SpanRecord kid : kids) {
             append(ordered, kid, children);
         }

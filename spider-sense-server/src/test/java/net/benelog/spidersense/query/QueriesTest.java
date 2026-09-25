@@ -432,6 +432,23 @@ class QueriesTest {
                 .extracting(Stats.TraceSummary::traceId).containsExactly(traceId(1), traceId(2));
     }
 
+    /** Siblings that start in the same nanosecond are listed by span id, whatever order they arrived in. */
+    @Test
+    void spansTiedOnTheirStartAreOrderedByTheirSpanId() {
+        Span.Builder root = Otlp.span(traceId(1), spanId(1), "GET /orders", Span.SpanKind.SPAN_KIND_SERVER,
+                NOW, 50);
+        Span.Builder later = Otlp.child(root, spanId(0x20), "SELECT b", Span.SpanKind.SPAN_KIND_CLIENT, NOW + 1, 5);
+        Span.Builder earlier = Otlp.child(root, spanId(0x10), "SELECT a", Span.SpanKind.SPAN_KIND_CLIENT, NOW + 1, 5);
+        decoder.accept(Otlp.traces(Otlp.service("orders"), later, root, earlier));
+        flush();
+
+        Queries.TraceDetail trace = queries.trace(traceId(1));
+
+        assertThat(trace).isNotNull();
+        assertThat(trace.spans()).extracting(net.benelog.spidersense.store.SpanRecord::spanId)
+                .containsExactly(spanId(1), spanId(0x10), spanId(0x20));
+    }
+
     @Test
     void logsWrittenInTheSameMillisecondPageByTheirId() {
         io.opentelemetry.proto.logs.v1.LogRecord[] burst = new io.opentelemetry.proto.logs.v1.LogRecord[5];
