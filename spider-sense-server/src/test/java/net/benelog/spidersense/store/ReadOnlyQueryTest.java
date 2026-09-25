@@ -47,4 +47,22 @@ class ReadOnlyQueryTest {
                 .isInstanceOf(ReadOnlyQuery.Refused.class).hasMessageContaining("FOR UPDATE");
         assertThat(sql.run("SELECT 'for update' AS words", 10).rows()).hasSize(1);
     }
+
+    /** H2 ends a line comment at a carriage return, so a second statement cannot hide past one. */
+    @Test
+    void aLineCommentEndsAtACarriageReturn() {
+        assertThatThrownBy(() -> ReadOnlyQuery.guard("SELECT 1 -- x\r; SET @x = 42"))
+                .isInstanceOf(ReadOnlyQuery.Refused.class).hasMessageContaining("one statement");
+        assertThat(row("SELECT 1 -- x\r")).containsExactly(1L);
+    }
+
+    /** Any space H2 separates words with separates FOR from UPDATE for the guard too. */
+    @Test
+    void forUpdateIsRefusedAcrossAUnicodeSpace() {
+        for (String space : List.of("\u00A0", "\u2003", "\u3000", "\u2028")) {
+            assertThatThrownBy(() -> ReadOnlyQuery.guard("SELECT * FROM span FOR" + space + "UPDATE"))
+                    .as("U+%04X", (int) space.charAt(0))
+                    .isInstanceOf(ReadOnlyQuery.Refused.class).hasMessageContaining("FOR UPDATE");
+        }
+    }
 }

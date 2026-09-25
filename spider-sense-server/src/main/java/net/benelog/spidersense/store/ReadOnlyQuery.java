@@ -225,7 +225,8 @@ public final class ReadOnlyQuery {
      *
      * <p>{@code SELECT 1 -- ; DELETE FROM span}, {@code SELECT ';' FROM span} and
      * {@code SELECT $$';$$ FROM span} are one statement each, and this is what makes
-     * the guard see that. It is a scanner and not a parser, which is the honest
+     * the guard see that. Every kind of whitespace H2 accepts is a plain space here.
+     * It is a scanner and not a parser, which is the honest
      * description of the first layer and the reason there is a second one.
      */
     static String bare(String statement) {
@@ -235,7 +236,8 @@ public final class ReadOnlyQuery {
         while (at < end) {
             char c = statement.charAt(at);
             if (c == '-' && at + 1 < end && statement.charAt(at + 1) == '-') {
-                while (at < end && statement.charAt(at) != '\n') {
+                // H2 ends a line comment at a carriage return as well as at a line feed.
+                while (at < end && statement.charAt(at) != '\n' && statement.charAt(at) != '\r') {
                     at++;
                 }
                 bare.append(' ');
@@ -255,6 +257,12 @@ public final class ReadOnlyQuery {
                 int close = statement.indexOf("$$", at + 2);
                 at = close < 0 ? end : close + 2;
                 bare.append(' ');
+            } else if (Character.isWhitespace(c) || Character.isSpaceChar(c)) {
+                // H2 separates words with any Unicode space (U+00A0, U+2003, U+3000,
+                // U+2028), which Java's \s and trim() do not see; folded to one space,
+                // FOR<U+00A0>UPDATE is FOR UPDATE to the guard too.
+                bare.append(' ');
+                at++;
             } else {
                 bare.append(c);
                 at++;
