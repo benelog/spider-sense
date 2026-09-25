@@ -42,15 +42,19 @@ public final class SpiderSenseMain {
             }
         }
         Path file = ConfigFile.apply();
-        Config config;
+        Config.Parsed parsed;
         try {
-            config = Config.fromArgs(args).withMode(Config.STANDALONE);
+            parsed = Config.fromArgs(args);
         } catch (IllegalArgumentException e) {
             // A usage error, as the CLI answers one: one line and exit code 2, no stack trace.
             System.err.println("spider-sense: " + e.getMessage());
             System.exit(2);
             return;
         }
+        Config.printWarnings(parsed);
+        // The server's own keys: it runs in this JVM and reads them as spidersense.* properties.
+        parsed.serverProperties().forEach(System::setProperty);
+        Config config = parsed.config().withMode(Config.STANDALONE);
         if (file != null) {
             System.out.println("Configuration: " + file.toAbsolutePath());
         }
@@ -125,7 +129,10 @@ public final class SpiderSenseMain {
     }
 
     static void printHelp() {
-        System.out.println("""
+        System.out.println(HELP_HEAD + Key.helpLines() + HELP_TAIL);
+    }
+
+    private static final String HELP_HEAD = """
                 Spider Sense — a local-development observability tool: one jar, OpenTelemetry-native.
 
                   java -javaagent:spider-sense.jar -jar app.jar          instrument an app, UI inside it
@@ -141,27 +148,13 @@ public final class SpiderSenseMain {
                 spidersense.key=value lines in spider-sense.properties in the working directory,
                 or in the file -Dspidersense.config names; the command line wins over the file):
 
-                  --port=4000                     UI and OTLP/HTTP port
-                  --host=127.0.0.1                bind address; 0.0.0.0 to reach it from elsewhere
-                  --collector=<url>               agent mode: forward instead of starting the UI
-                  --service=<name>                agent mode: sets otel.service.name
-                  --db=~/db/spider-sense/sense    H2 database path or jdbc:h2: URL
-                  --retention.hours=24            rows older than this are swept
-                  --retention.spans=1000000       the most spans kept; 0 for no cap
-                  --ingest.max-spans-per-second=  above this, new traces are dropped; unset for no cap
-                  --slow.request.ms=500           a server span slower than this is a tingle
-                  --slow.query.ms=100             a DB span slower than this is a tingle
-                  --app.packages=                 package prefixes that count as application code
-                  --ignore.endpoints=/actuator/**,/health,/healthz,/livez,/readyz
-                                                  endpoints that are not requests; empty for none
-                  --source.dirs=                  source roots for code frames; the default is
-                                                  src/main/java and src/main/kotlin here and one level down
-                  --open=false                    agent mode: open the browser at startup
+                """;
+
+    private static final String HELP_TAIL = """
                   --help, --version
 
                 An option not in this list is a usage error.
 
                 Every otel.* property still works as the OpenTelemetry agent documents it;
-                Spider Sense only fills in defaults.""");
-    }
+                Spider Sense only fills in defaults.""";
 }

@@ -131,7 +131,8 @@ class AgentDefaultsTest {
     @Test
     void exportsToTheCollectorWhenForwarding() {
         SpiderSenseAgent.applyOtelDefaults(
-                Config.fromArgs(new String[] {"--collector=http://box:4000/", "--service=orders"}));
+                Config.parse(new String[] {"--collector=http://box:4000/", "--service=orders"},
+                        key -> null, key -> null).config());
 
         assertThat(System.getProperty("otel.exporter.otlp.endpoint")).isEqualTo("http://box:4000");
         assertThat(System.getProperty("otel.service.name")).isEqualTo("orders");

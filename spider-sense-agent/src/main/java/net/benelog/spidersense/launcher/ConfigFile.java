@@ -33,27 +33,9 @@ final class ConfigFile {
 
     static final String PROPERTY = "spidersense.config";
     static final String DEFAULT_NAME = "spider-sense.properties";
-    static final String PREFIX = "spidersense.";
 
-    /**
-     * The keys of the table in configuration.adoc#properties, and the ones the launcher itself
-     * understands.
-     */
-    static final Set<String> KNOWN = Set.of(
-            "spidersense.port",
-            "spidersense.host",
-            "spidersense.collector",
-            "spidersense.service",
-            "spidersense.db",
-            "spidersense.retention.hours",
-            "spidersense.retention.spans",
-            "spidersense.ingest.max-spans-per-second",
-            "spidersense.slow.request.ms",
-            "spidersense.slow.query.ms",
-            "spidersense.open",
-            "spidersense.app.packages",
-            "spidersense.ignore.endpoints",
-            "spidersense.source.dirs");
+    /** The keys of the table in configuration.adoc#properties: the documented rows of {@link Key}. */
+    static final Set<String> KNOWN_KEYS = Key.documentedProperties();
 
     private ConfigFile() {
     }
@@ -101,10 +83,10 @@ final class ConfigFile {
     /** The same, with the environment read through {@code env}, which a test can stand in for. */
     static void apply(Properties properties, Path file, java.util.function.Function<String, @Nullable String> env) {
         for (String key : properties.stringPropertyNames()) {
-            if (!key.startsWith(PREFIX)) {
+            if (!key.startsWith(Key.PROPERTY_PREFIX)) {
                 continue;
             }
-            if (!KNOWN.contains(key)) {
+            if (!KNOWN_KEYS.contains(key)) {
                 System.err.println(SpiderSenseAgent.PREFIX + file + ": " + key
                         + " is not a Spider Sense property; applying it anyway");
             }

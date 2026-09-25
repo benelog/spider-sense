@@ -3,41 +3,45 @@ package net.benelog.spidersense.launcher;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
+/**
+ * The launcher's configuration, read from given properties and a given environment: nothing here
+ * reads or writes this JVM's system properties or depends on the developer's environment.
+ */
 class ConfigTest {
 
-    private final List<String> touched = new ArrayList<>();
+    private static final Map<String, String> NONE = Map.of();
 
-    @AfterEach
-    void clearProperties() {
-        touched.forEach(System::clearProperty);
-        touched.clear();
+    /** The arguments alone, with no property or variable set. */
+    private static Config.Parsed parse(String... args) {
+        return Config.parse(args, NONE::get, NONE::get);
     }
 
-    private void set(String key, String value) {
-        touched.add(key);
-        System.setProperty(key, value);
+    private static Config config(String... args) {
+        return parse(args).config();
     }
 
     /** A malformed number on the command line is one usage line, not a stack trace. */
     @Test
     void aMalformedNumberArgumentSaysWhichAndWhat() {
-        assertThatThrownBy(() -> Config.fromArgs(new String[] {"--port=abc"}))
+        assertThatThrownBy(() -> parse("--port=abc"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("--port is not a number: abc");
-        assertThatThrownBy(() -> Config.fromArgs(new String[] {"--slow.query.ms=1x"}))
+        assertThatThrownBy(() -> parse("--slow.query.ms=1x"))
                 .hasMessage("--slow.query.ms is not a number: 1x");
-        assertThatThrownBy(() -> Config.fromArgs(new String[] {"--retention.spans=1x"}))
+        assertThatThrownBy(() -> parse("--retention-hours=a day"))
+                .as("named as it was typed")
+                .hasMessage("--retention-hours is not a number: a day");
+        assertThatThrownBy(() -> parse("--retention.spans=1x"))
                 .as("a key the server owns is checked before it is forwarded")
                 .hasMessage("--retention.spans is not a number: 1x");
-        assertThatThrownBy(() -> Config.fromArgs(new String[] {"--ingest.max-spans-per-second=abc"}))
+        assertThatThrownBy(() -> parse("--ingest.max-spans-per-second=abc"))
                 .hasMessage("--ingest.max-spans-per-second is not a number: abc");
-        assertThat(System.getProperty("spidersense.retention.spans")).as("nothing forwarded").isNull();
     }
 
     @Test
@@ -57,16 +61,16 @@ class ConfigTest {
 
     @Test
     void systemPropertiesWithoutAnythingSetGiveTheDefaults() {
-        assertThat(Config.fromSystemProperties()).isEqualTo(Config.defaults());
+        assertThat(Config.fromSystemProperties(NONE::get, NONE::get)).isEqualTo(Config.defaults());
     }
 
     @Test
     void environmentVariablesAreReadBelowSystemProperties() {
-        java.util.Map<String, String> env = java.util.Map.of(
+        Map<String, String> env = Map.of(
                 "SPIDERSENSE_PORT", "4001",
                 "SPIDERSENSE_COLLECTOR", "http://127.0.0.1:4000",
                 "SPIDERSENSE_SLOW_QUERY_MS", "25");
-        java.util.Map<String, String> properties = java.util.Map.of("spidersense.slow.query.ms", "30");
+        Map<String, String> properties = Map.of("spidersense.slow.query.ms", "30");
 
         Config c = Config.fromSystemProperties(properties::get, env::get);
 
@@ -82,9 +86,9 @@ class ConfigTest {
      */
     @Test
     void anEmptyPropertyLeavesTheVariableInForce() {
-        java.util.Map<String, String> properties = java.util.Map.of(
+        Map<String, String> properties = Map.of(
                 "spidersense.slow.query.ms", "", "spidersense.port", "");
-        java.util.Map<String, String> env = java.util.Map.of("SPIDERSENSE_SLOW_QUERY_MS", "50");
+        Map<String, String> env = Map.of("SPIDERSENSE_SLOW_QUERY_MS", "50");
 
         Config c = Config.fromSystemProperties(properties::get, env::get);
 
@@ -116,11 +120,11 @@ class ConfigTest {
                 new Row("spidersense.ignore.endpoints", "", "/internal/**", ""),
                 new Row("spidersense.ignore.endpoints", unset, "", unset));
         for (Row row : rows) {
-            java.util.Map<String, String> properties = new java.util.HashMap<>();
+            Map<String, String> properties = new HashMap<>();
             if (row.property() != null) {
                 properties.put(row.key(), row.property());
             }
-            java.util.Map<String, String> env = new java.util.HashMap<>();
+            Map<String, String> env = new HashMap<>();
             if (row.variable() != null) {
                 env.put(Config.envName(row.key()), row.variable());
             }
@@ -131,17 +135,18 @@ class ConfigTest {
 
     @Test
     void systemPropertiesAreRead() {
-        set("spidersense.port", "4321");
-        set("spidersense.host", "0.0.0.0");
-        set("spidersense.collector", "http://elsewhere:4000/");
-        set("spidersense.service", "orders");
-        set("spidersense.db", "~/db/other/sense");
-        set("spidersense.retention.hours", "6");
-        set("spidersense.slow.request.ms", "13");
-        set("spidersense.slow.query.ms", "14");
-        set("spidersense.open", "true");
+        Map<String, String> properties = Map.of(
+                "spidersense.port", "4321",
+                "spidersense.host", "0.0.0.0",
+                "spidersense.collector", "http://elsewhere:4000/",
+                "spidersense.service", "orders",
+                "spidersense.db", "~/db/other/sense",
+                "spidersense.retention.hours", "6",
+                "spidersense.slow.request.ms", "13",
+                "spidersense.slow.query.ms", "14",
+                "spidersense.open", "true");
 
-        Config c = Config.fromSystemProperties();
+        Config c = Config.fromSystemProperties(properties::get, NONE::get);
 
         assertThat(c.port()).isEqualTo(4321);
         assertThat(c.host()).isEqualTo("0.0.0.0");
@@ -156,10 +161,10 @@ class ConfigTest {
 
     @Test
     void argumentsOverrideSystemProperties() {
-        set("spidersense.port", "4321");
-        set("spidersense.slow.query.ms", "14");
+        Map<String, String> properties = Map.of("spidersense.port", "4321", "spidersense.slow.query.ms", "14");
 
-        Config c = Config.fromArgs(new String[] {"--port=4005", "--host=0.0.0.0", "--open=true"});
+        Config c = Config.parse(new String[] {"--port=4005", "--host=0.0.0.0", "--open=true"},
+                properties::get, NONE::get).config();
 
         assertThat(c.port()).isEqualTo(4005);
         assertThat(c.host()).isEqualTo("0.0.0.0");
@@ -169,7 +174,7 @@ class ConfigTest {
 
     @Test
     void bareFlagsAreIgnored() {
-        Config c = Config.fromArgs(new String[] {"--help", "-x", "--port=4100", ""});
+        Config c = config("--help", "-x", "--port=4100", "");
         assertThat(c.port()).isEqualTo(4100);
         assertThat(c).isEqualTo(Config.defaults().withPort(4100));
     }
@@ -177,14 +182,15 @@ class ConfigTest {
     /** A mistyped key would otherwise take its default with nothing to say so. */
     @Test
     void anUnknownKeyIsAUsageError() {
-        assertThatThrownBy(() -> Config.fromArgs(new String[] {"--prot=4100"}))
+        assertThatThrownBy(() -> parse("--prot=4100"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("unknown option: --prot; java -jar spider-sense.jar --help lists them");
     }
 
     /**
-     * {@code --help} lists every key the standalone jar takes, each of which it accepts, and points
-     * at the CLI's own {@code help} for the commands rather than repeating a subset of them.
+     * {@code --help} lists every documented key the standalone jar takes and points at the CLI's own
+     * {@code help} for the commands rather than repeating a subset of them; and the jar accepts
+     * each of them, with a value of the key's kind.
      */
     @Test
     void theHelpListsEveryKeyTheJarTakesAndNothingElse() {
@@ -198,36 +204,35 @@ class ConfigTest {
         }
         String help = captured.toString(java.nio.charset.StandardCharsets.UTF_8);
         List<String> keys = java.util.regex.Pattern.compile("(?m)^\\s+--([a-z.-]+)=").matcher(help)
-                .results().map(m -> m.group(1)).toList();
+                .results().map(m -> "spidersense." + m.group(1)).toList();
 
         assertThat(help).contains("java -jar spider-sense.jar help");
-        assertThat(keys).containsExactlyInAnyOrder("port", "host", "collector", "service", "db",
-                "retention.hours", "retention.spans", "ingest.max-spans-per-second",
-                "slow.request.ms", "slow.query.ms", "app.packages", "ignore.endpoints",
-                "source.dirs", "open");
-        for (String key : keys) {
-            touched.add("spidersense." + key);
-            String value = key.equals("open") ? "true" : key.contains(".ms") || key.startsWith("retention")
-                    || key.startsWith("ingest") || key.equals("port") ? "1" : "x";
-            Config.fromArgs(new String[] {"--" + key + "=" + value});
+        assertThat(keys).containsExactlyInAnyOrderElementsOf(Key.documentedProperties());
+        for (Key key : Key.values()) {
+            String value = switch (key.kind()) {
+                case INT, LONG -> "1";
+                case BOOLEAN -> "true";
+                case STRING -> "x";
+            };
+            assertThat(parse("--" + key.argument() + "=" + value)).as("%s", key).isNotNull();
         }
     }
 
     @Test
     void zeroZeroZeroZeroIsNotAnAddressToConnectTo() {
         assertThat(Config.defaults().baseUrl()).isEqualTo("http://127.0.0.1:4000");
-        assertThat(Config.fromArgs(new String[] {"--host=0.0.0.0", "--port=4010"}).baseUrl())
+        assertThat(config("--host=0.0.0.0", "--port=4010").baseUrl())
                 .isEqualTo("http://127.0.0.1:4010");
-        assertThat(Config.fromArgs(new String[] {"--host=::1", "--port=4010"}).baseUrl())
+        assertThat(config("--host=::1", "--port=4010").baseUrl())
                 .as("an IPv6 address in brackets").isEqualTo("http://[::1]:4010");
-        assertThat(Config.fromArgs(new String[] {"--host=::", "--port=4010"}).baseUrl())
+        assertThat(config("--host=::", "--port=4010").baseUrl())
                 .isEqualTo("http://127.0.0.1:4010");
     }
 
     @Test
     void theOtlpEndpointIsTheCollectorWhenForwarding() {
         assertThat(Config.defaults().otlpEndpoint()).isEqualTo("http://127.0.0.1:4000");
-        assertThat(Config.fromArgs(new String[] {"--collector=http://box:4000//"}).otlpEndpoint())
+        assertThat(config("--collector=http://box:4000//").otlpEndpoint())
                 .isEqualTo("http://box:4000");
     }
 
@@ -252,10 +257,10 @@ class ConfigTest {
 
     @Test
     void theDatabaseAndRetentionTravelOnlyWhenSet() {
-        Config c = Config.fromArgs(new String[] {"--db=jdbc:h2:mem:x", "--retention.hours=6"});
+        Config c = config("--db=jdbc:h2:mem:x", "--retention.hours=6");
 
         assertThat(c.toServerArgs()).contains("--db=jdbc:h2:mem:x", "--retention.hours=6");
-        assertThat(Config.fromArgs(new String[] {"--retention-hours=3"}).toServerArgs())
+        assertThat(config("--retention-hours=3").toServerArgs())
                 .as("the dashed spelling is accepted too").contains("--retention.hours=3");
     }
 
@@ -270,12 +275,12 @@ class ConfigTest {
 
     @Test
     void serverArgumentsRoundTripThroughFromArgs() {
-        Config c = Config.fromArgs(new String[] {
+        Config c = config(
                 "--port=4321", "--host=0.0.0.0", "--service=orders",
                 "--db=jdbc:h2:mem:it", "--retention.hours=6",
-                "--slow.request.ms=13", "--slow.query.ms=14"}).withMode("agent");
+                "--slow.request.ms=13", "--slow.query.ms=14").withMode("agent");
 
-        Config again = Config.fromArgs(c.toServerArgs().toArray(new String[0]));
+        Config again = config(c.toServerArgs().toArray(new String[0]));
 
         assertThat(again).isEqualTo(c);
     }
@@ -307,33 +312,37 @@ class ConfigTest {
                 assertThat(Config.envName((String) property)).isEqualTo(env));
     }
 
+    /**
+     * The server's keys are handed back as the properties the caller sets, and set nothing
+     * themselves.
+     */
     @Test
-    void serverOwnedArgumentsBecomeSystemProperties() {
-        touched.add("spidersense.app.packages");
-        touched.add("spidersense.ignore.endpoints");
-        touched.add("spidersense.retention.spans");
-        touched.add("spidersense.ingest.max-spans-per-second");
+    void serverOwnedArgumentsBecomeServerProperties() {
+        Config.Parsed parsed = parse("--app.packages=com.acme,org.acme", "--ignore.endpoints=",
+                "--retention.spans=250000", "--ingest.max-spans-per-second=5000", "--port=4100");
 
-        Config.fromArgs(new String[] {"--app.packages=com.acme,org.acme", "--ignore.endpoints=",
-                "--retention.spans=250000", "--ingest.max-spans-per-second=5000"});
-
-        assertThat(System.getProperty("spidersense.app.packages")).isEqualTo("com.acme,org.acme");
-        // Kept empty, not dropped: an empty list means "ignore nothing" (configuration.adoc#ignored-endpoints).
-        assertThat(System.getProperty("spidersense.ignore.endpoints")).isEmpty();
-        assertThat(System.getProperty("spidersense.retention.spans")).isEqualTo("250000");
-        assertThat(System.getProperty("spidersense.ingest.max-spans-per-second")).isEqualTo("5000");
+        assertThat(parsed.serverProperties()).containsOnly(
+                Map.entry("spidersense.app.packages", "com.acme,org.acme"),
+                // Kept empty, not dropped: an empty list means "ignore nothing" (configuration.adoc#ignored-endpoints).
+                Map.entry("spidersense.ignore.endpoints", ""),
+                Map.entry("spidersense.retention.spans", "250000"),
+                Map.entry("spidersense.ingest.max-spans-per-second", "5000"));
+        assertThat(parsed.config()).isEqualTo(Config.defaults().withPort(4100));
+        assertThat(System.getProperty("spidersense.app.packages")).as("nothing set").isNull();
     }
 
     @Test
     void aMalformedNumberFallsBackAloneAndKeepsEveryOtherKey() {
-        set("spidersense.collector", "http://127.0.0.1:4000");
-        set("spidersense.service", "orders");
-        set("spidersense.slow.query.ms", "1x");
-        set("spidersense.port", "abc");
-        set("spidersense.retention.hours", "a day");
-        set("spidersense.slow.request.ms", "250");
+        Map<String, String> properties = Map.of(
+                "spidersense.collector", "http://127.0.0.1:4000",
+                "spidersense.service", "orders",
+                "spidersense.slow.query.ms", "1x",
+                "spidersense.port", "abc",
+                "spidersense.retention.hours", "a day",
+                "spidersense.slow.request.ms", "250");
 
-        Config c = Config.fromSystemProperties();
+        Config.Parsed parsed = Config.parse(null, properties::get, NONE::get);
+        Config c = parsed.config();
 
         assertThat(c.collector()).as("still forwarding").isEqualTo("http://127.0.0.1:4000");
         assertThat(c.service()).isEqualTo("orders");
@@ -341,13 +350,21 @@ class ConfigTest {
         assertThat(c.port()).isEqualTo(4000);
         assertThat(c.retentionHours()).as("the default, passed on so the server does not warn again").isEqualTo(24);
         assertThat(c.slowRequestMs()).isEqualTo(250);
+        assertThat(parsed.warnings()).containsExactlyInAnyOrder(
+                "spidersense.port=abc is not a number; using 4000",
+                "spidersense.retention.hours=a day is not a number; using 24",
+                "spidersense.slow.query.ms=1x is not a number; using 100");
     }
 
+    /** The one lookup over this JVM's own properties and environment, read and never written. */
     @Test
-    void theSystemPropertyWinsOverTheEnvironmentVariable() {
-        set("otel.exporter.otlp.protocol", "grpc");
-        assertThat(Config.propertyOrEnv("otel.exporter.otlp.protocol")).isEqualTo("grpc");
+    void theSystemPropertyAndTheEnvironmentAreWhatTheLookupReads() {
+        assertThat(Config.propertyOrEnv("java.version")).isEqualTo(System.getProperty("java.version"));
         assertThat(Config.propertyOrEnv("spidersense.definitely.not.set.anywhere")).isNull();
+        Map<String, String> properties = Map.of("otel.exporter.otlp.protocol", "grpc");
+        Map<String, String> env = Map.of("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf");
+        assertThat(Config.propertyOrEnv("otel.exporter.otlp.protocol", properties::get, env::get))
+                .as("the property wins over the variable").isEqualTo("grpc");
     }
 
     @Test

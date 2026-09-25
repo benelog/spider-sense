@@ -1,8 +1,11 @@
 package net.benelog.spidersense.launcher;
 
 import java.util.ArrayList;
+import java.util.EnumMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 import org.jspecify.annotations.Nullable;
@@ -50,105 +53,211 @@ public record Config(
                 DEFAULT_SLOW_REQUEST_MS, DEFAULT_SLOW_QUERY_MS, false, AGENT);
     }
 
-    /** Reads the {@code spidersense.*} system properties, falling back to the defaults. */
-    public static Config fromSystemProperties() {
-        return fromSystemProperties(System::getProperty, System::getenv);
+    /**
+     * What {@link #parse} makes of the arguments, the properties and the environment.
+     *
+     * @param config           the launcher's configuration
+     * @param serverProperties the server's own keys given as arguments, as the {@code spidersense.*}
+     *                         system properties the caller sets for the server in this JVM to read;
+     *                         a value is kept as written, because an empty
+     *                         {@code spidersense.ignore.endpoints} means "ignore nothing"
+     *                         (configuration.adoc#ignored-endpoints)
+     * @param warnings         one line per malformed property or variable, which fell back to its
+     *                         default; the caller prints them
+     */
+    public record Parsed(Config config, Map<String, String> serverProperties, List<String> warnings) {
     }
 
     /**
-     * The same with the properties and the environment given, for a test: each key is read by
-     * {@link #propertyOrEnv(String, Function, Function)}.
+     * Reads the {@code spidersense.*} system properties and variables, falling back to the
+     * defaults, and prints a line on stderr for each malformed one.
      */
+    public static Config fromSystemProperties() {
+        Parsed parsed = parse(null, System::getProperty, System::getenv);
+        printWarnings(parsed);
+        return parsed.config();
+    }
+
+    /** The same with the properties and the environment given, for a test. */
     static Config fromSystemProperties(Function<String, @Nullable String> property,
             Function<String, @Nullable String> env) {
-        Function<String, @Nullable String> read = name -> propertyOrEnv(name, property, env);
-        Config d = defaults();
-        return new Config(
-                intProperty(read, "spidersense.port", d.port()),
-                stringProperty(read, "spidersense.host", d.host()),
-                read.apply("spidersense.collector"),
-                read.apply("spidersense.service"),
-                read.apply("spidersense.db"),
-                integerProperty(read, "spidersense.retention.hours"),
-                longProperty(read, "spidersense.slow.request.ms", d.slowRequestMs()),
-                longProperty(read, "spidersense.slow.query.ms", d.slowQueryMs()),
-                booleanProperty(read, "spidersense.open", d.open()),
-                stringProperty(read, "spidersense.mode", d.mode()));
+        return parse(null, property, env).config();
+    }
+
+    /** {@link #parse} over this JVM's system properties and environment. */
+    public static Parsed fromArgs(String @Nullable [] args) {
+        return parse(args, System::getProperty, System::getenv);
+    }
+
+    /** Prints each of the warnings on stderr. */
+    public static void printWarnings(Parsed parsed) {
+        for (String warning : parsed.warnings()) {
+            System.err.println(SpiderSenseAgent.PREFIX + warning);
+        }
     }
 
     /**
-     * The system properties overridden by {@code --key=value} arguments; the keys are those of the
-     * table without the {@code spidersense.} prefix, e.g. {@code --port=4001}.
-     * Bare flags are ignored so {@code --help} and {@code --version} can be handled by the
-     * caller; an unknown {@code --key=value} is a usage error, as a malformed number is. {@code --app.packages}, {@code --ignore.endpoints},
-     * {@code --retention.spans}, {@code --ingest.max-spans-per-second} and
-     * {@code --source.dirs} belong to the server
-     * alone and are forwarded as the {@code spidersense.*} system property of the same name,
-     * which the server reads from this JVM.
+     * The properties and variables, each read by {@link #propertyOrEnv(String, Function, Function)},
+     * overridden by {@code --key=value} arguments; the keys are those of {@link Key}, e.g.
+     * {@code --port=4001}.
+     *
+     * <p>Bare flags are ignored so {@code --help} and {@code --version} can be handled by the
+     * caller. An unknown {@code --key=value} is a usage error, as a malformed number is, whoever
+     * owns the key: a typo is a usage line, not a stack trace from the server after the banner.
+     * A malformed property or variable costs its own key and no other: it falls back to its
+     * default with a warning, so a typo in {@code spidersense.slow.query.ms} does not also drop
+     * {@code spidersense.collector} and start an embedded UI where the user asked to forward.
+     *
+     * @throws IllegalArgumentException for an unknown or malformed argument
      */
-    public static Config fromArgs(String[] args) {
-        Config c = fromSystemProperties();
-        if (args == null) {
-            return c;
-        }
-        int port = c.port();
-        String host = c.host();
-        String collector = c.collector();
-        String service = c.service();
-        String db = c.db();
-        Integer retentionHours = c.retentionHours();
-        long slowRequest = c.slowRequestMs();
-        long slowQuery = c.slowQueryMs();
-        boolean open = c.open();
-        String mode = c.mode();
-        for (String arg : args) {
+    static Parsed parse(String @Nullable [] args, Function<String, @Nullable String> property,
+            Function<String, @Nullable String> env) {
+        Map<Key, Argument> given = new EnumMap<>(Key.class);
+        Map<String, String> serverProperties = new LinkedHashMap<>();
+        for (String arg : args == null ? new String[0] : args) {
             if (arg == null || !arg.startsWith("--")) {
                 continue;
             }
-            int eq = arg.indexOf('=');
-            if (eq < 0) {
+            int equals = arg.indexOf('=');
+            if (equals < 0) {
                 continue;
             }
-            String key = arg.substring(2, eq).trim();
-            String value = arg.substring(eq + 1).trim();
-            try {
-                switch (key) {
-                    case "port" -> port = Integer.parseInt(value);
-                    case "host" -> host = value;
-                    case "collector" -> collector = emptyToNull(value);
-                    case "service", "embedded-service" -> service = emptyToNull(value);
-                    case "db" -> db = emptyToNull(value);
-                    // Both spellings: the property is retention.hours, but a dashed flag reads better.
-                    case "retention.hours", "retention-hours" -> retentionHours = Integer.valueOf(value);
-                    case "slow.request.ms" -> slowRequest = Long.parseLong(value);
-                    case "slow.query.ms" -> slowQuery = Long.parseLong(value);
-                    case "open" -> open = Boolean.parseBoolean(value);
-                    case "mode" -> mode = value;
-                    // Server-owned keys the launcher never interprets: the server runs in this JVM
-                    // and reads them as spidersense.* properties, so the argument becomes the
-                    // property. The value is kept as written, because an empty
-                    // spidersense.ignore.endpoints means "ignore nothing" (configuration.adoc#ignored-endpoints).
-                    case "app.packages", "ignore.endpoints", "source.dirs" ->
-                            System.setProperty("spidersense." + key, value);
-                    // Numbers, so checked here: a typo is the same usage error as --port's,
-                    // not a stack trace from the server after the banner.
-                    case "retention.spans", "ingest.max-spans-per-second" -> {
-                        if (!value.isEmpty()) {
-                            long unused = Long.parseLong(value);
-                        }
-                        System.setProperty("spidersense." + key, value);
-                    }
-                    // A typo would otherwise be invisible: the key would take its default
-                    // and nothing would say so.
-                    default -> throw new IllegalArgumentException("unknown option: --" + key
-                            + "; java -jar spider-sense.jar --help lists them");
-                }
-            } catch (NumberFormatException e) {
-                throw new IllegalArgumentException("--" + key + " is not a number: " + value, e);
+            Argument argument = new Argument(arg.substring(2, equals).trim(), arg.substring(equals + 1).trim());
+            Key key = Key.ofArgument(argument.name());
+            if (key == null) {
+                // A typo would otherwise be invisible: the key would take its default and
+                // nothing would say so.
+                throw new IllegalArgumentException("unknown option: --" + argument.name()
+                        + "; java -jar spider-sense.jar --help lists them");
+            }
+            if (key.owner() == Key.Owner.SERVER) {
+                argument.check(key.kind());
+                serverProperties.put(key.property(), argument.value());
+            } else {
+                given.put(key, argument);
             }
         }
-        return new Config(port, host, collector, service, db, retentionHours,
-                slowRequest, slowQuery, open, mode);
+        List<String> warnings = new ArrayList<>();
+        Values values = new Values(given, name -> propertyOrEnv(name, property, env), warnings);
+        Config d = defaults();
+        Config config = new Config(
+                values.integer(Key.PORT, d.port()),
+                values.string(Key.HOST, d.host()),
+                values.optionalString(Key.COLLECTOR),
+                values.optionalString(Key.SERVICE),
+                values.optionalString(Key.DB),
+                values.optionalInteger(Key.RETENTION_HOURS, DEFAULT_RETENTION_HOURS),
+                values.number(Key.SLOW_REQUEST_MS, d.slowRequestMs()),
+                values.number(Key.SLOW_QUERY_MS, d.slowQueryMs()),
+                values.bool(Key.OPEN, d.open()),
+                values.string(Key.MODE, d.mode()));
+        return new Parsed(config, Map.copyOf(serverProperties), List.copyOf(warnings));
+    }
+
+    /** One {@code --name=value} argument, both trimmed, the name as it was typed. */
+    private record Argument(String name, String value) {
+
+        /** A number the key needs, or a usage error naming the argument. */
+        void check(Key.Kind kind) {
+            try {
+                switch (kind) {
+                    case INT -> Integer.parseInt(value);
+                    case LONG -> {
+                        // Empty is allowed: it is unset, which is what an empty cap means.
+                        if (!value.isEmpty()) {
+                            Long.parseLong(value);
+                        }
+                    }
+                    case BOOLEAN, STRING -> {
+                    }
+                }
+            } catch (NumberFormatException e) {
+                throw new IllegalArgumentException("--" + name + " is not a number: " + value, e);
+            }
+        }
+    }
+
+    /**
+     * The launcher's keys, each the argument if given, which must be well formed, else the
+     * property or variable, which falls back with a warning when it is not.
+     */
+    private record Values(Map<Key, Argument> given, Function<String, @Nullable String> read,
+            List<String> warnings) {
+
+        String string(Key key, String fallback) {
+            Argument argument = given.get(key);
+            if (argument != null) {
+                return argument.value();
+            }
+            String value = read.apply(key.property());
+            return value != null ? value : fallback;
+        }
+
+        /** Empty is unset, from either channel. */
+        @Nullable String optionalString(Key key) {
+            Argument argument = given.get(key);
+            return emptyToNull(argument != null ? argument.value() : read.apply(key.property()));
+        }
+
+        int integer(Key key, int fallback) {
+            Integer value = optionalInteger(key, fallback);
+            return value != null ? value : fallback;
+        }
+
+        /**
+         * Null when unset; a malformed property is the fallback rather than null, so that for
+         * {@code retention.hours} it is passed on and the server does not read the same malformed
+         * property again and warn a second time.
+         */
+        @Nullable Integer optionalInteger(Key key, int malformedFallback) {
+            Argument argument = given.get(key);
+            if (argument != null) {
+                argument.check(Key.Kind.INT);
+                return Integer.valueOf(argument.value());
+            }
+            String value = read.apply(key.property());
+            if (value == null) {
+                return null;
+            }
+            try {
+                return Integer.valueOf(value.trim());
+            } catch (NumberFormatException e) {
+                warnMalformed(key, value, String.valueOf(malformedFallback));
+                return malformedFallback;
+            }
+        }
+
+        long number(Key key, long fallback) {
+            Argument argument = given.get(key);
+            if (argument != null) {
+                try {
+                    return Long.parseLong(argument.value());
+                } catch (NumberFormatException e) {
+                    throw new IllegalArgumentException(
+                            "--" + argument.name() + " is not a number: " + argument.value(), e);
+                }
+            }
+            String value = read.apply(key.property());
+            if (value == null) {
+                return fallback;
+            }
+            try {
+                return Long.parseLong(value.trim());
+            } catch (NumberFormatException e) {
+                warnMalformed(key, value, String.valueOf(fallback));
+                return fallback;
+            }
+        }
+
+        boolean bool(Key key, boolean fallback) {
+            Argument argument = given.get(key);
+            String value = argument != null ? argument.value() : read.apply(key.property());
+            return value != null ? Boolean.parseBoolean(value.trim()) : fallback;
+        }
+
+        private void warnMalformed(Key key, String value, String fallback) {
+            warnings.add(key.property() + "=" + value + " is not a number; using " + fallback);
+        }
     }
 
     public Config withMode(String newMode) {
@@ -267,67 +376,5 @@ public record Config(
 
     private static @Nullable String emptyToNull(@Nullable String v) {
         return v == null || v.isEmpty() ? null : v;
-    }
-
-    private static String stringProperty(Function<String, @Nullable String> read, String name, String fallback) {
-        String v = read.apply(name);
-        return v != null ? v : fallback;
-    }
-
-    /*
-     * A malformed number costs its own key and no other: the key falls back to its default with
-     * a warning on stderr, so a typo in spidersense.slow.query.ms does not also drop
-     * spidersense.collector and start an embedded UI where the user asked to forward.
-     */
-
-    private static int intProperty(Function<String, @Nullable String> read, String name, int fallback) {
-        String v = read.apply(name);
-        if (v == null) {
-            return fallback;
-        }
-        try {
-            return Integer.parseInt(v.trim());
-        } catch (NumberFormatException e) {
-            warnMalformed(name, v, String.valueOf(fallback));
-            return fallback;
-        }
-    }
-
-    private static @Nullable Integer integerProperty(Function<String, @Nullable String> read, String name) {
-        String v = read.apply(name);
-        if (v == null) {
-            return null;
-        }
-        try {
-            return Integer.valueOf(v.trim());
-        } catch (NumberFormatException e) {
-            // Passed on as the default rather than left unset, so the server does not read the
-            // same malformed property again and warn a second time.
-            warnMalformed(name, v, String.valueOf(DEFAULT_RETENTION_HOURS));
-            return DEFAULT_RETENTION_HOURS;
-        }
-    }
-
-    private static long longProperty(Function<String, @Nullable String> read, String name, long fallback) {
-        String v = read.apply(name);
-        if (v == null) {
-            return fallback;
-        }
-        try {
-            return Long.parseLong(v.trim());
-        } catch (NumberFormatException e) {
-            warnMalformed(name, v, String.valueOf(fallback));
-            return fallback;
-        }
-    }
-
-    private static void warnMalformed(String name, String value, String fallback) {
-        System.err.println(SpiderSenseAgent.PREFIX + name + "=" + value + " is not a number; using "
-                + fallback);
-    }
-
-    private static boolean booleanProperty(Function<String, @Nullable String> read, String name, boolean fallback) {
-        String v = read.apply(name);
-        return v != null ? Boolean.parseBoolean(v.trim()) : fallback;
     }
 }

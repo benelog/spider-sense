@@ -147,14 +147,8 @@ class ConfigFileTest {
     }
 
     @Test
-    void everyKeyOfTheTableIsKnown() {
-        assertThat(ConfigFile.KNOWN).containsExactlyInAnyOrder(
-                "spidersense.port", "spidersense.host", "spidersense.collector",
-                "spidersense.service", "spidersense.db", "spidersense.retention.hours",
-                "spidersense.retention.spans", "spidersense.ingest.max-spans-per-second",
-                "spidersense.slow.request.ms", "spidersense.slow.query.ms", "spidersense.open",
-                "spidersense.app.packages", "spidersense.ignore.endpoints",
-                "spidersense.source.dirs");
+    void everyKeyOfTheTableIsKnown() throws IOException {
+        assertThat(ConfigFile.KNOWN_KEYS).isEqualTo(KeyTest.manualTable().keySet());
     }
 
     private static String capturingStderr(Runnable body) {

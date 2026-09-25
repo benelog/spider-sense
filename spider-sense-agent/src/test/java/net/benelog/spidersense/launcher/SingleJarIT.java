@@ -391,6 +391,54 @@ class SingleJarIT {
         assertThat(unknown.err()).startsWith("spider-sense: unknown option: --prot");
     }
 
+    /**
+     * The launcher's defaults are the server's, on every key both know: the launcher always passes
+     * {@code --slow.request.ms} and {@code --slow.query.ms}, so a default changed in the server alone
+     * would be silently overridden, and the help and the properties file would show the old one.
+     *
+     * <p>Here because only the packaged jar holds both: the server's {@code Config} is read from its
+     * nested jar, with no argument, property or variable set.
+     */
+    @Test
+    void theLaunchersDefaultsAreTheServers() throws Exception {
+        Path serverJar = work.resolve("server.jar");
+        try (java.util.jar.JarFile jar = new java.util.jar.JarFile(senseJar.toFile());
+                java.io.InputStream in = jar.getInputStream(jar.getEntry(NestedJar.ENTRY))) {
+            Files.copy(in, serverJar);
+        }
+        try (java.net.URLClassLoader loader = new java.net.URLClassLoader(
+                new java.net.URL[] {serverJar.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+            Class<?> type = Class.forName("net.benelog.spidersense.server.Config", true, loader);
+            java.lang.reflect.Method parse = type.getDeclaredMethod("parse", String[].class,
+                    java.util.function.Function.class, java.util.function.Function.class, Path.class,
+                    java.util.function.Consumer.class);
+            parse.setAccessible(true);
+            java.util.function.Function<String, String> none = key -> null;
+            java.util.function.Consumer<String> ignore = line -> { };
+            Object server = parse.invoke(null, new String[0], none, none, work, ignore);
+            java.util.function.Function<String, Object> field = name -> {
+                try {
+                    return type.getMethod(name).invoke(server);
+                } catch (ReflectiveOperationException e) {
+                    throw new LinkageError(name, e);
+                }
+            };
+            Config launcher = Config.defaults();
+
+            assertThat(field.apply("port")).isEqualTo(launcher.port());
+            assertThat(field.apply("host")).isEqualTo(launcher.host());
+            assertThat(field.apply("slowRequestMs")).isEqualTo(launcher.slowRequestMs());
+            assertThat(field.apply("slowQueryMs")).isEqualTo(launcher.slowQueryMs());
+            assertThat(field.apply("db")).isEqualTo(Config.DEFAULT_DB);
+            assertThat(field.apply("retentionHours")).isEqualTo(Config.DEFAULT_RETENTION_HOURS);
+            assertThat(field.apply("retentionSpans")).isEqualTo(Long.parseLong(Key.RETENTION_SPANS.shown()));
+            assertThat(field.apply("maxSpansPerSecond")).as("unset").isNull();
+            assertThat(field.apply("appPackages")).isEqualTo(Key.APP_PACKAGES.shown());
+            assertThat(field.apply("ignoreEndpoints")).isEqualTo(Key.IGNORE_ENDPOINTS.shown());
+            assertThat(field.apply("sourceDirs")).as("unset: the working directory's roots").isNull();
+        }
+    }
+
     // --- the command line ---------------------------------------------------------------------
 
     /**
