@@ -99,6 +99,11 @@ final class Options {
             SQL, "a statement",
             IMPORT, "a file to read");
 
+    /** Every command the parser takes, which a test runs in both modes. */
+    static Set<String> commands() {
+        return COMMANDS.keySet();
+    }
+
     private final String command;
     private final @Nullable String argument;
     private final Map<String, String> values;
