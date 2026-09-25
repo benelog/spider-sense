@@ -142,11 +142,14 @@ public record Config(
                 home);
     }
 
-    /** The keys {@link #parse} reads, each also from its property and its environment variable. */
+    /**
+     * The keys {@link #parse} reads, each also from its property and its environment variable.
+     * {@code await-writes} is not among them: it is an argument only, so no property or variable
+     * of a running application can make ingest wait for the disk.
+     */
     private static final List<String> KEYS = List.of("host", "port", "mode", "db", "retention.hours",
             "retention.spans", "ingest.max-spans-per-second", "slow.request.ms", "slow.query.ms",
-            "embedded-service", "app.packages", "ignore.endpoints", "source.dirs", "jar",
-            "await-writes");
+            "embedded-service", "app.packages", "ignore.endpoints", "source.dirs", "jar");
 
     /**
      * The keys whose readers tell an empty value from an unset one: an empty

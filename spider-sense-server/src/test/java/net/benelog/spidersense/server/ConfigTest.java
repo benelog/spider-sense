@@ -81,6 +81,15 @@ class ConfigTest {
     }
 
     @Test
+    void noPropertyOrVariableMakesIngestWaitForTheWriter() {
+        Config config = parse(Map.of("spidersense.await-writes", "true"),
+                Map.of("SPIDERSENSE_AWAIT_WRITES", "true"));
+
+        assertThat(config.awaitWrites()).as("an argument only, never a setting of a running application")
+                .isFalse();
+    }
+
+    @Test
     void aStandaloneServerIsEmbeddedInNothing() {
         assertThat(parse("--embedded-service=orders").embeddedService())
                 .as("standalone is the default mode").isNull();
