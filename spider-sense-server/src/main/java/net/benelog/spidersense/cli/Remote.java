@@ -158,7 +158,9 @@ final class Remote {
             return Cli.OK;
         }
         Output.print(out, response.body());
-        return Options.CHECK.equals(options.command()) ? verdict(response) : Cli.OK;
+        return Options.CHECK.equals(options.command())
+                ? verdict(response.headers().firstValue(AgentApi.PASS_HEADER).orElse(null))
+                : Cli.OK;
     }
 
     /**
@@ -302,10 +304,11 @@ final class Remote {
 
     /**
      * The verdict, read from the header {@code /api/check} sets, because the text
-     * rendering is for a reader and an exit code must not be parsed out of prose.
+     * rendering is for a reader and an exit code must not be parsed out of prose:
+     * {@code true} passes, {@code false} fails the check, anything else is a window
+     * with no requests to judge, and no header at all passes.
      */
-    private static int verdict(HttpResponse<String> response) {
-        String pass = response.headers().firstValue(AgentApi.PASS_HEADER).orElse(null);
+    static int verdict(@Nullable String pass) {
         if (pass == null) {
             return Cli.OK;
         }
@@ -325,19 +328,30 @@ final class Remote {
      * thing whether a server answered or the file did.
      */
     private static String message(HttpResponse<String> response) {
-        String body = response.body();
-        try {
-            if (Json.parse(body) instanceof Json.JsonObject object && object.has("error")) {
-                return object.getString("error");
+        return message(response.statusCode(), response.headers().firstValue("content-type").orElse(null),
+                response.body());
+    }
+
+    /**
+     * The same from the parts of a response: the {@code error} of a JSON object,
+     * else a {@code text/} body as it came, trimmed, else the status line with
+     * the body, if there is one, after it.
+     */
+    static String message(int status, @Nullable String contentType, @Nullable String body) {
+        if (body != null) {
+            try {
+                if (Json.parse(body) instanceof Json.JsonObject object && object.has("error")) {
+                    return object.getString("error");
+                }
+            } catch (RuntimeException e) {
+                // Not JSON: the status line and the body are all there is to say.
             }
-        } catch (RuntimeException e) {
-            // Not JSON: the status line and the body are all there is to say.
         }
-        boolean text = response.headers().firstValue("content-type").orElse("").startsWith("text/");
+        boolean text = contentType != null && contentType.startsWith("text/");
         if (text && body != null && !body.isBlank()) {
             return body.trim();
         }
-        return "HTTP " + response.statusCode() + (body == null || body.isBlank() ? "" : ": " + body.trim());
+        return "HTTP " + status + (body == null || body.isBlank() ? "" : ": " + body.trim());
     }
 
     /** The base URL without the trailing slashes a user may type: {@code http://h:4000/} is {@code http://h:4000}. */

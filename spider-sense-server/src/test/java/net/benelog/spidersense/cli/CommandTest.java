@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
 /** The command table against the help that lists it and against itself. */
@@ -41,5 +42,20 @@ class CommandTest {
         assertThat(Command.names()).doesNotHaveDuplicates();
         assertThat(Command.named("findings")).isNotNull();
         assertThat(Command.named("finding")).isNull();
+    }
+
+    /** What says rather than asks travels in a body; a question has none (api.adoc). */
+    @Test
+    void theBodyOfEachPostIsWhatTheCallerSays() {
+        assertThat(body("ack", "f1", "--note=known")).isEqualTo("{\"note\":\"known\"}");
+        assertThat(body("mark", "before-fix", "--service=orders"))
+                .contains("\"name\":\"before-fix\"").contains("\"service\":\"orders\"");
+        assertThat(body("sql", "select 1", "--limit=5")).isEqualTo("{\"sql\":\"select 1\",\"limit\":5}");
+        assertThat(body("findings")).as("a question").isNull();
+    }
+
+    private static @Nullable String body(String... args) {
+        Options options = Options.parse(args);
+        return Command.named(options.command()).bodyOf(options);
     }
 }
