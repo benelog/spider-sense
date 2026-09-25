@@ -99,9 +99,9 @@ final class Params {
                 : WebResponse.json(Codecs.error(said)).status(HttpStatus.BAD_REQUEST);
     }
 
+    /** The {@code limit} parameter, clamped by {@link Limits#clamp}. */
     static int limit(WebRequest req, int fallback, int max) {
-        int limit = req.queryParam("limit", Integer::parseInt, fallback);
-        return Math.min(Math.max(1, limit), max);
+        return Limits.clamp(req.queryParam("limit", Integer::parseInt, fallback), fallback, max);
     }
 
     static @Nullable String service(WebRequest req) {

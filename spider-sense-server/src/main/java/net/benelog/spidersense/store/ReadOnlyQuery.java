@@ -87,7 +87,7 @@ public final class ReadOnlyQuery {
         guard(statement);
         // guard refuses a statement that is null or blank, so this one is neither.
         String sql = Objects.requireNonNull(statement, "guard let a null statement through");
-        int cap = Math.min(Math.max(1, limit), LIMIT_MAX);
+        int cap = Math.clamp(limit, 1, LIMIT_MAX);
         long started = System.nanoTime();
         try (Connection connection = database.reader()) {
             connection.setReadOnly(true);

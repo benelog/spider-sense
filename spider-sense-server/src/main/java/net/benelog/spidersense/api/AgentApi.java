@@ -40,12 +40,6 @@ public final class AgentApi {
      */
     public static final String PASS_HEADER = "X-Spider-Sense-Pass";
 
-    private static final int FINDINGS = 20;
-    private static final int FINDINGS_MAX = 100;
-    private static final int MARKS = 50;
-    private static final int MARKS_MAX = 500;
-    private static final int ACKS = 200;
-    private static final int ACKS_MAX = 1000;
 
     private final Reports reports;
     private final Params params;
@@ -80,7 +74,7 @@ public final class AgentApi {
     public WebResponse findings(WebRequest req) {
         Window window = params.window(req);
         return Params.answer(req, reports.findings(window, Params.service(req),
-                Params.limit(req, FINDINGS, FINDINGS_MAX), Params.full(req),
+                Params.limit(req, Limits.FINDINGS, Limits.FINDINGS_MAX), Params.full(req),
                 req.queryParam("hideAcked", Boolean::parseBoolean, false)));
     }
 
@@ -181,11 +175,11 @@ public final class AgentApi {
     }
 
     public WebResponse acks(WebRequest req) {
-        return Params.answer(req, reports.acks(Params.limit(req, ACKS, ACKS_MAX)));
+        return Params.answer(req, reports.acks(Params.limit(req, Limits.ACKS, Limits.ACKS_MAX)));
     }
 
     public WebResponse marks(WebRequest req) {
-        return Params.answer(req, reports.marks(Params.limit(req, MARKS, MARKS_MAX)));
+        return Params.answer(req, reports.marks(Params.limit(req, Limits.MARKS, Limits.MARKS_MAX)));
     }
 
     public WebResponse mark(WebRequest req) {

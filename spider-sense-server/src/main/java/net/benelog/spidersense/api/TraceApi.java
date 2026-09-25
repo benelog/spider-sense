@@ -69,7 +69,7 @@ public final class TraceApi {
                 .put("window", Codecs.window(window))
                 .put("totals", Codecs.totals(queries.totals(window, null)))
                 .put("services", Codecs.serviceSummaries(queries.services(window)))
-                .put("tingles", Codecs.tingles(queries.tingles(window, 50)))
+                .put("tingles", Codecs.tingles(queries.tingles(window, Limits.OVERVIEW_TINGLES)))
                 .put("series", Codecs.overviewSeries(queries.buckets(window, null, null))));
     }
 
@@ -183,7 +183,7 @@ public final class TraceApi {
                 req.queryParamOrNull("q"),
                 Params.optionalLong(req, "before"),
                 req.queryParamOrNull("beforeId"),
-                Params.limit(req, 50, 1000));
+                Params.limit(req, Limits.TRACES, Limits.TRACES_MAX));
         return Params.answer(req, reports.traces(filter, Params.full(req)));
     }
 
@@ -206,7 +206,7 @@ public final class TraceApi {
 
     public WebResponse scatter(WebRequest req) {
         Window window = params.window(req);
-        int limit = Params.limit(req, 5000, 50_000);
+        int limit = Params.limit(req, Limits.SCATTER, Limits.SCATTER_MAX);
         // One point past the limit tells a list that was cut from one that was exactly full.
         List<Stats.ScatterPoint> points = queries.scatter(window, Params.service(req),
                 req.queryParamOrNull("endpointId"), limit + 1);
@@ -227,7 +227,7 @@ public final class TraceApi {
 
     public WebResponse queries(WebRequest req) {
         return Params.answer(req, reports.queries(params.window(req), Params.service(req),
-                req.queryParamOrNull("sort"), Params.limit(req, 100, 1000), Params.full(req)));
+                req.queryParamOrNull("sort"), Params.limit(req, Limits.QUERIES, Limits.QUERIES_MAX), Params.full(req)));
     }
 
     public WebResponse query(WebRequest req) {
@@ -254,7 +254,7 @@ public final class TraceApi {
 
     public WebResponse errors(WebRequest req) {
         return Params.answer(req, reports.errors(params.window(req), Params.service(req),
-                Params.limit(req, 100, 1000), Params.full(req)));
+                Params.limit(req, Limits.ERRORS, Limits.ERRORS_MAX), Params.full(req)));
     }
 
     public WebResponse error(WebRequest req) {
@@ -307,7 +307,7 @@ public final class TraceApi {
                 req.queryParamOrNull("traceId"),
                 Params.optionalLong(req, "before"),
                 Params.optionalLong(req, "beforeId"),
-                Params.limit(req, 200, 5000));
+                Params.limit(req, Limits.LOGS, Limits.LOGS_MAX));
         return Params.answer(req, reports.logs(filter));
     }
 }

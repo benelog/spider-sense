@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
+import net.benelog.spidersense.api.Limits;
 import net.benelog.spidersense.api.Reports;
 import net.benelog.spidersense.query.Queries;
 import net.benelog.spidersense.query.Selectors;
@@ -108,7 +109,7 @@ final class Local {
                     window(options, reports, service), service, null,
                     options.optionalLong("min-ms"), null,
                     options.valueOrNull("status"), options.valueOrNull("q"), null,
-                    options.limit(Limits.TRACES, Limits.TRACES_MAX)), options.flag("full"));
+                    options.limit(Limits.CLI_TRACES, Limits.TRACES_MAX)), options.flag("full"));
             case "endpoints" -> reports.endpoints(window(options, reports, service), service);
             case "queries" -> reports.queries(window(options, reports, service), service, null,
                     options.limit(Limits.QUERIES, Limits.QUERIES_MAX), options.flag("full"));
@@ -183,7 +184,7 @@ final class Local {
 
     private static Window window(Options options, Reports reports, @Nullable String service) {
         return reports.selectors().window(null, null,
-                options.value("since", Limits.SINCE), options.valueOrNull("until"), service);
+                options.value("since", Selectors.DEFAULT_SINCE), options.valueOrNull("until"), service);
     }
 
     private static int verdict(Reports.Report report) {

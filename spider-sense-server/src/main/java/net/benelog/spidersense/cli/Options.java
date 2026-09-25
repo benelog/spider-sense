@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
+import net.benelog.spidersense.api.Limits;
 import net.benelog.spidersense.query.Check;
 import org.jspecify.annotations.Nullable;
 
@@ -179,10 +180,7 @@ final class Options {
 
     /** The limit of a list, clamped the way the server clamps it (api.adoc). */
     int limit(int fallback, int max) {
-        if (!has("limit")) {
-            return fallback;
-        }
-        return Math.min(Math.max(1, (int) number("limit")), max);
+        return Limits.clamp(has("limit") ? (int) number("limit") : null, fallback, max);
     }
 
     @Nullable Long optionalLong(String key) {

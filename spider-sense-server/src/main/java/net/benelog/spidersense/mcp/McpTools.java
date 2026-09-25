@@ -3,8 +3,8 @@ package net.benelog.spidersense.mcp;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import net.benelog.spidersense.api.Limits;
 import net.benelog.spidersense.api.Reports;
-import net.benelog.spidersense.cli.Limits;
 import net.benelog.spidersense.query.Check;
 import net.benelog.spidersense.query.Selectors;
 import net.benelog.spidersense.query.Window;
@@ -127,7 +127,7 @@ public final class McpTools implements McpServer.ToolRunner {
 
     private Window window(Map<String, Object> arguments, @Nullable String service) {
         String since = string(arguments, "since");
-        return reports.selectors().window(null, null, since == null ? Limits.SINCE : since,
+        return reports.selectors().window(null, null, since == null ? Selectors.DEFAULT_SINCE : since,
                 string(arguments, "until"), service);
     }
 
@@ -146,11 +146,8 @@ public final class McpTools implements McpServer.ToolRunner {
 
     /** Clamped the way the handlers and the CLI clamp it, so the lists agree. */
     private static int limit(Map<String, Object> arguments, int fallback, int max) {
-        Object value = arguments.get("limit");
-        if (!(value instanceof Number number)) {
-            return fallback;
-        }
-        return Math.min(Math.max(1, number.intValue()), max);
+        return Limits.clamp(arguments.get("limit") instanceof Number number ? number.intValue() : null,
+                fallback, max);
     }
 
     /** A tool result is one message, and a host shows it as one line. */

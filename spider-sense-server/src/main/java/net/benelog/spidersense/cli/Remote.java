@@ -17,7 +17,9 @@ import java.time.Duration;
 import java.util.Map;
 
 import net.benelog.spidersense.api.AgentApi;
+import net.benelog.spidersense.api.Limits;
 import net.benelog.spidersense.api.Reports;
+import net.benelog.spidersense.query.Selectors;
 import net.benelog.spidersilk.json.Json;
 import org.jspecify.annotations.Nullable;
 
@@ -283,7 +285,7 @@ final class Remote {
                     .add("status", options.valueOrNull("status"))
                     .add("minMs", options.valueOrNull("min-ms"))
                     .add("q", options.valueOrNull("q"))
-                    .add("limit", options.limit(Limits.TRACES, Limits.TRACES_MAX));
+                    .add("limit", options.limit(Limits.CLI_TRACES, Limits.TRACES_MAX));
             case "endpoints" -> window(options, new Query("/api/endpoints"));
             case "queries" -> window(options, new Query("/api/queries"))
                     .add("limit", options.limit(Limits.QUERIES, Limits.QUERIES_MAX));
@@ -322,7 +324,7 @@ final class Remote {
 
     private static Query window(Options options, Query query) {
         return query
-                .add("since", options.value("since", Limits.SINCE))
+                .add("since", options.value("since", Selectors.DEFAULT_SINCE))
                 .add("until", options.valueOrNull("until"))
                 .add("service", options.valueOrNull("service"));
     }
