@@ -93,6 +93,29 @@ class TinglesTest {
         assertThat(tingles.isSlow(span("CLIENT", "c".repeat(16), 200, Map.of(), List.of()))).isFalse();
     }
 
+    /** The column, the tingle and the trace flag share one rule: longer than the threshold, not as long. */
+    @Test
+    void aRequestIsSlowOnlyPastTheThreshold() {
+        SpanRecord atThreshold = span("SERVER", null, 500, Map.of(), List.of());
+        SpanRecord past = span("SERVER", null, 501, Map.of(), List.of());
+
+        assertThat(tingles.isSlowRequest(atThreshold)).isFalse();
+        assertThat(tingles.isSlow(atThreshold)).isFalse();
+        assertThat(tingles.of(atThreshold)).isEmpty();
+        assertThat(tingles.isSlowRequest(past)).isTrue();
+        assertThat(tingles.isSlowRequest(500.0)).isFalse();
+        assertThat(tingles.isSlowRequest(500.001)).isTrue();
+    }
+
+    @Test
+    void onlyADatabaseSpanIsASlowQuery() {
+        assertThat(tingles.isSlowQuery(span("CLIENT", "c".repeat(16), 101,
+                Map.of("db.system", "h2", "db.statement", "select 1"), List.of()))).isTrue();
+        assertThat(tingles.isSlowQuery(span("CLIENT", "c".repeat(16), 100,
+                Map.of("db.system", "h2", "db.statement", "select 1"), List.of()))).isFalse();
+        assertThat(tingles.isSlowQuery(span("CLIENT", "c".repeat(16), 900, Map.of(), List.of()))).isFalse();
+    }
+
     @Test
     void messagesAreNormalisedSoLiteralsDoNotSplitAGroup() {
         assertThat(Ids.normaliseMessage("Order 42 is already shipped"))

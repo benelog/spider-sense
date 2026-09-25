@@ -94,6 +94,6 @@ record TraceSummary(String traceId, long startMs, long endMs, long durationNs, S
         return new TraceSummary(root.traceId(), startMs, endMs, durationNs, root.spanId(),
                 rootName, root.service(), root.kind(),
                 AttrJson.encodeStrings(List.copyOf(services), SERVICES_MAX), spans.size(), errorCount, dbCount,
-                root.httpStatus(), durationMs > slowRequestMs, errorCount > 0);
+                root.httpStatus(), Tingles.isSlowRequest(durationMs, slowRequestMs), errorCount > 0);
     }
 }

@@ -58,11 +58,33 @@ public final class Tingles {
         return span.isEntry() && !ignored.matches(span);
     }
 
-    /** Whether the span is what the {@code span.slow} column means. */
+    /** Whether the span is what the {@code span.slow} column means: a slow request or a slow query. */
     public boolean isSlow(SpanRecord span) {
-        double durationMs = span.durationMillis();
-        return (isEntry(span) && durationMs > slowRequestMs)
-                || (span.dbStatement() != null && durationMs > slowQueryMs);
+        return isSlowRequest(span) || isSlowQuery(span);
+    }
+
+    /** Whether the span is a request that took longer than the slow-request threshold. */
+    public boolean isSlowRequest(SpanRecord span) {
+        return isEntry(span) && isSlowRequest(span.durationMillis());
+    }
+
+    /** Whether the span is a database statement that took longer than the slow-query threshold. */
+    public boolean isSlowQuery(SpanRecord span) {
+        return span.dbStatement() != null && span.durationMillis() > slowQueryMs;
+    }
+
+    /**
+     * Whether a request, or a whole trace, of this duration is slow: the
+     * {@code span.slow} column of an entry span, its {@code slow-request} tingle and
+     * the {@code trace.slow} flag all ask this.
+     */
+    public boolean isSlowRequest(double durationMs) {
+        return isSlowRequest(durationMs, slowRequestMs);
+    }
+
+    /** The same against a threshold passed in, for the trace summary, which holds only the threshold. */
+    static boolean isSlowRequest(double durationMs, long slowRequestMs) {
+        return durationMs > slowRequestMs;
     }
 
     /**
@@ -78,12 +100,12 @@ public final class Tingles {
         double durationMs = span.durationMillis();
         long at = span.startMillis();
 
-        if (isEntry(span) && durationMs > slowRequestMs) {
+        if (isSlowRequest(span)) {
             produced.add(new Tingle(Tingle.SLOW_REQUEST, at, span.service(), span.endpointName(),
                     formatMillis(durationMs), span.traceId(), span.spanId(), durationMs));
         }
         String statement = span.dbStatement();
-        if (statement != null && durationMs > slowQueryMs) {
+        if (statement != null && isSlowQuery(span)) {
             produced.add(new Tingle(Tingle.SLOW_QUERY, at, span.service(), span.summary(),
                     statement, span.traceId(), span.spanId(), durationMs));
         }
