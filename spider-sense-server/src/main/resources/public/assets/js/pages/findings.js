@@ -54,22 +54,35 @@ export function stateChip(state) {
   return chip(state, { class: 'chip-state state-' + state, title: STATE_TITLE[state] || state });
 }
 
-/** The number the kind is ranked by, as pages.adoc#findings spells the column out. */
-export function impactOf(finding) {
+/**
+ * The number the kind is ranked by, as pages.adoc#findings spells the column out:
+ * `{ text, cls }`, `cls` the class of its span when it has one.
+ */
+export function impactText(finding) {
   const n = finding.numbers || {};
   // A regression is ranked by the number its original kind is ranked by.
-  if (finding.kind === 'regression' && n.originalKind) return impactOf({ ...finding, kind: n.originalKind });
+  if (finding.kind === 'regression' && n.originalKind) return impactText({ ...finding, kind: n.originalKind });
   switch (finding.kind) {
-    case 'error': return h('span.bad', count(n.count));
-    case 'log-error': return h('span.bad', count(n.count));
+    case 'error': return { text: count(n.count), cls: 'bad' };
+    case 'log-error': return { text: count(n.count), cls: 'bad' };
     case 'n-plus-one':
-    case 'n-plus-one-http': return h('span', count(n.medianRepeats) + ' × ' + count(n.affected));
-    case 'pool-exhausted': return h('span', count(n.pendingMax));
-    case 'gc-pause': return h('span', dur(n.worstMs));
-    case 'heap-pressure': return h('span', pct(n.ratioMax));
-    case 'thread-growth': return h('span', '+' + count((n.last || 0) - (n.first || 0)));
-    default: return h('span', dur(n.totalMs));
+    case 'n-plus-one-http': return { text: count(n.medianRepeats) + ' × ' + count(n.affected) };
+    case 'pool-exhausted': return { text: count(n.pendingMax) };
+    case 'gc-pause': return { text: dur(n.worstMs) };
+    case 'heap-pressure': return { text: pct(n.ratioMax) };
+    case 'thread-growth': return { text: '+' + count((n.last || 0) - (n.first || 0)) };
+    default: return { text: dur(n.totalMs) };
   }
+}
+
+/** A `{ text, cls, title }` as a span. */
+function textSpan({ text, cls, title }) {
+  return h(cls ? 'span.' + cls : 'span', { title }, text);
+}
+
+/** The impact cell of a row. */
+function impactOf(finding) {
+  return textSpan(impactText(finding));
 }
 
 const NUMBER_LABEL = {
@@ -94,32 +107,43 @@ function numberLabel(key) {
   return NUMBER_LABEL[key] || key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase();
 }
 
-/** One value of `numbers`, formatted as the same value is formatted everywhere else. */
-function numberValue(key, value, kind) {
-  if (value === null || value === undefined) return h('span.muted', '-');
-  if (key === 'hotSpan') return hotSpanLine(value);
-  if (key === 'hotSpans') return hotSpanList(value);
-  if (key === 'breakdown') return breakdownLine(value);
-  if (Array.isArray(value)) {
-    if (!value.length) return h('span.muted', 'none');
-    return h('ul.f-list', value.slice(0, 5).map((item) => h('li',
-      h('span.f-list-name', item.endpoint || item.name || String(item)),
-      (item.calls != null || item.count != null)
-        ? h('span.f-list-count', count(item.calls != null ? item.calls : item.count))
-        : null)));
-  }
-  if (typeof value === 'string') return h('span.mono', truncate(value, 200));
+/**
+ * One scalar value of `numbers` (absent, a string or a number) as `{ text, cls, title }`,
+ * formatted as the same value is formatted everywhere else; `kind` decides the unit a key
+ * alone does not say.
+ */
+export function numberText(key, value, kind) {
+  if (value === null || value === undefined) return { text: '-', cls: 'muted' };
+  if (typeof value === 'string') return { text: truncate(value, 200), cls: 'mono' };
   if (key === 'at' || key === 'firstSeen' || key === 'lastSeen' || key === 'resolvedAt') {
-    return h('span', { title: bothTimes(value) }, time(value));
+    return { text: time(value), title: bothTimes(value) };
   }
-  if (key === 'apdex') return h('span', apdex(value));
-  if (key === 'dbShare' || key === 'shareMax' || key === 'ratioMax') return h('span', pct(value));
-  if ((BYTE_NUMBERS[kind] || new Set()).has(key)) return h('span', bytes(value));
+  if (key === 'apdex') return { text: apdex(value) };
+  if (key === 'dbShare' || key === 'shareMax' || key === 'ratioMax') return { text: pct(value) };
+  if ((BYTE_NUMBERS[kind] || new Set()).has(key)) return { text: bytes(value) };
   // A duration ends in Ms, or in Ms per request or run (msPerRequest, dbMsPerRequest, dbMsPerRun).
-  if (/(^ms|Ms)(PerRequest|PerRun)?$/.test(key)) return h('span', dur(value));
-  if (key.endsWith('PerRequest') || key.endsWith('PerRun')) return h('span', rate(value));
+  if (/(^ms|Ms)(PerRequest|PerRun)?$/.test(key)) return { text: dur(value) };
+  if (key.endsWith('PerRequest') || key.endsWith('PerRun')) return { text: rate(value) };
   // max (a pool's connections, a JVM's threads) is a count like the rest (pages.adoc#findings).
-  return h('span', count(value));
+  return { text: count(value) };
+}
+
+/** One value of `numbers`: the structured ones as lists, the rest as numberText says. */
+function numberValue(key, value, kind) {
+  if (value !== null && value !== undefined) {
+    if (key === 'hotSpan') return hotSpanLine(value);
+    if (key === 'hotSpans') return hotSpanList(value);
+    if (key === 'breakdown') return breakdownLine(value);
+    if (Array.isArray(value)) {
+      if (!value.length) return h('span.muted', 'none');
+      return h('ul.f-list', value.slice(0, 5).map((item) => h('li',
+        h('span.f-list-name', item.endpoint || item.name || String(item)),
+        (item.calls != null || item.count != null)
+          ? h('span.f-list-count', count(item.calls != null ? item.calls : item.count))
+          : null)));
+    }
+  }
+  return textSpan(numberText(key, value, kind));
 }
 
 /** `SELECT order_line · 312.4 ms self · 62.0%`: where the time went (findings.adoc#time). */

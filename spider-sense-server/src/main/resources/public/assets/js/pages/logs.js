@@ -12,6 +12,20 @@ const LIMIT = 200;
 /** Live tails while a row is open only if the page is scrolled to within this much of the top. */
 const TAIL_SCROLL_SLACK_PX = 40;
 
+/**
+ * The newest page merged into the rows already loaded, newest first by `at` then `id`, less
+ * the rows the window has left (before `from`); null when a full page of `limit` rows holds
+ * none of the loaded ones, since it may not reach them and a gap would open.
+ */
+export function mergeNewestPage(rows, incoming, from, limit) {
+  const known = new Set(rows.map((log) => log.id));
+  const fresh = incoming.filter((log) => !known.has(log.id));
+  if (fresh.length === incoming.length && incoming.length >= limit) return null;
+  return fresh.concat(rows)
+    .filter((log) => log.at >= from)
+    .sort((a, b) => (b.at - a.at) || (b.id - a.id));
+}
+
 export function render(root, ctx) {
   let rows = [];
   let total = 0;
@@ -108,19 +122,6 @@ export function render(root, ctx) {
   }
 
   /**
-   * The newest page merged into the rows already loaded, newest first by `at` then `id`, less
-   * the rows the window has left; null when the page does not reach them, and a gap would open.
-   */
-  function merged(incoming, from) {
-    const known = new Set(rows.map((log) => log.id));
-    const fresh = incoming.filter((log) => !known.has(log.id));
-    if (fresh.length === incoming.length && incoming.length >= LIMIT) return null;
-    return fresh.concat(rows)
-      .filter((log) => log.at >= from)
-      .sort((a, b) => (b.at - a.at) || (b.id - a.id));
-  }
-
-  /**
    * `cursor` is the last row's `{ before: at, beforeId: id }` when loading more. Without one,
    * the newest page replaces the rows, except under a Live tick after Load more, which merges it.
    */
@@ -138,7 +139,7 @@ export function render(root, ctx) {
   function paintLogs({ res, key, tail, w }, cursor) {
     const incoming = res.logs || [];
     total = res.total || incoming.length;
-    const kept = tail ? merged(incoming, w.from) : null;
+    const kept = tail ? mergeNewestPage(rows, incoming, w.from, LIMIT) : null;
     if (cursor) {
       const seen = new Set(rows.map((log) => log.id));
       rows = rows.concat(incoming.filter((log) => !seen.has(log.id)));

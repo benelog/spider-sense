@@ -13,6 +13,17 @@ import { count, dur, clock } from '../format.js';
 const LIVE_MERGE_PERIOD_MS = 2000;
 const LIVE_MERGE_WINDOW_MS = 10000;
 
+/**
+ * The linear axis' maximum: half again the p99 of the durations shown, so a few outliers do
+ * not flatten the rest; at least 10 ms, and 100 ms when there is no point.
+ */
+export function scatterYMax(durations) {
+  const ds = durations.slice().sort((a, b) => a - b);
+  if (!ds.length) return 100;
+  const p99 = ds[Math.min(ds.length - 1, Math.floor(ds.length * 0.99))];
+  return Math.max(10, p99 * 1.5);
+}
+
 export function render(root, ctx) {
   let points = [];
   let chart = null;
@@ -115,10 +126,7 @@ export function render(root, ctx) {
   }
 
   function yMaxOf() {
-    const ds = visible().map((p) => p[POINT.MS]).sort((a, b) => a - b);
-    if (!ds.length) return 100;
-    const p99 = ds[Math.min(ds.length - 1, Math.floor(ds.length * 0.99))];
-    return Math.max(10, p99 * 1.5);
+    return scatterYMax(visible().map((p) => p[POINT.MS]));
   }
 
   function paintBar() {

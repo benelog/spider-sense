@@ -7,6 +7,16 @@ import { pageLoader } from '../page.js';
 import { chartBox, alignedTimes, alignTo } from '../charts.js';
 import { count } from '../format.js';
 
+/**
+ * A series' name in the legend: its attributes less the `jvm.` prefix, else its service,
+ * and led by its service when the top bar shows every service (`service` empty).
+ */
+export function labelOf(s, service = api.state.service) {
+  const attrs = Object.entries(s.attributes || {});
+  const text = attrs.length ? attrs.map(([k, v]) => k.replace(/^jvm\./, '') + '=' + v).join(' ') : (s.service || 'value');
+  return service ? text : (s.service ? s.service + ' · ' + text : text);
+}
+
 export function render(root, ctx) {
   let catalog = [];
   let selected = ctx.query.metric || '';
@@ -107,7 +117,7 @@ export function render(root, ctx) {
       countChart.node.hidden = true;
       return;
     }
-    const labels = series.map(labelOf);
+    const labels = series.map((s) => labelOf(s));
     const isHistogram = data.type === 'histogram';
     const t = alignedTimes(series);
     const at = (s, key) => alignTo(t, s, key);
@@ -139,12 +149,6 @@ export function render(root, ctx) {
   }
 
   const seriesLoader = pageLoader({ fetch: fetchSeries, paint: paintSeries, body: chart.body });
-
-  function labelOf(s) {
-    const attrs = Object.entries(s.attributes || {});
-    const text = attrs.length ? attrs.map(([k, v]) => k.replace(/^jvm\./, '') + '=' + v).join(' ') : (s.service || 'value');
-    return api.state.service ? text : (s.service ? s.service + ' · ' + text : text);
-  }
 
   const catalogLoader = pageLoader({
     fetch: () => api.metricCatalog({}),

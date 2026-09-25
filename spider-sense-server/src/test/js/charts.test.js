@@ -1,7 +1,7 @@
 // charts.js: the legend a chart's spec implies, and the series alignment of the JVM and Metrics pages.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { legendItems, alignedTimes, alignTo } from '../../main/resources/public/assets/js/charts.js';
+import { legendItems, alignedTimes, alignTo, stackColumns } from '../../main/resources/public/assets/js/charts.js';
 import { throughputSpec } from '../../main/resources/public/assets/js/throughput.js';
 
 test('the legend lists the series under their legend label, leaving out the hidden ones', () => {
@@ -35,4 +35,26 @@ test('series sampled at different instants share the union of their times', () =
   assert.deepEqual(t, [1, 2, 3]);
   assert.deepEqual(alignTo(t, a, 'used'), [10, null, 30]);
   assert.deepEqual(alignTo(t, b, 'used'), [null, 20, null]);
+});
+
+test('a stacked series holds the cumulative value and paints before the ones below it', () => {
+  const { columns, order, column } = stackColumns([
+    { label: 'fast', type: 'bar', stack: 'load', values: [1, 2] },
+    { label: 'slow', type: 'bar', stack: 'load', values: [3, null] },
+    { label: 'p95', type: 'line', values: [5, null] },
+  ]);
+  assert.deepEqual(order, [1, 0, 2]);
+  assert.deepEqual(columns, [[4, 2], [1, 2], [5, null]]);
+  assert.deepEqual(column, [2, 1, 3], 'spec series i is uPlot series column[i]');
+});
+
+test('bars take one slot per stack and one per unstacked bar series', () => {
+  const { slotOf, bars } = stackColumns([
+    { type: 'bar', stack: 'a', values: [] },
+    { type: 'line', values: [] },
+    { type: 'bar', values: [] },
+    { type: 'bar', stack: 'a', values: [] },
+  ]);
+  assert.deepEqual([...slotOf], [[0, 0], [2, 1], [3, 0]]);
+  assert.equal(bars, 2);
 });

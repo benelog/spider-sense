@@ -218,6 +218,52 @@ export function alignTo(t, s, key) {
 }
 
 /**
+ * A time series' data columns and paint order, from its spec series.
+ * A series with `stack: <key>` sits on the previous series carrying the same key, so its
+ * column holds the cumulative value.
+ * uPlot paints series in order, so within a stack the tallest cumulative series goes first
+ * and the ones below it paint over it: `order` lists the spec indexes in paint order,
+ * `columns` their values in that order, and `column[i]` is spec series i's uPlot series index
+ * (1-based, after the time column).
+ * Bars take one slot per stack group and one per unstacked bar series: `slotOf` maps a bar
+ * series' spec index to its slot, and `bars` counts the slots.
+ */
+export function stackColumns(specSeries) {
+  const running = new Map();
+  const values = specSeries.map((s) => {
+    const raw = s.values || [];
+    if (!s.stack) return raw.map((v) => (v == null ? null : v));
+    const under = running.get(s.stack) || [];
+    const out = raw.map((v, i) => (under[i] || 0) + (v == null ? 0 : v));
+    running.set(s.stack, out);
+    return out;
+  });
+  const order = specSeries.map((s, i) => i);
+  const groups = new Map();
+  specSeries.forEach((s, i) => {
+    if (!s.stack) return;
+    if (!groups.has(s.stack)) groups.set(s.stack, []);
+    groups.get(s.stack).push(i);
+  });
+  for (const slots of groups.values()) {
+    const reversed = slots.slice().reverse();
+    slots.forEach((slot, k) => { order[slot] = reversed[k]; });
+  }
+  const column = [];
+  order.forEach((specIndex, k) => { column[specIndex] = k + 1; });
+  const slotKeys = [];
+  const slotOf = new Map();
+  specSeries.forEach((s, i) => {
+    if (s.type !== 'bar') return;
+    const key = s.stack ? 'stack:' + s.stack : 'bar:' + i;
+    let k = slotKeys.indexOf(key);
+    if (k < 0) { k = slotKeys.length; slotKeys.push(key); }
+    slotOf.set(i, k);
+  });
+  return { columns: order.map((i) => values[i]), order, column, slotOf, bars: slotKeys.length };
+}
+
+/**
  * A time series.
  * spec = {
  *   height, t: [msEpoch], short,
@@ -229,46 +275,10 @@ export function alignTo(t, s, key) {
 export function timeSeries(container, spec) {
   const chart = new Chart(container, (width, height, colors) => {
     const xs = (spec.t || []).map((ms) => ms / 1000);
-    // Stacking: a series with `stack: <key>` sits on the previous series carrying the
-    // same key, so its data column holds the cumulative value.
-    const running = new Map();
-    const values = spec.series.map((s) => {
-      const raw = s.values || [];
-      if (!s.stack) return raw.map((v) => (v == null ? null : v));
-      const under = running.get(s.stack) || [];
-      const out = raw.map((v, i) => (under[i] || 0) + (v == null ? 0 : v));
-      running.set(s.stack, out);
-      return out;
-    });
-    // uPlot paints series in order, so the tallest cumulative series goes first and
-    // the ones below it paint over it; `column` maps a spec series to its data column.
-    const order = spec.series.map((s, i) => i);
-    const groups = new Map();
-    spec.series.forEach((s, i) => {
-      if (!s.stack) return;
-      if (!groups.has(s.stack)) groups.set(s.stack, []);
-      groups.get(s.stack).push(i);
-    });
-    for (const slots of groups.values()) {
-      const reversed = slots.slice().reverse();
-      slots.forEach((slot, k) => { order[slot] = reversed[k]; });
-    }
-    const column = [];
-    order.forEach((specIndex, k) => { column[specIndex] = k + 1; });
-    const data = [xs, ...order.map((i) => values[i])];
+    const { columns, order, column, slotOf, bars } = stackColumns(spec.series);
+    const data = [xs, ...columns];
     const scales = { x: { time: true } };
     const series = [{ label: 'Time' }];
-    // One bar slot per stack group, one per unstacked bar series.
-    const slotKeys = [];
-    const slotOf = new Map();
-    spec.series.forEach((s, i) => {
-      if (s.type !== 'bar') return;
-      const key = s.stack ? 'stack:' + s.stack : 'bar:' + i;
-      let k = slotKeys.indexOf(key);
-      if (k < 0) { k = slotKeys.length; slotKeys.push(key); }
-      slotOf.set(i, k);
-    });
-    const bars = slotKeys.length;
     for (const specIndex of order) {
       const s = spec.series[specIndex];
       const color = resolveColor(s.color, colors);
