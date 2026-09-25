@@ -855,7 +855,7 @@ public final class Queries {
      * <p>Siblings that start in the same nanosecond are ordered by their span id, so two
      * readings of one trace list its spans alike (cli.adoc#text-rendering).
      */
-    private static List<SpanRecord> sorted(List<SpanRecord> spans) {
+    static List<SpanRecord> sorted(List<SpanRecord> spans) {
         Map<String, List<SpanRecord>> children = new LinkedHashMap<>();
         Set<String> ids = new HashSet<>();
         for (SpanRecord span : spans) {
@@ -1247,6 +1247,107 @@ public final class Queries {
     public record TimeSplit(List<HotSpan> hotSpans, Map<String, Double> breakdown) {
 
         public static final TimeSplit NONE = new TimeSplit(List.of(), Map.of());
+
+        /**
+         * The split of a set of spans, whole traces of one service as {@link #timeSplit}
+         * reads them.
+         *
+         * <p>A span whose parent is not among them is a top span: the entry span of a
+         * request, the root span of a job. Its duration is what the shares are taken
+         * over, and its own self time is {@code self}. Every other span's self time goes
+         * to {@code db}, {@code http} or {@code internal} by its category, and to the
+         * summary it is named by.
+         */
+        static TimeSplit of(List<SpanRecord> spans) {
+            if (spans.isEmpty()) {
+                return NONE;
+            }
+            Map<String, Long> self = selfNanos(spans);
+            Set<String> known = self.keySet();
+
+            double totalMs = 0;
+            // Insertion order is the order the JSON and the text print, so it is written out
+            // rather than taken from a Map.of, whose iteration order is not specified.
+            Map<String, Double> shares = new LinkedHashMap<>();
+            for (String bucket : BUCKETS) {
+                shares.put(bucket, 0.0);
+            }
+            Map<String, double[]> hottest = new LinkedHashMap<>();
+            Map<String, String[]> named = new LinkedHashMap<>();
+            for (SpanRecord span : spans) {
+                double selfMs = Rows.ms(self.getOrDefault(span.spanId(), 0L));
+                String parent = span.parentSpanId();
+                if (parent == null || !known.contains(parent)) {
+                    // A top span: the entry span of a request, the root span of a job. Its own
+                    // self time is the request's own code, and its duration is what the shares
+                    // are taken over.
+                    totalMs += span.durationMillis();
+                    shares.merge("self", selfMs, Double::sum);
+                    continue;
+                }
+                String bucket = switch (span.category()) {
+                    case "db", "http" -> span.category();
+                    default -> "internal";
+                };
+                shares.merge(bucket, selfMs, Double::sum);
+                // An outbound call is named as an n-plus-one-http names it, so the same call
+                // reads the same in both; everything else is its summary, digits replaced.
+                String name = "http".equals(span.category()) && "CLIENT".equals(span.kind())
+                        ? callName(span) : Ids.normaliseDigits(span.summary());
+                String key = span.category() + "\0" + name;
+                named.putIfAbsent(key, new String[]{name, span.category()});
+                double[] summed = hottest.computeIfAbsent(key, k -> new double[2]);
+                summed[0] += selfMs;
+                summed[1]++;
+            }
+            if (totalMs <= 0) {
+                return NONE;
+            }
+
+            double total = totalMs;
+            shares.replaceAll((bucket, ms) -> Math.min(1, ms / total));
+            List<HotSpan> hotSpans = new ArrayList<>();
+            // Keyed by category and summary, but named by the summary alone: two categories
+            // never produce the same one, and the key is not what a reader wants to see.
+            named.forEach((key, name) -> {
+                double[] summed = hottest.getOrDefault(key, EMPTY_SUM);
+                hotSpans.add(new HotSpan(name[0], name[1], summed[0],
+                        Math.min(1, summed[0] / total), (long) summed[1]));
+            });
+            hotSpans.sort(Comparator.comparingDouble(HotSpan::selfMs).reversed()
+                    .thenComparing(HotSpan::name));
+            return new TimeSplit(
+                    List.copyOf(hotSpans.subList(0, Math.min(HOT_SPANS, hotSpans.size()))),
+                    Collections.unmodifiableMap(shares));
+        }
+    }
+
+    /**
+     * The self time of every span, by span id: its duration less the durations of its
+     * direct children among these spans, never below zero.
+     *
+     * <p>It is the Profile view's definition, which the hot span of a finding and the
+     * time split both use (findings.adoc#hot-span): a child whose parent is not among
+     * the spans takes nothing from anyone.
+     */
+    static Map<String, Long> selfNanos(List<SpanRecord> spans) {
+        Map<String, Long> childNanos = new HashMap<>();
+        Set<String> known = new HashSet<>();
+        for (SpanRecord span : spans) {
+            known.add(span.spanId());
+        }
+        for (SpanRecord span : spans) {
+            String parent = span.parentSpanId();
+            if (parent != null && known.contains(parent)) {
+                childNanos.merge(parent, span.durationNanos(), Long::sum);
+            }
+        }
+        Map<String, Long> self = new LinkedHashMap<>();
+        for (SpanRecord span : spans) {
+            self.put(span.spanId(), Math.max(0, span.durationNanos()
+                    - childNanos.getOrDefault(span.spanId(), 0L)));
+        }
+        return self;
     }
 
     /**
@@ -1313,79 +1414,8 @@ public final class Queries {
             return TimeSplit.NONE;
         }
         Where where = Where.window(window, service).andIn("trace_id", whole);
-        List<SpanRecord> spans = sql.query("SELECT " + Rows.SPAN_COLUMNS + " FROM span WHERE "
-                + where.sql(), where.params(), Rows::span);
-        if (spans.isEmpty()) {
-            return TimeSplit.NONE;
-        }
-
-        Set<String> known = new HashSet<>();
-        for (SpanRecord span : spans) {
-            known.add(span.spanId());
-        }
-        Map<String, Long> childNanos = new HashMap<>();
-        for (SpanRecord span : spans) {
-            String parent = span.parentSpanId();
-            if (parent != null && known.contains(parent)) {
-                childNanos.merge(parent, span.durationNanos(), Long::sum);
-            }
-        }
-
-        double totalMs = 0;
-        // Insertion order is the order the JSON and the text print, so it is written out
-        // rather than taken from a Map.of, whose iteration order is not specified.
-        Map<String, Double> shares = new LinkedHashMap<>();
-        for (String bucket : BUCKETS) {
-            shares.put(bucket, 0.0);
-        }
-        Map<String, double[]> hottest = new LinkedHashMap<>();
-        Map<String, String[]> named = new LinkedHashMap<>();
-        for (SpanRecord span : spans) {
-            double selfMs = Math.max(0, span.durationNanos()
-                    - childNanos.getOrDefault(span.spanId(), 0L)) / 1_000_000.0;
-            String parent = span.parentSpanId();
-            if (parent == null || !known.contains(parent)) {
-                // A top span: the entry span of a request, the root span of a job. Its own
-                // self time is the request's own code, and its duration is what the shares
-                // are taken over.
-                totalMs += span.durationMillis();
-                shares.merge("self", selfMs, Double::sum);
-                continue;
-            }
-            String bucket = switch (span.category()) {
-                case "db", "http" -> span.category();
-                default -> "internal";
-            };
-            shares.merge(bucket, selfMs, Double::sum);
-            // An outbound call is named as an n-plus-one-http names it, so the same call
-            // reads the same in both; everything else is its summary, digits replaced.
-            String name = "http".equals(span.category()) && "CLIENT".equals(span.kind())
-                    ? callName(span) : Ids.normaliseDigits(span.summary());
-            String key = span.category() + "\0" + name;
-            named.putIfAbsent(key, new String[]{name, span.category()});
-            double[] summed = hottest.computeIfAbsent(key, k -> new double[2]);
-            summed[0] += selfMs;
-            summed[1]++;
-        }
-        if (totalMs <= 0) {
-            return TimeSplit.NONE;
-        }
-
-        double total = totalMs;
-        shares.replaceAll((bucket, ms) -> Math.min(1, ms / total));
-        List<HotSpan> hotSpans = new ArrayList<>();
-        // Keyed by category and summary, but named by the summary alone: two categories
-        // never produce the same one, and the key is not what a reader wants to see.
-        named.forEach((key, name) -> {
-            double[] summed = hottest.getOrDefault(key, EMPTY_SUM);
-            hotSpans.add(new HotSpan(name[0], name[1], summed[0],
-                    Math.min(1, summed[0] / total), (long) summed[1]));
-        });
-        hotSpans.sort(Comparator.comparingDouble(HotSpan::selfMs).reversed()
-                .thenComparing(HotSpan::name));
-        return new TimeSplit(
-                List.copyOf(hotSpans.subList(0, Math.min(HOT_SPANS, hotSpans.size()))),
-                Collections.unmodifiableMap(shares));
+        return TimeSplit.of(sql.query("SELECT " + Rows.SPAN_COLUMNS + " FROM span WHERE "
+                + where.sql(), where.params(), Rows::span));
     }
 
     // --- the service map -----------------------------------------------------

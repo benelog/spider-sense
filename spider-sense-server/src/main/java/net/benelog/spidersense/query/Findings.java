@@ -1754,31 +1754,20 @@ public final class Findings {
         if (detail == null || detail.spans().isEmpty()) {
             return null;
         }
-        Set<String> known = new HashSet<>();
-        for (SpanRecord span : detail.spans()) {
-            known.add(span.spanId());
-        }
-        Map<String, Long> childNanos = new HashMap<>();
-        for (SpanRecord span : detail.spans()) {
-            String parent = span.parentSpanId();
-            if (parent != null && known.contains(parent)) {
-                childNanos.merge(parent, span.durationNanos(), Long::sum);
-            }
-        }
+        Map<String, Long> self = Queries.selfNanos(detail.spans());
         SpanRecord hottest = null;
         long selfNanos = -1;
         for (SpanRecord span : detail.spans()) {
-            long self = Math.max(0, span.durationNanos()
-                    - childNanos.getOrDefault(span.spanId(), 0L));
-            if (self > selfNanos) {
-                selfNanos = self;
+            long nanos = self.getOrDefault(span.spanId(), 0L);
+            if (nanos > selfNanos) {
+                selfNanos = nanos;
                 hottest = span;
             }
         }
         if (hottest == null) {
             return null;
         }
-        double selfMs = selfNanos / 1_000_000.0;
+        double selfMs = Rows.ms(selfNanos);
         Map<String, Object> hot = new LinkedHashMap<>();
         hot.put("name", hottest.summary());
         hot.put("category", hottest.category());
