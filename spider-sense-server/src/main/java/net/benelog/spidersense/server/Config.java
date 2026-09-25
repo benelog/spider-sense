@@ -148,10 +148,21 @@ public record Config(
         return AGENT.equals(mode);
     }
 
-    /** The base URL to print and to advertise in {@code /api/status}. */
+    /**
+     * The base URL to print and to advertise in {@code /api/status}.
+     *
+     * <p>A wildcard bind is not an address to connect to, from another machine or on Windows,
+     * so it is advertised as {@code 127.0.0.1}, as the launcher's banner does.
+     */
     public String endpoint(int boundPort) {
+        String h = host;
+        if (h.isEmpty() || h.equals("0.0.0.0") || h.equals("::") || h.equals("[::]")) {
+            h = "127.0.0.1";
+        }
         // An IPv6 address goes into a URL in brackets: http://[::1]:4000.
-        String h = host.contains(":") && !host.startsWith("[") ? "[" + host + "]" : host;
+        if (h.contains(":") && !h.startsWith("[")) {
+            h = "[" + h + "]";
+        }
         return "http://" + h + ":" + boundPort;
     }
 

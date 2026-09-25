@@ -78,6 +78,7 @@ It is stored as a `db_table` row rather than as a log (xref:storage.adoc#schema[
 }
 ----
 
+`endpoint` is the base URL to connect to, and the OTLP URLs are built on it: a wildcard bind address (`0.0.0.0`, `::`) is advertised as `127.0.0.1`, as the startup banner prints it.
 `embeddedService` is the service whose JVM the server runs inside: `spidersense.service` when the launcher was given one, else the first service that reports the server's own process id.
 It is always `null` in standalone mode, which runs inside no application, even when `spidersense.service` is set for the applications beside it.
 `ignore.endpoints` is the configured value of `spidersense.ignore.endpoints`, which xref:configuration.adoc#ignored-endpoints[Ignored endpoints] describes.

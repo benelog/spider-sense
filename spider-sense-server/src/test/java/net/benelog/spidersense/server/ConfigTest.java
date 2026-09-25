@@ -92,6 +92,17 @@ class ConfigTest {
         }
     }
 
+    /** What /api/status advertises is an address to connect to, whatever the bind address. */
+    @Test
+    void aWildcardBindIsAdvertisedAsTheLoopbackAddress() {
+        assertThat(Config.parse(new String[]{"--host=0.0.0.0"}).endpoint(4000)).isEqualTo("http://127.0.0.1:4000");
+        assertThat(Config.parse(new String[]{"--host=::"}).endpoint(4000)).isEqualTo("http://127.0.0.1:4000");
+        assertThat(Config.parse(new String[]{"--host=[::]"}).endpoint(4000)).isEqualTo("http://127.0.0.1:4000");
+        assertThat(Config.parse(new String[]{"--host=::1"}).endpoint(4001)).isEqualTo("http://[::1]:4001");
+        assertThat(Config.parse(new String[]{"--host=192.168.0.7"}).endpoint(4000))
+                .isEqualTo("http://192.168.0.7:4000");
+    }
+
     @Test
     void aPathBecomesAnAutoServerUrlWithTheHomeExpanded() {
         Config config = Config.parse(new String[]{"--db=~/db/other/sense"});
