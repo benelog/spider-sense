@@ -9,9 +9,9 @@ import {
 import { pageLoader, skeleton } from '../page.js';
 import { formatSql, stackTrace } from '../sql.js';
 import { dur, count, timeMs, bothTimes, offset, full } from '../format.js';
-
-/** A span's start as fractional epoch milliseconds: startNs carries the precision, start is the fallback. */
-const sms = (span) => (span.startNs ? span.startNs / 1e6 : span.start);
+import {
+  startMsOf, traceStartMs, spanTree, flattenTree, selfTimes, profileRows, hotSpanIds,
+} from '../trace-model.js';
 
 const CATEGORY_ICON = { http: 'trace', db: 'database', messaging: 'log', rpc: 'service', internal: 'chart' };
 
@@ -33,37 +33,6 @@ export function render(root, ctx) {
     h('div.panel-head', h('h2.panel-title', 'Logs')), logsBox);
 
   const layout = skeleton(root, () => [headPanel, bodyPanel, logsPanel]);
-
-  // --- model ------------------------------------------------------------
-
-  function tree(spans) {
-    const byId = new Map(spans.map((s) => [s.spanId, s]));
-    const children = new Map();
-    const roots = [];
-    for (const s of spans) {
-      const parent = s.parentSpanId && byId.has(s.parentSpanId) ? s.parentSpanId : null;
-      if (parent) {
-        if (!children.has(parent)) children.set(parent, []);
-        children.get(parent).push(s);
-      } else {
-        roots.push(s);
-      }
-    }
-    return { roots, children };
-  }
-
-  function flatten(spans) {
-    const { roots, children } = tree(spans);
-    const out = [];
-    const walk = (span, depth) => {
-      const kids = children.get(span.spanId) || [];
-      out.push({ span, depth, hasChildren: kids.length > 0 });
-      if (collapsed.has(span.spanId)) return;
-      for (const kid of kids) walk(kid, depth + 1);
-    };
-    for (const r of roots) walk(r, 0);
-    return out;
-  }
 
   // --- header -----------------------------------------------------------
 
@@ -101,10 +70,9 @@ export function render(root, ctx) {
   // --- waterfall --------------------------------------------------------
 
   function paintWaterfall() {
-    const spans = data.spans || [];
-    const t0 = (data.spans && data.spans.length) ? Math.min(...data.spans.map(sms)) : data.start;
+    const t0 = traceStartMs(data);
     const total = Math.max(1, data.durationMs || 1);
-    const rows = flatten(spans);
+    const rows = flattenTree(spanTree(data.spans || []), collapsed);
     const box = h('div.waterfall',
       h('div.wf-head', h('span', 'Span'), h('span', 'Timeline'), h('span.right', dur(total) + ' total')));
     for (const { span, depth, hasChildren } of rows) {
@@ -114,7 +82,7 @@ export function render(root, ctx) {
   }
 
   function waterfallRow(span, depth, hasChildren, t0, total) {
-    const startPct = Math.max(0, ((sms(span) - t0) / total) * 100);
+    const startPct = Math.max(0, ((startMsOf(span) - t0) / total) * 100);
     const widthPct = Math.max(0.4, Math.min(100 - startPct, (span.durationMs / total) * 100));
     const bar = h('span.wf-bar', {
       class: 'wf-bar' + (span.error ? ' err' : ''),
@@ -158,33 +126,12 @@ export function render(root, ctx) {
   // --- profile ----------------------------------------------------------
 
   function paintProfile() {
-    const spans = (data.spans || []).slice().sort((a, b) => sms(a) - sms(b) || b.durationMs - a.durationMs);
-    const depths = depthMap(data.spans || []);
-    const self = selfTimes(data.spans || []);
-    const t0 = (data.spans && data.spans.length) ? Math.min(...data.spans.map(sms)) : data.start;
     const total = Math.max(1, data.durationMs || 1);
     const slowMs = ((api.state.status || {}).thresholds || {}).slowRequestMs || 500;
-    let prevEnd = t0;
-    let rows = spans.map((span, i) => {
-      const gap = sms(span) - prevEnd;
-      prevEnd = Math.max(prevEnd, sms(span));
-      return {
-        span, index: i + 1, startOffset: sms(span) - t0, gap,
-        depth: depths.get(span.spanId) || 0,
-        self: self.get(span.spanId) || 0,
-      };
-    });
-    // The three steps that actually spent the time, and only when they spent enough
-    // of it to be worth reading: at least 5% of the trace.
-    const hot = new Set(rows.slice()
-      .sort((a, b) => b.self - a.self)
-      .filter((r) => r.self > 0 && r.self / total >= 0.05)
-      .slice(0, 3)
-      .map((r) => r.span.spanId));
+    const rows = profileRows(data, profileSort);
+    // The three steps that actually spent the time, and only when they spent enough of it to be worth reading.
+    const hot = hotSpanIds(rows, total);
     const chronological = profileSort === 'start';
-    if (!chronological) {
-      rows = rows.slice().sort((a, b) => (profileSort === 'self' ? b.self - a.self : b.span.durationMs - a.span.durationMs));
-    }
     const sortState = { key: profileSort, dir: chronological ? 'asc' : 'desc' };
     const onSort = (key) => {
       profileSort = key;
@@ -218,36 +165,6 @@ export function render(root, ctx) {
     }));
   }
 
-  /** Elapsed minus the durations of the direct children, never below zero. */
-  function selfTimes(spans) {
-    const byId = new Map(spans.map((s) => [s.spanId, s]));
-    const childSum = new Map();
-    for (const s of spans) {
-      const parent = s.parentSpanId && byId.has(s.parentSpanId) ? s.parentSpanId : null;
-      if (!parent) continue;
-      childSum.set(parent, (childSum.get(parent) || 0) + (s.durationMs || 0));
-    }
-    const out = new Map();
-    for (const s of spans) out.set(s.spanId, Math.max(0, (s.durationMs || 0) - (childSum.get(s.spanId) || 0)));
-    return out;
-  }
-
-  function depthMap(spans) {
-    const byId = new Map(spans.map((s) => [s.spanId, s]));
-    const depths = new Map();
-    const depthOf = (s, seen = new Set()) => {
-      if (depths.has(s.spanId)) return depths.get(s.spanId);
-      if (seen.has(s.spanId)) return 0;
-      seen.add(s.spanId);
-      const parent = s.parentSpanId && byId.has(s.parentSpanId) ? byId.get(s.parentSpanId) : null;
-      const d = parent ? depthOf(parent, seen) + 1 : 0;
-      depths.set(s.spanId, d);
-      return d;
-    };
-    for (const s of spans) depthOf(s);
-    return depths;
-  }
-
   function paintBody() {
     if (view === 'profile') paintProfile(); else paintWaterfall();
   }
@@ -269,7 +186,7 @@ export function render(root, ctx) {
   }
 
   function spanBody(span) {
-    const t0 = (data.spans && data.spans.length) ? Math.min(...data.spans.map(sms)) : data.start;
+    const t0 = traceStartMs(data);
     const total = Math.max(1, data.durationMs || 1);
     const selfMs = selfTimes(data.spans || []).get(span.spanId) || 0;
     const attrs = Object.entries(span.attributes || {}).sort((a, b) => a[0].localeCompare(b[0]));
@@ -278,7 +195,7 @@ export function render(root, ctx) {
         h('dt', 'span id'), h('dd', span.spanId),
         h('dt', 'parent'), h('dd', span.parentSpanId || '—'),
         h('dt', 'kind'), h('dd', span.kind || 'INTERNAL'),
-        h('dt', 'start'), h('dd', offset(sms(span) - t0) + ' (' + timeMs(span.start) + ')'),
+        h('dt', 'start'), h('dd', offset(startMsOf(span) - t0) + ' (' + timeMs(span.start) + ')'),
         h('dt', 'duration'), h('dd', dur(span.durationMs) + ' · ' + ((span.durationMs / total) * 100).toFixed(1) + '% of trace'),
         h('dt', 'self'), h('dd', dur(selfMs) + ' · ' + ((selfMs / total) * 100).toFixed(1) + '% of trace'),
         h('dt', 'status'), h('dd', { class: span.error ? 'bad' : '' }, (span.status || 'UNSET') + (span.statusMessage ? ' — ' + span.statusMessage : '')),
@@ -316,7 +233,7 @@ export function render(root, ctx) {
 
   function paintLogs() {
     const logs = data.logs || [];
-    const t0 = (data.spans && data.spans.length) ? Math.min(...data.spans.map(sms)) : data.start;
+    const t0 = traceStartMs(data);
     fill(logsBox, table([
       { key: 'offset', label: 'Offset', align: 'right', sortable: false, width: '80px', render: (l) => h('span.mono.muted', offset(l.at - t0)) },
       { key: 'severity', label: 'Level', sortable: false, width: '68px', render: (l) => severityChip(l.severity) },
