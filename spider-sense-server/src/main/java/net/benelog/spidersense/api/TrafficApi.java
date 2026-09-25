@@ -39,10 +39,10 @@ public final class TrafficApi {
     private final Reports reports;
     private final Params params;
 
-    public TrafficApi(Queries queries, Reports reports) {
+    public TrafficApi(Queries queries, Reports reports, Params params) {
         this.queries = queries;
         this.reports = reports;
-        this.params = new Params(reports.selectors());
+        this.params = params;
     }
 
     public void register(App app) {

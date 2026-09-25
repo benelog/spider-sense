@@ -46,9 +46,9 @@ public final class AgentApi {
     private final Reports reports;
     private final Params params;
 
-    public AgentApi(Reports reports) {
+    public AgentApi(Reports reports, Params params) {
         this.reports = reports;
-        this.params = new Params(reports.selectors());
+        this.params = params;
     }
 
     public void register(App app) {

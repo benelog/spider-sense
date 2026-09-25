@@ -12,6 +12,7 @@ import net.benelog.spidersense.api.AgentApi;
 import net.benelog.spidersense.api.EventsApi;
 import net.benelog.spidersense.api.McpApi;
 import net.benelog.spidersense.api.MetricsApi;
+import net.benelog.spidersense.api.Params;
 import net.benelog.spidersense.api.Reports;
 import net.benelog.spidersense.api.SourceApi;
 import net.benelog.spidersense.api.StatusApi;
@@ -104,10 +105,11 @@ public final class SpiderSenseServer implements AutoCloseable {
         app.beforeRequest(req -> LocalRequests.refuseForeign(req, config.host()));
         new OtlpReceiver(new OtlpDecoder(store, boundPort::get), store.writer(), config.awaitWrites())
                 .register(app);
-        new StatusApi(config, store, queries, reports, boundPort::get).register(app);
-        new TrafficApi(queries, reports).register(app);
-        new MetricsApi(metrics, store.services(), reports.selectors()).register(app);
-        new AgentApi(reports).register(app);
+        Params params = new Params(reports.selectors());
+        new StatusApi(config, store, queries, reports, params, boundPort::get).register(app);
+        new TrafficApi(queries, reports, params).register(app);
+        new MetricsApi(metrics, store.services(), params).register(app);
+        new AgentApi(reports, params).register(app);
         new SourceApi(SourceRoots.of(config.sourceDirs(), Path.of(""))).register(app);
         new McpApi(new McpServer(McpTools.TOOLS, new McpTools(reports), Version.CURRENT)).register(app);
         new EventsApi(store, queries).register(app);

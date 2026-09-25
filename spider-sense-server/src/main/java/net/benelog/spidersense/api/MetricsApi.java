@@ -26,11 +26,10 @@ public final class MetricsApi {
     private final ServiceRegistry services;
     private final Params params;
 
-    public MetricsApi(MetricQueries metrics, ServiceRegistry services,
-            net.benelog.spidersense.query.Selectors selectors) {
+    public MetricsApi(MetricQueries metrics, ServiceRegistry services, Params params) {
         this.metrics = metrics;
         this.services = services;
-        this.params = new Params(selectors);
+        this.params = params;
     }
 
     public void register(App app) {

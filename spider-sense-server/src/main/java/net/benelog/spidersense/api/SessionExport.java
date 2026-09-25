@@ -88,7 +88,7 @@ final class SessionExport {
                 .put("version", Version.CURRENT)
                 .put("schema", Schema.VERSION)
                 .put("exportedAt", exportedAt)
-                .put("window", Json.obj().put("from", window.from()).put("to", window.to()))
+                .put("window", Codecs.bounds(window.from(), window.to()))
                 .put("service", service)
                 .toJson());
 
@@ -144,12 +144,12 @@ final class SessionExport {
     }
 
     private static Select spans(Window window, @Nullable String service) {
-        return windowed("SELECT * FROM span WHERE start_ms BETWEEN ? AND ?", "service",
+        return windowed("SELECT * FROM span WHERE start_ms BETWEEN ? AND ?", "service = ?",
                 " ORDER BY start_ms, id", window, service);
     }
 
     private static Select logs(Window window, @Nullable String service) {
-        return windowed("SELECT * FROM log WHERE at_ms BETWEEN ? AND ?", "service",
+        return windowed("SELECT * FROM log WHERE at_ms BETWEEN ? AND ?", "service = ?",
                 " ORDER BY at_ms, id", window, service);
     }
 
@@ -163,32 +163,20 @@ final class SessionExport {
 
     /** Only the series with a point in the window; the others describe nothing here. */
     private static Select series(Window window, @Nullable String service) {
-        String sql = """
+        return windowed("""
                 SELECT DISTINCT s.id, s.service, s.name, s.attributes
                 FROM metric_series s JOIN metric_point p ON p.series_id = s.id
-                WHERE p.at_ms BETWEEN ? AND ?""";
-        List<Object> params = new ArrayList<>(List.of(window.from(), window.to()));
-        if (service != null) {
-            sql = sql + " AND s.service = ?";
-            params.add(service);
-        }
-        return new Select(sql + " ORDER BY s.id", params);
+                WHERE p.at_ms BETWEEN ? AND ?""", "s.service = ?", " ORDER BY s.id", window, service);
     }
 
     private static Select points(Window window, @Nullable String service) {
-        String sql = """
+        return windowed("""
                 SELECT p.* FROM metric_point p JOIN metric_series s ON s.id = p.series_id
-                WHERE p.at_ms BETWEEN ? AND ?""";
-        List<Object> params = new ArrayList<>(List.of(window.from(), window.to()));
-        if (service != null) {
-            sql = sql + " AND s.service = ?";
-            params.add(service);
-        }
-        return new Select(sql + " ORDER BY p.series_id, p.at_ms", params);
+                WHERE p.at_ms BETWEEN ? AND ?""", "s.service = ?", " ORDER BY p.series_id, p.at_ms", window, service);
     }
 
     private static Select tingles(Window window, @Nullable String service) {
-        return windowed("SELECT * FROM tingle WHERE at_ms BETWEEN ? AND ?", "service",
+        return windowed("SELECT * FROM tingle WHERE at_ms BETWEEN ? AND ?", "service = ?",
                 " ORDER BY at_ms, id", window, service);
     }
 
@@ -197,13 +185,8 @@ final class SessionExport {
      * "before" was the moment, not the application.
      */
     private static Select marks(Window window, @Nullable String service) {
-        String sql = "SELECT * FROM mark WHERE at_ms BETWEEN ? AND ?";
-        List<Object> params = new ArrayList<>(List.of(window.from(), window.to()));
-        if (service != null) {
-            sql = sql + " AND (service = ? OR service IS NULL)";
-            params.add(service);
-        }
-        return new Select(sql + " ORDER BY at_ms, id", params);
+        return windowed("SELECT * FROM mark WHERE at_ms BETWEEN ? AND ?", "(service = ? OR service IS NULL)",
+                " ORDER BY at_ms, id", window, service);
     }
 
     /**
@@ -222,12 +205,16 @@ final class SessionExport {
 
     // --- the plumbing --------------------------------------------------------------
 
-    private static Select windowed(String sql, String serviceColumn, String order, Window window,
+    /**
+     * A statement over the window, narrowed by {@code serviceCondition}, which binds the service
+     * once, when one is asked for.
+     */
+    private static Select windowed(String sql, String serviceCondition, String order, Window window,
             @Nullable String service) {
         List<Object> params = new ArrayList<>(List.of(window.from(), window.to()));
         String statement = sql;
         if (service != null) {
-            statement = statement + " AND " + serviceColumn + " = ?";
+            statement = statement + " AND " + serviceCondition;
             params.add(service);
         }
         return new Select(statement + order, params);

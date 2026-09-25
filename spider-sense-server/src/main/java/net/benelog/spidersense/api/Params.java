@@ -27,12 +27,15 @@ import org.jspecify.annotations.Nullable;
  * that answers it while everything else stays static. Every windowed endpoint
  * takes {@code since}/{@code until} beside {@code from}/{@code to}, which is what
  * lets an agent call the UI's own endpoints without doing arithmetic.
+ *
+ * <p>Public only so the server's assembly can build the one instance every API
+ * reads its windows through; what it reads stays inside this package.
  */
-final class Params {
+public final class Params {
 
     private final Selectors selectors;
 
-    Params(Selectors selectors) {
+    public Params(Selectors selectors) {
         this.selectors = selectors;
     }
 

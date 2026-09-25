@@ -635,7 +635,7 @@ public final class Reports implements AutoCloseable {
                 .put("marks", result.marks())
                 .put("dbTables", result.dbTables())
                 .put("skippedTraces", result.skippedTraces())
-                .put("window", Json.obj().put("from", result.from()).put("to", result.to()));
+                .put("window", Codecs.bounds(result.from(), result.to()));
         return new Report(json, Text.imported(result));
     }
 

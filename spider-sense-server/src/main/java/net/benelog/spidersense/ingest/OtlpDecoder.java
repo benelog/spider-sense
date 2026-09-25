@@ -3,11 +3,14 @@ package net.benelog.spidersense.ingest;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.function.BiConsumer;
+import java.util.function.Function;
 import java.util.function.IntSupplier;
 
 import io.opentelemetry.proto.collector.logs.v1.ExportLogsServiceRequest;
 import io.opentelemetry.proto.collector.metrics.v1.ExportMetricsServiceRequest;
 import io.opentelemetry.proto.collector.trace.v1.ExportTraceServiceRequest;
+import io.opentelemetry.proto.common.v1.KeyValue;
 import io.opentelemetry.proto.logs.v1.ResourceLogs;
 import io.opentelemetry.proto.logs.v1.ScopeLogs;
 import io.opentelemetry.proto.metrics.v1.AggregationTemporality;
@@ -18,6 +21,7 @@ import io.opentelemetry.proto.metrics.v1.Metric;
 import io.opentelemetry.proto.metrics.v1.NumberDataPoint;
 import io.opentelemetry.proto.metrics.v1.ResourceMetrics;
 import io.opentelemetry.proto.metrics.v1.ScopeMetrics;
+import io.opentelemetry.proto.resource.v1.Resource;
 import io.opentelemetry.proto.trace.v1.ResourceSpans;
 import io.opentelemetry.proto.trace.v1.ScopeSpans;
 import io.opentelemetry.proto.trace.v1.Span;
@@ -92,21 +96,33 @@ public final class OtlpDecoder {
      */
     static Batch decode(ExportTraceServiceRequest request, long now) {
         Batch batch = new Batch();
-        for (ResourceSpans resourceSpans : request.getResourceSpansList()) {
-            Map<String, Object> resource = Attrs.toMap(resourceSpans.getResource().getAttributesList());
+        forEachResource(batch, request.getResourceSpansList(), ResourceSpans::getResource, now,
+                (resourceSpans, service) -> {
+                    for (ScopeSpans scopeSpans : resourceSpans.getScopeSpansList()) {
+                        String scope = scopeSpans.getScope().getName();
+                        for (Span span : scopeSpans.getSpansList()) {
+                            SpanRecord record = spanRecord(span, service, scope);
+                            if (record != null) {
+                                batch.add(record);
+                            }
+                        }
+                    }
+                });
+        return batch;
+    }
+
+    /**
+     * Each resource of an export, its service seen at {@code now} and then its contents added
+     * under that service's name: the walk the three signals share.
+     */
+    private static <R> void forEachResource(Batch batch, List<R> resources, Function<R, Resource> resourceOf,
+            long now, BiConsumer<R, String> contents) {
+        for (R each : resources) {
+            Map<String, Object> resource = Attrs.toMap(resourceOf.apply(each).getAttributesList());
             String service = serviceName(resource);
             batch.saw(new Batch.Sighting(service, resource, now));
-            for (ScopeSpans scopeSpans : resourceSpans.getScopeSpansList()) {
-                String scope = scopeSpans.getScope().getName();
-                for (Span span : scopeSpans.getSpansList()) {
-                    SpanRecord record = spanRecord(span, service, scope);
-                    if (record != null) {
-                        batch.add(record);
-                    }
-                }
-            }
+            contents.accept(each, service);
         }
-        return batch;
     }
 
     /**
@@ -214,31 +230,38 @@ public final class OtlpDecoder {
     /** Every point of a metrics export that carries a value, and the sightings of its services. */
     static Batch decode(ExportMetricsServiceRequest request, long now) {
         Batch batch = new Batch();
-        for (ResourceMetrics resourceMetrics : request.getResourceMetricsList()) {
-            Map<String, Object> resource = Attrs.toMap(resourceMetrics.getResource().getAttributesList());
-            String service = serviceName(resource);
-            batch.saw(new Batch.Sighting(service, resource, now));
-            for (ScopeMetrics scopeMetrics : resourceMetrics.getScopeMetricsList()) {
-                for (Metric metric : scopeMetrics.getMetricsList()) {
-                    addMetric(batch, service, metric);
-                }
-            }
-        }
+        forEachResource(batch, request.getResourceMetricsList(), ResourceMetrics::getResource, now,
+                (resourceMetrics, service) -> {
+                    for (ScopeMetrics scopeMetrics : resourceMetrics.getScopeMetricsList()) {
+                        for (Metric metric : scopeMetrics.getMetricsList()) {
+                            addMetric(batch, service, metric);
+                        }
+                    }
+                });
         return batch;
     }
 
+    /** One metric of one service, each point of which becomes a sample of it. */
+    private record Instrument(String service, String name, String unit, String description) {
+
+        Batch.MetricSample sample(String type, boolean monotonic, String temporality, List<KeyValue> attributes,
+                MetricPoint point) {
+            return new Batch.MetricSample(service, name, type, unit, description, monotonic, temporality,
+                    Attrs.toMap(attributes), point);
+        }
+    }
+
     private static void addMetric(Batch batch, String service, Metric metric) {
-        String name = fit(metric.getName());
-        String unit = metric.getUnit();
-        String description = metric.getDescription();
+        Instrument instrument = new Instrument(service, fit(metric.getName()), metric.getUnit(),
+                metric.getDescription());
         switch (metric.getDataCase()) {
             case GAUGE -> {
                 for (NumberDataPoint point : metric.getGauge().getDataPointsList()) {
                     if (noValue(point)) {
                         continue;
                     }
-                    batch.add(new Batch.MetricSample(service, name, "gauge", unit, description, false,
-                            "UNSPECIFIED", Attrs.toMap(point.getAttributesList()), number(point)));
+                    batch.add(instrument.sample("gauge", false, "UNSPECIFIED", point.getAttributesList(),
+                            number(point)));
                 }
             }
             case SUM -> {
@@ -248,9 +271,8 @@ public final class OtlpDecoder {
                     if (noValue(point)) {
                         continue;
                     }
-                    batch.add(new Batch.MetricSample(service, name, "sum", unit, description,
-                            sum.getIsMonotonic(), temporality, Attrs.toMap(point.getAttributesList()),
-                            number(point)));
+                    batch.add(instrument.sample("sum", sum.getIsMonotonic(), temporality,
+                            point.getAttributesList(), number(point)));
                 }
             }
             case HISTOGRAM -> {
@@ -260,8 +282,8 @@ public final class OtlpDecoder {
                     if (noRecordedValue(point.getFlags())) {
                         continue;
                     }
-                    batch.add(new Batch.MetricSample(service, name, "histogram", unit, description, false,
-                            temporality, Attrs.toMap(point.getAttributesList()), histogram(point)));
+                    batch.add(instrument.sample("histogram", false, temporality, point.getAttributesList(),
+                            histogram(point)));
                 }
             }
             case EXPONENTIAL_HISTOGRAM -> {
@@ -271,8 +293,8 @@ public final class OtlpDecoder {
                     if (noRecordedValue(point.getFlags())) {
                         continue;
                     }
-                    batch.add(new Batch.MetricSample(service, name, "histogram", unit, description, false,
-                            temporality, Attrs.toMap(point.getAttributesList()), exponential(point)));
+                    batch.add(instrument.sample("histogram", false, temporality, point.getAttributesList(),
+                            exponential(point)));
                 }
             }
             default -> {
@@ -354,23 +376,21 @@ public final class OtlpDecoder {
      */
     static Batch decode(ExportLogsServiceRequest request, long now) {
         Batch batch = new Batch();
-        for (ResourceLogs resourceLogs : request.getResourceLogsList()) {
-            Map<String, Object> resource = Attrs.toMap(resourceLogs.getResource().getAttributesList());
-            String service = serviceName(resource);
-            batch.saw(new Batch.Sighting(service, resource, now));
-            for (ScopeLogs scopeLogs : resourceLogs.getScopeLogsList()) {
-                String logger = scopeLogs.getScope().getName();
-                for (io.opentelemetry.proto.logs.v1.LogRecord record : scopeLogs.getLogRecordsList()) {
-                    Map<String, Object> attributes = Attrs.toMap(record.getAttributesList());
-                    Batch.Catalog catalog = toCatalog(attributes, service, at(record, now));
-                    if (catalog != null) {
-                        batch.add(catalog);
-                    } else {
-                        batch.add(logRecord(record, service, logger, now, attributes));
+        forEachResource(batch, request.getResourceLogsList(), ResourceLogs::getResource, now,
+                (resourceLogs, service) -> {
+                    for (ScopeLogs scopeLogs : resourceLogs.getScopeLogsList()) {
+                        String logger = scopeLogs.getScope().getName();
+                        for (io.opentelemetry.proto.logs.v1.LogRecord record : scopeLogs.getLogRecordsList()) {
+                            Map<String, Object> attributes = Attrs.toMap(record.getAttributesList());
+                            Batch.Catalog catalog = toCatalog(attributes, service, at(record, now));
+                            if (catalog != null) {
+                                batch.add(catalog);
+                            } else {
+                                batch.add(logRecord(record, service, logger, now, attributes));
+                            }
+                        }
                     }
-                }
-            }
-        }
+                });
         return batch;
     }
 

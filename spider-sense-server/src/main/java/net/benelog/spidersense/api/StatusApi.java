@@ -34,12 +34,13 @@ public final class StatusApi {
     private final IntSupplier port;
     private final long startedAt;
 
-    public StatusApi(Config config, Store store, Queries queries, Reports reports, IntSupplier port) {
+    public StatusApi(Config config, Store store, Queries queries, Reports reports, Params params,
+            IntSupplier port) {
         this.config = config;
         this.store = store;
         this.queries = queries;
         this.reports = reports;
-        this.params = new Params(reports.selectors());
+        this.params = params;
         this.startedAt = reports.now();
         this.port = port;
     }

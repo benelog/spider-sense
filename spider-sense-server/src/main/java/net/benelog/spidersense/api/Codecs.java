@@ -2,6 +2,7 @@ package net.benelog.spidersense.api;
 
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 
 import net.benelog.spidersense.query.Catalog;
 import net.benelog.spidersense.query.Check;
@@ -151,6 +152,18 @@ public final class Codecs {
                 .put("bucketMs", window.bucketMs());
     }
 
+    /** The window's bounds alone, without the bucket width {@link #window} adds. */
+    static Json.JsonObject bounds(long from, long to) {
+        return Json.obj().put("from", from).put("to", to);
+    }
+
+    /** Each element of a list, as the JSON its codec writes, in the list's order. */
+    static <T> Json.JsonArray each(List<T> values, Function<T, ? extends Json.JsonValue> codec) {
+        Json.JsonArray array = Json.arr();
+        values.forEach(value -> array.add(codec.apply(value)));
+        return array;
+    }
+
     static Json.JsonArray strings(List<String> values) {
         return Json.arr().addAll(values);
     }
@@ -253,9 +266,7 @@ public final class Codecs {
     }
 
     static Json.JsonArray serviceSummaries(List<Stats.ServiceSummary> services) {
-        Json.JsonArray array = Json.arr();
-        services.forEach(service -> array.add(serviceSummary(service)));
-        return array;
+        return each(services, Codecs::serviceSummary);
     }
 
     static Json.JsonObject tingle(Tingle tingle) {
@@ -271,9 +282,7 @@ public final class Codecs {
     }
 
     static Json.JsonArray tingles(List<Tingle> tingles) {
-        Json.JsonArray array = Json.arr();
-        tingles.forEach(tingle -> array.add(tingle(tingle)));
-        return array;
+        return each(tingles, Codecs::tingle);
     }
 
     /** The overview's aligned arrays; percentiles are null in an empty bucket. */
@@ -324,9 +333,7 @@ public final class Codecs {
     }
 
     static Json.JsonArray endpoints(List<Stats.EndpointStats> endpoints) {
-        Json.JsonArray array = Json.arr();
-        endpoints.forEach(endpoint -> array.add(endpoint(endpoint)));
-        return array;
+        return each(endpoints, Codecs::endpoint);
     }
 
     static Json.JsonObject query(Stats.QueryStats query) {
@@ -388,9 +395,7 @@ public final class Codecs {
     }
 
     static Json.JsonArray queries(List<Stats.QueryStats> queries) {
-        Json.JsonArray array = Json.arr();
-        queries.forEach(query -> array.add(query(query)));
-        return array;
+        return each(queries, Codecs::query);
     }
 
     /** The exception chain of an error's sample, innermost first (api.adoc#cause). */
@@ -431,9 +436,7 @@ public final class Codecs {
     }
 
     static Json.JsonArray errorGroups(List<Stats.ErrorGroup> groups) {
-        Json.JsonArray array = Json.arr();
-        groups.forEach(group -> array.add(errorGroup(group)));
-        return array;
+        return each(groups, Codecs::errorGroup);
     }
 
     /** The same, each group with its {@code series} for the errors page's sparkline (api.adoc#error-group). */
@@ -463,9 +466,7 @@ public final class Codecs {
     }
 
     static Json.JsonArray traceSummaries(List<Stats.TraceSummary> traces) {
-        Json.JsonArray array = Json.arr();
-        traces.forEach(trace -> array.add(traceSummary(trace)));
-        return array;
+        return each(traces, Codecs::traceSummary);
     }
 
     static Json.JsonObject span(SpanRecord span, Tingles tingles) {
@@ -571,9 +572,7 @@ public final class Codecs {
     }
 
     static Json.JsonArray logs(List<LogRecord> logs) {
-        Json.JsonArray array = Json.arr();
-        logs.forEach(log -> array.add(log(log)));
-        return array;
+        return each(logs, Codecs::log);
     }
 
     static Json.JsonArray dependencies(List<Stats.Dependency> dependencies) {
@@ -766,9 +765,7 @@ public final class Codecs {
     }
 
     static Json.JsonArray marks(List<Marks.Mark> marks) {
-        Json.JsonArray array = Json.arr();
-        marks.forEach(mark -> array.add(mark(mark)));
-        return array;
+        return each(marks, Codecs::mark);
     }
 
     static Json.JsonObject finding(Findings.Finding finding) {
@@ -804,9 +801,7 @@ public final class Codecs {
     }
 
     static Json.JsonArray findings(List<Findings.Finding> findings) {
-        Json.JsonArray array = Json.arr();
-        findings.forEach(finding -> array.add(finding(finding)));
-        return array;
+        return each(findings, Codecs::finding);
     }
 
     static Json.JsonObject ack(Acks.Ack ack) {
@@ -817,9 +812,7 @@ public final class Codecs {
     }
 
     static Json.JsonArray acks(List<Acks.Ack> acks) {
-        Json.JsonArray array = Json.arr();
-        acks.forEach(ack -> array.add(ack(ack)));
-        return array;
+        return each(acks, Codecs::ack);
     }
 
 
@@ -856,12 +849,8 @@ public final class Codecs {
                     .put("verdict", diff.verdict()));
         }
         return Json.obj()
-                .put("before", Json.obj()
-                        .put("from", comparison.before().from())
-                        .put("to", comparison.before().to()))
-                .put("after", Json.obj()
-                        .put("from", comparison.after().from())
-                        .put("to", comparison.after().to()))
+                .put("before", bounds(comparison.before().from(), comparison.before().to()))
+                .put("after", bounds(comparison.after().from(), comparison.after().to()))
                 .put("totals", Json.obj()
                         .put("before", totals(comparison.beforeTotals()))
                         .put("after", totals(comparison.afterTotals())))
