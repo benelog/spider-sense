@@ -107,11 +107,72 @@ public record SchemaBlock(List<Table> tables, List<String> predicates, List<Stri
             return false;
         }
         for (Catalog.Index index : table.indexes()) {
-            if (!index.columns().isEmpty() && index.columns().get(0).equalsIgnoreCase(column)) {
+            if (!index.columns().isEmpty() && leads(index.columns().get(0), column)) {
                 return true;
             }
         }
         return false;
+    }
+
+    /**
+     * Whether an index's first key part is the column, or an expression over it.
+     *
+     * <p>PostgreSQL's driver names the key part of an expression index by the
+     * expression's text ({@code lower((email)::text)}), and a quoted column by its
+     * quoted name; the names the text holds, less its functions and its types,
+     * are the columns it is over. The statement, not the block, says whether the
+     * predicate uses the same expression (findings.adoc#schema).
+     */
+    static boolean leads(String keyPart, String column) {
+        return keyPart.equalsIgnoreCase(column)
+                || namesOf(keyPart).contains(column.toLowerCase(Locale.ROOT));
+    }
+
+    /** The column names an index expression holds, lower-cased. */
+    private static List<String> namesOf(String expression) {
+        List<String> names = new ArrayList<>();
+        int length = expression.length();
+        int i = 0;
+        boolean type = false;
+        while (i < length) {
+            char c = expression.charAt(i);
+            if (c == '\'') {
+                int end = expression.indexOf('\'', i + 1);
+                i = end < 0 ? length : end + 1;
+                continue;
+            }
+            if (expression.startsWith("::", i)) {
+                type = true;     // the next name is a type
+                i += 2;
+                continue;
+            }
+            int start = i;
+            String name;
+            if (c == '"') {
+                int end = expression.indexOf('"', i + 1);
+                name = expression.substring(i + 1, end < 0 ? length : end);
+                i = end < 0 ? length : end + 1;
+            } else if (Character.isLetter(c) || c == '_') {
+                while (i < length && (Character.isLetterOrDigit(expression.charAt(i))
+                        || expression.charAt(i) == '_' || expression.charAt(i) == '$')) {
+                    i++;
+                }
+                name = expression.substring(start, i);
+            } else {
+                i++;
+                continue;
+            }
+            int next = i;
+            while (next < length && expression.charAt(next) == ' ') {
+                next++;
+            }
+            boolean call = next < length && expression.charAt(next) == '(';
+            if (!type && !call) {
+                names.add(name.toLowerCase(Locale.ROOT));
+            }
+            type = false;
+        }
+        return names;
     }
 
     private static List<Index> indexes(Catalog.Table table) {

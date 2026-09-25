@@ -115,6 +115,7 @@ Before measuring, run the statement with the real parameter shape through the da
 
 The plan has to change from a scan to a seek on the new index (`Index Scan using idx_…`, `ref`/`range` with `key: idx_…`, `/* PUBLIC.IDX_… */` in H2); a plan that still scans means the index does not fit the predicate (column order, a function, a type mismatch, a leading wildcard) and the design goes back to step 3.
 For an N+1 the plan is not the point; the count is: the trace after the change shows one statement where there were `medianRepeats`.
+An expression index takes its column out of the finding's `unindexed` on PostgreSQL, which reports the key part as `lower((email)::text)`, but not on MySQL, which reports no column for a functional key part and lists the index with none; there the plan and `compare` are the proof, and the column left in `unindexed` is not.
 
 ## 5. Prove it with Spider Sense
 

@@ -224,6 +224,8 @@ A function in an `order by` list is skipped whole (`order by sum(l.quantity) des
 A column an index carries second is served no better by it than a column no index carries at all.
 A function-wrapped column is matched by its name, so an index on `name` takes `lower(name)` out of `unindexed`.
 The statement shows whether an expression index is what is really needed.
+The other way round, an index whose first key part is an expression serves the columns the expression names, so once `create index … on customers (lower(email))` exists, `customers.email` leaves `unindexed`: PostgreSQL reports that key part as `lower((email)::text)`.
+MySQL reports no column for a functional key part, so there such an index is listed with no columns (`idx_customer_email_lower ()`) and serves no predicate, and the plan is what confirms it.
 
 The block is `null` rather than wrong whenever the parse cannot vouch for it: a table the catalog has no row for (the application ran in standalone mode or without the extension, or no statement on that table has been slow yet), a statement whose tables the scanner does not find, or a column it cannot attribute to one table, such as an unqualified column in a join or the alias of a subquery.
 It says nothing about selectivity, wildcards or the plan.
