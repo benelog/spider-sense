@@ -90,7 +90,9 @@ public final class Importer {
                 Result result = write(connection, document);
                 connection.commit();
                 return result;
-            } catch (SQLException | RuntimeException e) {
+            } catch (SQLException | RuntimeException | Error e) {
+                // An Error too, such as a StackOverflowError: the reset of auto-commit below
+                // would otherwise commit the half of the document written before it.
                 connection.rollback();
                 throw e;
             } finally {

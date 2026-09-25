@@ -178,7 +178,7 @@ public final class Writer implements AutoCloseable {
             if (batches.isEmpty() && !wroteWhileExiting) {
                 return;
             }
-            Exception failure = null;
+            Throwable failure = null;
             for (int attempt = 0; attempt < EXIT_ATTEMPTS; attempt++) {
                 try (Connection connection = database.connectDirectly()) {
                     if (!batches.isEmpty()) {
@@ -187,7 +187,7 @@ public final class Writer implements AutoCloseable {
                     }
                     database.shutdownEngine(connection);
                     return;
-                } catch (SQLException | RuntimeException e) {
+                } catch (SQLException | RuntimeException | StackOverflowError e) {
                     if (failure != null) {
                         e.addSuppressed(failure);
                     }
@@ -315,7 +315,10 @@ public final class Writer implements AutoCloseable {
             insertMetrics(connection, batches);
             mergeTraces(connection, touched);
             connection.commit();
-        } catch (SQLException | RuntimeException e) {
+        } catch (SQLException | RuntimeException | Error e) {
+            // An Error too: a StackOverflowError from an absurdly nested attribute leaves
+            // the statements already run in the transaction, and the reset of auto-commit
+            // below would commit them, half a flush that the retry then writes again.
             try {
                 connection.rollback();
             } catch (SQLException rollback) {

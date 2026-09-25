@@ -100,6 +100,34 @@ class WriterTest {
                 .containsExactly("fine");
     }
 
+    /**
+     * The overflow strikes after the flush's spans are inserted: the flush must roll
+     * them back before each batch is written again on its own, or the spans are
+     * committed without their trace row and then stored a second time.
+     */
+    @Test
+    void aValueThatOverflowsTheEncoderAfterTheSpansLeavesThemStoredOnce() {
+        Database database = Database.open(fileUrl(), dir.resolve("sense.mv.db"));
+        Writer writer = writer(database);
+        Object nested = "leaf";
+        for (int i = 0; i < 100_000; i++) {
+            nested = List.of(nested);
+        }
+        Batch deep = new Batch();
+        deep.add(new LogRecord(0, AT, "orders", "INFO", 9, "deep", null, null, null,
+                java.util.Map.of("nested", nested)));
+        writer.submit(spans(1));
+        writer.submit(deep);
+
+        writer.flushNow();
+
+        assertThat(database.sql().count("SELECT COUNT(*) FROM span", List.of())).isEqualTo(1);
+        assertThat(database.sql().query("SELECT span_count FROM trace", List.of(), rs -> rs.getInt(1)))
+                .containsExactly(1);
+        assertThat(database.sql().count("SELECT COUNT(*) FROM log", List.of())).isZero();
+        database.close();
+    }
+
     /** A service or metric name longer than its column is stored cut, the same in every table. */
     @Test
     void aNameLongerThanItsColumnIsCutRatherThanLosingTheFlush() {

@@ -248,6 +248,7 @@ Every text value is cut to its column before it is bound: a service or metric na
 A histogram point whose buckets do not fit their column keeps its count, sum, min and max and is stored without buckets.
 A double attribute that JSON has no number for, `NaN` or an infinity, is stored as the string `"NaN"`, `"Infinity"` or `"-Infinity"`.
 When a flush still fails, each of its batches is written again in a transaction of its own, so a row the database refuses costs only the export that carried it.
+A failed flush is rolled back whole before that, whatever failed, a stack overflow on an attribute nested thousands of levels deep included, so no batch is stored twice.
 The catalog rows of a flush are merged in the same transaction.
 After each flush the writer recomputes the `trace` rows of the trace ids the flush touched (`MERGE INTO trace ... SELECT ... FROM span WHERE trace_id IN (...) GROUP BY trace_id`), because a trace's spans arrive in several exports and from several services.
 It locks those rows first, by merging a placeholder in trace id order, and only then reads their spans.
