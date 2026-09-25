@@ -5,7 +5,7 @@ import * as api from '../api.js';
 import * as router from '../router.js';
 import {
   h, fill, panel, stat, spinner, noDataYet,
-  drawer, closeDrawer, closeDrawerSilently, seedServices, categoryIcon,
+  drawer, closeDrawer, closeDrawerSilently, seedServices, categoryIcon, svgElement,
 } from '../ui.js';
 import { pageLoader } from '../page.js';
 import { timeSeries } from '../charts.js';
@@ -13,22 +13,8 @@ import { throughputSpec } from '../throughput.js';
 import { histogramBars, bucketVars, apdexClass, ERROR_RATE_BAD } from '../buckets.js';
 import { dur, count, rate, pct, apdex, truncate } from '../format.js';
 
-const NS = 'http://www.w3.org/2000/svg';
 const NODE_W = 200, NODE_H = 64, COL_PITCH = 260, ROW_PITCH = 96, PAD_X = 22, PAD_Y = 20;
 const HIST_W = 40, HIST_H = 14, HIST_X = NODE_W - HIST_W - 12, HIST_Y = NODE_H - HIST_H - 10;
-
-function el(tag, attrs = {}, ...children) {
-  const node = document.createElementNS(NS, tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (v === undefined || v === null || v === false) continue;
-    node.setAttribute(k, String(v));
-  }
-  for (const child of children.flat()) {
-    if (child === null || child === undefined || child === false) continue;
-    node.appendChild(child.nodeType ? child : document.createTextNode(String(child)));
-  }
-  return node;
-}
 
 /** Characters that fit in `px` of the UI font at `size`, near enough for a label. */
 function fits(px, size) {
@@ -256,7 +242,7 @@ export function render(root, ctx) {
     }
     const width = Math.round(maxX - minX), height = Math.round(maxY - minY);
 
-    const svg = el('svg', {
+    const svg = svgElement('svg', {
       class: 'map-svg',
       width,
       height,
@@ -265,16 +251,16 @@ export function render(root, ctx) {
       'aria-label': 'Service map',
     });
     svg.style.minWidth = Math.max(placed.columns * COL_PITCH, width) + 'px';
-    const defs = el('defs', {},
-      el('marker', { id: 'map-arrow', viewBox: '0 0 8 8', refX: '7', refY: '4', markerWidth: '7', markerHeight: '7', orient: 'auto-start-reverse' },
-        el('path', { d: 'M0 1 L7 4 L0 7 z', class: 'map-arrow-head' })));
+    const defs = svgElement('defs', {},
+      svgElement('marker', { id: 'map-arrow', viewBox: '0 0 8 8', refX: '7', refY: '4', markerWidth: '7', markerHeight: '7', orient: 'auto-start-reverse' },
+        svgElement('path', { d: 'M0 1 L7 4 L0 7 z', class: 'map-arrow-head' })));
     svg.appendChild(defs);
 
-    const edgeLayer = el('g', { class: 'map-edges' });
-    const nodeLayer = el('g', { class: 'map-nodes' });
+    const edgeLayer = svgElement('g', { class: 'map-edges' });
+    const nodeLayer = svgElement('g', { class: 'map-nodes' });
     // The labels ride above the nodes, so a halo that reaches over a node edge is
     // still readable instead of being painted over.
-    const labelLayer = el('g', { class: 'map-labels' });
+    const labelLayer = svgElement('g', { class: 'map-labels' });
     svg.appendChild(edgeLayer);
     svg.appendChild(nodeLayer);
     svg.appendChild(labelLayer);
@@ -306,19 +292,19 @@ export function render(root, ctx) {
   function drawEdge(e, curve) {
     if (!curve) return null;
     const width = Math.min(5, 1 + Math.log10(Math.max(1, e.calls || 1)));
-    const g = el('g', { class: 'map-edge' + (e.errors ? ' is-bad' : '') });
-    const path = el('path', {
+    const g = svgElement('g', { class: 'map-edge' + (e.errors ? ' is-bad' : '') });
+    const path = svgElement('path', {
       class: 'map-edge-path', d: curvePath(curve),
       'stroke-width': width.toFixed(2), 'marker-end': 'url(#map-arrow)',
-    }, el('title', {}, edgeTitle(e)));
+    }, svgElement('title', {}, edgeTitle(e)));
     g.appendChild(path);
     // The label rides the curve at 40% of its length, clear of the arrowhead.
     const at = cubicAt(curve.p0, curve.c1, curve.c2, curve.p3, 0.4);
-    const labelG = el('g', { class: 'map-edge-label-g' + (e.errors ? ' is-bad' : '') });
-    const halo = el('rect', { class: 'map-edge-halo', x: at.x - 20, y: at.y - 18, width: 40, height: 14, rx: 3 });
-    const label = el('text', { class: 'map-edge-label', x: at.x, y: at.y - 6, 'text-anchor': 'middle' },
-      el('tspan', {}, count(e.calls)),
-      e.errors ? el('tspan', { class: 'map-edge-err', dx: '5' }, count(e.errors) + ' err') : null);
+    const labelG = svgElement('g', { class: 'map-edge-label-g' + (e.errors ? ' is-bad' : '') });
+    const halo = svgElement('rect', { class: 'map-edge-halo', x: at.x - 20, y: at.y - 18, width: 40, height: 14, rx: 3 });
+    const label = svgElement('text', { class: 'map-edge-label', x: at.x, y: at.y - 6, 'text-anchor': 'middle' },
+      svgElement('tspan', {}, count(e.calls)),
+      e.errors ? svgElement('tspan', { class: 'map-edge-err', dx: '5' }, count(e.errors) + ' err') : null);
     labelG.appendChild(halo);
     labelG.appendChild(label);
     edgeRefs.set(edgeKey(e), { g, labelG, path, label, halo });
@@ -348,7 +334,7 @@ export function render(root, ctx) {
   function drawNode(n) {
     const p = placed.positions.get(n.id);
     if (!p) return null;
-    const g = el('g', {
+    const g = svgElement('g', {
       class: 'map-node ' + nodeClass(n),
       transform: `translate(${p.x},${p.y})`,
       'data-kind': n.kind,
@@ -357,16 +343,16 @@ export function render(root, ctx) {
       role: 'button',
       'aria-label': n.name + ', ' + n.kind,
     });
-    const rect = el('rect', { class: 'map-node-box', width: NODE_W, height: NODE_H, rx: 8 });
-    const use = el('use', { class: 'map-node-icon', href: '#i-' + categoryIcon(n.kind), x: 12, y: 12, width: 16, height: 16 });
-    const name = el('text', { class: 'map-node-name', x: 36, y: 25 },
-      truncate(n.name, fits(NODE_W - 36 - 12, 12)), el('title', {}, n.name));
+    const rect = svgElement('rect', { class: 'map-node-box', width: NODE_W, height: NODE_H, rx: 8 });
+    const use = svgElement('use', { class: 'map-node-icon', href: '#i-' + categoryIcon(n.kind), x: 12, y: 12, width: 16, height: 16 });
+    const name = svgElement('text', { class: 'map-node-name', x: 36, y: 25 },
+      truncate(n.name, fits(NODE_W - 36 - 12, 12)), svgElement('title', {}, n.name));
     g.appendChild(rect);
     g.appendChild(use);
     g.appendChild(name);
     const full = n.kind === 'service' ? serviceLine(n) : externalLine(n);
-    const line = el('text', { class: 'map-node-line', x: 12, y: 46 },
-      truncate(full, lineChars(n)), el('title', {}, full));
+    const line = svgElement('text', { class: 'map-node-line', x: 12, y: 46 },
+      truncate(full, lineChars(n)), svgElement('title', {}, full));
     g.appendChild(line);
     if (n.kind === 'service') g.appendChild(miniHistogram(n.histogram, HIST_X, HIST_Y));
     g.addEventListener('click', () => openNode(n));
@@ -407,7 +393,7 @@ export function render(root, ctx) {
 
   /** The 5-bar mini histogram in the node's bottom-right corner, 40x14. */
   function miniHistogram(histogram, x, y) {
-    const g = el('g', { class: 'map-hist', transform: `translate(${x},${y})` });
+    const g = svgElement('g', { class: 'map-hist', transform: `translate(${x},${y})` });
     const values = (histogram || []).slice(0, 5);
     while (values.length < 5) values.push(0);
     const max = Math.max(1, ...values.map((v) => v || 0));
@@ -415,7 +401,7 @@ export function render(root, ctx) {
     const pitch = HIST_W / 5;
     values.forEach((v, i) => {
       const hgt = Math.max(v ? 1 : 0, ((v || 0) / max) * HIST_H);
-      g.appendChild(el('rect', {
+      g.appendChild(svgElement('rect', {
         x: i * pitch, y: HIST_H - hgt, width: pitch - 2, height: hgt, rx: 1, fill: colors[i],
       }));
     });
@@ -432,7 +418,7 @@ export function render(root, ctx) {
       ref.g.setAttribute('class', 'map-node ' + nodeClass(n));
       if (ref.line) {
         const full = n.kind === 'service' ? serviceLine(n) : externalLine(n);
-        ref.line.replaceChildren(document.createTextNode(truncate(full, lineChars(n))), el('title', {}, full));
+        ref.line.replaceChildren(document.createTextNode(truncate(full, lineChars(n))), svgElement('title', {}, full));
       }
       if (n.kind === 'service') {
         const old = ref.g.querySelector('.map-hist');
@@ -445,10 +431,10 @@ export function render(root, ctx) {
       ref.g.setAttribute('class', 'map-edge' + (e.errors ? ' is-bad' : ''));
       ref.labelG.setAttribute('class', 'map-edge-label-g' + (e.errors ? ' is-bad' : ''));
       ref.path.setAttribute('stroke-width', Math.min(5, 1 + Math.log10(Math.max(1, e.calls || 1))).toFixed(2));
-      fill(ref.path, el('title', {}, edgeTitle(e)));
+      fill(ref.path, svgElement('title', {}, edgeTitle(e)));
       ref.label.replaceChildren(
-        el('tspan', {}, count(e.calls)),
-        ...(e.errors ? [el('tspan', { class: 'map-edge-err', dx: '5' }, count(e.errors) + ' err')] : []));
+        svgElement('tspan', {}, count(e.calls)),
+        ...(e.errors ? [svgElement('tspan', { class: 'map-edge-err', dx: '5' }, count(e.errors) + ' err')] : []));
       sizeHalo(ref);
     }
     applyDim();

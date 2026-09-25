@@ -3,7 +3,7 @@
 
 import * as fmt from './format.js';
 import { state } from './api.js';
-import { panel, readSeriesColors, serviceColor } from './ui.js';
+import { panel, readSeriesColors, serviceColor, svgElement } from './ui.js';
 
 const uPlot = globalThis.uPlot;
 
@@ -464,34 +464,22 @@ export function chartBox({ title, actions, legend: withLegend = true } = {}) {
 /** An inline SVG sparkline: no library, no interaction, 120x28 by default. */
 export function sparkline(values, opts = {}) {
   const width = opts.width || 120, height = opts.height || 28;
-  const ns = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(ns, 'svg');
-  svg.setAttribute('class', 'sparkline');
-  svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
-  svg.setAttribute('width', String(width));
-  svg.setAttribute('height', String(height));
-  svg.setAttribute('role', 'img');
-  svg.setAttribute('aria-label', opts.label || 'Requests per bucket');
+  const svg = svgElement('svg', {
+    class: 'sparkline', viewBox: `0 0 ${width} ${height}`, width, height,
+    role: 'img', 'aria-label': opts.label || 'Requests per bucket',
+  });
   const vals = (values || []).map((v) => (v == null ? 0 : v));
   if (vals.length < 2) {
-    const line = document.createElementNS(ns, 'line');
-    line.setAttribute('x1', '0'); line.setAttribute('x2', String(width));
-    line.setAttribute('y1', String(height - 1)); line.setAttribute('y2', String(height - 1));
-    line.setAttribute('class', 'spark-flat');
-    svg.appendChild(line);
+    svg.appendChild(svgElement('line', { x1: 0, x2: width, y1: height - 1, y2: height - 1, class: 'spark-flat' }));
     return svg;
   }
   const max = Math.max(1, ...vals);
   const step = width / (vals.length - 1);
   const y = (v) => height - 1 - (v / max) * (height - 3);
   const pts = vals.map((v, i) => `${(i * step).toFixed(2)},${y(v).toFixed(2)}`);
-  const area = document.createElementNS(ns, 'path');
-  area.setAttribute('d', `M0,${height} L${pts.join(' L')} L${width},${height} Z`);
-  area.setAttribute('class', 'spark-area');
+  const area = svgElement('path', { d: `M0,${height} L${pts.join(' L')} L${width},${height} Z`, class: 'spark-area' });
+  const path = svgElement('path', { d: 'M' + pts.join(' L'), class: 'spark-line' });
   svg.appendChild(area);
-  const path = document.createElementNS(ns, 'path');
-  path.setAttribute('d', 'M' + pts.join(' L'));
-  path.setAttribute('class', 'spark-line');
   svg.appendChild(path);
   if (opts.color) { path.setAttribute('stroke', opts.color); area.setAttribute('fill', withAlpha(opts.color, 0.14)); }
   return svg;

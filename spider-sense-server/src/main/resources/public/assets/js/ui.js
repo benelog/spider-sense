@@ -73,17 +73,27 @@ export function frag(...children) {
   return f;
 }
 
+/**
+ * svgElement('path', { d, class: 'x' }, ...children): an SVG element, its attributes set in the
+ * order given (undefined, null and false left out), its children nodes or text as h() takes them.
+ */
+export function svgElement(tag, attrs = {}, ...children) {
+  const node = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v === undefined || v === null || v === false) continue;
+    node.setAttribute(k, String(v));
+  }
+  for (const child of children.flat()) {
+    if (child === null || child === undefined || child === false) continue;
+    node.appendChild(child.nodeType ? child : document.createTextNode(String(child)));
+  }
+  return node;
+}
+
 /** A 16x16 icon from the sprite in index.html. */
 export function icon(name, cls) {
-  const svg = document.createElementNS(SVG_NS, 'svg');
-  svg.setAttribute('class', 'icon' + (cls ? ' ' + cls : ''));
-  svg.setAttribute('viewBox', '0 0 16 16');
-  svg.setAttribute('aria-hidden', 'true');
-  svg.setAttribute('focusable', 'false');
-  const use = document.createElementNS(SVG_NS, 'use');
-  use.setAttribute('href', '#i-' + name);
-  svg.appendChild(use);
-  return svg;
+  return svgElement('svg', { class: 'icon' + (cls ? ' ' + cls : ''), viewBox: '0 0 16 16', 'aria-hidden': 'true', focusable: 'false' },
+    svgElement('use', { href: '#i-' + name }));
 }
 
 /** The icon of a kind of node, span or call: a service, a database, an HTTP call, messaging. */
