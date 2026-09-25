@@ -1092,17 +1092,53 @@ public final class Queries {
     }
 
     /**
-     * The outbound HTTP calls of the window, row by row.
+     * One outbound HTTP call as the rules over outbound calls read it: the names it is
+     * grouped by, its measures, and whether it carries {@code code.stacktrace}, but not
+     * its attributes, which a finding reads again for the one call its code comes from.
+     *
+     * @param target  the dependency {@link #target}
+     * @param call    the {@link #callName}
+     * @param located whether the call carries {@code code.stacktrace}
+     */
+    public record OutboundCall(String traceId, String spanId, String service, String name,
+            String target, String call, long startNanos, long durationNanos, boolean error,
+            boolean located) {
+
+        public double durationMillis() {
+            return durationNanos / 1_000_000.0;
+        }
+
+        public long startMillis() {
+            return startNanos / 1_000_000L;
+        }
+    }
+
+    /**
+     * Every outbound HTTP call of the window, with no cap.
      *
      * <p>Read rather than aggregated because the group a {@code slow-external}
      * finding is about is {@code (service, target, span name)} and the target lives
-     * in the attributes rather than in a column ({@link #target}); the same cap as
-     * the dependency scan applies, for the same reason.
+     * in the attributes rather than in a column ({@link #target}). Every row is read,
+     * because a finding's numbers count every call and every request of the window
+     * (findings.adoc#n-plus-one-http); a row is kept as an {@link OutboundCall}, its
+     * repeated names shared, rather than as the span with its attributes.
      */
-    public List<SpanRecord> outboundHttp(Window window, @Nullable String service) {
+    public List<OutboundCall> outboundHttp(Window window, @Nullable String service) {
         Clause where = window(window, service).and("kind = 'CLIENT'").and("category = 'http'");
-        return sql.query("SELECT " + Rows.SPAN_COLUMNS + " FROM span WHERE " + where.sql()
-                + " LIMIT " + MAX_DEPENDENCY_ROWS, where.params(), Rows::span);
+        Map<String, String> shared = new HashMap<>();
+        List<OutboundCall> calls = new ArrayList<>();
+        sql.forEach("SELECT " + Rows.SPAN_COLUMNS + " FROM span WHERE " + where.sql(),
+                where.params(), rs -> {
+                    SpanRecord span = Rows.span(rs);
+                    calls.add(new OutboundCall(span.traceId(), span.spanId(),
+                            shared.computeIfAbsent(span.service(), s -> s),
+                            shared.computeIfAbsent(span.name(), s -> s),
+                            shared.computeIfAbsent(target(span), s -> s),
+                            shared.computeIfAbsent(callName(span), s -> s),
+                            span.startNanos(), span.durationNanos(), span.isError(),
+                            span.attributes().containsKey("code.stacktrace")));
+                });
+        return calls;
     }
 
     /** Nearest-rank, the same definition {@code PERCENTILE_DISC} uses. */

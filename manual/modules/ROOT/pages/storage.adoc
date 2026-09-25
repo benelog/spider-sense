@@ -311,6 +311,8 @@ The other kinds are the endpoint, query and error aggregations above, filtered b
 A scan of the window that several rules need is made once per answer and handed to each of them.
 The parent-chain walk is one: the query callers, the error endpoints, `n-plus-one`, `n-plus-one-http`, `slow-external` and `log-error` all read the same one.
 The outbound HTTP spans are the other: `n-plus-one-http` and `slow-external` read the same rows.
+Every outbound HTTP span of the window is read, with no limit, because the call's target and name live in its attributes and a finding counts every call and every request of the window.
+A row is held as the names it is grouped by and its measures, without its attributes, which are read again by span id for the one call a finding takes its code from.
 For one service the walk reads only the traces that have a span of that service in the window, which is where every entry span its spans can reach lies.
 The query and error lists read it the same way, so a finding's callers and endpoints are the list's.
 * The traces that contain a group (a finding's evidence and sample, the slowest and newest traces of the endpoint, query and error pages): `SELECT * FROM trace t WHERE t.start_ms BETWEEN ? AND ? AND t.trace_id IN (SELECT s.trace_id FROM span s WHERE s.<group> = ? AND s.start_ms BETWEEN ? AND ?)`.

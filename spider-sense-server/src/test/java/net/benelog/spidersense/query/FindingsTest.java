@@ -277,6 +277,38 @@ class FindingsTest {
         assertThat(finding.traces()).containsExactly(traceId(1));
     }
 
+    /**
+     * Twenty thousand older outbound calls do not hide the newest ones: the rules over
+     * outbound calls read every call of the window, not the first 20,000 rows.
+     */
+    @Test
+    void theNewestOutboundCallsCountWhateverCameBeforeThem() {
+        Span.Builder old = Otlp.span(traceId(1), spanId(1), "GET /old", Span.SpanKind.SPAN_KIND_SERVER,
+                NOW - 50_000, 30_000, Otlp.attr("http.request.method", "GET"), Otlp.attr("http.route", "/old"));
+        List<Span.Builder> spans = new ArrayList<>(List.of(old));
+        for (int i = 0; i < 20_000; i++) {
+            // Letters rather than digits, so that every call is a different call.
+            String path = "/api/" + (char) ('a' + i / 17_576) + (char) ('a' + i / 676 % 26)
+                    + (char) ('a' + i / 26 % 26) + (char) ('a' + i % 26);
+            spans.add(call(old, 100_000 + i, path, NOW - 50_000, 1));
+        }
+        decoder.accept(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
+        Span.Builder root = entry(2, "/books", 60);
+        List<Span.Builder> loop = new ArrayList<>(List.of(root));
+        for (int i = 0; i < 5; i++) {
+            loop.add(outbound(root, 200 + i, "slowhost", 9000, NOW + i, 600));
+        }
+        decoder.accept(Otlp.traces(Otlp.service("orders"), loop.toArray(new Span.Builder[0])));
+        flush();
+
+        List<Findings.Finding> repeated = of(Findings.N_PLUS_ONE_HTTP);
+        assertThat(repeated).extracting(Findings.Finding::title)
+                .containsExactly("GET /books calls GET slowhost:9000/api/books/? 5 times per request");
+        assertThat(repeated.get(0).numbers().get("affected")).isEqualTo(1L);
+        assertThat(of(Findings.SLOW_EXTERNAL)).extracting(Findings.Finding::title)
+                .containsExactly("GET slowhost:9000 is slow");
+    }
+
     @Test
     void fourRepeatsOfACallAreNotAnNPlusOneHttp() {
         Span.Builder root = entry(1, "/orders/{id}", 60);

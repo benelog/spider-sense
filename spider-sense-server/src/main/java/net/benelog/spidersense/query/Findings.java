@@ -939,10 +939,16 @@ public final class Findings {
 
     // --- n + 1 over HTTP ------------------------------------------------------
 
-    /** One repeated outbound call under one entry span. */
+    /**
+     * One repeated outbound call under one entry span.
+     *
+     * @param spanId  the call whose attributes give the code: the first that carries
+     *        {@code code.stacktrace}, else the first
+     * @param located whether that call carries {@code code.stacktrace}
+     */
     private record CallRepeat(String traceId, String endpointId, String endpoint, String service,
-            String target, String call, int repeats, double totalMs, long start,
-            Map<String, Object> attributes) {
+            String target, String call, int repeats, double totalMs, long start, String spanId,
+            boolean located) {
     }
 
     /**
@@ -958,18 +964,16 @@ public final class Findings {
             boolean evidence) {
         Queries.Ancestry ancestry = reads.ancestry();
         Map<String, List<CallRepeat>> byEntry = new LinkedHashMap<>();
-        for (SpanRecord span : reads.outboundHttp()) {
+        for (Queries.OutboundCall span : reads.outboundHttp()) {
             Queries.Ancestry.Entry entry = ancestry.entryOf(span.spanId());
             if (entry == null) {
                 continue;
             }
-            String target = Queries.target(span);
-            String call = Queries.callName(span);
-            byEntry.computeIfAbsent(entry.spanId() + "\0" + call, key -> new ArrayList<>())
+            byEntry.computeIfAbsent(entry.spanId() + "\0" + span.call(), key -> new ArrayList<>())
                     .add(new CallRepeat(span.traceId(),
                             Ids.endpointId(entry.service(), entry.endpoint()), entry.endpoint(),
-                            entry.service(), target, call, 1, span.durationMillis(),
-                            span.startMillis(), span.attributes()));
+                            entry.service(), span.target(), span.call(), 1, span.durationMillis(),
+                            span.startMillis(), span.spanId(), span.located()));
         }
 
         Map<String, List<CallRepeat>> byEndpointAndCall = new LinkedHashMap<>();
@@ -981,21 +985,19 @@ public final class Findings {
             double totalMs = 0;
             long start = Long.MAX_VALUE;
             // The extension captures the stack on the fifth repeat, as it does for a statement.
-            Map<String, Object> attributes = first.attributes();
-            boolean located = false;
+            CallRepeat located = first;
             for (CallRepeat call : calls) {
                 totalMs += call.totalMs();
                 start = Math.min(start, call.start());
-                if (!located && call.attributes().containsKey("code.stacktrace")) {
-                    attributes = call.attributes();
-                    located = true;
+                if (!located.located() && call.located()) {
+                    located = call;
                 }
             }
             byEndpointAndCall
                     .computeIfAbsent(first.endpointId() + "\0" + first.call(), key -> new ArrayList<>())
                     .add(new CallRepeat(first.traceId(), first.endpointId(), first.endpoint(),
                             first.service(), first.target(), first.call(), calls.size(), totalMs,
-                            start, attributes));
+                            start, located.spanId(), located.located()));
         });
 
         Map<String, Long> requestsByEndpoint = new HashMap<>();
@@ -1027,15 +1029,12 @@ public final class Findings {
             List<CallRepeat> newest = new ArrayList<>(affected);
             newest.sort(Comparator.comparingLong(CallRepeat::start).reversed());
             List<String> traces = new ArrayList<>();
-            List<String> code = List.of();
             for (CallRepeat repeat : newest) {
                 if (traces.size() < EVIDENCE_TRACES && !traces.contains(repeat.traceId())) {
                     traces.add(repeat.traceId());
                 }
-                if (evidence && code.isEmpty()) {
-                    code = frames.ofAttributes(repeat.attributes());
-                }
             }
+            List<String> code = evidence ? callCode(newest) : List.of();
             Finding finding = new Finding(
                     id(N_PLUS_ONE_HTTP, first.service(), first.endpointId() + "\0" + first.call()),
                     N_PLUS_ONE_HTTP, severity, first.service(),
@@ -1048,6 +1047,33 @@ public final class Findings {
             found.add(new Ranked(finding, affected.size() * (double) median));
         });
         return found;
+    }
+
+    /** How many located repeats an {@code n-plus-one-http} reads the attributes of for its code. */
+    private static final int CODE_ATTEMPTS = 20;
+
+    /**
+     * The code of an {@code n-plus-one-http}: the frames of the newest repeat whose call
+     * carries {@code code.stacktrace} and names an application frame, else what the
+     * newest repeat's own call names.
+     *
+     * <p>The attributes are read again by span id, one call at a time, so the window's
+     * outbound calls are held without them.
+     */
+    private List<String> callCode(List<CallRepeat> newest) {
+        int attempts = 0;
+        for (CallRepeat repeat : newest) {
+            if (!repeat.located()) {
+                continue;
+            }
+            List<String> code = frames.ofAttributes(attributesOf(repeat.traceId(), repeat.spanId()));
+            if (!code.isEmpty() || ++attempts >= CODE_ATTEMPTS) {
+                return code;
+            }
+        }
+        CallRepeat first = newest.get(0);
+        return first.located() ? List.of()
+                : frames.ofAttributes(attributesOf(first.traceId(), first.spanId()));
     }
 
     // --- slow query ----------------------------------------------------------
@@ -1309,10 +1335,10 @@ public final class Findings {
      * {@code PERCENTILE_DISC} gives the other rules.
      */
     private List<Ranked> slowExternal(Window window, Reads reads, boolean evidence) {
-        Map<String, List<SpanRecord>> byGroup = new LinkedHashMap<>();
-        for (SpanRecord span : reads.outboundHttp()) {
+        Map<String, List<Queries.OutboundCall>> byGroup = new LinkedHashMap<>();
+        for (Queries.OutboundCall span : reads.outboundHttp()) {
             byGroup.computeIfAbsent(
-                    span.service() + "\0" + Queries.target(span) + "\0" + span.name(),
+                    span.service() + "\0" + span.target() + "\0" + span.name(),
                     key -> new ArrayList<>()).add(span);
         }
         List<Ranked> found = new ArrayList<>();
@@ -1329,22 +1355,22 @@ public final class Findings {
 
     /** One group; with no {@code reads} it is the id alone, with no callers and no evidence. */
     private @Nullable Ranked external(Window window, @Nullable Reads reads, String service,
-            String target, String name, List<SpanRecord> calls) {
+            String target, String name, List<Queries.OutboundCall> calls) {
         double[] durations = new double[calls.size()];
         double totalMs = 0;
         long errors = 0;
         // The newest call that carries code.stacktrace, which the extension writes only on a
         // slow one (findings.adoc#code), else the newest call.
-        SpanRecord newest = null;
+        Queries.OutboundCall newest = null;
         for (int i = 0; i < calls.size(); i++) {
-            SpanRecord call = calls.get(i);
+            Queries.OutboundCall call = calls.get(i);
             durations[i] = call.durationMillis();
             totalMs += durations[i];
-            if (call.isError()) {
+            if (call.error()) {
                 errors++;
             }
-            if (newest == null || (hasStack(call) && !hasStack(newest))
-                    || (hasStack(call) == hasStack(newest) && call.startNanos() > newest.startNanos())) {
+            if (newest == null || (call.located() && !newest.located())
+                    || (call.located() == newest.located() && call.startNanos() > newest.startNanos())) {
                 newest = call;
             }
         }
@@ -1375,23 +1401,25 @@ public final class Findings {
                         + Numbers.millis(totalMs) + " in total",
                 new Subject(null, null, null, null, null, target, null, null),
                 numbers, null,
-                reads == null ? List.of()
-                        : frames.ofAttributes(newest == null ? null : newest.attributes()),
+                reads == null || newest == null ? List.of()
+                        : frames.ofAttributes(attributesOf(newest.traceId(), newest.spanId())),
                 reads == null ? List.of() : externalTraces(window, calls));
         return new Ranked(finding, totalMs);
     }
 
-    private static boolean hasStack(SpanRecord span) {
-        return span.attributes().containsKey("code.stacktrace");
+    /** The attributes of one span, read again for the one call a finding takes its code from. */
+    private @Nullable Map<String, Object> attributesOf(String traceId, String spanId) {
+        return sql.queryOne("SELECT attributes FROM span WHERE trace_id = ? AND span_id = ?",
+                List.of(traceId, spanId), rs -> AttrJson.decode(rs.getString("attributes")));
     }
 
     /** Which endpoints made the calls: the nearest entry span up the chain, as a query's callers. */
-    private static List<Stats.Caller> externalCallers(Reads reads, List<SpanRecord> calls,
+    private static List<Stats.Caller> externalCallers(Reads reads, List<Queries.OutboundCall> calls,
             String service) {
         Queries.Ancestry ancestry = reads.ancestry();
         Map<String, long[]> counts = new LinkedHashMap<>();
         Map<String, String> byService = new LinkedHashMap<>();
-        for (SpanRecord call : calls) {
+        for (Queries.OutboundCall call : calls) {
             Queries.Ancestry.Entry entry = ancestry.entryOf(call.spanId());
             String endpoint = entry == null ? "(no endpoint)" : entry.endpoint();
             counts.computeIfAbsent(endpoint, name -> new long[1])[0]++;
@@ -1413,11 +1441,11 @@ public final class Findings {
      * the candidates the store then orders by trace duration; the cap keeps the
      * {@code IN} list bounded on a group with thousands of calls.
      */
-    private List<String> externalTraces(Window window, List<SpanRecord> calls) {
-        List<SpanRecord> slowest = new ArrayList<>(calls);
-        slowest.sort(Comparator.comparingDouble((SpanRecord call) -> call.durationMillis()).reversed());
+    private List<String> externalTraces(Window window, List<Queries.OutboundCall> calls) {
+        List<Queries.OutboundCall> slowest = new ArrayList<>(calls);
+        slowest.sort(Comparator.comparingLong(Queries.OutboundCall::durationNanos).reversed());
         Set<String> candidates = new LinkedHashSet<>();
-        for (SpanRecord call : slowest) {
+        for (Queries.OutboundCall call : slowest) {
             if (candidates.size() >= EVIDENCE_CANDIDATES) {
                 break;
             }
@@ -1757,7 +1785,7 @@ public final class Findings {
         private final Window window;
         private final @Nullable String service;
         private Queries.@Nullable Ancestry ancestry;
-        private @Nullable List<SpanRecord> outboundHttp;
+        private @Nullable List<Queries.OutboundCall> outboundHttp;
 
         private Reads(Sql sql, Queries queries, Window window, @Nullable String service) {
             this.sql = sql;
@@ -1775,8 +1803,8 @@ public final class Findings {
             return loaded;
         }
 
-        List<SpanRecord> outboundHttp() {
-            List<SpanRecord> loaded = outboundHttp;
+        List<Queries.OutboundCall> outboundHttp() {
+            List<Queries.OutboundCall> loaded = outboundHttp;
             if (loaded == null) {
                 loaded = queries.outboundHttp(window, service);
                 outboundHttp = loaded;
