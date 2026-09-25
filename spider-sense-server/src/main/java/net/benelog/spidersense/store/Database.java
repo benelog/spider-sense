@@ -174,10 +174,20 @@ public final class Database implements AutoCloseable {
      * The H2 error codes of a second process opening the file while the first one
      * does: the lock file taken or recently modified, an auto-server not yet
      * answering, and the first one's CREATE TABLE or its locks.
+     *
+     * <p>The loser of two concurrent {@code CREATE INDEX IF NOT EXISTS} is not told
+     * 42101 but a general error, 50000, whose message says the object "already
+     * exists" ({@link #ALREADY_EXISTS}), and now and then the loser of two catalog
+     * writes is told that a row of {@code SYS_DATA} is not in its primary index,
+     * 90143. Both pass once the first process's schema is in.
      */
     private static final Set<Integer> RACE_CODES = Set.of(ErrorCode.ERROR_OPENING_DATABASE_1,
             ErrorCode.DATABASE_ALREADY_OPEN_1, ErrorCode.CONNECTION_BROKEN_1,
-            ErrorCode.TABLE_OR_VIEW_ALREADY_EXISTS_1, ErrorCode.DUPLICATE_KEY_1, ErrorCode.LOCK_TIMEOUT_1);
+            ErrorCode.TABLE_OR_VIEW_ALREADY_EXISTS_1, ErrorCode.DUPLICATE_KEY_1, ErrorCode.LOCK_TIMEOUT_1,
+            ErrorCode.ROW_NOT_FOUND_IN_PRIMARY_INDEX);
+
+    /** What H2's general error says when a concurrent CREATE made the object first. */
+    private static final String ALREADY_EXISTS = "already exists";
 
     /**
      * What H2 said, rather than the statement it said it about: a failure wrapped by
@@ -199,7 +209,8 @@ public final class Database implements AutoCloseable {
             int code = t instanceof SQLException sql ? sql.getErrorCode()
                     : t instanceof DbException db ? db.getErrorCode() : -1;
             if (code >= 0) {
-                return RACE_CODES.contains(code);
+                return RACE_CODES.contains(code) || code == ErrorCode.GENERAL_ERROR_1
+                        && t.getMessage() != null && t.getMessage().contains(ALREADY_EXISTS);
             }
         }
         return false;

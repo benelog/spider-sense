@@ -124,6 +124,53 @@ class DatabaseTest {
         assertThat(Database.raced(new IllegalStateException("no code"))).isFalse();
     }
 
+    /**
+     * Two sessions of one fresh engine creating the schema at once, which is what the
+     * second of two applications starting together on a new file is. H2 reports the
+     * loser of a {@code CREATE ... IF NOT EXISTS} in ways other than "already
+     * exists", and each of them must be taken for the race it is, and outlasted by
+     * trying again, not fall back to memory.
+     */
+    @Test
+    void everyFailureOfTwoSessionsCreatingTheSchemaAtOnceIsTakenForTheRace() throws Exception {
+        List<String> notRetried = new java.util.ArrayList<>();
+        for (int round = 0; round < 200; round++) {
+            org.h2.jdbcx.JdbcConnectionPool pool = org.h2.jdbcx.JdbcConnectionPool.create(
+                    "jdbc:h2:mem:schema-race-" + round + ";NON_KEYWORDS=KEY,VALUE", "sa", "");
+            try {
+                java.util.concurrent.CyclicBarrier start = new java.util.concurrent.CyclicBarrier(2);
+                java.util.concurrent.Callable<RuntimeException> create = () -> {
+                    start.await();
+                    try {
+                        Schema.create(new Sql(pool));
+                        return null;
+                    } catch (RuntimeException e) {
+                        return e;
+                    }
+                };
+                var executor = java.util.concurrent.Executors.newFixedThreadPool(2);
+                try {
+                    var first = executor.submit(create);
+                    var second = executor.submit(create);
+                    for (RuntimeException failure : List.of(
+                            java.util.Optional.ofNullable(first.get()),
+                            java.util.Optional.ofNullable(second.get())).stream()
+                            .flatMap(java.util.Optional::stream).toList()) {
+                        if (!Database.raced(failure)) {
+                            notRetried.add(String.valueOf(failure.getCause()));
+                        }
+                    }
+                } finally {
+                    executor.shutdownNow();
+                }
+                Schema.create(new Sql(pool));
+            } finally {
+                pool.dispose();
+            }
+        }
+        assertThat(notRetried).isEmpty();
+    }
+
     @Test
     void thePageCacheIsASixteenthOfTheHeapBetweenSixteenAndTwoHundredFiftySixMib() {
         long mib = 1024 * 1024;

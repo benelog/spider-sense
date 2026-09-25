@@ -378,4 +378,5 @@ A size read after a delete would say the same number and ask for the next hour, 
 If the database cannot be opened, because the file is corrupt or a permission is missing, the server logs one line and falls back to `jdbc:h2:mem:spidersense-<pid>` so the UI still works for the session.
 It marks `/api/status.storage.fallback` as `true` with the reason, which is H2's own message.
 Only a race with another process opening the same file at the same moment is retried, for up to 15 seconds; any other failure falls back at once, since the open runs on the monitored application's `premain` thread.
+The race includes the two processes creating the schema at once, whose loser H2 tells that an object already exists, as a general error `50000`, or now and then that a catalog row is not in its primary index, `90143`.
 Nothing in this path throws out of `premain`.
