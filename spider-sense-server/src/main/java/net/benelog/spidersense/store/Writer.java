@@ -906,39 +906,9 @@ public final class Writer implements AutoCloseable {
         if (cached != null) {
             return cached;
         }
-        long id = lookupOrCreateSeries(connection, sample, series.hash(), series.attributes());
+        long id = MetricSeriesRows.lookupOrCreate(connection, sample.service(), sample.name(), series.attributes());
         seriesIds.put(series.key(), id);
         return id;
-    }
-
-    private long lookupOrCreateSeries(Connection connection, Batch.MetricSample sample, String hash,
-            String attributes) throws SQLException {
-        try (PreparedStatement select = connection.prepareStatement(
-                "SELECT id FROM metric_series WHERE service = ? AND name = ? AND attr_hash = ? FOR UPDATE")) {
-            select.setString(1, sample.service());
-            select.setString(2, sample.name());
-            select.setString(3, hash);
-            try (ResultSet rs = select.executeQuery()) {
-                if (rs.next()) {
-                    return rs.getLong(1);
-                }
-            }
-        }
-        try (PreparedStatement insert = connection.prepareStatement(
-                "INSERT INTO metric_series (service, name, attr_hash, attributes) VALUES (?, ?, ?, ?)",
-                java.sql.Statement.RETURN_GENERATED_KEYS)) {
-            insert.setString(1, sample.service());
-            insert.setString(2, sample.name());
-            insert.setString(3, hash);
-            insert.setString(4, cut(attributes, 4096));
-            insert.executeUpdate();
-            try (ResultSet keys = insert.getGeneratedKeys()) {
-                if (keys.next()) {
-                    return keys.getLong(1);
-                }
-            }
-        }
-        throw new SQLException("No id for metric series " + sample.name());
     }
 
     /**

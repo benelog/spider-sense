@@ -4,7 +4,6 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -606,43 +605,9 @@ public final class Importer {
             String attributes = AttrJson.encodeSorted(
                     AttrJson.decode(nested(row, "attributes", AttrJson.EMPTY_OBJECT)));
             ids.put(longOr(row, "id", 0),
-                    lookupOrCreate(connection, service, name, attributes));
+                    MetricSeriesRows.lookupOrCreate(connection, service, name, attributes));
         }
         return ids;
-    }
-
-    private static long lookupOrCreate(Connection connection, String service, String name,
-            String attributes) throws SQLException {
-        String hash = Ids.shortHash(attributes);
-        try (PreparedStatement select = connection.prepareStatement(
-                // Locked, as the writer locks it: the orphan sweep locks a series before it
-                // deletes it, so it waits for this import's points rather than deleting the
-                // series under them.
-                "SELECT id FROM metric_series WHERE service = ? AND name = ? AND attr_hash = ? FOR UPDATE")) {
-            select.setString(1, service);
-            select.setString(2, name);
-            select.setString(3, hash);
-            try (ResultSet rs = select.executeQuery()) {
-                if (rs.next()) {
-                    return rs.getLong(1);
-                }
-            }
-        }
-        try (PreparedStatement insert = connection.prepareStatement(
-                "INSERT INTO metric_series (service, name, attr_hash, attributes) VALUES (?, ?, ?, ?)",
-                Statement.RETURN_GENERATED_KEYS)) {
-            insert.setString(1, service);
-            insert.setString(2, name);
-            insert.setString(3, hash);
-            insert.setString(4, Writer.cut(attributes, 4096));
-            insert.executeUpdate();
-            try (ResultSet keys = insert.getGeneratedKeys()) {
-                if (keys.next()) {
-                    return keys.getLong(1);
-                }
-            }
-        }
-        throw new SQLException("No id for metric series " + name);
     }
 
     private static long mergePoints(Connection connection, Json.JsonArray points,
