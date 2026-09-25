@@ -477,9 +477,9 @@ class FindingsTest {
         assertThat(schema.unindexed()).as("an index that carries a column second cannot seek on it")
                 .containsExactly("items.name");
         assertThat(schema.tables()).singleElement().satisfies(table -> {
-            assertThat(table.table()).isEqualTo("ITEMS");
+            assertThat(table.name()).isEqualTo("ITEMS");
             assertThat(table.schema()).isEqualTo("PUBLIC");
-            assertThat(table.indexes()).extracting(SchemaBlock.Index::name)
+            assertThat(table.indexes()).extracting(Catalog.Index::name)
                     .containsExactly("PRIMARY_KEY_8", "IDX_ITEMS_SUPPLIER");
             assertThat(table.indexes().get(0).unique()).isTrue();
             assertThat(table.indexes().get(1).columns()).containsExactly("SUPPLIER_ID", "NAME");
@@ -518,7 +518,7 @@ class FindingsTest {
         assertThat(schema).isNotNull();
         assertThat(schema.predicates()).containsExactly("order_line.order_id");
         assertThat(schema.unindexed()).containsExactly("order_line.order_id");
-        assertThat(schema.tables()).extracting(SchemaBlock.Table::table).containsExactly("ORDER_LINE");
+        assertThat(schema.tables()).extracting(Catalog.Table::name).containsExactly("ORDER_LINE");
     }
 
     @Test

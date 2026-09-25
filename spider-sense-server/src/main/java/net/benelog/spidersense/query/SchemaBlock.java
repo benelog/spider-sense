@@ -21,20 +21,10 @@ import org.jspecify.annotations.Nullable;
  * cannot vouch for, or one table of which the catalog has never heard, produces
  * no block at all: a reader who is told which columns are unindexed will act on
  * it, and a half-read statement would send them to index the wrong column.
+ *
+ * @param tables the catalog rows of the statement's tables, in the order it names them
  */
-public record SchemaBlock(List<Table> tables, List<String> predicates, List<String> unindexed) {
-
-    /** One index of one table, in the order its columns form the key. */
-    public record Index(String name, boolean unique, List<String> columns) {
-    }
-
-    /**
-     * One table of the statement, in the database's own spelling.
-     *
-     * @param schema null when the database reports none
-     */
-    public record Table(String table, @Nullable String schema, List<Index> indexes) {
-    }
+public record SchemaBlock(List<Catalog.Table> tables, List<String> predicates, List<String> unindexed) {
 
     /**
      * The block for one statement, or null when it cannot be vouched for.
@@ -51,7 +41,7 @@ public record SchemaBlock(List<Table> tables, List<String> predicates, List<Stri
         if (!shape.readable()) {
             return null;
         }
-        List<Table> tables = new ArrayList<>();
+        List<Catalog.Table> tables = new ArrayList<>();
         Map<String, Catalog.Table> byStatementName = new LinkedHashMap<>();
         for (SqlShape.TableRef reference : shape.tables()) {
             Catalog.Table known = pick(catalog.get(reference.name().toLowerCase(Locale.ROOT)),
@@ -60,7 +50,7 @@ public record SchemaBlock(List<Table> tables, List<String> predicates, List<Stri
                 return null;
             }
             byStatementName.put(reference.name(), known);
-            tables.add(new Table(known.name(), known.schema(), indexes(known)));
+            tables.add(known);
         }
 
         List<String> predicates = new ArrayList<>();
@@ -128,58 +118,22 @@ public record SchemaBlock(List<Table> tables, List<String> predicates, List<Stri
                 || namesOf(keyPart).contains(column.toLowerCase(Locale.ROOT));
     }
 
-    /** The column names an index expression holds, lower-cased. */
+    /**
+     * The column names an index expression holds, lower-cased: every name
+     * {@link SqlShape.Token} reads in it, less a type after {@code ::} and a
+     * function before {@code (}.
+     */
     private static List<String> namesOf(String expression) {
+        List<SqlShape.Token> tokens = SqlShape.Token.of(expression);
         List<String> names = new ArrayList<>();
-        int length = expression.length();
-        int i = 0;
-        boolean type = false;
-        while (i < length) {
-            char c = expression.charAt(i);
-            if (c == '\'') {
-                int end = expression.indexOf('\'', i + 1);
-                i = end < 0 ? length : end + 1;
-                continue;
+        for (int i = 0; i < tokens.size(); i++) {
+            SqlShape.Token token = tokens.get(i);
+            boolean type = i > 0 && tokens.get(i - 1).is("::");
+            boolean call = i + 1 < tokens.size() && tokens.get(i + 1).is("(");
+            if (token.kind() == SqlShape.Token.Kind.NAME && !type && !call) {
+                names.addAll(token.parts());
             }
-            if (expression.startsWith("::", i)) {
-                type = true;     // the next name is a type
-                i += 2;
-                continue;
-            }
-            int start = i;
-            String name;
-            if (c == '"') {
-                int end = expression.indexOf('"', i + 1);
-                name = expression.substring(i + 1, end < 0 ? length : end);
-                i = end < 0 ? length : end + 1;
-            } else if (Character.isLetter(c) || c == '_') {
-                while (i < length && (Character.isLetterOrDigit(expression.charAt(i))
-                        || expression.charAt(i) == '_' || expression.charAt(i) == '$')) {
-                    i++;
-                }
-                name = expression.substring(start, i);
-            } else {
-                i++;
-                continue;
-            }
-            int next = i;
-            while (next < length && expression.charAt(next) == ' ') {
-                next++;
-            }
-            boolean call = next < length && expression.charAt(next) == '(';
-            if (!type && !call) {
-                names.add(name.toLowerCase(Locale.ROOT));
-            }
-            type = false;
         }
         return names;
-    }
-
-    private static List<Index> indexes(Catalog.Table table) {
-        List<Index> indexes = new ArrayList<>(table.indexes().size());
-        for (Catalog.Index index : table.indexes()) {
-            indexes.add(new Index(index.name(), index.unique(), index.columns()));
-        }
-        return List.copyOf(indexes);
     }
 }

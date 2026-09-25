@@ -11,6 +11,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 
+import net.benelog.spidersense.query.Catalog;
 import net.benelog.spidersense.query.Check;
 import net.benelog.spidersense.query.CodeFrames;
 import net.benelog.spidersense.query.Compare;
@@ -448,13 +449,13 @@ final class Text {
         if (block == null) {
             return;
         }
-        for (SchemaBlock.Table table : block.tables()) {
+        for (Catalog.Table table : block.tables()) {
             List<String> indexes = new ArrayList<>();
-            for (SchemaBlock.Index index : table.indexes()) {
+            for (Catalog.Index index : table.indexes()) {
                 indexes.add(index.name() + " (" + String.join(", ", index.columns()) + ")"
                         + (index.unique() ? " unique" : ""));
             }
-            text.append("   indexes ").append(table.table()).append(": ")
+            text.append("   indexes ").append(table.name()).append(": ")
                     .append(indexes.isEmpty() ? "none" : String.join(", ", indexes)).append('\n');
         }
         text.append("   predicates: ");

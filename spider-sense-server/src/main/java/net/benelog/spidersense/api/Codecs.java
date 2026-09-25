@@ -3,6 +3,7 @@ package net.benelog.spidersense.api;
 import java.util.List;
 import java.util.Map;
 
+import net.benelog.spidersense.query.Catalog;
 import net.benelog.spidersense.query.Check;
 import net.benelog.spidersense.query.Compare;
 import net.benelog.spidersense.query.Findings;
@@ -367,16 +368,16 @@ public final class Codecs {
             return null;
         }
         Json.JsonArray tables = Json.arr();
-        for (SchemaBlock.Table table : block.tables()) {
+        for (Catalog.Table table : block.tables()) {
             Json.JsonArray indexes = Json.arr();
-            for (SchemaBlock.Index index : table.indexes()) {
+            for (Catalog.Index index : table.indexes()) {
                 indexes.add(Json.obj()
                         .put("name", index.name())
                         .put("unique", index.unique())
                         .put("columns", strings(index.columns())));
             }
             tables.add(Json.obj()
-                    .put("table", table.table())
+                    .put("table", table.name())
                     .put("schema", table.schema())
                     .put("indexes", indexes));
         }

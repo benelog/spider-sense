@@ -631,9 +631,12 @@ final class SqlShape {
      * is one), a parameter or a number. String literals are dropped as they are
      * read — a sanitised statement has none left worth looking at.
      *
+     * <p>Package-private so {@link SchemaBlock} reads an index expression with the
+     * same tokenizer as a statement.
+     *
      * @param parts the segments of a name, unquoted and lower-cased; empty otherwise
      */
-    private record Token(Kind kind, String text, List<String> parts, boolean quoted) {
+    record Token(Kind kind, String text, List<String> parts, boolean quoted) {
 
         enum Kind { NAME, PUNCTUATION, PARAMETER, NUMBER }
 
