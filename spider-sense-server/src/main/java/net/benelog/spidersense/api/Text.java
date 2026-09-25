@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Function;
 
 import net.benelog.spidersense.query.Check;
 import net.benelog.spidersense.query.CodeFrames;
@@ -59,17 +60,122 @@ final class Text {
     /** A run of identical siblings longer than this collapses into one line. */
     private static final int COLLAPSE_AFTER = 3;
 
-    /** The columns of the findings table, one finding's included. */
-    private static final List<String> FINDING_COLUMNS =
-            List.of("#", "severity", "state", "kind", "id", "service", "title");
+    /**
+     * One column of a table: its header and how a row's cell is written, on one line, so a column
+     * cannot be added to the header without its cell or land under another column's header.
+     */
+    private record Column<T>(String header, Function<T, String> cell) {
+    }
 
-    /** The columns of the queries table, one query group's included. */
-    private static final List<String> QUERY_COLUMNS = List.of("id", "service", "calls", "slow", "p50",
-            "p95", "max", "total", "callers", "unindexed", "statement");
+    /** A finding and its place in the list, which is the table's first column. */
+    private record Ranked(int rank, Findings.Finding finding) {
+    }
+
+    /** The columns of the findings table, one finding's included. */
+    private static final List<Column<Ranked>> FINDING_COLUMNS = List.of(
+            new Column<>("#", ranked -> String.valueOf(ranked.rank())),
+            new Column<>("severity", ranked -> severity(ranked.finding())),
+            new Column<>("state", ranked -> ranked.finding().state()),
+            new Column<>("kind", ranked -> ranked.finding().kind()),
+            new Column<>("id", ranked -> ranked.finding().id()),
+            new Column<>("service", ranked -> ranked.finding().service()),
+            new Column<>("title", ranked -> ranked.finding().title()));
+
+    /** The columns of the queries table, one query group's included; {@code full} keeps statements whole. */
+    private static List<Column<Stats.QueryStats>> queryColumns(boolean full) {
+        return List.of(
+                new Column<>("id", Stats.QueryStats::queryId),
+                new Column<>("service", Stats.QueryStats::service),
+                new Column<>("calls", query -> Numbers.count(query.calls())),
+                new Column<>("slow", query -> Numbers.count(query.slowCalls())),
+                new Column<>("p50", query -> Numbers.millis(query.p50Ms())),
+                new Column<>("p95", query -> Numbers.millis(query.p95Ms())),
+                new Column<>("max", query -> Numbers.millis(query.maxMs())),
+                new Column<>("total", query -> Numbers.millis(query.totalMs())),
+                new Column<>("callers", Text::callers),
+                new Column<>("unindexed", query -> unindexed(query.schema())),
+                new Column<>("statement", query -> shortened(query.statement(), full)));
+    }
 
     /** The columns of the errors table, one error group's included. */
-    private static final List<String> ERROR_COLUMNS =
-            List.of("id", "service", "type", "message", "count", "first", "last", "endpoints");
+    private static final List<Column<Stats.ErrorGroup>> ERROR_COLUMNS = List.of(
+            new Column<>("id", Stats.ErrorGroup::errorId),
+            new Column<>("service", Stats.ErrorGroup::service),
+            new Column<>("type", group -> or(group.type())),
+            new Column<>("message", group -> or(group.message())),
+            new Column<>("count", group -> Numbers.count(group.count())),
+            new Column<>("first", group -> clockMillis(group.firstSeen())),
+            new Column<>("last", group -> clockMillis(group.lastSeen())),
+            new Column<>("endpoints", Text::endpointCounts));
+
+    private static final List<Column<Stats.TraceSummary>> TRACE_COLUMNS = List.of(
+            new Column<>("start", trace -> clockMillis(trace.start())),
+            new Column<>("duration", trace -> Numbers.millis(trace.durationMs())),
+            new Column<>("trace", Stats.TraceSummary::traceId),
+            new Column<>("root", trace -> or(trace.rootName())),
+            new Column<>("service", trace -> or(trace.rootService())),
+            new Column<>("spans", trace -> String.valueOf(trace.spanCount())),
+            new Column<>("db", trace -> String.valueOf(trace.dbCount())),
+            new Column<>("errors", trace -> String.valueOf(trace.errorCount())),
+            new Column<>("status", trace -> trace.httpStatus() == null
+                    ? "—" : String.valueOf(trace.httpStatus())));
+
+    private static final List<Column<Stats.EndpointStats>> ENDPOINT_COLUMNS = List.of(
+            new Column<>("endpoint", endpoint -> or(endpoint.name())),
+            new Column<>("id", Stats.EndpointStats::endpointId),
+            new Column<>("service", Stats.EndpointStats::service),
+            new Column<>("calls", endpoint -> Numbers.count(endpoint.calls())),
+            new Column<>("errors", endpoint -> Numbers.count(endpoint.errors())),
+            new Column<>("p50", endpoint -> Numbers.millis(endpoint.p50Ms())),
+            new Column<>("p95", endpoint -> Numbers.millis(endpoint.p95Ms())),
+            new Column<>("max", endpoint -> Numbers.millis(endpoint.maxMs())),
+            new Column<>("total", endpoint -> Numbers.millis(endpoint.totalMs())),
+            new Column<>("apdex", endpoint -> Numbers.score(endpoint.apdex())));
+
+    private static final List<Column<Stats.ServiceSummary>> SERVICE_COLUMNS = List.of(
+            new Column<>("service", Stats.ServiceSummary::name),
+            new Column<>("language", summary -> or(summary.language())),
+            new Column<>("embedded", summary -> summary.embedded() ? "yes" : "no"),
+            new Column<>("requests", summary -> Numbers.count(summary.totals().requests())),
+            new Column<>("errors", summary -> Numbers.count(summary.totals().errors())),
+            new Column<>("p50", summary -> Numbers.millis(summary.totals().p50Ms())),
+            new Column<>("p95", summary -> Numbers.millis(summary.totals().p95Ms())),
+            new Column<>("max", summary -> Numbers.millis(summary.totals().maxMs())),
+            new Column<>("apdex", summary -> Numbers.score(summary.totals().apdex())),
+            new Column<>("last seen", summary -> instantMillis(summary.lastSeen())));
+
+    /** The endpoint rows of a compare: each number as {@code before → after}. */
+    private static final List<Column<Compare.EndpointDiff>> COMPARE_ENDPOINT_COLUMNS = List.of(
+            new Column<>("verdict", Compare.EndpointDiff::verdict),
+            new Column<>("endpoint", diff -> or(diff.name())),
+            new Column<>("id", Compare.EndpointDiff::endpointId),
+            endpointPair("calls", Compare.Side::calls, Text::count),
+            endpointPair("errors", Compare.Side::errors, Text::count),
+            endpointPair("p95", Compare.Side::p95Ms, Text::millis),
+            endpointPair("db/req", Compare.Side::dbCallsPerRequest, Text::number),
+            endpointPair("db ms/req", Compare.Side::dbMsPerRequest, Text::millis));
+
+    private static <V> Column<Compare.EndpointDiff> endpointPair(String header, Function<Compare.Side, V> field,
+            Function<@Nullable V, String> format) {
+        return new Column<>(header, diff -> pair(diff.before(), diff.after(), field, format));
+    }
+
+    /** The query rows of a compare; {@code full} keeps statements whole. */
+    private static List<Column<Compare.QueryDiff>> compareQueryColumns(boolean full) {
+        return List.of(
+                new Column<>("verdict", Compare.QueryDiff::verdict),
+                new Column<>("id", Compare.QueryDiff::queryId),
+                queryPair("calls", Compare.QuerySide::calls, Text::count),
+                queryPair("calls/req", Compare.QuerySide::callsPerRequest, Text::number),
+                queryPair("p95", Compare.QuerySide::p95Ms, Text::millis),
+                queryPair("total", Compare.QuerySide::totalMs, Text::millis),
+                new Column<>("statement", diff -> shortened(diff.statement(), full)));
+    }
+
+    private static <V> Column<Compare.QueryDiff> queryPair(String header, Function<Compare.QuerySide, V> field,
+            Function<@Nullable V, String> format) {
+        return new Column<>(header, diff -> pair(diff.before(), diff.after(), field, format));
+    }
 
     private static final int OFFSET_WIDTH = 11;
     private static final int DURATION_WIDTH = 10;
@@ -271,16 +377,13 @@ final class Text {
         StringBuilder text =
                 new StringBuilder(heading("findings", window, service, requests, acked, resolved));
         text.append('\n');
-        table(text, FINDING_COLUMNS);
-        int rank = 0;
+        List<Ranked> ranked = new ArrayList<>(findings.size());
         for (Findings.Finding finding : findings) {
-            rank++;
-            findingRow(text, rank, finding);
+            ranked.add(new Ranked(ranked.size() + 1, finding));
         }
-        rank = 0;
-        for (Findings.Finding finding : findings) {
-            rank++;
-            findingEvidence(text, rank, finding, full);
+        table(text, FINDING_COLUMNS, ranked);
+        for (Ranked each : ranked) {
+            findingEvidence(text, each.rank(), each.finding(), full);
         }
         return text.toString();
     }
@@ -296,16 +399,9 @@ final class Text {
         StringBuilder text = new StringBuilder(heading("finding " + finding.id(), window, service,
                 requests));
         text.append('\n');
-        table(text, FINDING_COLUMNS);
-        findingRow(text, rank, finding);
+        table(text, FINDING_COLUMNS, List.of(new Ranked(rank, finding)));
         findingEvidence(text, rank, finding, full);
         return text.toString();
-    }
-
-    private static void findingRow(StringBuilder text, int rank, Findings.Finding finding) {
-        row(text, List.of(String.valueOf(rank), severity(finding), finding.state(),
-                finding.kind(), finding.id(),
-                finding.service(), finding.title()));
     }
 
     private static void findingEvidence(StringBuilder text, int rank, Findings.Finding finding,
@@ -605,40 +701,14 @@ final class Text {
         if (comparison.endpoints().isEmpty()) {
             text.append("no endpoint in either window\n");
         } else {
-            table(text, List.of("verdict", "endpoint", "id", "calls", "errors", "p95", "db/req",
-                    "db ms/req"));
-            for (Compare.EndpointDiff diff : comparison.endpoints()) {
-                row(text, List.of(diff.verdict(), or(diff.name()), diff.endpointId(),
-                        pair(count(diff.before() == null ? null : diff.before().calls()),
-                                count(diff.after() == null ? null : diff.after().calls())),
-                        pair(count(diff.before() == null ? null : diff.before().errors()),
-                                count(diff.after() == null ? null : diff.after().errors())),
-                        pair(millis(diff.before() == null ? null : diff.before().p95Ms()),
-                                millis(diff.after() == null ? null : diff.after().p95Ms())),
-                        pair(number(diff.before() == null ? null : diff.before().dbCallsPerRequest()),
-                                number(diff.after() == null ? null : diff.after().dbCallsPerRequest())),
-                        pair(millis(diff.before() == null ? null : diff.before().dbMsPerRequest()),
-                                millis(diff.after() == null ? null : diff.after().dbMsPerRequest()))));
-            }
+            table(text, COMPARE_ENDPOINT_COLUMNS, comparison.endpoints());
         }
 
         text.append("\n## queries\n\n");
         if (comparison.queries().isEmpty()) {
             text.append("no query in either window\n");
         } else {
-            table(text, List.of("verdict", "id", "calls", "calls/req", "p95", "total", "statement"));
-            for (Compare.QueryDiff diff : comparison.queries()) {
-                row(text, List.of(diff.verdict(), diff.queryId(),
-                        pair(count(diff.before() == null ? null : diff.before().calls()),
-                                count(diff.after() == null ? null : diff.after().calls())),
-                        pair(number(diff.before() == null ? null : diff.before().callsPerRequest()),
-                                number(diff.after() == null ? null : diff.after().callsPerRequest())),
-                        pair(millis(diff.before() == null ? null : diff.before().p95Ms()),
-                                millis(diff.after() == null ? null : diff.after().p95Ms())),
-                        pair(millis(diff.before() == null ? null : diff.before().totalMs()),
-                                millis(diff.after() == null ? null : diff.after().totalMs())),
-                        shortened(diff.statement(), full)));
-            }
+            table(text, compareQueryColumns(full), comparison.queries());
         }
 
         text.append("\n## errors\n\n");
@@ -654,9 +724,14 @@ final class Text {
         return text.toString();
     }
 
-    /** {@code 12 → 3}: the two windows in one cell, a dash where a side has nothing. */
-    private static String pair(String before, String after) {
-        return before + " → " + after;
+    /**
+     * {@code 12 → 3}: one number of the two windows in one cell, a dash where a side has nothing
+     * or the side is not there at all.
+     */
+    private static <S, V> String pair(@Nullable S before, @Nullable S after, Function<S, V> field,
+            Function<@Nullable V, String> format) {
+        return format.apply(before == null ? null : field.apply(before)) + " → "
+                + format.apply(after == null ? null : field.apply(after));
     }
 
     private static String count(@Nullable Long value) {
@@ -716,15 +791,7 @@ final class Text {
         // The table is a page of the newest; the count says how many the window holds.
         text.append(traces.size() < total ? traces.size() + " of " : "").append(plural(total, "trace"))
                 .append(", newest first\n\n");
-        table(text, List.of("start", "duration", "trace", "root", "service", "spans", "db", "errors",
-                "status"));
-        for (Stats.TraceSummary trace : traces) {
-            row(text, List.of(clockMillis(trace.start()), Numbers.millis(trace.durationMs()),
-                    trace.traceId(), or(trace.rootName()), or(trace.rootService()),
-                    String.valueOf(trace.spanCount()), String.valueOf(trace.dbCount()),
-                    String.valueOf(trace.errorCount()),
-                    trace.httpStatus() == null ? "—" : String.valueOf(trace.httpStatus())));
-        }
+        table(text, TRACE_COLUMNS, traces);
         return text.toString();
     }
 
@@ -736,15 +803,7 @@ final class Text {
         }
         StringBuilder text = new StringBuilder(heading("endpoints", window, service, requests));
         text.append('\n');
-        table(text, List.of("endpoint", "id", "service", "calls", "errors", "p50", "p95", "max",
-                "total", "apdex"));
-        for (Stats.EndpointStats endpoint : endpoints) {
-            row(text, List.of(or(endpoint.name()), endpoint.endpointId(), endpoint.service(),
-                    Numbers.count(endpoint.calls()), Numbers.count(endpoint.errors()),
-                    Numbers.millis(endpoint.p50Ms()), Numbers.millis(endpoint.p95Ms()),
-                    Numbers.millis(endpoint.maxMs()), Numbers.millis(endpoint.totalMs()),
-                    Numbers.score(endpoint.apdex())));
-        }
+        table(text, ENDPOINT_COLUMNS, endpoints);
         return text.toString();
     }
 
@@ -756,10 +815,7 @@ final class Text {
         }
         StringBuilder text = new StringBuilder(heading("queries", window, service, requests));
         text.append('\n');
-        table(text, QUERY_COLUMNS);
-        for (Stats.QueryStats query : queries) {
-            queryRow(text, query, full);
-        }
+        table(text, queryColumns(full), queries);
         return text.toString();
     }
 
@@ -769,23 +825,17 @@ final class Text {
         StringBuilder text = new StringBuilder(heading("query " + query.queryId(), window, service,
                 requests));
         text.append('\n');
-        table(text, QUERY_COLUMNS);
-        queryRow(text, query, full);
+        table(text, queryColumns(full), List.of(query));
         return text.toString();
     }
 
-    private static void queryRow(StringBuilder text, Stats.QueryStats query, boolean full) {
+    /** {@code GET /orders ×12; GET /report ×3}: who ran a query, and how often. */
+    private static String callers(Stats.QueryStats query) {
         List<String> callers = new ArrayList<>();
         for (Stats.Caller caller : query.callers()) {
             callers.add(caller.endpoint() + " ×" + caller.calls());
         }
-        row(text, List.of(query.queryId(), query.service(), Numbers.count(query.calls()),
-                Numbers.count(query.slowCalls()), Numbers.millis(query.p50Ms()),
-                Numbers.millis(query.p95Ms()), Numbers.millis(query.maxMs()),
-                Numbers.millis(query.totalMs()),
-                callers.isEmpty() ? "—" : String.join("; ", callers),
-                unindexed(query.schema()),
-                shortened(query.statement(), full)));
+        return callers.isEmpty() ? "—" : String.join("; ", callers);
     }
 
     static String errors(Window window, @Nullable String service, List<Stats.ErrorGroup> errors, long requests,
@@ -796,10 +846,7 @@ final class Text {
         }
         StringBuilder text = new StringBuilder(heading("errors", window, service, requests));
         text.append('\n');
-        table(text, ERROR_COLUMNS);
-        for (Stats.ErrorGroup group : errors) {
-            errorRow(text, group);
-        }
+        table(text, ERROR_COLUMNS, errors);
         for (Stats.ErrorGroup group : errors) {
             errorFrames(text, group, full, frames);
         }
@@ -812,21 +859,18 @@ final class Text {
         StringBuilder text = new StringBuilder(heading("error " + group.errorId(), window, service,
                 requests));
         text.append('\n');
-        table(text, ERROR_COLUMNS);
-        errorRow(text, group);
+        table(text, ERROR_COLUMNS, List.of(group));
         errorFrames(text, group, full, frames);
         return text.toString();
     }
 
-    private static void errorRow(StringBuilder text, Stats.ErrorGroup group) {
+    /** {@code GET /orders ×12; GET /report ×3}: where an error group was thrown, and how often. */
+    private static String endpointCounts(Stats.ErrorGroup group) {
         List<String> endpoints = new ArrayList<>();
         for (Stats.EndpointCount endpoint : group.endpoints()) {
             endpoints.add(endpoint.name() + " ×" + endpoint.count());
         }
-        row(text, List.of(group.errorId(), group.service(), or(group.type()), or(group.message()),
-                Numbers.count(group.count()), clockMillis(group.firstSeen()),
-                clockMillis(group.lastSeen()),
-                endpoints.isEmpty() ? "—" : String.join("; ", endpoints)));
+        return endpoints.isEmpty() ? "—" : String.join("; ", endpoints);
     }
 
     /** The sample's application frames under the table, when there are any or {@code full} was asked. */
@@ -892,16 +936,7 @@ final class Text {
         }
         StringBuilder text = new StringBuilder(heading("services", window, null, requests));
         text.append('\n');
-        table(text, List.of("service", "language", "embedded", "requests", "errors", "p50", "p95",
-                "max", "apdex", "last seen"));
-        for (Stats.ServiceSummary summary : services) {
-            Stats.Totals totals = summary.totals();
-            row(text, List.of(summary.name(), or(summary.language()),
-                    summary.embedded() ? "yes" : "no", Numbers.count(totals.requests()),
-                    Numbers.count(totals.errors()), Numbers.millis(totals.p50Ms()),
-                    Numbers.millis(totals.p95Ms()), Numbers.millis(totals.maxMs()),
-                    Numbers.score(totals.apdex()), instantMillis(summary.lastSeen())));
-        }
+        table(text, SERVICE_COLUMNS, services);
         return text.toString();
     }
 
@@ -1360,6 +1395,14 @@ final class Text {
 
     private static String or(@Nullable String value) {
         return value == null || value.isBlank() ? "—" : value;
+    }
+
+    /** A table with a row per element, each cell written by its column. */
+    private static <T> void table(StringBuilder text, List<Column<T>> columns, List<T> rows) {
+        table(text, columns.stream().map(Column::header).toList());
+        for (T each : rows) {
+            row(text, columns.stream().map(column -> column.cell().apply(each)).toList());
+        }
     }
 
     private static void table(StringBuilder text, List<String> columns) {
