@@ -547,7 +547,9 @@ export function render(root, ctx) {
           snippetBlocks((api.state.status || {}).endpoint || location.origin)));
         return;
       }
-      const key = nodes.map((n) => n.id).sort().join('|');
+      // The edges are part of the layout: a call between services moves a node to a later
+      // column, and an edge that comes or goes is drawn or removed. Live only renumbers the rest.
+      const key = nodes.map((n) => n.id).sort().join('|') + '#' + edges.map(edgeKey).sort().join('|');
       if (key !== layoutKey) {
         layoutKey = key;
         draw();

@@ -157,7 +157,8 @@ A full-height panel holds one SVG, drawn by hand without a library.
 The layout runs left to right in columns: the `user` node first, then the services ordered by the longest path from a source, then the external nodes (databases, hosts, destinations) in the last column.
 A service that no traced call reaches is a source.
 Nodes within a column are sorted by name and spaced evenly.
-The layout is computed once per set of nodes and kept while Live refreshes the numbers, so nodes do not jump.
+The layout is computed once per set of nodes and edges and kept while Live refreshes the numbers, so nodes do not jump.
+An edge that appears or leaves the window, which can move a service to another column, lays the map out again.
 
 [#map-nodes]
 A node is a rounded rectangle of 200×64 with an icon for its kind: service, database, a trace icon for `http`, a log icon for messaging, and a person for `user`.
