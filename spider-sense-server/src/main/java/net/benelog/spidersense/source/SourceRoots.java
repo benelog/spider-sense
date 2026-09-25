@@ -39,13 +39,29 @@ public final class SourceRoots {
     private static final int MAX_FRAME = 1000;
 
     /**
+     * A character that may start a Java identifier: any letter, a letter-like number,
+     * {@code _} or {@code $}, so {@code 주문Service} and {@code Ünïcode} are identifiers too.
+     */
+    private static final String START = "[\\p{L}\\p{Nl}_$]";
+
+    /**
+     * A character that may continue one: those, a digit, a combining mark or a connector.
+     * Not {@code \w}, which is ASCII in a Java pattern, and not
+     * {@code \p{javaJavaIdentifierPart}}, which admits control characters no path should hold.
+     */
+    private static final String PART = "[\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}$]";
+
+    /** A character of a file name: those and {@code -}, never a dot or a slash. */
+    private static final String FILE_PART = "[\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}$-]";
+
+    /**
      * {@code package.Class.method(File.ext:line)}: the class a dotted run of identifiers
      * ({@code $} for a nested class), the method anything but a dot or a parenthesis
      * ({@code <init>}, {@code lambda$load$0}), the file a plain name with a source extension.
      */
     private static final Pattern FRAME = Pattern.compile(
-            "([A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*)\\.[^.()\\s]+"
-                    + "\\(([\\w$-]+\\.(?:java|kt|groovy|scala)):(\\d{1,9})\\)");
+            "(" + START + PART + "*(?:\\." + START + PART + "*)*)\\.[^.()\\s]+"
+                    + "\\((" + FILE_PART + "+\\.(?:java|kt|groovy|scala)):([0-9]{1,9})\\)");
 
     private final List<Path> roots;
 

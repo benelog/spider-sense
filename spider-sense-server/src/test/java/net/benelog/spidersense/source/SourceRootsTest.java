@@ -75,6 +75,20 @@ class SourceRootsTest {
         assertThat(roots.resolve("orders.OrderService.<init>(OrderService.java:3)")).isNotNull();
     }
 
+    /** A Java identifier is not only ASCII: a Korean or an accented class name is a frame too. */
+    @Test
+    void aNonAsciiIdentifierIsAFrame() throws IOException {
+        assertThat(SourceRoots.parse("orders.주문Service.load(주문Service.java:41)"))
+                .isEqualTo(new SourceRoots.Frame("orders/주문Service.java", 41));
+        assertThat(SourceRoots.parse("주문.Ünïcode$Inner.run(Ünïcode.java:3)"))
+                .isEqualTo(new SourceRoots.Frame("주문/Ünïcode.java", 3));
+        assertThat(SourceRoots.parse("orders.주문Service.load(../주문Service.java:41)")).isNull();
+
+        write("src/main/java/orders/주문Service.java", 50);
+        assertThat(SourceRoots.of(null, project).resolve("orders.주문Service.load(주문Service.java:41)"))
+                .isNotNull();
+    }
+
     @Test
     void theSnippetIsTheFiveLinesAroundTheLineCutAtTheEdgesOfTheFile() throws IOException {
         write("src/main/java/orders/OrderService.java", 10);
