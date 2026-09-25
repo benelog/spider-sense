@@ -27,7 +27,7 @@ import org.jspecify.annotations.Nullable;
  * {@link Reports} instead of rendering here, because the CLI answers those same
  * seven with no server running and there must be one implementation of each.
  */
-public final class TraceApi {
+public final class TrafficApi {
 
     private static final int DETAIL_TRACES = 20;
     private static final int TOP_N = 10;
@@ -39,7 +39,7 @@ public final class TraceApi {
     private final Reports reports;
     private final Params params;
 
-    public TraceApi(Queries queries, Reports reports) {
+    public TrafficApi(Queries queries, Reports reports) {
         this.queries = queries;
         this.reports = reports;
         this.params = new Params(reports.selectors());

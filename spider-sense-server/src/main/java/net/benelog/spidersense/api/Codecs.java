@@ -28,11 +28,13 @@ import net.benelog.spidersilk.json.Json;
 import org.jspecify.annotations.Nullable;
 
 /**
- * The wire format, written by hand, in one place.
+ * The records' shapes on the wire, written by hand.
  *
- * <p>api.adoc is the contract and this file is its implementation: every field name
- * the UI reads appears here literally, so a change to the contract is a change to
- * one file and a reader can check the two side by side.
+ * <p>api.adoc is the contract and this file implements the shape of every record it
+ * names: each field name of those records appears here literally, so a reader can check
+ * the two side by side. Each route's envelope, the object that wraps the records it
+ * answers with, is written in its handler, so a change to the contract is a change to
+ * this file and to the handler of the route it concerns.
  *
  * <p>Two rules run through it. A duration that has no value — a percentile of an
  * empty bucket, the rate of the first point of a series — is written as

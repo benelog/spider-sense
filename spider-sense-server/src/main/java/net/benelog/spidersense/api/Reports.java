@@ -184,8 +184,8 @@ public final class Reports implements AutoCloseable {
     }
 
     /** The base URL an empty answer tells the caller to send telemetry to. */
-    public String endpoint() {
-        return config.endpoint(port.getAsInt());
+    public String otlpEndpoint() {
+        return config.baseUrl(port.getAsInt());
     }
 
     // --- status ---------------------------------------------------------------
@@ -238,7 +238,7 @@ public final class Reports implements AutoCloseable {
                 .put("resolved", answer.resolved())
                 .put("findings", Codecs.findings(found));
         return new Report(json, Text.findings(window, service, requests, answer.acked(),
-                answer.resolved(), found, full, endpoint()));
+                answer.resolved(), found, full, otlpEndpoint()));
     }
 
     /**
@@ -391,7 +391,7 @@ public final class Reports implements AutoCloseable {
                 .put("window", Codecs.window(filter.window()));
         long requests = queries.totals(filter.window(), filter.service()).requests();
         return new Report(json, Text.traces(filter.window(), filter.service(), traces, total, requests,
-                endpoint()));
+                otlpEndpoint()));
     }
 
     /** One trace, or null when the id is not stored. */
@@ -435,7 +435,7 @@ public final class Reports implements AutoCloseable {
         List<Stats.EndpointStats> endpoints = queries.endpoints(window, service, null);
         long requests = queries.totals(window, service).requests();
         return new Report(Json.obj().put("endpoints", Codecs.endpoints(endpoints)),
-                Text.endpoints(window, service, endpoints, requests, endpoint()));
+                Text.endpoints(window, service, endpoints, requests, otlpEndpoint()));
     }
 
     public Report queries(Window window, @Nullable String service, @Nullable String sort, int limit,
@@ -443,7 +443,7 @@ public final class Reports implements AutoCloseable {
         List<Stats.QueryStats> list = queries.queries(window, service, sort, limit, null);
         long requests = queries.totals(window, service).requests();
         return new Report(Json.obj().put("queries", Codecs.queries(list)),
-                Text.queries(window, service, list, requests, full, endpoint()));
+                Text.queries(window, service, list, requests, full, otlpEndpoint()));
     }
 
     /**
@@ -458,7 +458,7 @@ public final class Reports implements AutoCloseable {
         list.forEach(group -> ids.add(group.errorId()));
         Map<String, long[]> series = queries.errorSeries(window, ids);
         return new Report(Json.obj().put("errors", Codecs.errorGroups(list, series)),
-                Text.errors(window, service, list, requests, full, frames, endpoint()));
+                Text.errors(window, service, list, requests, full, frames, otlpEndpoint()));
     }
 
     /**
@@ -503,7 +503,7 @@ public final class Reports implements AutoCloseable {
         // Only an empty answer says the count, and only a window with no request says to send some.
         long requests = logs.isEmpty() ? queries.totals(filter.window(), filter.service()).requests() : 0;
         return new Report(json, Text.logs(filter.window(), filter.service(), logs, total, requests,
-                endpoint()));
+                otlpEndpoint()));
     }
 
     /**
@@ -577,7 +577,7 @@ public final class Reports implements AutoCloseable {
         List<Stats.ServiceSummary> summaries = queries.services(window);
         long requests = queries.totals(window, null).requests();
         return new Report(Json.obj().put("services", Codecs.serviceSummaries(summaries)),
-                Text.services(window, summaries, requests, endpoint()));
+                Text.services(window, summaries, requests, otlpEndpoint()));
     }
 
     @Override

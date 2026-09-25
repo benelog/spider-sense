@@ -268,15 +268,17 @@ public final class AgentApi {
     }
 
     /** A plain decimal number, such as {@code 500} or {@code 0.95}: not Java's {@code 5d} or {@code 0x1p3}. */
-    private static final java.util.regex.Pattern DECIMAL =
+    private static final java.util.regex.Pattern PLAIN_DECIMAL =
             java.util.regex.Pattern.compile("-?\\d+(\\.\\d+)?([eE][+-]?\\d+)?");
 
-    private static double limit(String value) {
-        double limit = DECIMAL.matcher(value.trim()).matches() ? Double.parseDouble(value.trim()) : Double.NaN;
-        if (!Double.isFinite(limit)) {
+    /** A check rule's threshold, such as {@code maxP95Ms=500}: a finite plain decimal. */
+    private static double ruleValue(String value) {
+        double threshold = PLAIN_DECIMAL.matcher(value.trim()).matches()
+                ? Double.parseDouble(value.trim()) : Double.NaN;
+        if (!Double.isFinite(threshold)) {
             throw new NumberFormatException("not a finite decimal number: " + value);
         }
-        return limit;
+        return threshold;
     }
 
     /** The rejection an {@code IllegalArgumentException} from the store means. */
@@ -289,7 +291,7 @@ public final class AgentApi {
         Map<String, Double> rules = new LinkedHashMap<>();
         for (String rule : Check.RULES) {
             if (req.queryParamOrNull(rule) != null) {
-                rules.put(rule, req.queryParam(rule, AgentApi::limit));
+                rules.put(rule, req.queryParam(rule, AgentApi::ruleValue));
             }
         }
         Reports.CheckReport checked = reports.check(window, Params.service(req),

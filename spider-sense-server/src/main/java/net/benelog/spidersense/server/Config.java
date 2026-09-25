@@ -180,7 +180,7 @@ public record Config(
      * <p>A wildcard bind is not an address to connect to, from another machine or on Windows,
      * so it is advertised as {@code 127.0.0.1}, as the launcher's banner does.
      */
-    public String endpoint(int boundPort) {
+    public String baseUrl(int boundPort) {
         return "http://" + callableHost(host) + ":" + boundPort;
     }
 

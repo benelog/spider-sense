@@ -121,11 +121,11 @@ class ConfigTest {
     /** What /api/status advertises is an address to connect to, whatever the bind address. */
     @Test
     void aWildcardBindIsAdvertisedAsTheLoopbackAddress() {
-        assertThat(parse("--host=0.0.0.0").endpoint(4000)).isEqualTo("http://127.0.0.1:4000");
-        assertThat(parse("--host=::").endpoint(4000)).isEqualTo("http://127.0.0.1:4000");
-        assertThat(parse("--host=[::]").endpoint(4000)).isEqualTo("http://127.0.0.1:4000");
-        assertThat(parse("--host=::1").endpoint(4001)).isEqualTo("http://[::1]:4001");
-        assertThat(parse("--host=192.168.0.7").endpoint(4000)).isEqualTo("http://192.168.0.7:4000");
+        assertThat(parse("--host=0.0.0.0").baseUrl(4000)).isEqualTo("http://127.0.0.1:4000");
+        assertThat(parse("--host=::").baseUrl(4000)).isEqualTo("http://127.0.0.1:4000");
+        assertThat(parse("--host=[::]").baseUrl(4000)).isEqualTo("http://127.0.0.1:4000");
+        assertThat(parse("--host=::1").baseUrl(4001)).isEqualTo("http://[::1]:4001");
+        assertThat(parse("--host=192.168.0.7").baseUrl(4000)).isEqualTo("http://192.168.0.7:4000");
     }
 
     /** The one table the advertised endpoint, the host check and the CLI's default URL share. */

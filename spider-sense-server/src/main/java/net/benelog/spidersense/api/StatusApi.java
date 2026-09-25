@@ -17,13 +17,14 @@ import net.benelog.spidersilk.WebResponse;
 import net.benelog.spidersilk.json.Json;
 
 /**
- * The status and control endpoints, and the place where the whole {@code /api}
- * surface is registered.
+ * The status and control endpoints ({@code status}, {@code clear}, {@code export} and
+ * {@code import}) and what every {@code /api} route shares: the no-store filter and the error
+ * pages.
  *
- * <p>The routing table is one visible list, which is Spider Silk's rule and also
- * the fastest way to answer "what does the UI actually call?".
+ * <p>Each class of this package registers its own routes as one visible list, which is Spider
+ * Silk's rule, and {@code SpiderSenseServer.assemble} lists the classes.
  */
-public final class ApiRoutes {
+public final class StatusApi {
 
     private final Config config;
     private final Store store;
@@ -33,7 +34,7 @@ public final class ApiRoutes {
     private final IntSupplier port;
     private final long startedAt;
 
-    public ApiRoutes(Config config, Store store, Queries queries, Reports reports, IntSupplier port) {
+    public StatusApi(Config config, Store store, Queries queries, Reports reports, IntSupplier port) {
         this.config = config;
         this.store = store;
         this.queries = queries;
@@ -63,7 +64,7 @@ public final class ApiRoutes {
 
     public WebResponse status(WebRequest req) {
         return Params.answer(req,
-                reports.status(config.mode(), config.endpoint(port.getAsInt()), startedAt));
+                reports.status(config.mode(), config.baseUrl(port.getAsInt()), startedAt));
     }
 
     public WebResponse clear(WebRequest req) {

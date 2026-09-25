@@ -9,13 +9,13 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.LongSupplier;
 
 import net.benelog.spidersense.api.AgentApi;
-import net.benelog.spidersense.api.ApiRoutes;
 import net.benelog.spidersense.api.EventsApi;
 import net.benelog.spidersense.api.McpApi;
 import net.benelog.spidersense.api.MetricsApi;
 import net.benelog.spidersense.api.Reports;
 import net.benelog.spidersense.api.SourceApi;
-import net.benelog.spidersense.api.TraceApi;
+import net.benelog.spidersense.api.StatusApi;
+import net.benelog.spidersense.api.TrafficApi;
 import net.benelog.spidersense.ingest.ErrorBody;
 import net.benelog.spidersense.ingest.OtlpDecoder;
 import net.benelog.spidersense.ingest.OtlpReceiver;
@@ -67,7 +67,7 @@ public final class SpiderSenseServer implements AutoCloseable {
     public static void main(String[] args) {
         Config config = Config.parse(args);
         SpiderSenseServer server = start(config);
-        System.out.println("Spider Sense (" + config.mode() + "): " + config.endpoint(server.port()));
+        System.out.println("Spider Sense (" + config.mode() + "): " + config.baseUrl(server.port()));
         if (!config.agentMode()) {
             server.join();
         }
@@ -106,8 +106,8 @@ public final class SpiderSenseServer implements AutoCloseable {
         app.beforeRequest(req -> LocalRequests.check(req, config.host()));
         new OtlpReceiver(new OtlpDecoder(store, boundPort::get), store.writer(), config.awaitWrites())
                 .register(app);
-        new ApiRoutes(config, store, queries, reports, boundPort::get).register(app);
-        new TraceApi(queries, reports).register(app);
+        new StatusApi(config, store, queries, reports, boundPort::get).register(app);
+        new TrafficApi(queries, reports).register(app);
         new MetricsApi(metrics, store.services(), reports.selectors()).register(app);
         new AgentApi(reports).register(app);
         new SourceApi(SourceRoots.of(config.sourceDirs(), Path.of(""))).register(app);
