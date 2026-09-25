@@ -6,6 +6,7 @@ import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.function.Function;
 
 import net.benelog.spidersense.api.Reports;
 import net.benelog.spidersense.query.Selectors;
@@ -62,6 +63,18 @@ public final class Cli {
     /** With stdin too, which only {@code mcp} reads. */
     static int run(String[] args, String defaultUrl, InputStream in, PrintStream out,
             PrintStream err) {
+        return run(args, defaultUrl, in, out, err, Cli::withSuspectChanges);
+    }
+
+    /**
+     * With what adds the suspect changes to a {@code findings} text named too, which is how a test
+     * checks the addition without a git repository around it.
+     *
+     * @param annotateFindings the {@code findings} text as printed, from the text as rendered; in
+     *                         production {@link #withSuspectChanges}
+     */
+    static int run(String[] args, String defaultUrl, InputStream in, PrintStream out,
+            PrintStream err, Function<String, String> annotateFindings) {
         quietLoggingUnlessTold();
         Options options;
         try {
@@ -74,7 +87,7 @@ public final class Cli {
             return OK;
         }
         try {
-            return dispatch(options, defaultUrl, in, out, err);
+            return dispatch(options, defaultUrl, in, out, err, annotateFindings);
         } catch (Options.Usage e) {
             return usage(e, err);
         } catch (Reports.NoSuchTrace | Selectors.UnknownMark e) {
@@ -103,7 +116,7 @@ public final class Cli {
      * each tool call it is asked to answer.
      */
     private static int dispatch(Options options, String defaultUrl, InputStream in, PrintStream out,
-            PrintStream err) {
+            PrintStream err, Function<String, String> annotateFindings) {
         if (Options.INIT.equals(options.command())) {
             return Init.run(options, out, err);
         }
@@ -115,7 +128,7 @@ public final class Cli {
         }
         if (Options.FINDINGS.equals(options.command()) && !options.has("json")
                 && !options.has("no-git")) {
-            return findingsWithSuspects(options, defaultUrl, out, err);
+            return findingsWithSuspects(options, defaultUrl, out, err, annotateFindings);
         }
         return answer(options, defaultUrl, out, err);
     }
@@ -126,20 +139,27 @@ public final class Cli {
      * the repository is where the CLI runs and not necessarily where the server does.
      */
     private static int findingsWithSuspects(Options options, String defaultUrl, PrintStream out,
-            PrintStream err) {
+            PrintStream err, Function<String, String> annotateFindings) {
         ByteArrayOutputStream captured = new ByteArrayOutputStream();
         int code;
         try (PrintStream capture = new PrintStream(captured, true, StandardCharsets.UTF_8)) {
             code = answer(options, defaultUrl, capture, err);
         }
         String text = captured.toString(StandardCharsets.UTF_8);
-        SuspectChange suspects = code == OK
-                ? SuspectChange.in(Path.of(""), SourceRoots.fromSystemProperties(),
-                        System.currentTimeMillis())
-                : null;
-        out.print(suspects == null ? text : suspects.annotate(text));
+        out.print(code == OK ? annotateFindings.apply(text) : text);
         out.flush();
         return code;
+    }
+
+    /**
+     * The findings text with the suspect change under each code frame, from the repository the
+     * working directory is in, as of now; the text as it is when there is no repository or no
+     * {@code git} to ask.
+     */
+    static String withSuspectChanges(String findings) {
+        SuspectChange suspects = SuspectChange.in(Path.of(""), SourceRoots.fromSystemProperties(),
+                System.currentTimeMillis());
+        return suspects == null ? findings : suspects.annotate(findings);
     }
 
     /** HTTP first, the file second, as {@link #dispatch} describes. */

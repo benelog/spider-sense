@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.BiConsumer;
+import java.util.function.Function;
 
 import io.opentelemetry.proto.trace.v1.Span;
 
@@ -62,6 +63,19 @@ class CliTest {
     /** A command that must not need the network: the default URL is one nothing listens on. */
     private static Run run(String... args) {
         return runAt(closedUrl(), args);
+    }
+
+    /** The same with what adds the suspect changes to a findings text given. */
+    private static Run runAnnotating(Function<String, String> annotateFindings, String... args) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        int exit;
+        try (PrintStream toOut = new PrintStream(out, true, UTF_8);
+                PrintStream toErr = new PrintStream(err, true, UTF_8)) {
+            exit = Cli.run(args, closedUrl(), java.io.InputStream.nullInputStream(), toOut, toErr,
+                    annotateFindings);
+        }
+        return new Run(exit, out.toString(UTF_8), err.toString(UTF_8));
     }
 
     private static String closedUrl() {
@@ -383,6 +397,33 @@ class CliTest {
 
         assertThat(run("findings", "--since=nowhere", db).exit()).isEqualTo(4);
         assertThat(run("mark", "two words", db).exit()).isEqualTo(2);
+    }
+
+    /**
+     * The suspect change is the one addition the CLI makes to an answer, to the findings text as
+     * rendered and to nothing else (cli.adoc#suspect-change); no git repository is needed to see it.
+     */
+    @Test
+    void theFindingsTextAndNothingElseGetsTheSuspectChanges() {
+        String db = "--db=" + TestStore.writtenUrl();
+        String line = "   ↳ changed in abc1234 (2 hours ago): Load orders by id\n";
+        List<String> given = new ArrayList<>();
+        Function<String, String> annotate = text -> {
+            given.add(text);
+            return text + line;
+        };
+
+        Run annotated = runAnnotating(annotate, "findings", db);
+        assertThat(annotated.exit()).isZero();
+        assertThat(given).hasSize(1);
+        assertThat(given.get(0)).as("the text as rendered").startsWith("# findings  ");
+        assertThat(annotated.out()).isEqualTo(given.get(0) + line);
+
+        assertThat(runAnnotating(annotate, "findings", "--no-git", db).out()).doesNotContain(line);
+        assertThat(runAnnotating(annotate, "findings", "--json", db).out()).doesNotContain(line);
+        assertThat(runAnnotating(annotate, "endpoints", db).out()).doesNotContain(line);
+        assertThat(runAnnotating(annotate, "findings", "--since=nowhere", db).exit()).isEqualTo(4);
+        assertThat(given).as("a findings text only, and only one that was answered").hasSize(1);
     }
 
     /**
