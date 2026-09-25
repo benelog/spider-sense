@@ -297,7 +297,8 @@ class WriterTest {
                     throw new IllegalStateException(e);
                 }
             });
-            Thread.sleep(300);
+            LockWaits.awaitRunning(database.sql(), "MERGE INTO trace");
+            assertThat(merging).as("the second recompute waits for the first").isNotDone();
             a.commit();
             merging.get(10, java.util.concurrent.TimeUnit.SECONDS);
         }
@@ -329,7 +330,7 @@ class WriterTest {
 
             var sweep = java.util.concurrent.CompletableFuture.supplyAsync(
                     () -> Sweeper.deleteOrphanSeries(database.sql()));
-            Thread.sleep(300);
+            LockWaits.awaitBlocked(database.sql(), 1);
             assertThat(sweep).as("the sweep waits for the flush's lock").isNotDone();
             flush.commit();
             assertThat(sweep.get(10, java.util.concurrent.TimeUnit.SECONDS)).isZero();
@@ -354,20 +355,20 @@ class WriterTest {
         writer.submit(spans(3));
         Batch after = decoder.accept(Otlp.traces(Otlp.service("orders"), Otlp.span("%032x".formatted(99),
                 "%016x".formatted(99), "GET /orders", Span.SpanKind.SPAN_KIND_SERVER, AT, 5)));
-        var flushing = new java.util.concurrent.atomic.AtomicReference<java.util.concurrent.CompletableFuture<Void>>();
+        var flushed = new java.util.concurrent.CompletableFuture<Void>();
+        Thread flushing = new Thread(() -> {
+            writer.flushNow();
+            flushed.complete(null);
+        }, "flushing");
 
         writer.clear(() -> {
             writer.submit(after);
-            flushing.set(java.util.concurrent.CompletableFuture.runAsync(writer::flushNow));
-            try {
-                Thread.sleep(300);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-            assertThat(flushing.get()).as("the flush waits for the clear").isNotDone();
+            flushing.start();
+            LockWaits.awaitBlocked(flushing);
+            assertThat(flushed).as("the flush waits for the clear").isNotDone();
             database.deleteAll();
         });
-        flushing.get().get(10, java.util.concurrent.TimeUnit.SECONDS);
+        flushed.get(10, java.util.concurrent.TimeUnit.SECONDS);
 
         assertThat(database.sql().count("SELECT COUNT(*) FROM span", List.of())).isEqualTo(1);
         assertThat(database.sql().count("SELECT COUNT(*) FROM trace", List.of())).isEqualTo(1);

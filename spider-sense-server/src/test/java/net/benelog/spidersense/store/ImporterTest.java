@@ -100,7 +100,7 @@ class ImporterTest {
                 hold.executeUpdate();
             }
             var importing = CompletableFuture.supplyAsync(() -> importer.importDocument(document("orders")));
-            Thread.sleep(300);
+            LockWaits.awaitRunning(database.sql(), "MERGE INTO trace");
             assertThat(importing).as("the import waits for the trace row").isNotDone();
 
             var flushing = CompletableFuture.runAsync(() -> flush("orders", 2));
@@ -143,11 +143,11 @@ class ImporterTest {
             other.setAutoCommit(false);
             other.createStatement().executeUpdate("UPDATE service SET last_seen = last_seen WHERE name = 'orders'");
             var importing = CompletableFuture.supplyAsync(() -> importer.importDocument(document));
-            Thread.sleep(300);
+            LockWaits.awaitBlocked(database.sql(), 1);
             assertThat(importing).as("the import waits for the service row").isNotDone();
 
             var sweep = CompletableFuture.supplyAsync(() -> Sweeper.deleteOrphanSeries(database.sql()));
-            Thread.sleep(300);
+            LockWaits.awaitBlocked(database.sql(), 2);
             assertThat(sweep).as("the sweep waits for the import's lock").isNotDone();
 
             other.rollback();
