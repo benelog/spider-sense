@@ -164,4 +164,43 @@ class SpiderSenseServerTest {
             server.stop();
         }
     }
+
+    /**
+     * Whatever Jetty refuses before routing answers in the API's error shape, not Jetty's HTML
+     * page: a name holding '%' is reached as %25, and %5C or %2E%2E is a JSON 400.
+     */
+    @Test
+    void aPathJettyDeemsAmbiguousStillAnswersJson() throws Exception {
+        SpiderSenseServer server = SpiderSenseServer.start(TestStore.config());
+        try {
+            HttpResponse<String> percent = get(server, "/api/services/a%25b");
+            assertThat(percent.statusCode()).isEqualTo(404);
+            assertThat(percent.headers().firstValue("Content-Type")).hasValueSatisfying(
+                    type -> assertThat(type).startsWith("application/json"));
+            assertThat(percent.body()).contains("a%b");
+
+            for (String path : new String[] {"/api/services/a%5Cb", "/api/services/%2E%2E",
+                    "/api/services/a%5Cb?x=1"}) {
+                HttpResponse<String> refused = get(server, path);
+                assertThat(refused.statusCode()).as(path).isEqualTo(400);
+                assertThat(refused.headers().firstValue("Content-Type")).as(path).hasValueSatisfying(
+                        type -> assertThat(type).startsWith("application/json"));
+                assertThat(refused.body()).as(path).startsWith("{\"error\":").doesNotContain("<html");
+            }
+
+            for (String escape : new String[] {"/assets/..%252F..%252Fsimplelogger.properties",
+                    "/assets/%2E%2E/%2E%2E/simplelogger.properties", "/assets/..%5C..%5Csimplelogger.properties"}) {
+                assertThat(get(server, escape).body()).as(escape).doesNotContain("defaultLogLevel");
+            }
+        } finally {
+            server.stop();
+        }
+    }
+
+    private static HttpResponse<String> get(SpiderSenseServer server, String path) throws Exception {
+        return HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + server.port() + path))
+                        .timeout(Duration.ofSeconds(10)).build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
 }

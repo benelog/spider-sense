@@ -125,11 +125,15 @@ public final class SpiderSenseServer implements AutoCloseable {
         // No handler reads a session, so the container's session manager and its
         // housekeeping thread are pure cost.
         JettyServer server = new JettyServer(app).port(port).host(config.host()).sessions(false)
-                // A service name or a finding id may hold a '/', which a link carries as %2F
-                // inside one path segment; Jetty refuses that by default with an HTML 400.
+                // A service name or a finding id may hold a '/' or a '%', which a link carries
+                // as %2F or %25 inside one path segment; Jetty refuses both by default.
                 .customizeHttpConfiguration(http -> http.setUriCompliance(UriCompliance.DEFAULT
-                        .with("spider-sense", UriCompliance.Violation.AMBIGUOUS_PATH_SEPARATOR)))
-                .customizeContext(context -> context.getServletHandler().setDecodeAmbiguousURIs(true));
+                        .with("spider-sense", UriCompliance.Violation.AMBIGUOUS_PATH_SEPARATOR,
+                                UriCompliance.Violation.AMBIGUOUS_PATH_ENCODING)))
+                .customizeContext(context -> context.getServletHandler().setDecodeAmbiguousURIs(true))
+                // What it still refuses before routing (%5C, %2E%2E) answers in the API's error
+                // shape rather than as Jetty's HTML page.
+                .customizeServer(jetty -> jetty.setErrorHandler(new JsonErrorHandler()));
         if (config.agentMode()) {
             // Inside someone else's JVM: our threads must never be what keeps it alive,
             // and the lifecycle belongs to the launcher, not to a shutdown hook of ours.
