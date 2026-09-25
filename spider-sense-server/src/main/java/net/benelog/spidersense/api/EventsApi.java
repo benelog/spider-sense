@@ -41,14 +41,14 @@ public final class EventsApi {
     public WebResponse events(WebRequest req) {
         return WebResponse.sse(stream -> {
             try (EventBus.Subscription subscription = store.events().subscribe()) {
-                pump(stream, subscription);
+                streamUntilClosed(stream, subscription);
             } catch (SseStream.Closed closed) {
                 // The browser navigated away; nothing to report.
             }
         });
     }
 
-    private void pump(SseStream stream, EventBus.Subscription subscription) throws InterruptedException {
+    private void streamUntilClosed(SseStream stream, EventBus.Subscription subscription) throws InterruptedException {
         long lastKeepalive = System.currentTimeMillis();
         long lastStats = 0;
         Counts previous = counts();

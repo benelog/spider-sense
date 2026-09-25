@@ -59,10 +59,10 @@ final class SessionExport {
             OutputStream out) {
         // Work always answers with something; there is nothing to answer with here.
         Boolean unused = sql.withConnection(connection -> {
-            Writer text = new BufferedWriter(new OutputStreamWriter(out, StandardCharsets.UTF_8), 8192);
+            Writer writer = new BufferedWriter(new OutputStreamWriter(out, StandardCharsets.UTF_8), 8192);
             try {
-                document(connection, window, service, exportedAt, text);
-                text.flush();
+                document(connection, window, service, exportedAt, writer);
+                writer.flush();
             } catch (IOException e) {
                 throw new UncheckedIOException("could not write the export", e);
             }
@@ -71,10 +71,10 @@ final class SessionExport {
     }
 
     private static void document(Connection connection, Window window, @Nullable String service,
-            long exportedAt, Writer text)
+            long exportedAt, Writer out)
             throws SQLException, IOException {
-        text.write("{\"spiderSense\":");
-        text.write(Json.obj()
+        out.write("{\"spiderSense\":");
+        out.write(Json.obj()
                 .put("version", Version.CURRENT)
                 .put("schema", Schema.VERSION)
                 .put("exportedAt", exportedAt)
@@ -82,16 +82,16 @@ final class SessionExport {
                 .put("service", service)
                 .toJson());
 
-        section(text, "services", connection, services(service), SessionExport::service);
-        section(text, "spans", connection, spans(window, service), SessionExport::span);
-        section(text, "logs", connection, logs(window, service), SessionExport::log);
-        section(text, "metrics", connection, metrics(), SessionExport::metric);
-        section(text, "metricSeries", connection, series(window, service), SessionExport::series);
-        section(text, "metricPoints", connection, points(window, service), SessionExport::point);
-        section(text, "tingles", connection, tingles(window, service), SessionExport::tingle);
-        section(text, "marks", connection, marks(window, service), SessionExport::mark);
-        section(text, "dbTables", connection, catalog(service), SessionExport::catalogRow);
-        text.write("}");
+        section(out, "services", connection, services(service), SessionExport::service);
+        section(out, "spans", connection, spans(window, service), SessionExport::span);
+        section(out, "logs", connection, logs(window, service), SessionExport::log);
+        section(out, "metrics", connection, metrics(), SessionExport::metric);
+        section(out, "metricSeries", connection, series(window, service), SessionExport::series);
+        section(out, "metricPoints", connection, points(window, service), SessionExport::point);
+        section(out, "tingles", connection, tingles(window, service), SessionExport::tingle);
+        section(out, "marks", connection, marks(window, service), SessionExport::mark);
+        section(out, "dbTables", connection, catalog(service), SessionExport::catalogRow);
+        out.write("}");
     }
 
     /** One row of a result set, as the object the document holds. */
@@ -104,25 +104,25 @@ final class SessionExport {
     private record Select(String sql, List<Object> params) {
     }
 
-    private static void section(Writer text, String name, Connection connection, Select select,
+    private static void section(Writer out, String name, Connection connection, Select select,
             Row row) throws SQLException, IOException {
-        text.write(",\"");
-        text.write(name);
-        text.write("\":[");
+        out.write(",\"");
+        out.write(name);
+        out.write("\":[");
         try (PreparedStatement statement = connection.prepareStatement(select.sql())) {
             Sql.bind(statement, select.params());
             try (ResultSet rs = statement.executeQuery()) {
                 boolean first = true;
                 while (rs.next()) {
                     if (!first) {
-                        text.write(',');
+                        out.write(',');
                     }
                     first = false;
-                    text.write(row.of(rs).toJson());
+                    out.write(row.of(rs).toJson());
                 }
             }
         }
-        text.write(']');
+        out.write(']');
     }
 
     // --- the sections -----------------------------------------------------------

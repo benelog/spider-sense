@@ -272,15 +272,15 @@ final class Text {
                 new StringBuilder(heading("findings", window, service, requests, acked, resolved));
         text.append('\n');
         table(text, FINDING_COLUMNS);
-        int n = 0;
+        int rank = 0;
         for (Findings.Finding finding : findings) {
-            n++;
-            findingRow(text, n, finding);
+            rank++;
+            findingRow(text, rank, finding);
         }
-        n = 0;
+        rank = 0;
         for (Findings.Finding finding : findings) {
-            n++;
-            findingEvidence(text, n, finding, full);
+            rank++;
+            findingEvidence(text, rank, finding, full);
         }
         return text.toString();
     }
@@ -302,17 +302,17 @@ final class Text {
         return text.toString();
     }
 
-    private static void findingRow(StringBuilder text, int n, Findings.Finding finding) {
-        row(text, List.of(String.valueOf(n), severity(finding), finding.state(),
+    private static void findingRow(StringBuilder text, int rank, Findings.Finding finding) {
+        row(text, List.of(String.valueOf(rank), severity(finding), finding.state(),
                 finding.kind(), finding.id(),
                 finding.service(), finding.title()));
     }
 
-    private static void findingEvidence(StringBuilder text, int n, Findings.Finding finding,
+    private static void findingEvidence(StringBuilder text, int rank, Findings.Finding finding,
             boolean full) {
         // The why and the numbers carry what the application wrote (an exception message,
         // a log body), so each is kept to its one line.
-        text.append('\n').append(n).append(". ").append(finding.id()).append(" — ")
+        text.append('\n').append(rank).append(". ").append(finding.id()).append(" — ")
                 .append(collapse(finding.why())).append('\n');
         text.append("   ").append(numbers(finding.numbers())).append('\n');
         String hot = hotSpan(finding.numbers());
@@ -391,7 +391,7 @@ final class Text {
         List<String> parts = new ArrayList<>();
         numbers.forEach((key, value) -> {
             if (!LINES_OF_THEIR_OWN.contains(key) && !(value instanceof Map<?, ?>)) {
-                parts.add(key + " " + scalar(key, value));
+                parts.add(key + " " + formatByKey(key, value));
             }
         });
         return String.join(", ", parts);
@@ -467,7 +467,7 @@ final class Text {
      * percentage, an Apdex is a score. Without this a {@code firstSeen} would read
      * as {@code 1,789,596,953,808}, which is a number and not an answer.
      */
-    private static String scalar(String key, @Nullable Object value) {
+    private static String formatByKey(String key, @Nullable Object value) {
         if (value instanceof Number number) {
             if ("at".equals(key) || key.endsWith("Seen") || key.endsWith("At")) {
                 return instantMillis(number.longValue());
@@ -494,7 +494,8 @@ final class Text {
                 for (Object element : list) {
                     if (element instanceof Map<?, ?> map) {
                         List<String> inner = new ArrayList<>();
-                        map.forEach((key, each) -> inner.add(key + " " + scalar(String.valueOf(key), each)));
+                        map.forEach((key, each) ->
+                                inner.add(key + " " + formatByKey(String.valueOf(key), each)));
                         parts.add("[" + String.join(" ", inner) + "]");
                     } else {
                         parts.add(collapse(String.valueOf(element)));

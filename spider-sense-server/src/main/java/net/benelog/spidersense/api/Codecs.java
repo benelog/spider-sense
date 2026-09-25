@@ -829,8 +829,8 @@ public final class Codecs {
                     .put("endpointId", diff.endpointId())
                     .put("service", diff.service())
                     .put("name", diff.name())
-                    .put("before", side(diff.before()))
-                    .put("after", side(diff.after()))
+                    .put("before", endpointSide(diff.before()))
+                    .put("after", endpointSide(diff.after()))
                     .put("verdict", diff.verdict()));
         }
         Json.JsonArray queries = Json.arr();
@@ -869,7 +869,7 @@ public final class Codecs {
                 .put("errors", errors);
     }
 
-    private static Json.@Nullable JsonValue side(Compare.@Nullable Side side) {
+    private static Json.@Nullable JsonValue endpointSide(Compare.@Nullable Side side) {
         if (side == null) {
             return null;
         }

@@ -98,8 +98,8 @@ final class Local {
         Reports.Report report = switch (options.command()) {
             case "status" -> reports.status("file", null, 0);
             case "findings" -> reports.findings(window(options, reports, service), service,
-                    options.limit(Limits.FINDINGS, Limits.FINDINGS_MAX), options.flag("full"),
-                    options.flag("hide-acked"));
+                    new Reports.FindingsAsk(options.limit(Limits.FINDINGS, Limits.FINDINGS_MAX),
+                            options.flag("full"), options.flag("hide-acked")));
             case Options.ACK -> reports.ack(
                     reports.ack(options.requiredArgument(), options.valueOrNull("note")));
             case Options.RESOLVE -> reports.resolve(

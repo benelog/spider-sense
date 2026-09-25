@@ -234,7 +234,7 @@ public final class TrafficApi {
         String queryId = req.pathParam("queryId");
         Window window = params.window(req);
         if (Params.wantsText(req)) {
-            return text(reports.queryText(window, Params.service(req), queryId, Params.full(req)),
+            return textOr404(reports.queryText(window, Params.service(req), queryId, Params.full(req)),
                     "No such query in this window: " + queryId);
         }
         List<Stats.QueryStats> found = queries.queries(window, null, "total", 1, queryId);
@@ -261,7 +261,7 @@ public final class TrafficApi {
         String errorId = req.pathParam("errorId");
         Window window = params.window(req);
         if (Params.wantsText(req)) {
-            return text(reports.errorText(window, Params.service(req), errorId, Params.full(req)),
+            return textOr404(reports.errorText(window, Params.service(req), errorId, Params.full(req)),
                     "No such error in this window: " + errorId);
         }
         List<Stats.ErrorGroup> found = queries.errors(window, null, 1, errorId);
@@ -291,7 +291,7 @@ public final class TrafficApi {
      * The text rendering of one group (cli.adoc#one-finding), or the {@code 404}
      * the JSON form answers when the group is not in the window.
      */
-    private static WebResponse text(@Nullable String text, String missing) {
+    private static WebResponse textOr404(@Nullable String text, String missing) {
         if (text == null) {
             throw new HttpException(HttpStatus.NOT_FOUND, missing);
         }

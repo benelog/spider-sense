@@ -32,9 +32,9 @@ final class LocalRequests {
      * @param bindHost the address the server binds; a wildcard one means the user
      *                 opened it to the network, and then any {@code Host} is accepted
      */
-    static @Nullable WebResponse check(WebRequest req, String bindHost) {
+    static @Nullable WebResponse refuseForeign(WebRequest req, String bindHost) {
         String host = req.header("Host");
-        if (host != null && !acceptedHost(name(host), bindHost)) {
+        if (host != null && !acceptedHost(hostName(host), bindHost)) {
             return forbidden("Host " + host + " is not a name of this machine");
         }
         String origin = req.header("Origin");
@@ -45,7 +45,7 @@ final class LocalRequests {
     }
 
     /** The host part of a {@code Host} header, without its port and brackets, in lower case. */
-    static String name(String host) {
+    static String hostName(String host) {
         String name = host.trim().toLowerCase(Locale.ROOT);
         if (name.startsWith("[")) {
             int end = name.indexOf(']');
@@ -57,7 +57,7 @@ final class LocalRequests {
     }
 
     static boolean acceptedHost(String name, String bindHost) {
-        String bound = name(bindHost);
+        String bound = hostName(bindHost);
         if (Config.isWildcard(bound)) {
             return true;
         }

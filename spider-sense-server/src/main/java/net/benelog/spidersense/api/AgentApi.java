@@ -74,9 +74,9 @@ public final class AgentApi {
 
     public WebResponse findings(WebRequest req) {
         Window window = params.window(req);
-        return Params.answer(req, reports.findings(window, Params.service(req),
+        return Params.answer(req, reports.findings(window, Params.service(req), new Reports.FindingsAsk(
                 Params.limit(req, Limits.FINDINGS, Limits.FINDINGS_MAX), Params.full(req),
-                req.queryParam("hideAcked", Boolean::parseBoolean, false)));
+                req.queryParam("hideAcked", Boolean::parseBoolean, false))));
     }
 
     /**
@@ -241,17 +241,17 @@ public final class AgentApi {
         try {
             body = req.bodyJson(SqlBody::read);
         } catch (HttpException e) {
-            return Params.problem(req, e.getMessage());
+            return Params.badRequest(req, e.getMessage());
         }
         // Compared as the long it was sent as: a cast first would turn 2^32 + 1 into 1.
         if (body.limit() < 1) {
-            return Params.problem(req, "limit must be at least 1");
+            return Params.badRequest(req, "limit must be at least 1");
         }
         int limit = (int) Math.min(body.limit(), ReadOnlyQuery.LIMIT_MAX);
         try {
             return Params.answer(req, reports.sql(body.statement(), limit, Params.full(req)));
         } catch (IllegalArgumentException | Database.ReaderUnavailable e) {
-            return Params.problem(req, e.getMessage());
+            return Params.badRequest(req, e.getMessage());
         }
     }
 

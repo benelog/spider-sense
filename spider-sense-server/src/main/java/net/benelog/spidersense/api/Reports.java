@@ -90,7 +90,7 @@ public final class Reports implements AutoCloseable {
     private final Compare compare;
     private final Check check;
     private final Selectors selectors;
-    private final ReadOnlyQuery readOnly;
+    private final ReadOnlyQuery sqlRunner;
     private final LongSupplier clock;
 
     /**
@@ -147,7 +147,7 @@ public final class Reports implements AutoCloseable {
         this.compare = new Compare(queries);
         this.check = new Check(queries, findings, tingles);
         this.selectors = new Selectors(marks, clock);
-        this.readOnly = new ReadOnlyQuery(database);
+        this.sqlRunner = new ReadOnlyQuery(database);
     }
 
     // --- what the callers need beside the answers -----------------------------
@@ -170,7 +170,7 @@ public final class Reports implements AutoCloseable {
         return frames;
     }
 
-    public Tingles thresholds() {
+    public Tingles tingles() {
         return tingles;
     }
 
@@ -218,17 +218,26 @@ public final class Reports implements AutoCloseable {
     // --- findings, marks, compare, check --------------------------------------
 
     public Report findings(Window window, @Nullable String service, int limit, boolean full) {
-        return findings(window, service, limit, full, false);
+        return findings(window, service, new FindingsAsk(limit, full, false));
     }
 
     /**
-     * The same report, narrowed to what a reader has not accepted yet.
+     * What a findings answer is asked for beside its window and scope.
      *
+     * @param limit     how many findings at most
+     * @param full      whether statements are kept whole rather than cut
      * @param hideAcked whether acknowledged findings are left out rather than ranked last
      */
-    public Report findings(Window window, @Nullable String service, int limit, boolean full,
-            boolean hideAcked) {
-        Findings.Answer answer = findings.answer(window, service, limit, hideAcked);
+    public record FindingsAsk(int limit, boolean full, boolean hideAcked) {
+    }
+
+    /**
+     * The same report as the ask says: how many, how whole, and with or without what a reader
+     * has accepted.
+     */
+    public Report findings(Window window, @Nullable String service, FindingsAsk ask) {
+        boolean full = ask.full();
+        Findings.Answer answer = findings.answer(window, service, ask.limit(), ask.hideAcked());
         List<Findings.Finding> found = answer.findings();
         long requests = queries.totals(window, service).requests();
         Json.JsonObject json = Json.obj()
@@ -416,14 +425,14 @@ public final class Reports implements AutoCloseable {
      * @throws NoSuchTrace when either id is not stored
      */
     public Report traceDiff(String a, String b, boolean full) {
-        Queries.TraceDetail one = stored(a);
-        Queries.TraceDetail two = stored(b);
+        Queries.TraceDetail one = traceOrThrow(a);
+        Queries.TraceDetail two = traceOrThrow(b);
         List<Text.DiffLine> lines = Text.align(Text.lines(one, tingles, frames, full),
                 Text.lines(two, tingles, frames, full));
         return new Report(Codecs.traceDiff(one, two, lines), Text.traceDiff(one, two, lines));
     }
 
-    private Queries.TraceDetail stored(String traceId) {
+    private Queries.TraceDetail traceOrThrow(String traceId) {
         Queries.TraceDetail trace = queries.trace(traceId);
         if (trace == null) {
             throw new NoSuchTrace(traceId);
@@ -519,7 +528,7 @@ public final class Reports implements AutoCloseable {
      * @throws Database.ReaderUnavailable when the database has no reader user yet
      */
     public Report sql(@Nullable String statement, int limit, boolean full) {
-        ReadOnlyQuery.Result result = readOnly.run(statement, limit);
+        ReadOnlyQuery.Result result = sqlRunner.run(statement, limit);
         return new Report(Codecs.sqlResult(result), Text.sql(result, limit, full));
     }
 

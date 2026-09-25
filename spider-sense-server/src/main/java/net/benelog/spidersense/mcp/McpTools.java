@@ -153,9 +153,9 @@ public final class McpTools implements McpServer.ToolRunner {
 
     private McpServer.ToolResult findings(Map<String, Object> arguments) {
         String service = string(arguments, "service");
-        return text(reports.findings(window(arguments, service), service,
+        return text(reports.findings(window(arguments, service), service, new Reports.FindingsAsk(
                 limit(arguments, Limits.FINDINGS, Limits.FINDINGS_MAX), flag(arguments, "full"),
-                flag(arguments, "hideAcked")));
+                flag(arguments, "hideAcked"))));
     }
 
     private McpServer.ToolResult resolve(Map<String, Object> arguments) {

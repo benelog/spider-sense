@@ -92,7 +92,7 @@ final class Params {
      * caller that asked for Markdown gets the message on one line rather than a
      * JSON object it was not expecting (cli.adoc#sql).
      */
-    static WebResponse problem(WebRequest req, @Nullable String message) {
+    static WebResponse badRequest(WebRequest req, @Nullable String message) {
         return wantsText(req)
                 ? WebResponse.text(ErrorBody.message(message, "Bad request") + "\n")
                         .contentType(Text.CONTENT_TYPE).status(HttpStatus.BAD_REQUEST)

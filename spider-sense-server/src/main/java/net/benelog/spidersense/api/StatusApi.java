@@ -122,17 +122,17 @@ public final class StatusApi {
         } catch (RequestBody.TooLarge e) {
             return ErrorBody.response(HttpStatus.CONTENT_TOO_LARGE, e.getMessage(), "Content too large");
         } catch (RuntimeException e) {
-            return Params.problem(req, "Undecodable import document: " + e.getMessage());
+            return Params.badRequest(req, "Undecodable import document: " + e.getMessage());
         }
         try {
             return Params.answer(req, reports.imported(reports.importDocument(document)));
         } catch (Importer.WrongSchema | Importer.BadDocument e) {
-            return Params.problem(req, e.getMessage());
+            return Params.badRequest(req, e.getMessage());
         } catch (Json.JsonException e) {
             // A row of the wrong shape (a span that is not an object, a number that
             // is a string) fails only once the import reads it, and the transaction
             // has rolled back by the time it reaches here.
-            return Params.problem(req, "Undecodable import document: " + e.getMessage());
+            return Params.badRequest(req, "Undecodable import document: " + e.getMessage());
         }
     }
 

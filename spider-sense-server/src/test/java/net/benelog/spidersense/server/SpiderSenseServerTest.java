@@ -115,9 +115,9 @@ class SpiderSenseServerTest {
 
     @Test
     void theHostCheckAcceptsLoopbackNamesAndAnyNameOnAWildcardBind() {
-        assertThat(LocalRequests.name("[::1]:4000")).isEqualTo("::1");
-        assertThat(LocalRequests.name("LocalHost:4000")).isEqualTo("localhost");
-        assertThat(LocalRequests.name("::1")).isEqualTo("::1");
+        assertThat(LocalRequests.hostName("[::1]:4000")).isEqualTo("::1");
+        assertThat(LocalRequests.hostName("LocalHost:4000")).isEqualTo("localhost");
+        assertThat(LocalRequests.hostName("::1")).isEqualTo("::1");
         assertThat(LocalRequests.acceptedHost("127.0.0.1", "127.0.0.1")).isTrue();
         assertThat(LocalRequests.acceptedHost("localhost", "127.0.0.1")).isTrue();
         assertThat(LocalRequests.acceptedHost("::1", "127.0.0.1")).isTrue();

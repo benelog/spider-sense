@@ -103,7 +103,7 @@ public final class SpiderSenseServer implements AutoCloseable {
         Reports reports = new Reports(config, store, boundPort::get);
 
         App app = new App();
-        app.beforeRequest(req -> LocalRequests.check(req, config.host()));
+        app.beforeRequest(req -> LocalRequests.refuseForeign(req, config.host()));
         new OtlpReceiver(new OtlpDecoder(store, boundPort::get), store.writer(), config.awaitWrites())
                 .register(app);
         new StatusApi(config, store, queries, reports, boundPort::get).register(app);
