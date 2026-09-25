@@ -349,6 +349,52 @@ class FindingsTest {
         assertThat(finding.traces()).containsExactly(traceId(1));
     }
 
+    /** Two letters for {@code n}, so that no digit is normalised away and two names stay two groups. */
+    private static String letters(int n) {
+        return "" + (char) ('a' + n / 26) + (char) ('a' + n % 26);
+    }
+
+    /**
+     * A hundred fast groups that each spent more time in total rank a slow one 101st;
+     * it is a finding all the same, because the threshold is asked of every group.
+     */
+    @Test
+    void aSlowQueryBelowTheFirstHundredGroupsByTotalTimeIsStillAFinding() {
+        for (int t = 0; t < 5; t++) {
+            Span.Builder root = entry(1 + t, "/books", 50);
+            List<Span.Builder> spans = new ArrayList<>(List.of(root));
+            for (int i = 0; i < 100; i++) {
+                spans.add(query(root, 1_000 + t * 1_000 + i, "select col_" + letters(i) + " from book",
+                        "book", NOW, 80));
+            }
+            decoder.accept(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
+        }
+        Span.Builder report = entry(10, "/report", 50);
+        decoder.accept(Otlp.traces(Otlp.service("orders"), report,
+                query(report, 10_000, "select * from book where title like ?", "book", NOW, 300)));
+        flush();
+
+        assertThat(of(Findings.SLOW_QUERY)).extracting(Findings.Finding::statement)
+                .containsExactly("select * from book where title like ?");
+    }
+
+    /** The same for a job: a slow one ranked below a hundred heavier fast ones is a finding. */
+    @Test
+    void aSlowJobBelowTheFirstHundredJobsByTotalTimeIsStillAFinding() {
+        int n = 1;
+        for (int i = 0; i < 100; i++) {
+            for (int run = 0; run < 3; run++) {
+                decoder.accept(Otlp.traces(Otlp.service("orders"),
+                        job(n++, "Fast" + letters(i) + "Job.run", 400)));
+            }
+        }
+        decoder.accept(Otlp.traces(Otlp.service("orders"), job(n, "ReportJob.run", 900)));
+        flush();
+
+        assertThat(of(Findings.SLOW_JOB)).extracting(Findings.Finding::title)
+                .containsExactly("ReportJob.run is slow");
+    }
+
     @Test
     void aSlowQueryTakesItsCodeFromTheSlowCallNotTheNewest() {
         Span.Builder root = entry(1, "/books", 400);

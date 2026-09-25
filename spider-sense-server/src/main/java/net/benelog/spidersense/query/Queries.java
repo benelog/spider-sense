@@ -418,6 +418,26 @@ public final class Queries {
     }
 
     /**
+     * Every query group whose p95 exceeds {@code slow.query.ms}, heaviest first, with
+     * its callers and its schema block: the candidates of a {@code slow-query} finding.
+     *
+     * <p>The threshold is a {@code HAVING} rather than a filter over the top of a
+     * list, so a slow group that ranks low by total time is still one
+     * (findings.adoc#slow-query).
+     */
+    List<Stats.QueryStats> slowQueries(Window window, @Nullable String service,
+            Supplier<Ancestry> ancestry) {
+        return withSchema(withCallers(slowQueryGroups(window, service), window, ancestry));
+    }
+
+    /** The same groups alone, with no callers and no schema block, for a finding's state. */
+    List<Stats.QueryStats> slowQueryGroups(Window window, @Nullable String service) {
+        return queryGroups(window, service, "total", Integer.MAX_VALUE, null,
+                "PERCENTILE_DISC(0.95) WITHIN GROUP (ORDER BY duration_ns) > "
+                        + tingles.slowQueryMs() * 1_000_000L);
+    }
+
+    /**
      * The query groups alone: the aggregate, with no callers and no schema block.
      *
      * <p>What a finding's state needs from the previous run, where only which groups
@@ -425,6 +445,12 @@ public final class Queries {
      */
     List<Stats.QueryStats> queryGroups(Window window, @Nullable String service,
             @Nullable String sort, int limit, @Nullable String queryId) {
+        return queryGroups(window, service, sort, limit, queryId, null);
+    }
+
+    /** The same, keeping only the groups that satisfy {@code having}, an aggregate condition. */
+    private List<Stats.QueryStats> queryGroups(Window window, @Nullable String service,
+            @Nullable String sort, int limit, @Nullable String queryId, @Nullable String having) {
         Clause where = window(window, service).and("query_id IS NOT NULL");
         if (queryId != null) {
             where = where.and("query_id = ?", queryId);
@@ -443,7 +469,9 @@ public final class Queries {
                 + " SUM(duration_ns) AS total_ns, MAX(duration_ns) AS max_ns, MAX(start_ms) AS last_seen,"
                 + " SUM(CASE WHEN duration_ns > " + slowNs + " THEN 1 ELSE 0 END) AS slow_calls, "
                 + PERCENTILES + " FROM span WHERE " + where.sql()
-                + " GROUP BY query_id, service ORDER BY " + order + ", query_id LIMIT " + Math.max(1, limit);
+                + " GROUP BY query_id, service"
+                + (having == null ? "" : " HAVING " + having)
+                + " ORDER BY " + order + ", query_id LIMIT " + Math.max(1, limit);
 
         return sql.query(query, where.params(), rs -> {
             long calls = rs.getLong("calls");

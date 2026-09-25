@@ -434,6 +434,7 @@ What to do:
 === slow-query
 
 A query group whose p95 exceeds `slow.query.ms`.
+Every group of the window is asked, however it ranks by total time, so a report query called twice behind a hundred frequent fast statements is still a finding.
 It is `high` when the p95 exceeds ten times the threshold, and `medium` otherwise.
 The impact it is ranked by is total time.
 
@@ -491,6 +492,7 @@ What to do:
 === slow-job
 
 A job whose p95 exceeds `slow.request.ms`, grouped by service and span name.
+Every job of the window is asked, as for `slow-query`.
 A job is a root `INTERNAL` span: a scheduled method, an `@Async` call, a batch step (xref:design.adoc#endpoint-identity[Endpoint identity]).
 Severity and impact are the same as `slow-endpoint`.
 `subject.job` is the span name, and the title is `<job> is slow`.

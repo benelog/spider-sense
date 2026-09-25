@@ -306,6 +306,7 @@ Every such pair of the window is read, with no limit, so a finding's `affected` 
 `dbCallsPerRequest` and `dbMsPerRequest` of an endpoint join the endpoint's entry spans with the database spans of the same trace and service.
 `slow-job` is the same aggregation over `span WHERE parent_span_id IS NULL AND kind = 'INTERNAL'` grouped by `(service, name)`, with the database work joined the same way.
 Only the endpoints and jobs that crossed the threshold are joined, since only they become findings; a job's runs are read by its service's `(service, start_ms)` index, and so is its newest run, whose attributes give the code frames.
+`slow-query` and `slow-job` put their threshold in the statement, `HAVING PERCENTILE_DISC(0.95) WITHIN GROUP (ORDER BY duration_ns) > :thresholdNs`, and read every group that passes it rather than the top of a list.
 The other kinds are the endpoint, query and error aggregations above, filtered by the thresholds.
 A scan of the window that several rules need is made once per answer and handed to each of them.
 The parent-chain walk is one: the query callers, the error endpoints, `n-plus-one`, `n-plus-one-http`, `slow-external` and `log-error` all read the same one.

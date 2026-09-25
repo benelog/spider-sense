@@ -1054,15 +1054,11 @@ public final class Findings {
 
     private List<Ranked> slowQueries(Window window, @Nullable String service, Reads reads,
             boolean evidence) {
-        List<Stats.QueryStats> slow = new ArrayList<>();
-        List<Stats.QueryStats> groups = evidence
-                ? queries.queries(window, service, "total", GROUPS, null, reads::ancestry)
-                : queries.queryGroups(window, service, "total", GROUPS, null);
-        for (Stats.QueryStats query : groups) {
-            if (query.p95Ms() > tingles.slowQueryMs()) {
-                slow.add(query);
-            }
-        }
+        // Every group over the threshold, however it ranks by total time: the cut of a
+        // list applied before the threshold would hide a slow group behind fast frequent ones.
+        List<Stats.QueryStats> slow = evidence
+                ? queries.slowQueries(window, service, reads::ancestry)
+                : queries.slowQueryGroups(window, service);
         if (slow.isEmpty()) {
             return List.of();
         }
@@ -1189,12 +1185,7 @@ public final class Findings {
      * {@code slow-endpoint} measures over the requests of an endpoint.
      */
     private List<Ranked> slowJobs(Window window, @Nullable String service, boolean evidence) {
-        List<Job> slow = new ArrayList<>();
-        for (Job job : jobs(window, service)) {
-            if (job.p95Ms() > tingles.slowRequestMs()) {
-                slow.add(job);
-            }
-        }
+        List<Job> slow = slowJobGroups(window, service);
         if (slow.isEmpty()) {
             return List.of();
         }
@@ -1255,15 +1246,24 @@ public final class Findings {
         return found;
     }
 
-    /** The job groups of the window, the heaviest first (storage.adoc). */
-    private List<Job> jobs(Window window, @Nullable String service) {
+    /**
+     * The job groups of the window whose p95 exceeds {@code slow.request.ms}, the
+     * heaviest first (storage.adoc).
+     *
+     * <p>Every one of them: the threshold is a {@code HAVING}, so a slow job that ranks
+     * low by total time is still a finding (findings.adoc#slow-job).
+     */
+    private List<Job> slowJobGroups(Window window, @Nullable String service) {
         List<Object> params = new ArrayList<>(List.of(window.from(), window.to()));
         String where = jobWhere(service, params);
         return sql.query("SELECT service, name, COUNT(*) AS runs,"
                         + " PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY duration_ns) AS p50_ns,"
                         + " PERCENTILE_DISC(0.95) WITHIN GROUP (ORDER BY duration_ns) AS p95_ns,"
                         + " MAX(duration_ns) AS max_ns, SUM(duration_ns) AS total_ns FROM span WHERE "
-                        + where + " GROUP BY service, name ORDER BY total_ns DESC, service, name LIMIT " + GROUPS,
+                        + where + " GROUP BY service, name"
+                        + " HAVING PERCENTILE_DISC(0.95) WITHIN GROUP (ORDER BY duration_ns) > "
+                        + tingles.slowRequestMs() * 1_000_000L
+                        + " ORDER BY total_ns DESC, service, name",
                 params, rs -> new Job(rs.getString("service"), rs.getString("name"),
                         rs.getLong("runs"), Rows.ms(rs, "p50_ns"), Rows.ms(rs, "p95_ns"),
                         Rows.ms(rs, "max_ns"), Rows.ms(rs, "total_ns")));
