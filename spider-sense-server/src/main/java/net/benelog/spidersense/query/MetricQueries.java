@@ -33,6 +33,66 @@ public final class MetricQueries {
             Object value = attributes.get(key);
             return value == null ? null : String.valueOf(value);
         }
+
+        /**
+         * What one unit of a duration histogram is in milliseconds: {@code jvm.gc.duration}
+         * is seconds by the semantic conventions, and the stored unit wins when it says
+         * otherwise.
+         */
+        public double toMillis() {
+            return "ms".equals(unit) ? 1 : 1000;
+        }
+
+        /** Whether a point is a running total since the process started, not the increment since the one before. */
+        public boolean cumulative() {
+            return !"DELTA".equals(temporality);
+        }
+
+        /**
+         * What a histogram recorded between each point and the one before it, oldest
+         * first: the gc-pause rule and the JVM page's collection chart both read these.
+         *
+         * <p>A delta point is its own interval. A cumulative point's interval is its
+         * difference from the one before, so the first point has none; and an interval
+         * whose count went down is the counter starting again after a restart, which says
+         * nothing about the time between the two points, so it has none either.
+         */
+        public List<Interval> intervals() {
+            boolean running = cumulative();
+            List<Interval> intervals = new ArrayList<>(points.size());
+            for (int i = 0; i < points.size(); i++) {
+                MetricPoint point = points.get(i);
+                MetricPoint previous = i == 0 ? null : points.get(i - 1);
+                long lengthMs = previous == null ? 0 : point.at() - previous.at();
+                if (!running) {
+                    intervals.add(new Interval(point.at(), lengthMs, point.count(), point.sum(),
+                            point.max(), true));
+                    continue;
+                }
+                if (previous == null) {
+                    continue;
+                }
+                long count = point.count() - previous.count();
+                if (count < 0) {
+                    continue;
+                }
+                intervals.add(new Interval(point.at(), lengthMs, count, point.sum() - previous.sum(),
+                        point.max(), point.max() > previous.max()));
+            }
+            return intervals;
+        }
+
+        /**
+         * One interval of a histogram series, in the series' unit.
+         *
+         * @param lengthMs how long it was, zero for the first point of a delta series
+         * @param maxIsOwn whether {@code max} is the longest recording of this interval:
+         *        always for a delta point, and for a cumulative one only when it rose,
+         *        because otherwise it is the longest since the process started
+         */
+        public record Interval(long at, long lengthMs, long count, double sum, double max,
+                boolean maxIsOwn) {
+        }
     }
 
     private final Sql sql;

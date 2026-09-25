@@ -1521,52 +1521,40 @@ public final class Findings {
         if (points.isEmpty()) {
             return null;
         }
-        double toMillis = "ms".equals(series.unit()) ? 1 : 1000;
-        boolean cumulative = !"DELTA".equals(series.temporality());
+        double toMillis = series.toMillis();
+        boolean cumulative = series.cumulative();
         double worstMs = 0;
         long worstAt = points.get(0).at();
         double shareMax = 0;
         long shareAt = points.get(0).at();
         long collections = 0;
-        for (int i = 0; i < points.size(); i++) {
-            MetricPoint point = points.get(i);
-            if (!cumulative) {
-                double longest = point.max() * toMillis;
-                if (longest > worstMs) {
-                    worstMs = longest;
-                    worstAt = point.at();
-                }
-            }
-            if (cumulative && i == 0) {
-                continue;
-            }
-            long count = point.count();
-            double sum = point.sum();
+        for (MetricQueries.SeriesData.Interval interval : series.intervals()) {
+            long count = interval.count();
+            double sum = interval.sum();
+            double longest;
             if (cumulative) {
-                MetricPoint previous = points.get(i - 1);
-                count -= previous.count();
-                sum -= previous.sum();
                 // A cumulative point's max is the longest collection since the JVM started, so
                 // it names this interval only when it rose in it; the interval's mean is a
                 // collection at least that long in any case.
-                double longest = count > 0 ? sum / count * toMillis : 0;
-                if (count > 0 && point.max() > previous.max()) {
-                    longest = Math.max(longest, point.max() * toMillis);
+                longest = count > 0 ? sum / count * toMillis : 0;
+                if (count > 0 && interval.maxIsOwn()) {
+                    longest = Math.max(longest, interval.max() * toMillis);
                 }
-                if (longest > worstMs) {
-                    worstMs = longest;
-                    worstAt = point.at();
-                }
+            } else {
+                longest = interval.max() * toMillis;
+            }
+            if (longest > worstMs) {
+                worstMs = longest;
+                worstAt = interval.at();
             }
             if (count > 0) {
                 collections += count;
             }
-            long interval = i == 0 ? 0 : point.at() - points.get(i - 1).at();
-            if (interval > 0) {
-                double share = Math.max(0, sum) * toMillis / interval;
+            if (interval.lengthMs() > 0) {
+                double share = Math.max(0, sum) * toMillis / interval.lengthMs();
                 if (share > shareMax) {
                     shareMax = share;
-                    shareAt = point.at();
+                    shareAt = interval.at();
                 }
             }
         }
