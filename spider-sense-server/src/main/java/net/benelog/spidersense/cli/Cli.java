@@ -156,12 +156,11 @@ public final class Cli {
             return USAGE;
         } catch (Remote.Unreachable e) {
             if (named != null) {
-                err.println("spider-sense: no Spider Sense at " + base + " (" + e.getMessage() + ")");
+                err.println("spider-sense: " + e.line(base));
                 return USAGE;
             }
             Config config = Local.config(options);
-            err.println("(no Spider Sense at " + base + "; reading " + Local.describe(config)
-                    + " directly)");
+            err.println(Local.fallbackNotice(base, config));
             return Local.run(options, config, out, err);
         }
     }
@@ -196,10 +195,7 @@ public final class Cli {
     static String configuredUrl(java.util.Properties properties) {
         String collector = value(properties, "spidersense.collector");
         if (collector != null) {
-            while (collector.endsWith("/")) {
-                collector = collector.substring(0, collector.length() - 1);
-            }
-            return collector;
+            return Remote.trimSlash(collector);
         }
         String host = value(properties, "spidersense.host");
         String port = value(properties, "spidersense.port");

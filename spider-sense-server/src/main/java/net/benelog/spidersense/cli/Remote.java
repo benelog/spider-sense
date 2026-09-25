@@ -39,6 +39,11 @@ final class Remote {
         Unreachable(String reason) {
             super(reason);
         }
+
+        /** The line a caller says it with, the reason in parentheses (cli.adoc). */
+        String line(String base) {
+            return "no Spider Sense at " + base + " (" + getMessage() + ")";
+        }
     }
 
     /**
@@ -90,11 +95,43 @@ final class Remote {
         if (e instanceof HttpTimeoutException && !(e instanceof HttpConnectTimeoutException)) {
             return new Busy(trimSlash(base));
         }
-        return new Unreachable(e.getClass().getSimpleName()
-                + (e.getMessage() == null ? "" : ": " + e.getMessage()));
+        return new Unreachable(reason(e));
+    }
+
+    /** An exchange's failure as a reason: the exception's simple name and its message. */
+    static String reason(IOException e) {
+        return e.getClass().getSimpleName() + (e.getMessage() == null ? "" : ": " + e.getMessage());
     }
 
     private Remote() {
+    }
+
+    /** A client that gives up on a connection not made in {@link #CONNECT}; the caller closes it. */
+    static HttpClient client() {
+        return HttpClient.newBuilder().connectTimeout(CONNECT).build();
+    }
+
+    /** A request to a path of the Spider Sense at {@code base}, which waits {@link #READ} for the answer. */
+    private static HttpRequest.Builder request(String base, String path) {
+        return HttpRequest.newBuilder(URI.create(trimSlash(base) + path)).timeout(READ);
+    }
+
+    /**
+     * One exchange, and what its failure means: {@link #failure} for an {@link IOException}, and
+     * {@link Unreachable} for an interrupt, with the thread's interrupt flag restored.
+     *
+     * <p>The client is the caller's, so a streamed body can still be read after this returns.
+     */
+    static <T> HttpResponse<T> send(HttpClient client, String base, HttpRequest request,
+            HttpResponse.BodyHandler<T> body) {
+        try {
+            return client.send(request, body);
+        } catch (IOException e) {
+            throw failure(e, base);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new Unreachable("interrupted");
+        }
     }
 
     static int run(Options options, String base, PrintStream out, PrintStream err) {
@@ -104,8 +141,7 @@ final class Remote {
         if (Options.IMPORT.equals(options.command())) {
             return importFile(options, base, out, err);
         }
-        URI uri = URI.create(trimSlash(base) + path(options));
-        HttpRequest.Builder request = HttpRequest.newBuilder(uri).timeout(READ);
+        HttpRequest.Builder request = request(base, path(options));
         String body = body(options);
         if (Options.UNACK.equals(options.command()) || Options.UNRESOLVE.equals(options.command())) {
             request.DELETE();
@@ -117,13 +153,8 @@ final class Remote {
         }
 
         HttpResponse<String> response;
-        try (HttpClient client = HttpClient.newBuilder().connectTimeout(CONNECT).build()) {
-            response = client.send(request.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-        } catch (IOException e) {
-            throw failure(e, base);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new Unreachable("interrupted");
+        try (HttpClient client = client()) {
+            response = send(client, base, request.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
         }
 
         if (response.statusCode() >= 400) {
@@ -131,13 +162,12 @@ final class Remote {
             return response.statusCode() == 404 ? Cli.NOT_FOUND : Cli.USAGE;
         }
         if (Options.UNACK.equals(options.command()) || Options.UNRESOLVE.equals(options.command())) {
-            Reports.Report report = Options.UNACK.equals(options.command())
+            Output.printReport(out, options, Options.UNACK.equals(options.command())
                     ? Reports.unack(options.requiredArgument())
-                    : Reports.unresolve(options.requiredArgument());
-            print(out, options.flag("json") ? report.json().toJson() : report.text());
+                    : Reports.unresolve(options.requiredArgument()));
             return Cli.OK;
         }
-        print(out, response.body());
+        Output.print(out, response.body());
         return Options.CHECK.equals(options.command()) ? verdict(response) : Cli.OK;
     }
 
@@ -150,19 +180,11 @@ final class Remote {
      */
     private static int export(Options options, String base, PrintStream out, PrintStream err) {
         String name = options.valueOrNull("out");
-        URI uri = URI.create(trimSlash(base) + window(options, new Query("/api/export")));
-        HttpRequest request = HttpRequest.newBuilder(uri).timeout(READ).GET().build();
-        HttpClient client = HttpClient.newBuilder().connectTimeout(CONNECT).build();
+        HttpRequest request = request(base, window(options, new Query("/api/export")).toString()).GET().build();
+        HttpClient client = client();
         try {
-            HttpResponse<InputStream> response;
-            try {
-                response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
-            } catch (IOException e) {
-                throw failure(e, base);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new Unreachable("interrupted");
-            }
+            HttpResponse<InputStream> response =
+                    send(client, base, request, HttpResponse.BodyHandlers.ofInputStream());
             if (response.statusCode() >= 400) {
                 err.println("spider-sense: HTTP " + response.statusCode());
                 return Cli.USAGE;
@@ -176,9 +198,7 @@ final class Remote {
         } finally {
             client.close();
         }
-        if (name != null) {
-            err.println("wrote " + name);
-        }
+        Output.wroteExport(err, name);
         return Cli.OK;
     }
 
@@ -193,29 +213,22 @@ final class Remote {
         String name = options.requiredArgument();
         byte[] body = Sessions.bytes(name);
         String format = options.flag("json") ? "json" : "text";
-        HttpRequest.Builder request = HttpRequest
-                .newBuilder(URI.create(trimSlash(base) + "/api/import?format=" + format))
-                .timeout(READ)
+        HttpRequest.Builder request = request(base, "/api/import?format=" + format)
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofByteArray(body));
         if (Sessions.gzipped(name)) {
             request.header("Content-Encoding", "gzip");
         }
         HttpResponse<String> response;
-        try (HttpClient client = HttpClient.newBuilder().connectTimeout(CONNECT).build()) {
-            response = client.send(request.build(),
+        try (HttpClient client = client()) {
+            response = send(client, base, request.build(),
                     HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-        } catch (IOException e) {
-            throw failure(e, base);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new Unreachable("interrupted");
         }
         if (response.statusCode() >= 400) {
             err.println("spider-sense: " + message(response));
             return Cli.USAGE;
         }
-        print(out, response.body());
+        Output.print(out, response.body());
         return Cli.OK;
     }
 
@@ -235,20 +248,14 @@ final class Remote {
      * @return the response body, or null when the server answered with none
      */
     static @Nullable String post(String base, String path, @Nullable String body) {
-        HttpRequest request = HttpRequest.newBuilder(URI.create(trimSlash(base) + path))
-                .timeout(READ)
+        HttpRequest request = request(base, path)
                 .header("Content-Type", "application/json")
                 .header("Accept", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
                 .build();
         HttpResponse<String> response;
-        try (HttpClient client = HttpClient.newBuilder().connectTimeout(CONNECT).build()) {
-            response = client.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-        } catch (IOException e) {
-            throw failure(e, base);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new Unreachable("interrupted");
+        try (HttpClient client = client()) {
+            response = send(client, base, request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
         }
         int status = response.statusCode();
         if (status == 404 || status == 405) {
@@ -394,18 +401,8 @@ final class Remote {
         return "HTTP " + response.statusCode() + (body == null || body.isBlank() ? "" : ": " + body.trim());
     }
 
-    private static void print(PrintStream out, @Nullable String body) {
-        if (body == null || body.isEmpty()) {
-            return;
-        }
-        out.print(body);
-        if (!body.endsWith("\n")) {
-            out.println();
-        }
-        out.flush();
-    }
-
-    private static String trimSlash(String base) {
+    /** The base URL without the trailing slashes a user may type: {@code http://h:4000/} is {@code http://h:4000}. */
+    static String trimSlash(String base) {
         String url = base.trim();
         while (url.endsWith("/")) {
             url = url.substring(0, url.length() - 1);

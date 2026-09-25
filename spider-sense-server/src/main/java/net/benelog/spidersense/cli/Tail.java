@@ -10,7 +10,6 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -45,8 +44,6 @@ final class Tail {
     /** The kinds a tingle can be; {@code --kind} takes one of them (api.adoc#tingle). */
     private static final Set<String> KINDS = Set.of("slow-request", "slow-query", "error");
 
-    private static final Duration CONNECT = Duration.ofSeconds(2);
-
     private static final DateTimeFormatter CLOCK = DateTimeFormatter.ofPattern("HH:mm:ss.SSS");
 
     private static final int KIND_WIDTH = 14;
@@ -69,27 +66,27 @@ final class Tail {
     }
 
     static int run(Options options, String defaultUrl, PrintStream out, PrintStream err) {
-        String base = trimSlash(options.value("url", defaultUrl));
+        String base = Remote.trimSlash(options.value("url", defaultUrl));
         Watch watch = watch(options);
+        // No read timeout: the stream is meant to stay open (--timeout closes it from the side).
         HttpRequest request = HttpRequest.newBuilder(URI.create(base + "/api/events"))
                 .header("Accept", "text/event-stream")
                 .GET()
                 .build();
-        try (HttpClient client = HttpClient.newBuilder().connectTimeout(CONNECT).build()) {
+        try (HttpClient client = Remote.client()) {
             HttpResponse<InputStream> response =
-                    client.send(request, HttpResponse.BodyHandlers.ofInputStream());
+                    Remote.send(client, base, request, HttpResponse.BodyHandlers.ofInputStream());
             if (response.statusCode() >= 400) {
-                return unreachable(err, base, "HTTP " + response.statusCode());
+                return unreachable(err, new Remote.Unreachable("HTTP " + response.statusCode()), base);
             }
             try (InputStream body = response.body()) {
                 return follow(body, watch, out);
             }
         } catch (IOException e) {
-            return unreachable(err, base, e.getClass().getSimpleName()
-                    + (e.getMessage() == null ? "" : ": " + e.getMessage()));
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return Cli.OK;
+            return unreachable(err, new Remote.Unreachable(Remote.reason(e)), base);
+        } catch (Remote.Unreachable e) {
+            // An interrupt while connecting ends the watch, as one while reading does.
+            return Thread.currentThread().isInterrupted() ? Cli.OK : unreachable(err, e, base);
         }
     }
 
@@ -260,9 +257,8 @@ final class Tail {
         out.flush();
     }
 
-    private static int unreachable(PrintStream err, String base, String reason) {
-        err.println("spider-sense: no Spider Sense at " + base + " (" + reason
-                + "); there is no file to tail");
+    private static int unreachable(PrintStream err, Remote.Unreachable e, String base) {
+        err.println("spider-sense: " + e.line(base) + "; there is no file to tail");
         return Cli.USAGE;
     }
 
@@ -276,13 +272,5 @@ final class Tail {
 
     private static String pad(String value, int width) {
         return value.length() >= width ? value + " " : value + " ".repeat(width - value.length());
-    }
-
-    private static String trimSlash(String base) {
-        String url = base.trim();
-        while (url.endsWith("/")) {
-            url = url.substring(0, url.length() - 1);
-        }
-        return url;
     }
 }

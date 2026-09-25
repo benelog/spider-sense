@@ -59,6 +59,14 @@ final class Local {
         return file == null ? config.jdbcUrl() : file.toString();
     }
 
+    /**
+     * The line on stderr when nothing answered at {@code base} and the file is read instead: an
+     * agent must never mistake yesterday's database for a live one (cli.adoc#invocation).
+     */
+    static String fallbackNotice(String base, Config config) {
+        return "(no Spider Sense at " + base + "; reading " + describe(config) + " directly)";
+    }
+
     static int run(Options options, PrintStream out, PrintStream err) {
         return run(options, config(options), out, err);
     }
@@ -82,8 +90,7 @@ final class Local {
                 err.println("spider-sense: No such acknowledgement: " + options.requiredArgument());
                 return Cli.NOT_FOUND;
             }
-            Reports.Report withdrawn = Reports.unack(options.requiredArgument());
-            print(out, options.flag("json") ? withdrawn.json().toJson() : withdrawn.text());
+            Output.printReport(out, options, Reports.unack(options.requiredArgument()));
             return Cli.OK;
         }
         if (Options.UNRESOLVE.equals(options.command())) {
@@ -91,8 +98,7 @@ final class Local {
                 err.println("spider-sense: No such resolution: " + options.requiredArgument());
                 return Cli.NOT_FOUND;
             }
-            Reports.Report withdrawn = Reports.unresolve(options.requiredArgument());
-            print(out, options.flag("json") ? withdrawn.json().toJson() : withdrawn.text());
+            Output.printReport(out, options, Reports.unresolve(options.requiredArgument()));
             return Cli.OK;
         }
         Reports.Report report = switch (options.command()) {
@@ -137,7 +143,7 @@ final class Local {
             err.println("spider-sense: No such trace: " + options.requiredArgument());
             return Cli.NOT_FOUND;
         }
-        print(out, options.flag("json") ? report.json().toJson() : report.text());
+        Output.printReport(out, options, report);
         return Cli.OK;
     }
 
@@ -145,8 +151,7 @@ final class Local {
     private static int check(Options options, Reports reports, @Nullable String service, PrintStream out) {
         Reports.CheckReport checked = reports.check(window(options, reports, service), service,
                 options.valueOrNull("endpoint"), options.rules());
-        Reports.Report report = checked.report();
-        print(out, options.flag("json") ? report.json().toJson() : report.text());
+        Output.printReport(out, options, checked.report());
         return switch (checked.verdict()) {
             case PASS -> Cli.OK;
             case FAIL -> Cli.CHECK_FAILED;
@@ -170,9 +175,7 @@ final class Local {
         } catch (IOException e) {
             throw new UncheckedIOException("could not write " + (name == null ? "the export" : name), e);
         }
-        if (name != null) {
-            err.println("wrote " + name);
-        }
+        Output.wroteExport(err, name);
         return Cli.OK;
     }
 
@@ -185,16 +188,5 @@ final class Local {
     private static Window window(Options options, Reports reports, @Nullable String service) {
         return reports.selectors().window(null, null,
                 options.value("since", Selectors.DEFAULT_SINCE), options.valueOrNull("until"), service);
-    }
-
-    private static void print(PrintStream out, @Nullable String body) {
-        if (body == null || body.isEmpty()) {
-            return;
-        }
-        out.print(body);
-        if (!body.endsWith("\n")) {
-            out.println();
-        }
-        out.flush();
     }
 }

@@ -30,4 +30,20 @@ class RemoteTest {
                 .isInstanceOf(Remote.Unreachable.class)
                 .hasMessage("ConnectException: Connection refused");
     }
+
+    /** The line every command says it with, and tail adds its own ending to (cli.adoc). */
+    @Test
+    void noServerIsSaidWithTheReason() {
+        Remote.Unreachable unreachable = new Remote.Unreachable("ConnectException: Connection refused");
+
+        assertThat(unreachable.line("http://127.0.0.1:4000"))
+                .isEqualTo("no Spider Sense at http://127.0.0.1:4000 (ConnectException: Connection refused)");
+        assertThat(Remote.reason(new HttpConnectTimeoutException(null))).isEqualTo("HttpConnectTimeoutException");
+    }
+
+    @Test
+    void aBaseUrlLosesItsTrailingSlashes() {
+        assertThat(Remote.trimSlash(" http://box:4000// ")).isEqualTo("http://box:4000");
+        assertThat(Remote.trimSlash("http://box:4000")).isEqualTo("http://box:4000");
+    }
 }

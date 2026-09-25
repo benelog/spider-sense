@@ -115,11 +115,10 @@ final class Mcp {
                 return server.handle(line, (name, arguments) -> McpServer.ToolResult.failed(said));
             } catch (Remote.Unreachable e) {
                 if (named) {
-                    String said = "no Spider Sense at " + forwardTo + " (" + e.getMessage() + ")";
+                    String said = e.line(forwardTo);
                     return server.handle(line, (name, arguments) -> McpServer.ToolResult.failed(said));
                 }
-                err.println("(no Spider Sense at " + forwardTo + "; reading "
-                        + Local.describe(config()) + " directly)");
+                err.println(Local.fallbackNotice(forwardTo, config()));
                 err.flush();
                 base = null;
             }
