@@ -158,4 +158,31 @@ class ImporterTest {
         assertThat(count("SELECT COUNT(*) FROM metric_point p JOIN metric_series s ON s.id = p.series_id"))
                 .isEqualTo(1);
     }
+
+    /**
+     * Buckets past their column are left out, as the writer leaves them out
+     * (storage.adoc#writer): text cut partway through would not parse on the next read.
+     */
+    @Test
+    void anImportedPointWhoseBucketsDoNotFitIsStoredWithoutThem() {
+        Json.JsonArray bounds = Json.arr();
+        Json.JsonArray counts = Json.arr();
+        for (int i = 0; i < 2_000; i++) {
+            bounds.add(i * 1.5);
+            counts.add(i);
+        }
+        Json.JsonObject document = document("orders")
+                .put("metrics", Json.arr().add(Json.obj().put("service", "orders")
+                        .put("name", "http.server.request.duration").put("type", "histogram")))
+                .put("metricSeries", Json.arr().add(Json.obj().put("id", 7).put("service", "orders")
+                        .put("name", "http.server.request.duration").put("attributes", Json.obj())))
+                .put("metricPoints", Json.arr().add(Json.obj().put("seriesId", 7).put("atMs", AT)
+                        .put("count", 3).put("sum", 0.3)
+                        .put("buckets", Json.obj().put("bounds", bounds).put("counts", counts))));
+
+        assertThat(writer.importer().importDocument(document).metricPoints()).isEqualTo(1);
+
+        assertThat(count("SELECT COUNT(*) FROM metric_point WHERE count = 3 AND buckets IS NULL"))
+                .isEqualTo(1);
+    }
 }

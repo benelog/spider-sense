@@ -675,13 +675,14 @@ public final class Writer implements AutoCloseable {
             }
         }
         for (Batch.Sighting sighting : sightings.values()) {
-            Object language = sighting.resource().get("telemetry.sdk.language");
+            Object sdkLanguage = sighting.resource().get("telemetry.sdk.language");
+            String language = sdkLanguage == null ? null : cut(String.valueOf(sdkLanguage), 64);
             Object pid = sighting.resource().get("process.pid");
             String resource = AttrJson.encode(sighting.resource(), 65535);
             markRestart(connection, sighting, pid, startOf(batches, sighting));
             try (PreparedStatement update = connection.prepareStatement(
                     "UPDATE service SET language = ?, pid = ?, last_seen = ?, resource = ? WHERE name = ?")) {
-                update.setString(1, language == null ? null : String.valueOf(language));
+                update.setString(1, language);
                 setLong(update, 2, pid instanceof Number n ? n.longValue() : null);
                 update.setLong(3, sighting.at());
                 update.setString(4, resource);
@@ -694,7 +695,7 @@ public final class Writer implements AutoCloseable {
                     "INSERT INTO service (name, language, pid, first_seen, last_seen, resource)"
                             + " VALUES (?, ?, ?, ?, ?, ?)")) {
                 insert.setString(1, sighting.name());
-                insert.setString(2, language == null ? null : String.valueOf(language));
+                insert.setString(2, language);
                 setLong(insert, 3, pid instanceof Number n ? n.longValue() : null);
                 insert.setLong(4, sighting.at());
                 insert.setLong(5, sighting.at());
@@ -853,7 +854,7 @@ public final class Writer implements AutoCloseable {
     }
 
     /** The width of {@code metric_point.buckets}. */
-    private static final int BUCKETS_MAX = 8192;
+    static final int BUCKETS_MAX = 8192;
 
     /** How many cached ids one statement checks. */
     private static final int SERIES_CHECK_CHUNK = 500;

@@ -181,6 +181,21 @@ class WriterTest {
         assertThat(pointsWithASeries()).isEqualTo(1);
     }
 
+    /** An SDK language longer than its column is stored cut, not refused with the flush. */
+    @Test
+    void aLanguageLongerThanItsColumnIsCutRatherThanLosingTheFlush() {
+        String language = "j".repeat(100);
+        decoder.accept(Otlp.traces(Otlp.resource(Otlp.attr("service.name", "orders"),
+                        Otlp.attr("telemetry.sdk.language", language)),
+                Otlp.span("%032x".formatted(1), "%016x".formatted(1), "GET /orders",
+                        Span.SpanKind.SPAN_KIND_SERVER, AT, 5)));
+        store.writer().awaitIdle(5_000);
+
+        assertThat(store.sql().query("SELECT language FROM service WHERE name = 'orders'", List.of(),
+                rs -> rs.getString(1))).containsExactly(language.substring(0, 64));
+        assertThat(store.sql().count("SELECT COUNT(*) FROM span", List.of())).isEqualTo(1);
+    }
+
     /** A double attribute JSON has no number for is kept as text, not refused with its export. */
     @Test
     void aNonFiniteDoubleAttributeIsStoredAsText() {

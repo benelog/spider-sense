@@ -686,9 +686,19 @@ public final class Importer {
         return count;
     }
 
+    /**
+     * The buckets as their column holds them, or null when they do not fit it:
+     * text cut partway through would not parse, so a point past the column keeps
+     * its count, sum, min and max and loses only its buckets, as the writer's does
+     * (storage.adoc#writer).
+     */
     private static @Nullable String buckets(Json.JsonObject point) {
         Json.JsonObject object = point.optObject("buckets");
-        return object == null ? null : Writer.cut(object.toJson(), 8192);
+        if (object == null) {
+            return null;
+        }
+        String json = object.toJson();
+        return json.length() <= Writer.BUCKETS_MAX ? json : null;
     }
 
     // --- reading the document -------------------------------------------------------
