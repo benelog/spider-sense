@@ -25,6 +25,15 @@ import org.junit.jupiter.api.io.TempDir;
 
 class NestedJarTest {
 
+    /** The moment every extraction and prune in these tests happens at. */
+    private static final Instant NOW = Instant.parse("2026-01-01T12:00:00Z");
+
+    /** Long enough untouched to be pruned at {@link #NOW}. */
+    private static final FileTime STALE = FileTime.from(NOW.minus(NestedJar.STALE_AFTER).minus(Duration.ofMinutes(1)));
+
+    /** Touched just before {@link #NOW}: in use elsewhere. */
+    private static final FileTime RECENT = FileTime.from(NOW.minusSeconds(10));
+
     @TempDir
     Path dir;
 
@@ -50,7 +59,7 @@ class NestedJarTest {
         manifest.getMainAttributes().putValue("Implementation-Version", "9.9.9");
         try (OutputStream out = Files.newOutputStream(jar);
              JarOutputStream jos = new JarOutputStream(out, manifest)) {
-            jos.putNextEntry(new JarEntry(NestedJar.ENTRY));
+            jos.putNextEntry(new JarEntry(NestedJar.SERVER_ENTRY));
             jos.write(payload("the server fat jar"));
             jos.closeEntry();
             jos.putNextEntry(new JarEntry(NestedJar.EXTENSION_ENTRY));
@@ -80,9 +89,9 @@ class NestedJarTest {
 
     @Test
     void extractsTheNestedJarUnderTheCrcOfItsContent() throws IOException {
-        Path jar = jarContaining(NestedJar.ENTRY, payload("the server fat jar"));
+        Path jar = jarContaining(NestedJar.SERVER_ENTRY, payload("the server fat jar"));
 
-        Path extracted = NestedJar.extractFrom(jar, NestedJar.ENTRY, out(), "server-9.9.9");
+        Path extracted = NestedJar.extractFrom(jar, NestedJar.SERVER_ENTRY, out(), "server", "9.9.9", NOW);
 
         assertThat(extracted).isEqualTo(out().resolve("server-9.9.9-" + crcOf("the server fat jar") + ".jar"));
         assertThat(extracted).exists().hasContent("the server fat jar");
@@ -90,9 +99,9 @@ class NestedJarTest {
 
     @Test
     void leavesNoTemporaryFilesBehind() throws IOException {
-        Path jar = jarContaining(NestedJar.ENTRY, payload("the server fat jar"));
+        Path jar = jarContaining(NestedJar.SERVER_ENTRY, payload("the server fat jar"));
 
-        Path extracted = NestedJar.extractFrom(jar, NestedJar.ENTRY, out(), "server-9.9.9");
+        Path extracted = NestedJar.extractFrom(jar, NestedJar.SERVER_ENTRY, out(), "server", "9.9.9", NOW);
 
         try (Stream<Path> files = Files.list(out())) {
             assertThat(files).containsExactly(extracted);
@@ -101,13 +110,13 @@ class NestedJarTest {
 
     @Test
     void reusesTheFileAlreadyThereUnderTheSameName() throws IOException {
-        Path jar = jarContaining(NestedJar.ENTRY, payload("the server fat jar"));
+        Path jar = jarContaining(NestedJar.SERVER_ENTRY, payload("the server fat jar"));
         Path target = out().resolve("server-9.9.9-" + crcOf("the server fat jar") + ".jar");
         Files.createDirectories(out());
         // Same name and length, different content: if the file is rewritten the content changes.
         Files.writeString(target, "XXX XXXXXX XXX XXX");
 
-        assertThat(NestedJar.extractFrom(jar, NestedJar.ENTRY, out(), "server-9.9.9")).isEqualTo(target);
+        assertThat(NestedJar.extractFrom(jar, NestedJar.SERVER_ENTRY, out(), "server", "9.9.9", NOW)).isEqualTo(target);
 
         assertThat(target).hasContent("XXX XXXXXX XXX XXX");
     }
@@ -115,9 +124,9 @@ class NestedJarTest {
     @Test
     void aRebuildOfTheSameSizeGetsAFileOfItsOwn() throws IOException {
         Path before = NestedJar.extractFrom(
-                jarContaining(NestedJar.ENTRY, payload("the server fat jar")), NestedJar.ENTRY, out(), "server-9.9.9");
+                jarContaining(NestedJar.SERVER_ENTRY, payload("the server fat jar")), NestedJar.SERVER_ENTRY, out(), "server", "9.9.9", NOW);
         Path after = NestedJar.extractFrom(
-                jarContaining(NestedJar.ENTRY, payload("the server NEW jar")), NestedJar.ENTRY, out(), "server-9.9.9");
+                jarContaining(NestedJar.SERVER_ENTRY, payload("the server NEW jar")), NestedJar.SERVER_ENTRY, out(), "server", "9.9.9", NOW);
 
         assertThat(after).isNotEqualTo(before).hasContent("the server NEW jar");
         assertThat(before).as("just used, so not pruned").hasContent("the server fat jar");
@@ -125,12 +134,12 @@ class NestedJarTest {
 
     @Test
     void rewritesAFileOfTheRightNameButTheWrongSize() throws IOException {
-        Path jar = jarContaining(NestedJar.ENTRY, payload("the server fat jar"));
+        Path jar = jarContaining(NestedJar.SERVER_ENTRY, payload("the server fat jar"));
         Path target = out().resolve("server-9.9.9-" + crcOf("the server fat jar") + ".jar");
         Files.createDirectories(out());
         Files.writeString(target, "cut short");
 
-        NestedJar.extractFrom(jar, NestedJar.ENTRY, out(), "server-9.9.9");
+        NestedJar.extractFrom(jar, NestedJar.SERVER_ENTRY, out(), "server", "9.9.9", NOW);
 
         assertThat(target).hasContent("the server fat jar");
     }
@@ -138,15 +147,15 @@ class NestedJarTest {
     @Test
     void prunesTheJarsOfOtherBuildsNoJvmHasUsedLately() throws IOException {
         Files.createDirectories(out());
-        FileTime old = FileTime.from(Instant.now().minus(NestedJar.STALE_AFTER).minus(Duration.ofMinutes(1)));
         Path stale = Files.writeString(out().resolve("server-9.9.8-0badf00d.jar"), "old build");
-        Files.setLastModifiedTime(stale, old);
+        Files.setLastModifiedTime(stale, STALE);
         Path staleExtension = Files.writeString(out().resolve("extension-9.9.8-0badf00d.jar"), "old build");
-        Files.setLastModifiedTime(staleExtension, old);
+        Files.setLastModifiedTime(staleExtension, STALE);
         Path recent = Files.writeString(out().resolve("server-9.9.9-0000beef.jar"), "in use elsewhere");
+        Files.setLastModifiedTime(recent, RECENT);
 
         Path extracted = NestedJar.extractFrom(
-                jarContaining(NestedJar.ENTRY, payload("the server fat jar")), NestedJar.ENTRY, out(), "server-9.9.9");
+                jarContaining(NestedJar.SERVER_ENTRY, payload("the server fat jar")), NestedJar.SERVER_ENTRY, out(), "server", "9.9.9", NOW);
 
         assertThat(stale).doesNotExist();
         assertThat(recent).exists();
@@ -158,16 +167,35 @@ class NestedJarTest {
     @Test
     void prunesTheTemporaryFileOfAnExtractionThatNeverFinished() throws IOException {
         Files.createDirectories(out());
-        FileTime old = FileTime.from(Instant.now().minus(NestedJar.STALE_AFTER).minus(Duration.ofMinutes(1)));
         Path abandoned = Files.writeString(out().resolve("nested-123.jar.tmp"), "half a jar");
-        Files.setLastModifiedTime(abandoned, old);
+        Files.setLastModifiedTime(abandoned, STALE);
         Path inProgress = Files.writeString(out().resolve("nested-456.jar.tmp"), "being copied");
+        Files.setLastModifiedTime(inProgress, RECENT);
 
         NestedJar.extractFrom(
-                jarContaining(NestedJar.ENTRY, payload("the server fat jar")), NestedJar.ENTRY, out(), "server-9.9.9");
+                jarContaining(NestedJar.SERVER_ENTRY, payload("the server fat jar")), NestedJar.SERVER_ENTRY, out(), "server", "9.9.9", NOW);
 
         assertThat(abandoned).doesNotExist();
         assertThat(inProgress).as("another JVM may be copying it right now").exists();
+    }
+
+    @Test
+    void prunesWhatTheGlobMatchesOnceStaleAsOfTheGivenMoment() throws IOException {
+        Path stale = Files.writeString(dir.resolve("server-1.jar"), "stale");
+        Files.setLastModifiedTime(stale, STALE);
+        Path kept = Files.writeString(dir.resolve("server-2.jar"), "stale, but this JVM's own");
+        Files.setLastModifiedTime(kept, STALE);
+        Path recent = Files.writeString(dir.resolve("server-3.jar"), "recent");
+        Files.setLastModifiedTime(recent, RECENT);
+        Path otherKind = Files.writeString(dir.resolve("extension-1.jar"), "stale, another kind");
+        Files.setLastModifiedTime(otherKind, STALE);
+
+        NestedJar.pruneStale(dir, "server-*.jar", kept, NOW);
+
+        assertThat(stale).doesNotExist();
+        assertThat(kept).exists();
+        assertThat(recent).exists();
+        assertThat(otherKind).exists();
     }
 
     @Test
@@ -176,7 +204,7 @@ class NestedJarTest {
         Files.createDirectories(out());
         Files.setPosixFilePermissions(out(), PosixFilePermissions.fromString("rwxrwxrwx"));
 
-        NestedJar.extractFrom(jarContaining(NestedJar.ENTRY, payload("x")), NestedJar.ENTRY, out(), "server-9.9.9");
+        NestedJar.extractFrom(jarContaining(NestedJar.SERVER_ENTRY, payload("x")), NestedJar.SERVER_ENTRY, out(), "server", "9.9.9", NOW);
 
         assertThat(PosixFilePermissions.toString(Files.getPosixFilePermissions(out()))).isEqualTo("rwx------");
     }
@@ -186,7 +214,7 @@ class NestedJarTest {
         assumeTrue(posix(dir));
         Path nested = dir.resolve("fresh");
 
-        NestedJar.extractFrom(jarContaining(NestedJar.ENTRY, payload("x")), NestedJar.ENTRY, nested, "server-9.9.9");
+        NestedJar.extractFrom(jarContaining(NestedJar.SERVER_ENTRY, payload("x")), NestedJar.SERVER_ENTRY, nested, "server", "9.9.9", NOW);
 
         assertThat(PosixFilePermissions.toString(Files.getPosixFilePermissions(nested))).isEqualTo("rwx------");
     }
@@ -198,7 +226,7 @@ class NestedJarTest {
         Path link = Files.createSymbolicLink(dir.resolve("link"), real);
 
         assertThatThrownBy(() -> NestedJar.extractFrom(
-                jarContaining(NestedJar.ENTRY, payload("x")), NestedJar.ENTRY, link, "server-9.9.9"))
+                jarContaining(NestedJar.SERVER_ENTRY, payload("x")), NestedJar.SERVER_ENTRY, link, "server", "9.9.9", NOW))
                 .isInstanceOf(IOException.class)
                 .hasMessageContaining("symbolic link");
     }
@@ -207,16 +235,16 @@ class NestedJarTest {
     void complainsWhenTheEntryIsMissing() throws IOException {
         Path jar = jarContaining("something/else.jar", payload("not it"));
 
-        assertThatThrownBy(() -> NestedJar.extractFrom(jar, NestedJar.ENTRY, out(), "server-9.9.9"))
+        assertThatThrownBy(() -> NestedJar.extractFrom(jar, NestedJar.SERVER_ENTRY, out(), "server", "9.9.9", NOW))
                 .isInstanceOf(IOException.class)
-                .hasMessageContaining(NestedJar.ENTRY);
+                .hasMessageContaining(NestedJar.SERVER_ENTRY);
     }
 
     @Test
     void recognisesAJarThatCarriesTheServer() throws IOException {
-        assertThat(NestedJar.hasEntry(jarContaining(NestedJar.ENTRY, payload("x")))).isTrue();
-        assertThat(NestedJar.hasEntry(jarContaining("other", payload("x")))).isFalse();
-        assertThat(NestedJar.hasEntry(dir.resolve("no-such.jar"))).isFalse();
+        assertThat(NestedJar.hasServerEntry(jarContaining(NestedJar.SERVER_ENTRY, payload("x")))).isTrue();
+        assertThat(NestedJar.hasServerEntry(jarContaining("other", payload("x")))).isFalse();
+        assertThat(NestedJar.hasServerEntry(dir.resolve("no-such.jar"))).isFalse();
     }
 
     @Test
@@ -240,11 +268,11 @@ class NestedJarTest {
     void theExtensionIsExtractedBesideTheServer() throws IOException {
         Path jar = jarContainingBoth();
 
-        assertThat(NestedJar.hasEntry(jar, NestedJar.ENTRY)).isTrue();
+        assertThat(NestedJar.hasEntry(jar, NestedJar.SERVER_ENTRY)).isTrue();
         assertThat(NestedJar.hasEntry(jar, NestedJar.EXTENSION_ENTRY)).isTrue();
 
-        Path server = NestedJar.extractFrom(jar, NestedJar.ENTRY, out(), "server-9.9.9");
-        Path extension = NestedJar.extractFrom(jar, NestedJar.EXTENSION_ENTRY, out(), "extension-9.9.9");
+        Path server = NestedJar.extractFrom(jar, NestedJar.SERVER_ENTRY, out(), "server", "9.9.9", NOW);
+        Path extension = NestedJar.extractFrom(jar, NestedJar.EXTENSION_ENTRY, out(), "extension", "9.9.9", NOW);
 
         assertThat(server).hasContent("the server fat jar");
         assertThat(extension).hasContent("the extension jar");
@@ -257,52 +285,39 @@ class NestedJarTest {
     @Test
     void thereIsNoExtensionToPointAtFromExplodedClasses() throws IOException {
         assertThat(NestedJar.ownJar()).isNull();
-        String previous = System.getProperty(NestedJar.EXTENSION_JAR_PROPERTY);
-        try {
-            System.clearProperty(NestedJar.EXTENSION_JAR_PROPERTY);
-            assertThat(NestedJar.extensionJar()).as("null, not an exception").isNull();
+        assertThat(NestedJar.locate(NestedJar.EXTENSION_ENTRY, NestedJar.EXTENSION_KIND, null))
+                .as("null, not an exception").isNull();
+        assertThat(NestedJar.locate(NestedJar.EXTENSION_ENTRY, NestedJar.EXTENSION_KIND, ""))
+                .as("an empty override is none").isNull();
 
-            Path jar = dir.resolve("extension.jar");
-            Files.writeString(jar, "pretend extension jar");
-            System.setProperty(NestedJar.EXTENSION_JAR_PROPERTY, jar.toString());
-            assertThat(NestedJar.extensionJar()).isEqualTo(jar);
+        Path jar = dir.resolve("extension.jar");
+        Files.writeString(jar, "pretend extension jar");
+        assertThat(NestedJar.locate(NestedJar.EXTENSION_ENTRY, NestedJar.EXTENSION_KIND, jar.toString()))
+                .isEqualTo(jar);
 
-            System.setProperty(NestedJar.EXTENSION_JAR_PROPERTY, dir.resolve("gone.jar").toString());
-            assertThatThrownBy(NestedJar::extensionJar).isInstanceOf(IOException.class);
-        } finally {
-            if (previous == null) {
-                System.clearProperty(NestedJar.EXTENSION_JAR_PROPERTY);
-            } else {
-                System.setProperty(NestedJar.EXTENSION_JAR_PROPERTY, previous);
-            }
-        }
+        String gone = dir.resolve("gone.jar").toString();
+        assertThatThrownBy(() -> NestedJar.locate(NestedJar.EXTENSION_ENTRY, NestedJar.EXTENSION_KIND, gone))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining(NestedJar.EXTENSION_JAR_PROPERTY);
     }
 
     @Test
     void theVersionComesFromTheBuild() {
-        // Exploded classes in the test run: spider-sense.properties is the only source.
+        // Exploded classes in the test run: spider-sense-version.properties is the only source.
         assertThat(NestedJar.version()).isNotEmpty().isNotEqualTo("dev");
     }
 
     @Test
-    void theServerJarFallsBackToTheSystemProperty() throws IOException {
+    void theServerJarFallsBackToTheOverride() throws IOException {
         // Tests run from exploded classes, so ownJar() is null and the override decides.
         assertThat(NestedJar.ownJar()).isNull();
         Path fat = dir.resolve("spider-sense-server-all.jar");
         Files.writeString(fat, "pretend fat jar");
-        String previous = System.getProperty(NestedJar.SERVER_JAR_PROPERTY);
-        try {
-            System.setProperty(NestedJar.SERVER_JAR_PROPERTY, fat.toString());
-            assertThat(NestedJar.serverJar()).isEqualTo(fat);
+        assertThat(NestedJar.locate(NestedJar.SERVER_ENTRY, NestedJar.SERVER_KIND, fat.toString())).isEqualTo(fat);
 
-            System.setProperty(NestedJar.SERVER_JAR_PROPERTY, dir.resolve("gone.jar").toString());
-            assertThatThrownBy(NestedJar::serverJar).isInstanceOf(IOException.class);
-        } finally {
-            if (previous == null) {
-                System.clearProperty(NestedJar.SERVER_JAR_PROPERTY);
-            } else {
-                System.setProperty(NestedJar.SERVER_JAR_PROPERTY, previous);
-            }
-        }
+        String gone = dir.resolve("gone.jar").toString();
+        assertThatThrownBy(() -> NestedJar.locate(NestedJar.SERVER_ENTRY, NestedJar.SERVER_KIND, gone))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining(NestedJar.SERVER_JAR_PROPERTY);
     }
 }

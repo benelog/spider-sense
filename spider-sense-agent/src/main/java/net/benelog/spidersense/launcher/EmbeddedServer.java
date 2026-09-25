@@ -1,7 +1,6 @@
 package net.benelog.spidersense.launcher;
 
 import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.util.List;
 import org.jspecify.annotations.Nullable;
@@ -10,9 +9,8 @@ import org.jspecify.annotations.Nullable;
  * Starts the collector + UI inside the current JVM, in its own class loader.
  *
  * <p>{@code SpiderSenseServer.main} binds and returns in agent mode (its Jetty pool is daemon), and
- * blocks in standalone mode. It is invoked reflectively because the launcher has no compile-time
- * dependency on the server, and with the context class loader set to the {@link SenseClassLoader}
- * so anything the server looks up by thread context finds the server's own jar.
+ * blocks in standalone mode. It is invoked through {@link SenseClassLoader#invokeStatic}, which
+ * says why that is reflective and what it does with the context class loader.
  */
 final class EmbeddedServer {
 
@@ -39,12 +37,7 @@ final class EmbeddedServer {
         // Set before the call: in standalone mode main() never returns, and in agent mode a second
         // agentmain must not start a second server while the first is still binding.
         started = loader;
-        Thread current = Thread.currentThread();
-        ClassLoader previous = current.getContextClassLoader();
         try {
-            current.setContextClassLoader(loader);
-            Class<?> server = Class.forName(SERVER_CLASS, true, loader);
-            Method main = server.getMethod("main", String[].class);
             List<String> args = config.toServerArgs();
             // The distributable's own path, which the UI's "Copy CLI line" names (api.adoc#status,
             // /api/status.jar): the server runs out of the nested jar and cannot find it itself.
@@ -52,7 +45,7 @@ final class EmbeddedServer {
             if (own != null) {
                 args.add("--jar=" + own.toAbsolutePath());
             }
-            main.invoke(null, (Object) args.toArray(new String[0]));
+            loader.invokeStatic(SERVER_CLASS, "main", args.toArray(new String[0]));
         } catch (InvocationTargetException e) {
             started = null;
             Throwable cause = e.getCause();
@@ -60,8 +53,6 @@ final class EmbeddedServer {
         } catch (Exception | LinkageError e) {
             started = null;
             throw e instanceof Exception ex ? ex : new IllegalStateException(e);
-        } finally {
-            current.setContextClassLoader(previous);
         }
         return true;
     }

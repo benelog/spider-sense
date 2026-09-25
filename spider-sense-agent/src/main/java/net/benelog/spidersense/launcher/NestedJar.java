@@ -52,16 +52,25 @@ import org.jspecify.annotations.Nullable;
 final class NestedJar {
 
     /** The path of the nested server fat jar inside the distributable jar. */
-    static final String ENTRY = "spider-sense/server.jar";
+    static final String SERVER_ENTRY = "spider-sense/server.jar";
 
     /** The path of the nested OpenTelemetry agent extension inside the distributable jar. */
     static final String EXTENSION_ENTRY = "spider-sense/extension.jar";
+
+    /** What the server jar is called on disk, {@code server-<version>-<crc>.jar}, and in messages. */
+    static final String SERVER_KIND = "server";
+
+    /** The same for the extension jar, {@code extension-<version>-<crc>.jar}. */
+    static final String EXTENSION_KIND = "extension";
 
     /** Escape hatch for exploded classes (IDE, Gradle test runs): point at the fat jar directly. */
     static final String SERVER_JAR_PROPERTY = "spidersense.serverJar";
 
     /** The same escape hatch for the extension jar. */
     static final String EXTENSION_JAR_PROPERTY = "spidersense.extensionJar";
+
+    /** The resource the build generates with the version in it, for exploded classes. */
+    static final String VERSION_RESOURCE = "/spider-sense-version.properties";
 
     /**
      * How long another build's extracted jar stays once a new one is extracted: long enough for a
@@ -82,20 +91,13 @@ final class NestedJar {
      *                     the fat jar is by {@value #SERVER_JAR_PROPERTY}
      */
     static Path serverJar() throws IOException {
-        Path own = ownJar();
-        if (own != null && hasEntry(own, ENTRY)) {
-            return extractFrom(own, ENTRY, directory(), "server-" + version());
+        Path jar = locate(SERVER_ENTRY, SERVER_KIND, System.getProperty(SERVER_JAR_PROPERTY));
+        if (jar == null) {
+            Path own = ownJar();
+            throw new IOException("no " + SERVER_ENTRY + " inside " + (own == null ? "the launcher's location" : own)
+                    + " and no -D" + SERVER_JAR_PROPERTY + "=<path to spider-sense-server-all.jar>");
         }
-        String override = System.getProperty(SERVER_JAR_PROPERTY);
-        if (override != null && !override.isEmpty()) {
-            Path p = Paths.get(override);
-            if (!Files.isRegularFile(p)) {
-                throw new IOException(SERVER_JAR_PROPERTY + " points at a file that does not exist: " + p);
-            }
-            return p;
-        }
-        throw new IOException("no " + ENTRY + " inside " + (own == null ? "the launcher's location" : own)
-                + " and no -D" + SERVER_JAR_PROPERTY + "=<path to spider-sense-server-all.jar>");
+        return jar;
     }
 
     /**
@@ -108,17 +110,28 @@ final class NestedJar {
      *                     file that is not there
      */
     static @Nullable Path extensionJar() throws IOException {
+        return locate(EXTENSION_ENTRY, EXTENSION_KIND, System.getProperty(EXTENSION_JAR_PROPERTY));
+    }
+
+    /**
+     * A nested jar on disk: {@code entry} extracted from our own jar when it carries one, else the
+     * file {@code override} names (the value of {@code spidersense.<kind>Jar}), else {@code null}.
+     * An empty override is none.
+     *
+     * @throws IOException when the entry is there but cannot be unpacked, or the override names a
+     *                     file that is not there
+     */
+    static @Nullable Path locate(String entry, String kind, @Nullable String override) throws IOException {
         Path own = ownJar();
-        if (own != null && hasEntry(own, EXTENSION_ENTRY)) {
-            return extractFrom(own, EXTENSION_ENTRY, directory(), "extension-" + version());
+        if (own != null && hasEntry(own, entry)) {
+            return extractFrom(own, entry, directory(), kind, version(), Instant.now());
         }
-        String override = System.getProperty(EXTENSION_JAR_PROPERTY);
         if (override != null && !override.isEmpty()) {
-            Path p = Paths.get(override);
-            if (!Files.isRegularFile(p)) {
-                throw new IOException(EXTENSION_JAR_PROPERTY + " points at a file that does not exist: " + p);
+            Path file = Paths.get(override);
+            if (!Files.isRegularFile(file)) {
+                throw new IOException("spidersense." + kind + "Jar points at a file that does not exist: " + file);
             }
-            return p;
+            return file;
         }
         return null;
     }
@@ -141,8 +154,9 @@ final class NestedJar {
         }
     }
 
-    static boolean hasEntry(Path jar) {
-        return hasEntry(jar, ENTRY);
+    /** Whether {@code jar} carries the nested server, which is what makes it the distributable. */
+    static boolean hasServerEntry(Path jar) {
+        return hasEntry(jar, SERVER_ENTRY);
     }
 
     static boolean hasEntry(Path jar, String entry) {
@@ -166,34 +180,36 @@ final class NestedJar {
     }
 
     /**
-     * Copies {@code name} out of {@code jar} into {@code dir} as {@code <prefix>-<crc>.jar}, and
-     * returns that file. A file already there under that name and with the entry's size holds the
-     * same content, and is used as it is. The copy goes to a temporary file in {@code dir} and is
-     * then moved into place, so two JVMs starting at once never see a half-written jar.
+     * Copies {@code entry} out of {@code jar} into {@code dir} as {@code <kind>-<version>-<crc>.jar},
+     * and returns that file. A file already there under that name and with the entry's size holds
+     * the same content, and is used as it is, touched at {@code now}. The copy goes to a temporary
+     * file in {@code dir} and is then moved into place, so two JVMs starting at once never see a
+     * half-written jar.
      *
-     * <p>The prefix is {@code server-<version>} or {@code extension-<version>}; after a new
-     * extraction, the jars of other builds with the same first word are pruned.
+     * <p>The kind is {@code server} or {@code extension}; after a new extraction, the jars of other
+     * builds of the same kind ({@code <kind>-*.jar}) are pruned as of {@code now}.
      *
      * @throws IOException when the entry is missing, or {@code dir} belongs to another user
      */
-    static Path extractFrom(Path jar, String name, Path dir, String prefix) throws IOException {
+    static Path extractFrom(Path jar, String entry, Path dir, String kind, String version, Instant now)
+            throws IOException {
         try (JarFile jarFile = new JarFile(jar.toFile())) {
-            JarEntry entry = jarFile.getJarEntry(name);
-            if (entry == null) {
-                throw new IOException("no " + name + " inside " + jar);
+            JarEntry nested = jarFile.getJarEntry(entry);
+            if (nested == null) {
+                throw new IOException("no " + entry + " inside " + jar);
             }
             ownDirectory(dir);
-            long size = entry.getSize();
-            Path target = dir.resolve(prefix + "-" + crc(jarFile, entry) + ".jar");
+            long size = nested.getSize();
+            Path target = dir.resolve(kind + "-" + version + "-" + crc(jarFile, nested) + ".jar");
             if (isComplete(target, size)) {
                 // Touched, so that another build's prune sees it in use.
-                Files.setLastModifiedTime(target, FileTime.from(Instant.now()));
-                pruneStale(dir, TEMP_GLOB, null);
+                Files.setLastModifiedTime(target, FileTime.from(now));
+                pruneStale(dir, TEMP_GLOB, null, now);
                 return target;
             }
             Path temp = Files.createTempFile(dir, "nested-", ".jar.tmp");
             try {
-                try (InputStream in = jarFile.getInputStream(entry)) {
+                try (InputStream in = jarFile.getInputStream(nested)) {
                     Files.copy(in, temp, StandardCopyOption.REPLACE_EXISTING);
                 }
                 try {
@@ -208,9 +224,8 @@ final class NestedJar {
             } finally {
                 Files.deleteIfExists(temp);
             }
-            int dash = prefix.indexOf('-');
-            pruneStale(dir, (dash < 0 ? prefix : prefix.substring(0, dash + 1)) + "*.jar", target);
-            pruneStale(dir, TEMP_GLOB, null);
+            pruneStale(dir, kind + "-*.jar", target, now);
+            pruneStale(dir, TEMP_GLOB, null, now);
             return target;
         }
     }
@@ -278,12 +293,12 @@ final class NestedJar {
 
     /**
      * Deletes the files {@code glob} matches, best effort, once they have gone {@link #STALE_AFTER}
-     * untouched: the jars of other builds of one kind ({@code server-} or {@code extension-}),
+     * untouched as of {@code now}: the jars of other builds of one kind ({@code server-} or {@code extension-}),
      * which every JVM that starts from one touches, so what goes is what no JVM has started from
      * lately, and the temporary files of extractions that never finished.
      */
-    static void pruneStale(Path dir, String glob, @Nullable Path keep) {
-        FileTime cutoff = FileTime.from(Instant.now().minus(STALE_AFTER));
+    static void pruneStale(Path dir, String glob, @Nullable Path keep, Instant now) {
+        FileTime cutoff = FileTime.from(now.minus(STALE_AFTER));
         try (DirectoryStream<Path> files = Files.newDirectoryStream(dir, glob)) {
             for (Path file : files) {
                 try {
@@ -302,7 +317,7 @@ final class NestedJar {
 
     /**
      * The Spider Sense version: the manifest's {@code Implementation-Version} of our own package,
-     * else the {@code spider-sense.properties} the build generates (the path taken from exploded
+     * else the {@value #VERSION_RESOURCE} the build generates (the path taken from exploded
      * classes, which have no manifest), else {@code dev}.
      */
     static String version() {
@@ -317,7 +332,7 @@ final class NestedJar {
     }
 
     private static @Nullable String propertiesVersion() {
-        try (InputStream in = NestedJar.class.getResourceAsStream("/spider-sense.properties")) {
+        try (InputStream in = NestedJar.class.getResourceAsStream(VERSION_RESOURCE)) {
             if (in == null) {
                 return null;
             }

@@ -152,13 +152,7 @@ public final class SpiderSenseAgent {
      * user who names extensions of their own keeps them.
      */
     static void addExtension(String path) {
-        String key = "otel.javaagent.extensions";
-        String existing = Config.propertyOrEnv(key);
-        if (existing == null) {
-            System.setProperty(key, path);
-        } else if (!existing.contains(path)) {
-            System.setProperty(key, existing + "," + path);
-        }
+        appendToList("otel.javaagent.extensions", path);
     }
 
     /**
@@ -168,13 +162,19 @@ public final class SpiderSenseAgent {
      * itself.
      */
     private static void excludeOurClassLoader() {
-        String key = "otel.javaagent.exclude-class-loaders";
-        String ours = SenseClassLoader.class.getName();
+        appendToList("otel.javaagent.exclude-class-loaders", SenseClassLoader.class.getName());
+    }
+
+    /**
+     * Adds {@code item} to the comma-separated list in {@code key}, read from the property or its
+     * environment variable, unless it is there already; an unset list becomes {@code item} alone.
+     */
+    static void appendToList(String key, String item) {
         String existing = Config.propertyOrEnv(key);
         if (existing == null) {
-            System.setProperty(key, ours);
-        } else if (!existing.contains(ours)) {
-            System.setProperty(key, existing + "," + ours);
+            System.setProperty(key, item);
+        } else if (!existing.contains(item)) {
+            System.setProperty(key, existing + "," + item);
         }
     }
 

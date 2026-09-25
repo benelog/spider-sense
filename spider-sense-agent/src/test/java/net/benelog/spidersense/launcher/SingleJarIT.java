@@ -403,7 +403,7 @@ class SingleJarIT {
     void theLaunchersDefaultsAreTheServers() throws Exception {
         Path serverJar = work.resolve("server.jar");
         try (java.util.jar.JarFile jar = new java.util.jar.JarFile(senseJar.toFile());
-                java.io.InputStream in = jar.getInputStream(jar.getEntry(NestedJar.ENTRY))) {
+                java.io.InputStream in = jar.getInputStream(jar.getEntry(NestedJar.SERVER_ENTRY))) {
             Files.copy(in, serverJar);
         }
         try (java.net.URLClassLoader loader = new java.net.URLClassLoader(

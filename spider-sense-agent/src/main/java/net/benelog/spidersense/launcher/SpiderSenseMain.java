@@ -1,7 +1,6 @@
 package net.benelog.spidersense.launcher;
 
 import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.nio.file.Path;
 
 /**
@@ -89,19 +88,13 @@ public final class SpiderSenseMain {
                 System.setProperty(JAR_PROPERTY, own.toAbsolutePath().toString());
             }
             SenseClassLoader loader = new SenseClassLoader(NestedJar.serverJar());
-            Thread current = Thread.currentThread();
-            ClassLoader previous = current.getContextClassLoader();
             try {
-                current.setContextClassLoader(loader);
-                Class<?> cli = Class.forName(CLI_CLASS, true, loader);
-                Method run = cli.getMethod("run", String[].class);
-                return (Integer) run.invoke(null, (Object) args);
+                Object exit = loader.invokeStatic(CLI_CLASS, "run", args);
+                return exit instanceof Integer code ? code : 2;
             } catch (InvocationTargetException e) {
                 Throwable cause = e.getCause() == null ? e : e.getCause();
                 System.err.println("spider-sense: " + cause);
                 return 2;
-            } finally {
-                current.setContextClassLoader(previous);
             }
         } catch (Exception | LinkageError e) {
             System.err.println("spider-sense: could not start the command line: " + e);
