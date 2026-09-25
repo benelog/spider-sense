@@ -189,8 +189,9 @@ At most 2000 characters of a statement are shown.
 The Gradle module `spider-sense-extension` is packaged as `spider-sense/extension.jar`, and is the only piece of Spider Sense that is not the stock OpenTelemetry agent.
 It exists for three things the agent cannot do: say where a slow query was issued from, say which indexes the table it read carries, and say which route of a Spider Silk application a request matched.
 
-It registers, through `META-INF/services/io.opentelemetry.sdk.autoconfigure.spi.AutoConfigurationCustomizerProvider`, a span processor that implements `io.opentelemetry.sdk.trace.internal.ExtendedSpanProcessor` and does its work in `onEnding(ReadWriteSpan)`.
+It registers, through `META-INF/services/io.opentelemetry.sdk.autoconfigure.spi.AutoConfigurationCustomizerProvider`, a span processor, `CallSiteSpanProcessor`, that implements `io.opentelemetry.sdk.trace.internal.ExtendedSpanProcessor` and applies its thresholds in `onEnding(ReadWriteSpan)`.
 That callback runs on the thread that is ending the span, before the span becomes immutable: the duration is already known and an attribute can still be set, which no ordinary `SpanProcessor` callback allows.
+The repeats are counted in `onStart`, for the reason <<stack-capture,below>>.
 
 [#stack-capture]
 === Where a query or a call was made
@@ -199,7 +200,7 @@ The span processor writes the stack of the calling thread into `code.stacktrace`
 
 The first case is a slow query.
 When the span carries a `db.system` or `db.system.name` attribute and has taken at least `spidersense.slow.query.ms`, the processor writes `Thread.currentThread().getStackTrace()` into the span attribute `code.stacktrace`.
-The environment variable `SPIDERSENSE_SLOW_QUERY_MS` sets the threshold as well.
+The environment variable `SPIDERSENSE_SLOW_QUERY_MS` sets the threshold as well, by the rule of xref:configuration.adoc[Configuration]: the property wins, and an empty one is unset, so the variable is next.
 The default is 100, the same threshold at which the server calls a query a tingle.
 The value is read once, when the processor is built.
 
@@ -262,6 +263,8 @@ The fifth repeat of a statement within a trace, which the span processor capture
 It would cost a map lookup on every statement the application runs, for the one N+1 whose predicate column has no index, and the typical N+1 filters on a primary key.
 An `n-plus-one` finding therefore carries the block only when its statement has also been slow on that table.
 `IndexCatalog` is a helper class the agent injects beside the driver (`getAdditionalHelperClassNames`), because advice runs in the application's class loader and the extension's own classes are not visible there.
+Its package, `schema`, is the helper list: `IndexCatalog`, its nested classes, and `Thresholds` with the `Settings` it reads through, which the span processor also uses in the extension's own loader, so both read the threshold one way.
+A unit test compares the list with the compiled package, because a class missing from it would be a `NoClassDefFoundError` inside the application.
 
 `IndexCatalog` takes the statement's SQL from the `execute(String …)` argument, or, for a `PreparedStatement`, from the `VirtualField<PreparedStatement, String>` the agent's JDBC instrumentation fills at prepare time.
 A statement with neither is left alone.

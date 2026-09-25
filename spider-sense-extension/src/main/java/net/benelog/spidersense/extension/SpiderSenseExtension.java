@@ -19,7 +19,7 @@ public final class SpiderSenseExtension implements AutoConfigurationCustomizerPr
     public void customize(AutoConfigurationCustomizer autoConfiguration) {
         autoConfiguration
                 .addTracerProviderCustomizer(
-                        (builder, config) -> builder.addSpanProcessor(new SlowQuerySpanProcessor()))
+                        (builder, config) -> builder.addSpanProcessor(new CallSiteSpanProcessor()))
                 .addSamplerCustomizer((sampler, config) -> new SchemaLookupSampler(sampler));
     }
 }

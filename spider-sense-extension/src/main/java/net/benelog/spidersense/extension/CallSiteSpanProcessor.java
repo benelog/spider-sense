@@ -23,15 +23,17 @@ import java.util.regex.Pattern;
  * query came from, so a {@code slow-query} or {@code n-plus-one} finding could name a statement but
  * never a line ({@code findings.adoc#code}). This is the one thing Spider Sense collects itself.
  *
- * <p>The work happens in {@link #onEnding(ReadWriteSpan)}, which the SDK calls on the thread that is
- * ending the span while the span is still writable: the duration is already known, so the threshold
- * can be applied, and an attribute can still be set. {@code onStart} and {@code onEnd} are not
- * wanted, and neither is an exception: a missing code location is never worth a broken span.
+ * <p>The work is split between two callbacks, and {@code onEnd} is not wanted, because by then the
+ * span is immutable. The thresholds are applied in {@link #onEnding(ReadWriteSpan)}, which the SDK
+ * calls on the thread that is ending the span while the span is still writable: the duration is
+ * already known, and an attribute can still be set. The repeats are counted and captured in
+ * {@link #onStart(Context, ReadWriteSpan)}, while the thread is still the one that made the call.
+ * Neither callback lets an exception out: a missing code location is never worth a broken span.
  *
  * <p>The individual queries of an N+1 are fast, so the threshold would never fire on them. For
- * those, the processor counts per thread how many database spans of the current trace have ended
- * with the same statement, and captures the stack once, on the fifth repeat: the same number that
- * makes a query group an N+1 on the server ({@code design.adoc#extension}).
+ * those, the processor counts per trace how many database spans of it have started with the same
+ * statement, and captures the stack once, on the fifth repeat: the same number that makes a query
+ * group an N+1 on the server ({@code design.adoc#extension}).
  *
  * <p>The third case is a slow outbound call: a {@code CLIENT} span that is not a database span and
  * took at least {@code spidersense.slow.request.ms}, so a {@code slow-external} finding names the
@@ -41,7 +43,7 @@ import java.util.regex.Pattern;
  * counted per trace under its name and its URL with the digits replaced, and the fifth repeat gets
  * the stack, so an {@code n-plus-one-http} finding names the loop rather than only the host.
  */
-public final class SlowQuerySpanProcessor implements ExtendedSpanProcessor {
+public final class CallSiteSpanProcessor implements ExtendedSpanProcessor {
 
     /** Where the frames go; read back by the server's {@code CodeFrames}. */
     static final AttributeKey<String> CODE_STACKTRACE = AttributeKey.stringKey("code.stacktrace");
@@ -103,15 +105,15 @@ public final class SlowQuerySpanProcessor implements ExtendedSpanProcessor {
      * The configured thresholds, the ones the server reports at ({@link Thresholds}), read once:
      * this runs on every span that ends.
      */
-    public SlowQuerySpanProcessor() {
+    public CallSiteSpanProcessor() {
         this(Thresholds.slowQueryMillis(), Thresholds.slowRequestMillis());
     }
 
-    SlowQuerySpanProcessor(long thresholdMillis) {
+    CallSiteSpanProcessor(long thresholdMillis) {
         this(thresholdMillis, Thresholds.DEFAULT_SLOW_REQUEST_MS);
     }
 
-    SlowQuerySpanProcessor(long thresholdMillis, long requestThresholdMillis) {
+    CallSiteSpanProcessor(long thresholdMillis, long requestThresholdMillis) {
         this.thresholdNanos = TimeUnit.MILLISECONDS.toNanos(Math.max(0, thresholdMillis));
         this.requestThresholdNanos =
                 TimeUnit.MILLISECONDS.toNanos(Math.max(0, requestThresholdMillis));
@@ -321,7 +323,7 @@ public final class SlowQuerySpanProcessor implements ExtendedSpanProcessor {
         return out.toString();
     }
 
-    private static final String OWN_CLASS = SlowQuerySpanProcessor.class.getName();
+    private static final String OWN_CLASS = CallSiteSpanProcessor.class.getName();
 
     private static boolean isPlumbing(StackTraceElement frame) {
         String className = frame.getClassName();

@@ -24,7 +24,7 @@ import org.junit.jupiter.api.Test;
  * {@code onEnding} is part of the test, because the whole point is that the callback runs while the
  * span is still writable.
  */
-class SlowQuerySpanProcessorTest {
+class CallSiteSpanProcessorTest {
 
     /** Small enough that a test can sleep past it, large enough that a fast span stays under it. */
     private static final long THRESHOLD_MS = 50;
@@ -35,12 +35,12 @@ class SlowQuerySpanProcessorTest {
     private InMemorySpanExporter exporter;
     private SdkTracerProvider tracerProvider;
     private Tracer tracer;
-    private SlowQuerySpanProcessor processor;
+    private CallSiteSpanProcessor processor;
 
     @BeforeEach
     void start() {
         exporter = InMemorySpanExporter.create();
-        processor = new SlowQuerySpanProcessor(THRESHOLD_MS, THRESHOLD_MS);
+        processor = new CallSiteSpanProcessor(THRESHOLD_MS, THRESHOLD_MS);
         tracerProvider = SdkTracerProvider.builder()
                 .addSpanProcessor(processor)
                 .addSpanProcessor(SimpleSpanProcessor.create(exporter))
@@ -59,16 +59,16 @@ class SlowQuerySpanProcessorTest {
         sleep(THRESHOLD_MS * 2);
         span.end();
 
-        String stacktrace = exported().getAttributes().get(SlowQuerySpanProcessor.CODE_STACKTRACE);
+        String stacktrace = exported().getAttributes().get(CallSiteSpanProcessor.CODE_STACKTRACE);
         assertThat(stacktrace).as("code.stacktrace").isNotNull();
         String first = LINES.split(stacktrace, 2)[0];
         assertThat(first)
                 .as("the frames start where the query was issued, not inside the SDK")
                 .startsWith("\tat ")
-                .contains("SlowQuerySpanProcessorTest.aSlowDatabaseSpanCarriesTheStackItWasIssuedFrom");
+                .contains("CallSiteSpanProcessorTest.aSlowDatabaseSpanCarriesTheStackItWasIssuedFrom");
         assertThat(LINES.split(stacktrace))
                 .allMatch(line -> line.startsWith("\tat "))
-                .hasSizeLessThanOrEqualTo(SlowQuerySpanProcessor.MAX_FRAMES);
+                .hasSizeLessThanOrEqualTo(CallSiteSpanProcessor.MAX_FRAMES);
     }
 
     @Test
@@ -77,7 +77,7 @@ class SlowQuerySpanProcessorTest {
         sleep(THRESHOLD_MS * 2);
         span.end();
 
-        assertThat(exported().getAttributes().get(SlowQuerySpanProcessor.CODE_STACKTRACE)).isNotNull();
+        assertThat(exported().getAttributes().get(CallSiteSpanProcessor.CODE_STACKTRACE)).isNotNull();
     }
 
     @Test
@@ -85,7 +85,7 @@ class SlowQuerySpanProcessorTest {
         Span span = tracer.spanBuilder("SELECT books").setAttribute("db.system", "h2").startSpan();
         span.end();
 
-        assertThat(exported().getAttributes().get(SlowQuerySpanProcessor.CODE_STACKTRACE)).isNull();
+        assertThat(exported().getAttributes().get(CallSiteSpanProcessor.CODE_STACKTRACE)).isNull();
     }
 
     @Test
@@ -94,7 +94,7 @@ class SlowQuerySpanProcessorTest {
         sleep(THRESHOLD_MS * 2);
         span.end();
 
-        assertThat(exported().getAttributes().get(SlowQuerySpanProcessor.CODE_STACKTRACE)).isNull();
+        assertThat(exported().getAttributes().get(CallSiteSpanProcessor.CODE_STACKTRACE)).isNull();
     }
 
     @Test
@@ -107,10 +107,10 @@ class SlowQuerySpanProcessorTest {
         sleep(THRESHOLD_MS * 2);
         span.end();
 
-        String stacktrace = exported().getAttributes().get(SlowQuerySpanProcessor.CODE_STACKTRACE);
+        String stacktrace = exported().getAttributes().get(CallSiteSpanProcessor.CODE_STACKTRACE);
         assertThat(stacktrace).as("code.stacktrace").isNotNull();
         assertThat(LINES.split(stacktrace, 2)[0])
-                .contains("SlowQuerySpanProcessorTest.aSlowOutboundCallCarriesTheStackItWasMadeFrom");
+                .contains("CallSiteSpanProcessorTest.aSlowOutboundCallCarriesTheStackItWasMadeFrom");
     }
 
     @Test
@@ -121,7 +121,7 @@ class SlowQuerySpanProcessorTest {
                 .startSpan();
         span.end();
 
-        assertThat(exported().getAttributes().get(SlowQuerySpanProcessor.CODE_STACKTRACE)).isNull();
+        assertThat(exported().getAttributes().get(CallSiteSpanProcessor.CODE_STACKTRACE)).isNull();
     }
 
     @Test
@@ -143,8 +143,8 @@ class SlowQuerySpanProcessorTest {
     void theFramesOfTheSdkAndOfOurselvesAreDroppedFromTheTop() {
         StackTraceElement[] frames = {
                 new StackTraceElement("java.lang.Thread", "getStackTrace", "Thread.java", 1),
-                new StackTraceElement("net.benelog.spidersense.extension.SlowQuerySpanProcessor",
-                        "onEnding", "SlowQuerySpanProcessor.java", 2),
+                new StackTraceElement("net.benelog.spidersense.extension.CallSiteSpanProcessor",
+                        "onEnding", "CallSiteSpanProcessor.java", 2),
                 new StackTraceElement("io.opentelemetry.sdk.trace.SdkSpan", "end", "SdkSpan.java", 3),
                 new StackTraceElement("org.h2.jdbc.JdbcPreparedStatement", "executeQuery",
                         "JdbcPreparedStatement.java", 4),
@@ -152,7 +152,7 @@ class SlowQuerySpanProcessorTest {
                 new StackTraceElement("io.opentelemetry.NotLeading", "run", "NotLeading.java", 6),
         };
 
-        assertThat(SlowQuerySpanProcessor.format(frames)).isEqualTo("""
+        assertThat(CallSiteSpanProcessor.format(frames)).isEqualTo("""
                 \tat org.h2.jdbc.JdbcPreparedStatement.executeQuery(JdbcPreparedStatement.java:4)
                 \tat orders.OrderRepository.load(OrderRepository.java:5)
                 \tat io.opentelemetry.NotLeading.run(NotLeading.java:6)
@@ -166,8 +166,8 @@ class SlowQuerySpanProcessorTest {
             frames[i] = new StackTraceElement("orders.Frame" + i, "run", "Frame.java", i);
         }
 
-        assertThat(LINES.split(SlowQuerySpanProcessor.format(frames)))
-                .hasSize(SlowQuerySpanProcessor.MAX_FRAMES);
+        assertThat(LINES.split(CallSiteSpanProcessor.format(frames)))
+                .hasSize(CallSiteSpanProcessor.MAX_FRAMES);
     }
 
 
@@ -181,13 +181,13 @@ class SlowQuerySpanProcessorTest {
 
         List<SpanData> repeats = exportedQueries();
         assertThat(repeats).hasSize(6);
-        for (int i = 0; i < SlowQuerySpanProcessor.N_PLUS_ONE_REPEATS - 1; i++) {
+        for (int i = 0; i < CallSiteSpanProcessor.N_PLUS_ONE_REPEATS - 1; i++) {
             assertThat(stacktraceOf(repeats.get(i))).as("repeat " + (i + 1)).isNull();
         }
         assertThat(stacktraceOf(repeats.get(4)))
                 .as("the fifth repeat is where the N+1 gets its line")
                 .isNotNull()
-                .contains("SlowQuerySpanProcessorTest");
+                .contains("CallSiteSpanProcessorTest");
         assertThat(stacktraceOf(repeats.get(5)))
                 .as("one capture per statement per trace, not one per repeat")
                 .isNull();
@@ -267,7 +267,7 @@ class SlowQuerySpanProcessorTest {
     @Test
     void beyondTheStatementLimitTheCounterGivesUpQuietly() {
         inOneTrace(() -> {
-            for (int i = 0; i < SlowQuerySpanProcessor.MAX_STATEMENTS; i++) {
+            for (int i = 0; i < CallSiteSpanProcessor.MAX_STATEMENTS; i++) {
                 query("select * from table_" + i + " where id = ?");
             }
             for (int i = 0; i < 6; i++) {
@@ -276,7 +276,7 @@ class SlowQuerySpanProcessorTest {
         });
 
         List<SpanData> repeats = exportedQueries();
-        assertThat(repeats).hasSize(SlowQuerySpanProcessor.MAX_STATEMENTS + 6);
+        assertThat(repeats).hasSize(CallSiteSpanProcessor.MAX_STATEMENTS + 6);
         assertThat(repeats).allSatisfy(span -> assertThat(stacktraceOf(span))
                 .as("the 257th statement is not counted, and nothing throws")
                 .isNull());
@@ -292,13 +292,13 @@ class SlowQuerySpanProcessorTest {
 
         List<SpanData> repeats = exportedCalls();
         assertThat(repeats).hasSize(6);
-        for (int i = 0; i < SlowQuerySpanProcessor.N_PLUS_ONE_REPEATS - 1; i++) {
+        for (int i = 0; i < CallSiteSpanProcessor.N_PLUS_ONE_REPEATS - 1; i++) {
             assertThat(stacktraceOf(repeats.get(i))).as("repeat " + (i + 1)).isNull();
         }
         assertThat(stacktraceOf(repeats.get(4)))
                 .as("the digits are what the loop varies, so six URLs are one call")
                 .isNotNull()
-                .contains("SlowQuerySpanProcessorTest");
+                .contains("CallSiteSpanProcessorTest");
         assertThat(stacktraceOf(repeats.get(5)))
                 .as("one capture per call per trace, not one per repeat")
                 .isNull();
@@ -373,7 +373,7 @@ class SlowQuerySpanProcessorTest {
 
         List<SpanData> repeats = exportedCalls();
         assertThat(repeats).hasSize(6);
-        for (int i = 0; i < SlowQuerySpanProcessor.N_PLUS_ONE_REPEATS - 1; i++) {
+        for (int i = 0; i < CallSiteSpanProcessor.N_PLUS_ONE_REPEATS - 1; i++) {
             assertThat(stacktraceOf(repeats.get(i))).as("repeat " + (i + 1)).isNull();
         }
         assertThat(stacktraceOf(repeats.get(4)))
@@ -406,7 +406,7 @@ class SlowQuerySpanProcessorTest {
         assertThat(stacktrace).isNotNull();
         assertThat(stacktrace)
                 .as("the call site, which only the starting thread knows")
-                .contains("SlowQuerySpanProcessorTest.theStackIsTheThreadThatMadeTheCallNotTheOneThatEndedIt");
+                .contains("CallSiteSpanProcessorTest.theStackIsTheThreadThatMadeTheCallNotTheOneThatEndedIt");
     }
 
     @Test
@@ -462,7 +462,7 @@ class SlowQuerySpanProcessorTest {
     }
 
     private static String stacktraceOf(SpanData span) {
-        return span.getAttributes().get(SlowQuerySpanProcessor.CODE_STACKTRACE);
+        return span.getAttributes().get(CallSiteSpanProcessor.CODE_STACKTRACE);
     }
 
     /** One entry span, so everything started inside it shares its trace id. */

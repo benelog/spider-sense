@@ -82,7 +82,7 @@ public final class IndexCatalog {
      * Read once, at class initialisation: this sits on the path of every statement the application
      * runs, and the value cannot change while it runs.
      *
-     * <p>{@code SlowQuerySpanProcessor} reads the same {@link Thresholds}, which is injected beside
+     * <p>{@code CallSiteSpanProcessor} reads the same {@link Thresholds}, which is injected beside
      * this class, so the stack and the catalog of one statement are captured at one threshold.
      */
     private static final long THRESHOLD_NANOS =
