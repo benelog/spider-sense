@@ -62,7 +62,6 @@ export function render(root, ctx) {
   };
   let rows = [];
   let total = 0;
-  let loading = false;
   let destroyed = false;
   const latest = api.requestSequence();
   const latestEndpoints = api.requestSequence();
@@ -116,7 +115,7 @@ export function render(root, ctx) {
 
   function paint() {
     countLabel.textContent = rows.length ? count(rows.length) + ' of ' + count(total) : '';
-    if (!rows.length && !loading) {
+    if (!rows.length) {
       const hasFilter = filter.q || filter.minMs || filter.maxMs || filter.status !== 'all' || filter.endpointId;
       tableNode = null;
       fill(body, hasFilter || (api.state.status && api.state.status.counts && api.state.status.counts.traces)
@@ -152,7 +151,6 @@ export function render(root, ctx) {
   /** `cursor` is the last row's `{ before: start, beforeId: traceId }` when loading more. */
   async function load(cursor) {
     const current = latest();
-    loading = true;
     try {
       const res = await api.traces({
         q: filter.q,
@@ -176,8 +174,6 @@ export function render(root, ctx) {
       paint();
     } catch (e) {
       if (!destroyed && current()) fill(body, errorBox(e, () => load()));
-    } finally {
-      if (current()) loading = false;
     }
   }
 

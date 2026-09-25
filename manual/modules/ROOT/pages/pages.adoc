@@ -272,6 +272,8 @@ The query bar takes free text (`q`), a duration range (`minMs` and `maxMs`, two 
 Enter applies the query, and so does a 400 ms pause in typing.
 The table gives the time, the root name in bold with the service chips, the duration with a bar proportional to the slowest row and coloured by slow or error, the span count, the DB calls, the status code, and the error and slow markers.
 The rows are newest first, with *Load more* under the table, which pages with the last row's `before` and `beforeId`.
+When no trace has been stored at all (`/api/status.counts.traces` is `0`) and no filter is set, the page shows the usual sentence and the snippet instead of the table.
+A filter or a window that matches nothing leaves the table, with one row that says so.
 
 [#trace-header]
 === The header
