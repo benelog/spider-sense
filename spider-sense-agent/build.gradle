@@ -198,6 +198,8 @@ tasks.register('integrationTest', Test) {
     classpath = sourceSets.test.runtimeClasspath
     useJUnitPlatform { includeTags 'integration' }
     dependsOn senseJar
+    // The jar is an input, so a rebuilt jar reruns the tests; the path alone would not.
+    inputs.file(senseJar.map { it.archiveFile }).withPropertyName('senseJar')
     systemProperty 'spidersense.it.jar', senseJar.get().archiveFile.get().asFile.absolutePath
     systemProperty 'spidersense.it.testClasses', sourceSets.test.output.classesDirs.asPath
     // SampleApp runs an H2 statement when asked to, so the packaged extension has a database span
