@@ -354,6 +354,9 @@ class ExportImportTest {
                             .add(Json.obj().put("atMs", NOW + 60).put("name", "before")))
                     .toJson();
             assertThat(postJson(client, "/api/import", document).statusCode()).isEqualTo(200);
+            // Before any flush of the running service could put its own pid back.
+            assertThat(rows(client, "SELECT pid FROM service WHERE name = 'spring-orders'"))
+                    .as("the stored pid, not the file's").isEqualTo(100);
             postProtobuf(client, "/v1/traces", Otlp.traces(
                     Otlp.resource(Otlp.attr("service.name", "spring-orders"), Otlp.attr("process.pid", 100)),
                     Otlp.span(FAILING_TRACE, ROOT, "GET /orders", Span.SpanKind.SPAN_KIND_SERVER, NOW + 100, 5))

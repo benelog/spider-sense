@@ -484,6 +484,26 @@ class QueriesTest {
                 .containsExactly(spanId(1), spanId(0x10), spanId(0x20));
     }
 
+    /**
+     * Three rows read in trace id order sort the same with or without the tie-break; enough tied
+     * rows that H2's partial sort for the LIMIT reorders them do not, and the tie-break is what
+     * keeps a finding's evidence traces the lowest ids.
+     */
+    @Test
+    void manyTracesTiedOnTheOrderingColumnAreCutByTheirId() {
+        for (int n = 40; n >= 1; n--) {
+            decoder.accept(Otlp.traces(Otlp.service("orders"),
+                    Otlp.span(traceId(n), spanId(n), "GET /orders", Span.SpanKind.SPAN_KIND_SERVER, NOW, 5)));
+        }
+        flush();
+
+        List<String> lowest = List.of(traceId(1), traceId(2), traceId(3));
+        assertThat(queries.tracesContaining(window, "name = ?", List.of("GET /orders"), 3, true))
+                .extracting(Stats.TraceSummary::traceId).containsExactlyElementsOf(lowest);
+        assertThat(queries.tracesContaining(window, "name = ?", List.of("GET /orders"), 3, false))
+                .extracting(Stats.TraceSummary::traceId).containsExactlyElementsOf(lowest);
+    }
+
     @Test
     void logsWrittenInTheSameMillisecondPageByTheirId() {
         io.opentelemetry.proto.logs.v1.LogRecord[] burst = new io.opentelemetry.proto.logs.v1.LogRecord[5];

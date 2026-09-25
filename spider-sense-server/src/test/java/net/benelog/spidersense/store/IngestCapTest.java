@@ -68,6 +68,11 @@ class IngestCapTest {
                 .isTrue();
     }
 
+    /**
+     * Twice as many dropped traces as either window holds: the accepted traces are still
+     * accepted, the recent drops are still dropped in the next second, and only the oldest
+     * drops, which fell out of their own window, are decided afresh.
+     */
     @Test
     void aBurstOfDroppedTracesDoesNotPushOutTheAcceptedOnes() {
         for (int n = 1; n <= 10; n++) {
@@ -80,6 +85,14 @@ class IngestCapTest {
         for (int n = 1; n <= 10; n++) {
             assertThat(cap.accept(traceId(n))).as("trace " + n + " is still being stored").isTrue();
         }
+
+        clock.addAndGet(1000);
+
+        for (int n = 10_011; n <= 20_010; n += 999) {
+            assertThat(cap.accept(traceId(n))).as("trace " + n + " is within the dropped window")
+                    .isFalse();
+        }
+        assertThat(cap.accept(traceId(11))).as("the oldest drop fell out of the window").isTrue();
     }
 
     @Test

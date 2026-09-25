@@ -306,6 +306,51 @@ class SingleJarIT {
         return frames;
     }
 
+    /**
+     * A port held by something that is not a Spider Sense: the application starts, the agent says
+     * so in one line, and nothing is exported there, where it would fail on every interval.
+     */
+    @Test
+    void aPortHeldByAForeignServerExportsNothingAndSaysSoOnce() throws Exception {
+        List<String> requests = java.util.Collections.synchronizedList(new ArrayList<>());
+        com.sun.net.httpserver.HttpServer foreign = com.sun.net.httpserver.HttpServer.create(
+                new java.net.InetSocketAddress(java.net.InetAddress.getLoopbackAddress(), 0), 0);
+        foreign.createContext("/", exchange -> {
+            requests.add(exchange.getRequestMethod() + " " + exchange.getRequestURI().getPath());
+            exchange.getRequestBody().readAllBytes();
+            byte[] body = "<html>some other server</html>".getBytes(UTF_8);
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        foreign.start();
+        int port = foreign.getAddress().getPort();
+        Path log = work.resolve("foreign-port.log");
+        try {
+            Process app = start(log,
+                    javaBinary.toString(),
+                    "-javaagent:" + senseJar,
+                    "-Dspidersense.port=" + port,
+                    "-Dspidersense.db=" + throwawayDatabase(),
+                    "-Dotel.service.name=sample",
+                    "-cp", testClasses,
+                    "net.benelog.spidersense.launcher.SampleApp");
+            if (!app.waitFor(60, TimeUnit.SECONDS)) {
+                app.destroyForcibly();
+                throw new AssertionError("the sample did not finish\n--- output ---\n" + read(log));
+            }
+            String output = read(log);
+
+            assertThat(output).as(output).contains("sample: done");
+            assertThat(requests).as("only the probe reached the port, no export").isNotEmpty()
+                    .allMatch(request -> request.equals("GET /api/status"));
+            assertThat(output.split("is held by something that is not Spider Sense", -1))
+                    .as("one line saying so\n" + output).hasSize(2);
+        } finally {
+            foreign.stop(0);
+        }
+    }
+
     // --- standalone mode ----------------------------------------------------------------------
 
     @Test
@@ -331,6 +376,19 @@ class SingleJarIT {
                 server.destroyForcibly();
             }
         }
+    }
+
+    /** A malformed or unknown option to the standalone jar is one usage line and exit 2, not a stack trace. */
+    @Test
+    void aMalformedOptionToTheStandaloneJarIsAUsageError() throws Exception {
+        Command malformed = cli("--slow.query.ms=1x");
+        assertThat(malformed.exit()).isEqualTo(2);
+        assertThat(malformed.err()).isEqualTo("spider-sense: --slow.query.ms is not a number: 1x\n");
+        assertThat(malformed.out()).isEmpty();
+
+        Command unknown = cli("--prot=4001");
+        assertThat(unknown.exit()).isEqualTo(2);
+        assertThat(unknown.err()).startsWith("spider-sense: unknown option: --prot");
     }
 
     // --- the command line ---------------------------------------------------------------------
