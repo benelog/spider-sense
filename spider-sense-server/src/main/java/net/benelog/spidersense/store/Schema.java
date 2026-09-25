@@ -208,16 +208,6 @@ public final class Schema {
             )""",
     };
 
-    /**
-     * The tables the data lives in, in the order they must be emptied.
-     *
-     * <p>{@code ack} is in this list and in none of the sweeper's: an
-     * acknowledgement is not swept by time, since a known finding stays known, but
-     * {@code DELETE /api/data} empties it with everything else (storage.adoc).
-     */
-    static final String[] DATA_TABLES =
-            {"span", "trace", "log", "metric_point", "tingle", "mark", "ack", "db_table"};
-
     /** What an open does with a database of another schema version, or of none. */
     enum OnOtherVersion {
 
@@ -274,9 +264,8 @@ public final class Schema {
                     + " (it recreates the tables), or point --db at another file");
         }
         if (stored != null && stored != VERSION) {
-            for (String table : new String[]{"span", "trace", "log", "metric_point", "metric_series",
-                    "metric", "tingle", "mark", "ack", "db_table", "service"}) {
-                sql.execute("DROP TABLE IF EXISTS " + table);
+            for (Table table : Table.values()) {
+                sql.execute("DROP TABLE IF EXISTS " + table.sqlName());
             }
         }
         sql.execute(TABLES);

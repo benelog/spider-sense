@@ -49,38 +49,6 @@ public final class Sweeper implements AutoCloseable {
     private static final int MAX_PASSES = 48;
 
     /**
-     * The time column each table is swept by.
-     *
-     * <p>{@code db_table} is in it because a catalog older than the retention
-     * describes a run no window can show any more (storage.adoc#retention): its indexes are
-     * those of a schema that may since have changed.
-     */
-    private static final List<TimedTable> SWEPT_BY_AGE = List.of(
-            new TimedTable("span", "start_ms"), new TimedTable("trace", "start_ms"),
-            new TimedTable("log", "at_ms"), new TimedTable("metric_point", "at_ms"),
-            new TimedTable("tingle", "at_ms"), new TimedTable("db_table", "seen_ms"));
-
-    /**
-     * What the span cap deletes: everything the window shows, marks and catalog
-     * rows excepted. A mark is a name a person gave a moment and is a row of
-     * nothing, and a catalog row is one row per table; both go by the time
-     * retention alone.
-     */
-    private static final List<TimedTable> SWEPT_BY_CAP = List.of(
-            new TimedTable("span", "start_ms"), new TimedTable("trace", "start_ms"),
-            new TimedTable("log", "at_ms"), new TimedTable("metric_point", "at_ms"),
-            new TimedTable("tingle", "at_ms"));
-
-    /** A table and the time column its rows are swept by. */
-    private record TimedTable(String table, String timeColumn) {
-
-        /** Deletes the rows older than {@code cutoff}, returning how many. */
-        int deleteBefore(Sql sql, long cutoff) {
-            return sql.update("DELETE FROM " + table + " WHERE " + timeColumn + " < ?", List.of(cutoff));
-        }
-    }
-
-    /**
      * Deletes the series rows with no point left, without racing a writer.
      *
      * <p>A writer, in this process or another sharing the file, may be adding the
@@ -176,13 +144,11 @@ public final class Sweeper implements AutoCloseable {
     public int sweep() {
         long cutoff = clock.getAsLong() - retentionHours * HOUR_MS;
         int deleted = 0;
-        for (TimedTable table : SWEPT_BY_AGE) {
-            deleted += table.deleteBefore(sql, cutoff);
+        for (Table table : Table.values()) {
+            if (table.sweptByAge()) {
+                deleted += sql.update(table.deleteOlder(), List.of(cutoff));
+            }
         }
-        // Every mark by age, except each service's newest start, which since=start
-        // needs for as long as that process runs.
-        deleted += sql.update("DELETE FROM mark o WHERE o.at_ms < ? AND " + Marks.NOT_NEWEST_START,
-                List.of(cutoff));
         deleted += deleteOrphanSeries(sql);
         deleted += sweepToCap();
         return deleted;
@@ -211,8 +177,10 @@ public final class Sweeper implements AutoCloseable {
             }
             long cutoff = oldest + HOUR_MS;
             int pruned = 0;
-            for (TimedTable table : SWEPT_BY_CAP) {
-                pruned += table.deleteBefore(sql, cutoff);
+            for (Table table : Table.values()) {
+                if (table.cappedBySpans()) {
+                    pruned += sql.update(table.deleteOlder(), List.of(cutoff));
+                }
             }
             if (pruned == 0) {
                 break;

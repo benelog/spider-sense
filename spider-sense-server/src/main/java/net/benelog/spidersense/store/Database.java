@@ -388,12 +388,11 @@ public final class Database implements AutoCloseable {
         // Work always answers with something; there is nothing to answer with here.
         Boolean unused = sql.transaction(connection -> {
             try (Statement statement = connection.createStatement()) {
-                for (String table : Schema.DATA_TABLES) {
-                    statement.executeUpdate(switch (table) {
-                        case "mark" -> "DELETE FROM mark o WHERE " + Marks.NOT_NEWEST_START;
-                        case "trace" -> "DELETE FROM trace WHERE trace_id NOT IN (SELECT trace_id FROM span)";
-                        default -> "DELETE FROM " + table;
-                    });
+                for (Table table : Table.values()) {
+                    String clear = table.clear();
+                    if (clear != null) {
+                        statement.executeUpdate(clear);
+                    }
                 }
             }
             Sweeper.deleteOrphanSeries(connection);
