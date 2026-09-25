@@ -47,4 +47,21 @@ class WindowTest {
         assertThat(window.indexOf(window.alignedFrom() - 1)).isEqualTo(-1);
         assertThat(window.indexOf(window.to() + 10 * window.bucketMs())).isEqualTo(-1);
     }
+
+    @Test
+    void aSqlBucketNumberMapsToTheSlotItsInstantMapsTo() {
+        Window window = Window.of(1_700_000_007_000L, 1_700_000_007_000L + 15 * 60_000L);
+
+        assertThat(window.bucketExpression()).isEqualTo("start_ms / 15000");
+        for (long at : new long[]{window.from(), window.alignedFrom(), window.from() + 123_456, window.to()}) {
+            // What H2 computes for start_ms / 15000 over a positive start.
+            long bucketNumber = at / window.bucketMs();
+            assertThat(window.slotOf(bucketNumber)).isEqualTo(window.indexOf(at));
+        }
+        long first = window.alignedFrom() / window.bucketMs();
+        assertThat(window.slotOf(first)).isZero();
+        assertThat(window.slotOf(first - 1)).isEqualTo(-1);
+        assertThat(window.slotOf(first + window.bucketCount() - 1)).isEqualTo(window.bucketCount() - 1);
+        assertThat(window.slotOf(first + window.bucketCount())).isEqualTo(-1);
+    }
 }

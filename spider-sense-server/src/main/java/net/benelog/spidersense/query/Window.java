@@ -79,6 +79,23 @@ public record Window(long from, long to, long bucketMs) {
         return starts;
     }
 
+    /**
+     * The SQL that numbers the bucket a span starts in, to group by and to hand back
+     * to {@link #slotOf}: the width is the window's own, so it is written as a literal.
+     */
+    public String bucketExpression() {
+        return "start_ms / " + bucketMs;
+    }
+
+    /**
+     * The index into {@link #bucketStarts} of a bucket numbered by
+     * {@link #bucketExpression}, or -1 when it falls outside the window.
+     */
+    public int slotOf(long bucketNumber) {
+        long slot = bucketNumber - alignedFrom() / bucketMs;
+        return slot >= 0 && slot < bucketCount() ? (int) slot : -1;
+    }
+
     /** The bucket an instant falls in, or -1 when it falls outside the window. */
     public int indexOf(long at) {
         long offset = at - alignedFrom();

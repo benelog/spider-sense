@@ -78,8 +78,6 @@ public final class Findings {
      * are the finding's own {@code traces} (findings.adoc#time).
      */
     private static final int SAMPLE_TRACES = 20;
-    /** How many candidate traces one read of their spans names in its {@code IN} list. */
-    private static final int CANDIDATE_CHUNK = 1_000;
     private static final int GROUPS = 100;
 
     /** How many {@code (service, previous run, kind)} id sets a server keeps (findings.adoc#state). */
@@ -730,20 +728,18 @@ public final class Findings {
      */
     private List<Ranked> logErrors(Window window, @Nullable String service, Reads reads,
             boolean evidence) {
-        List<Object> params = new ArrayList<>(List.of(window.from(), window.to()));
-        String where = "l.at_ms BETWEEN ? AND ? AND l.severity_number >= " + ERROR_SEVERITY
-                + " AND (t.trace_id IS NULL OR t.error_count = 0)";
+        Where where = new Where("l.at_ms BETWEEN ? AND ? AND l.severity_number >= " + ERROR_SEVERITY
+                + " AND (t.trace_id IS NULL OR t.error_count = 0)", window.from(), window.to());
         if (service != null) {
-            where = where + " AND l.service = ?";
-            params.add(service);
+            where = where.and("l.service = ?", service);
         }
         Map<String, LogGroup> byGroup = new LinkedHashMap<>();
         sql.forEach("SELECT l.service AS service, l.logger AS logger, l.body AS body, l.at_ms AS at_ms,"
                 + " l.trace_id AS trace_id, l.span_id AS span_id,"
                 + (evidence ? " l.attributes AS attributes," : "")
                 + " t.root_name AS root_name FROM log l"
-                + " LEFT JOIN trace t ON t.trace_id = l.trace_id WHERE " + where
-                + " ORDER BY l.at_ms, l.id", params, rs -> {
+                + " LEFT JOIN trace t ON t.trace_id = l.trace_id WHERE " + where.sql()
+                + " ORDER BY l.at_ms, l.id", where.params(), rs -> {
                     String serviceName = rs.getString("service");
                     String logger = logger(rs.getString("logger"));
                     String message = Ids.normaliseMessage(rs.getString("body"));
@@ -844,23 +840,11 @@ public final class Findings {
 
         Queries.Ancestry ancestry = reads.ancestry();
         List<Repeats.Occurrence<StatementRun>> occurrences = new ArrayList<>();
-        List<String> traceList = List.copyOf(traceIds);
-        for (int from = 0; from < traceList.size(); from += CANDIDATE_CHUNK) {
-            List<String> chunk = traceList.subList(from, Math.min(from + CANDIDATE_CHUNK, traceList.size()));
-            List<Object> params = new ArrayList<>();
-            params.add(window.from());
-            params.add(window.to());
-            params.addAll(chunk);
-            params.addAll(queryIds);
-            String where = "start_ms BETWEEN ? AND ? AND trace_id IN (" + Sql.placeholders(chunk.size())
-                    + ") AND query_id IN (" + Sql.placeholders(queryIds.size()) + ")";
-            if (service != null) {
-                where = where + " AND service = ?";
-                params.add(service);
-            }
+        for (List<String> chunk : Sql.chunks(List.copyOf(traceIds))) {
+            Where where = Where.window(window, service).andIn("trace_id", chunk).andIn("query_id", queryIds);
             sql.forEach("SELECT span_id, trace_id, query_id, service, start_ms, duration_ns, db_statement,"
-                    + " db_operation, db_table, attributes FROM span WHERE " + where
-                    + " ORDER BY start_ms, span_id", params, rs -> {
+                    + " db_operation, db_table, attributes FROM span WHERE " + where.sql()
+                    + " ORDER BY start_ms, span_id", where.params(), rs -> {
                         String traceId = rs.getString("trace_id");
                         String queryId = rs.getString("query_id");
                         if (!pairs.contains(traceId + "\0" + queryId)) {
@@ -937,18 +921,13 @@ public final class Findings {
     }
 
     private List<String[]> candidates(Window window, @Nullable String service) {
-        List<Object> params = new ArrayList<>(List.of(window.from(), window.to()));
-        String where = "start_ms BETWEEN ? AND ? AND query_id IS NOT NULL";
-        if (service != null) {
-            where = where + " AND service = ?";
-            params.add(service);
-        }
+        Where where = Where.window(window, service).and("query_id IS NOT NULL");
         // Every pair of the window, not the most repeated few: affected and requests
         // must count the same population (findings.adoc#n-plus-one).
-        return sql.query("SELECT trace_id, query_id FROM span WHERE " + where
+        return sql.query("SELECT trace_id, query_id FROM span WHERE " + where.sql()
                         + " GROUP BY trace_id, query_id HAVING COUNT(*) >= " + Repeats.MIN_REPEATS
                         + " ORDER BY trace_id, query_id",
-                params, rs -> new String[]{rs.getString("trace_id"), rs.getString("query_id")});
+                where.params(), rs -> new String[]{rs.getString("trace_id"), rs.getString("query_id")});
     }
 
     /**
@@ -961,13 +940,8 @@ public final class Findings {
     }
 
     private long requests(Window window, @Nullable String service, String endpointId) {
-        List<Object> params = new ArrayList<>(List.of(window.from(), window.to(), endpointId));
-        String where = "start_ms BETWEEN ? AND ? AND entry AND endpoint_id = ?";
-        if (service != null) {
-            where = where + " AND service = ?";
-            params.add(service);
-        }
-        return sql.count("SELECT COUNT(*) FROM span WHERE " + where, params);
+        Where where = Where.entries(window, service).and("endpoint_id = ?", endpointId);
+        return sql.count("SELECT COUNT(*) FROM span WHERE " + where.sql(), where.params());
     }
 
     // --- n + 1 over HTTP ------------------------------------------------------
@@ -1214,7 +1188,7 @@ public final class Findings {
      * {@code slow-endpoint} measures over the requests of an endpoint.
      */
     private List<Ranked> slowJobs(Window window, @Nullable String service, boolean evidence) {
-        List<SlowGroup> slow = slowJobGroups(window, service);
+        List<SlowGroup> slow = queries.slowJobGroups(window, service);
         if (slow.isEmpty()) {
             return List.of();
         }
@@ -1260,29 +1234,6 @@ public final class Findings {
     }
 
     /**
-     * The job groups of the window whose p95 exceeds {@code slow.request.ms}, the
-     * heaviest first (storage.adoc).
-     *
-     * <p>Every one of them: the threshold is a {@code HAVING}, so a slow job that ranks
-     * low by total time is still a finding (findings.adoc#slow-job).
-     */
-    private List<SlowGroup> slowJobGroups(Window window, @Nullable String service) {
-        List<Object> params = new ArrayList<>(List.of(window.from(), window.to()));
-        String where = jobWhere(service, params);
-        return sql.query("SELECT service, name, COUNT(*) AS runs,"
-                        + " PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY duration_ns) AS p50_ns,"
-                        + " PERCENTILE_DISC(0.95) WITHIN GROUP (ORDER BY duration_ns) AS p95_ns,"
-                        + " MAX(duration_ns) AS max_ns, SUM(duration_ns) AS total_ns FROM span WHERE "
-                        + where + " GROUP BY service, name"
-                        + " HAVING PERCENTILE_DISC(0.95) WITHIN GROUP (ORDER BY duration_ns) > "
-                        + tingles.slowRequestMs() * 1_000_000L
-                        + " ORDER BY total_ns DESC, service, name",
-                params, rs -> new SlowGroup(rs.getString("service"), rs.getString("name"),
-                        rs.getLong("runs"), Rows.ms(rs, "p50_ns"), Rows.ms(rs, "p95_ns"),
-                        Rows.ms(rs, "max_ns"), Rows.ms(rs, "total_ns")));
-    }
-
-    /**
      * The attributes of a job's newest run, for the {@code code.*} frames.
      *
      * <p>One statement per slow job rather than one over every job group: the
@@ -1291,22 +1242,10 @@ public final class Findings {
      * would read every span of the window.
      */
     private @Nullable Map<String, Object> newestRun(Window window, SlowGroup job) {
-        List<Object> params = new ArrayList<>(List.of(window.from(), window.to()));
-        String where = jobWhere(job.service(), params) + " AND name = ?";
-        params.add(job.name());
-        return sql.queryOne("SELECT attributes FROM span WHERE " + where
-                + " ORDER BY start_ms DESC, id DESC LIMIT 1", params,
+        Where where = Where.jobs(window, job.service()).and("name = ?", job.name());
+        return sql.queryOne("SELECT attributes FROM span WHERE " + where.sql()
+                + " ORDER BY start_ms DESC, id DESC LIMIT 1", where.params(),
                 rs -> AttrJson.decode(rs.getString("attributes")));
-    }
-
-    /** A run of a job: a root {@code INTERNAL} span of the window (design.adoc#endpoint-identity). */
-    private static String jobWhere(@Nullable String service, List<Object> params) {
-        String where = "start_ms BETWEEN ? AND ? AND parent_span_id IS NULL AND kind = 'INTERNAL'";
-        if (service != null) {
-            params.add(service);
-            return where + " AND service = ?";
-        }
-        return where;
     }
 
     // --- slow external -------------------------------------------------------
@@ -1890,15 +1829,13 @@ public final class Findings {
      */
     private Map<String, Map<String, Object>> sampleAttributes(Window window, String column,
             Set<String> ids) {
-        List<Object> params = new ArrayList<>(List.of(window.from(), window.to()));
-        params.addAll(ids);
+        Where where = Where.window(window, null).andIn(column, ids);
         Map<String, Map<String, Object>> samples = new HashMap<>();
         sql.forEach("SELECT * FROM (SELECT " + column + " AS group_id, attributes,"
                 + " ROW_NUMBER() OVER (PARTITION BY " + column
                 + " ORDER BY CASE WHEN attributes LIKE '%\"code.stacktrace\"%' THEN 0 ELSE 1 END,"
                 + " start_ms DESC, id DESC) AS rn"
-                + " FROM span WHERE start_ms BETWEEN ? AND ? AND " + column + " IN ("
-                + Sql.placeholders(ids.size()) + ")) WHERE rn = 1", params, rs ->
+                + " FROM span WHERE " + where.sql() + ") WHERE rn = 1", where.params(), rs ->
                         samples.put(rs.getString("group_id"),
                                 AttrJson.decode(rs.getString("attributes"))));
         return samples;

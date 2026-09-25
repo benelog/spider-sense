@@ -132,8 +132,8 @@ public final class Queries {
     // --- totals and series ---------------------------------------------------
 
     public Stats.Totals totals(Window window, @Nullable String service) {
-        Clause where = entryWindow(window, service);
-        String query = "SELECT COUNT(*) AS calls, SUM(CASE WHEN error THEN 1 ELSE 0 END) AS errors,"
+        Where where = Where.entries(window, service);
+        String query = "SELECT COUNT(*) AS calls, " + SpanSql.ERRORS + " AS errors,"
                 + " MAX(duration_ns) AS max_ns, " + responseBuckets.columns() + ", " + PERCENTILES
                 + " FROM span WHERE " + where.sql();
         Stats.Totals totals = sql.queryOne(query, where.params(),
@@ -154,15 +154,14 @@ public final class Queries {
 
     /** Requests, errors and percentiles per bucket. */
     public Stats.Buckets buckets(Window window, @Nullable String service, @Nullable String endpointId) {
-        Clause where = entryWindow(window, service);
+        Where where = Where.entries(window, service);
         if (endpointId != null) {
             where = where.and("endpoint_id = ?", endpointId);
         }
-        long bucket = window.bucketMs();
-        String query = "SELECT start_ms / " + bucket + " AS b, COUNT(*) AS calls,"
-                + " SUM(CASE WHEN error THEN 1 ELSE 0 END) AS errors, " + responseBuckets.columns()
+        String query = "SELECT " + window.bucketExpression() + " AS b, COUNT(*) AS calls,"
+                + " " + SpanSql.ERRORS + " AS errors, " + responseBuckets.columns()
                 + ", " + PERCENTILES
-                + " FROM span WHERE " + where.sql() + " GROUP BY start_ms / " + bucket;
+                + " FROM span WHERE " + where.sql() + " GROUP BY " + window.bucketExpression();
 
         long[] t = window.bucketStarts();
         long[] requests = new long[t.length];
@@ -171,10 +170,9 @@ public final class Queries {
         double[] p95 = new double[t.length];
         double[] p99 = new double[t.length];
         long[][] histogram = ResponseBuckets.emptySeries(t.length);
-        long first = window.alignedFrom() / bucket;
         sql.forEach(query, where.params(), rs -> {
-            int i = (int) (rs.getLong("b") - first);
-            if (i >= 0 && i < t.length) {
+            int i = window.slotOf(rs.getLong("b"));
+            if (i >= 0) {
                 requests[i] = rs.getLong("calls");
                 errors[i] = rs.getLong("errors");
                 p50[i] = Rows.ms(rs, "p50_ns");
@@ -193,8 +191,8 @@ public final class Queries {
 
     public List<Stats.ServiceSummary> services(Window window) {
         Map<String, Stats.Totals> byService = new HashMap<>();
-        Clause where = entryWindow(window, null);
-        sql.forEach("SELECT service, COUNT(*) AS calls, SUM(CASE WHEN error THEN 1 ELSE 0 END) AS errors,"
+        Where where = Where.entries(window, null);
+        sql.forEach("SELECT service, COUNT(*) AS calls, " + SpanSql.ERRORS + " AS errors,"
                 + " MAX(duration_ns) AS max_ns, " + responseBuckets.columns() + ", " + PERCENTILES
                 + " FROM span WHERE " + where.sql() + " GROUP BY service", where.params(), rs ->
                         byService.put(rs.getString("service"), totals(rs, window.rangeSeconds())));
@@ -225,15 +223,13 @@ public final class Queries {
     }
 
     private Map<String, long[]> sparklines(Window window) {
-        long bucket = window.bucketMs();
-        long first = window.alignedFrom() / bucket;
         int count = window.bucketCount();
-        Clause where = entryWindow(window, null);
+        Where where = Where.entries(window, null);
         Map<String, long[]> sparklines = new HashMap<>();
-        sql.forEach("SELECT service, start_ms / " + bucket + " AS b, COUNT(*) AS calls FROM span WHERE "
-                + where.sql() + " GROUP BY service, start_ms / " + bucket, where.params(), rs -> {
-                    int i = (int) (rs.getLong("b") - first);
-                    if (i >= 0 && i < count) {
+        sql.forEach("SELECT service, " + window.bucketExpression() + " AS b, COUNT(*) AS calls FROM span WHERE "
+                + where.sql() + " GROUP BY service, " + window.bucketExpression(), where.params(), rs -> {
+                    int i = window.slotOf(rs.getLong("b"));
+                    if (i >= 0) {
                         sparklines.computeIfAbsent(rs.getString("service"), s -> new long[count])[i] =
                                 rs.getLong("calls");
                     }
@@ -265,13 +261,13 @@ public final class Queries {
      */
     List<Stats.EndpointStats> endpoints(Window window, @Nullable String service,
             @Nullable String endpointId, boolean withStatusCodes) {
-        Clause where = entryWindow(window, service).and("endpoint_id IS NOT NULL");
+        Where where = Where.entries(window, service).and("endpoint_id IS NOT NULL");
         if (endpointId != null) {
             where = where.and("endpoint_id = ?", endpointId);
         }
         String query = "SELECT endpoint_id, service, MAX(endpoint) AS name, MAX(http_method) AS method,"
                 + " MAX(http_route) AS route, MAX(kind) AS kind, COUNT(*) AS calls,"
-                + " SUM(CASE WHEN error THEN 1 ELSE 0 END) AS errors, SUM(duration_ns) AS total_ns,"
+                + " " + SpanSql.ERRORS + " AS errors, SUM(duration_ns) AS total_ns,"
                 + " MAX(duration_ns) AS max_ns, " + responseBuckets.columns() + ", " + PERCENTILES
                 + " FROM span WHERE " + where.sql()
                 + " GROUP BY endpoint_id, service ORDER BY total_ns DESC, endpoint_id";
@@ -355,24 +351,20 @@ public final class Queries {
         if (endpointIds != null && endpointIds.isEmpty()) {
             return Map.of();
         }
-        List<Object> params = new ArrayList<>(List.of(window.from(), window.to(),
-                window.from(), window.to()));
-        String where = "e.entry AND e.endpoint_id IS NOT NULL AND e.start_ms BETWEEN ? AND ?"
-                + " AND d.start_ms BETWEEN ? AND ?";
+        Where where = new Where("e.entry AND e.endpoint_id IS NOT NULL AND e.start_ms BETWEEN ? AND ?"
+                + " AND d.start_ms BETWEEN ? AND ?", window.from(), window.to(), window.from(), window.to());
         if (service != null) {
-            where = where + " AND e.service = ?";
-            params.add(service);
+            where = where.and("e.service = ?", service);
         }
         if (endpointIds != null) {
-            where = where + " AND e.endpoint_id IN (" + Sql.placeholders(endpointIds.size()) + ")";
-            params.addAll(endpointIds);
+            where = where.andIn("e.endpoint_id", endpointIds);
         }
         Map<String, DbWork> work = new HashMap<>();
         sql.forEach("SELECT e.endpoint_id AS id, COUNT(*) AS calls, SUM(d.duration_ns) AS total_ns, "
                 + slowCalls("d") + " AS slow_calls"
                 + " FROM span e JOIN span d USE INDEX (span_trace) ON d.trace_id = e.trace_id AND d.service = e.service"
-                + " AND d.query_id IS NOT NULL WHERE " + where + " GROUP BY e.endpoint_id",
-                params, rs ->
+                + " AND d.query_id IS NOT NULL WHERE " + where.sql() + " GROUP BY e.endpoint_id",
+                where.params(), rs ->
                         work.put(rs.getString("id"), new DbWork(rs.getLong("calls"), Rows.ms(rs, "total_ns"),
                                 rs.getLong("slow_calls"))));
         return work;
@@ -395,30 +387,50 @@ public final class Queries {
         if (names.isEmpty()) {
             return Map.of();
         }
-        List<Object> params = new ArrayList<>(List.of(window.from(), window.to(),
-                window.from(), window.to(), service));
-        String where = "r.parent_span_id IS NULL AND r.kind = 'INTERNAL'"
-                + " AND r.start_ms BETWEEN ? AND ? AND d.start_ms BETWEEN ? AND ? AND r.service = ?";
-        where = where + " AND r.name IN (" + Sql.placeholders(names.size()) + ")";
-        params.addAll(names);
+        Where where = new Where(SpanSql.job("r.")
+                + " AND r.start_ms BETWEEN ? AND ? AND d.start_ms BETWEEN ? AND ? AND r.service = ?",
+                window.from(), window.to(), window.from(), window.to(), service)
+                .andIn("r.name", names);
         Map<String, DbWork> work = new HashMap<>();
         sql.forEach("SELECT r.service AS service, r.name AS name, COUNT(d.id) AS calls,"
                 + " SUM(d.duration_ns) AS total_ns, " + slowCalls("d") + " AS slow_calls"
                 + " FROM span r JOIN span d USE INDEX (span_trace) ON d.trace_id = r.trace_id AND d.service = r.service"
-                + " AND d.query_id IS NOT NULL WHERE " + where + " GROUP BY r.service, r.name",
-                params, rs ->
+                + " AND d.query_id IS NOT NULL WHERE " + where.sql() + " GROUP BY r.service, r.name",
+                where.params(), rs ->
                         work.put(rs.getString("service") + "\0" + rs.getString("name"),
                                 new DbWork(rs.getLong("calls"), Rows.ms(rs, "total_ns"), rs.getLong("slow_calls"))));
         return work;
     }
 
+    /**
+     * The job groups of the window whose p95 exceeds {@code slow.request.ms}, the
+     * heaviest first (storage.adoc).
+     *
+     * <p>Every one of them: the threshold is a {@code HAVING}, so a slow job that ranks
+     * low by total time is still a finding (findings.adoc#slow-job). It is
+     * {@link #queryGroups} over the runs of the jobs, grouped by service and span name.
+     */
+    List<SlowGroup> slowJobGroups(Window window, @Nullable String service) {
+        Where where = Where.jobs(window, service);
+        return sql.query("SELECT service, name, COUNT(*) AS runs,"
+                        + " PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY duration_ns) AS p50_ns,"
+                        + " " + SpanSql.P95 + " AS p95_ns,"
+                        + " MAX(duration_ns) AS max_ns, SUM(duration_ns) AS total_ns FROM span WHERE "
+                        + where.sql() + " GROUP BY service, name"
+                        + " HAVING " + SpanSql.slowerThan(SpanSql.P95, tingles.slowRequestMs())
+                        + " ORDER BY total_ns DESC, service, name",
+                where.params(), rs -> new SlowGroup(rs.getString("service"), rs.getString("name"),
+                        rs.getLong("runs"), Rows.ms(rs, "p50_ns"), Rows.ms(rs, "p95_ns"),
+                        Rows.ms(rs, "max_ns"), Rows.ms(rs, "total_ns")));
+    }
+
     /** How many of {@code alias}'s spans ran past {@code slow.query.ms}, as an aggregate. */
     private String slowCalls(String alias) {
-        return "SUM(CASE WHEN " + alias + ".duration_ns > " + tingles.slowQueryMs() * 1_000_000L
+        return "SUM(CASE WHEN " + SpanSql.slowerThan(alias + ".duration_ns", tingles.slowQueryMs())
                 + " THEN 1 ELSE 0 END)";
     }
 
-    private Map<String, Map<String, Long>> statusCodes(Clause where) {
+    private Map<String, Map<String, Long>> statusCodes(Where where) {
         Map<String, Map<String, Long>> byEndpoint = new HashMap<>();
         sql.forEach("SELECT endpoint_id, http_status, COUNT(*) AS calls FROM span WHERE " + where.sql()
                 + " AND http_status IS NOT NULL GROUP BY endpoint_id, http_status", where.params(), rs ->
@@ -463,8 +475,7 @@ public final class Queries {
     /** The same groups alone, with no callers and no schema block, for a finding's state. */
     List<Stats.QueryStats> slowQueryGroups(Window window, @Nullable String service) {
         return queryGroups(window, service, "total", ALL_GROUPS, null,
-                "PERCENTILE_DISC(0.95) WITHIN GROUP (ORDER BY duration_ns) > "
-                        + tingles.slowQueryMs() * 1_000_000L);
+                SpanSql.slowerThan(SpanSql.P95, tingles.slowQueryMs()));
     }
 
     /**
@@ -481,7 +492,7 @@ public final class Queries {
     /** The same, keeping only the groups that satisfy {@code having}, an aggregate condition. */
     private List<Stats.QueryStats> queryGroups(Window window, @Nullable String service,
             @Nullable String sort, int limit, @Nullable String queryId, @Nullable String having) {
-        Clause where = window(window, service).and("query_id IS NOT NULL");
+        Where where = Where.window(window, service).and("query_id IS NOT NULL");
         if (queryId != null) {
             where = where.and("query_id = ?", queryId);
         }
@@ -492,12 +503,12 @@ public final class Queries {
             case "calls" -> "calls DESC";
             default -> "total_ns DESC";
         };
-        long slowNs = tingles.slowQueryMs() * 1_000_000L;
         String query = "SELECT query_id, service, MAX(db_system) AS db_sys, MAX(db_namespace) AS db_ns,"
                 + " MAX(db_operation) AS db_op, MAX(db_table) AS db_tbl, MAX(db_statement) AS stmt,"
-                + " COUNT(*) AS calls, SUM(CASE WHEN error THEN 1 ELSE 0 END) AS errors,"
+                + " COUNT(*) AS calls, " + SpanSql.ERRORS + " AS errors,"
                 + " SUM(duration_ns) AS total_ns, MAX(duration_ns) AS max_ns, MAX(start_ms) AS last_seen,"
-                + " SUM(CASE WHEN duration_ns > " + slowNs + " THEN 1 ELSE 0 END) AS slow_calls, "
+                + " SUM(CASE WHEN " + SpanSql.slowerThan(tingles.slowQueryMs())
+                + " THEN 1 ELSE 0 END) AS slow_calls, "
                 + PERCENTILES + " FROM span WHERE " + where.sql()
                 + " GROUP BY query_id, service"
                 + (having == null ? "" : " HAVING " + having)
@@ -557,8 +568,7 @@ public final class Queries {
         Ancestry ancestry = ancestors.get();
         Map<String, Map<String, long[]>> callers = new HashMap<>();
         Map<String, Map<String, String>> callerService = new HashMap<>();
-        Clause where = window(window, null)
-                .and("query_id IN (" + Sql.placeholders(ids.size()) + ")", ids.toArray());
+        Where where = Where.window(window, null).andIn("query_id", ids);
         sql.forEach("SELECT query_id, trace_id, span_id, service FROM span WHERE " + where.sql(),
                 where.params(), rs -> {
                     String queryId = rs.getString("query_id");
@@ -619,15 +629,13 @@ public final class Queries {
         for (String id : errorIds) {
             series.put(id, new long[points]);
         }
-        long bucket = window.bucketMs();
-        long first = window.alignedFrom() / bucket;
-        Clause where = window(window, null).and("error")
-                .and("error_id IN (" + Sql.placeholders(errorIds.size()) + ")", errorIds.toArray());
-        sql.forEach("SELECT error_id, start_ms / " + bucket + " AS b, COUNT(*) AS calls FROM span WHERE "
-                + where.sql() + " GROUP BY error_id, start_ms / " + bucket, where.params(), rs -> {
-                    int i = (int) (rs.getLong("b") - first);
+        Where where = Where.window(window, null).and("error").andIn("error_id", errorIds);
+        sql.forEach("SELECT error_id, " + window.bucketExpression() + " AS b, COUNT(*) AS calls"
+                + " FROM span WHERE " + where.sql() + " GROUP BY error_id, " + window.bucketExpression(),
+                where.params(), rs -> {
+                    int i = window.slotOf(rs.getLong("b"));
                     long[] counts = series.get(rs.getString("error_id"));
-                    if (counts != null && i >= 0 && i < buckets) {
+                    if (counts != null && i >= 0) {
                         counts[i / merge] += rs.getLong("calls");
                     }
                 });
@@ -635,19 +643,17 @@ public final class Queries {
     }
 
     private Stats.Buckets groupBuckets(Window window, String predicate, String id) {
-        Clause where = window(window, null).and(predicate, id);
-        long bucket = window.bucketMs();
-        long first = window.alignedFrom() / bucket;
+        Where where = Where.window(window, null).and(predicate, id);
         long[] t = window.bucketStarts();
         long[] counts = new long[t.length];
         long[] errors = new long[t.length];
         double[] p95 = new double[t.length];
-        sql.forEach("SELECT start_ms / " + bucket + " AS b, COUNT(*) AS calls,"
-                + " SUM(CASE WHEN error THEN 1 ELSE 0 END) AS errors, " + PERCENTILES
-                + " FROM span WHERE " + where.sql() + " GROUP BY start_ms / " + bucket,
+        sql.forEach("SELECT " + window.bucketExpression() + " AS b, COUNT(*) AS calls,"
+                + " " + SpanSql.ERRORS + " AS errors, " + PERCENTILES
+                + " FROM span WHERE " + where.sql() + " GROUP BY " + window.bucketExpression(),
                 where.params(), rs -> {
-                    int i = (int) (rs.getLong("b") - first);
-                    if (i >= 0 && i < t.length) {
+                    int i = window.slotOf(rs.getLong("b"));
+                    if (i >= 0) {
                         counts[i] = rs.getLong("calls");
                         errors[i] = rs.getLong("errors");
                         p95[i] = Rows.ms(rs, "p95_ns");
@@ -693,7 +699,7 @@ public final class Queries {
      */
     List<Stats.ErrorGroup> errorGroups(Window window, @Nullable String service, int limit,
             @Nullable String errorId) {
-        Clause where = window(window, service).and("error").and("error_id IS NOT NULL");
+        Where where = Where.window(window, service).and("error").and("error_id IS NOT NULL");
         if (errorId != null) {
             where = where.and("error_id = ?", errorId);
         }
@@ -710,8 +716,7 @@ public final class Queries {
     }
 
     private Map<String, Stats.ErrorSample> errorSamples(Window window, Set<String> ids) {
-        Clause where = window(window, null)
-                .and("error_id IN (" + Sql.placeholders(ids.size()) + ")", ids.toArray());
+        Where where = Where.window(window, null).andIn("error_id", ids);
         String query = "SELECT * FROM (SELECT error_id, trace_id, span_id, start_ms, error_message, events,"
                 + " ROW_NUMBER() OVER (PARTITION BY error_id ORDER BY start_ms DESC, id DESC) AS rn"
                 + " FROM span WHERE " + where.sql() + ") WHERE rn = 1";
@@ -735,8 +740,7 @@ public final class Queries {
     private Map<String, List<Stats.EndpointCount>> errorEndpoints(Window window, Set<String> ids,
             Supplier<Ancestry> ancestors) {
         Ancestry ancestry = ancestors.get();
-        Clause where = window(window, null)
-                .and("error_id IN (" + Sql.placeholders(ids.size()) + ")", ids.toArray());
+        Where where = Where.window(window, null).andIn("error_id", ids);
         Map<String, Map<String, long[]>> counts = new LinkedHashMap<>();
         sql.forEach("SELECT error_id, span_id FROM span WHERE " + where.sql(), where.params(), rs -> {
             Ancestry.Entry entry = ancestry.entryOf(rs.getString("span_id"));
@@ -757,20 +761,20 @@ public final class Queries {
     // --- traces --------------------------------------------------------------
 
     public List<Stats.TraceSummary> traces(TraceFilter filter) {
-        Clause where = traceWhere(filter, true);
+        Where where = traceWhere(filter, true);
         return sql.query("SELECT * FROM trace t WHERE " + where.sql()
                 + " ORDER BY t.start_ms DESC, t.trace_id DESC LIMIT " + Math.max(1, filter.limit()),
                 where.params(), Rows::trace);
     }
 
     public long traceTotal(TraceFilter filter) {
-        Clause where = traceWhere(filter, false);
+        Where where = traceWhere(filter, false);
         return sql.count("SELECT COUNT(*) FROM trace t WHERE " + where.sql(), where.params());
     }
 
-    private Clause traceWhere(TraceFilter filter, boolean paging) {
+    private Where traceWhere(TraceFilter filter, boolean paging) {
         Window window = filter.window();
-        Clause where = new Clause("t.start_ms BETWEEN ? AND ?", window.from(), window.to());
+        Where where = new Where("t.start_ms BETWEEN ? AND ?", window.from(), window.to());
         Long before = filter.before();
         if (paging && before != null) {
             where = filter.beforeId() == null
@@ -894,7 +898,7 @@ public final class Queries {
         List<Object> params = new ArrayList<>(values);
         params.add(window.from());
         params.add(window.to());
-        Clause where = new Clause("t.start_ms BETWEEN ? AND ?", window.from(), window.to())
+        Where where = new Where("t.start_ms BETWEEN ? AND ?", window.from(), window.to())
                 // An IN over the matching spans rather than an EXISTS per trace: H2 reads
                 // the spans by the predicate's index once instead of probing every trace.
                 // The span's own window makes that read a range of the (…, start_ms) index,
@@ -931,7 +935,7 @@ public final class Queries {
 
     public List<Stats.ScatterPoint> scatter(Window window, @Nullable String service,
             @Nullable String endpointId, int limit) {
-        Clause where = entryWindow(window, service);
+        Where where = Where.entries(window, service);
         if (endpointId != null) {
             where = where.and("endpoint_id = ?", endpointId);
         }
@@ -983,20 +987,20 @@ public final class Queries {
     }
 
     public List<LogRecord> logs(LogFilter filter) {
-        Clause where = logWhere(filter, true);
+        Where where = logWhere(filter, true);
         return sql.query("SELECT * FROM log WHERE " + where.sql()
                 + " ORDER BY at_ms DESC, id DESC LIMIT " + Math.max(1, filter.limit()),
                 where.params(), Rows::log);
     }
 
     public long logTotal(LogFilter filter) {
-        Clause where = logWhere(filter, false);
+        Where where = logWhere(filter, false);
         return sql.count("SELECT COUNT(*) FROM log WHERE " + where.sql(), where.params());
     }
 
-    private Clause logWhere(LogFilter filter, boolean paging) {
+    private Where logWhere(LogFilter filter, boolean paging) {
         Window window = filter.window();
-        Clause where = new Clause("at_ms BETWEEN ? AND ?", window.from(), window.to());
+        Where where = new Where("at_ms BETWEEN ? AND ?", window.from(), window.to());
         Long before = filter.before();
         if (paging && before != null) {
             where = filter.beforeId() == null
@@ -1025,7 +1029,7 @@ public final class Queries {
 
     /** What one service calls: its outbound spans grouped by target. */
     public List<Stats.Dependency> dependencies(String service, Window window) {
-        Clause where = window(window, service)
+        Where where = Where.window(window, service)
                 .and("NOT entry")
                 .and("category IN ('http', 'db', 'messaging', 'rpc')");
         List<SpanRecord> spans = sql.query("SELECT " + Rows.SPAN_COLUMNS + " FROM span WHERE "
@@ -1154,7 +1158,7 @@ public final class Queries {
      * repeated names shared, rather than as the span with its attributes.
      */
     public List<OutboundCall> outboundHttp(Window window, @Nullable String service) {
-        Clause where = window(window, service).and("kind = 'CLIENT'").and("category = 'http'");
+        Where where = Where.window(window, service).and("kind = 'CLIENT'").and("category = 'http'");
         Map<String, String> shared = new HashMap<>();
         List<OutboundCall> calls = new ArrayList<>();
         sql.forEach("SELECT " + Rows.SPAN_COLUMNS + " FROM span WHERE " + where.sql(),
@@ -1214,13 +1218,11 @@ public final class Queries {
         if (traceIds.isEmpty()) {
             return List.of();
         }
-        List<Object> params = new ArrayList<>(List.of(window.from(), window.to(), service));
-        params.addAll(traceIds);
+        Where where = Where.window(window, service).andIn("trace_id", traceIds);
         Map<String, Long> counts = new HashMap<>();
-        sql.forEach("SELECT trace_id, COUNT(*) AS spans FROM span"
-                        + " WHERE start_ms BETWEEN ? AND ? AND service = ? AND trace_id IN ("
-                        + Sql.placeholders(traceIds.size()) + ") GROUP BY trace_id",
-                params, rs -> counts.put(rs.getString("trace_id"), rs.getLong("spans")));
+        sql.forEach("SELECT trace_id, COUNT(*) AS spans FROM span WHERE " + where.sql()
+                        + " GROUP BY trace_id",
+                where.params(), rs -> counts.put(rs.getString("trace_id"), rs.getLong("spans")));
         List<String> whole = new ArrayList<>();
         long read = 0;
         for (String traceId : traceIds) {
@@ -1265,12 +1267,9 @@ public final class Queries {
         if (whole.isEmpty()) {
             return TimeSplit.NONE;
         }
-        List<Object> params = new ArrayList<>(List.of(window.from(), window.to(), service));
-        params.addAll(whole);
-        List<SpanRecord> spans = sql.query("SELECT " + Rows.SPAN_COLUMNS + " FROM span"
-                        + " WHERE start_ms BETWEEN ? AND ? AND service = ? AND trace_id IN ("
-                        + Sql.placeholders(whole.size()) + ")",
-                params, Rows::span);
+        Where where = Where.window(window, service).andIn("trace_id", whole);
+        List<SpanRecord> spans = sql.query("SELECT " + Rows.SPAN_COLUMNS + " FROM span WHERE "
+                + where.sql(), where.params(), Rows::span);
         if (spans.isEmpty()) {
             return TimeSplit.NONE;
         }
@@ -1478,7 +1477,7 @@ public final class Queries {
                         + " WHERE c.start_ms BETWEEN ? AND ? AND c.entry AND p.service <> c.service",
                 List.of(window.from(), window.to()), rs -> rs.getString(1)));
 
-        Clause where = window(window, null)
+        Where where = Where.window(window, null)
                 .and("NOT entry")
                 .and("category IN ('http', 'db', 'messaging', 'rpc')");
         List<SpanRecord> spans = sql.query("SELECT " + Rows.SPAN_COLUMNS + " FROM span WHERE "
@@ -1560,29 +1559,6 @@ public final class Queries {
 
     // --- building blocks -----------------------------------------------------
 
-    private static Clause window(Window window, @Nullable String service) {
-        Clause where = new Clause("start_ms BETWEEN ? AND ?", window.from(), window.to());
-        return service == null ? where : where.and("service = ?", service);
-    }
-
-    private static Clause entryWindow(Window window, @Nullable String service) {
-        return window(window, service).and("entry");
-    }
-
-    /** A growing {@code WHERE} with its parameters beside it. */
-    private record Clause(String sql, List<Object> params) {
-
-        Clause(String sql, Object... params) {
-            this(sql, Arrays.asList(params));
-        }
-
-        Clause and(String more, Object... extra) {
-            List<Object> combined = new ArrayList<>(params);
-            combined.addAll(Arrays.asList(extra));
-            return new Clause(sql + " AND " + more, combined);
-        }
-    }
-
     /**
      * Which entry span a span belongs to, resolved by walking the parent chain.
      *
@@ -1615,15 +1591,14 @@ public final class Queries {
         static Ancestry of(Sql sql, Window window, @Nullable String service) {
             Map<String, Entry> entries = new HashMap<>();
             Map<String, String> parents = new HashMap<>();
-            String where = "start_ms BETWEEN ? AND ?";
-            List<Object> params = new ArrayList<>(List.of(window.from(), window.to()));
+            Where where = Where.window(window, null);
             if (service != null) {
-                where = where + " AND trace_id IN (SELECT trace_id FROM span WHERE service = ?"
-                        + " AND start_ms BETWEEN ? AND ?)";
-                params.addAll(List.of(service, window.from(), window.to()));
+                Where traced = Where.window(window, service);
+                where = where.and("trace_id IN (SELECT trace_id FROM span WHERE " + traced.sql() + ")",
+                        traced.params().toArray());
             }
             sql.forEach("SELECT span_id, parent_span_id, entry, endpoint, service, name FROM span"
-                    + " WHERE " + where, params, rs -> {
+                    + " WHERE " + where.sql(), where.params(), rs -> {
                         String spanId = rs.getString("span_id");
                         String parent = rs.getString("parent_span_id");
                         if (parent != null) {
