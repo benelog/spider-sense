@@ -114,4 +114,48 @@ class ImporterTest {
         assertThat(count("SELECT first_seen FROM service WHERE name = 'orders'"))
                 .as("widened to the imported session").isEqualTo(AT - 86_400_000L);
     }
+
+    /**
+     * A series whose points have all aged out still has its row until the orphan
+     * sweep runs. An import that carries points of it must lock the row, as the
+     * writer does, so a sweep running meanwhile waits for the import and keeps it.
+     */
+    @Test
+    void theOrphanSweepWaitsForAnImportAddingPointsToASeries() throws Exception {
+        Batch batch = new Batch();
+        batch.saw(new Batch.Sighting("orders", Map.of("process.pid", 100L), AT));
+        batch.add(new Batch.MetricSample("orders", "jvm.memory.used", "gauge", "By", "", false, "UNSPECIFIED",
+                Map.of(), MetricPoint.number(AT, 1)));
+        writer.submit(batch);
+        writer.flushNow();
+        database.sql().update("DELETE FROM metric_point", List.of());
+        Json.JsonObject document = document("orders")
+                .put("metrics", Json.arr().add(Json.obj().put("service", "orders").put("name", "jvm.memory.used")
+                        .put("type", "gauge")))
+                .put("metricSeries", Json.arr().add(Json.obj().put("id", 7).put("service", "orders")
+                        .put("name", "jvm.memory.used").put("attributes", Json.obj())))
+                .put("metricPoints", Json.arr().add(Json.obj().put("seriesId", 7).put("atMs", AT - 86_400_000L)
+                        .put("value", 2.0)));
+        Importer importer = writer.importer();
+
+        try (Connection other = database.sql().connection()) {
+            // Holds the service row, so the import waits just before its commit.
+            other.setAutoCommit(false);
+            other.createStatement().executeUpdate("UPDATE service SET last_seen = last_seen WHERE name = 'orders'");
+            var importing = CompletableFuture.supplyAsync(() -> importer.importDocument(document));
+            Thread.sleep(300);
+            assertThat(importing).as("the import waits for the service row").isNotDone();
+
+            var sweep = CompletableFuture.supplyAsync(() -> Sweeper.deleteOrphanSeries(database.sql()));
+            Thread.sleep(300);
+            assertThat(sweep).as("the sweep waits for the import's lock").isNotDone();
+
+            other.rollback();
+            assertThat(importing.get(10, TimeUnit.SECONDS).metricPoints()).isEqualTo(1);
+            assertThat(sweep.get(10, TimeUnit.SECONDS)).isZero();
+        }
+
+        assertThat(count("SELECT COUNT(*) FROM metric_point p JOIN metric_series s ON s.id = p.series_id"))
+                .isEqualTo(1);
+    }
 }

@@ -596,7 +596,10 @@ public final class Importer {
             String attributes) throws SQLException {
         String hash = Ids.shortHash(attributes);
         try (PreparedStatement select = connection.prepareStatement(
-                "SELECT id FROM metric_series WHERE service = ? AND name = ? AND attr_hash = ?")) {
+                // Locked, as the writer locks it: the orphan sweep locks a series before it
+                // deletes it, so it waits for this import's points rather than deleting the
+                // series under them.
+                "SELECT id FROM metric_series WHERE service = ? AND name = ? AND attr_hash = ? FOR UPDATE")) {
             select.setString(1, service);
             select.setString(2, name);
             select.setString(3, hash);
