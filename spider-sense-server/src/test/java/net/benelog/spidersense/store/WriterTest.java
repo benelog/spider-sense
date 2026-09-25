@@ -325,6 +325,58 @@ class WriterTest {
         database.close();
     }
 
+    // --- DELETE /api/data ------------------------------------------------------------
+
+    /**
+     * The writer's thread keeps flushing while the data is cleared. A flush between
+     * two of the deletes would keep its spans and lose its trace rows, so none runs
+     * until the deletes have committed, and it then writes into the emptied store.
+     */
+    @Test
+    void aFlushWaitsForAClearAndIsStoredWhole() throws Exception {
+        Database database = Database.open(fileUrl(), dir.resolve("sense.mv.db"));
+        Writer writer = writer(database);
+        writer.submit(spans(3));
+        Batch after = decoder.accept(Otlp.traces(Otlp.service("orders"), Otlp.span("%032x".formatted(99),
+                "%016x".formatted(99), "GET /orders", Span.SpanKind.SPAN_KIND_SERVER, AT, 5)));
+        var flushing = new java.util.concurrent.atomic.AtomicReference<java.util.concurrent.CompletableFuture<Void>>();
+
+        writer.clear(() -> {
+            writer.submit(after);
+            flushing.set(java.util.concurrent.CompletableFuture.runAsync(writer::flushNow));
+            try {
+                Thread.sleep(300);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            assertThat(flushing.get()).as("the flush waits for the clear").isNotDone();
+            database.deleteAll();
+        });
+        flushing.get().get(10, java.util.concurrent.TimeUnit.SECONDS);
+
+        assertThat(database.sql().count("SELECT COUNT(*) FROM span", List.of())).isEqualTo(1);
+        assertThat(database.sql().count("SELECT COUNT(*) FROM trace", List.of())).isEqualTo(1);
+        database.close();
+    }
+
+    /** The deletes are one transaction: one that fails leaves every table as it was. */
+    @Test
+    void aClearThatFailsDeletesNothing() {
+        Database database = Database.open(fileUrl(), dir.resolve("sense.mv.db"));
+        Writer writer = writer(database);
+        writer.submit(spans(2));
+        writer.flushNow();
+        // A table that is not there fails the delete after span's and trace's.
+        database.sql().execute("DROP TABLE ack");
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(database::deleteAll)
+                .isInstanceOf(Sql.SqlException.class);
+
+        assertThat(database.sql().count("SELECT COUNT(*) FROM span", List.of())).isEqualTo(2);
+        assertThat(database.sql().count("SELECT COUNT(*) FROM trace", List.of())).isEqualTo(2);
+        database.close();
+    }
+
     // --- the flush at exit -----------------------------------------------------------
 
     @TempDir

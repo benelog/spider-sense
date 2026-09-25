@@ -129,11 +129,12 @@ public final class Store implements AutoCloseable {
     /**
      * {@code DELETE /api/data}: every span, trace, log, metric point, tingle,
      * mark, acknowledgement and catalog row.
+     *
+     * <p>Through the writer, which flushes what is queued first and flushes
+     * nothing else until the deletes have committed.
      */
     public void clear() {
-        writer.flushNow();
-        database.deleteAll();
-        writer.forgetSeriesIds();
+        writer.clear(database::deleteAll);
     }
 
     @Override

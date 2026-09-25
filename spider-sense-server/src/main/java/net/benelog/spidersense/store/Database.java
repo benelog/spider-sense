@@ -365,14 +365,37 @@ public final class Database implements AutoCloseable {
      * included — they are the one table the sweeper never touches and this does.
      * Each service's newest start mark stays, so {@code since=start} still names
      * the run of a process that keeps running.
+     *
+     * <p>One transaction, so a flush that commits while it runs finds either
+     * everything or nothing deleted. Table by table, a flush committed between the
+     * span and the trace delete would keep its spans and lose its trace rows. A
+     * writer of this process is kept out by {@link Store#clear()}; one of another
+     * process sharing the file may still commit between two statements, so a trace
+     * row whose spans that writer has just committed is kept with them.
      */
     public void deleteAll() {
-        for (String table : Schema.DATA_TABLES) {
-            sql.update("mark".equals(table)
-                    ? "DELETE FROM mark o WHERE " + Marks.NOT_NEWEST_START
-                    : "DELETE FROM " + table, List.of());
-        }
-        Sweeper.deleteOrphanSeries(sql);
+        // Work always answers with something; there is nothing to answer with here.
+        Boolean unused = sql.with(connection -> {
+            boolean autoCommit = connection.getAutoCommit();
+            connection.setAutoCommit(false);
+            try (Statement statement = connection.createStatement()) {
+                for (String table : Schema.DATA_TABLES) {
+                    statement.executeUpdate(switch (table) {
+                        case "mark" -> "DELETE FROM mark o WHERE " + Marks.NOT_NEWEST_START;
+                        case "trace" -> "DELETE FROM trace WHERE trace_id NOT IN (SELECT trace_id FROM span)";
+                        default -> "DELETE FROM " + table;
+                    });
+                }
+                Sweeper.deleteOrphanSeries(connection);
+                connection.commit();
+                return Boolean.TRUE;
+            } catch (SQLException | RuntimeException e) {
+                connection.rollback();
+                throw e;
+            } finally {
+                connection.setAutoCommit(autoCommit);
+            }
+        }, "DELETE /api/data");
     }
 
     @Override

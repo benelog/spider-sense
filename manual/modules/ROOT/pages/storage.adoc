@@ -358,6 +358,9 @@ A daemon sweeper runs a minute after start and every five minutes after that, de
 A catalog row goes by its `seen_ms`, because a catalog older than the retention describes a run no window can show any more.
 Each service's newest `start` mark is spared: the writer inserts one only for a process id new to the service, so a service that has run for longer than the retention would otherwise have none, and `since=start` would fail for it.
 `DELETE /api/data` runs the same deletes without the time bound, and empties `ack`, acknowledgements and resolutions alike.
+It runs them in one transaction, after the writer of its process has flushed what was queued and while that writer flushes nothing else.
+A flush between two of the deletes would otherwise keep its spans and lose its `trace` rows.
+A writer of another process sharing the file may still commit while the transaction runs, so the `trace` delete keeps a trace whose spans are still there (`DELETE FROM trace WHERE trace_id NOT IN (SELECT trace_id FROM span)`).
 At 24 hours of a few requests per second the file stays in the low hundreds of megabytes.
 H2 reclaims space on the next compaction, when the database closes.
 

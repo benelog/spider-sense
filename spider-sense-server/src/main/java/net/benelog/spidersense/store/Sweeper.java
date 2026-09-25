@@ -1,5 +1,6 @@
 package net.benelog.spidersense.store;
 
+import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -88,30 +89,7 @@ public final class Sweeper implements AutoCloseable {
             boolean autoCommit = connection.getAutoCommit();
             connection.setAutoCommit(false);
             try {
-                List<Long> candidates = new ArrayList<>();
-                try (PreparedStatement select = connection.prepareStatement(
-                        "SELECT id FROM metric_series WHERE id NOT IN (SELECT series_id FROM metric_point)");
-                        ResultSet rs = select.executeQuery()) {
-                    while (rs.next()) {
-                        candidates.add(rs.getLong(1));
-                    }
-                }
-                int deleted = 0;
-                for (int from = 0; from < candidates.size(); from += ORPHAN_CHUNK) {
-                    List<Long> chunk = candidates.subList(from, Math.min(candidates.size(), from + ORPHAN_CHUNK));
-                    String in = Sql.placeholders(chunk.size());
-                    try (PreparedStatement lock = connection.prepareStatement(
-                            "SELECT id FROM metric_series WHERE id IN (" + in + ") FOR UPDATE")) {
-                        Sql.bind(lock, List.copyOf(chunk));
-                        lock.executeQuery().close();
-                    }
-                    try (PreparedStatement delete = connection.prepareStatement(
-                            "DELETE FROM metric_series WHERE id IN (" + in + ")"
-                                    + " AND id NOT IN (SELECT series_id FROM metric_point)")) {
-                        Sql.bind(delete, List.copyOf(chunk));
-                        deleted += delete.executeUpdate();
-                    }
-                }
+                int deleted = deleteOrphanSeries(connection);
                 connection.commit();
                 return deleted;
             } catch (SQLException | RuntimeException e) {
@@ -121,6 +99,38 @@ public final class Sweeper implements AutoCloseable {
                 connection.setAutoCommit(autoCommit);
             }
         }, "the orphan series sweep");
+    }
+
+    /**
+     * The same inside the caller's transaction, which commits it:
+     * {@code DELETE /api/data} deletes the points and their series in one.
+     */
+    static int deleteOrphanSeries(Connection connection) throws SQLException {
+        List<Long> candidates = new ArrayList<>();
+        try (PreparedStatement select = connection.prepareStatement(
+                "SELECT id FROM metric_series WHERE id NOT IN (SELECT series_id FROM metric_point)");
+                ResultSet rs = select.executeQuery()) {
+            while (rs.next()) {
+                candidates.add(rs.getLong(1));
+            }
+        }
+        int deleted = 0;
+        for (int from = 0; from < candidates.size(); from += ORPHAN_CHUNK) {
+            List<Long> chunk = candidates.subList(from, Math.min(candidates.size(), from + ORPHAN_CHUNK));
+            String in = Sql.placeholders(chunk.size());
+            try (PreparedStatement lock = connection.prepareStatement(
+                    "SELECT id FROM metric_series WHERE id IN (" + in + ") FOR UPDATE")) {
+                Sql.bind(lock, List.copyOf(chunk));
+                lock.executeQuery().close();
+            }
+            try (PreparedStatement delete = connection.prepareStatement(
+                    "DELETE FROM metric_series WHERE id IN (" + in + ")"
+                            + " AND id NOT IN (SELECT series_id FROM metric_point)")) {
+                Sql.bind(delete, List.copyOf(chunk));
+                deleted += delete.executeUpdate();
+            }
+        }
+        return deleted;
     }
 
     private final Sql sql;

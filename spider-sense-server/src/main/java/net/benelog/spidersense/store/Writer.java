@@ -968,9 +968,19 @@ public final class Writer implements AutoCloseable {
         return new Importer(sql, this);
     }
 
-    /** {@code DELETE /api/data} invalidates the series cache along with the rows. */
-    public void forgetSeriesIds() {
-        seriesIds.clear();
+    /**
+     * {@code DELETE /api/data}: what is queued is flushed, then {@code deleteAll}
+     * runs, and the series cache is emptied along with the rows, all while no
+     * other flush of this writer can run. A flush committed between two of the
+     * deletes would otherwise keep what one statement had already passed and lose
+     * what the next one had not, such as its spans without their trace rows.
+     */
+    public void clear(Runnable deleteAll) {
+        synchronized (flushLock) {
+            flush();
+            deleteAll.run();
+            seriesIds.clear();
+        }
     }
 
     static void setLong(PreparedStatement statement, int index, @Nullable Long value)
