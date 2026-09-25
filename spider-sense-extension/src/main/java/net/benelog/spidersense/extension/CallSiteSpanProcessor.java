@@ -69,7 +69,7 @@ public final class CallSiteSpanProcessor implements ExtendedSpanProcessor {
     static final int N_PLUS_ONE_REPEATS = 5;
 
     /** How many distinct statements and calls of one trace are counted before it gives up. */
-    static final int MAX_STATEMENTS = 256;
+    static final int MAX_KEYS_PER_TRACE = 256;
 
     /**
      * How many traces are counted at once, so a map keyed by trace id cannot grow without bound.
@@ -183,7 +183,7 @@ public final class CallSiteSpanProcessor implements ExtendedSpanProcessor {
         if (span.getAttribute(CODE_STACKTRACE) != null) {
             return;
         }
-        String stacktrace = format(Thread.currentThread().getStackTrace());
+        String stacktrace = stacktraceOf(Thread.currentThread().getStackTrace());
         if (!stacktrace.isEmpty()) {
             span.setAttribute(CODE_STACKTRACE, stacktrace);
         }
@@ -197,12 +197,12 @@ public final class CallSiteSpanProcessor implements ExtendedSpanProcessor {
     /**
      * How often this statement or call has now started in this trace.
      *
-     * <p>Zero when it is not counted at all, which is what beyond {@link #MAX_STATEMENTS} distinct
+     * <p>Zero when it is not counted at all, which is what beyond {@link #MAX_KEYS_PER_TRACE} distinct
      * keys of one trace means: the counter stops adding keys and nothing else changes.
      */
     private int count(ReadWriteSpan span, String key) {
         ConcurrentMap<String, Integer> counts = countsOf(span.getSpanContext().getTraceId());
-        if (!counts.containsKey(key) && counts.size() >= MAX_STATEMENTS) {
+        if (!counts.containsKey(key) && counts.size() >= MAX_KEYS_PER_TRACE) {
             return 0;
         }
         // merge is atomic, so exactly one of several threads ending the repeats of one trace
@@ -304,7 +304,7 @@ public final class CallSiteSpanProcessor implements ExtendedSpanProcessor {
      * instrumentation advice sits in. Dropping only leading frames keeps a later application frame
      * that happens to live in one of those packages.
      */
-    static String format(StackTraceElement[] frames) {
+    static String stacktraceOf(StackTraceElement[] frames) {
         StringBuilder out = new StringBuilder();
         int written = 0;
         boolean started = false;

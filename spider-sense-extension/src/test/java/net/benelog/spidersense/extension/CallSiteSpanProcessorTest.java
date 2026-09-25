@@ -152,7 +152,7 @@ class CallSiteSpanProcessorTest {
                 new StackTraceElement("io.opentelemetry.NotLeading", "run", "NotLeading.java", 6),
         };
 
-        assertThat(CallSiteSpanProcessor.format(frames)).isEqualTo("""
+        assertThat(CallSiteSpanProcessor.stacktraceOf(frames)).isEqualTo("""
                 \tat org.h2.jdbc.JdbcPreparedStatement.executeQuery(JdbcPreparedStatement.java:4)
                 \tat orders.OrderRepository.load(OrderRepository.java:5)
                 \tat io.opentelemetry.NotLeading.run(NotLeading.java:6)
@@ -166,7 +166,7 @@ class CallSiteSpanProcessorTest {
             frames[i] = new StackTraceElement("orders.Frame" + i, "run", "Frame.java", i);
         }
 
-        assertThat(LINES.split(CallSiteSpanProcessor.format(frames)))
+        assertThat(LINES.split(CallSiteSpanProcessor.stacktraceOf(frames)))
                 .hasSize(CallSiteSpanProcessor.MAX_FRAMES);
     }
 
@@ -267,7 +267,7 @@ class CallSiteSpanProcessorTest {
     @Test
     void beyondTheStatementLimitTheCounterGivesUpQuietly() {
         inOneTrace(() -> {
-            for (int i = 0; i < CallSiteSpanProcessor.MAX_STATEMENTS; i++) {
+            for (int i = 0; i < CallSiteSpanProcessor.MAX_KEYS_PER_TRACE; i++) {
                 query("select * from table_" + i + " where id = ?");
             }
             for (int i = 0; i < 6; i++) {
@@ -276,7 +276,7 @@ class CallSiteSpanProcessorTest {
         });
 
         List<SpanData> repeats = exportedQueries();
-        assertThat(repeats).hasSize(CallSiteSpanProcessor.MAX_STATEMENTS + 6);
+        assertThat(repeats).hasSize(CallSiteSpanProcessor.MAX_KEYS_PER_TRACE + 6);
         assertThat(repeats).allSatisfy(span -> assertThat(stacktraceOf(span))
                 .as("the 257th statement is not counted, and nothing throws")
                 .isNull());

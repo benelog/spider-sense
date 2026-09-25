@@ -89,10 +89,10 @@ public final class IndexCatalog {
             TimeUnit.MILLISECONDS.toNanos(Math.max(0, Thresholds.slowQueryMillis()));
 
     /** One entry per table that has been attempted, successfully or not; bounded by MAX_TABLES. */
-    private static final Set<String> looked = ConcurrentHashMap.newKeySet();
+    private static final Set<String> attemptedTables = ConcurrentHashMap.newKeySet();
 
     /** Set for the length of a lookup, so the driver's own catalog queries fall straight through. */
-    private static final ThreadLocal<Boolean> inside = new ThreadLocal<>();
+    private static final ThreadLocal<Boolean> insideLookup = new ThreadLocal<>();
 
     /** Null means the agent's own, resolved at emit time; a test puts its own provider here. */
     private static volatile @Nullable LoggerProvider provider;
@@ -115,7 +115,7 @@ public final class IndexCatalog {
     static void afterExecute(
             Statement statement, @Nullable String sql, long elapsedNanos, long thresholdNanos) {
         try {
-            if (elapsedNanos < thresholdNanos || Boolean.TRUE.equals(inside.get())) {
+            if (elapsedNanos < thresholdNanos || Boolean.TRUE.equals(insideLookup.get())) {
                 return;
             }
             String text = sql != null ? sql : preparedSql(statement);
@@ -130,7 +130,7 @@ public final class IndexCatalog {
             if (connection == null) {
                 return;
             }
-            inside.set(Boolean.TRUE);
+            insideLookup.set(Boolean.TRUE);
             try (Scope lookup = Baggage.current()
                     .toBuilder()
                     .put(LOOKUP_KEY, "1")
@@ -139,7 +139,7 @@ public final class IndexCatalog {
                     .makeCurrent()) {
                 lookUpAll(connection, tables);
             } finally {
-                inside.remove();
+                insideLookup.remove();
             }
         } catch (Throwable swallowed) {
             // Documented: nothing here may reach the application.
@@ -167,10 +167,10 @@ public final class IndexCatalog {
         String url = meta.getURL();
         String catalog = catalogOf(connection);
         for (TableRef table : tables) {
-            if (looked.size() >= MAX_TABLES) {
+            if (attemptedTables.size() >= MAX_TABLES) {
                 return;
             }
-            if (!looked.add(url + "\0" + table.name())) {
+            if (!attemptedTables.add(url + "\0" + table.name())) {
                 continue;
             }
             lookUp(meta, catalog, table);
@@ -198,7 +198,7 @@ public final class IndexCatalog {
         List<CatalogTable> found = new ArrayList<>();
         try (ResultSet rows = meta.getTables(catalog, schema, pattern(meta, name), null)) {
             while (rows.next()) {
-                if (!indexed(rows.getString("TABLE_TYPE"))) {
+                if (!hasOwnIndexes(rows.getString("TABLE_TYPE"))) {
                     continue;
                 }
                 found.add(new CatalogTable(rows.getString("TABLE_SCHEM"), rows.getString("TABLE_NAME")));
@@ -216,7 +216,7 @@ public final class IndexCatalog {
      * indexes would name every column its statement filters on as unindexed, when the indexes that
      * serve them are its base table's; like a misread name, it emits nothing.
      */
-    private static boolean indexed(@Nullable String type) {
+    private static boolean hasOwnIndexes(@Nullable String type) {
         if (type == null) {
             return true;
         }
@@ -279,7 +279,7 @@ public final class IndexCatalog {
     private static void emit(
             DatabaseMetaData meta, @Nullable String catalog, @Nullable String schema, String table)
             throws SQLException {
-        String indexes = json(indexesOf(meta, catalog, schema, table));
+        String indexes = indexesJson(indexesOf(meta, catalog, schema, table));
         String product = meta.getDatabaseProductName();
         LogRecordBuilder record = loggerProvider()
                 .get(SCOPE_NAME)
@@ -347,7 +347,7 @@ public final class IndexCatalog {
      * The indexes as the JSON array the attribute carries, written by hand: the helper runs in the
      * application's class loader, where the only library it may assume is the JDK.
      */
-    static String json(List<Index> indexes) {
+    static String indexesJson(List<Index> indexes) {
         StringBuilder out = new StringBuilder("[");
         for (int i = 0; i < indexes.size(); i++) {
             Index index = indexes.get(i);
@@ -408,7 +408,7 @@ public final class IndexCatalog {
 
     /** For tests: forget which tables have been looked up. */
     static void forget() {
-        looked.clear();
+        attemptedTables.clear();
     }
 
     // ---------------------------------------------------------------- the scanner
