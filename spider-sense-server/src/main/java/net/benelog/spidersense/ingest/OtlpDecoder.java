@@ -37,6 +37,11 @@ import org.jspecify.annotations.Nullable;
  * {@link Batch}; the database is the writer's business. Decoding is total:
  * anything decodable is stored and nothing is reported back as partially
  * rejected, which is what the API contract promises.
+ *
+ * <p>Two steps, kept apart: the static {@code decode} methods are pure, a request and the time
+ * in, every record, catalog row and service sighting out, and the {@code accept} methods are
+ * the ingest around them, which registers the sightings, drops our own traffic and what the
+ * ingest cap refuses, raises the tingles and hands the batch to the writer.
  */
 public final class OtlpDecoder {
 
@@ -58,34 +63,61 @@ public final class OtlpDecoder {
     // --- traces ---
 
     /**
-     * Decodes one trace export and queues it.
+     * Decodes one trace export and queues what is to be kept of it.
      *
      * @return the batch that was queued, for tests that want to see what was decoded
      */
     public Batch accept(ExportTraceServiceRequest request) {
-        long now = store.clock().getAsLong();
+        Batch decoded = decode(request, store.clock().getAsLong());
+        Batch batch = sightings(decoded);
+        int port = ownPort.getAsInt();
+        for (SpanRecord record : decoded.spans()) {
+            if (isOurOwnTraffic(record, port, store.services().embeddedService())) {
+                continue;
+            }
+            // The ingest cap decides before the writer sees anything (storage.adoc#ingest-cap).
+            if (!store.ingestCap().accept(record.traceId())) {
+                continue;
+            }
+            batch.add(record);
+            batch.addTingles(store.tingles().raisedBy(record));
+        }
+        store.submit(batch);
+        return batch;
+    }
+
+    /**
+     * Every span of a trace export that has both ids, and a sighting of each resource's service at
+     * {@code now}: nothing filtered, no tingle raised, nothing registered.
+     */
+    static Batch decode(ExportTraceServiceRequest request, long now) {
         Batch batch = new Batch();
         for (ResourceSpans resourceSpans : request.getResourceSpansList()) {
             Map<String, Object> resource = Attrs.toMap(resourceSpans.getResource().getAttributesList());
             String service = serviceName(resource);
-            store.sawService(batch, service, resource, now);
+            batch.saw(new Batch.Sighting(service, resource, now));
             for (ScopeSpans scopeSpans : resourceSpans.getScopeSpansList()) {
                 String scope = scopeSpans.getScope().getName();
                 for (Span span : scopeSpans.getSpansList()) {
                     SpanRecord record = toRecord(span, service, scope);
-                    if (record == null || isOurOwnTraffic(record)) {
-                        continue;
+                    if (record != null) {
+                        batch.add(record);
                     }
-                    // The ingest cap decides before the writer sees anything (storage.adoc#ingest-cap).
-                    if (!store.ingestCap().accept(record.traceId())) {
-                        continue;
-                    }
-                    batch.add(record);
-                    batch.addTingles(store.tingles().raisedBy(record));
                 }
             }
         }
-        store.submit(batch);
+        return batch;
+    }
+
+    /**
+     * A new batch carrying the decoded one's sightings, each registered with the store, which is
+     * where a service seen for the first time is announced.
+     */
+    private Batch sightings(Batch decoded) {
+        Batch batch = new Batch();
+        for (Batch.Sighting sighting : decoded.services()) {
+            store.sawService(batch, sighting.name(), sighting.resource(), sighting.at());
+        }
         return batch;
     }
 
@@ -101,16 +133,17 @@ public final class OtlpDecoder {
      *
      * <p>When the embedded service is not known yet, any service counts: a span
      * served on our own port cannot be anyone else's work.
+     *
+     * @param embedded the service this server runs inside, or null when that is not known
      */
-    private boolean isOurOwnTraffic(SpanRecord span) {
+    static boolean isOurOwnTraffic(SpanRecord span, int ownPort, @Nullable String embedded) {
         if (!"SERVER".equals(span.kind())) {
             return false;
         }
         Long port = span.serverPort();
-        if (port == null || port.intValue() != ownPort.getAsInt()) {
+        if (port == null || port.intValue() != ownPort) {
             return false;
         }
-        String embedded = store.services().embeddedService();
         return embedded == null || embedded.equals(span.service());
     }
 
@@ -171,23 +204,30 @@ public final class OtlpDecoder {
     // --- metrics ---
 
     public Batch accept(ExportMetricsServiceRequest request) {
-        long now = store.clock().getAsLong();
+        Batch decoded = decode(request, store.clock().getAsLong());
+        Batch batch = sightings(decoded);
+        decoded.metrics().forEach(batch::add);
+        store.submit(batch);
+        return batch;
+    }
+
+    /** Every point of a metrics export that carries a value, and the sightings of its services. */
+    static Batch decode(ExportMetricsServiceRequest request, long now) {
         Batch batch = new Batch();
         for (ResourceMetrics resourceMetrics : request.getResourceMetricsList()) {
             Map<String, Object> resource = Attrs.toMap(resourceMetrics.getResource().getAttributesList());
             String service = serviceName(resource);
-            store.sawService(batch, service, resource, now);
+            batch.saw(new Batch.Sighting(service, resource, now));
             for (ScopeMetrics scopeMetrics : resourceMetrics.getScopeMetricsList()) {
                 for (Metric metric : scopeMetrics.getMetricsList()) {
                     accept(batch, service, metric);
                 }
             }
         }
-        store.submit(batch);
         return batch;
     }
 
-    private void accept(Batch batch, String service, Metric metric) {
+    private static void accept(Batch batch, String service, Metric metric) {
         String name = fit(metric.getName());
         String unit = metric.getUnit();
         String description = metric.getDescription();
@@ -300,12 +340,24 @@ public final class OtlpDecoder {
     // --- logs ---
 
     public Batch accept(ExportLogsServiceRequest request) {
-        long now = store.clock().getAsLong();
+        Batch decoded = decode(request, store.clock().getAsLong());
+        Batch batch = sightings(decoded);
+        decoded.logs().forEach(batch::add);
+        decoded.catalogs().forEach(batch::add);
+        store.submit(batch);
+        return batch;
+    }
+
+    /**
+     * Every log record of a logs export and every index catalog it carries, and the sightings of
+     * its services; a record with no time of its own is placed at {@code now}.
+     */
+    static Batch decode(ExportLogsServiceRequest request, long now) {
         Batch batch = new Batch();
         for (ResourceLogs resourceLogs : request.getResourceLogsList()) {
             Map<String, Object> resource = Attrs.toMap(resourceLogs.getResource().getAttributesList());
             String service = serviceName(resource);
-            store.sawService(batch, service, resource, now);
+            batch.saw(new Batch.Sighting(service, resource, now));
             for (ScopeLogs scopeLogs : resourceLogs.getScopeLogsList()) {
                 String logger = scopeLogs.getScope().getName();
                 for (io.opentelemetry.proto.logs.v1.LogRecord record : scopeLogs.getLogRecordsList()) {
@@ -319,7 +371,6 @@ public final class OtlpDecoder {
                 }
             }
         }
-        store.submit(batch);
         return batch;
     }
 
