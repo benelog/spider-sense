@@ -46,7 +46,7 @@ public final class Codecs {
 
     /** A double, or {@code null} when it is not a number (an absent value). */
     static Json.JsonObject put(Json.JsonObject object, String key, double value) {
-        if (Double.isNaN(value) || Double.isInfinite(value)) {
+        if (!Double.isFinite(value)) {
             return object.putNull(key);
         }
         return object.put(key, round(value));
@@ -86,7 +86,7 @@ public final class Codecs {
     static Json.JsonArray doubles(double[] values) {
         Json.JsonArray array = Json.arr();
         for (double value : values) {
-            if (Double.isNaN(value) || Double.isInfinite(value)) {
+            if (!Double.isFinite(value)) {
                 array.add((Json.JsonValue) null);
             } else {
                 array.add(round(value));
@@ -101,7 +101,7 @@ public final class Codecs {
         for (int i = 0; i < values.length; i++) {
             if (i < counts.length && counts[i] == 0) {
                 array.add((Json.JsonValue) null);
-            } else if (Double.isNaN(values[i]) || Double.isInfinite(values[i])) {
+            } else if (!Double.isFinite(values[i])) {
                 array.add((Json.JsonValue) null);
             } else {
                 array.add(round(values[i]));
@@ -117,27 +117,26 @@ public final class Codecs {
         return object;
     }
 
+    /**
+     * An attribute's value: rounded like every other duration, {@code null} for what is not a
+     * number, and a key/value list not yet stored as its JSON text, as it reads once it is.
+     */
+    private static final AttrJson.Rules ATTRIBUTE =
+            new AttrJson.Rules(AttrJson.NonFinite.NULL, Codecs::round, true);
+
+    /**
+     * A finding's {@code numbers}, whose keys are the kind's own: the same, with a nested map an
+     * object, as a slow endpoint's hot span is.
+     *
+     * <p>They are data rather than schema — every kind names different ones — so they are written
+     * by the type of the value, which is the one place in this file that does not read like the
+     * contract, because the contract itself says "kind-specific".
+     */
+    private static final AttrJson.Rules NUMBER =
+            new AttrJson.Rules(AttrJson.NonFinite.NULL, Codecs::round, false);
+
     private static Json.JsonValue value(@Nullable Object value) {
-        Json.JsonObject holder = Json.obj();
-        switch (value) {
-            case null -> holder.putNull("v");
-            case String text -> holder.put("v", text);
-            case Long number -> holder.put("v", number.longValue());
-            case Integer number -> holder.put("v", number.longValue());
-            case Double number -> put(holder, "v", number.doubleValue());
-            case Boolean flag -> holder.put("v", flag.booleanValue());
-            case List<?> list -> {
-                Json.JsonArray array = Json.arr();
-                for (Object element : list) {
-                    array.add(value(element));
-                }
-                holder.put("v", array);
-            }
-            // A key/value list, not yet stored: its JSON text, as it reads once it is.
-            case Map<?, ?> map -> holder.put("v", AttrJson.toJson(map).toJson());
-            default -> holder.put("v", String.valueOf(value));
-        }
-        return holder.get("v");
+        return AttrJson.toJson(value, ATTRIBUTE);
     }
 
     static Json.JsonObject window(Window window) {
@@ -154,8 +153,15 @@ public final class Codecs {
     // --- the contract's objects ---------------------------------------------
 
     static Json.JsonObject totals(Stats.Totals totals) {
-        Json.JsonObject object = Json.obj()
-                .put("requests", totals.requests())
+        return putTotals(Json.obj(), totals);
+    }
+
+    /**
+     * The numbers of api.adoc#service-summary, in their order: what the overview's totals, a
+     * service summary and a service node of the map all carry.
+     */
+    private static Json.JsonObject putTotals(Json.JsonObject object, Stats.Totals totals) {
+        object.put("requests", totals.requests())
                 .put("errors", totals.errors())
                 .put("errorRate", round(totals.errorRate()))
                 .put("rps", round(totals.rps()));
@@ -168,23 +174,13 @@ public final class Codecs {
     }
 
     static Json.JsonObject serviceSummary(Stats.ServiceSummary service) {
-        Json.JsonObject object = Json.obj()
-                .put("name", service.name())
-                .put("language", service.language())
-                .put("embedded", service.embedded())
-                .put("firstSeen", service.firstSeen())
-                .put("lastSeen", service.lastSeen())
-                .put("requests", service.totals().requests())
-                .put("errors", service.totals().errors())
-                .put("errorRate", round(service.totals().errorRate()))
-                .put("rps", round(service.totals().rps()));
-        put(object, "p50Ms", service.totals().p50Ms());
-        put(object, "p95Ms", service.totals().p95Ms());
-        put(object, "p99Ms", service.totals().p99Ms());
-        put(object, "maxMs", service.totals().maxMs());
-        put(object, "apdex", service.totals().apdex());
-        return object
-                .put("histogram", longs(service.totals().histogram()))
+        return putTotals(Json.obj()
+                        .put("name", service.name())
+                        .put("language", service.language())
+                        .put("embedded", service.embedded())
+                        .put("firstSeen", service.firstSeen())
+                        .put("lastSeen", service.lastSeen()),
+                service.totals())
                 .put("sparkline", longs(service.sparkline()))
                 .put("hasJvm", service.hasJvm());
     }
@@ -542,16 +538,7 @@ public final class Codecs {
                     .put("name", node.name());
             Stats.Totals totals = node.totals();
             if (totals != null) {
-                object.put("requests", totals.requests())
-                        .put("errors", totals.errors())
-                        .put("errorRate", round(totals.errorRate()))
-                        .put("rps", round(totals.rps()));
-                put(object, "p50Ms", totals.p50Ms());
-                put(object, "p95Ms", totals.p95Ms());
-                put(object, "p99Ms", totals.p99Ms());
-                put(object, "maxMs", totals.maxMs());
-                put(object, "apdex", totals.apdex());
-                object.put("histogram", longs(totals.histogram())).put("hasJvm", node.hasJvm());
+                putTotals(object, totals).put("hasJvm", node.hasJvm());
             } else if (!"user".equals(node.kind())) {
                 object.put("calls", node.calls()).put("errors", node.errors());
                 put(object, "avgMs", node.avgMs());
@@ -723,7 +710,7 @@ public final class Codecs {
 
     static Json.JsonObject finding(Findings.Finding finding) {
         Json.JsonObject numbers = Json.obj();
-        finding.numbers().forEach((key, value) -> any(numbers, key, value));
+        finding.numbers().forEach((key, value) -> numbers.put(key, AttrJson.toJson(value, NUMBER)));
         return Json.obj()
                 .put("id", finding.id())
                 .put("kind", finding.kind())
@@ -772,44 +759,6 @@ public final class Codecs {
         return array;
     }
 
-    /**
-     * A finding's {@code numbers}, whose keys are the kind's own.
-     *
-     * <p>They are data rather than schema — every kind names different ones — so
-     * they are written by the type of the value, which is the one place in this file
-     * that does not read like the contract, because the contract itself says
-     * "kind-specific".
-     */
-    private static void any(Json.JsonObject object, String key, Object value) {
-        switch (value) {
-            case null -> object.putNull(key);
-            case String text -> object.put(key, text);
-            case Double number -> put(object, key, number.doubleValue());
-            case Float number -> put(object, key, number.doubleValue());
-            case Number number -> object.put(key, number.longValue());
-            case Boolean flag -> object.put(key, flag.booleanValue());
-            case Map<?, ?> map -> {
-                // A nested object, as a slow-endpoint's hotSpan is.
-                Json.JsonObject inner = Json.obj();
-                map.forEach((name, each) -> any(inner, String.valueOf(name), each));
-                object.put(key, inner);
-            }
-            case List<?> list -> {
-                Json.JsonArray array = Json.arr();
-                for (Object element : list) {
-                    if (element instanceof Map<?, ?> map) {
-                        Json.JsonObject inner = Json.obj();
-                        map.forEach((name, each) -> any(inner, String.valueOf(name), each));
-                        array.add(inner);
-                    } else {
-                        array.add(String.valueOf(element));
-                    }
-                }
-                object.put(key, array);
-            }
-            default -> object.put(key, String.valueOf(value));
-        }
-    }
 
     static Json.JsonObject comparison(Compare.Comparison comparison) {
         Json.JsonArray endpoints = Json.arr();
@@ -930,20 +879,8 @@ public final class Codecs {
                 .put("elapsedMs", result.elapsedMs());
     }
 
-    /** A cell stays the type the store holds it as; anything else is its text. */
+    /** A cell stays the type the store holds it as, unrounded; anything else is its text. */
     private static void cell(Json.JsonArray cells, @Nullable Object value) {
-        switch (value) {
-            case null -> cells.add((Json.JsonValue) null);
-            case Boolean flag -> cells.add(flag.booleanValue());
-            case Long number -> cells.add(number.longValue());
-            case Double number -> {
-                if (number.isNaN() || number.isInfinite()) {
-                    cells.add((Json.JsonValue) null);
-                } else {
-                    cells.add(number.doubleValue());
-                }
-            }
-            default -> cells.add(String.valueOf(value));
-        }
+        cells.add(AttrJson.toJson(value, AttrJson.Rules.ANSWER));
     }
 }

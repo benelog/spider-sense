@@ -5,6 +5,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.function.DoubleUnaryOperator;
 
 import net.benelog.spidersilk.json.Json;
 import org.jspecify.annotations.Nullable;
@@ -215,37 +216,87 @@ public final class AttrJson {
     }
 
     /**
+     * What a NaN or an infinity becomes, since JSON has no syntax for either and Spider Silk
+     * refuses to write one.
+     */
+    public enum NonFinite {
+        /** {@code null}: an absent value, which is what an answer means by it. */
+        NULL,
+        /** The text Java spells it with, so a stored attribute keeps its value. */
+        TEXT
+    }
+
+    /**
+     * Where the writers of {@link #toJson(Object, Rules)} differ.
+     *
+     * @param nonFinite  what a NaN or an infinity becomes
+     * @param finite     what any other double is written as, such as rounded to three decimals
+     * @param mapsAsText a map as its JSON text rather than as an object, which is how an
+     *                   attribute that holds one reads back once it is stored
+     */
+    public record Rules(NonFinite nonFinite, DoubleUnaryOperator finite, boolean mapsAsText) {
+
+        /** The store's own: a map is an object, and a non-finite double is its text. */
+        public static final Rules STORE = new Rules(NonFinite.TEXT, DoubleUnaryOperator.identity(), false);
+
+        /** An answer's: a non-finite double is null, and every other value as the store writes it. */
+        public static final Rules ANSWER = new Rules(NonFinite.NULL, DoubleUnaryOperator.identity(), false);
+    }
+
+    /**
      * One value of the store's value space as JSON: a list is an array of its
      * elements, never Java's {@code [a, b]}, and a map is an object, however deep
      * either nests.
      */
     public static Json.JsonValue toJson(@Nullable Object value) {
+        return toJson(value, Rules.STORE);
+    }
+
+    /**
+     * The one conversion from a Java value to JSON: the store's attributes, the API's attributes,
+     * a finding's numbers, a SQL cell, the export's numbers and MCP's structured content all come
+     * through here, and differ only by {@code rules}. Whole numbers are JSON integers, a list is an
+     * array however deep it nests, and anything else is its text.
+     */
+    public static Json.JsonValue toJson(@Nullable Object value, Rules rules) {
         Json.JsonObject holder = Json.obj();
         switch (value) {
             case null -> holder.putNull("v");
             case String text -> holder.put("v", text);
             case Long number -> holder.put("v", number.longValue());
             case Integer number -> holder.put("v", number.longValue());
-            // JSON has no NaN or Infinity, and Spider Silk refuses to write one: the
-            // attribute keeps its value as the text Java spells it.
-            case Double number when !Double.isFinite(number) -> holder.put("v", number.toString());
-            case Double number -> holder.put("v", number.doubleValue());
+            case Short number -> holder.put("v", number.longValue());
+            case Byte number -> holder.put("v", number.longValue());
+            case Double number -> putDouble(holder, number, rules);
+            case Float number -> putDouble(holder, number.doubleValue(), rules);
             case Boolean flag -> holder.put("v", flag.booleanValue());
             case List<?> list -> {
                 Json.JsonArray array = Json.arr();
                 for (Object element : list) {
-                    array.add(toJson(element));
+                    array.add(toJson(element, rules));
                 }
                 holder.put("v", array);
             }
+            // The text the store would write for it, which is what the attribute reads back as.
+            case Map<?, ?> map when rules.mapsAsText() -> holder.put("v", toJson(map, Rules.STORE).toJson());
             case Map<?, ?> map -> {
                 Json.JsonObject object = Json.obj();
-                map.forEach((key, each) -> object.put(String.valueOf(key), toJson(each)));
+                map.forEach((key, each) -> object.put(String.valueOf(key), toJson(each, rules)));
                 holder.put("v", object);
             }
             default -> holder.put("v", String.valueOf(value));
         }
         return holder.get("v");
+    }
+
+    private static void putDouble(Json.JsonObject holder, double number, Rules rules) {
+        if (Double.isFinite(number)) {
+            holder.put("v", rules.finite().applyAsDouble(number));
+        } else if (rules.nonFinite() == NonFinite.NULL) {
+            holder.putNull("v");
+        } else {
+            holder.put("v", Double.toString(number));
+        }
     }
 
     private static @Nullable Object fromJson(Json.JsonValue value) {

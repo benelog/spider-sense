@@ -71,4 +71,31 @@ class AttrJsonTest {
         assertThat(event.attributes().get("exception.type")).isEqualTo("java.lang.StackOverflowError");
         assertThat((String) event.attributes().get("exception.stacktrace")).endsWith(AttrJson.CUT_MARK);
     }
+
+    @Test
+    void theStoreKeepsANonFiniteDoubleAsItsTextAndAnAnswerWritesNull() {
+        assertThat(AttrJson.toJson(Double.NaN).toJson()).isEqualTo("\"NaN\"");
+        assertThat(AttrJson.toJson(Double.POSITIVE_INFINITY, AttrJson.Rules.STORE).toJson())
+                .isEqualTo("\"Infinity\"");
+        assertThat(AttrJson.toJson(Double.NaN, AttrJson.Rules.ANSWER).toJson()).isEqualTo("null");
+        assertThat(AttrJson.toJson(1.5, AttrJson.Rules.ANSWER).toJson()).isEqualTo("1.5");
+    }
+
+    @Test
+    void wholeNumbersAreIntegersAndAListKeepsItsElementsTypes() {
+        assertThat(AttrJson.toJson(List.of(1L, 2, (short) 3, "four", true), AttrJson.Rules.ANSWER).toJson())
+                .isEqualTo("[1,2,3,\"four\",true]");
+    }
+
+    @Test
+    void theRulesRoundAFiniteDoubleAndCanWriteAMapAsItsStoredText() {
+        AttrJson.Rules rounded = new AttrJson.Rules(AttrJson.NonFinite.NULL,
+                value -> Math.round(value * 10.0) / 10.0, true);
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("a", 1.25);
+
+        assertThat(AttrJson.toJson(List.of(1.26, Double.NaN), rounded).toJson()).isEqualTo("[1.3,null]");
+        assertThat(AttrJson.toJson(map, rounded).toJson()).isEqualTo("\"{\\\"a\\\":1.25}\"");
+        assertThat(AttrJson.toJson(map, AttrJson.Rules.ANSWER).toJson()).isEqualTo("{\"a\":1.25}");
+    }
 }

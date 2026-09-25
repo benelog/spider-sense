@@ -358,14 +358,13 @@ final class SessionExport {
      * A nullable number as the JSON value it is: a number, or null — which
      * {@code put(key, (JsonValue) null)} writes as {@code null}.
      */
-    private static Json.@Nullable JsonValue value(@Nullable Long number) {
-        return number == null ? null : Json.obj().put("v", number.longValue()).get("v");
+    private static Json.JsonValue value(@Nullable Long number) {
+        return AttrJson.toJson(number, AttrJson.Rules.ANSWER);
     }
 
     /** The same for a double; a NaN or an infinity has no JSON syntax, so it is null. */
-    private static Json.@Nullable JsonValue value(@Nullable Double number) {
-        return number == null || number.isNaN() || number.isInfinite()
-                ? null : Json.obj().put("v", number.doubleValue()).get("v");
+    private static Json.JsonValue value(@Nullable Double number) {
+        return AttrJson.toJson(number, AttrJson.Rules.ANSWER);
     }
 
     private static @Nullable Double doubleOrNull(ResultSet rs, String column) throws SQLException {

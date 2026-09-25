@@ -19,15 +19,19 @@ public final class Numbers {
     private Numbers() {
     }
 
+    /** Whether a value is there and is a number JSON and a reader can say: not null, NaN or infinite. */
+    public static boolean finite(@Nullable Double value) {
+        return value != null && Double.isFinite(value);
+    }
+
     /** {@code 1,532.4 ms}; an absent duration is a dash. */
     public static String millis(@Nullable Double value) {
-        return value == null || value.isNaN() || value.isInfinite() ? "—" : number(value) + " ms";
+        return finite(value) ? number(value) + " ms" : "—";
     }
 
     /** {@code 1,532.4}: one decimal and a thousands separator. */
     public static String number(@Nullable Double value) {
-        return value == null || value.isNaN() || value.isInfinite()
-                ? "—" : String.format(Locale.US, "%,.1f", value);
+        return finite(value) ? String.format(Locale.US, "%,.1f", value) : "—";
     }
 
     /** {@code 1,532}: a count is whole. */
@@ -37,8 +41,9 @@ public final class Numbers {
 
     /** {@code 43.0%} from a fraction of one; an absent rate is a dash. */
     public static String percent(@Nullable Double fraction) {
-        return fraction == null || fraction.isNaN() || fraction.isInfinite()
-                ? "—" : String.format(Locale.US, "%,.1f%%", fraction * 100);
+        // The null test NullAway can see; finite() makes the same one.
+        return fraction != null && finite(fraction)
+                ? String.format(Locale.US, "%,.1f%%", fraction * 100) : "—";
     }
 
     /** {@code 1 call}, {@code 3 calls}: a count with the noun it counts. */
@@ -48,7 +53,6 @@ public final class Numbers {
 
     /** {@code 0.931}, the way an Apdex is written; {@code null} is a dash. */
     public static String score(@Nullable Double value) {
-        return value == null || value.isNaN() || value.isInfinite()
-                ? "—" : String.format(Locale.US, "%.3f", value);
+        return finite(value) ? String.format(Locale.US, "%.3f", value) : "—";
     }
 }

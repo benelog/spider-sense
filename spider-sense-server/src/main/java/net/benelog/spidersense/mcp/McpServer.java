@@ -239,22 +239,8 @@ public final class McpServer {
         return null;
     }
 
-    private static Json.JsonObject structured(Map<String, Object> values) {
-        Json.JsonObject object = Json.obj();
-        values.forEach((key, value) -> {
-            if (value == null) {
-                object.putNull(key);
-            } else if (value instanceof Boolean flag) {
-                object.put(key, (boolean) flag);
-            } else if (value instanceof Double number) {
-                object.put(key, (double) number);
-            } else if (value instanceof Number number) {
-                object.put(key, number.longValue());
-            } else {
-                object.put(key, String.valueOf(value));
-            }
-        });
-        return object;
+    private static Json.JsonValue structured(Map<String, Object> values) {
+        return AttrJson.toJson(values, AttrJson.Rules.ANSWER);
     }
 
     // --- the envelope ---------------------------------------------------------
