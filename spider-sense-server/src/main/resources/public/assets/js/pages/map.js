@@ -9,7 +9,7 @@ import {
 } from '../ui.js';
 import { pageLoader } from '../page.js';
 import { timeSeries } from '../charts.js';
-import { throughputSpec } from '../loadchart.js';
+import { throughputSpec } from '../throughput.js';
 import { histogramBars, bucketVars, apdexClass, fmtApdex } from '../buckets.js';
 import { dur, count, rate, pct } from '../format.js';
 

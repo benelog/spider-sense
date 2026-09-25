@@ -4,9 +4,8 @@ import * as api from '../api.js';
 import * as router from '../router.js';
 import { h, fill, panel, table, chip, methodChip, statusBar, tabs, spinner, serviceChip, breakdownBar, breakdownLead } from '../ui.js';
 import { pageLoader, skeleton } from '../page.js';
-import { redCharts } from './service.js';
 import { histogramBars, apdexCell } from '../buckets.js';
-import { traceTable } from './traces.js';
+import { traceTable, redCharts } from '../widgets.js';
 import { statementColumn, errorTypeColumn, messageColumn, seenColumn, durationColumn, countColumn } from '../columns.js';
 import { dur, count, rate } from '../format.js';
 

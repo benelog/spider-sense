@@ -2,56 +2,10 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, icon, panel, table, serviceChip, statusChip, durationBar, debounce, spinner, emptyState, snippetBlocks } from '../ui.js';
+import { h, fill, icon, panel, debounce, spinner, emptyState, snippetBlocks } from '../ui.js';
 import { pageLoader } from '../page.js';
-import { dur, count, time, bothTimes, shortId } from '../format.js';
-
-/** A trace table shared by the Traces, Endpoint, Query and Error pages. */
-export function traceTable(rows, opts = {}) {
-  const ref = { max: 0 };
-  const recalc = (rs) => { ref.max = rs.reduce((m, r) => Math.max(m, r.durationMs || 0), 0); };
-  recalc(rows);
-  const columns = [
-    { key: 'start', label: 'Time', sortable: false, width: '88px', render: (r) => h('span.mono', { title: bothTimes(r.start) }, time(r.start)) },
-    {
-      key: 'rootName', label: 'Root', sortable: false, cls: 'wide',
-      render: (r) => h('div',
-        h('div.cell-ellipsis', { title: r.rootName }, h('b', r.rootName)),
-        h('div.row', { style: { gap: '4px', marginTop: '2px' } },
-          (r.services || []).slice(0, 3).map((s) => serviceChip(s)),
-          (r.services || []).length > 3 ? h('span.muted', '+' + ((r.services || []).length - 3)) : null)),
-    },
-    {
-      key: 'durationMs', label: 'Duration', align: 'right', sortable: false, width: '110px',
-      render: (r) => h('div.duration-cell',
-        h('span', { class: r.error ? 'bad' : r.slow ? 'warned' : '' }, dur(r.durationMs)),
-        durationBar(r.durationMs, ref.max, r.error ? 'err' : r.slow ? 'slow' : null)),
-    },
-    { key: 'spanCount', label: 'Spans', align: 'right', sortable: false, width: '58px', render: (r) => count(r.spanCount) },
-    { key: 'dbCount', label: 'DB', align: 'right', sortable: false, width: '48px', render: (r) => (r.dbCount ? count(r.dbCount) : h('span.muted', '-')) },
-    { key: 'httpStatus', label: 'Status', align: 'right', sortable: false, width: '58px', render: (r) => statusChip(r.httpStatus) },
-    {
-      key: 'marks', label: '', sortable: false, width: '58px',
-      render: (r) => h('span.row', { style: { gap: '4px' } },
-        r.error ? h('span.marker.err', { title: 'Error' }, icon('bolt')) : null,
-        r.slow ? h('span.marker.slow', { title: 'Slow request' }, icon('turtle')) : null),
-    },
-  ];
-  if (opts.showId) {
-    columns.splice(1, 0, { key: 'traceId', label: 'Trace', sortable: false, width: '92px', render: (r) => h('span.mono.muted', { title: r.traceId }, shortId(r.traceId)) });
-  }
-  const rowOpts = {
-    rowKey: (r) => r.traceId,
-    rowClass: (r) => (r.error ? 'is-error' : r.slow ? 'is-slow' : ''),
-    onRowClick: opts.onRowClick || ((r) => router.openDetail('traces', r.traceId)),
-    empty: opts.empty || 'No trace matches this window and filter.',
-  };
-  const node = table(columns, { rows, ...rowOpts });
-  /** Replace the rows in place: scroll position and the sort header survive. */
-  const setRows = node.setRows;
-  node.setRows = (rs) => { recalc(rs); return setRows(rs); };
-  return node;
-}
+import { traceTable } from '../widgets.js';
+import { count } from '../format.js';
 
 export function render(root, ctx) {
   const q = { ...ctx.query };

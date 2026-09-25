@@ -8,67 +8,13 @@ import {
   spinner, serviceColor,
 } from '../ui.js';
 import { pageLoader, skeleton } from '../page.js';
-import { chartBox } from '../charts.js';
 import { histogramBars, apdexCell } from '../buckets.js';
-import { chartModeSwitch, throughputSpec } from '../loadchart.js';
-import { statTiles } from './overview.js';
+import { statTiles, redCharts } from '../widgets.js';
 import { statementColumn, errorTypeColumn, messageColumn, seenColumn, durationColumn, countColumn } from '../columns.js';
 import { count, rate, rel, bothTimes } from '../format.js';
 
-/**
- * The three RED charts, shared with the Endpoint page. The first carries the
- * Requests | Load switch; `chart` in the hash query wins, Load is the default here.
- */
-export function redCharts() {
-  let lastSeries = {};
-  const modeSwitch = chartModeSwitch('load', () => node.apply(lastSeries));
-  const charts = [
-    chartBox({ title: 'Requests and errors', actions: modeSwitch }),
-    chartBox({ title: 'Response time' }),
-    chartBox({ title: 'Error rate' }),
-  ];
-  const node = h('div.grid-3', charts.map((c) => c.node));
-
-  /** A same-page hash change only calls refresh(), so `chart` is re-read here. */
-  node.syncMode = () => modeSwitch.sync();
-
-  node.apply = (series) => {
-    lastSeries = series;
-    const t = series.t || [];
-    const specs = [
-      throughputSpec(series, modeSwitch.value(), { height: 160 }),
-      {
-        height: 160, t,
-        series: [
-          { label: 'p50', values: series.p50Ms || [], color: 'series5', type: 'line', scale: 'ms', width: 1.6 },
-          { label: 'p95', values: series.p95Ms || [], color: 'accent', type: 'line', scale: 'ms', width: 2 },
-          { label: 'p99', values: series.p99Ms || [], color: 'warn', type: 'line', scale: 'ms', width: 1.6, dash: [4, 3] },
-        ],
-        axes: [{ scale: 'ms', label: 'ms' }],
-      },
-      {
-        height: 160, t,
-        series: [{
-          label: 'Error rate', legendLabel: 'Errors as a share of requests',
-          values: errorRate(series), color: 'err', type: 'area', scale: 'pct', width: 2,
-        }],
-        axes: [{ scale: 'pct', label: '%' }],
-      },
-    ];
-    specs.forEach((spec, i) => charts[i].show(spec));
-  };
-  node.destroy = () => charts.forEach((c) => c.destroy());
-  return node;
-}
-
-function errorRate(series) {
-  const req = series.requests || [];
-  const err = series.errors || [];
-  return req.map((r, i) => (r ? ((err[i] || 0) / r) * 100 : null));
-}
-
-/** The endpoints table, shared with the Service page only for now. */
-export function endpointTable(rows, sortState, onSort) {
+/** The endpoints table. */
+function endpointTable(rows, sortState, onSort) {
   const columns = [
     { key: 'method', label: 'Method', width: '68px', render: (e) => methodChip(e.method) || h('span.muted', '-') },
     { key: 'route', label: 'Endpoint', cls: 'wide', render: (e) => h('span.cell-ellipsis', { title: e.name }, e.route || e.name) },

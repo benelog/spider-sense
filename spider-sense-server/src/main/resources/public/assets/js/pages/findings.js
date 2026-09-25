@@ -10,22 +10,7 @@ import { count, dur, rate, pct, bytes, time, bothTimes, truncate, shortId } from
 import { codeFrame } from '../frames.js';
 import { copyButtons, cliLine } from '../copyas.js';
 import { pageLoader } from '../page.js';
-
-const KIND_LABEL = {
-  regression: 'regression',
-  error: 'error',
-  'log-error': 'log error',
-  'n-plus-one': 'n+1',
-  'n-plus-one-http': 'n+1 http',
-  'slow-query': 'slow query',
-  'slow-endpoint': 'slow endpoint',
-  'slow-job': 'slow job',
-  'slow-external': 'slow external',
-  'pool-exhausted': 'pool',
-  'gc-pause': 'gc pause',
-  'heap-pressure': 'heap',
-  'thread-growth': 'threads',
-};
+import { severityDot, kindChip, findingTarget, schemaLines } from '../widgets.js';
 
 /** The dot and the word, so the severity is not carried by colour alone. */
 export function severityMark(severity) {
@@ -68,42 +53,6 @@ const STATE_TITLE = {
 export function stateChip(state) {
   if (!state) return null;
   return chip(state, { class: 'chip-state state-' + state, title: STATE_TITLE[state] || state });
-}
-
-export function severityDot(severity) {
-  const s = severity || 'low';
-  return h('span.sev-dot', { class: 'sev-dot sev-' + s, title: s + ' severity' });
-}
-
-export function kindChip(kind) {
-  return chip(KIND_LABEL[kind] || kind, { class: 'chip-kind', title: kind });
-}
-
-/**
- * Where a finding points: its subject's page, and the first evidence trace when the
- * subject has no page of its own (a job) or names nothing (pages.adoc#findings).
- */
-export function findingTarget(finding) {
-  const subject = finding.subject || {};
-  const shared = api.sharedQuery();
-  if (subject.endpointId) return { path: router.detailPath('endpoints', subject.endpointId), query: shared };
-  if (subject.queryId) return { path: router.detailPath('queries', subject.queryId), query: shared };
-  if (subject.errorId) return { path: router.detailPath('errors', subject.errorId), query: shared };
-  if (subject.pool || subject.jvm) return { path: '/jvm', query: { ...shared, service: finding.service || shared.service } };
-  if (subject.logger) {
-    return {
-      path: '/logs',
-      query: { ...shared, service: finding.service || shared.service, severity: 'ERROR', q: subject.logger },
-    };
-  }
-  const trace = (finding.traces || [])[0];
-  if (trace) return { path: router.detailPath('traces', trace), query: shared };
-  return null;
-}
-
-export function goToFinding(finding) {
-  const target = findingTarget(finding);
-  if (target) router.go(target.path, target.query);
 }
 
 /** The number the kind is ranked by, as pages.adoc#findings spells the column out. */
@@ -180,36 +129,6 @@ function hotSpanLine(hot) {
   return h('span',
     h('span.mono', truncate(String(hot.name || ''), 120)),
     h('span.muted', ' · ' + dur(hot.selfMs) + ' self · ' + pct(hot.share)));
-}
-
-/**
- * The schema block under the statement (findings.adoc#schema), as the
- * text rendering has it: one line per table, then one line for the columns.
- *
- * <p>Nothing is computed here. The tables, the predicates and the unindexed columns
- * are the ones the API carries, so the page and the CLI say the same thing; a
- * finding whose block is null shows nothing.
- */
-export function schemaLines(schema) {
-  if (!schema) return null;
-  const predicates = schema.predicates || [];
-  const unindexed = schema.unindexed || [];
-  return h('div.f-schema.mono',
-    (schema.tables || []).map((t) => h('div.f-schema-line',
-      h('span.muted', 'indexes ' + t.table + ': '),
-      (t.indexes || []).length
-        ? (t.indexes || []).map((index, i) => h('span',
-          i ? ', ' : null,
-          (index.name || '') + ' (' + (index.columns || []).join(', ') + ')',
-          index.unique ? h('span.muted', ' unique') : null))
-        : h('span.muted', 'none'))),
-    h('div.f-schema-line',
-      h('span.muted', 'predicates: '),
-      predicates.length
-        ? [predicates.join(', '),
-          h('span.muted', '; unindexed: '),
-          unindexed.length ? h('span.accent', unindexed.join(', ')) : h('span.muted', 'none')]
-        : h('span.muted', 'none')));
 }
 
 /**

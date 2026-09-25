@@ -8,7 +8,7 @@ import { chartBox } from '../charts.js';
 import { codeFrame, foldedStack, framesMode } from '../frames.js';
 import { copyButtons, cliLine } from '../copyas.js';
 import { countColumn } from '../columns.js';
-import { traceTable } from './traces.js';
+import { traceTable } from '../widgets.js';
 import { count, rel, bothTimes, full, splitType } from '../format.js';
 
 /** One section per cause, the root cause first, each folded as a stack trace (pages.adoc#error). */

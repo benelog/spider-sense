@@ -13,7 +13,7 @@ import { count, dur, rate, time } from '../format.js';
 const VERDICTS = ['worse', 'new', 'same', 'better', 'gone'];
 
 /** The verdict chip: the word first, so the colour is never alone. */
-export function verdictChip(verdict) {
+function verdictChip(verdict) {
   const v = VERDICTS.includes(verdict) ? verdict : 'same';
   return chip(v, { class: 'verdict verdict-' + v });
 }

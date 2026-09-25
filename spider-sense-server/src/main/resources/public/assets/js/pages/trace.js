@@ -7,7 +7,8 @@ import {
   drawer, closeDrawer, spinner,
 } from '../ui.js';
 import { pageLoader, skeleton } from '../page.js';
-import { formatSql, stackTrace } from '../sql.js';
+import { formatSql } from '../sql.js';
+import { stackTrace } from '../frames.js';
 import { dur, count, timeMs, bothTimes, offset, full } from '../format.js';
 import {
   startMsOf, traceStartMs, spanTree, flattenTree, selfTimes, profileRows, hotSpanIds,

@@ -6,7 +6,7 @@ import * as router from '../router.js';
 import { h, fill, panel, spinner, errorBox, serviceColor, seedServices, emptyState, snippetBlocks, segmented } from '../ui.js';
 import { pageLoader } from '../page.js';
 import { scatterChart, legend } from '../charts.js';
-import { traceTable } from './traces.js';
+import { traceTable } from '../widgets.js';
 import { count, dur, clock } from '../format.js';
 
 export function render(root, ctx) {

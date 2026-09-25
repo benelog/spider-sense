@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { legendItems, alignedTimes, alignTo } from '../../main/resources/public/assets/js/charts.js';
-import { throughputSpec } from '../../main/resources/public/assets/js/loadchart.js';
+import { throughputSpec } from '../../main/resources/public/assets/js/throughput.js';
 
 test('the legend lists the series under their legend label, leaving out the hidden ones', () => {
   const spec = {

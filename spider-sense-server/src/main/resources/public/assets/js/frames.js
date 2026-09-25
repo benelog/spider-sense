@@ -1,6 +1,7 @@
 // Code frames as links into the editor, with the lines around them (pages.adoc#code-frames).
 // Each frame asks GET /api/source once; a frame that does not resolve stays plain text.
-// A whole stack trace folds its framework frames by the same rules (pages.adoc#stack-traces).
+// A whole stack trace folds its framework frames by the same rules (pages.adoc#stack-traces),
+// or, in the span drawer and the Logs page, is a plain highlighted <pre>.
 
 import { getJSON, state } from './api.js';
 import { h } from './ui.js';
@@ -125,6 +126,21 @@ export function framesMode(query) {
   return (query || {}).frames === 'all' ? 'all' : 'app';
 }
 
+/**
+ * What one line of a stack trace is: an `at` frame, the `Caused by:` or `Suppressed:` of a cause,
+ * the `... n more` of frames a cause shares with the trace above it, or a head (the exception
+ * and its message, or a continuation of the message).
+ */
+export function classifyLine(line) {
+  if (frameOf(line) !== null) return 'frame';
+  if (/^\s*(Caused by|Suppressed):/.test(line)) return 'cause';
+  if (/^\s*\.\.\. \d+ more/.test(line)) return 'more';
+  return 'head';
+}
+
+/** The class of a line that is not an application frame: a cause, or a dimmed frame, or a head. */
+const LINE_CLASS = { frame: 'st-frame', more: 'st-frame', cause: 'st-cause', head: 'st-head' };
+
 function lineSpan(cls, text) {
   const span = document.createElement('span');
   span.className = cls;
@@ -190,11 +206,45 @@ export function foldedStack(text, mode = 'app') {
       continue;
     }
     flush();
-    if (frame) pre.appendChild(lineSpan('st-frame', line));
-    else if (/^\s*(Caused by|Suppressed):/.test(line)) pre.appendChild(lineSpan('st-cause', line));
-    else if (/^\s*\.\.\. \d+ more/.test(line)) pre.appendChild(lineSpan('st-frame', line));
-    else pre.appendChild(lineSpan('st-head', line));
+    pre.appendChild(lineSpan(LINE_CLASS[classifyLine(line)], line));
   }
   flush();
   return pre;
+}
+
+// --- the plain highlighted stack trace --------------------------------------------------
+
+/**
+ * A stack trace in a <pre>, nothing folded: frames whose package shares the first frame's two
+ * top-level segments are "own" frames, and the other frames are dimmed.
+ */
+export function stackTrace(text, cls) {
+  const pre = document.createElement('pre');
+  pre.className = 'stack' + (cls ? ' ' + cls : '');
+  if (!text) return pre;
+  const lines = String(text).split('\n');
+  const own = ownPrefix(lines);
+  for (const line of lines) {
+    const kind = classifyLine(line);
+    const at = kind === 'frame' ? AT.exec(line) : null;
+    pre.appendChild(lineSpan(own && at && at[1].startsWith(own) ? 'st-own' : LINE_CLASS[kind], line));
+  }
+  return pre;
+}
+
+/** The class and method an `at` line names, up to the parenthesis or a module's slash. */
+const AT = /^\s*at\s+([\w$.]+)/;
+
+/** The package prefix of the first frame outside the JDK, to two segments (com.example.). */
+function ownPrefix(lines) {
+  for (const line of lines) {
+    const m = AT.exec(line);
+    if (!m) continue;
+    const parts = m[1].split('.');
+    if (parts.length < 3) return null;
+    const head = parts[0];
+    if (head === 'java' || head === 'javax' || head === 'jdk' || head === 'sun') continue;
+    return parts.slice(0, 2).join('.') + '.';
+  }
+  return null;
 }

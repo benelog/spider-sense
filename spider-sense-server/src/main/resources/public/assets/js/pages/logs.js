@@ -4,7 +4,7 @@ import * as api from '../api.js';
 import * as router from '../router.js';
 import { h, fill, icon, panel, table, serviceChip, severityChip, debounce, spinner, emptyState, snippetBlocks } from '../ui.js';
 import { pageLoader } from '../page.js';
-import { stackTrace } from '../sql.js';
+import { stackTrace } from '../frames.js';
 import { timeMs, bothTimes, count, shortId } from '../format.js';
 
 const SEVERITIES = ['TRACE', 'DEBUG', 'INFO', 'WARN', 'ERROR'];

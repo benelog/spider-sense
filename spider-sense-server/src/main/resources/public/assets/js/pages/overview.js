@@ -2,31 +2,16 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, icon, panel, stat, chip, serviceChip, serviceColor, renderList, emptyState, snippetBlocks, seedServices } from '../ui.js';
+import { h, fill, icon, panel, chip, serviceChip, serviceColor, renderList, emptyState, snippetBlocks, seedServices } from '../ui.js';
 import { pageLoader, skeleton } from '../page.js';
 import { chartBox, sparkline } from '../charts.js';
-import { histogramBars, apdexClass, apdexCell, fmtApdex } from '../buckets.js';
-import { chartModeSwitch, throughputSpec } from '../loadchart.js';
-import { severityDot, kindChip, goToFinding } from './findings.js';
-import { dur, count, rate, pct, rel, bothTimes } from '../format.js';
+import { histogramBars, apdexCell } from '../buckets.js';
+import { chartModeSwitch, throughputSpec } from '../throughput.js';
+import { statTiles, severityDot, kindChip, goToFinding } from '../widgets.js';
+import { dur, rate, pct, rel, bothTimes } from '../format.js';
 
 const KIND_ICON = { 'slow-request': 'turtle', 'slow-query': 'database', error: 'bolt' };
 const KIND_LABEL = { 'slow-request': 'Slow request', 'slow-query': 'Slow query', error: 'Error' };
-
-/** The seven tiles of pages.adoc#overview item 1; the Service page shows the same row. */
-export function statTiles(totals, thresholds) {
-  const t = totals || {};
-  const slow = (thresholds && thresholds.slowRequestMs) || 500;
-  return [
-    stat(count(t.requests), 'total', 'requests'),
-    stat(fmtApdex(t.apdex), '', 'apdex', { class: apdexClass(t.apdex), title: 'Apdex, T = ' + dur(slow) }),
-    stat(pct(t.errorRate || 0), '', 'error rate', { class: t.errorRate > 0.01 ? 'is-bad' : '' }),
-    stat(dur(t.p50Ms), '', 'p50'),
-    stat(dur(t.p95Ms), '', 'p95', { class: t.p95Ms > slow ? 'is-warn' : '' }),
-    stat(dur(t.p99Ms), '', 'p99'),
-    stat(rate(t.rps || 0), '/s', 'requests per second'),
-  ];
-}
 
 export function render(root, ctx) {
   let tingles = [];

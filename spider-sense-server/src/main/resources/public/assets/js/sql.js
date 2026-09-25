@@ -1,4 +1,4 @@
-// SQL pretty-printer and stack-trace highlighter.
+// SQL pretty-printer: a statement on lines by clause, or on one line for a table cell.
 
 const KEYWORDS = new Set(`select from where group by having order limit offset insert into values update set
 delete create table alter drop index view join inner left right full outer cross on using union all distinct
@@ -133,54 +133,4 @@ export function oneLineSql(sql, max = 200) {
   }
   s = s.replace(/\s+/g, ' ').trim();
   return s.length > max ? s.slice(0, max - 1) + '…' : s;
-}
-
-/**
- * Highlight a stack trace. Frames whose package shares the first frame's
- * top-level package are "own" frames; "at" lines are dimmed otherwise.
- * Returns a DocumentFragment of <span> lines.
- */
-export function highlightStack(text) {
-  const frag = document.createDocumentFragment();
-  if (!text) return frag;
-  const lines = String(text).split('\n');
-  const own = ownPrefix(lines);
-  for (const line of lines) {
-    const span = document.createElement('span');
-    const at = /^\s*at\s+([\w$.]+)/.exec(line);
-    if (at) {
-      span.className = own && at[1].startsWith(own) ? 'st-own' : 'st-frame';
-    } else if (/^\s*(Caused by|Suppressed):/.test(line)) {
-      span.className = 'st-cause';
-    } else if (/^\s*\.\.\. \d+ more/.test(line)) {
-      span.className = 'st-frame';
-    } else {
-      span.className = 'st-head';
-    }
-    span.textContent = line + '\n';
-    frag.appendChild(span);
-  }
-  return frag;
-}
-
-/** The package prefix of the first frame, to two segments (com.example). */
-function ownPrefix(lines) {
-  for (const line of lines) {
-    const m = /^\s*at\s+([\w$.]+)/.exec(line);
-    if (!m) continue;
-    const parts = m[1].split('.');
-    if (parts.length < 3) return null;
-    const head = parts[0];
-    if (head === 'java' || head === 'javax' || head === 'jdk' || head === 'sun') continue;
-    return parts.slice(0, 2).join('.') + '.';
-  }
-  return null;
-}
-
-/** A <pre> with the trace highlighted. */
-export function stackTrace(text, cls) {
-  const pre = document.createElement('pre');
-  pre.className = 'stack' + (cls ? ' ' + cls : '');
-  pre.appendChild(highlightStack(text));
-  return pre;
 }

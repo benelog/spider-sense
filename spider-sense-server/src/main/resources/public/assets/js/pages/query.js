@@ -5,8 +5,7 @@ import { h, fill, panel, stat, table, chip, serviceChip, copyBlock } from '../ui
 import { pageLoader, skeleton } from '../page.js';
 import { chartBox } from '../charts.js';
 import { formatSql } from '../sql.js';
-import { traceTable } from './traces.js';
-import { schemaLines } from './findings.js';
+import { traceTable, schemaLines } from '../widgets.js';
 import { copyButtons, cliLine } from '../copyas.js';
 import { serviceColumn, countColumn } from '../columns.js';
 import { dur, count, rel, bothTimes } from '../format.js';
