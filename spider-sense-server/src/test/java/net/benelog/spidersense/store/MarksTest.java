@@ -82,6 +82,21 @@ class MarksTest {
     }
 
     /**
+     * An application and its tests, or two instances of one application, export one
+     * service name at once. Each process is one start, not one per export of the
+     * other.
+     */
+    @Test
+    void twoProcessesExportingOneServiceMarkOneStartEach() {
+        for (int i = 0; i < 6; i++) {
+            export("orders", i % 2 == 0 ? 100 : 200, NOW + i * 1_000L);
+            flush();
+        }
+
+        assertThat(startMarks()).extracting(Marks.Mark::note).containsExactly("pid 200", "pid 100");
+    }
+
+    /**
      * An exporter batches for seconds, so a run's first request arrives after it
      * began: the start mark takes that request's start, and since=start keeps it.
      */

@@ -84,7 +84,8 @@ $ java -jar spider-sense.jar marks
 === Automatic start marks
 
 Spider Sense records a mark by itself whenever a service restarts.
-When the writer sees a service with a `process.pid` it has not stored for that service, it inserts a mark named `start` with that service and the note `pid <pid>`.
+When the writer sees a service with a `process.pid` that no `start` mark of that service names yet, it inserts a mark named `start` with that service and the note `pid <pid>`.
+Two processes that export one service name at once, an application and its tests or two instances of one application, therefore leave one start mark each, not one per export.
 The mark is at the earliest span start, log record or metric point of that service in the flush that carries the new process id, never after that flush and never more than a minute before it, since an exporter batches for seconds and the run's first requests arrive after they began.
 `--since=start` therefore means "since the application was last restarted", which is what an agent that just rebuilt the application wants, and it needs no cooperation from anyone.
 The retention sweeper and `DELETE /api/data` spare each service's newest start mark, so it lasts as long as the process does.

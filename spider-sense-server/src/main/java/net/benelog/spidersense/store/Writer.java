@@ -661,7 +661,7 @@ public final class Writer implements AutoCloseable {
      * {@code first_seen} must survive, so this is an update-then-insert rather
      * than a MERGE that would overwrite it.
      *
-     * <p>The stored process id is read first, because a sighting whose
+     * <p>The start marks are read first, because a sighting whose
      * {@code process.pid} is new to this service means the application was
      * restarted, and that moment is worth a {@code start} mark: it is what
      * {@code since=start} resolves to, and nobody had to ask for it
@@ -739,37 +739,38 @@ public final class Writer implements AutoCloseable {
     /**
      * A {@code start} mark for a service whose process id is new.
      *
-     * <p>"New" is both a service nobody has stored yet and a service whose stored
-     * pid differs: the second is the restart an agent has just caused by rebuilding
-     * and running the application again. A sighting without a {@code process.pid}
-     * marks nothing, since there is nothing to compare.
+     * <p>"New" is a process id that no {@code start} mark of the service names yet:
+     * the restart an agent has just caused by rebuilding and running the
+     * application again, or the first sighting of the service. It is not decided
+     * against the one pid the service row stores, because two processes may export
+     * one service name at once, an application and its tests or two instances of
+     * one application, and each export of the other would then count as a restart.
+     * A sighting without a {@code process.pid} marks nothing, since there is
+     * nothing to compare.
      */
     private void markRestart(Connection connection, Batch.Sighting sighting, @Nullable Object pid, long at)
             throws SQLException {
         if (!(pid instanceof Number number)) {
             return;
         }
-        Long stored = null;
-        boolean known = false;
+        String note = "pid " + number.longValue();
         try (PreparedStatement select = connection.prepareStatement(
-                "SELECT pid FROM service WHERE name = ?")) {
-            select.setString(1, sighting.name());
+                "SELECT COUNT(*) FROM mark WHERE name = ? AND service = ? AND note = ?")) {
+            select.setString(1, Marks.START);
+            select.setString(2, sighting.name());
+            select.setString(3, note);
             try (ResultSet rs = select.executeQuery()) {
-                if (rs.next()) {
-                    known = true;
-                    stored = Sql.longOrNull(rs, "pid");
+                if (rs.next() && rs.getLong(1) > 0) {
+                    return;
                 }
             }
-        }
-        if (known && stored != null && stored == number.longValue()) {
-            return;
         }
         try (PreparedStatement insert = connection.prepareStatement(
                 "INSERT INTO mark (at_ms, name, service, note) VALUES (?, ?, ?, ?)")) {
             insert.setLong(1, at);
             insert.setString(2, Marks.START);
             insert.setString(3, sighting.name());
-            insert.setString(4, "pid " + number.longValue());
+            insert.setString(4, note);
             insert.executeUpdate();
         }
     }

@@ -490,8 +490,7 @@ public final class Importer {
             long lastSeen = longOr(service, "lastSeen", firstSeen);
             String resource = nested(service, "resource", AttrJson.EMPTY_OBJECT);
             // A stored row keeps its pid, language and resource: they describe the
-            // process running here, and a pid the writer does not recognise would
-            // make its next flush of that service insert a start mark at now.
+            // process running here, not the one that ran the imported session.
             long[] stored = sighting(connection, name);
             if (stored != null) {
                 // Updated only when it widens: an update locks the row the running
