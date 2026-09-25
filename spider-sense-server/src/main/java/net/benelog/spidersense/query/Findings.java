@@ -600,7 +600,7 @@ public final class Findings {
     }
 
     /** A finding with the impact it is ranked by inside its kind. */
-    private record Ranked(Finding finding, double impact) {
+    record Ranked(Finding finding, double impact) {
 
         /** findings.adoc: the kind order that breaks a tie of severity. */
         private static final List<String> KINDS = List.of(REGRESSION, ERROR, N_PLUS_ONE, N_PLUS_ONE_HTTP,
@@ -1438,7 +1438,7 @@ public final class Findings {
      * moment, and "{@code usedMax} equal to {@code max}" has to read as "the pool
      * was full" whichever came first (findings.adoc#pool-exhausted).
      */
-    private @Nullable Ranked exhausted(String service, JvmView.ConnectionPool pool) {
+    static @Nullable Ranked exhausted(String service, JvmView.ConnectionPool pool) {
         long at = 0;
         double worstPending = 0;
         double worstUsed = 0;
@@ -1446,9 +1446,9 @@ public final class Findings {
         double max = Double.NaN;
         boolean exhausted = false;
         for (int i = 0; i < pool.t().length; i++) {
-            double pending = pool.pending().length > i ? pool.pending()[i] : Double.NaN;
-            double used = pool.used().length > i ? pool.used()[i] : Double.NaN;
-            double limit = pool.max().length > i ? pool.max()[i] : Double.NaN;
+            double pending = at(pool.pending(), i);
+            double used = at(pool.used(), i);
+            double limit = at(pool.max(), i);
             if (!Double.isNaN(used)) {
                 usedMax = Math.max(usedMax, used);
             }
@@ -1520,13 +1520,10 @@ public final class Findings {
         for (String name : servicesInScope(service)) {
             for (MetricQueries.SeriesData series :
                     metrics.series(MetricSeriesNames.GC_DURATION, name, Map.of(), window)) {
-                Ranked paused = gcPause(name, series);
-                if (paused != null) {
-                    found.add(paused);
-                }
+                add(found, gcPause(name, series, tingles.slowRequestMs()));
             }
-            add(found, heapPressure(name, window));
-            add(found, threadGrowth(name, window));
+            add(found, heapPressure(name, JvmView.heap(metrics, name, window)));
+            add(found, threadGrowth(name, JvmView.threads(metrics, name, window)));
         }
         return found;
     }
@@ -1547,7 +1544,8 @@ public final class Findings {
      * away. {@code jvm.gc.duration} is seconds by the semantic conventions, and the
      * stored unit is trusted over that when it says otherwise.
      */
-    private @Nullable Ranked gcPause(String service, MetricQueries.SeriesData series) {
+    static @Nullable Ranked gcPause(String service, MetricQueries.SeriesData series,
+            long slowRequestMs) {
         List<MetricPoint> points = series.points();
         if (points.isEmpty()) {
             return null;
@@ -1601,8 +1599,7 @@ public final class Findings {
                 }
             }
         }
-        long threshold = tingles.slowRequestMs();
-        boolean paused = worstMs >= threshold;
+        boolean paused = worstMs >= slowRequestMs;
         if (!paused && shareMax < GC_SHARE) {
             return null;
         }
@@ -1631,8 +1628,7 @@ public final class Findings {
     }
 
     /** The heap against its limit, summed over the pools exactly as the JVM page sums them. */
-    private @Nullable Ranked heapPressure(String service, Window window) {
-        JvmView.Memory heap = JvmView.heap(metrics, service, window);
+    static @Nullable Ranked heapPressure(String service, JvmView.Memory heap) {
         double ratioMax = 0;
         double usedMax = 0;
         double limit = 0;
@@ -1672,8 +1668,7 @@ public final class Findings {
     }
 
     /** Threads at the end of the window against threads at its start. */
-    private @Nullable Ranked threadGrowth(String service, Window window) {
-        JvmView.Threads threads = JvmView.threads(metrics, service, window);
+    static @Nullable Ranked threadGrowth(String service, JvmView.Threads threads) {
         double first = Double.NaN;
         double last = Double.NaN;
         double max = 0;
