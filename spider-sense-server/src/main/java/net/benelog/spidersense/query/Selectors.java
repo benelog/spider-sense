@@ -1,5 +1,6 @@
 package net.benelog.spidersense.query;
 
+import java.util.function.LongSupplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -44,9 +45,21 @@ public final class Selectors {
     private static final Pattern EPOCH = Pattern.compile("\\d{13,}");
 
     private final Marks marks;
+    private final LongSupplier clock;
 
+    /** Selectors whose {@code now} is the wall clock. */
     public Selectors(Marks marks) {
+        this(marks, System::currentTimeMillis);
+    }
+
+    /**
+     * @param clock what {@code now} is, in epoch milliseconds; a window reads it once,
+     *        so its {@code until=now} and the anchor its {@code since} counts back from
+     *        are the same instant
+     */
+    public Selectors(Marks marks, LongSupplier clock) {
         this.marks = marks;
+        this.clock = clock;
     }
 
     /**
@@ -58,13 +71,18 @@ public final class Selectors {
      *        from, or null
      */
     public long resolve(@Nullable String selector, long anchor, @Nullable String service) {
+        return resolve(selector, anchor, clock.getAsLong(), service);
+    }
+
+    /** The same, with {@code now} already read, as a window reads it once for both ends. */
+    private long resolve(@Nullable String selector, long anchor, long now, @Nullable String service) {
         String value = selector == null ? null : selector.trim();
         if (value == null || value.isEmpty()) {
             throw new BadSelector("An empty time selector: expected a duration, epoch milliseconds,"
                     + " now, start or a mark name");
         }
         if ("now".equals(value)) {
-            return System.currentTimeMillis();
+            return now;
         }
         Matcher duration = DURATION.matcher(value);
         if (duration.matches()) {
@@ -115,10 +133,10 @@ public final class Selectors {
      */
     public Window window(@Nullable Long from, @Nullable Long to, @Nullable String since,
             @Nullable String until, @Nullable String service) {
-        long now = System.currentTimeMillis();
-        long end = to != null ? to : (until == null ? now : resolve(until, now, service));
+        long now = clock.getAsLong();
+        long end = to != null ? to : (until == null ? now : resolve(until, now, now, service));
         long start = from != null ? from
-                : resolve(since == null ? DEFAULT_SINCE : since, end, service);
+                : resolve(since == null ? DEFAULT_SINCE : since, end, now, service);
         if (start > end) {
             throw new BadSelector("since resolves to " + start + ", which is after until " + end);
         }

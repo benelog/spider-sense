@@ -15,7 +15,7 @@ class SelectorsTest {
     private static final long NOW = 1_700_000_000_000L;
 
     private final Store store = new Store(TestStore.memoryUrl(), null, 24, 500, 100, null);
-    private final Selectors selectors = new Selectors(store.marks());
+    private final Selectors selectors = new Selectors(store.marks(), () -> NOW);
 
     @AfterEach
     void close() {
@@ -33,8 +33,7 @@ class SelectorsTest {
     @Test
     void epochMillisecondsAndNowAreTakenAsWritten() {
         assertThat(selectors.resolve("1758000000000", NOW, null)).isEqualTo(1_758_000_000_000L);
-        assertThat(selectors.resolve("now", NOW, null))
-                .isCloseTo(System.currentTimeMillis(), org.assertj.core.data.Offset.offset(5_000L));
+        assertThat(selectors.resolve("now", NOW - 60_000, null)).isEqualTo(NOW);
     }
 
     @Test
@@ -87,7 +86,33 @@ class SelectorsTest {
     }
 
     @Test
+    void theWindowReadsNowOnceForBothEnds() {
+        Window defaulted = selectors.window(null, null, null, null, null);
+        assertThat(defaulted.from()).isEqualTo(NOW - 900_000);
+        assertThat(defaulted.to()).isEqualTo(NOW);
+
+        Window untilNow = selectors.window(null, null, "15m", "now", null);
+        assertThat(untilNow.from()).isEqualTo(NOW - 900_000);
+        assertThat(untilNow.to()).isEqualTo(NOW);
+
+        Window sinceNow = selectors.window(null, null, "now", null, null);
+        assertThat(sinceNow.from()).isEqualTo(NOW);
+        assertThat(sinceNow.to()).isEqualTo(NOW);
+    }
+
+    @Test
+    void theWallClockIsWhatNowIsInProduction() {
+        long before = System.currentTimeMillis();
+        long now = new Selectors(store.marks()).resolve("now", 0, null);
+
+        assertThat(now).isBetween(before, System.currentTimeMillis());
+    }
+
+    @Test
     void aSinceAfterTheUntilIsTheCallersMistake() {
+        assertThatThrownBy(() -> selectors.window(null, null, "now", "5m", null))
+                .isInstanceOf(Selectors.BadSelector.class)
+                .hasMessage("since resolves to " + NOW + ", which is after until " + (NOW - 300_000));
         assertThatThrownBy(() -> selectors.window(null, null,
                 String.valueOf(NOW), String.valueOf(NOW - 1000), null))
                 .isInstanceOf(Selectors.BadSelector.class);
