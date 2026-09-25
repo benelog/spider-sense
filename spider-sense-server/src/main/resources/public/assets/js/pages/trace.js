@@ -3,7 +3,7 @@
 import * as api from '../api.js';
 import * as router from '../router.js';
 import {
-  h, fill, icon, panel, table, chip, serviceChip, serviceColor, severityChip, idButton,
+  h, fill, icon, panel, table, chip, serviceChip, serviceColor, severityChip, idButton, segmented,
   drawer, closeDrawer, spinner,
 } from '../ui.js';
 import { pageLoader, skeleton } from '../page.js';
@@ -54,17 +54,13 @@ export function render(root, ctx) {
             ? h('a.link-btn', { href: '#trace-logs', onclick: (e) => { e.preventDefault(); logsPanel.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }, count(data.logs.length) + ' logs')
             : null)),
       h('div.row', { style: { marginLeft: 'auto', gap: '8px' } },
-        h('div.row', { style: { gap: '2px' }, role: 'group', 'aria-label': 'View' },
-          viewBtn('waterfall', 'Waterfall'),
-          viewBtn('profile', 'Profile')),
+        segmented({
+          label: 'View',
+          options: [['waterfall', 'Waterfall'], ['profile', 'Profile']],
+          value: view,
+          onChange: (id) => { view = id; router.setQuery({ view: id === 'waterfall' ? '' : id }); paintBody(); },
+        }),
         h('a.btn', { href: api.exportUrl({ traceId: data.traceId || traceId }), download: 'trace-' + (data.traceId || traceId) + '.json' }, icon('download'), 'Export')));
-  }
-
-  function viewBtn(id, label) {
-    return h('button.btn', {
-      type: 'button', 'aria-pressed': String(view === id),
-      onclick: () => { view = id; router.setQuery({ view: id === 'waterfall' ? '' : id }); paintHead(); paintBody(); },
-    }, label);
   }
 
   // --- waterfall --------------------------------------------------------

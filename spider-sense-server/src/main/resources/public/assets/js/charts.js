@@ -3,7 +3,7 @@
 
 import { clock, clockShort, durBare, count as fmtCount } from './format.js';
 import { state } from './api.js';
-import { readSeriesColors, serviceColor as uiServiceColor, seedServices } from './ui.js';
+import { panel, readSeriesColors, serviceColor as uiServiceColor, seedServices } from './ui.js';
 
 const uPlot = globalThis.uPlot;
 
@@ -408,6 +408,52 @@ export function legend(items, opts = {}) {
     node.appendChild(btn);
   }
   return node;
+}
+
+/**
+ * The legend a spec's series imply: each series under its `legendLabel`, or its `label` when the
+ * legend says no more than the tooltip; `legend: false` leaves one out, and `spec.legendExtra`
+ * adds items after them. One declaration, so a colour or a name cannot differ between the two.
+ */
+export function legendItems(spec) {
+  return (spec.series || [])
+    .filter((s) => s.legend !== false)
+    .map((s) => ({ label: s.legendLabel || s.label, color: s.color }))
+    .concat(spec.legendExtra || []);
+}
+
+/**
+ * A time series in a panel, its legend above it: `show(spec)` draws it the first time and
+ * redraws it after, `empty(content)` puts something else where the chart was until the next
+ * `show`, and `destroy()` lets it go. `legend: false` leaves the legend out.
+ */
+export function chartBox({ title, actions, legend: withLegend = true } = {}) {
+  const legendNode = document.createElement('div');
+  const body = document.createElement('div');
+  body.className = 'chart';
+  const node = panel({ title, actions }, withLegend ? legendNode : null, body);
+  let chart = null;
+  return {
+    node,
+    body,
+    show(spec) {
+      if (withLegend) legendNode.replaceChildren(legend(legendItems(spec)));
+      if (chart) chart.update(spec);
+      else chart = timeSeries(body, spec);
+    },
+    empty(content) {
+      legendNode.replaceChildren();
+      body.replaceChildren(content);
+    },
+    setTitle(text) {
+      const heading = node.querySelector('.panel-title');
+      if (heading) heading.textContent = text;
+    },
+    destroy() {
+      if (chart) chart.destroy();
+      chart = null;
+    },
+  };
 }
 
 /** An inline SVG sparkline: no library, no interaction, 120x28 by default. */

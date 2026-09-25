@@ -2,10 +2,10 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, panel, stat, table, serviceChip, idButton } from '../ui.js';
+import { h, fill, panel, stat, table, serviceChip, idButton, segmented } from '../ui.js';
 import { pageLoader, skeleton } from '../page.js';
-import { timeSeries, legend } from '../charts.js';
-import { codeFrame, foldedStack, framesMode, framesToggle } from '../frames.js';
+import { chartBox } from '../charts.js';
+import { codeFrame, foldedStack, framesMode } from '../frames.js';
 import { copyButtons, cliLine } from '../copyas.js';
 import { countColumn } from '../columns.js';
 import { traceTable } from './traces.js';
@@ -25,7 +25,6 @@ function exceptionChain(chain, mode) {
 
 export function render(root, ctx) {
   const id = ctx.params.id;
-  let chart = null;
   let mode = framesMode(ctx.query);
   let lastChain = null;
   let loaded = null;
@@ -33,26 +32,28 @@ export function render(root, ctx) {
   const head = h('div', { style: { padding: '14px', display: 'grid', gap: '8px' } });
   const headPanel = panel({}, head);
   const statsRow = h('div.stat-row');
-  const chartBody = h('div.chart');
-  const chartLegend = h('div');
-  const chartPanel = panel({ title: 'Occurrences' }, chartLegend, chartBody);
+  const chart = chartBox({ title: 'Occurrences' });
   const stackBody = h('div', { style: { padding: '14px' } });
   const stackTraceBox = h('div');
-  const modeBox = h('div.row', { style: { gap: '2px' } });
-  const stackPanel = panel({ title: 'Sample stack trace', actions: modeBox }, stackBody);
-
   // App frames | All, remembered in the hash query (pages.adoc#error).
+  const framesSwitch = segmented({
+    label: 'Stack frames',
+    options: [['app', 'App frames'], ['all', 'All']],
+    value: mode,
+    onChange: (next) => {
+      mode = next;
+      router.setQuery({ frames: next === 'all' ? 'all' : '' });
+      paintStack();
+    },
+  });
+  const stackPanel = panel({ title: 'Sample stack trace', actions: framesSwitch }, stackBody);
+
   // A Live refresh repaints only when the trace or the mode changed, so an expanded run stays open.
   let painted = null;
   function paintStack() {
     const key = mode + '|' + JSON.stringify(lastChain);
     if (key === painted) return;
     painted = key;
-    fill(modeBox, framesToggle(mode, (next) => {
-      mode = next;
-      router.setQuery({ frames: next === 'all' ? 'all' : '' });
-      paintStack();
-    }));
     fill(stackTraceBox, lastChain && lastChain.length
       ? exceptionChain(lastChain, mode)
       : h('span.muted', 'This error carried no stack trace.'));
@@ -73,7 +74,7 @@ export function render(root, ctx) {
     panel({ title: 'Endpoints' }, endpointsBody),
     panel({ title: 'Recent traces' }, tracesBody));
 
-  const layout = skeleton(root, () => [headPanel, statsRow, chartPanel, stackPanel, half]);
+  const layout = skeleton(root, () => [headPanel, statsRow, chart.node, stackPanel, half]);
 
   function paint({ win, data }) {
     const e = data.error || {};
@@ -106,11 +107,10 @@ export function render(root, ctx) {
     const spec = {
       height: 160,
       t: series.t || [],
-      series: [{ label: 'Errors', values: series.count || [], color: 'err', type: 'bar' }],
+      series: [{ label: 'Errors', legendLabel: 'Occurrences per bucket', values: series.count || [], color: 'err', type: 'bar' }],
       axes: [{ scale: 'y' }],
     };
-    fill(chartLegend, legend([{ label: 'Occurrences per bucket', color: 'err' }]));
-    if (chart) chart.update(spec); else chart = timeSeries(chartBody, spec);
+    chart.show(spec);
 
     const code = data.code || [];
     lastChain = data.chain || [];
@@ -136,5 +136,5 @@ export function render(root, ctx) {
   });
 
   loader.load();
-  return { refresh: loader.load, destroy: () => { loader.destroy(); if (chart) chart.destroy(); } };
+  return { refresh: loader.load, destroy: () => { loader.destroy(); chart.destroy(); } };
 }

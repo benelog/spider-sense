@@ -4,7 +4,7 @@ import * as api from '../api.js';
 import * as router from '../router.js';
 import { h, fill, panel, chip, emptyState, seriesColor } from '../ui.js';
 import { pageLoader, skeleton } from '../page.js';
-import { timeSeries, legend, alignedTimes, alignTo } from '../charts.js';
+import { chartBox, alignedTimes, alignTo } from '../charts.js';
 import { count } from '../format.js';
 
 const MIB = 1024 * 1024;
@@ -20,24 +20,20 @@ export function render(root, ctx) {
 
   /** Drops every chart; whatever replaces the panels next puts them back empty. */
   function reset() {
-    for (const box of charts.values()) if (box.chart) box.chart.destroy();
+    for (const box of charts.values()) box.destroy();
     charts.clear();
     fill(grid);
   }
 
-  function chartPanel(id, title, spec, legendItems) {
+  /** The chart panel `id`, added to the grid the first time, drawn with `spec`. */
+  function chartPanel(id, title, spec) {
     let box = charts.get(id);
     if (!box) {
-      const bodyNode = h('div.chart');
-      const legendNode = h('div');
-      const node = panel({ title }, legendNode, bodyNode);
-      grid.appendChild(node);
-      box = { node, bodyNode, legendNode, chart: null };
+      box = chartBox({ title });
+      grid.appendChild(box.node);
       charts.set(id, box);
     }
-    fill(box.legendNode, legend(legendItems));
-    if (box.chart) box.chart.update(spec);
-    else box.chart = timeSeries(box.bodyNode, spec);
+    box.show(spec);
   }
 
   function pickService(res) {
@@ -87,7 +83,7 @@ export function render(root, ctx) {
         { label: 'limit', values: toMib(heap.limit), color: 'warn', type: 'line', width: 1.4, dash: [4, 3] },
       ],
       axes: [{ scale: 'y', label: 'MiB' }],
-    }, [{ label: 'used', color: 'accent' }, { label: 'committed', color: 'silk' }, { label: 'limit', color: 'warn' }]);
+    });
 
     const nonHeap = data.nonHeap || {};
     chartPanel('nonheap', 'Non-heap memory', {
@@ -97,7 +93,7 @@ export function render(root, ctx) {
         { label: 'committed', values: toMib(nonHeap.committed), color: 'silk', type: 'line', width: 1.6 },
       ],
       axes: [{ scale: 'y', label: 'MiB' }],
-    }, [{ label: 'used', color: 'series5' }, { label: 'committed', color: 'silk' }]);
+    });
 
     const pools = data.pools || [];
     // Each pool has its own timestamps: one that exists only before a restart must not be
@@ -107,17 +103,20 @@ export function render(root, ctx) {
       height: 170, t: poolTimes,
       series: pools.map((p, i) => ({ label: p.name, values: toMib(alignTo(poolTimes, p, 'used')), color: seriesColor(i), type: 'line', width: 1.6 })),
       axes: [{ scale: 'y', label: 'MiB' }],
-    }, pools.map((p, i) => ({ label: p.name, color: seriesColor(i) })));
+    });
 
     const gc = data.gc || [];
     chartPanel('gc', 'Garbage collection', {
       height: 170, t: (gc[0] || {}).t || [],
       series: gc.flatMap((g, i) => [
         { label: g.name + ' count', values: g.count || [], color: seriesColor(i), type: 'bar', scale: 'y' },
-        { label: g.name + ' time', values: g.durationMs || [], color: 'accent', type: 'line', scale: 'ms', width: 1.8 },
+        {
+          label: g.name + ' time', legendLabel: g.name + ' time, right axis',
+          values: g.durationMs || [], color: 'accent', type: 'line', scale: 'ms', width: 1.8,
+        },
       ]),
       axes: [{ scale: 'y', label: 'Collections' }, { scale: 'ms', side: 1, label: 'ms', color: 'accent' }],
-    }, gc.flatMap((g, i) => [{ label: g.name + ', count', color: seriesColor(i) }, { label: g.name + ', time (right axis)', color: 'accent' }]));
+    });
 
     const threads = data.threads || {};
     chartPanel('threads', 'Threads', {
@@ -127,30 +126,36 @@ export function render(root, ctx) {
         { label: 'daemon', values: threads.daemon || [], color: 'silk', type: 'line', width: 1.6 },
       ],
       axes: [{ scale: 'y', label: 'Threads' }],
-    }, [{ label: 'live', color: 'series7' }, { label: 'daemon', color: 'silk' }]);
+    });
 
     const cpu = data.cpu || {};
     chartPanel('cpu', 'CPU', {
       height: 170, t: cpu.t || [],
       series: [
-        { label: 'utilisation', values: (cpu.utilization || []).map((v) => (v == null ? null : v <= 1 ? v * 100 : v)), color: 'ok', type: 'area', scale: 'pct', width: 2 },
-        { label: 'load 1m', values: cpu.systemLoad1m || [], color: 'warn', type: 'line', scale: 'load', width: 1.6 },
+        {
+          label: 'utilisation', legendLabel: 'process CPU utilisation',
+          values: (cpu.utilization || []).map((v) => (v == null ? null : v <= 1 ? v * 100 : v)), color: 'ok', type: 'area', scale: 'pct', width: 2,
+        },
+        {
+          label: 'load 1m', legendLabel: 'system load, 1 min, right axis',
+          values: cpu.systemLoad1m || [], color: 'warn', type: 'line', scale: 'load', width: 1.6,
+        },
       ],
       axes: [{ scale: 'pct', label: '%' }, { scale: 'load', side: 1, label: 'load', color: 'warn' }],
-    }, [{ label: 'process CPU utilisation', color: 'ok' }, { label: 'system load, 1 min, right axis', color: 'warn' }]);
+    });
 
     const classes = data.classes || {};
     chartPanel('classes', 'Loaded classes', {
       height: 170, t: classes.t || [],
-      series: [{ label: 'loaded', values: classes.loaded || [], color: 'series8', type: 'line', width: 2 }],
+      series: [{ label: 'loaded', legendLabel: 'loaded classes', values: classes.loaded || [], color: 'series8', type: 'line', width: 2 }],
       axes: [{ scale: 'y', label: 'Classes' }],
-    }, [{ label: 'loaded classes', color: 'series8' }]);
+    });
 
     // One panel per JDBC pool; nothing is added when the service reports none.
     const pools2 = data.connectionPools || [];
     for (const [id, box] of charts) {
       if (!id.startsWith('pool:') || pools2.some((p) => 'pool:' + p.name === id)) continue;
-      if (box.chart) box.chart.destroy();
+      box.destroy();
       box.node.remove();
       charts.delete(id);
     }
@@ -161,15 +166,10 @@ export function render(root, ctx) {
           { label: 'used', values: pool.used || [], color: 'accent', type: 'area', width: 2 },
           { label: 'idle', values: pool.idle || [], color: 'silk', type: 'line', width: 1.6 },
           { label: 'max', values: pool.max || [], color: 'warn', type: 'line', width: 1.4, dash: [4, 3] },
-          { label: 'pending', values: pool.pending || [], color: 'err', type: 'bar', scale: 'pending' },
+          { label: 'pending', legendLabel: 'pending requests, right axis', values: pool.pending || [], color: 'err', type: 'bar', scale: 'pending' },
         ],
         axes: [{ scale: 'y', label: 'connections' }, { scale: 'pending', side: 1, label: 'pending', color: 'err' }],
-      }, [
-        { label: 'used', color: 'accent' },
-        { label: 'idle', color: 'silk' },
-        { label: 'max', color: 'warn' },
-        { label: 'pending requests, right axis', color: 'err' },
-      ]);
+      });
     }
   }
 

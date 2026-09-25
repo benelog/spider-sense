@@ -4,9 +4,9 @@ import * as api from '../api.js';
 import * as router from '../router.js';
 import { h, fill, icon, panel, stat, chip, serviceChip, serviceColor, renderList, emptyState, snippetBlocks, seedServices } from '../ui.js';
 import { pageLoader, skeleton } from '../page.js';
-import { timeSeries, sparkline, legend } from '../charts.js';
+import { chartBox, sparkline } from '../charts.js';
 import { histogramBars, apdexClass, apdexCell, fmtApdex } from '../buckets.js';
-import { chartMode, loadToggle, throughputSpec, throughputLegend } from '../loadchart.js';
+import { chartModeSwitch, throughputSpec } from '../loadchart.js';
 import { severityDot, kindChip, goToFinding } from './findings.js';
 import { dur, count, rate, pct, rel, bothTimes } from '../format.js';
 
@@ -29,32 +29,16 @@ export function statTiles(totals, thresholds) {
 }
 
 export function render(root, ctx) {
-  let chart = null;
   let tingles = [];
-
-  let mode = chartMode(ctx.query, 'requests');
   let lastSeries = {};
   let findings = [];
 
   const statsRow = h('div.stat-row', h('div.stat', h('div.stat-caption', 'Loading')));
-  const chartBody = h('div.chart');
-  const chartLegend = h('div');
-  const modeBox = h('div.row', { style: { gap: '2px' } });
-  const chartPanel = panel({ title: 'Throughput and latency', actions: modeBox }, chartLegend, chartBody);
+  const modeSwitch = chartModeSwitch('requests', () => paintChart(lastSeries));
+  const chart = chartBox({ title: 'Throughput and latency', actions: modeSwitch });
   const summaryBody = h('div');
   const summaryPanel = panel({ title: 'Response summary' }, summaryBody);
-  const chartRow = h('div.grid-2-1', chartPanel, summaryPanel);
-
-  function paintModeToggle() {
-    fill(modeBox, loadToggle(mode, (next) => {
-      mode = next;
-      // Written in full, Requests too: the Service page defaults to Load, and the choice crosses.
-      router.setQuery({ chart: next });
-      paintModeToggle();
-      paintChart(lastSeries);
-    }));
-  }
-  paintModeToggle();
+  const chartRow = h('div.grid-2-1', chart.node, summaryPanel);
   const findingsBody = h('div.findings');
   const findingsPanel = panel({
     title: 'Findings',
@@ -76,10 +60,7 @@ export function render(root, ctx) {
 
   function paintChart(series) {
     lastSeries = series;
-    const spec = throughputSpec(series, mode, { height: 220, p95: true });
-    fill(chartLegend, legend(throughputLegend(mode, { p95: true })));
-    if (chart) chart.update(spec);
-    else chart = timeSeries(chartBody, spec);
+    chart.show(throughputSpec(series, modeSwitch.value(), { height: 220, p95: true }));
   }
 
   /** The top five findings, each a row that goes where the finding points (pages.adoc#overview). */
@@ -198,9 +179,7 @@ export function render(root, ctx) {
       return;
     }
     layout.build();
-    // a same-page hash change only calls refresh(), so `chart` is re-read here
-    const wanted = chartMode(router.currentRoute().query, 'requests');
-    if (wanted !== mode) { mode = wanted; paintModeToggle(); }
+    modeSwitch.sync();
     paintStats(data.totals || {}, (api.state.status || {}).thresholds);
     paintFindings(findings);
     paintChart(data.series || {});
@@ -229,6 +208,6 @@ export function render(root, ctx) {
       tingles = [{ ...t, fresh: true }, ...tingles].slice(0, 50);
       paintTingles();
     },
-    destroy: () => { loader.destroy(); if (chart) chart.destroy(); },
+    destroy: () => { loader.destroy(); chart.destroy(); },
   };
 }

@@ -17,7 +17,7 @@ export function render(root, ctx) {
 
   const head = h('div.trace-head');
   const headPanel = panel({}, head);
-  const red = redCharts({ query: ctx.query });
+  const red = redCharts();
   const tabsBody = h('div', spinner());
   const tabsPanel = panel({}, tabsBody);
 

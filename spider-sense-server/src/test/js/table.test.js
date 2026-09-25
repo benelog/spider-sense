@@ -86,3 +86,20 @@ test('an open detail row survives new rows and is rebuilt only when its key chan
   assert.equal(rowsOf(node)[1].textContent, 'v2');
   assert.equal(built, 2);
 });
+
+test('a segmented switch presses one button and reports a change of choice only', async () => {
+  const { segmented } = await import('../../main/resources/public/assets/js/ui.js');
+  const chosen = [];
+  const node = segmented({ label: 'Chart mode', options: [['requests', 'Requests'], ['load', 'Load']], value: 'load', onChange: (v) => chosen.push(v) });
+  const [requests, load] = node.all('button');
+  assert.equal(node.getAttribute('role'), 'group');
+  assert.equal(node.getAttribute('aria-label'), 'Chart mode');
+  assert.deepEqual([requests.getAttribute('aria-pressed'), load.getAttribute('aria-pressed')], ['false', 'true']);
+  load.click();
+  requests.click();
+  assert.deepEqual(chosen, ['requests']);
+  assert.equal(node.value(), 'requests');
+  node.set('load');
+  assert.deepEqual(chosen, ['requests']);
+  assert.equal(load.getAttribute('aria-pressed'), 'true');
+});

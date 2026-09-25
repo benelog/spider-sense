@@ -3,7 +3,7 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, panel, spinner, errorBox, serviceColor, seedServices, emptyState, snippetBlocks } from '../ui.js';
+import { h, fill, panel, spinner, errorBox, serviceColor, seedServices, emptyState, snippetBlocks, segmented } from '../ui.js';
 import { pageLoader } from '../page.js';
 import { scatterChart, legend } from '../charts.js';
 import { traceTable } from './traces.js';
@@ -58,28 +58,23 @@ export function render(root, ctx) {
   const okBtn = statusButton('ok', 'Success');
   const errBtn = statusButton('err', 'Failed');
 
-  const modeBox = h('div.row', { style: { gap: '2px' }, role: 'group', 'aria-label': 'Chart mode' });
-  function paintModeToggle() {
-    const make = (id, label) => h('button.btn', {
-      type: 'button', 'aria-pressed': String(mode === id),
-      onclick: () => {
-        if (mode === id) return;
-        mode = id;
-        router.setQuery({ mode: id === 'dots' ? '' : id });
-        paintModeToggle();
-        if (chart) chart.setMode(mode);
-      },
-    }, label);
-    fill(modeBox, make('dots', 'Dots'), make('heatmap', 'Heatmap'));
-  }
-  paintModeToggle();
+  const modeSwitch = segmented({
+    label: 'Chart mode',
+    options: [['dots', 'Dots'], ['heatmap', 'Heatmap']],
+    value: mode,
+    onChange: (id) => {
+      mode = id;
+      router.setQuery({ mode: id === 'dots' ? '' : id });
+      if (chart) chart.setMode(mode);
+    },
+  });
 
   const legendBox = h('div');
   const counts = h('div.scatter-counts');
   const clipNote = h('span.clip-note');
   const selBox = h('span.scatter-sel');
   selBox.hidden = true;
-  const bar = h('div.scatter-bar', legendBox, okBtn, errBtn, logToggle, modeBox, clipNote, counts);
+  const bar = h('div.scatter-bar', legendBox, okBtn, errBtn, logToggle, modeSwitch, clipNote, counts);
   const chartBody = h('div.chart', { style: { minHeight: '380px' } }, spinner());
   const chartPanel = panel({
     title: 'Response time over time',

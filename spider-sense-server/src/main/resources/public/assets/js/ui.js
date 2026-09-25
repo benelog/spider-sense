@@ -596,6 +596,32 @@ export function tabs(items, opts = {}) {
   return node;
 }
 
+/**
+ * Buttons of which one is pressed, for a choice between views in a panel head: Requests | Load,
+ * App frames | All, Dots | Heatmap, Waterfall | Profile. `options` is [[value, text]]; a click on
+ * another button presses it and calls onChange, and `set(value)` presses one without calling it.
+ */
+export function segmented({ label, options, value, onChange }) {
+  const node = h('div.row', { style: { gap: '2px' }, role: 'group', 'aria-label': label });
+  let current = value;
+  const buttons = options.map(([id, text]) => h('button.btn', {
+    type: 'button',
+    onclick: () => {
+      if (id === current) return;
+      node.set(id);
+      onChange(id);
+    },
+  }, text));
+  append(node, buttons);
+  node.set = (next) => {
+    current = next;
+    options.forEach(([id], i) => buttons[i].setAttribute('aria-pressed', String(id === next)));
+  };
+  node.value = () => current;
+  node.set(value);
+  return node;
+}
+
 /** Remember and restore the scroll position of the main scroller across a re-render. */
 export function keepScroll(node, work) {
   const top = node ? node.scrollTop : 0;

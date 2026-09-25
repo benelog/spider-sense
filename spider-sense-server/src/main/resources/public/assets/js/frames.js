@@ -125,18 +125,6 @@ export function framesMode(query) {
   return (query || {}).frames === 'all' ? 'all' : 'app';
 }
 
-/** The panel-head toggle, **App frames** | **All**; onChange gets 'app' or 'all'. */
-export function framesToggle(mode, onChange) {
-  const node = h('div.row', { style: { gap: '2px' }, role: 'group', 'aria-label': 'Stack frames' });
-  const make = (id, label) => h('button.btn', {
-    type: 'button', 'aria-pressed': String(mode === id),
-    onclick: () => { if (mode !== id) onChange(id); },
-  }, label);
-  node.appendChild(make('app', 'App frames'));
-  node.appendChild(make('all', 'All'));
-  return node;
-}
-
 function lineSpan(cls, text) {
   const span = document.createElement('span');
   span.className = cls;

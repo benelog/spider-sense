@@ -8,53 +8,35 @@ import {
   spinner, serviceColor,
 } from '../ui.js';
 import { pageLoader, skeleton } from '../page.js';
-import { timeSeries, legend } from '../charts.js';
+import { chartBox } from '../charts.js';
 import { histogramBars, apdexCell } from '../buckets.js';
-import { chartMode, loadToggle, throughputSpec, throughputLegend } from '../loadchart.js';
+import { chartModeSwitch, throughputSpec } from '../loadchart.js';
 import { statTiles } from './overview.js';
 import { statementColumn, errorTypeColumn, messageColumn, seenColumn, durationColumn, countColumn } from '../columns.js';
 import { count, rate, rel, bothTimes } from '../format.js';
 
 /**
  * The three RED charts, shared with the Endpoint page. The first carries the
- * Requests | Load toggle; `chart` in the hash query wins, Load is the default here.
+ * Requests | Load switch; `chart` in the hash query wins, Load is the default here.
  */
-export function redCharts(opts = {}) {
-  const bodies = [h('div.chart'), h('div.chart'), h('div.chart')];
-  const legends = [h('div'), h('div'), h('div')];
-  const charts = [null, null, null];
-  let mode = chartMode(opts.query, 'load');
+export function redCharts() {
   let lastSeries = {};
-  const modeBox = h('div.row', { style: { gap: '2px' } });
-  const node = h('div.grid-3',
-    panel({ title: 'Requests and errors', actions: modeBox }, legends[0], bodies[0]),
-    panel({ title: 'Response time' }, legends[1], bodies[1]),
-    panel({ title: 'Error rate' }, legends[2], bodies[2]));
-
-  function paintModeToggle() {
-    fill(modeBox, loadToggle(mode, (next) => {
-      mode = next;
-      // written out in full, so the Overview and this page share the choice
-      router.setQuery({ chart: next });
-      paintModeToggle();
-      node.apply(lastSeries);
-    }));
-  }
-  paintModeToggle();
+  const modeSwitch = chartModeSwitch('load', () => node.apply(lastSeries));
+  const charts = [
+    chartBox({ title: 'Requests and errors', actions: modeSwitch }),
+    chartBox({ title: 'Response time' }),
+    chartBox({ title: 'Error rate' }),
+  ];
+  const node = h('div.grid-3', charts.map((c) => c.node));
 
   /** A same-page hash change only calls refresh(), so `chart` is re-read here. */
-  node.syncMode = () => {
-    const next = chartMode(router.currentRoute().query, 'load');
-    if (next === mode) return;
-    mode = next;
-    paintModeToggle();
-  };
+  node.syncMode = () => modeSwitch.sync();
 
   node.apply = (series) => {
     lastSeries = series;
     const t = series.t || [];
     const specs = [
-      throughputSpec(series, mode, { height: 160 }),
+      throughputSpec(series, modeSwitch.value(), { height: 160 }),
       {
         height: 160, t,
         series: [
@@ -66,22 +48,16 @@ export function redCharts(opts = {}) {
       },
       {
         height: 160, t,
-        series: [{ label: 'Error rate', values: errorRate(series), color: 'err', type: 'area', scale: 'pct', width: 2 }],
+        series: [{
+          label: 'Error rate', legendLabel: 'Errors as a share of requests',
+          values: errorRate(series), color: 'err', type: 'area', scale: 'pct', width: 2,
+        }],
         axes: [{ scale: 'pct', label: '%' }],
       },
     ];
-    const legendSets = [
-      throughputLegend(mode),
-      [{ label: 'p50', color: 'series5' }, { label: 'p95', color: 'accent' }, { label: 'p99', color: 'warn' }],
-      [{ label: 'Errors as a share of requests', color: 'err' }],
-    ];
-    specs.forEach((spec, i) => {
-      fill(legends[i], legend(legendSets[i]));
-      if (charts[i]) charts[i].update(spec);
-      else charts[i] = timeSeries(bodies[i], spec);
-    });
+    specs.forEach((spec, i) => charts[i].show(spec));
   };
-  node.destroy = () => charts.forEach((c) => c && c.destroy());
+  node.destroy = () => charts.forEach((c) => c.destroy());
   return node;
 }
 
@@ -128,7 +104,7 @@ export function render(root, ctx) {
   const head = h('div.trace-head');
   const headPanel = panel({}, head);
   const statsRow = h('div.stat-row');
-  const red = redCharts({ query: ctx.query });
+  const red = redCharts();
   const endpointBody = h('div', spinner());
   const endpointPanel = panel({ title: 'Endpoints' }, endpointBody);
   const queriesBody = h('div');

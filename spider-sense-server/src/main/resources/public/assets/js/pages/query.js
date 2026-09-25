@@ -3,7 +3,7 @@
 import * as api from '../api.js';
 import { h, fill, panel, stat, table, chip, serviceChip, copyBlock } from '../ui.js';
 import { pageLoader, skeleton } from '../page.js';
-import { timeSeries, legend } from '../charts.js';
+import { chartBox } from '../charts.js';
 import { formatSql } from '../sql.js';
 import { traceTable } from './traces.js';
 import { schemaLines } from './findings.js';
@@ -13,15 +13,12 @@ import { dur, count, rel, bothTimes } from '../format.js';
 
 export function render(root, ctx) {
   const id = ctx.params.id;
-  let chart = null;
   let loaded = null;
 
   const head = h('div', { style: { padding: '14px', display: 'grid', gap: '10px' } });
   const headPanel = panel({ title: 'Statement' }, head);
   const statsRow = h('div.stat-row');
-  const chartBody = h('div.chart');
-  const chartLegend = h('div');
-  const chartPanel = panel({ title: 'Calls and p95' }, chartLegend, chartBody);
+  const chart = chartBox({ title: 'Calls and p95' });
   // The two tables are built once, and a Live refresh gives them new rows, so a focused row
   // and a scrolled table survive it (ui.adoc#live-refresh).
   const callersTable = table([
@@ -39,7 +36,7 @@ export function render(root, ctx) {
     panel({ title: 'Callers' }, callersBody),
     panel({ title: 'Slowest traces' }, tracesBody));
 
-  const layout = skeleton(root, () => [headPanel, statsRow, chartPanel, half]);
+  const layout = skeleton(root, () => [headPanel, statsRow, chart.node, half]);
 
   function paint({ win, data }) {
     const q = data.query || {};
@@ -75,13 +72,12 @@ export function render(root, ctx) {
       height: 180,
       t: series.t || [],
       series: [
-        { label: 'Calls', values: series.calls || [], color: 'silk', type: 'bar' },
-        { label: 'p95', values: series.p95Ms || [], color: 'accent', type: 'line', scale: 'ms', width: 2 },
+        { label: 'Calls', legendLabel: 'Calls per bucket', values: series.calls || [], color: 'silk', type: 'bar' },
+        { label: 'p95', legendLabel: 'p95, right axis', values: series.p95Ms || [], color: 'accent', type: 'line', scale: 'ms', width: 2 },
       ],
       axes: [{ scale: 'y', label: 'Calls' }, { scale: 'ms', side: 1, label: 'p95 (ms)', color: 'accent' }],
     };
-    fill(chartLegend, legend([{ label: 'Calls per bucket', color: 'silk' }, { label: 'p95, right axis', color: 'accent' }]));
-    if (chart) chart.update(spec); else chart = timeSeries(chartBody, spec);
+    chart.show(spec);
 
     callersTable.setRows(q.callers || []);
     tracesTable.setRows(data.traces || []);
@@ -97,5 +93,5 @@ export function render(root, ctx) {
   });
 
   loader.load();
-  return { refresh: loader.load, destroy: () => { loader.destroy(); if (chart) chart.destroy(); } };
+  return { refresh: loader.load, destroy: () => { loader.destroy(); chart.destroy(); } };
 }

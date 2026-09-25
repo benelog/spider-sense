@@ -4,7 +4,7 @@ import * as api from '../api.js';
 import * as router from '../router.js';
 import { h, fill, icon, panel, renderList, debounce, spinner, emptyState, seriesColor } from '../ui.js';
 import { pageLoader } from '../page.js';
-import { timeSeries, legend, alignedTimes, alignTo } from '../charts.js';
+import { chartBox, alignedTimes, alignTo } from '../charts.js';
 import { count } from '../format.js';
 
 export function render(root, ctx) {
@@ -12,8 +12,6 @@ export function render(root, ctx) {
   let selected = ctx.query.metric || '';
   let rateOn = ctx.query.rate === '1';
   let filterText = ctx.query.find || '';
-  let chart = null;
-  let countChart = null;
 
   const search = h('input', { type: 'search', placeholder: 'Find a metric', value: filterText, 'aria-label': 'Find a metric' });
   const listBox = h('div.catalog', spinner());
@@ -21,8 +19,6 @@ export function render(root, ctx) {
     h('div.querybar', h('div.search', icon('search'), search)),
     listBox);
 
-  const chartBody = h('div.chart');
-  const chartLegend = h('div');
   const rateBtn = h('button.btn', {
     type: 'button', 'aria-pressed': String(rateOn),
     onclick: () => {
@@ -33,15 +29,11 @@ export function render(root, ctx) {
     },
   }, 'Per second');
   rateBtn.hidden = true;
-  const detailTitle = h('h2.panel-title', 'Metric');
-  const detailPanel = h('section.panel',
-    h('div.panel-head', detailTitle, h('div.panel-actions', rateBtn)),
-    chartLegend, chartBody);
-  const countBody = h('div.chart');
-  const countPanel = panel({ title: 'Sample count' }, countBody);
-  countPanel.hidden = true;
+  const chart = chartBox({ title: 'Metric', actions: rateBtn });
+  const countChart = chartBox({ title: 'Sample count', legend: false });
+  countChart.node.hidden = true;
 
-  const layout = h('div.metrics-layout', catalogPanel, h('div', { style: { display: 'grid', gap: 'var(--gap)' } }, detailPanel, countPanel));
+  const layout = h('div.metrics-layout', catalogPanel, h('div', { style: { display: 'grid', gap: 'var(--gap)' } }, chart.node, countChart.node));
   root.appendChild(layout);
 
   const applySearch = debounce(() => {
@@ -100,21 +92,19 @@ export function render(root, ctx) {
 
   function paintSeries(res) {
     if (!res) {
-      detailTitle.textContent = 'Metric';
+      chart.setTitle('Metric');
       rateBtn.hidden = true;
-      countPanel.hidden = true;
-      fill(chartBody, emptyState('Pick a metric on the left.'));
-      fill(chartLegend);
+      countChart.node.hidden = true;
+      chart.empty(emptyState('Pick a metric on the left.'));
       return;
     }
     const { name, data } = res;
     const series = data.series || [];
-    detailTitle.textContent = name + (data.unit ? ' (' + data.unit + ')' : '');
+    chart.setTitle(name + (data.unit ? ' (' + data.unit + ')' : ''));
     rateBtn.hidden = data.type !== 'sum';
     if (!series.length) {
-      fill(chartBody, emptyState('No point for this metric in the window.'));
-      fill(chartLegend);
-      countPanel.hidden = true;
+      chart.empty(emptyState('No point for this metric in the window.'));
+      countChart.node.hidden = true;
       return;
     }
     const labels = series.map(labelOf);
@@ -126,30 +116,29 @@ export function render(root, ctx) {
       t,
       series: series.flatMap((s, i) => {
         const base = [{ label: labels[i], values: at(s, 'v'), color: seriesColor(i), type: 'line', width: 1.8 }];
-        if (isHistogram && s.p95) base.push({ label: labels[i] + ' p95', values: at(s, 'p95'), color: seriesColor(i), type: 'line', width: 1.2, dash: [4, 3] });
+        if (isHistogram && s.p95) base.push({ label: labels[i] + ' p95', legend: false, values: at(s, 'p95'), color: seriesColor(i), type: 'line', width: 1.2, dash: [4, 3] });
         return base;
       }),
       axes: [{ scale: 'y', label: data.unit || '' }],
+      legendExtra: isHistogram ? [{ label: 'dashed: p95', color: 'silk' }] : [],
     };
-    fill(chartLegend, legend(series.map((s, i) => ({ label: labels[i], color: seriesColor(i) }))
-      .concat(isHistogram ? [{ label: 'dashed: p95', color: 'silk' }] : [])));
-    if (chart) chart.update(spec); else chart = timeSeries(chartBody, spec);
+    chart.show(spec);
 
     if (isHistogram && series.some((s) => s.count)) {
-      countPanel.hidden = false;
+      countChart.node.hidden = false;
       const countSpec = {
         height: 130,
         t,
         series: series.map((s, i) => ({ label: labels[i], values: at(s, 'count'), color: seriesColor(i), type: 'bar' })),
         axes: [{ scale: 'y', label: 'Count' }],
       };
-      if (countChart) countChart.update(countSpec); else countChart = timeSeries(countBody, countSpec);
+      countChart.show(countSpec);
     } else {
-      countPanel.hidden = true;
+      countChart.node.hidden = true;
     }
   }
 
-  const seriesLoader = pageLoader({ fetch: fetchSeries, paint: paintSeries, body: chartBody });
+  const seriesLoader = pageLoader({ fetch: fetchSeries, paint: paintSeries, body: chart.body });
 
   function labelOf(s) {
     const attrs = Object.entries(s.attributes || {});
@@ -163,11 +152,10 @@ export function render(root, ctx) {
       catalog = (res.metrics || []).slice().sort((a, b) => a.name.localeCompare(b.name));
       if (!catalog.length) {
         fill(listBox, h('div', { style: { padding: '18px', textAlign: 'center' } }, h('span.muted', 'No metric has arrived yet.')));
-        fill(chartBody, emptyState('No metric has arrived yet. The OpenTelemetry agent exports runtime metrics every 5 seconds by default.'));
-        fill(chartLegend);
-        detailTitle.textContent = 'Metric';
+        chart.empty(emptyState('No metric has arrived yet. The OpenTelemetry agent exports runtime metrics every 5 seconds by default.'));
+        chart.setTitle('Metric');
         rateBtn.hidden = true;
-        countPanel.hidden = true;
+        countChart.node.hidden = true;
         return;
       }
       if (!selected || !catalog.some((m) => m.name === selected)) selected = catalog[0].name;
@@ -186,8 +174,8 @@ export function render(root, ctx) {
       catalogLoader.destroy();
       seriesLoader.destroy();
       applySearch.cancel();
-      if (chart) chart.destroy();
-      if (countChart) countChart.destroy();
+      chart.destroy();
+      countChart.destroy();
     },
   };
 }
