@@ -39,12 +39,16 @@ export function rangeIndex(id) {
   return i < 0 ? 1 : i;
 }
 
-/** The window the current range implies. `all` starts at /api/status.oldest.span. */
+/**
+ * The window the current range implies. `all` starts at /api/status.oldest.span, which the
+ * shell re-reads before every route change and Live refresh under `all`; an empty store
+ * answers 0 there, and then `all` is the last 15 minutes.
+ */
 export function windowFor(range = state.range, now = Date.now()) {
   const r = rangeOf(range);
   if (r.ms == null) {
-    const oldest = state.status && state.status.oldest ? state.status.oldest.span : null;
-    return { from: oldest || now - 15 * 60 * 1000, to: now };
+    const oldest = state.status && state.status.oldest ? state.status.oldest.span : 0;
+    return { from: oldest > 0 ? oldest : now - 15 * 60 * 1000, to: now };
   }
   return { from: now - r.ms, to: now };
 }

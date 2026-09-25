@@ -107,7 +107,24 @@ function startLive() {
   clearInterval(liveTimer);
   liveTimer = null;
   if (!state.live) return;
-  liveTimer = setInterval(() => { refreshPage(); loadMarks(); }, 5000);
+  liveTimer = setInterval(liveTick, 5000);
+}
+
+/** Under `all` the refresh waits for the status, whose oldest span is where the window starts. */
+function liveTick() {
+  const status = freshStatus();
+  if (state.range === 'all') status.then(() => { if (state.live) refreshPage(); });
+  else refreshPage();
+  loadMarks();
+}
+
+/**
+ * Re-reads /api/status: the footer, the counts the empty states test, and `oldest.span`, the
+ * start of the `all` window. Read only at boot, `all` would stay the last 15 minutes for as
+ * long as the page was first opened on an empty store. It never fails; a stale status is kept.
+ */
+function freshStatus() {
+  return api.refreshStatus().then(paintFoot).catch(() => {});
 }
 
 /**
@@ -150,9 +167,24 @@ function markNav(navKey) {
   }
 }
 
+let routeSeq = 0;
+let routeChangePending = false;
+
 function onRoute(current, changedRoute) {
   syncStateFromQuery(current.query);
   loadMarks();
+  const status = freshStatus();
+  // Under `all` the window starts at the oldest span, so the page waits for the status that
+  // says where that is; any other range paints at once. A route that came while waiting wins.
+  const seq = ++routeSeq;
+  routeChangePending = routeChangePending || changedRoute;
+  if (state.range !== 'all') { showRoute(current); return; }
+  status.then(() => { if (seq === routeSeq) showRoute(current); });
+}
+
+function showRoute(current) {
+  const changedRoute = routeChangePending;
+  routeChangePending = false;
   const entry = PAGES.find((p) => p[0] === current.route.pattern);
   if (!entry) return;
   const [, module, title, navKey] = entry;

@@ -165,6 +165,8 @@ It applies to every page that takes a `service`.
 Time range::
 `5m`, `15m`, `1h`, `6h`, or `all`.
 `all` sets `from` to `/api/status.oldest.span`, the oldest span in storage.
+The shell re-reads `/api/status` on every route change and every Live refresh, and under `all` the page waits for it, so the window grows as data arrives, and after a *Clear data*, an import or another process's writes.
+With no span in storage, `oldest.span` is `0` and `all` is the last 15 minutes.
 
 Editor::
 A select of *IntelliJ IDEA*, the default, or *VS Code*: what a code frame link opens, on the Findings page and the error page (xref:pages.adoc#code-frames[Code frames]).
