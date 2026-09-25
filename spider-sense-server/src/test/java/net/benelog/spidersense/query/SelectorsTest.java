@@ -117,4 +117,22 @@ class SelectorsTest {
                 String.valueOf(NOW), String.valueOf(NOW - 1000), null))
                 .isInstanceOf(Selectors.BadSelector.class);
     }
+
+    @Test
+    void compareResolvesTheEndFirstThenCountsAfterAndBeforeBackFromIt() {
+        assertThat(selectors.compareBounds("10m", "5m", null, null))
+                .as("until is now, after 5m before it, before 10m before that")
+                .isEqualTo(new Selectors.CompareBounds(NOW - 900_000, NOW - 300_000, NOW));
+        assertThat(selectors.compareBounds("10m", "5m", "1m", null))
+                .isEqualTo(new Selectors.CompareBounds(NOW - 960_000, NOW - 360_000, NOW - 60_000));
+    }
+
+    @Test
+    void compareReadsMarksLikeAnyOtherSelector() {
+        store.marks().create("before", null, null, NOW - 50_000);
+        store.marks().create("after", null, null, NOW - 20_000);
+
+        assertThat(selectors.compareBounds("before", "after", null, null))
+                .isEqualTo(new Selectors.CompareBounds(NOW - 50_000, NOW - 20_000, NOW));
+    }
 }

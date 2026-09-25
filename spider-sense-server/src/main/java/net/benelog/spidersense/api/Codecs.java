@@ -893,10 +893,11 @@ public final class Codecs {
             checks.add(object.put("pass", check.pass()).put("detail", check.detail()));
         }
         Json.JsonObject object = Json.obj();
-        if (result.pass() == null) {
+        Boolean pass = result.verdict().pass();
+        if (pass == null) {
             object.putNull("pass");
         } else {
-            object.put("pass", result.pass().booleanValue());
+            object.put("pass", pass.booleanValue());
         }
         return object
                 .put("requests", result.requests())

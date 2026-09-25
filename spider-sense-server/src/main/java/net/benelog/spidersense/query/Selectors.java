@@ -25,6 +25,13 @@ public final class Selectors {
     public static final String DEFAULT_SINCE = "15m";
 
     /**
+     * The three moments a {@code compare} splits into two windows: {@code [before, after)} and
+     * {@code [after, until)}.
+     */
+    public record CompareBounds(long before, long after, long until) {
+    }
+
+    /**
      * A selector that is not one of the forms marks-and-compare.adoc#time-selectors lists: a
      * {@code 400}.
      */
@@ -141,6 +148,24 @@ public final class Selectors {
             throw new BadSelector("since resolves to " + start + ", which is after until " + end);
         }
         return Window.of(start, end);
+    }
+
+    /**
+     * The moments of a {@code compare}, resolved the one way every transport resolves them
+     * (marks-and-compare.adoc#compare): the end first, {@code now} when {@code until} is unsaid,
+     * then {@code after} counted back from it, then {@code before} counted back from that, so
+     * {@code --before=10m --after=5m} reads left to right. {@code now} is read once.
+     *
+     * <p>Whether the moments are in order is the caller's to judge, since a window that is
+     * empty or backwards is refused in the words of the answer it would have been.
+     */
+    public CompareBounds compareBounds(@Nullable String before, @Nullable String after,
+            @Nullable String until, @Nullable String service) {
+        long now = clock.getAsLong();
+        long untilAt = until == null ? now : resolve(until, now, now, service);
+        long afterAt = resolve(after, untilAt, now, service);
+        long beforeAt = resolve(before, afterAt, now, service);
+        return new CompareBounds(beforeAt, afterAt, untilAt);
     }
 
     private static long unitMillis(char unit) {

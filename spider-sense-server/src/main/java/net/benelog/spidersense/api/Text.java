@@ -624,8 +624,7 @@ final class Text {
 
     static String check(Check.CheckResult result, Window window, @Nullable String service,
             @Nullable String endpoint) {
-        String verdict = result.pass() == null ? "no verdict" : result.pass() ? "pass" : "fail";
-        StringBuilder text = new StringBuilder("# check  ").append(verdict).append("  ")
+        StringBuilder text = new StringBuilder("# check  ").append(result.verdict().word()).append("  ")
                 .append(instant(window.from())).append(" → ").append(clock(window.to()))
                 .append("  (").append(range(window)).append(", ")
                 .append(service == null ? "all services" : service)

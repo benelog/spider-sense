@@ -12,7 +12,6 @@ import net.benelog.spidersense.query.Selectors;
 import net.benelog.spidersense.query.Window;
 import net.benelog.spidersense.store.Database;
 import net.benelog.spidersense.store.Marks;
-import net.benelog.spidersilk.json.Json;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -192,20 +191,10 @@ public final class McpTools implements McpServer.ToolRunner {
         return text(reports.mark(mark));
     }
 
-    /**
-     * The two windows, resolved the way {@code /api/compare} and the CLI resolve
-     * them: the end first, then {@code after} counted back from it, then
-     * {@code before} counted back from that.
-     */
+    /** The two windows, resolved the way {@code /api/compare} and the CLI resolve them. */
     private McpServer.ToolResult compare(Map<String, Object> arguments) {
-        String service = string(arguments, "service");
-        Selectors selectors = reports.selectors();
-        long now = System.currentTimeMillis();
-        String until = string(arguments, "until");
-        long untilAt = until == null ? now : selectors.resolve(until, now, service);
-        long afterAt = selectors.resolve(string(arguments, "after"), untilAt, service);
-        long beforeAt = selectors.resolve(string(arguments, "before"), afterAt, service);
-        return text(reports.compare(beforeAt, afterAt, untilAt, service, false));
+        return text(reports.compare(string(arguments, "before"), string(arguments, "after"),
+                string(arguments, "until"), string(arguments, "service"), false));
     }
 
     /**
@@ -225,14 +214,12 @@ public final class McpTools implements McpServer.ToolRunner {
                 rules.put(rule, number.doubleValue());
             }
         }
-        Reports.Report report = reports.check(window(arguments, service), service,
+        Reports.CheckReport checked = reports.check(window(arguments, service), service,
                 string(arguments, "endpoint"), rules);
-        Json.JsonObject json = report.json().asObject();
-        Json.JsonValue pass = json.get("pass");
         Map<String, Object> structured = new LinkedHashMap<>();
-        structured.put("pass", pass.isNull() ? null : pass.asBoolean());
-        structured.put("requests", json.getLong("requests"));
-        return new McpServer.ToolResult(report.text(), false, structured);
+        structured.put("pass", checked.verdict().pass());
+        structured.put("requests", checked.requests());
+        return new McpServer.ToolResult(checked.report().text(), false, structured);
     }
 
     private Window window(Map<String, Object> arguments, @Nullable String service) {

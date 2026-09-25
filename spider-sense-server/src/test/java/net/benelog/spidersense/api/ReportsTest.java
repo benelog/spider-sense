@@ -60,8 +60,10 @@ class ReportsTest {
                 assertThat(reports.marks(50).json().asObject().getArray("marks")).hasSize(1);
                 assertThat(reports.selectors().resolve("after-fix", NOW, null)).isEqualTo(mark.at());
 
-                assertThat(reports.check(window, null, null, java.util.Map.of()).json().asObject()
+                assertThat(reports.check(window, null, null, java.util.Map.of()).report().json().asObject()
                         .getBoolean("pass")).isFalse();
+                assertThat(reports.check(window, null, null, java.util.Map.of()).verdict())
+                        .isEqualTo(net.benelog.spidersense.query.Verdict.FAIL);
                 assertThat(reports.endpoints(window, null).text()).contains("GET /orders/report");
 
                 Reports.Report sql = reports.sql(
@@ -161,7 +163,7 @@ class ReportsTest {
                         .contains("1. " + id + " — came back after it was resolved (precomputed); ")
                         .contains("   resolvedAt " + Text.instantMillis(NOW - 30_000)
                                 + ", note precomputed, originalKind slow-endpoint, calls 1");
-                assertThat(reports.check(window, null, null, java.util.Map.of()).text())
+                assertThat(reports.check(window, null, null, java.util.Map.of()).report().text())
                         .contains("| maxRegressions | 0 | 1 | fail | 1 finding: slow-endpoint GET /orders/report is slow |");
             }
         }

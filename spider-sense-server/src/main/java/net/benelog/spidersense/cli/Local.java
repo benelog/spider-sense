@@ -74,6 +74,9 @@ final class Local {
         if (Options.EXPORT.equals(options.command())) {
             return export(options, reports, service, out, err);
         }
+        if (Options.CHECK.equals(options.command())) {
+            return check(options, reports, service, out);
+        }
         if (Options.UNACK.equals(options.command())) {
             if (!reports.ackStore().unack(options.requiredArgument())) {
                 err.println("spider-sense: No such acknowledgement: " + options.requiredArgument());
@@ -122,11 +125,10 @@ final class Local {
                     options.limit(Limits.LOGS, Limits.LOGS_MAX)));
             case Options.MARK -> mark(options, reports, service);
             case "marks" -> reports.marks(options.limit(Limits.MARKS, Limits.MARKS_MAX));
-            case Options.COMPARE -> compare(options, reports, service);
+            case Options.COMPARE -> reports.compare(options.valueOrNull("before"), options.valueOrNull("after"),
+                    options.valueOrNull("until"), service, options.flag("full"));
             case Options.SQL -> reports.sql(options.requiredArgument(),
                     options.limit(Limits.SQL, Limits.SQL_MAX), options.flag("full"));
-            case Options.CHECK -> reports.check(window(options, reports, service), service,
-                    options.valueOrNull("endpoint"), options.rules());
             case Options.IMPORT -> reports.imported(
                     reports.importDocument(Json.parse(Sessions.read(options.requiredArgument())).asObject()));
             default -> throw new Options.Usage("unknown command: " + options.command());
@@ -136,7 +138,20 @@ final class Local {
             return Cli.NOT_FOUND;
         }
         print(out, options.flag("json") ? report.json().toJson() : report.text());
-        return Options.CHECK.equals(options.command()) ? verdict(report) : Cli.OK;
+        return Cli.OK;
+    }
+
+    /** {@code check}: the report, and its verdict as the exit code (check.adoc#exit-codes). */
+    private static int check(Options options, Reports reports, @Nullable String service, PrintStream out) {
+        Reports.CheckReport checked = reports.check(window(options, reports, service), service,
+                options.valueOrNull("endpoint"), options.rules());
+        Reports.Report report = checked.report();
+        print(out, options.flag("json") ? report.json().toJson() : report.text());
+        return switch (checked.verdict()) {
+            case PASS -> Cli.OK;
+            case FAIL -> Cli.CHECK_FAILED;
+            case NONE -> Cli.NO_REQUESTS;
+        };
     }
 
     /**
@@ -166,33 +181,10 @@ final class Local {
         return reports.mark(mark);
     }
 
-    /**
-     * The two windows, resolved the way {@code /api/compare} resolves them: the
-     * end first, then {@code after} counted back from it, then {@code before}
-     * counted back from that, so {@code --before=10m --after=5m} reads left to
-     * right.
-     */
-    private static Reports.Report compare(Options options, Reports reports, @Nullable String service) {
-        Selectors selectors = reports.selectors();
-        long now = System.currentTimeMillis();
-        String until = options.valueOrNull("until");
-        long untilAt = until == null ? now : selectors.resolve(until, now, service);
-        long afterAt = selectors.resolve(options.valueOrNull("after"), untilAt, service);
-        long beforeAt = selectors.resolve(options.valueOrNull("before"), afterAt, service);
-        return reports.compare(beforeAt, afterAt, untilAt, service, options.flag("full"));
-    }
 
     private static Window window(Options options, Reports reports, @Nullable String service) {
         return reports.selectors().window(null, null,
                 options.value("since", Selectors.DEFAULT_SINCE), options.valueOrNull("until"), service);
-    }
-
-    private static int verdict(Reports.Report report) {
-        Json.JsonValue pass = report.json().asObject().get("pass");
-        if (pass.isNull()) {
-            return Cli.NO_REQUESTS;
-        }
-        return pass.asBoolean() ? Cli.OK : Cli.CHECK_FAILED;
     }
 
     private static void print(PrintStream out, @Nullable String body) {

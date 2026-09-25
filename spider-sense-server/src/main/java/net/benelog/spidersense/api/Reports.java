@@ -15,6 +15,7 @@ import net.benelog.spidersense.query.MetricQueries;
 import net.benelog.spidersense.query.Queries;
 import net.benelog.spidersense.query.Selectors;
 import net.benelog.spidersense.query.Stats;
+import net.benelog.spidersense.query.Verdict;
 import net.benelog.spidersense.query.Window;
 import net.benelog.spidersense.server.Config;
 import net.benelog.spidersense.server.Version;
@@ -410,10 +411,30 @@ public final class Reports implements AutoCloseable {
         return new Report(Codecs.comparison(comparison), Text.compare(comparison, service, full));
     }
 
-    public Report check(Window window, @Nullable String service, @Nullable String endpoint,
+    /**
+     * The same comparison with its moments given as selectors, resolved by
+     * {@link Selectors#compareBounds}: what {@code /api/compare}, the {@code compare} tool and
+     * the CLI's file path all call.
+     */
+    public Report compare(@Nullable String before, @Nullable String after, @Nullable String until,
+            @Nullable String service, boolean full) {
+        Selectors.CompareBounds bounds = selectors.compareBounds(before, after, until, service);
+        return compare(bounds.before(), bounds.after(), bounds.until(), service, full);
+    }
+
+    /**
+     * A check's answer with its verdict beside it, so the header, the MCP result and the exit
+     * code read the typed value rather than the rendered JSON.
+     */
+    public record CheckReport(Report report, Verdict verdict, long requests) {
+    }
+
+    public CheckReport check(Window window, @Nullable String service, @Nullable String endpoint,
             Map<String, Double> rules) {
         Check.CheckResult result = check.check(window, service, endpoint, rules);
-        return new Report(Codecs.checkResult(result), Text.check(result, window, service, endpoint));
+        return new CheckReport(
+                new Report(Codecs.checkResult(result), Text.check(result, window, service, endpoint)),
+                result.verdict(), result.requests());
     }
 
     /** The rule set a {@code check} with no rule uses. */

@@ -69,6 +69,10 @@ public final class Check {
     /** {@code pass} is null when there was no request to judge. */
     public record CheckResult(@Nullable Boolean pass, long requests, @Nullable String reason,
             List<RuleCheck> checks) {
+
+        public Verdict verdict() {
+            return Verdict.of(pass);
+        }
     }
 
     private final Queries queries;

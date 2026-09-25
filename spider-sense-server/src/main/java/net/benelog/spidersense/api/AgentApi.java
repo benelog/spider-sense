@@ -222,14 +222,8 @@ public final class AgentApi {
             throw new HttpException(HttpStatus.BAD_REQUEST,
                     "compare needs both before and after, as marks or time selectors");
         }
-        String service = Params.service(req);
-        Selectors selectors = params.selectors();
-        long now = System.currentTimeMillis();
-        String until = req.queryParamOrNull("until");
-        long untilAt = until == null ? now : selectors.resolve(until, now, service);
-        long afterAt = selectors.resolve(after, untilAt, service);
-        long beforeAt = selectors.resolve(before, afterAt, service);
-        return Params.answer(req, reports.compare(beforeAt, afterAt, untilAt, service, Params.full(req)));
+        return Params.answer(req, reports.compare(before, after, req.queryParamOrNull("until"),
+                Params.service(req), Params.full(req)));
     }
 
     /**
@@ -298,10 +292,8 @@ public final class AgentApi {
                 rules.put(rule, req.queryParam(rule, AgentApi::limit));
             }
         }
-        Reports.Report report = reports.check(window, Params.service(req),
+        Reports.CheckReport checked = reports.check(window, Params.service(req),
                 req.queryParamOrNull("endpoint"), rules);
-        Json.JsonValue pass = report.json().asObject().get("pass");
-        return Params.answer(req, report)
-                .header(PASS_HEADER, pass.isNull() ? "none" : String.valueOf(pass.asBoolean()));
+        return Params.answer(req, checked.report()).header(PASS_HEADER, checked.verdict().header());
     }
 }
