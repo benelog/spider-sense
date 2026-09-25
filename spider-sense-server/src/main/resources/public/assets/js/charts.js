@@ -492,6 +492,9 @@ export function sparkline(values, opts = {}) {
   return svg;
 }
 
+/** A click picks the nearest point within this many CSS pixels. */
+const PICK_RADIUS_PX = 12;
+
 /**
  * The response-time scatter: one dot per request, or a density heatmap, drawn by
  * hand in a draw hook.
@@ -670,7 +673,7 @@ export function scatterChart(container, opts) {
         const pick = (ev) => {
           const rect = over.getBoundingClientRect();
           const px = ev.clientX - rect.left, py = ev.clientY - rect.top;
-          let best = null, bestD = 144;
+          let best = null, bestD = PICK_RADIUS_PX * PICK_RADIUS_PX;
           for (const p of view.points) {
             if (view.hidden.has(p[2])) continue;
             const x = plot.valToPos(p[0] / 1000, 'x');

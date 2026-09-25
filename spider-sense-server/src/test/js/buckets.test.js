@@ -3,7 +3,7 @@ import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { state } from '../../main/resources/public/assets/js/api.js';
 import {
-  bucketBounds, bucketLabels, apdexClass, fmtApdex, histogramTitle,
+  bucketBounds, bucketLabels, apdexClass, fmtApdex, histogramTitle, slowRequestMs,
 } from '../../main/resources/public/assets/js/buckets.js';
 
 afterEach(() => { state.status = null; });
@@ -50,4 +50,9 @@ test('histogramTitle names each bucket with its count and share', () => {
 test('the bounds can come from a status handed in rather than the shared one', () => {
   assert.deepEqual(bucketLabels({ thresholds: { responseBucketsMs: [50, 200, 800] } }), ['≤50.0 ms', '≤200 ms', '≤800 ms', '>800 ms', 'error']);
   assert.deepEqual(bucketBounds(null), [125, 500, 2000]);
+});
+
+test('the slow-request threshold comes from the status, 500 ms before it arrives', () => {
+  assert.equal(slowRequestMs(), 500);
+  assert.equal(slowRequestMs({ thresholds: { slowRequestMs: 250 } }), 250);
 });

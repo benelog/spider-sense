@@ -86,6 +86,14 @@ export function icon(name, cls) {
   return svg;
 }
 
+/** The icon of a kind of node, span or call: a service, a database, an HTTP call, messaging. */
+const CATEGORY_ICON = { user: 'user', service: 'service', db: 'database', http: 'trace', messaging: 'log', rpc: 'service', internal: 'chart' };
+
+/** The sprite name for a node kind or a span category, `fallback` for one it does not know. */
+export function categoryIcon(kind, fallback = 'service') {
+  return CATEGORY_ICON[kind] || fallback;
+}
+
 export function iconButton(name, label, onclick, extra = {}) {
   return h('button.icon-btn', { type: 'button', 'aria-label': label, title: label, onclick, ...extra }, icon(name));
 }
@@ -694,6 +702,9 @@ export function durationBar(value, max, klass) {
     h('span.dbar-fill', { style: { width: w + '%' } }));
 }
 
+/** The four buckets a breakdown splits the time into, in the order every bar draws them (Queries.java). */
+export const BREAKDOWN_BUCKETS = ['db', 'http', 'internal', 'self'];
+
 /**
  * Where an endpoint's or a job's time went, as one stacked bar (pages.adoc#time-breakdown):
  * `db`, `http`, `internal` and `self`, each segment sized by its share.
@@ -705,7 +716,7 @@ export function durationBar(value, max, klass) {
  * @returns null when there is no breakdown to draw
  */
 export function breakdownBar(breakdown) {
-  const buckets = ['db', 'http', 'internal', 'self'];
+  const buckets = BREAKDOWN_BUCKETS;
   const total = buckets.reduce((sum, b) => sum + (Number(breakdown && breakdown[b]) || 0), 0);
   if (!total) return null;
   const title = buckets
@@ -720,7 +731,7 @@ export function breakdownBar(breakdown) {
 /** The bucket the most time went to, so the bar is readable without its colours. */
 export function breakdownLead(breakdown) {
   let lead = null;
-  for (const bucket of ['db', 'http', 'internal', 'self']) {
+  for (const bucket of BREAKDOWN_BUCKETS) {
     const share = Number(breakdown && breakdown[bucket]) || 0;
     if (!lead || share > lead[1]) lead = [bucket, share];
   }

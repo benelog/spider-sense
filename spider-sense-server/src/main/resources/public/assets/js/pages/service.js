@@ -4,7 +4,7 @@
 import * as api from '../api.js';
 import * as router from '../router.js';
 import {
-  h, fill, icon, panel, table, chip, methodChip, statusBar, comparator, sortFromQuery, nextSort,
+  h, fill, icon, panel, table, chip, methodChip, statusBar, comparator, sortFromQuery, nextSort, categoryIcon,
   spinner, serviceColor,
 } from '../ui.js';
 import { pageLoader, skeleton } from '../page.js';
@@ -70,7 +70,7 @@ export function render(root, ctx) {
     const r = resource || {};
     fill(head,
       h('div.row', { style: { gap: '10px' } },
-        h('span.dot', { style: { background: serviceColor(name), width: '10px', height: '10px', borderRadius: '50%' } }),
+        h('span.dot.service-dot.large', { style: { background: serviceColor(name) } }),
         h('b', { style: { fontSize: '15px' } }, name),
         summary.embedded ? chip('embedded', { class: 'chip-accent' }) : null,
         summary.language ? chip(summary.language) : null,
@@ -132,7 +132,7 @@ export function render(root, ctx) {
   fill(errorsBody, errorsTable);
 
   const depsTable = table([
-    { key: 'kind', label: 'Kind', sortable: false, width: '80px', render: (d) => h('span.row', { style: { gap: '6px' } }, icon(d.kind === 'db' ? 'database' : d.kind === 'http' ? 'trace' : 'service'), d.kind) },
+    { key: 'kind', label: 'Kind', sortable: false, width: '80px', render: (d) => h('span.row', { style: { gap: '6px' } }, icon(categoryIcon(d.kind)), d.kind) },
     { key: 'target', label: 'Target', sortable: false, cls: 'wide', render: (d) => h('span.cell-ellipsis.mono', { title: d.target }, d.target) },
     countColumn('calls', 'Calls'),
     { key: 'errors', label: 'Errors', align: 'right', width: '66px', render: (d) => (d.errors ? h('span.bad', count(d.errors)) : h('span.muted', '0')) },

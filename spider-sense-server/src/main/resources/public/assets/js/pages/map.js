@@ -5,19 +5,17 @@ import * as api from '../api.js';
 import * as router from '../router.js';
 import {
   h, fill, panel, stat, spinner, noDataYet,
-  drawer, closeDrawer, seedServices,
+  drawer, closeDrawer, seedServices, categoryIcon,
 } from '../ui.js';
 import { pageLoader } from '../page.js';
 import { timeSeries } from '../charts.js';
 import { throughputSpec } from '../throughput.js';
-import { histogramBars, bucketVars, apdexClass, fmtApdex } from '../buckets.js';
-import { dur, count, rate, pct } from '../format.js';
+import { histogramBars, bucketVars, apdexClass, fmtApdex, ERROR_RATE_BAD } from '../buckets.js';
+import { dur, count, rate, pct, truncate } from '../format.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 const NODE_W = 200, NODE_H = 64, COL_PITCH = 260, ROW_PITCH = 96, PAD_X = 22, PAD_Y = 20;
 const HIST_W = 40, HIST_H = 14, HIST_X = NODE_W - HIST_W - 12, HIST_Y = NODE_H - HIST_H - 10;
-
-const KIND_ICON = { user: 'user', service: 'service', db: 'database', http: 'trace', messaging: 'log', rpc: 'service' };
 
 function el(tag, attrs = {}, ...children) {
   const node = document.createElementNS(NS, tag);
@@ -30,11 +28,6 @@ function el(tag, attrs = {}, ...children) {
     node.appendChild(child.nodeType ? child : document.createTextNode(String(child)));
   }
   return node;
-}
-
-function ellipsis(text, max) {
-  const s = String(text == null ? '' : text);
-  return s.length <= max ? s : s.slice(0, max - 1) + '…';
 }
 
 /** Characters that fit in `px` of the UI font at `size`, near enough for a label. */
@@ -365,15 +358,15 @@ export function render(root, ctx) {
       'aria-label': n.name + ', ' + n.kind,
     });
     const rect = el('rect', { class: 'map-node-box', width: NODE_W, height: NODE_H, rx: 8 });
-    const use = el('use', { class: 'map-node-icon', href: '#i-' + (KIND_ICON[n.kind] || 'service'), x: 12, y: 12, width: 16, height: 16 });
+    const use = el('use', { class: 'map-node-icon', href: '#i-' + categoryIcon(n.kind), x: 12, y: 12, width: 16, height: 16 });
     const name = el('text', { class: 'map-node-name', x: 36, y: 25 },
-      ellipsis(n.name, fits(NODE_W - 36 - 12, 12)), el('title', {}, n.name));
+      truncate(n.name, fits(NODE_W - 36 - 12, 12)), el('title', {}, n.name));
     g.appendChild(rect);
     g.appendChild(use);
     g.appendChild(name);
     const full = n.kind === 'service' ? serviceLine(n) : externalLine(n);
     const line = el('text', { class: 'map-node-line', x: 12, y: 46 },
-      ellipsis(full, lineChars(n)), el('title', {}, full));
+      truncate(full, lineChars(n)), el('title', {}, full));
     g.appendChild(line);
     if (n.kind === 'service') g.appendChild(miniHistogram(n.histogram, HIST_X, HIST_Y));
     g.addEventListener('click', () => openNode(n));
@@ -388,8 +381,8 @@ export function render(root, ctx) {
 
   function nodeClass(n) {
     if (n.kind !== 'service') return '';
-    if (n.errorRate > 0.01) return 'is-bad';
-    if (n.apdex != null && n.apdex < 0.85) return 'is-warn';
+    if (n.errorRate > ERROR_RATE_BAD) return 'is-bad';
+    if (apdexClass(n.apdex)) return 'is-warn';
     return '';
   }
 
@@ -439,7 +432,7 @@ export function render(root, ctx) {
       ref.g.setAttribute('class', 'map-node ' + nodeClass(n));
       if (ref.line) {
         const full = n.kind === 'service' ? serviceLine(n) : externalLine(n);
-        ref.line.replaceChildren(document.createTextNode(ellipsis(full, lineChars(n))), el('title', {}, full));
+        ref.line.replaceChildren(document.createTextNode(truncate(full, lineChars(n))), el('title', {}, full));
       }
       if (n.kind === 'service') {
         const old = ref.g.querySelector('.map-hist');
@@ -482,7 +475,7 @@ export function render(root, ctx) {
       h('div.stat-row',
         stat(count(n.requests), 'total', 'requests'),
         stat(fmtApdex(n.apdex), '', 'apdex', { class: apdexClass(n.apdex) }),
-        stat(pct(n.errorRate || 0), '', 'error rate', { class: n.errorRate > 0.01 ? 'is-bad' : '' }),
+        stat(pct(n.errorRate || 0), '', 'error rate', { class: n.errorRate > ERROR_RATE_BAD ? 'is-bad' : '' }),
         stat(dur(n.p95Ms), '', 'p95'),
         stat(rate(n.rps || 0), '/s', 'requests per second')),
       h('div', h('div.sub-head', { style: { marginBottom: '6px' } }, 'Response summary'), histogramBars(n.histogram)),

@@ -3,7 +3,7 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, panel, table, chip, serviceChip, copyBlock, spinner, noDataYet, formDialog, errorText, toast, breakdownBar, breakdownLead } from '../ui.js';
+import { h, fill, panel, table, chip, serviceChip, copyBlock, spinner, noDataYet, formDialog, errorText, toast, breakdownBar, breakdownLead, BREAKDOWN_BUCKETS } from '../ui.js';
 import { formatSql } from '../sql.js';
 import { fmtApdex } from '../buckets.js';
 import { count, dur, rate, pct, bytes, time, bothTimes, truncate, shortId } from '../format.js';
@@ -147,7 +147,7 @@ function breakdownLine(breakdown) {
   const bar = breakdownBar(breakdown);
   if (!bar) return h('span.muted', 'none');
   return h('div.f-breakdown', bar,
-    h('span.muted', ['db', 'http', 'internal', 'self']
+    h('span.muted', BREAKDOWN_BUCKETS
       .map((bucket) => bucket + ' ' + pct(breakdown[bucket] || 0)).join(' · ')));
 }
 

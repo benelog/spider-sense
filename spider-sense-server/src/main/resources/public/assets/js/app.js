@@ -69,9 +69,14 @@ function storeTheme(theme) {
   try { localStorage.setItem(THEME_KEY, theme); } catch (e) { /* the choice lasts until reload */ }
 }
 
+/** Whether a theme, or the system's when none is chosen, is dark. */
+function isDark(theme) {
+  return theme ? theme === 'dark' : !matchMedia('(prefers-color-scheme: light)').matches;
+}
+
 function applyTheme(theme) {
   document.documentElement.dataset.theme = theme || '';
-  const dark = theme ? theme === 'dark' : !matchMedia('(prefers-color-scheme: light)').matches;
+  const dark = isDark(theme);
   const btn = el.themeToggle;
   if (btn) {
     btn.setAttribute('aria-label', dark ? 'Switch to light theme' : 'Switch to dark theme');
@@ -82,10 +87,7 @@ function applyTheme(theme) {
 }
 
 function toggleTheme() {
-  const dark = document.documentElement.dataset.theme
-    ? document.documentElement.dataset.theme === 'dark'
-    : !matchMedia('(prefers-color-scheme: light)').matches;
-  const next = dark ? 'light' : 'dark';
+  const next = isDark(document.documentElement.dataset.theme) ? 'light' : 'dark';
   storeTheme(next);
   applyTheme(next);
 }
@@ -115,11 +117,14 @@ function fillServiceSelect(names) {
   el.serviceSelect.value = names.includes(current) ? current : '';
 }
 
+/** How often Live refreshes the page (ui.adoc#live-refresh). */
+const LIVE_PERIOD_MS = 5000;
+
 function startLive() {
   clearInterval(liveTimer);
   liveTimer = null;
   if (!state.live) return;
-  liveTimer = setInterval(liveTick, 5000);
+  liveTimer = setInterval(liveTick, LIVE_PERIOD_MS);
 }
 
 /** Under `all` the refresh waits for the status, whose oldest span is where the window starts. */
@@ -147,9 +152,10 @@ function freshStatus() {
 function loadMarks() {
   return api.marks(50).then((res) => {
     const list = res.marks || [];
-    const before = state.marks.map((m) => m.id + ':' + m.at + ':' + m.name).join(',');
+    const signature = (marks) => marks.map((m) => m.id + ':' + m.at + ':' + m.name).join(',');
+    const changed = signature(state.marks) !== signature(list);
     state.marks = list;
-    if (before !== list.map((m) => m.id + ':' + m.at + ':' + m.name).join(',')) redrawAll();
+    if (changed) redrawAll();
     return list;
   }).catch(() => state.marks);
 }

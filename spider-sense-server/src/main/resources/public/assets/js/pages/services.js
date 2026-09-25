@@ -5,7 +5,7 @@ import * as router from '../router.js';
 import { h, fill, panel, table, chip, serviceColor, comparator, sortFromQuery, nextSort, spinner, noDataYet, seedServices } from '../ui.js';
 import { pageLoader } from '../page.js';
 import { sparkline } from '../charts.js';
-import { apdexCell } from '../buckets.js';
+import { apdexCell, ERROR_RATE_BAD } from '../buckets.js';
 import { seenColumn, durationColumn, countColumn } from '../columns.js';
 import { rate, pct } from '../format.js';
 
@@ -21,14 +21,14 @@ export function render(root, ctx) {
     {
       key: 'name', label: 'Service', cls: 'wide',
       render: (s) => h('div.row', { style: { gap: '8px' } },
-        h('span.dot', { style: { background: serviceColor(s.name), width: '8px', height: '8px', borderRadius: '50%', flex: 'none' } }),
+        h('span.dot.service-dot', { style: { background: serviceColor(s.name) } }),
         h('b', s.name),
         s.embedded ? chip('embedded', { class: 'chip-accent' }) : null),
     },
     { key: 'language', label: 'Language', width: '92px', render: (s) => (s.language ? chip(s.language) : h('span.muted', 'unknown')) },
     countColumn('requests', 'Requests', '84px'),
     { key: 'rps', label: 'rps', align: 'right', width: '64px', render: (s) => rate(s.rps || 0) },
-    { key: 'errorRate', label: 'Errors', align: 'right', width: '72px', render: (s) => h('span', { class: s.errorRate > 0.01 ? 'bad' : '' }, pct(s.errorRate || 0)) },
+    { key: 'errorRate', label: 'Errors', align: 'right', width: '72px', render: (s) => h('span', { class: s.errorRate > ERROR_RATE_BAD ? 'bad' : '' }, pct(s.errorRate || 0)) },
     { key: 'apdex', label: 'Apdex', align: 'right', width: '70px', render: (s) => apdexCell(s.apdex) },
     durationColumn('p50Ms', 'p50', '78px'),
     durationColumn('p95Ms', 'p95', '78px'),

@@ -39,6 +39,17 @@ const CSS_VARS = ['var(--bucket-1)', 'var(--bucket-2)', 'var(--bucket-3)', 'var(
 /** The same five colours as CSS variables, so a theme change needs no redraw. */
 export function bucketVars() { return CSS_VARS.slice(); }
 
+/** An error rate above this (1%) is shown as bad. */
+export const ERROR_RATE_BAD = 0.01;
+
+/** The slow-request threshold before /api/status has said it (configuration.adoc, `slow.request.ms`). */
+export const DEFAULT_SLOW_REQUEST_MS = 500;
+
+/** The slow-request threshold from /api/status, or the default before it has arrived. */
+export function slowRequestMs(status = api.state.status) {
+  return ((status || {}).thresholds || {}).slowRequestMs || DEFAULT_SLOW_REQUEST_MS;
+}
+
 /** '' up to 0.85, 'is-warn' under it, 'is-bad' under 0.7. */
 export function apdexClass(value) {
   if (value == null) return '';

@@ -7,7 +7,7 @@ import * as router from './router.js';
 import { h, table, icon, chip, stat, serviceChip, statusChip, durationBar } from './ui.js';
 import { chartBox } from './charts.js';
 import { chartModeSwitch, throughputSpec } from './throughput.js';
-import { apdexClass, fmtApdex } from './buckets.js';
+import { apdexClass, fmtApdex, ERROR_RATE_BAD, DEFAULT_SLOW_REQUEST_MS } from './buckets.js';
 import { dur, count, rate, pct, time, bothTimes, shortId } from './format.js';
 
 // --- traces ---------------------------------------------------------------
@@ -64,11 +64,11 @@ export function traceTable(rows, opts = {}) {
 /** The seven tiles of pages.adoc#overview item 1; the Service page shows the same row. */
 export function statTiles(totals, thresholds) {
   const t = totals || {};
-  const slow = (thresholds && thresholds.slowRequestMs) || 500;
+  const slow = (thresholds && thresholds.slowRequestMs) || DEFAULT_SLOW_REQUEST_MS;
   return [
     stat(count(t.requests), 'total', 'requests'),
     stat(fmtApdex(t.apdex), '', 'apdex', { class: apdexClass(t.apdex), title: 'Apdex, T = ' + dur(slow) }),
-    stat(pct(t.errorRate || 0), '', 'error rate', { class: t.errorRate > 0.01 ? 'is-bad' : '' }),
+    stat(pct(t.errorRate || 0), '', 'error rate', { class: t.errorRate > ERROR_RATE_BAD ? 'is-bad' : '' }),
     stat(dur(t.p50Ms), '', 'p50'),
     stat(dur(t.p95Ms), '', 'p95', { class: t.p95Ms > slow ? 'is-warn' : '' }),
     stat(dur(t.p99Ms), '', 'p99'),

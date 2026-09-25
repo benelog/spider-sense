@@ -3,18 +3,18 @@
 import * as api from '../api.js';
 import * as router from '../router.js';
 import {
-  h, fill, icon, panel, table, chip, serviceChip, serviceColor, severityChip, idButton, segmented,
+  h, fill, icon, panel, table, chip, serviceChip, serviceColor, severityChip, idButton, segmented, categoryIcon,
   drawer, closeDrawer, spinner,
 } from '../ui.js';
 import { pageLoader, skeleton } from '../page.js';
 import { formatSql } from '../sql.js';
 import { stackTrace } from '../frames.js';
+import { slowRequestMs } from '../buckets.js';
 import { dur, count, timeMs, bothTimes, offset, full } from '../format.js';
 import {
   startMsOf, traceStartMs, spanTree, flattenTree, selfTimes, profileRows, hotSpanIds,
 } from '../trace-model.js';
 
-const CATEGORY_ICON = { http: 'trace', db: 'database', messaging: 'log', rpc: 'service', internal: 'chart' };
 
 export function render(root, ctx) {
   const traceId = ctx.params.id;
@@ -112,7 +112,7 @@ export function render(root, ctx) {
       h('div.wf-name', { style: { paddingLeft: depth * 14 + 'px' } },
         toggle,
         h('span.wf-svc', { style: { background: serviceColor(span.service) }, title: span.service }),
-        icon(CATEGORY_ICON[span.category] || 'chart'),
+        icon(categoryIcon(span.category, 'chart')),
         h('span.wf-label', { title: span.summary || span.name }, span.name),
         span.error ? h('span.marker.err', { title: 'Error' }, icon('bolt')) : null),
       h('div.wf-track', bar),
@@ -124,7 +124,7 @@ export function render(root, ctx) {
 
   function paintProfile() {
     const total = Math.max(1, data.durationMs || 1);
-    const slowMs = ((api.state.status || {}).thresholds || {}).slowRequestMs || 500;
+    const slowMs = slowRequestMs();
     const rows = profileRows(data, profileSort);
     // The three steps that actually spent the time, and only when they spent enough of it to be worth reading.
     const hot = hotSpanIds(rows, total);
@@ -146,7 +146,7 @@ export function render(root, ctx) {
         key: 'step', label: 'Step', sortable: false, cls: 'wide',
         render: (r) => h('span.cell-ellipsis', { style: { paddingLeft: r.depth * 14 + 'px' }, title: r.span.summary || r.span.name },
           h('span.row', { style: { gap: '6px' } },
-            icon(CATEGORY_ICON[r.span.category] || 'chart'),
+            icon(categoryIcon(r.span.category, 'chart')),
             h('span', r.span.summary || r.span.name),
             r.span.error ? icon('bolt') : null)),
       },

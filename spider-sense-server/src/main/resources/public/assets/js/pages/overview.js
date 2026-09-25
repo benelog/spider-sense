@@ -5,13 +5,13 @@ import * as router from '../router.js';
 import { h, fill, icon, panel, chip, serviceChip, serviceColor, renderList, emptyState, snippetBlocks, placeholder, seedServices } from '../ui.js';
 import { pageLoader, skeleton } from '../page.js';
 import { chartBox, sparkline } from '../charts.js';
-import { histogramBars, apdexCell } from '../buckets.js';
+import { histogramBars, apdexCell, ERROR_RATE_BAD } from '../buckets.js';
 import { chartModeSwitch, throughputSpec } from '../throughput.js';
 import { statTiles, severityDot, kindChip, goToFinding } from '../widgets.js';
 import { dur, rate, pct, rel, bothTimes } from '../format.js';
 
-const KIND_ICON = { 'slow-request': 'turtle', 'slow-query': 'database', error: 'bolt' };
-const KIND_LABEL = { 'slow-request': 'Slow request', 'slow-query': 'Slow query', error: 'Error' };
+const TINGLE_ICON = { 'slow-request': 'turtle', 'slow-query': 'database', error: 'bolt' };
+const TINGLE_LABEL = { 'slow-request': 'Slow request', 'slow-query': 'Slow query', error: 'Error' };
 
 export function render(root, ctx) {
   let tingles = [];
@@ -100,14 +100,14 @@ export function render(root, ctx) {
       },
     },
       h('div.sc-head',
-        h('span.dot', { style: { background: color, width: '8px', height: '8px', borderRadius: '50%', flex: 'none' } }),
+        h('span.dot.service-dot', { style: { background: color } }),
         h('span.sc-name', s.name),
         s.language ? chip(s.language) : null,
         s.embedded ? chip('embedded', { class: 'chip-accent' }) : null),
       h('div.sc-stats',
         h('div', h('b', rate(s.rps || 0)), 'rps'),
         h('div', h('b', dur(s.p95Ms)), 'p95'),
-        h('div', h('b', { class: s.errorRate > 0.01 ? 'bad' : '' }, pct(s.errorRate || 0)), 'errors'),
+        h('div', h('b', { class: s.errorRate > ERROR_RATE_BAD ? 'bad' : '' }, pct(s.errorRate || 0)), 'errors'),
         h('div', apdexCell(s.apdex, 'b'), 'apdex')),
       h('div.sc-foot',
         sparkline(s.sparkline || [], { color, label: s.name + ' requests per bucket' }),
@@ -136,11 +136,11 @@ export function render(root, ctx) {
       'data-kind': t.kind,
       tabindex: 0,
       role: 'link',
-      title: KIND_LABEL[t.kind] || t.kind,
+      title: TINGLE_LABEL[t.kind] || t.kind,
       onclick: () => t.traceId && router.openDetail('traces', t.traceId),
       onkeydown: (e) => { if (e.key === 'Enter' && t.traceId) router.openDetail('traces', t.traceId); },
     },
-      h('span.t-icon', icon(KIND_ICON[t.kind] || 'bolt')),
+      h('span.t-icon', icon(TINGLE_ICON[t.kind] || 'bolt')),
       h('div.t-title', serviceChip(t.service), h('span', t.title)),
       h('span.t-when', { class: 't-when', title: bothTimes(t.at) }, rel(t.at)),
       h('div.t-detail', t.detail || ''));

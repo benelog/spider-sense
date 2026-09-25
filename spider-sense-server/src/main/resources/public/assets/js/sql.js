@@ -1,5 +1,7 @@
 // SQL pretty-printer: a statement on lines by clause, or on one line for a table cell.
 
+import { truncate } from './format.js';
+
 const KEYWORDS = new Set(`select from where group by having order limit offset insert into values update set
 delete create table alter drop index view join inner left right full outer cross on using union all distinct
 as and or not in exists between like ilike is null asc desc case when then else end with recursive
@@ -131,6 +133,5 @@ export function oneLineSql(sql, max = 200) {
     s += (lower && KEYWORDS.has(lower) ? t.text.toUpperCase() : t.text) + ' ';
     prev = lower;
   }
-  s = s.replace(/\s+/g, ' ').trim();
-  return s.length > max ? s.slice(0, max - 1) + '…' : s;
+  return truncate(s.replace(/\s+/g, ' ').trim(), max);
 }

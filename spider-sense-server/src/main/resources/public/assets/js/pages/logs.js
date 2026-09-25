@@ -9,6 +9,8 @@ import { timeMs, bothTimes, count, shortId } from '../format.js';
 
 const SEVERITIES = ['TRACE', 'DEBUG', 'INFO', 'WARN', 'ERROR'];
 const LIMIT = 200;
+/** Live tails while a row is open only if the page is scrolled to within this much of the top. */
+const TAIL_SCROLL_SLACK_PX = 40;
 
 export function render(root, ctx) {
   let rows = [];
@@ -169,7 +171,7 @@ export function render(root, ctx) {
 
   return {
     // Live tail: new lines arrive at the top; the scroll position is left alone.
-    refresh: () => { if (!expanded.size || window.scrollY < 40) loader.load(); },
+    refresh: () => { if (!expanded.size || window.scrollY < TAIL_SCROLL_SLACK_PX) loader.load(); },
     destroy: () => { loader.destroy(); apply.cancel(); },
   };
 }

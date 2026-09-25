@@ -9,6 +9,10 @@ import { scatterChart, legend } from '../charts.js';
 import { traceTable } from '../widgets.js';
 import { count, dur, clock } from '../format.js';
 
+/** Under Live the scatter merges the last 10 s every 2 s (pages.adoc#scatter), faster than the page refresh. */
+const LIVE_MERGE_PERIOD_MS = 2000;
+const LIVE_MERGE_WINDOW_MS = 10000;
+
 export function render(root, ctx) {
   let points = [];
   let chart = null;
@@ -242,7 +246,7 @@ export function render(root, ctx) {
     const requested = scope();
     try {
       const now = Date.now();
-      const res = await api.scatter({ limit: 5000 }, { window: { from: now - 10000, to: now } });
+      const res = await api.scatter({ limit: 5000 }, { window: { from: now - LIVE_MERGE_WINDOW_MS, to: now } });
       if (loader.isDestroyed() || requested !== loadedFor) return;
       const seen = new Set(points.map((p) => p[4]));
       const fresh = (res.points || []).filter((p) => !seen.has(p[4]));
@@ -260,7 +264,7 @@ export function render(root, ctx) {
     clearInterval(liveTimer);
     liveTimer = null;
     if (!api.state.live) return;
-    liveTimer = setInterval(mergeRecent, 2000);
+    liveTimer = setInterval(mergeRecent, LIVE_MERGE_PERIOD_MS);
   }
 
   loader.load().then(() => { if (!loader.isDestroyed()) loadTraces(); });

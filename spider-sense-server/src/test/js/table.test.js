@@ -2,7 +2,7 @@
 import './fake-dom.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { table, sortFromQuery, nextSort } from '../../main/resources/public/assets/js/ui.js';
+import { table, sortFromQuery, nextSort, categoryIcon } from '../../main/resources/public/assets/js/ui.js';
 
 const columns = [
   { key: 'name', label: 'Name', render: (r) => r.name },
@@ -111,4 +111,12 @@ test('a sort comes from the hash query, and a second click on its header turns i
   assert.deepEqual(nextSort(sort, 'p95Ms'), { key: 'p95Ms', dir: 'asc' });
   assert.deepEqual(nextSort({ key: 'p95Ms', dir: 'asc' }, 'p95Ms'), { key: 'p95Ms', dir: 'desc' });
   assert.deepEqual(nextSort(sort, 'name'), { key: 'name', dir: 'desc' });
+});
+
+test('a node kind or a span category has one icon everywhere', () => {
+  assert.equal(categoryIcon('db'), 'database');
+  assert.equal(categoryIcon('http'), 'trace');
+  assert.equal(categoryIcon('messaging'), 'log');
+  assert.equal(categoryIcon('unknown'), 'service');
+  assert.equal(categoryIcon('unknown', 'chart'), 'chart');
 });
