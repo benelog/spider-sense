@@ -545,7 +545,10 @@ public final class Reports implements AutoCloseable {
         Json.JsonObject json = Json.obj()
                 .put("logs", Codecs.logs(logs))
                 .put("total", total);
-        return new Report(json, Text.logs(filter.window(), filter.service(), logs, total, endpoint()));
+        // Only an empty answer says the count, and only a window with no request says to send some.
+        long requests = logs.isEmpty() ? queries.totals(filter.window(), filter.service()).requests() : 0;
+        return new Report(json, Text.logs(filter.window(), filter.service(), logs, total, requests,
+                endpoint()));
     }
 
     /**

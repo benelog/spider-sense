@@ -167,6 +167,39 @@ class ReportsTest {
         }
     }
 
+    /**
+     * No ERROR line in a window with requests is the healthy case: the empty answer
+     * counts the requests and sends nobody to debug the exporter (cli.adoc#text-rendering).
+     */
+    @Test
+    void anEmptyLogsAnswerCountsTheRequestsOfTheWindow() {
+        Config config = TestStore.config();
+        try (Store store = new Store(config.jdbcUrl(), config.databaseFile(), config.retentionHours(),
+                config.slowRequestMs(), config.slowQueryMs(), null)) {
+            Reports reports = new Reports(config, store, config::port);
+            Window window = Window.of(NOW - 60_000, NOW + 60_000);
+            net.benelog.spidersense.query.Queries.LogFilter errors =
+                    new net.benelog.spidersense.query.Queries.LogFilter(window, null, "ERROR", null, null, null, 50);
+
+            assertThat(reports.logs(errors).text())
+                    .contains("0 requests)")
+                    .contains("Nothing has been received in this window.");
+
+            OtlpDecoder decoder = new OtlpDecoder(store, () -> 4000);
+            decoder.accept(Otlp.traces(Otlp.service("orders"),
+                    Otlp.span("%032x".formatted(1), "%016x".formatted(1), "GET /orders",
+                            Span.SpanKind.SPAN_KIND_SERVER, NOW, 20,
+                            Otlp.attr("http.request.method", "GET"),
+                            Otlp.attr("http.route", "/orders"))));
+            store.writer().awaitIdle(5_000);
+
+            assertThat(reports.logs(errors).text())
+                    .contains("no logs since ")
+                    .contains("1 request)")
+                    .doesNotContain("Nothing has been received");
+        }
+    }
+
     @Test
     void statusReportsTheRetentionCapTheIngestCapAndWhatTheCapDropped() {
         Config config = TestStore.config("--retention.spans=250000",

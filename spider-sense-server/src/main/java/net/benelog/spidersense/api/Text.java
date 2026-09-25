@@ -797,11 +797,17 @@ final class Text {
         }
     }
 
+    /**
+     * The log lines, newest first.
+     *
+     * @param requests the requests of the window, which only the empty answer says: no
+     *        log line in a window that has requests is the healthy case, not a missing exporter
+     */
     static String logs(Window window, @Nullable String service, List<LogRecord> logs, long total,
-            String otlpEndpoint) {
+            long requests, String otlpEndpoint) {
         if (logs.isEmpty()) {
             return heading("logs", window, service, null) + "\n"
-                    + empty("logs", window, 0, otlpEndpoint);
+                    + empty("logs", window, requests, otlpEndpoint);
         }
         StringBuilder text = new StringBuilder(heading("logs", window, service, null));
         text.append('\n')
