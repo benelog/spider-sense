@@ -94,11 +94,34 @@ public final class Reports implements AutoCloseable {
     private final LongSupplier clock;
 
     /**
+     * What every answer is made of: the reads, the rules and the stores beside them.
+     * {@link #of} builds the graph both public ways in share; a test hands in its own.
+     */
+    record Parts(Tingles tingles, ServiceRegistry services, Marks marks, Acks acks, Queries queries,
+            MetricQueries metrics, CodeFrames frames, Findings findings, Compare compare, Check check,
+            Selectors selectors, ReadOnlyQuery sqlRunner) {
+
+        static Parts of(Config config, Database database, Tingles tingles, ServiceRegistry services,
+                Marks marks, LongSupplier clock) {
+            Sql sql = database.sql();
+            Queries queries = new Queries(sql, tingles, services);
+            MetricQueries metrics = new MetricQueries(sql);
+            CodeFrames frames = new CodeFrames(config.appPackages());
+            Findings findings = new Findings(sql, queries, metrics, services, tingles, frames);
+            return new Parts(tingles, services, marks, new Acks(sql), queries, metrics, frames, findings,
+                    new Compare(queries), new Check(queries, findings, tingles), new Selectors(marks, clock),
+                    new ReadOnlyQuery(database));
+        }
+    }
+
+    /**
      * The server's way: everything is already open, the writer's counters exist, and the time is
      * the store's clock.
      */
     public Reports(Config config, Store store, IntSupplier port) {
-        this(config, store.database(), store, port, store.tingles(), store.services(), store.marks(),
+        this(config, store.database(), store, port,
+                Parts.of(config, store.database(), store.tingles(), store.services(), store.marks(),
+                        store.clock()),
                 false, store.clock());
     }
 
@@ -120,34 +143,38 @@ public final class Reports implements AutoCloseable {
     public static Reports readOnly(Config config, LongSupplier clock) {
         Database database = Database.openExisting(config.jdbcUrl(), config.databaseFile());
         Sql sql = database.sql();
-        return new Reports(config, database, null, config::port,
-                new Tingles(config.slowRequestMs(), config.slowQueryMs(),
-                        IgnoredEndpoints.of(config.ignoreEndpoints())),
-                new ServiceRegistry(sql, config.embeddedService()), new Marks(sql, clock), true, clock);
+        Parts parts = Parts.of(config, database,
+                new Tingles(config.slowRequestMs(), config.slowQueryMs(), IgnoredEndpoints.of(config.ignoreEndpoints())),
+                new ServiceRegistry(sql, config.embeddedService()), new Marks(sql, clock), clock);
+        return new Reports(config, database, null, config::port, parts, true, clock);
     }
 
-    private Reports(Config config, Database database, @Nullable Store store, IntSupplier port,
-            Tingles tingles, ServiceRegistry services, Marks marks, boolean ownsDatabase,
-            LongSupplier clock) {
+    /**
+     * Reports over collaborators already built.
+     *
+     * @param store        the running store, whose writer's counters status reports, or null in the CLI
+     * @param ownsDatabase whether {@link #close()} closes {@code database}
+     */
+    Reports(Config config, Database database, @Nullable Store store, IntSupplier port, Parts parts,
+            boolean ownsDatabase, LongSupplier clock) {
         this.clock = clock;
         this.config = config;
         this.database = database;
         this.store = store;
         this.port = port;
         this.ownsDatabase = ownsDatabase;
-        this.tingles = tingles;
-        this.services = services;
-        this.marks = marks;
-        Sql sql = database.sql();
-        this.acks = new Acks(sql);
-        this.queries = new Queries(sql, tingles, services);
-        this.metrics = new MetricQueries(sql);
-        this.frames = new CodeFrames(config.appPackages());
-        this.findings = new Findings(sql, queries, metrics, services, tingles, frames);
-        this.compare = new Compare(queries);
-        this.check = new Check(queries, findings, tingles);
-        this.selectors = new Selectors(marks, clock);
-        this.sqlRunner = new ReadOnlyQuery(database);
+        this.tingles = parts.tingles();
+        this.services = parts.services();
+        this.marks = parts.marks();
+        this.acks = parts.acks();
+        this.queries = parts.queries();
+        this.metrics = parts.metrics();
+        this.frames = parts.frames();
+        this.findings = parts.findings();
+        this.compare = parts.compare();
+        this.check = parts.check();
+        this.selectors = parts.selectors();
+        this.sqlRunner = parts.sqlRunner();
     }
 
     // --- what the callers need beside the answers -----------------------------
@@ -275,16 +302,27 @@ public final class Reports implements AutoCloseable {
             boolean full) {
         List<Findings.Finding> ranked =
                 findings.answer(window, service, Queries.ALL_GROUPS, false).findings();
+        return finding(window, service, ranked, id, full, () -> requests(window, service));
+    }
+
+    /**
+     * The report of the finding {@code id} among {@code ranked}, numbered from 1 by its
+     * place there, or null when it is not among them; {@code requests} is read only
+     * when it is.
+     */
+    static @Nullable Report finding(Window window, @Nullable String service, List<Findings.Finding> ranked,
+            String id, boolean full, LongSupplier requests) {
         for (int i = 0; i < ranked.size(); i++) {
             Findings.Finding finding = ranked.get(i);
             if (finding.id().equals(id)) {
-                long requests = requests(window, service);
+                long count = requests.getAsLong();
+                int rank = i + 1;
                 Json.JsonObject json = Json.obj()
                         .put("window", Codecs.window(window))
-                        .put("requests", requests)
-                        .put("rank", i + 1)
+                        .put("requests", count)
+                        .put("rank", rank)
                         .put("finding", Codecs.finding(finding));
-                return new Report(json, Text.finding(window, service, requests, i + 1, finding, full));
+                return new Report(json, Text.finding(window, service, count, rank, finding, full));
             }
         }
         return null;
