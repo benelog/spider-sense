@@ -2,7 +2,7 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, fillRows, panel, table, chip, methodChip, statusBar, tabs, spinner, errorBox, serviceChip, breakdownBar, breakdownLead } from '../ui.js';
+import { h, fill, panel, table, chip, methodChip, statusBar, tabs, spinner, errorBox, serviceChip, breakdownBar, breakdownLead } from '../ui.js';
 import { redCharts } from './service.js';
 import { histogramBars, apdexClass, fmtApdex } from '../buckets.js';
 import { traceTable } from './traces.js';
@@ -63,16 +63,6 @@ export function render(root, ctx) {
   // so the open table keeps its scroll position and focus (ui.adoc#live-refresh).
   let tabNode = null;
   const tables = {};
-  const queryOpts = {
-    rowKey: (q) => q.queryId,
-    onRowClick: (q) => router.go('/queries/' + encodeURIComponent(q.queryId), api.sharedQuery()),
-    empty: 'This endpoint made no database call in this window.',
-  };
-  const errorOpts = {
-    rowKey: (e) => e.errorId,
-    onRowClick: (e) => router.go('/errors/' + encodeURIComponent(e.errorId), api.sharedQuery()),
-    empty: 'No error in this window.',
-  };
   const TAB_ROWS = {
     slowest: () => data.traces || [],
     recent: () => data.recent || [],
@@ -93,14 +83,24 @@ export function render(root, ctx) {
         { key: 'avgMs', label: 'avg', align: 'right', sortable: false, width: '74px', render: (q) => dur(q.avgMs) },
         { key: 'p95Ms', label: 'p95', align: 'right', sortable: false, width: '74px', render: (q) => dur(q.p95Ms) },
         { key: 'totalMs', label: 'Total', align: 'right', sortable: false, width: '82px', render: (q) => dur(q.totalMs) },
-      ], { ...queryOpts, rows });
+      ], {
+        rowKey: (q) => q.queryId,
+        onRowClick: (q) => router.go('/queries/' + encodeURIComponent(q.queryId), api.sharedQuery()),
+        empty: 'This endpoint made no database call in this window.',
+        rows,
+      });
     } else {
       tables[tab] = table([
         { key: 'type', label: 'Type', sortable: false, cls: 'wide', render: (e) => h('span.cell-ellipsis.mono', { title: e.type }, e.type) },
         { key: 'message', label: 'Message', sortable: false, cls: 'wide', render: (e) => h('span.cell-ellipsis', { title: e.message }, truncate(e.message, 100)) },
         { key: 'count', label: 'Count', align: 'right', sortable: false, width: '66px', render: (e) => h('span.bad', count(e.count)) },
         { key: 'lastSeen', label: 'Last seen', align: 'right', sortable: false, width: '90px', render: (e) => h('span', { title: bothTimes(e.lastSeen) }, rel(e.lastSeen)) },
-      ], { ...errorOpts, rows });
+      ], {
+        rowKey: (e) => e.errorId,
+        onRowClick: (e) => router.go('/errors/' + encodeURIComponent(e.errorId), api.sharedQuery()),
+        empty: 'No error in this window.',
+        rows,
+      });
     }
     return tables[tab];
   }
@@ -112,8 +112,7 @@ export function render(root, ctx) {
         if (counter) counter.textContent = String(rows().length);
         const node = tables[tab];
         if (!node) continue;
-        if (node.setRows) node.setRows(rows());
-        else fillRows(node, rows(), tab === 'queries' ? queryOpts : errorOpts);
+        node.setRows(rows());
       }
       return;
     }

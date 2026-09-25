@@ -2,7 +2,7 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, icon, panel, table, fillRows, chip, serviceChip, debounce, spinner, errorBox } from '../ui.js';
+import { h, fill, icon, panel, table, chip, serviceChip, debounce, spinner, errorBox } from '../ui.js';
 import { oneLineSql } from '../sql.js';
 import { dur, count, rel, bothTimes } from '../format.js';
 
@@ -89,7 +89,7 @@ export function render(root, ctx) {
       node = table(columns, { ...opts, rows: filtered() });
       fill(body, node);
     } else {
-      fillRows(node, filtered(), opts);
+      node.setRows(filtered());
     }
   }
 

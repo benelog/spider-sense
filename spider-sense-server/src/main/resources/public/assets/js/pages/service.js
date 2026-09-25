@@ -4,7 +4,7 @@
 import * as api from '../api.js';
 import * as router from '../router.js';
 import {
-  h, fill, icon, panel, table, fillRows, chip, methodChip, statusBar, comparator,
+  h, fill, icon, panel, table, chip, methodChip, statusBar, comparator,
   spinner, errorBox, serviceColor,
 } from '../ui.js';
 import { timeSeries, legend } from '../charts.js';
@@ -116,7 +116,6 @@ export function endpointTable(rows, sortState, onSort) {
     empty: 'No endpoint in this window.',
   };
   const node = table(columns, { ...opts, rows, sort: sortState, onSort });
-  node.setRows = (rs) => fillRows(node, rs, opts);
   return node;
 }
 
@@ -197,34 +196,31 @@ export function render(root, ctx) {
 
   // The three tables under the endpoints are built once, and a Live refresh gives them new
   // rows, so a focused row and a scrolled table survive it (ui.adoc#live-refresh).
-  const queryOpts = {
-    rowKey: (q) => q.queryId,
-    onRowClick: (q) => router.go('/queries/' + encodeURIComponent(q.queryId), api.sharedQuery()),
-    empty: 'No database call in this window.',
-  };
   const queriesTable = table([
     { key: 'statement', label: 'Statement', sortable: false, cls: 'wide', render: (q) => h('span.cell-ellipsis.mono', { title: q.statement }, oneLineSql(q.statement, 140)) },
     { key: 'calls', label: 'Calls', align: 'right', sortable: false, width: '62px', render: (q) => count(q.calls) },
     { key: 'avgMs', label: 'avg', align: 'right', sortable: false, width: '72px', render: (q) => dur(q.avgMs) },
     { key: 'p95Ms', label: 'p95', align: 'right', sortable: false, width: '72px', render: (q) => dur(q.p95Ms) },
     { key: 'totalMs', label: 'Total', align: 'right', sortable: false, width: '80px', render: (q) => dur(q.totalMs) },
-  ], { ...queryOpts, rows: [] });
+  ], {
+    rowKey: (q) => q.queryId,
+    onRowClick: (q) => router.go('/queries/' + encodeURIComponent(q.queryId), api.sharedQuery()),
+    empty: 'No database call in this window.',
+  });
   fill(queriesBody, queriesTable);
 
-  const errorOpts = {
-    rowKey: (e) => e.errorId,
-    onRowClick: (e) => router.go('/errors/' + encodeURIComponent(e.errorId), api.sharedQuery()),
-    empty: 'No error in this window.',
-  };
   const errorsTable = table([
     { key: 'type', label: 'Type', sortable: false, cls: 'wide', render: (e) => h('span.cell-ellipsis.mono', { title: e.type }, shortType(e.type)) },
     { key: 'message', label: 'Message', sortable: false, cls: 'wide', render: (e) => h('span.cell-ellipsis', { title: e.message }, truncate(e.message, 90)) },
     { key: 'count', label: 'Count', align: 'right', sortable: false, width: '62px', render: (e) => h('span.bad', count(e.count)) },
     { key: 'lastSeen', label: 'Last seen', align: 'right', sortable: false, width: '86px', render: (e) => h('span', { title: bothTimes(e.lastSeen) }, rel(e.lastSeen)) },
-  ], { ...errorOpts, rows: [] });
+  ], {
+    rowKey: (e) => e.errorId,
+    onRowClick: (e) => router.go('/errors/' + encodeURIComponent(e.errorId), api.sharedQuery()),
+    empty: 'No error in this window.',
+  });
   fill(errorsBody, errorsTable);
 
-  const depOpts = { rowKey: (d) => d.kind + '|' + d.target, empty: 'This service called nothing else in this window.' };
   const depsTable = table([
     { key: 'kind', label: 'Kind', sortable: false, width: '80px', render: (d) => h('span.row', { style: { gap: '6px' } }, icon(d.kind === 'db' ? 'database' : d.kind === 'http' ? 'trace' : 'service'), d.kind) },
     { key: 'target', label: 'Target', sortable: false, cls: 'wide', render: (d) => h('span.cell-ellipsis.mono', { title: d.target }, d.target) },
@@ -232,7 +228,10 @@ export function render(root, ctx) {
     { key: 'errors', label: 'Errors', align: 'right', sortable: false, width: '66px', render: (d) => (d.errors ? h('span.bad', count(d.errors)) : h('span.muted', '0')) },
     { key: 'avgMs', label: 'avg', align: 'right', sortable: false, width: '74px', render: (d) => dur(d.avgMs) },
     { key: 'p95Ms', label: 'p95', align: 'right', sortable: false, width: '74px', render: (d) => dur(d.p95Ms) },
-  ], { ...depOpts, rows: [] });
+  ], {
+    rowKey: (d) => d.kind + '|' + d.target,
+    empty: 'This service called nothing else in this window.',
+  });
   fill(depsBody, depsTable);
 
   function paintResource(resource) {
@@ -255,9 +254,9 @@ export function render(root, ctx) {
       red.apply(data.series || {});
       endpoints = data.endpoints || [];
       paintEndpoints();
-      fillRows(queriesTable, data.queries || [], queryOpts);
-      fillRows(errorsTable, data.errors || [], errorOpts);
-      fillRows(depsTable, data.dependencies || [], depOpts);
+      queriesTable.setRows(data.queries || []);
+      errorsTable.setRows(data.errors || []);
+      depsTable.setRows(data.dependencies || []);
       paintResource(data.resource);
     } catch (e) {
       if (destroyed || !current()) return;

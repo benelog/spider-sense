@@ -2,7 +2,7 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, icon, panel, table, serviceChip, severityChip, renderList, debounce, spinner, errorBox, emptyState, snippetBlocks } from '../ui.js';
+import { h, fill, icon, panel, table, serviceChip, severityChip, debounce, spinner, errorBox, emptyState, snippetBlocks } from '../ui.js';
 import { stackTrace } from '../sql.js';
 import { timeMs, bothTimes, count, shortId } from '../format.js';
 
@@ -75,63 +75,30 @@ export function render(root, ctx) {
     },
   ];
 
-  const opts = {
-    rowKey: (l) => String(l.id),
-    onRowClick: (l) => toggle(l),
-    empty: 'No log in this window.',
-  };
-
-  function toggle(l) {
-    const key = String(l.id);
-    if (expanded.has(key)) expanded.delete(key); else expanded.add(key);
-    paint();
-  }
-
-  /** Rows plus a detail row after each expanded one. */
-  function withDetails() {
-    const out = [];
-    for (const l of rows) {
-      out.push(l);
-      if (expanded.has(String(l.id))) out.push({ ...l, id: 'detail:' + l.id, detail: l });
-    }
-    return out;
-  }
-
   function paint() {
     countLabel.textContent = rows.length ? count(rows.length) + ' of ' + count(total) : '';
-    const list = withDetails();
     if (!node) {
-      node = table(columns, { ...opts, rows: [] });
+      node = table(columns, {
+        rowKey: (l) => String(l.id),
+        detail: detailOf,
+        detailClass: 'log-detail',
+        expanded,
+        empty: 'No log in this window.',
+      });
       fill(body, node);
     }
-    renderList(node.tbody, list, {
-      key: (l) => String(l.id),
-      create: (l) => (l.detail ? detailRow(l.detail) : buildRow(l)),
-      update: (n, l) => { if (!l.detail) { const fresh = buildRow(l); n.replaceChildren(...fresh.childNodes); } },
-    });
-    if (!list.length) fill(node.tbody, h('tr.empty-row', h('td', { colspan: columns.length }, h('span.muted', opts.empty))));
+    node.setRows(rows);
     foot.hidden = rows.length >= total || !rows.length;
   }
 
-  function buildRow(l) {
-    const tr = h('tr.clickable', { tabindex: 0, onclick: (e) => { if (!e.target.closest('a')) toggle(l); } });
-    for (const col of columns) {
-      const td = h('td', { class: [col.align === 'right' ? 'right' : null, col.cls].filter(Boolean).join(' ') || null });
-      const v = col.render(l);
-      if (v) td.appendChild(v.nodeType ? v : document.createTextNode(String(v)));
-      tr.appendChild(td);
-    }
-    return tr;
-  }
-
-  function detailRow(l) {
+  /** An open row: its attributes, and the stack trace an exception carries. */
+  function detailOf(l) {
     const attrs = { ...(l.attributes || {}) };
     const stack = attrs['exception.stacktrace'];
     delete attrs['exception.stacktrace'];
-    return h('tr.log-detail', h('td', { colspan: columns.length },
-      h('div', { style: { display: 'grid', gap: '10px', padding: '4px 0' } },
-        Object.keys(attrs).length ? h('dl.kv', Object.entries(attrs).map(([k, v]) => [h('dt', k), h('dd', String(v))])) : h('span.muted', 'No attribute.'),
-        stack ? stackTrace(stack) : null)));
+    return h('div', { style: { display: 'grid', gap: '10px', padding: '4px 0' } },
+      Object.keys(attrs).length ? h('dl.kv', Object.entries(attrs).map(([k, v]) => [h('dt', k), h('dd', String(v))])) : h('span.muted', 'No attribute.'),
+      stack ? stackTrace(stack) : null);
   }
 
   /** The top-bar state and the filter the rows answer: a change of either starts over. */

@@ -2,7 +2,7 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, panel, table, fillRows, chip, serviceChip, spinner, errorBox } from '../ui.js';
+import { h, fill, panel, table, chip, serviceChip, spinner, errorBox } from '../ui.js';
 import { sparkline, themeColors } from '../charts.js';
 import { count, rel, bothTimes, truncate, splitType } from '../format.js';
 
@@ -57,7 +57,7 @@ export function render(root, ctx) {
       node = table(columns, { ...opts, rows });
       fill(body, node);
     } else {
-      fillRows(node, rows, opts);
+      node.setRows(rows);
     }
   }
 

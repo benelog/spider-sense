@@ -2,7 +2,7 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, fillRows, panel, stat, table, chip, serviceChip, copyBlock, spinner, errorBox } from '../ui.js';
+import { h, fill, panel, stat, table, chip, serviceChip, copyBlock, spinner, errorBox } from '../ui.js';
 import { timeSeries, legend } from '../charts.js';
 import { formatSql } from '../sql.js';
 import { traceTable } from './traces.js';
@@ -25,12 +25,14 @@ export function render(root, ctx) {
   const chartPanel = panel({ title: 'Calls and p95' }, chartLegend, chartBody);
   // The two tables are built once, and a Live refresh gives them new rows, so a focused row
   // and a scrolled table survive it (ui.adoc#live-refresh).
-  const callerOpts = { rowKey: (c) => c.service + '|' + c.endpoint, empty: 'No caller recorded.' };
   const callersTable = table([
     { key: 'endpoint', label: 'Endpoint', sortable: false, cls: 'wide', render: (c) => h('span.cell-ellipsis', { title: c.endpoint }, c.endpoint) },
     { key: 'service', label: 'Service', sortable: false, width: '150px', render: (c) => serviceChip(c.service) },
     { key: 'calls', label: 'Calls', align: 'right', sortable: false, width: '72px', render: (c) => count(c.calls) },
-  ], { ...callerOpts, rows: [] });
+  ], {
+    rowKey: (c) => c.service + '|' + c.endpoint,
+    empty: 'No caller recorded.',
+  });
   const tracesTable = traceTable([], { empty: 'No trace contains this query in this window.' });
   const callersBody = h('div', callersTable);
   const tracesBody = h('div', tracesTable);
@@ -95,7 +97,7 @@ export function render(root, ctx) {
       fill(chartLegend, legend([{ label: 'Calls per bucket', color: 'silk' }, { label: 'p95, right axis', color: 'accent' }]));
       if (chart) chart.update(spec); else chart = timeSeries(chartBody, spec);
 
-      fillRows(callersTable, q.callers || [], callerOpts);
+      callersTable.setRows(q.callers || []);
       tracesTable.setRows(data.traces || []);
     } catch (e) {
       if (destroyed || !current()) return;

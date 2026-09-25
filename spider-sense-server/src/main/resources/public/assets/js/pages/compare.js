@@ -3,7 +3,7 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, panel, table, fillRows, chip, serviceChip, markDialog, copyBlock, spinner, errorBox, emptyState } from '../ui.js';
+import { h, fill, panel, table, chip, serviceChip, markDialog, copyBlock, spinner, errorBox, emptyState } from '../ui.js';
 import { oneLineSql } from '../sql.js';
 import { fmtApdex } from '../buckets.js';
 import { count, dur, rate, time, truncate, splitType } from '../format.js';
@@ -208,7 +208,7 @@ export function render(root, ctx) {
       const node = table(columns, { ...opts, rows });
       nodes[key] = { table: node, panel: panel({ title }, node) };
     } else {
-      fillRows(nodes[key].table, rows, opts);
+      nodes[key].table.setRows(rows);
     }
     return nodes[key].panel;
   }

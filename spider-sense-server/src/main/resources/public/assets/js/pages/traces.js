@@ -2,7 +2,7 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, icon, panel, table, fillRows, serviceChip, statusChip, durationBar, debounce, spinner, errorBox, emptyState, snippetBlocks } from '../ui.js';
+import { h, fill, icon, panel, table, serviceChip, statusChip, durationBar, debounce, spinner, errorBox, emptyState, snippetBlocks } from '../ui.js';
 import { dur, count, time, bothTimes, shortId } from '../format.js';
 
 /** A trace table shared by the Traces, Endpoint, Query and Error pages. */
@@ -47,7 +47,8 @@ export function traceTable(rows, opts = {}) {
   };
   const node = table(columns, { rows, ...rowOpts });
   /** Replace the rows in place: scroll position and the sort header survive. */
-  node.setRows = (rs) => { recalc(rs); fillRows(node, rs, rowOpts); };
+  const setRows = node.setRows;
+  node.setRows = (rs) => { recalc(rs); return setRows(rs); };
   return node;
 }
 

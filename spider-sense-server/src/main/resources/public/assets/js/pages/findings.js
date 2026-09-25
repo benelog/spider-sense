@@ -3,7 +3,7 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, panel, table, chip, serviceChip, renderList, copyBlock, spinner, errorBox, emptyState, snippetBlocks, dialog, toast, breakdownBar, breakdownLead } from '../ui.js';
+import { h, fill, panel, table, chip, serviceChip, copyBlock, spinner, errorBox, emptyState, snippetBlocks, dialog, toast, breakdownBar, breakdownLead } from '../ui.js';
 import { formatSql } from '../sql.js';
 import { fmtApdex } from '../buckets.js';
 import { count, dur, rate, pct, bytes, time, bothTimes, truncate, shortId } from '../format.js';
@@ -434,6 +434,7 @@ export function render(root, ctx) {
   let requests = 0;
   let listWindow = null;
   let node = null;
+  // The open rows, kept across a table rebuilt after an error or an empty window.
   const expanded = new Set();
 
   const body = h('div', spinner());
@@ -449,78 +450,26 @@ export function render(root, ctx) {
     { key: 'impact', label: 'Impact', align: 'right', sortable: false, width: '110px', render: (f) => impactOf(f) },
   ];
 
-  function toggle(finding) {
-    if (expanded.has(finding.id)) expanded.delete(finding.id);
-    else expanded.add(finding.id);
-    paint();
-  }
-
-  /** Each finding, followed by its evidence row while it is open. */
-  function withEvidence() {
-    const out = [];
-    rows.forEach((f, i) => {
-      out.push({ finding: f, index: i, key: f.id });
-      if (expanded.has(f.id)) out.push({ finding: f, key: 'evidence:' + f.id, evidence: true });
-    });
-    return out;
-  }
-
-  /** What has to change before an open evidence row is rebuilt. */
+  /** What has to change before an open evidence row is rebuilt: a Live refresh leaves it alone otherwise. */
   function ackSignature(finding) {
     const decided = finding.ack || finding.resolution;
     return decided ? (finding.ack ? 'a' : 'r') + decided.at + '|' + (decided.note || '') : '';
   }
 
-  function buildRow(finding, index) {
-    const tr = h('tr.clickable', {
-      tabindex: 0,
-      class: setAside(finding) ? 'clickable is-acked' : 'clickable',
-      'aria-expanded': String(expanded.has(finding.id)),
-      onclick: (e) => { if (!e.target.closest('a, button')) toggle(finding); },
-      onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(finding); } },
-    });
-    for (const col of columns) {
-      const td = h('td', { class: [col.align === 'right' ? 'right' : null, col.cls].filter(Boolean).join(' ') || null });
-      const v = col.render(finding, index);
-      if (v) td.appendChild(v);
-      tr.appendChild(td);
-    }
-    return tr;
-  }
-
   function paint() {
-    const list = withEvidence();
     if (!node) {
-      node = table(columns, { rows: [] });
+      node = table(columns, {
+        rowKey: (f) => f.id,
+        rowClass: (f) => (setAside(f) ? 'is-acked' : null),
+        detail: (f) => evidence(f, load, () => listWindow),
+        detailKey: ackSignature,
+        detailClass: 'f-detail',
+        expanded,
+        empty: () => 'Nothing worth fixing ' + windowName() + '.',
+      });
       fill(body, node);
     }
-    renderList(node.tbody, list, {
-      key: (item) => item.key,
-      create: (item) => (item.evidence
-        ? h('tr.f-detail', { dataset: { ack: ackSignature(item.finding) } },
-          h('td', { colspan: columns.length }, evidence(item.finding, load, () => listWindow)))
-        : buildRow(item.finding, item.index)),
-      update: (n, item) => {
-        // An open evidence row is left alone by a Live refresh, unless its
-        // acknowledgement changed: that is what the button in it just did.
-        if (item.evidence) {
-          const signature = ackSignature(item.finding);
-          if (n.dataset.ack !== signature) {
-            n.dataset.ack = signature;
-            n.replaceChildren(h('td', { colspan: columns.length }, evidence(item.finding, load, () => listWindow)));
-          }
-          return;
-        }
-        const fresh = buildRow(item.finding, item.index);
-        n.className = fresh.className;
-        n.setAttribute('aria-expanded', fresh.getAttribute('aria-expanded'));
-        n.replaceChildren(...fresh.childNodes);
-      },
-    });
-    if (!list.length) {
-      fill(node.tbody, h('tr.empty-row', h('td', { colspan: columns.length },
-        h('span.muted', 'Nothing worth fixing ' + windowName() + '.'))));
-    }
+    node.setRows(rows);
   }
 
   async function load() {

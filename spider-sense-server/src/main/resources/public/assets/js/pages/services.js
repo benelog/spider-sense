@@ -2,7 +2,7 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, panel, table, fillRows, chip, serviceColor, comparator, spinner, errorBox, emptyState, snippetBlocks, seedServices } from '../ui.js';
+import { h, fill, panel, table, chip, serviceColor, comparator, spinner, errorBox, emptyState, snippetBlocks, seedServices } from '../ui.js';
 import { sparkline } from '../charts.js';
 import { apdexClass, fmtApdex } from '../buckets.js';
 import { dur, count, rate, pct, rel, bothTimes } from '../format.js';
@@ -59,7 +59,7 @@ export function render(root, ctx) {
       node = table(columns, { ...opts, rows: sorted(), sort, onSort });
       fill(body, node);
     } else {
-      fillRows(node, sorted(), opts);
+      node.setRows(sorted());
     }
   }
 

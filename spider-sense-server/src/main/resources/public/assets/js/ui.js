@@ -262,8 +262,17 @@ export function renderList(container, items, { key, create, update, enter } = {}
 // --- tables -------------------------------------------------------------
 
 /**
- * columns: [{ key, label, align, width, sortable, sortKey, render(row), title(row), cls }]
- * opts: { rows, sort: {key, dir}, onSort(key), onRowClick(row), rowKey(row), rowClass(row), empty }
+ * columns: [{ key, label, align, width, sortable, sortKey, render(row, index), title(row), cls }]
+ * opts: { rows, sort: {key, dir}, onSort(key), onRowClick(row), rowKey(row), rowClass(row), empty,
+ *         detail(row), expanded, detailKey(row), detailClass }
+ *
+ * The node it returns keeps the options: `node.setRows(rows)` renders new rows into the same
+ * table, reusing each row by its key, so a Live refresh keeps the scroll position and the focus
+ * (ui.adoc#live-refresh). `empty` is the sentence of an empty table, or a function returning it.
+ *
+ * With `detail`, a row opens and closes a detail row under it on a click, Enter or Space;
+ * `expanded` is the set of the open rows' keys, which the caller may share. An open detail row
+ * is built once and left alone by later rows, unless its `detailKey` changed.
  */
 export function table(columns, opts = {}) {
   const wrap = h('div.table-wrap');
@@ -272,7 +281,7 @@ export function table(columns, opts = {}) {
   const tr = h('tr');
   for (const col of columns) {
     const th = h('th', {
-      class: [col.align === 'right' ? 'right' : col.align === 'center' ? 'center' : null, col.sortable !== false && opts.onSort ? 'sortable' : null].filter(Boolean).join(' ') || null,
+      class: [alignClass(col), col.sortable !== false && opts.onSort ? 'sortable' : null].filter(Boolean).join(' ') || null,
       style: col.width ? { width: col.width } : null,
       scope: 'col',
     });
@@ -295,59 +304,98 @@ export function table(columns, opts = {}) {
   const tbody = h('tbody');
   t.appendChild(tbody);
   wrap.appendChild(t);
-  wrap.tbody = tbody;
-  wrap.columns = columns;
-  fillRows(wrap, opts.rows || [], opts);
-  return wrap;
-}
 
-export function fillRows(wrap, rows, opts = {}) {
-  const columns = wrap.columns;
-  const tbody = wrap.tbody;
-  if (!rows.length) {
-    clear(tbody);
-    tbody.appendChild(h('tr.empty-row', h('td', { colspan: columns.length },
-      h('span.muted', opts.empty || 'Nothing in this window.'))));
-    return wrap;
-  }
-  renderList(tbody, rows, {
-    key: (row, i) => (opts.rowKey ? opts.rowKey(row, i) : i),
-    create: (row, i) => buildRow(columns, row, i, opts),
-    update: (node, row, i) => {
-      const fresh = buildRow(columns, row, i, opts);
-      node.className = fresh.className;
-      node.replaceChildren(...fresh.childNodes);
-      if (opts.onRowClick) { node.onclick = fresh.onclick; node.onkeydown = fresh.onkeydown; }
-    },
-  });
-  return wrap;
-}
+  const expanded = opts.expanded || new Set();
+  const keyOf = (row, i) => String(opts.rowKey ? opts.rowKey(row, i) : i);
+  let rows = [];
 
-function buildRow(columns, row, i, opts) {
-  const tr = h('tr', {
-    class: opts.rowClass ? opts.rowClass(row) : null,
-    tabindex: opts.onRowClick ? 0 : null,
-  });
-  if (opts.onRowClick) {
-    tr.classList.add('clickable');
-    tr.onclick = (e) => { if (!e.target.closest('button, a')) opts.onRowClick(row, e); };
-    // Only the row's own keys: an Enter on a link or button inside it is that control's, and
-    // bubbles here too. A property, not a listener, so an update rebinds it to the new row.
-    tr.onkeydown = (e) => {
-      if (e.target !== e.currentTarget) return;
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); opts.onRowClick(row, e); }
-    };
+  function toggle(row, i) {
+    const key = keyOf(row, i);
+    if (expanded.has(key)) expanded.delete(key); else expanded.add(key);
+    paint();
   }
-  for (const col of columns) {
-    const td = h('td', {
-      class: [col.align === 'right' ? 'right' : col.align === 'center' ? 'center' : null, col.cls].filter(Boolean).join(' ') || null,
-      title: col.title ? col.title(row) : null,
+  const activate = opts.onRowClick || (opts.detail ? toggle : null);
+
+  function buildRow(row, i, key) {
+    const tr = h('tr', {
+      class: opts.rowClass ? opts.rowClass(row) : null,
+      tabindex: activate ? 0 : null,
+      'aria-expanded': opts.detail ? String(expanded.has(key)) : null,
     });
-    const v = col.render(row, i);
-    if (v !== null && v !== undefined) append(td, [v]);
-    tr.appendChild(td);
+    if (activate) {
+      tr.classList.add('clickable');
+      tr.onclick = (e) => { if (!e.target.closest('button, a')) activate(row, i, e); };
+      // Only the row's own keys: an Enter on a link or button inside it is that control's, and
+      // bubbles here too. A property, not a listener, so an update rebinds it to the new row.
+      tr.onkeydown = (e) => {
+        if (e.target !== e.currentTarget) return;
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(row, i, e); }
+      };
+    }
+    for (const col of columns) {
+      const td = h('td', {
+        class: [alignClass(col), col.cls].filter(Boolean).join(' ') || null,
+        title: col.title ? col.title(row) : null,
+      });
+      const v = col.render(row, i);
+      if (v !== null && v !== undefined) append(td, [v]);
+      tr.appendChild(td);
+    }
+    return tr;
   }
-  return tr;
+
+  const detailCell = (row) => h('td', { colspan: columns.length }, opts.detail(row));
+  const detailKeyOf = (row) => (opts.detailKey ? String(opts.detailKey(row)) : '');
+
+  function paint() {
+    if (!rows.length) {
+      clear(tbody);
+      const empty = typeof opts.empty === 'function' ? opts.empty() : opts.empty;
+      tbody.appendChild(h('tr.empty-row', h('td', { colspan: columns.length },
+        h('span.muted', empty || 'Nothing in this window.'))));
+      return;
+    }
+    const items = [];
+    rows.forEach((row, i) => {
+      const key = keyOf(row, i);
+      items.push({ row, i, key });
+      if (opts.detail && expanded.has(key)) items.push({ row, i, key: 'detail:' + key, detail: true });
+    });
+    renderList(tbody, items, {
+      key: (item) => item.key,
+      create: (item) => (item.detail
+        ? h('tr', { class: opts.detailClass || null, dataset: { detail: detailKeyOf(item.row) } }, detailCell(item.row))
+        : buildRow(item.row, item.i, item.key)),
+      update: (node, item) => {
+        if (item.detail) {
+          const signature = detailKeyOf(item.row);
+          if (node.dataset.detail !== signature) {
+            node.dataset.detail = signature;
+            node.replaceChildren(detailCell(item.row));
+          }
+          return;
+        }
+        const fresh = buildRow(item.row, item.i, item.key);
+        node.className = fresh.className;
+        if (opts.detail) node.setAttribute('aria-expanded', fresh.getAttribute('aria-expanded'));
+        node.replaceChildren(...fresh.childNodes);
+        if (activate) { node.onclick = fresh.onclick; node.onkeydown = fresh.onkeydown; }
+      },
+    });
+  }
+
+  /** Replace the rows in place: scroll position, focus and the sort header survive. */
+  wrap.setRows = (next) => {
+    rows = next || [];
+    paint();
+    return wrap;
+  };
+  wrap.setRows(opts.rows);
+  return wrap;
+}
+
+function alignClass(col) {
+  return col.align === 'right' ? 'right' : col.align === 'center' ? 'center' : null;
 }
 
 /** Sort helper: returns a comparator for {key, dir} over numeric or string fields. */
