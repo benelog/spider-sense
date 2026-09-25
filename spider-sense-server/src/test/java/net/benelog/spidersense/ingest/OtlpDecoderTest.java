@@ -47,7 +47,7 @@ class OtlpDecoderTest {
                 Otlp.attr("db.operation", "SELECT"),
                 Otlp.attr("db.sql.table", "orders"));
 
-        Batch batch = decoder.accept(Otlp.traces(Otlp.service("spring-orders"), root, child));
+        Batch batch = decoder.ingest(Otlp.traces(Otlp.service("spring-orders"), root, child));
 
         assertThat(batch.spans()).hasSize(2);
         SpanRecord server = batch.spans().get(0);
@@ -76,7 +76,7 @@ class OtlpDecoderTest {
                 Otlp.attr("http.target", "/orders"),
                 Otlp.attr("http.status_code", 404));
 
-        Batch batch = decoder.accept(Otlp.traces(Otlp.service("legacy"), root));
+        Batch batch = decoder.ingest(Otlp.traces(Otlp.service("legacy"), root));
 
         SpanRecord span = batch.spans().get(0);
         assertThat(span.httpMethod()).isEqualTo("GET");
@@ -88,7 +88,7 @@ class OtlpDecoderTest {
     void aResourceWithoutAServiceNameFallsBackToUnknownService() {
         Span.Builder root = Otlp.span(TRACE, ROOT, "GET", Span.SpanKind.SPAN_KIND_SERVER, 1, 1);
 
-        Batch batch = decoder.accept(Otlp.traces(Otlp.resource(), root));
+        Batch batch = decoder.ingest(Otlp.traces(Otlp.resource(), root));
 
         assertThat(batch.spans().get(0).service()).isEqualTo(OtlpDecoder.UNKNOWN_SERVICE);
     }
@@ -100,7 +100,7 @@ class OtlpDecoderTest {
         Span.Builder theirs = Otlp.span(TRACE, CHILD, "GET /orders", Span.SpanKind.SPAN_KIND_SERVER,
                 1_700_000_000_000L, 5, Otlp.attr("server.port", 8081));
 
-        Batch batch = decoder.accept(Otlp.traces(Otlp.service("silk-bookstore"), ours, theirs));
+        Batch batch = decoder.ingest(Otlp.traces(Otlp.service("silk-bookstore"), ours, theirs));
 
         assertThat(batch.spans()).hasSize(1);
         assertThat(batch.spans().get(0).spanId()).isEqualTo(CHILD);
@@ -116,7 +116,7 @@ class OtlpDecoderTest {
                 Otlp.attr("url.full", "http://localhost:4000/v1/traces"),
                 Otlp.attr("server.port", 4000));
 
-        Batch batch = decoder.accept(Otlp.traces(Otlp.service("silk-bookstore"), caller));
+        Batch batch = decoder.ingest(Otlp.traces(Otlp.service("silk-bookstore"), caller));
 
         assertThat(batch.spans()).hasSize(1);
         assertThat(batch.spans().get(0).kind()).isEqualTo("CLIENT");
@@ -128,7 +128,7 @@ class OtlpDecoderTest {
                 Otlp.span(TRACE, ROOT, "POST /orders", Span.SpanKind.SPAN_KIND_SERVER, 1, 1),
                 "java.lang.IllegalStateException", "Order 42 is already shipped", "at Orders.ship(..)");
 
-        Batch batch = decoder.accept(Otlp.traces(Otlp.service("spring-orders"), failing));
+        Batch batch = decoder.ingest(Otlp.traces(Otlp.service("spring-orders"), failing));
 
         SpanRecord span = batch.spans().get(0);
         assertThat(span.isError()).isTrue();
@@ -139,9 +139,9 @@ class OtlpDecoderTest {
 
     @Test
     void decodesGaugeAndHistogramMetrics() {
-        decoder.accept(Otlp.gauge(Otlp.service("spring-orders"), "jvm.memory.used", "By",
+        decoder.ingest(Otlp.gauge(Otlp.service("spring-orders"), "jvm.memory.used", "By",
                 1_700_000_000_000L, 1024, Otlp.attr("jvm.memory.type", "heap")));
-        Batch batch = decoder.accept(Otlp.histogram(Otlp.service("spring-orders"), "jvm.gc.duration",
+        Batch batch = decoder.ingest(Otlp.histogram(Otlp.service("spring-orders"), "jvm.gc.duration",
                 1_700_000_000_000L, 4, 0.2, new double[]{0.01, 0.1}, new long[]{2, 1, 1},
                 Otlp.attr("jvm.gc.name", "G1 Young Generation")));
 
@@ -173,7 +173,7 @@ class OtlpDecoderTest {
                 .setFlags(io.opentelemetry.proto.metrics.v1.DataPointFlags
                         .DATA_POINT_FLAGS_NO_RECORDED_VALUE_MASK_VALUE);
 
-        Batch batch = decoder.accept(Otlp.metrics(Otlp.service("spring-orders"),
+        Batch batch = decoder.ingest(Otlp.metrics(Otlp.service("spring-orders"),
                 io.opentelemetry.proto.metrics.v1.Metric.newBuilder().setName("probe.gauge")
                         .setGauge(io.opentelemetry.proto.metrics.v1.Gauge.newBuilder()
                                 .addDataPoints(flagged).addDataPoints(unset).addDataPoints(measured))
@@ -191,7 +191,7 @@ class OtlpDecoderTest {
 
     @Test
     void decodesLogsWithTheSeverityTableAndTheScopeAsLogger() {
-        Batch batch = decoder.accept(Otlp.logs(Otlp.service("spring-orders"), "o.s.boot.StartupInfoLogger",
+        Batch batch = decoder.ingest(Otlp.logs(Otlp.service("spring-orders"), "o.s.boot.StartupInfoLogger",
                 Otlp.log(1_700_000_000_000L, 9, "Started in 2.1 seconds", TRACE, ROOT),
                 Otlp.log(1_700_000_000_001L, 17, "Boom", null, null)));
 
@@ -211,7 +211,7 @@ class OtlpDecoderTest {
     void aSchemaRecordBecomesACatalogRowAndNeverALogLine() {
         String indexes = "[{\"name\":\"PRIMARY_KEY_8\",\"unique\":true,\"columns\":[\"ID\"]}]";
 
-        Batch batch = decoder.accept(Otlp.logs(Otlp.service("spring-orders"), "spider-sense",
+        Batch batch = decoder.ingest(Otlp.logs(Otlp.service("spring-orders"), "spider-sense",
                 Otlp.log(1_700_000_000_000L, 9, "index catalog of ITEMS", null, null,
                         Otlp.attr("spidersense.schema.table", "ITEMS"),
                         Otlp.attr("spidersense.schema.schema", "PUBLIC"),
@@ -235,7 +235,7 @@ class OtlpDecoderTest {
         assertThat(store.sql().count("SELECT COUNT(*) FROM db_table", List.of())).isEqualTo(1);
 
         // The same table again, looked up after a restart: one row, the newer one.
-        decoder.accept(Otlp.logs(Otlp.service("spring-orders"), "spider-sense",
+        decoder.ingest(Otlp.logs(Otlp.service("spring-orders"), "spider-sense",
                 Otlp.log(1_700_000_100_000L, 9, "index catalog of ITEMS", null, null,
                         Otlp.attr("spidersense.schema.table", "ITEMS"),
                         Otlp.attr("spidersense.schema.schema", "PUBLIC"),
@@ -250,7 +250,7 @@ class OtlpDecoderTest {
     /** A schema record without the optional attributes still says what it knows. */
     @Test
     void aCatalogRowWithoutASchemaOrIndexesIsStillARow() {
-        Batch batch = decoder.accept(Otlp.logs(Otlp.service("spring-orders"), "spider-sense",
+        Batch batch = decoder.ingest(Otlp.logs(Otlp.service("spring-orders"), "spider-sense",
                 Otlp.log(1_700_000_000_000L, 9, "index catalog of items", null, null,
                         Otlp.attr("spidersense.schema.table", "items"))));
 
@@ -286,7 +286,7 @@ class OtlpDecoderTest {
         for (String json : List.of(hexJson, base64Json)) {
             ExportTraceServiceRequest.Builder parsed = ExportTraceServiceRequest.newBuilder();
             OtlpJson.merge(json, parsed);
-            Batch batch = decoder.accept(parsed.build());
+            Batch batch = decoder.ingest(parsed.build());
 
             assertThat(batch.spans()).hasSize(1);
             assertThat(batch.spans().get(0).traceId()).isEqualTo(TRACE);
@@ -312,7 +312,7 @@ class OtlpDecoderTest {
         ExportTraceServiceRequest.Builder parsed = ExportTraceServiceRequest.newBuilder();
         OtlpJson.merge(json, parsed);
 
-        Batch batch = decoder.accept(parsed.build());
+        Batch batch = decoder.ingest(parsed.build());
 
         assertThat(batch.spans()).singleElement().satisfies(span -> {
             assertThat(span.traceId()).isEqualTo(TRACE);
@@ -336,7 +336,7 @@ class OtlpDecoderTest {
         ExportTraceServiceRequest.Builder parsed = ExportTraceServiceRequest.newBuilder();
         OtlpJson.merge(json, parsed);
 
-        Batch batch = decoder.accept(parsed.build());
+        Batch batch = decoder.ingest(parsed.build());
 
         assertThat(batch.spans()).singleElement().satisfies(span -> {
             assertThat(span.traceId()).isEqualTo(TRACE);
@@ -366,7 +366,7 @@ class OtlpDecoderTest {
         Span.Builder badParent = Otlp.span(TRACE, CHILD, "a 4-byte parent", Span.SpanKind.SPAN_KIND_INTERNAL,
                 1_700_000_000_000L, 5).setParentSpanId(Otlp.id("00f067aa"));
 
-        Batch batch = decoder.accept(Otlp.traces(Otlp.service("spring-orders"),
+        Batch batch = decoder.ingest(Otlp.traces(Otlp.service("spring-orders"),
                 good, noTraceId, noSpanId, longTraceId, zeroSpanId, badParent));
 
         assertThat(batch.spans()).extracting(SpanRecord::name)
@@ -383,7 +383,7 @@ class OtlpDecoderTest {
                 .setTraceId(Otlp.id(TRACE + "0000")).setSpanId(Otlp.id(ROOT + "00")).build();
         var zeros = Otlp.log(1_700_000_000_001L, 17, "all zeros", "0".repeat(32), "0".repeat(16));
 
-        Batch batch = decoder.accept(Otlp.logs(Otlp.service("worker"), "worker.Jobs", wrongLength, zeros));
+        Batch batch = decoder.ingest(Otlp.logs(Otlp.service("worker"), "worker.Jobs", wrongLength, zeros));
 
         assertThat(batch.logs()).hasSize(2).allSatisfy(log -> {
             assertThat(log.traceId()).isNull();
@@ -416,7 +416,7 @@ class OtlpDecoderTest {
                 burst[n] = capSpan(n + 1, clock.get());
             }
 
-            Batch first = capping.accept(Otlp.traces(Otlp.service("orders"), burst));
+            Batch first = capping.ingest(Otlp.traces(Otlp.service("orders"), burst));
 
             assertThat(first.spans()).as("the tenth span of the second is the last one kept")
                     .hasSize(10);
@@ -432,7 +432,7 @@ class OtlpDecoderTest {
                         Otlp.attr("db.system", "h2"), Otlp.attr("db.statement", "select 1"));
             }
 
-            Batch second = capping.accept(Otlp.traces(Otlp.service("orders"), more));
+            Batch second = capping.ingest(Otlp.traces(Otlp.service("orders"), more));
 
             assertThat(second.spans()).as("a trace already being stored stays complete").hasSize(10);
             assertThat(capped.droppedSpans()).isEqualTo(20);
@@ -449,7 +449,7 @@ class OtlpDecoderTest {
                 burst[n] = capSpan(n + 1, clock.get());
             }
 
-            assertThat(plain.accept(Otlp.traces(Otlp.service("orders"), burst)).spans()).hasSize(30);
+            assertThat(plain.ingest(Otlp.traces(Otlp.service("orders"), burst)).spans()).hasSize(30);
             assertThat(uncapped.droppedSpans()).isZero();
         }
     }

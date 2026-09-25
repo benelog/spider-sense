@@ -213,11 +213,11 @@ class ConfigTest {
     void aSettingIsThePropertyElseTheVariableAndEmptyIsUnset() {
         Map<String, String> env = Map.of("SPIDERSENSE_SOURCE_DIRS", "from-env");
 
-        assertThat(Config.setting("spidersense.source.dirs", Map.of("spidersense.source.dirs", "from-property")::get,
+        assertThat(Config.propertyOrEnv("spidersense.source.dirs", Map.of("spidersense.source.dirs", "from-property")::get,
                 env::get)).isEqualTo("from-property");
-        assertThat(Config.setting("spidersense.source.dirs", Map.<String, String>of()::get, env::get))
+        assertThat(Config.propertyOrEnv("spidersense.source.dirs", Map.<String, String>of()::get, env::get))
                 .isEqualTo("from-env");
-        assertThat(Config.setting("spidersense.source.dirs", Map.<String, String>of()::get,
+        assertThat(Config.propertyOrEnv("spidersense.source.dirs", Map.<String, String>of()::get,
                 Map.of("SPIDERSENSE_SOURCE_DIRS", "")::get)).isNull();
     }
 }

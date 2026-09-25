@@ -31,7 +31,7 @@ class WriterTest {
     }
 
     private void gauge(long at, double value) {
-        decoder.accept(Otlp.gauge(Otlp.service("orders"), "jvm.memory.used", "By", at, value,
+        decoder.ingest(Otlp.gauge(Otlp.service("orders"), "jvm.memory.used", "By", at, value,
                 Otlp.attr("jvm.memory.type", "heap")));
         store.writer().awaitIdle(5_000);
     }
@@ -72,7 +72,7 @@ class WriterTest {
     @Test
     void aLogWithoutASeverityIsStoredWithTheSpansFlushedBesideIt() {
         spans(1);
-        decoder.accept(Otlp.logs(Otlp.service("orders"), "orders.Job",
+        decoder.ingest(Otlp.logs(Otlp.service("orders"), "orders.Job",
                 Otlp.log(AT, 0, "no severity", null, null)));
         store.writer().awaitIdle(5_000);
 
@@ -92,7 +92,7 @@ class WriterTest {
         deep.add(new LogRecord(0, AT, "orders", "INFO", 9, "deep", null, null, null,
                 java.util.Map.of("nested", nested)));
         store.writer().submit(deep);
-        decoder.accept(Otlp.logs(Otlp.service("orders"), "orders.Job", Otlp.log(AT, 9, "fine", null, null)));
+        decoder.ingest(Otlp.logs(Otlp.service("orders"), "orders.Job", Otlp.log(AT, 9, "fine", null, null)));
 
         store.writer().awaitIdle(5_000);
 
@@ -166,9 +166,9 @@ class WriterTest {
     @Test
     void aNameLongerThanItsColumnIsCutRatherThanLosingTheFlush() {
         String name = "s".repeat(300);
-        decoder.accept(Otlp.traces(Otlp.service(name), Otlp.span("%032x".formatted(1), "%016x".formatted(1),
+        decoder.ingest(Otlp.traces(Otlp.service(name), Otlp.span("%032x".formatted(1), "%016x".formatted(1),
                 "GET /orders", Span.SpanKind.SPAN_KIND_SERVER, AT, 5)));
-        decoder.accept(Otlp.gauge(Otlp.service(name), "m".repeat(300), "By", AT, 1));
+        decoder.ingest(Otlp.gauge(Otlp.service(name), "m".repeat(300), "By", AT, 1));
         store.writer().awaitIdle(5_000);
 
         String cut = name.substring(0, 255);
@@ -185,7 +185,7 @@ class WriterTest {
     @Test
     void aLanguageLongerThanItsColumnIsCutRatherThanLosingTheFlush() {
         String language = "j".repeat(100);
-        decoder.accept(Otlp.traces(Otlp.resource(Otlp.attr("service.name", "orders"),
+        decoder.ingest(Otlp.traces(Otlp.resource(Otlp.attr("service.name", "orders"),
                         Otlp.attr("telemetry.sdk.language", language)),
                 Otlp.span("%032x".formatted(1), "%016x".formatted(1), "GET /orders",
                         Span.SpanKind.SPAN_KIND_SERVER, AT, 5)));
@@ -203,7 +203,7 @@ class WriterTest {
                 .setKey("ratio")
                 .setValue(io.opentelemetry.proto.common.v1.AnyValue.newBuilder().setDoubleValue(Double.NaN))
                 .build();
-        decoder.accept(Otlp.traces(Otlp.service("orders"), Otlp.span("%032x".formatted(3), "%016x".formatted(3),
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), Otlp.span("%032x".formatted(3), "%016x".formatted(3),
                 "GET /orders", Span.SpanKind.SPAN_KIND_SERVER, AT, 5, nan)));
         store.writer().awaitIdle(5_000);
 
@@ -217,7 +217,7 @@ class WriterTest {
         var point = io.opentelemetry.proto.metrics.v1.HistogramDataPoint.newBuilder()
                 .setTimeUnixNano(AT * 1_000_000L).setCount(4).setSum(2.0)
                 .addExplicitBounds(1).addBucketCounts(3).addBucketCounts(1);
-        decoder.accept(Otlp.metrics(Otlp.service("orders"), io.opentelemetry.proto.metrics.v1.Metric.newBuilder()
+        decoder.ingest(Otlp.metrics(Otlp.service("orders"), io.opentelemetry.proto.metrics.v1.Metric.newBuilder()
                 .setName("http.client.request.duration")
                 .setHistogram(io.opentelemetry.proto.metrics.v1.Histogram.newBuilder().addDataPoints(point))
                 .build()));
@@ -236,7 +236,7 @@ class WriterTest {
             bounds[i] = i * 1.5;
         }
         counts[0] = 3;
-        decoder.accept(Otlp.histogram(Otlp.service("orders"), "http.server.request.duration", AT, 3, 0.3,
+        decoder.ingest(Otlp.histogram(Otlp.service("orders"), "http.server.request.duration", AT, 3, 0.3,
                 bounds, counts));
         store.writer().awaitIdle(5_000);
 
@@ -253,7 +253,7 @@ class WriterTest {
         refused.addTingles(List.of(new Tingle("k".repeat(20), AT, "orders", "too long a kind", null, null, null, 0)));
         writer.submit(spans(1));
         writer.submit(refused);
-        writer.submit(decoder.accept(Otlp.traces(Otlp.service("orders"), Otlp.span("%032x".formatted(99),
+        writer.submit(decoder.ingest(Otlp.traces(Otlp.service("orders"), Otlp.span("%032x".formatted(99),
                 "%016x".formatted(99), "GET /orders", Span.SpanKind.SPAN_KIND_SERVER, AT, 5))));
 
         writer.flushNow();
@@ -278,8 +278,8 @@ class WriterTest {
                 AT, 20);
         Span.Builder server = Otlp.child(client, "%016x".formatted(2), "GET /books", Span.SpanKind.SPAN_KIND_SERVER,
                 AT + 1, 10);
-        Batch orders = decoder.accept(Otlp.traces(Otlp.service("orders"), client));
-        Batch bookstore = decoder.accept(Otlp.traces(Otlp.service("bookstore"), server));
+        Batch orders = decoder.ingest(Otlp.traces(Otlp.service("orders"), client));
+        Batch bookstore = decoder.ingest(Otlp.traces(Otlp.service("bookstore"), server));
 
         try (java.sql.Connection a = database.sql().connection();
                 java.sql.Connection b = database.sql().connection()) {
@@ -317,13 +317,13 @@ class WriterTest {
     void theOrphanSweepWaitsForAFlushAddingPointsToASeries() throws Exception {
         Database database = Database.open(fileUrl(), dir.resolve("sense.mv.db"));
         Writer writer = writer(database);
-        Batch first = decoder.accept(Otlp.gauge(Otlp.service("orders"), "jvm.memory.used", "By", AT, 1));
+        Batch first = decoder.ingest(Otlp.gauge(Otlp.service("orders"), "jvm.memory.used", "By", AT, 1));
         writer.submit(first);
         writer.flushNow();
         // The point goes by age; the series stays, cached in the writer, with nothing committed.
         database.sql().update("DELETE FROM metric_point", List.of());
 
-        Batch next = decoder.accept(Otlp.gauge(Otlp.service("orders"), "jvm.memory.used", "By", AT + 1_000, 2));
+        Batch next = decoder.ingest(Otlp.gauge(Otlp.service("orders"), "jvm.memory.used", "By", AT + 1_000, 2));
         try (java.sql.Connection flush = database.sql().connection()) {
             flush.setAutoCommit(false);
             writer.writeMetrics(flush, List.of(next));
@@ -353,7 +353,7 @@ class WriterTest {
         Database database = Database.open(fileUrl(), dir.resolve("sense.mv.db"));
         Writer writer = writer(database);
         writer.submit(spans(3));
-        Batch after = decoder.accept(Otlp.traces(Otlp.service("orders"), Otlp.span("%032x".formatted(99),
+        Batch after = decoder.ingest(Otlp.traces(Otlp.service("orders"), Otlp.span("%032x".formatted(99),
                 "%016x".formatted(99), "GET /orders", Span.SpanKind.SPAN_KIND_SERVER, AT, 5)));
         var flushed = new java.util.concurrent.CompletableFuture<Void>();
         Thread flushing = new Thread(() -> {
@@ -405,7 +405,7 @@ class WriterTest {
             spans[i] = Otlp.span("%032x".formatted(i + 1), "%016x".formatted(i + 1), "GET /orders",
                     Span.SpanKind.SPAN_KIND_SERVER, AT, 5, Otlp.attr("http.route", "/orders"));
         }
-        return decoder.accept(Otlp.traces(Otlp.service("orders"), spans));
+        return decoder.ingest(Otlp.traces(Otlp.service("orders"), spans));
     }
 
     private String fileUrl() {

@@ -49,7 +49,7 @@ class QueriesTest {
     @Test
     void percentilesAreNearestRankOverTheEntrySpansOfTheWindow() {
         for (int i = 1; i <= 10; i++) {
-            decoder.accept(Otlp.traces(Otlp.service("orders"),
+            decoder.ingest(Otlp.traces(Otlp.service("orders"),
                     Otlp.span(traceId(i), spanId(i), "GET /orders", Span.SpanKind.SPAN_KIND_SERVER,
                             NOW, i * 10L, Otlp.attr("http.route", "/orders"),
                             Otlp.attr("http.request.method", "GET"))));
@@ -79,12 +79,12 @@ class QueriesTest {
     void theHistogramCountsEachResponseTimeBucketAndKeepsTheErrorsApart() {
         long[] durations = {50, 300, 1000, 5000};
         for (int i = 0; i < durations.length; i++) {
-            decoder.accept(Otlp.traces(Otlp.service("orders"),
+            decoder.ingest(Otlp.traces(Otlp.service("orders"),
                     Otlp.span(traceId(i + 1), spanId(i + 1), "GET /orders",
                             Span.SpanKind.SPAN_KIND_SERVER, NOW, durations[i])));
         }
         // An error is counted in the fifth slot only, however fast it answered.
-        decoder.accept(Otlp.traces(Otlp.service("orders"), Otlp.failing(
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), Otlp.failing(
                 Otlp.span(traceId(5), spanId(5), "GET /orders", Span.SpanKind.SPAN_KIND_SERVER,
                         NOW, 1),
                 "java.lang.IllegalStateException", "no", "at Orders.list")));
@@ -101,7 +101,7 @@ class QueriesTest {
 
     @Test
     void endpointsGroupOnTheEndpointIdentityRule() {
-        decoder.accept(Otlp.traces(Otlp.service("orders"),
+        decoder.ingest(Otlp.traces(Otlp.service("orders"),
                 Otlp.span(traceId(1), spanId(1), "GET /orders/42", Span.SpanKind.SPAN_KIND_SERVER,
                         NOW, 10, Otlp.attr("http.request.method", "GET"),
                         Otlp.attr("http.route", "/orders/{id}"),
@@ -130,7 +130,7 @@ class QueriesTest {
 
     @Test
     void anIgnoredEndpointIsStoredAndInItsTraceButIsNeverARequest() {
-        decoder.accept(Otlp.traces(Otlp.service("orders"),
+        decoder.ingest(Otlp.traces(Otlp.service("orders"),
                 Otlp.span(traceId(1), spanId(1), "GET /orders", Span.SpanKind.SPAN_KIND_SERVER,
                         NOW, 10, Otlp.attr("http.request.method", "GET"),
                         Otlp.attr("http.route", "/orders")),
@@ -167,7 +167,7 @@ class QueriesTest {
                     Otlp.attr("db.system", "h2"),
                     Otlp.attr("db.statement", "select * from orders where name like ?"),
                     Otlp.attr("db.name", "orders"));
-            decoder.accept(Otlp.traces(Otlp.service("orders"), root, query));
+            decoder.ingest(Otlp.traces(Otlp.service("orders"), root, query));
         }
         flush();
 
@@ -206,7 +206,7 @@ class QueriesTest {
         Span.Builder[] all = new Span.Builder[12];
         all[0] = root;
         System.arraycopy(children, 0, all, 1, 11);
-        decoder.accept(Otlp.traces(Otlp.service("orders"), all));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), all));
         flush();
 
         for (String sort : List.of("total", "avg", "p95", "max", "calls")) {
@@ -227,7 +227,7 @@ class QueriesTest {
                 Span.SpanKind.SPAN_KIND_CLIENT, NOW + 1, 200,
                 Otlp.attr("db.system", "h2"), Otlp.attr("db.statement", "select count(*) from events"),
                 Otlp.attr("db.name", "worker"));
-        decoder.accept(Otlp.traces(Otlp.service("batch-worker"), job, query));
+        decoder.ingest(Otlp.traces(Otlp.service("batch-worker"), job, query));
         flush();
 
         Stats.ServiceMap map = queries.map(window);
@@ -244,7 +244,7 @@ class QueriesTest {
     @Test
     void errorsGroupOnTheNormalisedMessage() {
         for (int i = 1; i <= 2; i++) {
-            decoder.accept(Otlp.traces(Otlp.service("orders"), Otlp.failing(
+            decoder.ingest(Otlp.traces(Otlp.service("orders"), Otlp.failing(
                     Otlp.span(traceId(i), spanId(i), "POST /orders/{id}/ship",
                             Span.SpanKind.SPAN_KIND_SERVER, NOW, 5,
                             Otlp.attr("http.request.method", "POST"),
@@ -281,7 +281,7 @@ class QueriesTest {
     }
 
     private void fail(int n, String type, String message, String stacktrace) {
-        decoder.accept(Otlp.traces(Otlp.service("orders"), Otlp.failing(
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), Otlp.failing(
                 Otlp.span(traceId(n), spanId(n), "POST /orders", Span.SpanKind.SPAN_KIND_SERVER, NOW, 5,
                         Otlp.attr("http.request.method", "POST"), Otlp.attr("http.route", "/orders")),
                 type, message, stacktrace)));
@@ -348,10 +348,10 @@ class QueriesTest {
                 Span.SpanKind.SPAN_KIND_SERVER, NOW, 152,
                 Otlp.attr("http.request.method", "GET"), Otlp.attr("http.route", "/orders/{id}"),
                 Otlp.attr("http.response.status_code", 200));
-        decoder.accept(Otlp.traces(Otlp.service("orders"), root));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), root));
         flush();
         // The second service's spans arrive in an export of their own, as they do in life.
-        decoder.accept(Otlp.traces(Otlp.service("bookstore"),
+        decoder.ingest(Otlp.traces(Otlp.service("bookstore"),
                 Otlp.child(root, spanId(2), "SELECT books", Span.SpanKind.SPAN_KIND_CLIENT, NOW + 10, 30,
                         Otlp.attr("db.system", "h2"), Otlp.attr("db.statement", "select * from books"))));
         flush();
@@ -373,7 +373,7 @@ class QueriesTest {
 
     @Test
     void theFreeTextSearchLooksInSpanNamesAndAttributeValues() {
-        decoder.accept(Otlp.traces(Otlp.service("orders"),
+        decoder.ingest(Otlp.traces(Otlp.service("orders"),
                 Otlp.span(traceId(1), spanId(1), "GET /orders", Span.SpanKind.SPAN_KIND_SERVER, NOW, 5,
                         Otlp.attr("enduser.id", "grumpy-badger"))));
         flush();
@@ -390,7 +390,7 @@ class QueriesTest {
     @Test
     void tracesThatStartInTheSameMillisecondPageByTheirTraceId() {
         for (int i = 1; i <= 5; i++) {
-            decoder.accept(Otlp.traces(Otlp.service("orders"),
+            decoder.ingest(Otlp.traces(Otlp.service("orders"),
                     Otlp.span(traceId(i), spanId(i), "GET /orders", Span.SpanKind.SPAN_KIND_SERVER, NOW, 5)));
         }
         flush();
@@ -420,7 +420,7 @@ class QueriesTest {
     @Test
     void tracesTiedOnTheOrderingColumnAreOrderedByTheirId() {
         for (int n : new int[] {3, 1, 2}) {
-            decoder.accept(Otlp.traces(Otlp.service("orders"),
+            decoder.ingest(Otlp.traces(Otlp.service("orders"),
                     Otlp.span(traceId(n), spanId(n), "GET /orders", Span.SpanKind.SPAN_KIND_SERVER, NOW, 5)));
         }
         flush();
@@ -449,7 +449,7 @@ class QueriesTest {
                     Otlp.attr("db.system", "h2"), Otlp.attr("db.statement", "select * from orders where id = ?")));
         }
         spans.add(root);
-        decoder.accept(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
     }
 
     /**
@@ -476,7 +476,7 @@ class QueriesTest {
                 NOW, 50);
         Span.Builder later = Otlp.child(root, spanId(0x20), "SELECT b", Span.SpanKind.SPAN_KIND_CLIENT, NOW + 1, 5);
         Span.Builder earlier = Otlp.child(root, spanId(0x10), "SELECT a", Span.SpanKind.SPAN_KIND_CLIENT, NOW + 1, 5);
-        decoder.accept(Otlp.traces(Otlp.service("orders"), later, root, earlier));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), later, root, earlier));
         flush();
 
         Queries.TraceDetail trace = queries.trace(traceId(1));
@@ -494,7 +494,7 @@ class QueriesTest {
     @Test
     void manyTracesTiedOnTheOrderingColumnAreCutByTheirId() {
         for (int n = 40; n >= 1; n--) {
-            decoder.accept(Otlp.traces(Otlp.service("orders"),
+            decoder.ingest(Otlp.traces(Otlp.service("orders"),
                     Otlp.span(traceId(n), spanId(n), "GET /orders", Span.SpanKind.SPAN_KIND_SERVER, NOW, 5)));
         }
         flush();
@@ -514,7 +514,7 @@ class QueriesTest {
         for (int i = 0; i < burst.length; i++) {
             burst[i] = Otlp.log(NOW, 17, "line " + i, null, null);
         }
-        decoder.accept(Otlp.logs(Otlp.service("orders"), "o.e.Orders", burst));
+        decoder.ingest(Otlp.logs(Otlp.service("orders"), "o.e.Orders", burst));
         flush();
 
         List<String> seen = new ArrayList<>();
@@ -538,7 +538,7 @@ class QueriesTest {
     /** q is a substring: its % and _ match themselves, not any text. */
     @Test
     void freeTextIsASubstringNotALikePattern() {
-        decoder.accept(Otlp.logs(Otlp.service("orders"), "orders.Job",
+        decoder.ingest(Otlp.logs(Otlp.service("orders"), "orders.Job",
                 Otlp.log(NOW, 9, "100% done", null, null),
                 Otlp.log(NOW + 1, 9, "1000 done", null, null),
                 Otlp.log(NOW + 2, 9, "a_b", null, null),
@@ -554,7 +554,7 @@ class QueriesTest {
     /** A log-error finding's link searches for its logger, which is a column of its own. */
     @Test
     void freeTextOverLogsMatchesTheLogger() {
-        decoder.accept(Otlp.logs(Otlp.service("orders"), "orders.web.OrderController",
+        decoder.ingest(Otlp.logs(Otlp.service("orders"), "orders.web.OrderController",
                 Otlp.log(NOW, 17, "Payment gateway timeout", null, null)));
         flush();
 
@@ -566,7 +566,7 @@ class QueriesTest {
 
     @Test
     void bucketsLineUpWithTheWindowAndCountWhatFellInThem() {
-        decoder.accept(Otlp.traces(Otlp.service("orders"),
+        decoder.ingest(Otlp.traces(Otlp.service("orders"),
                 Otlp.span(traceId(1), spanId(1), "GET /orders", Span.SpanKind.SPAN_KIND_SERVER, NOW, 5),
                 Otlp.span(traceId(2), spanId(2), "GET /orders", Span.SpanKind.SPAN_KIND_SERVER, NOW, 7)));
         flush();
@@ -582,9 +582,9 @@ class QueriesTest {
     @Test
     void theSweeperDeletesWhatIsOlderThanTheRetentionAndClearEmptiesEverything() {
         long old = System.currentTimeMillis() - 48 * 3_600_000L;
-        decoder.accept(Otlp.traces(Otlp.service("orders"),
+        decoder.ingest(Otlp.traces(Otlp.service("orders"),
                 Otlp.span(traceId(1), spanId(1), "GET /old", Span.SpanKind.SPAN_KIND_SERVER, old, 5)));
-        decoder.accept(Otlp.traces(Otlp.service("orders"),
+        decoder.ingest(Otlp.traces(Otlp.service("orders"),
                 Otlp.span(traceId(2), spanId(2), "GET /new", Span.SpanKind.SPAN_KIND_SERVER,
                         System.currentTimeMillis(), 5)));
         flush();
@@ -609,7 +609,7 @@ class QueriesTest {
                 NOW + 50_000, 20_000);
         Span.Builder early = Otlp.span(traceId(2), spanId(2), "GET /early", Span.SpanKind.SPAN_KIND_SERVER,
                 NOW, 2_000);
-        decoder.accept(Otlp.traces(Otlp.service("orders"),
+        decoder.ingest(Otlp.traces(Otlp.service("orders"),
                 late, Otlp.child(late, spanId(11), "lookup", Span.SpanKind.SPAN_KIND_INTERNAL, NOW + 65_000, 5),
                 early, Otlp.child(early, spanId(12), "lookup", Span.SpanKind.SPAN_KIND_INTERNAL, NOW + 1_000, 5)));
         flush();

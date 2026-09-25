@@ -61,7 +61,7 @@ class CheckTest {
 
     @Test
     void withNoRuleGivenTheDefaultsAreTheOnesAgentMdNames() {
-        decoder.accept(Otlp.traces(Otlp.service("orders"), entry("/orders", 10)));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), entry("/orders", 10)));
         flush();
 
         Check.CheckResult result = check.check(window, null, null, Map.of());
@@ -78,7 +78,7 @@ class CheckTest {
 
     @Test
     void aRuleThatIsExceededFailsAndSaysWhich() {
-        decoder.accept(Otlp.traces(Otlp.service("orders"),
+        decoder.ingest(Otlp.traces(Otlp.service("orders"),
                 entry("/orders", 10), entry("/orders/report", 800)));
         flush();
 
@@ -94,7 +94,7 @@ class CheckTest {
 
     @Test
     void everyRuleGivenIsEvaluatedAndNoOther() {
-        decoder.accept(Otlp.traces(Otlp.service("orders"),
+        decoder.ingest(Otlp.traces(Otlp.service("orders"),
                 Otlp.failing(entry("/ship", 10), "java.lang.IllegalStateException", "already shipped",
                         "at orders.Ship.run(Ship.java:1)")));
         flush();
@@ -122,7 +122,7 @@ class CheckTest {
             spans.add(query(a, 200, NOW + i));
         }
         spans.add(query(b, 2, NOW));
-        decoder.accept(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
         flush();
 
         Check.RuleCheck fromB = rule(check.check(window, null, "GET /b", Map.of(Check.MAX_SLOW_QUERIES, 0.0)),
@@ -155,7 +155,7 @@ class CheckTest {
 
     @Test
     void anEndpointNarrowsTheScopeByNameOrById() {
-        decoder.accept(Otlp.traces(Otlp.service("orders"),
+        decoder.ingest(Otlp.traces(Otlp.service("orders"),
                 entry("/orders", 10), entry("/orders/report", 800)));
         flush();
 
@@ -184,7 +184,7 @@ class CheckTest {
                 Otlp.attr("db.statement", "insert into orders values (?)"),
                 Otlp.attr("db.operation", "INSERT"),
                 Otlp.attr("db.sql.table", "orders"));
-        decoder.accept(Otlp.traces(Otlp.service("orders"), seed, entry("/orders", 10)));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), seed, entry("/orders", 10)));
         flush();
 
         assertThat(queries.totals(window, null).requests()).isEqualTo(1);
@@ -209,7 +209,7 @@ class CheckTest {
         int n = ids++;
         Span.Builder tick = Otlp.span("%032x".formatted(n), "%016x".formatted(n), "ReportJob.run",
                 Span.SpanKind.SPAN_KIND_INTERNAL, NOW, 900);
-        decoder.accept(Otlp.traces(Otlp.service("orders"), tick, entry("/orders", 10)));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), tick, entry("/orders", 10)));
         flush();
 
         Check.CheckResult result = check.check(window, null, null, Map.of());
@@ -225,8 +225,8 @@ class CheckTest {
     void uncoveredErrorLogsAreCountedByTheLogErrorRuleAndAreNotADefault() {
         assertThat(check.defaults()).doesNotContainKey(Check.MAX_LOG_ERRORS);
 
-        decoder.accept(Otlp.traces(Otlp.service("orders"), entry("/orders", 10)));
-        decoder.accept(Otlp.logs(Otlp.service("orders"), "orders.web.OrderController",
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), entry("/orders", 10)));
+        decoder.ingest(Otlp.logs(Otlp.service("orders"), "orders.web.OrderController",
                 Otlp.log(NOW, 17, "Payment gateway timeout for order 42", null, null),
                 Otlp.log(NOW + 1, 17, "Payment gateway timeout for order 43", null, null)));
         flush();
@@ -244,19 +244,19 @@ class CheckTest {
 
     @Test
     void theLogErrorRuleCountsEveryRecordPastTwentyThousand() {
-        decoder.accept(Otlp.traces(Otlp.service("orders"), entry("/orders", 10)));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), entry("/orders", 10)));
         int records = 20_001;
         for (int from = 0; from < records; from += 1_000) {
             List<io.opentelemetry.proto.logs.v1.LogRecord> chunk = new ArrayList<>();
             for (int i = from; i < Math.min(records, from + 1_000); i++) {
                 chunk.add(Otlp.log(NOW + i, 17, "Retry budget spent", null, null));
             }
-            decoder.accept(Otlp.logs(Otlp.service("orders"), "orders.Job",
+            decoder.ingest(Otlp.logs(Otlp.service("orders"), "orders.Job",
                     chunk.toArray(new io.opentelemetry.proto.logs.v1.LogRecord[0])));
             flush();
         }
         // A group whose only record comes after the first twenty thousand.
-        decoder.accept(Otlp.logs(Otlp.service("orders"), "orders.Sweeper",
+        decoder.ingest(Otlp.logs(Otlp.service("orders"), "orders.Sweeper",
                 Otlp.log(NOW + records, 17, "Sweep failed", null, null)));
         flush();
 
@@ -275,7 +275,7 @@ class CheckTest {
 
     @Test
     void theLogErrorRulePassesWhenNothingLoggedAnErrorOutsideAFailedTrace() {
-        decoder.accept(Otlp.traces(Otlp.service("orders"), entry("/orders", 10)));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), entry("/orders", 10)));
         flush();
 
         Check.CheckResult result = check.check(window, null, null, Map.of(Check.MAX_LOG_ERRORS, 0.0));
@@ -300,7 +300,7 @@ class CheckTest {
                     Otlp.attr("db.operation", "SELECT"),
                     Otlp.attr("db.sql.table", "order_line")));
         }
-        decoder.accept(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
         flush();
 
         Check.CheckResult result = check.check(window, null, null, Map.of(Check.MAX_N_PLUS_ONE, 0.0,
@@ -319,7 +319,7 @@ class CheckTest {
         // more error findings, which rank before an N+1, than a top hundred holds.
         for (int i = 0; i < 101; i++) {
             String type = "orders.Failure" + (char) ('A' + i % 26) + (char) ('A' + i / 26);
-            decoder.accept(Otlp.traces(Otlp.service("orders"), Otlp.failing(entry("/ship", 10), type,
+            decoder.ingest(Otlp.traces(Otlp.service("orders"), Otlp.failing(entry("/ship", 10), type,
                     "failed", "at orders.Ship.run(Ship.java:1)")));
         }
         Span.Builder root = entry("/orders/{id}", 60);
@@ -334,7 +334,7 @@ class CheckTest {
                     Otlp.attr("db.operation", "SELECT"),
                     Otlp.attr("db.sql.table", "order_line")));
         }
-        decoder.accept(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
         flush();
 
         Check.CheckResult result = check.check(window, null, null, Map.of(Check.MAX_ERRORS, 0.0,
@@ -359,7 +359,7 @@ class CheckTest {
                     Otlp.attr("db.operation", "SELECT"),
                     Otlp.attr("db.sql.table", "order_line")));
         }
-        decoder.accept(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
         flush();
         assertThat(rule(check.check(window, null, null, Map.of()), Check.MAX_REGRESSIONS).detail())
                 .isEqualTo("no resolved finding came back");

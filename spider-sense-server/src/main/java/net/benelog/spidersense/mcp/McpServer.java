@@ -122,7 +122,7 @@ public final class McpServer {
      * <p>The stdio transport uses it to answer a call it could not forward,
      * without building a JSON-RPC envelope of its own.
      */
-    public @Nullable String handle(String message, ToolRunner with) {
+    public @Nullable String handle(String message, ToolRunner calls) {
         Json.JsonValue parsed;
         try {
             parsed = Json.parse(message);
@@ -156,7 +156,7 @@ public final class McpServer {
                 case "initialize" -> result(id, initialize(params));
                 case "ping" -> result(id, Json.obj());
                 case "tools/list" -> result(id, Json.obj().put("tools", list()));
-                case "tools/call" -> result(id, call(params, with));
+                case "tools/call" -> result(id, call(params, calls));
                 default -> error(id, METHOD_NOT_FOUND, "No such method: " + method);
             };
         } catch (BadArgument e) {
@@ -191,19 +191,19 @@ public final class McpServer {
                 .put("instructions", INSTRUCTIONS);
     }
 
-    private Json.JsonObject call(Json.JsonObject params, ToolRunner with) {
+    private Json.JsonObject call(Json.JsonObject params, ToolRunner calls) {
         String name = params.has("name") && params.get("name").isString()
                 ? params.getString("name") : null;
         Tool tool = byName(name);
         if (tool == null) {
-            return failIfUnknown(name);
+            throw unknownTool(name);
         }
         Json.JsonValue given = params.has("arguments") ? params.get("arguments") : null;
         if (given != null && !given.isNull() && !(given instanceof Json.JsonObject)) {
             throw new BadArgument("arguments must be an object");
         }
         Map<String, Object> arguments = tool.read(given instanceof Json.JsonObject object ? object : Json.obj());
-        ToolResult answer = with.call(tool.name(), arguments);
+        ToolResult answer = calls.call(tool.name(), arguments);
         Json.JsonObject result = Json.obj()
                 .put("content", Json.arr().add(Json.obj()
                         .put("type", "text")
@@ -215,8 +215,8 @@ public final class McpServer {
         return result;
     }
 
-    private Json.JsonObject failIfUnknown(@Nullable String name) {
-        throw new BadArgument(name == null
+    private BadArgument unknownTool(@Nullable String name) {
+        return new BadArgument(name == null
                 ? "tools/call needs a tool name"
                 : "No such tool: " + name + "; the tools are "
                         + String.join(", ", tools.stream().map(Tool::name).toList()));

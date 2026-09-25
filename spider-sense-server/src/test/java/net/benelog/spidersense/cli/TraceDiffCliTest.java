@@ -96,7 +96,7 @@ class TraceDiffCliTest {
         Config config = TestStore.config();
         SpiderSenseServer server = SpiderSenseServer.start(config);
         try {
-            new OtlpDecoder(server.store(), server::port).accept(sample());
+            new OtlpDecoder(server.store(), server::port).ingest(sample());
             server.store().writer().awaitIdle(5_000);
             body.accept(server, "http://127.0.0.1:" + server.port());
         } finally {
@@ -108,7 +108,7 @@ class TraceDiffCliTest {
         Config config = TestStore.config();
         try (Store store = new Store(config.jdbcUrl(), config.databaseFile(),
                 config.retentionHours(), config.slowRequestMs(), config.slowQueryMs(), null)) {
-            new OtlpDecoder(store, () -> 4000).accept(sample());
+            new OtlpDecoder(store, () -> 4000).ingest(sample());
             store.writer().awaitIdle(5_000);
             body.accept(store, "--db=" + config.jdbcUrl());
         }

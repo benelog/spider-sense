@@ -121,7 +121,7 @@ class FindingsTest {
     void anErrorGroupIsAFindingWithItsApplicationFrames() {
         Span.Builder failing = Otlp.failing(entry(1, "/orders/{id}", 10),
                 "java.lang.IllegalStateException", "no such order 42", STACKTRACE);
-        decoder.accept(Otlp.traces(Otlp.service("orders"), failing));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), failing));
         flush();
 
         List<Findings.Finding> errors = of(Findings.ERROR);
@@ -143,7 +143,7 @@ class FindingsTest {
 
     @Test
     void anErrorAsFrequentAtTwoEndpointsIsNamedAfterTheFirstByName() {
-        decoder.accept(Otlp.traces(Otlp.service("orders"),
+        decoder.ingest(Otlp.traces(Otlp.service("orders"),
                 Otlp.failing(entry(1, "/orders/{id}/ship", 10), "java.lang.IllegalStateException",
                         "no such order 42", STACKTRACE),
                 Otlp.failing(entry(2, "/orders/{id}", 10), "java.lang.IllegalStateException",
@@ -165,7 +165,7 @@ class FindingsTest {
             spans.add(query(root, 100 + i, "select * from order_line where order_id = ?", "order_line",
                     NOW + i, 2));
         }
-        decoder.accept(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
         flush();
 
         List<Findings.Finding> repeated = of(Findings.N_PLUS_ONE);
@@ -195,7 +195,7 @@ class FindingsTest {
                 spans.add(query(root, 10_000 + n * 10 + i, "select * from order_line where order_id = ?", "order_line",
                         NOW - n * 10L + i, 2));
             }
-            decoder.accept(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
+            decoder.ingest(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
         }
         flush();
 
@@ -220,7 +220,7 @@ class FindingsTest {
             }
             spans.add(repeat);
         }
-        decoder.accept(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
         flush();
 
         List<Findings.Finding> repeated = of(Findings.N_PLUS_ONE);
@@ -240,7 +240,7 @@ class FindingsTest {
             spans.add(query(root, 100 + i, "select * from order_line where order_id = ?", "order_line",
                     NOW + i, 2));
         }
-        decoder.accept(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
         flush();
 
         List<Findings.Finding> repeated = of(Findings.N_PLUS_ONE);
@@ -258,7 +258,7 @@ class FindingsTest {
             // Only the digits differ, which is what a loop over items varies.
             spans.add(call(root, 100 + i, "/api/books/" + (155 + i), NOW + i, 2));
         }
-        decoder.accept(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
         flush();
 
         List<Findings.Finding> repeated = of(Findings.N_PLUS_ONE_HTTP);
@@ -292,13 +292,13 @@ class FindingsTest {
                     + (char) ('a' + i / 26 % 26) + (char) ('a' + i % 26);
             spans.add(call(old, 100_000 + i, path, NOW - 50_000, 1));
         }
-        decoder.accept(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
         Span.Builder root = entry(2, "/books", 60);
         List<Span.Builder> loop = new ArrayList<>(List.of(root));
         for (int i = 0; i < 5; i++) {
             loop.add(outbound(root, 200 + i, "slowhost", 9000, NOW + i, 600));
         }
-        decoder.accept(Otlp.traces(Otlp.service("orders"), loop.toArray(new Span.Builder[0])));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), loop.toArray(new Span.Builder[0])));
         flush();
 
         List<Findings.Finding> repeated = of(Findings.N_PLUS_ONE_HTTP);
@@ -317,7 +317,7 @@ class FindingsTest {
         for (int i = 0; i < 4; i++) {
             spans.add(call(root, 100 + i, "/api/books/" + i, NOW + i, 2));
         }
-        decoder.accept(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
         flush();
 
         assertThat(of(Findings.N_PLUS_ONE_HTTP)).isEmpty();
@@ -334,7 +334,7 @@ class FindingsTest {
         for (int i = 0; i < 3; i++) {
             spans.add(call(root, 200 + i, "/api/authors/" + i, NOW + i, 2));
         }
-        decoder.accept(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
         flush();
 
         assertThat(of(Findings.N_PLUS_ONE_HTTP))
@@ -354,7 +354,7 @@ class FindingsTest {
             }
             spans.add(repeat);
         }
-        decoder.accept(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
         flush();
 
         assertThat(of(Findings.N_PLUS_ONE_HTTP).get(0).code()).containsExactly(
@@ -365,7 +365,7 @@ class FindingsTest {
     @Test
     void aQueryGroupOverTheThresholdIsASlowQuery() {
         Span.Builder root = entry(1, "/books", 400);
-        decoder.accept(Otlp.traces(Otlp.service("orders"), root,
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), root,
                 query(root, 100, "select * from book where title like ?", "book", NOW, 300)));
         flush();
 
@@ -399,10 +399,10 @@ class FindingsTest {
                 spans.add(query(root, 1_000 + t * 1_000 + i, "select col_" + letters(i) + " from book",
                         "book", NOW, 80));
             }
-            decoder.accept(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
+            decoder.ingest(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
         }
         Span.Builder report = entry(10, "/report", 50);
-        decoder.accept(Otlp.traces(Otlp.service("orders"), report,
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), report,
                 query(report, 10_000, "select * from book where title like ?", "book", NOW, 300)));
         flush();
 
@@ -416,11 +416,11 @@ class FindingsTest {
         int n = 1;
         for (int i = 0; i < 100; i++) {
             for (int run = 0; run < 3; run++) {
-                decoder.accept(Otlp.traces(Otlp.service("orders"),
+                decoder.ingest(Otlp.traces(Otlp.service("orders"),
                         job(n++, "Fast" + letters(i) + "Job.run", 400)));
             }
         }
-        decoder.accept(Otlp.traces(Otlp.service("orders"), job(n, "ReportJob.run", 900)));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), job(n, "ReportJob.run", 900)));
         flush();
 
         assertThat(of(Findings.SLOW_JOB)).extracting(Findings.Finding::title)
@@ -431,7 +431,7 @@ class FindingsTest {
     void aSlowQueryTakesItsCodeFromTheSlowCallNotTheNewest() {
         Span.Builder root = entry(1, "/books", 400);
         String statement = "select * from book where title like ?";
-        decoder.accept(Otlp.traces(Otlp.service("orders"), root,
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), root,
                 query(root, 100, statement, "book", NOW, 300)
                         .addAttributes(Otlp.attr("code.stacktrace", QUERY_STACKTRACE)),
                 query(root, 101, statement, "book", NOW + 310, 5),
@@ -449,7 +449,7 @@ class FindingsTest {
 
     /** The catalog of one table, as the extension sends it: a log record (design.adoc#index-catalog). */
     private void catalog(String table, String indexes) {
-        decoder.accept(Otlp.logs(Otlp.service("orders"), "spider-sense",
+        decoder.ingest(Otlp.logs(Otlp.service("orders"), "spider-sense",
                 Otlp.log(NOW, 9, "index catalog of " + table, null, null,
                         Otlp.attr("spidersense.schema.table", table),
                         Otlp.attr("spidersense.schema.schema", "PUBLIC"),
@@ -464,7 +464,7 @@ class FindingsTest {
     @Test
     void aSlowQueryCarriesTheIndexesOfItsTablesAndTheColumnsNoneLeadsWith() {
         Span.Builder root = entry(1, "/items", 400);
-        decoder.accept(Otlp.traces(Otlp.service("orders"), root,
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), root,
                 query(root, 100, "select * from items where name = ? and supplier_id = ?", "items",
                         NOW, 300)));
         catalog("ITEMS", ITEMS_INDEXES);
@@ -489,7 +489,7 @@ class FindingsTest {
     @Test
     void aStatementWhoseTableTheCatalogDoesNotKnowHasNoBlockAtAll() {
         Span.Builder root = entry(1, "/items", 400);
-        decoder.accept(Otlp.traces(Otlp.service("orders"), root,
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), root,
                 query(root, 100, "select * from items where name = ? and supplier_id = ?", "items",
                         NOW, 300)));
         flush();
@@ -508,7 +508,7 @@ class FindingsTest {
             spans.add(query(root, 100 + i, "select * from order_line where order_id = ?",
                     "order_line", NOW + i, 2));
         }
-        decoder.accept(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
         catalog("ORDER_LINE",
                 "[{\"name\":\"PRIMARY_KEY_3\",\"unique\":true,\"columns\":[\"ID\"]}]");
         flush();
@@ -524,7 +524,7 @@ class FindingsTest {
     @Test
     void aFindingOfAnotherKindHasNoSchemaBlock() {
         Span.Builder root = entry(1, "/orders/report", 1000);
-        decoder.accept(Otlp.traces(Otlp.service("orders"), root,
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), root,
                 query(root, 100, "select * from orders", "orders", NOW, 400)));
         catalog("ORDERS", "[]");
         flush();
@@ -535,7 +535,7 @@ class FindingsTest {
     @Test
     void anEndpointOverTheThresholdIsASlowEndpointWithItsDatabaseShare() {
         Span.Builder root = entry(1, "/orders/report", 1000);
-        decoder.accept(Otlp.traces(Otlp.service("orders"), root,
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), root,
                 query(root, 100, "select * from orders", "orders", NOW, 400)));
         flush();
 
@@ -557,7 +557,7 @@ class FindingsTest {
         Span.Builder slow = job(11, "ReportJob.run", 900);
         Span.Builder alsoSlow = job(12, "ReportJob.run", 800);
         Span.Builder quick = job(13, "ReportJob.run", 100);
-        decoder.accept(Otlp.traces(Otlp.service("orders"), slow,
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), slow,
                 query(slow, 101, "select * from orders", "orders", NOW, 360),
                 alsoSlow, quick));
         flush();
@@ -586,7 +586,7 @@ class FindingsTest {
 
     @Test
     void aJobUnderTheThresholdIsNoFinding() {
-        decoder.accept(Otlp.traces(Otlp.service("orders"),
+        decoder.ingest(Otlp.traces(Otlp.service("orders"),
                 job(11, "ReportJob.run", 100), job(12, "ReportJob.run", 120)));
         flush();
 
@@ -604,7 +604,7 @@ class FindingsTest {
                 Otlp.attr("db.statement", "insert into orders values (?)"),
                 Otlp.attr("db.operation", "INSERT"),
                 Otlp.attr("db.sql.table", "orders"));
-        decoder.accept(Otlp.traces(Otlp.service("orders"), request, inside, seed));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), request, inside, seed));
         flush();
 
         assertThat(of(Findings.SLOW_JOB)).isEmpty();
@@ -614,7 +614,7 @@ class FindingsTest {
 
     @Test
     void aSlowJobIsRankedAfterASlowEndpointOfTheSameSeverity() {
-        decoder.accept(Otlp.traces(Otlp.service("orders"),
+        decoder.ingest(Otlp.traces(Otlp.service("orders"),
                 entry(1, "/orders/report", 700), job(11, "ReportJob.run", 700)));
         flush();
 
@@ -631,8 +631,8 @@ class FindingsTest {
     /** findings.adoc's kind order: an N+1 comes before a log-error of the same severity. */
     @Test
     void aLogErrorIsRankedAfterAnNPlusOneOfTheSameSeverity() {
-        decoder.accept(Otlp.traces(Otlp.service("orders"), entry(1, "/orders/{id}", 10)));
-        decoder.accept(Otlp.logs(Otlp.service("orders"), "orders.web.OrderController",
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), entry(1, "/orders/{id}", 10)));
+        decoder.ingest(Otlp.logs(Otlp.service("orders"), "orders.web.OrderController",
                 Otlp.log(NOW, 17, "Payment gateway timeout", traceId(1), spanId(1))));
         Span.Builder root = entry(2, "/orders", 60);
         List<Span.Builder> spans = new ArrayList<>();
@@ -641,7 +641,7 @@ class FindingsTest {
             spans.add(query(root, 200 + i, "select * from order_line where order_id = ?", "order_line",
                     NOW + i, 2));
         }
-        decoder.accept(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
         flush();
 
         List<String> kinds = new ArrayList<>();
@@ -655,7 +655,7 @@ class FindingsTest {
 
     @Test
     void aPoolWithSomebodyWaitingIsExhausted() {
-        decoder.accept(Otlp.traces(Otlp.service("orders"), entry(1, "/orders", 10)));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), entry(1, "/orders", 10)));
         pool("db.client.connections.usage", 10, Otlp.attr("state", "used"));
         pool("db.client.connections.usage", 0, Otlp.attr("state", "idle"));
         pool("db.client.connections.max", 10);
@@ -678,7 +678,7 @@ class FindingsTest {
 
     @Test
     void aPoolFullAtAnotherPointThanTheMostWaitingReadsAsFull() {
-        decoder.accept(Otlp.traces(Otlp.service("orders"), entry(1, "/orders", 10)));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), entry(1, "/orders", 10)));
         // Three waiting with eight of ten in use, then nobody waiting with all ten in use.
         long first = NOW - 30_000;
         pool(first, "db.client.connections.usage", 8, Otlp.attr("state", "used"));
@@ -708,7 +708,7 @@ class FindingsTest {
                 new io.opentelemetry.proto.common.v1.KeyValue[extra.length + 1];
         attributes[0] = Otlp.attr("pool.name", "HikariPool-1");
         System.arraycopy(extra, 0, attributes, 1, extra.length);
-        decoder.accept(Otlp.sum(Otlp.service("orders"), metric, "{connection}", at, value, false,
+        decoder.ingest(Otlp.sum(Otlp.service("orders"), metric, "{connection}", at, value, false,
                 attributes));
     }
 
@@ -722,7 +722,7 @@ class FindingsTest {
                         Otlp.attr("http.route", "/orders")),
                 "java.lang.IllegalStateException", "already shipped", STACKTRACE);
         Span.Builder mild = entry(3, "/orders/list", 700);
-        decoder.accept(Otlp.traces(Otlp.service("orders"), slow, failing, mild));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), slow, failing, mild));
         flush();
 
         List<Findings.Finding> found = findings.findings(window, null, 20);
@@ -745,7 +745,7 @@ class FindingsTest {
     @Test
     void aSlowOutboundCallIsASlowExternalWithItsCallersAndItsLine() {
         Span.Builder root = entry(1, "/orders/{id}", 900);
-        decoder.accept(Otlp.traces(Otlp.service("orders"), root,
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), root,
                 outbound(root, 100, "localhost", 8081, NOW, 800)
                         .addAttributes(Otlp.attr("code.stacktrace", QUERY_STACKTRACE))));
         flush();
@@ -779,7 +779,7 @@ class FindingsTest {
     @Test
     void aSlowExternalTakesItsCodeFromTheSlowCallNotTheNewest() {
         Span.Builder root = entry(1, "/orders/{id}", 2000);
-        decoder.accept(Otlp.traces(Otlp.service("orders"), root,
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), root,
                 outbound(root, 100, "localhost", 8081, NOW, 800)
                         .addAttributes(Otlp.attr("code.stacktrace", QUERY_STACKTRACE)),
                 outbound(root, 101, "localhost", 8081, NOW + 900, 20)));
@@ -796,7 +796,7 @@ class FindingsTest {
     @Test
     void aFastOutboundCallIsNoFinding() {
         Span.Builder root = entry(1, "/orders/{id}", 100);
-        decoder.accept(Otlp.traces(Otlp.service("orders"), root,
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), root,
                 outbound(root, 100, "localhost", 8081, NOW, 40)));
         flush();
 
@@ -806,7 +806,7 @@ class FindingsTest {
     @Test
     void aSlowEndpointNamesTheSpanItsTimeWentInto() {
         Span.Builder root = entry(1, "/orders/report", 1000);
-        decoder.accept(Otlp.traces(Otlp.service("orders"), root,
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), root,
                 query(root, 100, "select * from orders", "orders", NOW, 800)));
         flush();
 
@@ -826,7 +826,7 @@ class FindingsTest {
         // Two requests, each one slow query and one outbound call to a different item.
         for (int n = 1; n <= 2; n++) {
             Span.Builder root = entry(n, "/orders/report", 1000);
-            decoder.accept(Otlp.traces(Otlp.service("orders"), root,
+            decoder.ingest(Otlp.traces(Otlp.service("orders"), root,
                     query(root, 10 * n, "select * from orders", "orders", NOW, 600),
                     call(root, 10 * n + 1, "/api/books/" + n, NOW, 200)));
         }
@@ -853,7 +853,7 @@ class FindingsTest {
     @Test
     void theBreakdownOfASlowEndpointSumsToOne() {
         Span.Builder root = entry(1, "/orders/report", 1000);
-        decoder.accept(Otlp.traces(Otlp.service("orders"), root,
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), root,
                 query(root, 100, "select * from orders", "orders", NOW, 600),
                 call(root, 101, "/api/books/1", NOW, 200)));
         flush();
@@ -876,14 +876,14 @@ class FindingsTest {
     void theSpansOfADownstreamServiceBelongToItsOwnEndpoint() {
         Span.Builder root = entry(1, "/orders/{id}", 1000);
         Span.Builder outbound = call(root, 100, "/api/books/1", NOW, 900);
-        decoder.accept(Otlp.traces(Otlp.service("orders"), root, outbound));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), root, outbound));
         // The callee's own server span and query, under the caller's outbound call.
         Span.Builder downstream = Otlp.child(outbound, spanId(200), "GET /api/books/{id}",
                 Span.SpanKind.SPAN_KIND_SERVER, NOW, 880,
                 Otlp.attr("http.request.method", "GET"),
                 Otlp.attr("http.route", "/api/books/{id}"),
                 Otlp.attr("http.response.status_code", 200));
-        decoder.accept(Otlp.traces(Otlp.service("bookstore"), downstream,
+        decoder.ingest(Otlp.traces(Otlp.service("bookstore"), downstream,
                 query(downstream, 201, "select * from book where id = ?", "book", NOW, 850)));
         flush();
 
@@ -906,8 +906,8 @@ class FindingsTest {
 
     @Test
     void anErrorLogNoTraceReportsIsALogError() {
-        decoder.accept(Otlp.traces(Otlp.service("orders"), entry(1, "/orders/{id}", 10)));
-        decoder.accept(Otlp.logs(Otlp.service("orders"), "orders.web.OrderController",
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), entry(1, "/orders/{id}", 10)));
+        decoder.ingest(Otlp.logs(Otlp.service("orders"), "orders.web.OrderController",
                 Otlp.log(NOW, 17, "Payment gateway timeout for order 42", traceId(1), spanId(1)),
                 Otlp.log(NOW + 1, 17, "Payment gateway timeout for order 43", traceId(1), spanId(1),
                         Otlp.attr("exception.stacktrace", STACKTRACE))));
@@ -945,8 +945,8 @@ class FindingsTest {
     void anErrorLogOnAFailedTraceIsNotCountedTwice() {
         Span.Builder failing = Otlp.failing(entry(1, "/orders/{id}", 10),
                 "java.lang.IllegalStateException", "no such order 42", STACKTRACE);
-        decoder.accept(Otlp.traces(Otlp.service("orders"), failing));
-        decoder.accept(Otlp.logs(Otlp.service("orders"), "orders.web.OrderController",
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), failing));
+        decoder.ingest(Otlp.logs(Otlp.service("orders"), "orders.web.OrderController",
                 Otlp.log(NOW, 17, "no such order 42", traceId(1), spanId(1))));
         flush();
 
@@ -958,8 +958,8 @@ class FindingsTest {
 
     @Test
     void aWarningIsNotALogError() {
-        decoder.accept(Otlp.traces(Otlp.service("orders"), entry(1, "/orders/{id}", 10)));
-        decoder.accept(Otlp.logs(Otlp.service("orders"), "orders.web.OrderController",
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), entry(1, "/orders/{id}", 10)));
+        decoder.ingest(Otlp.logs(Otlp.service("orders"), "orders.web.OrderController",
                 Otlp.log(NOW, 13, "Retrying the payment gateway", traceId(1), spanId(1))));
         flush();
 
@@ -968,7 +968,7 @@ class FindingsTest {
 
     @Test
     void aLongCollectionIsAGcPause() {
-        decoder.accept(Otlp.traces(Otlp.service("orders"), entry(1, "/orders", 10)));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), entry(1, "/orders", 10)));
         gc(NOW - 1000, 1, 0.01, 0.01);
         gc(NOW, 2, 0.62, 0.61);
         flush();
@@ -992,7 +992,7 @@ class FindingsTest {
 
     @Test
     void aLongCollectionBeforeTheWindowIsNoGcPauseInIt() {
-        decoder.accept(Otlp.traces(Otlp.service("orders"), entry(1, "/orders", 10)));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), entry(1, "/orders", 10)));
         gc(NOW - 1000, 2, 0.62, 0.61);
         gc(NOW, 3, 0.63, 0.61);
         flush();
@@ -1002,7 +1002,7 @@ class FindingsTest {
 
     @Test
     void shortCollectionsAreNoFinding() {
-        decoder.accept(Otlp.traces(Otlp.service("orders"), entry(1, "/orders", 10)));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), entry(1, "/orders", 10)));
         gc(NOW - 1000, 10, 0.02, 0.004);
         gc(NOW, 20, 0.04, 0.004);
         flush();
@@ -1011,7 +1011,7 @@ class FindingsTest {
     }
 
     private void gc(long at, long count, double sum, double max) {
-        decoder.accept(Otlp.histogram(Otlp.service("orders"), "jvm.gc.duration", "s",
+        decoder.ingest(Otlp.histogram(Otlp.service("orders"), "jvm.gc.duration", "s",
                 at, count, sum, max,
                 Otlp.attr("jvm.gc.name", "G1 Young Generation"),
                 Otlp.attr("jvm.gc.action", "end of minor GC")));
@@ -1019,7 +1019,7 @@ class FindingsTest {
 
     @Test
     void aHeapNearItsLimitIsHeapPressure() {
-        decoder.accept(Otlp.traces(Otlp.service("orders"), entry(1, "/orders", 10)));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), entry(1, "/orders", 10)));
         heap(NOW - 1000, 400_000_000, 1_000_000_000);
         heap(NOW, 950_000_000, 1_000_000_000);
         flush();
@@ -1040,7 +1040,7 @@ class FindingsTest {
 
     @Test
     void aHeapWithRoomIsNoFinding() {
-        decoder.accept(Otlp.traces(Otlp.service("orders"), entry(1, "/orders", 10)));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), entry(1, "/orders", 10)));
         heap(NOW, 400_000_000, 1_000_000_000);
         flush();
 
@@ -1048,17 +1048,17 @@ class FindingsTest {
     }
 
     private void heap(long at, double used, double limit) {
-        decoder.accept(Otlp.gauge(Otlp.service("orders"), "jvm.memory.used", "By", at, used,
+        decoder.ingest(Otlp.gauge(Otlp.service("orders"), "jvm.memory.used", "By", at, used,
                 Otlp.attr("jvm.memory.type", "heap"),
                 Otlp.attr("jvm.memory.pool.name", "G1 Old Gen")));
-        decoder.accept(Otlp.gauge(Otlp.service("orders"), "jvm.memory.limit", "By", at, limit,
+        decoder.ingest(Otlp.gauge(Otlp.service("orders"), "jvm.memory.limit", "By", at, limit,
                 Otlp.attr("jvm.memory.type", "heap"),
                 Otlp.attr("jvm.memory.pool.name", "G1 Old Gen")));
     }
 
     @Test
     void threadsThatKeepGrowingAreAFinding() {
-        decoder.accept(Otlp.traces(Otlp.service("orders"), entry(1, "/orders", 10)));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), entry(1, "/orders", 10)));
         threads(NOW - 1000, 40);
         threads(NOW, 140);
         flush();
@@ -1079,7 +1079,7 @@ class FindingsTest {
 
     @Test
     void aSteadyThreadCountIsNoFinding() {
-        decoder.accept(Otlp.traces(Otlp.service("orders"), entry(1, "/orders", 10)));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), entry(1, "/orders", 10)));
         threads(NOW - 1000, 40);
         threads(NOW, 50);
         flush();
@@ -1088,12 +1088,12 @@ class FindingsTest {
     }
 
     private void threads(long at, double count) {
-        decoder.accept(Otlp.gauge(Otlp.service("orders"), "jvm.thread.count", "{thread}", at, count));
+        decoder.ingest(Otlp.gauge(Otlp.service("orders"), "jvm.thread.count", "{thread}", at, count));
     }
 
     @Test
     void theLimitIsHonoured() {
-        decoder.accept(Otlp.traces(Otlp.service("orders"),
+        decoder.ingest(Otlp.traces(Otlp.service("orders"),
                 entry(1, "/a", 900), entry(2, "/b", 900), entry(3, "/c", 900)));
         flush();
 
@@ -1104,7 +1104,7 @@ class FindingsTest {
 
     /** Three slow endpoints, so the acknowledged one has somewhere to fall to. */
     private void threeSlowEndpoints() {
-        decoder.accept(Otlp.traces(Otlp.service("orders"),
+        decoder.ingest(Otlp.traces(Otlp.service("orders"),
                 entry(1, "/a", 2000), entry(2, "/b", 1500), entry(3, "/c", 900)));
         flush();
     }
@@ -1231,7 +1231,7 @@ class FindingsTest {
 
     @Test
     void anOccurrenceAfterAResolutionInsideTheWindowIsTheRegressionsEvidence() {
-        decoder.accept(Otlp.traces(Otlp.service("orders"),
+        decoder.ingest(Otlp.traces(Otlp.service("orders"),
                 entryAt(1, "/a", NOW - 20_000, 2000), entryAt(2, "/a", NOW + 20_000, 3000)));
         flush();
         String id = findings.findings(window, null, 20).get(0).id();
@@ -1262,11 +1262,11 @@ class FindingsTest {
 
     @Test
     void aFindingIsNewUnlessThePreviousRunOfItsServiceHadItToo() {
-        decoder.accept(Otlp.traces(Otlp.service("orders"),
+        decoder.ingest(Otlp.traces(Otlp.service("orders"),
                 entryAt(1, "/a", NOW - 50_000, 2000)));
         flush();
         store.marks().create("start", "orders", "pid 2", NOW - 30_000);
-        decoder.accept(Otlp.traces(Otlp.service("orders"),
+        decoder.ingest(Otlp.traces(Otlp.service("orders"),
                 entryAt(2, "/a", NOW, 2000), entryAt(3, "/b", NOW, 1500)));
         flush();
 
@@ -1281,12 +1281,12 @@ class FindingsTest {
 
     @Test
     void theRunBeforeTheOneBeforeDoesNotCount() {
-        decoder.accept(Otlp.traces(Otlp.service("orders"),
+        decoder.ingest(Otlp.traces(Otlp.service("orders"),
                 entryAt(1, "/a", NOW - 50_000, 2000)));
         flush();
         store.marks().create("start", "orders", "pid 2", NOW - 40_000);
         store.marks().create("start", "orders", "pid 3", NOW - 30_000);
-        decoder.accept(Otlp.traces(Otlp.service("orders"), entryAt(2, "/a", NOW, 2000)));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), entryAt(2, "/a", NOW, 2000)));
         flush();
 
         List<Findings.Finding> ranked = findings.findings(Window.of(NOW - 30_000, NOW + 60_000), null, 20);
@@ -1312,8 +1312,8 @@ class FindingsTest {
             spans.add(query(root, 100 + i, "select * from order_line where order_id = ?", "order_line",
                     NOW + i, 2));
         }
-        decoder.accept(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
-        decoder.accept(Otlp.traces(Otlp.service("stock"), entry(2, "/stock", 5)));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
+        decoder.ingest(Otlp.traces(Otlp.service("stock"), entry(2, "/stock", 5)));
         flush();
 
         List<Findings.Finding> named = findings.findings(window, "orders", 20);
@@ -1337,10 +1337,10 @@ class FindingsTest {
 
     @Test
     void whatThePreviousRunHadIsAskedOnceAndKept() {
-        decoder.accept(Otlp.traces(Otlp.service("orders"), entryAt(1, "/a", NOW - 50_000, 2000)));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), entryAt(1, "/a", NOW - 50_000, 2000)));
         flush();
         store.marks().create("start", "orders", "pid 2", NOW - 30_000);
-        decoder.accept(Otlp.traces(Otlp.service("orders"),
+        decoder.ingest(Otlp.traces(Otlp.service("orders"),
                 entryAt(2, "/a", NOW, 2000), entryAt(3, "/b", NOW, 1500)));
         flush();
         Window afterRestart = Window.of(NOW - 30_000, NOW + 60_000);
@@ -1348,7 +1348,7 @@ class FindingsTest {
                 .containsExactly(Findings.ONGOING, Findings.NEW);
 
         // A span of the closed run arriving late changes nothing the server already knows.
-        decoder.accept(Otlp.traces(Otlp.service("orders"), entryAt(4, "/b", NOW - 45_000, 1500)));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), entryAt(4, "/b", NOW - 45_000, 1500)));
         flush();
 
         assertThat(findings.findings(afterRestart, null, 20)).extracting(Findings.Finding::state)
@@ -1368,7 +1368,7 @@ class FindingsTest {
             spans.add(query(root, n * 100 + i, "select * from order_line where order_id = ?", "order_line",
                     at + i, 2));
         }
-        decoder.accept(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
         flush();
     }
 }

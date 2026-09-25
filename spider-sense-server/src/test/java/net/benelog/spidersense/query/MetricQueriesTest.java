@@ -63,17 +63,17 @@ class MetricQueriesTest {
             MetricQueries metrics = new MetricQueries(store.sql());
             Window window = Window.of(now - 60_000, now + 60_000);
             Runnable serviceB = () -> {
-                decoder.accept(Otlp.sum(Otlp.service("service-b"), "requests.total", "1", now, 5, true,
+                decoder.ingest(Otlp.sum(Otlp.service("service-b"), "requests.total", "1", now, 5, true,
                         AggregationTemporality.AGGREGATION_TEMPORALITY_DELTA));
-                decoder.accept(Otlp.sum(Otlp.service("service-b"), "requests.total", "1", now + 1000, 7,
+                decoder.ingest(Otlp.sum(Otlp.service("service-b"), "requests.total", "1", now + 1000, 7,
                         true, AggregationTemporality.AGGREGATION_TEMPORALITY_DELTA));
                 store.writer().awaitIdle(5_000);
             };
             if (serviceBFirst) {
                 serviceB.run();
             }
-            decoder.accept(Otlp.sum(Otlp.service("service-a"), "requests.total", "1", now, 100, true));
-            decoder.accept(Otlp.sum(Otlp.service("service-a"), "requests.total", "1", now + 1000, 110, true));
+            decoder.ingest(Otlp.sum(Otlp.service("service-a"), "requests.total", "1", now, 100, true));
+            decoder.ingest(Otlp.sum(Otlp.service("service-a"), "requests.total", "1", now + 1000, 110, true));
             store.writer().awaitIdle(5_000);
             if (!serviceBFirst) {
                 serviceB.run();

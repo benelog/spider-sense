@@ -65,7 +65,7 @@ class ExportCommandTest {
         Config config = TestStore.config();
         SpiderSenseServer server = SpiderSenseServer.start(config);
         try {
-            new OtlpDecoder(server.store(), server::port).accept(sample());
+            new OtlpDecoder(server.store(), server::port).ingest(sample());
             server.store().writer().awaitIdle(5_000);
             body.accept(server, "http://127.0.0.1:" + server.port());
         } finally {

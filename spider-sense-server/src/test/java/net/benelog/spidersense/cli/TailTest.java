@@ -209,7 +209,7 @@ class TailTest {
                     Thread.currentThread().interrupt();
                     return;
                 }
-                new OtlpDecoder(server.store(), server::port).accept(sample());
+                new OtlpDecoder(server.store(), server::port).ingest(sample());
                 server.store().writer().awaitIdle(5_000);
             });
             traffic.setDaemon(true);

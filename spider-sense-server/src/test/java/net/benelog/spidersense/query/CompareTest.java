@@ -52,7 +52,7 @@ class CompareTest {
     }
 
     private void send(Span.Builder... spans) {
-        decoder.accept(Otlp.traces(Otlp.service("orders"), spans));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), spans));
     }
 
     private Map<String, String> endpointVerdicts() {

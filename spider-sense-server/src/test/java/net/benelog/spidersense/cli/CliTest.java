@@ -78,7 +78,7 @@ class CliTest {
         SpiderSenseServer server = SpiderSenseServer.start(config);
         try {
             if (withData) {
-                new OtlpDecoder(server.store(), server::port).accept(sample());
+                new OtlpDecoder(server.store(), server::port).ingest(sample());
                 server.store().writer().awaitIdle(5_000);
             }
             body.accept(server, "http://127.0.0.1:" + server.port());
@@ -394,7 +394,7 @@ class CliTest {
         String url = TestStore.memoryUrl();
         String db = "--db=" + url;
         try (Store store = new Store(url, null, 24, 500, 100, null)) {
-            new OtlpDecoder(store, () -> 4000).accept(sample());
+            new OtlpDecoder(store, () -> 4000).ingest(sample());
             store.writer().awaitIdle(5_000);
         }
 

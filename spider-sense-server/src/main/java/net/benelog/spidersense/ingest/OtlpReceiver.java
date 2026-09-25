@@ -61,28 +61,28 @@ public final class OtlpReceiver {
     }
 
     public WebResponse traces(WebRequest req) {
-        return receive(req, ExportTraceServiceRequest.newBuilder(), request -> decoder.accept(request.build()),
+        return receive(req, ExportTraceServiceRequest.newBuilder(), builder -> decoder.ingest(builder.build()),
                 ExportTraceServiceResponse.getDefaultInstance());
     }
 
     public WebResponse metrics(WebRequest req) {
-        return receive(req, ExportMetricsServiceRequest.newBuilder(), request -> decoder.accept(request.build()),
+        return receive(req, ExportMetricsServiceRequest.newBuilder(), builder -> decoder.ingest(builder.build()),
                 ExportMetricsServiceResponse.getDefaultInstance());
     }
 
     public WebResponse logs(WebRequest req) {
-        return receive(req, ExportLogsServiceRequest.newBuilder(), request -> decoder.accept(request.build()),
+        return receive(req, ExportLogsServiceRequest.newBuilder(), builder -> decoder.ingest(builder.build()),
                 ExportLogsServiceResponse.getDefaultInstance());
     }
 
-    private <B extends Message.Builder> WebResponse receive(WebRequest req, B request, Consumer<B> accept,
+    private <B extends Message.Builder> WebResponse receive(WebRequest req, B builder, Consumer<B> ingest,
             Message response) {
         String encoding = encodingOf(req);
         if (encoding == null) {
             return unsupported(req);
         }
         try {
-            parse(req, encoding, request);
+            parse(req, encoding, builder);
         } catch (RequestBody.TooLarge e) {
             return error(HttpStatus.CONTENT_TOO_LARGE, e.getMessage());
         } catch (InvalidProtocolBufferException e) {
@@ -91,7 +91,7 @@ public final class OtlpReceiver {
             // A gzip body that is not gzip, or is cut short: undecodable as much as bad protobuf.
             return error(HttpStatus.BAD_REQUEST, "Undecodable OTLP body: " + e.getMessage());
         }
-        accept.accept(request);
+        ingest.accept(builder);
         if (awaitWrites) {
             writer.awaitIdle(5_000);
         }

@@ -179,7 +179,7 @@ public final class Cli {
         }
         java.util.Properties settings = new java.util.Properties();
         for (String key : List.of("spidersense.collector", "spidersense.host", "spidersense.port")) {
-            String value = Config.setting(key);
+            String value = Config.propertyOrEnv(key);
             if (value != null) {
                 settings.setProperty(key, value);
             }

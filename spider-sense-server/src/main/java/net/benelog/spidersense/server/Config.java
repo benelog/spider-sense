@@ -119,7 +119,7 @@ public record Config(
             }
         }
         Settings settings = new Settings(values, given, property, warn);
-        Numbers numbers = new Numbers(settings);
+        NumericSettings numbers = new NumericSettings(settings);
         boolean agent = AGENT.equalsIgnoreCase(settings.string("mode", STANDALONE));
         return new Config(
                 settings.string("host", DEFAULT_HOST),
@@ -151,12 +151,12 @@ public record Config(
      * The {@code spidersense.*} setting outside the arguments: the system property,
      * else the environment variable of the same name, else null.
      */
-    public static @Nullable String setting(String property) {
-        return setting(property, System::getProperty, System::getenv);
+    public static @Nullable String propertyOrEnv(String property) {
+        return propertyOrEnv(property, System::getProperty, System::getenv);
     }
 
     /** The same with the properties and the environment given. */
-    static @Nullable String setting(String name, Function<String, @Nullable String> property,
+    static @Nullable String propertyOrEnv(String name, Function<String, @Nullable String> property,
             Function<String, @Nullable String> env) {
         String value = property.apply(name);
         if (value == null) {
@@ -266,7 +266,7 @@ public record Config(
         }
         // configuration.adoc#properties names the launcher's own property spidersense.service; when the
         // launcher was told the name that way, it is the same answer.
-        return setting("spidersense.service", property, env);
+        return propertyOrEnv("spidersense.service", property, env);
     }
 
     /**
@@ -301,7 +301,7 @@ public record Config(
      * warning on stderr, and that key alone takes its default, so a typo in one key never stops
      * the embedded UI of an application that is otherwise unaffected.
      */
-    private record Numbers(Settings settings) {
+    private record NumericSettings(Settings settings) {
 
         /** The number, else null when nobody said anything: an unset cap is not a cap of zero. */
         @Nullable Long optionalNumber(String key) {

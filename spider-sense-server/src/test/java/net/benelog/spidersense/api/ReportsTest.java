@@ -50,7 +50,7 @@ class ReportsTest {
         try (Store store = new Store(config.jdbcUrl(), config.databaseFile(), config.retentionHours(),
                 config.slowRequestMs(), config.slowQueryMs(), null)) {
             OtlpDecoder decoder = new OtlpDecoder(store, () -> 4000);
-            decoder.accept(Otlp.traces(Otlp.service("orders"),
+            decoder.ingest(Otlp.traces(Otlp.service("orders"),
                     Otlp.span("%032x".formatted(1), "%016x".formatted(1), "GET /orders/report",
                             Span.SpanKind.SPAN_KIND_SERVER, NOW, 900,
                             Otlp.attr("http.request.method", "GET"),
@@ -108,7 +108,7 @@ class ReportsTest {
             OtlpDecoder decoder = new OtlpDecoder(store, () -> 4000);
             long before = NOW - 60_000;
             long after = NOW - 30_000;
-            decoder.accept(Otlp.traces(Otlp.service("orders"),
+            decoder.ingest(Otlp.traces(Otlp.service("orders"),
                     entry(1, "/at-after", after), entry(2, "/at-until", NOW)));
             store.writer().awaitIdle(5_000);
 
@@ -152,7 +152,7 @@ class ReportsTest {
         try (Store store = new Store(config.jdbcUrl(), config.databaseFile(), config.retentionHours(),
                 config.slowRequestMs(), config.slowQueryMs(), null)) {
             OtlpDecoder decoder = new OtlpDecoder(store, () -> 4000);
-            decoder.accept(Otlp.traces(Otlp.service("orders"),
+            decoder.ingest(Otlp.traces(Otlp.service("orders"),
                     Otlp.span("%032x".formatted(1), "%016x".formatted(1), "GET /orders/report",
                             Span.SpanKind.SPAN_KIND_SERVER, NOW, 900,
                             Otlp.attr("http.request.method", "GET"),
@@ -206,7 +206,7 @@ class ReportsTest {
                     .contains("Nothing has been received in this window.");
 
             OtlpDecoder decoder = new OtlpDecoder(store, () -> 4000);
-            decoder.accept(Otlp.traces(Otlp.service("orders"),
+            decoder.ingest(Otlp.traces(Otlp.service("orders"),
                     Otlp.span("%032x".formatted(1), "%016x".formatted(1), "GET /orders",
                             Span.SpanKind.SPAN_KIND_SERVER, NOW, 20,
                             Otlp.attr("http.request.method", "GET"),

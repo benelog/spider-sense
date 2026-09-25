@@ -140,7 +140,7 @@ class MarksTest {
     }
 
     private void export(String service, long pid, long at) {
-        decoder.accept(Otlp.traces(
+        decoder.ingest(Otlp.traces(
                 Otlp.resource(Otlp.attr("service.name", service),
                         Otlp.attr("telemetry.sdk.language", "java"),
                         Otlp.attr("process.pid", pid)),

@@ -110,7 +110,7 @@ public final class SourceRoots {
 
     /** {@code spidersense.source.dirs} of this JVM against its working directory. */
     public static SourceRoots fromSystemProperties() {
-        return of(Config.setting("spidersense.source.dirs"), Path.of(""));
+        return of(Config.propertyOrEnv("spidersense.source.dirs"), Path.of(""));
     }
 
     /** The roots that exist, in the order they are tried. */

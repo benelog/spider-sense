@@ -50,11 +50,11 @@ class SweeperTest {
                         Otlp.attr("http.request.method", "GET"),
                         Otlp.attr("http.route", "/orders"),
                         Otlp.attr("http.response.status_code", 200));
-                decoder.accept(Otlp.traces(Otlp.service("orders"), root));
-                decoder.accept(Otlp.logs(Otlp.service("orders"), "orders.Web",
+                decoder.ingest(Otlp.traces(Otlp.service("orders"), root));
+                decoder.ingest(Otlp.logs(Otlp.service("orders"), "orders.Web",
                         Otlp.log(at, 9, "served", "%032x".formatted(n), "%016x".formatted(n))));
             }
-            decoder.accept(Otlp.gauge(Otlp.service("orders"), "jvm.memory.used", "By",
+            decoder.ingest(Otlp.gauge(Otlp.service("orders"), "jvm.memory.used", "By",
                     hour(h), 1024 * h));
         }
         store.writer().awaitIdle(10_000);

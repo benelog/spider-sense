@@ -39,7 +39,7 @@ import org.jspecify.annotations.Nullable;
  * rejected, which is what the API contract promises.
  *
  * <p>Two steps, kept apart: the static {@code decode} methods are pure, a request and the time
- * in, every record, catalog row and service sighting out, and the {@code accept} methods are
+ * in, every record, catalog row and service sighting out, and the {@code ingest} methods are
  * the ingest around them, which registers the sightings, drops our own traffic and what the
  * ingest cap refuses, raises the tingles and hands the batch to the writer.
  */
@@ -67,7 +67,7 @@ public final class OtlpDecoder {
      *
      * @return the batch that was queued, for tests that want to see what was decoded
      */
-    public Batch accept(ExportTraceServiceRequest request) {
+    public Batch ingest(ExportTraceServiceRequest request) {
         Batch decoded = decode(request, store.clock().getAsLong());
         Batch batch = sightings(decoded);
         int port = ownPort.getAsInt();
@@ -99,7 +99,7 @@ public final class OtlpDecoder {
             for (ScopeSpans scopeSpans : resourceSpans.getScopeSpansList()) {
                 String scope = scopeSpans.getScope().getName();
                 for (Span span : scopeSpans.getSpansList()) {
-                    SpanRecord record = toRecord(span, service, scope);
+                    SpanRecord record = spanRecord(span, service, scope);
                     if (record != null) {
                         batch.add(record);
                     }
@@ -155,7 +155,7 @@ public final class OtlpDecoder {
      * skipped rather than refused, so the rest of its export is still stored.
      * A parent id that is not a valid span id is read as none.
      */
-    private static @Nullable SpanRecord toRecord(Span span, String service, String scope) {
+    private static @Nullable SpanRecord spanRecord(Span span, String service, String scope) {
         String traceId = Attrs.traceId(span.getTraceId());
         String spanId = Attrs.spanId(span.getSpanId());
         if (traceId == null || spanId == null) {
@@ -203,7 +203,7 @@ public final class OtlpDecoder {
 
     // --- metrics ---
 
-    public Batch accept(ExportMetricsServiceRequest request) {
+    public Batch ingest(ExportMetricsServiceRequest request) {
         Batch decoded = decode(request, store.clock().getAsLong());
         Batch batch = sightings(decoded);
         decoded.metrics().forEach(batch::add);
@@ -220,14 +220,14 @@ public final class OtlpDecoder {
             batch.saw(new Batch.Sighting(service, resource, now));
             for (ScopeMetrics scopeMetrics : resourceMetrics.getScopeMetricsList()) {
                 for (Metric metric : scopeMetrics.getMetricsList()) {
-                    accept(batch, service, metric);
+                    addMetric(batch, service, metric);
                 }
             }
         }
         return batch;
     }
 
-    private static void accept(Batch batch, String service, Metric metric) {
+    private static void addMetric(Batch batch, String service, Metric metric) {
         String name = fit(metric.getName());
         String unit = metric.getUnit();
         String description = metric.getDescription();
@@ -339,7 +339,7 @@ public final class OtlpDecoder {
 
     // --- logs ---
 
-    public Batch accept(ExportLogsServiceRequest request) {
+    public Batch ingest(ExportLogsServiceRequest request) {
         Batch decoded = decode(request, store.clock().getAsLong());
         Batch batch = sightings(decoded);
         decoded.logs().forEach(batch::add);
@@ -366,7 +366,7 @@ public final class OtlpDecoder {
                     if (catalog != null) {
                         batch.add(catalog);
                     } else {
-                        batch.add(toRecord(record, service, logger, now, attributes));
+                        batch.add(logRecord(record, service, logger, now, attributes));
                     }
                 }
             }
@@ -419,7 +419,7 @@ public final class OtlpDecoder {
      * The id is 0 here: the {@code log} table assigns it, and the reads report what it assigned.
      * A trace or span id that is not a valid one is read as none, so the line is kept uncorrelated.
      */
-    private static LogRecord toRecord(io.opentelemetry.proto.logs.v1.LogRecord record, String service,
+    private static LogRecord logRecord(io.opentelemetry.proto.logs.v1.LogRecord record, String service,
             String logger, long now, Map<String, Object> attributes) {
         int severityNumber = record.getSeverityNumberValue();
         return new LogRecord(
