@@ -7,6 +7,7 @@ import { stackTrace } from '../sql.js';
 import { timeMs, bothTimes, count, shortId } from '../format.js';
 
 const SEVERITIES = ['TRACE', 'DEBUG', 'INFO', 'WARN', 'ERROR'];
+const LIMIT = 200;
 
 export function render(root, ctx) {
   let destroyed = false;
@@ -15,6 +16,10 @@ export function render(root, ctx) {
   let total = 0;
   let node = null;
   const expanded = new Set();
+  // Set once Load more has fetched a page further back: a Live tick then merges the newest
+  // page into the rows instead of replacing them, for the view the rows were loaded for.
+  let pagedBack = false;
+  let loadedFor = '';
 
   const filter = {
     q: ctx.query.q || '',
@@ -129,23 +134,53 @@ export function render(root, ctx) {
         stack ? stackTrace(stack) : null)));
   }
 
-  /** `cursor` is the last row's `{ before: at, beforeId: id }` when loading more. */
+  /** The top-bar state and the filter the rows answer: a change of either starts over. */
+  function viewKey() {
+    return JSON.stringify([api.state.service, api.state.range, filter.q, filter.severity, filter.traceId]);
+  }
+
+  /**
+   * The newest page merged into the rows already loaded, newest first by `at` then `id`, less
+   * the rows the window has left; null when the page does not reach them, and a gap would open.
+   */
+  function merged(incoming, from) {
+    const known = new Set(rows.map((l) => l.id));
+    const fresh = incoming.filter((l) => !known.has(l.id));
+    if (fresh.length === incoming.length && incoming.length >= LIMIT) return null;
+    return fresh.concat(rows)
+      .filter((l) => l.at >= from)
+      .sort((a, b) => (b.at - a.at) || (b.id - a.id));
+  }
+
+  /**
+   * `cursor` is the last row's `{ before: at, beforeId: id }` when loading more. Without one,
+   * the newest page replaces the rows, except under a Live tick after Load more, which merges it.
+   */
   async function load(cursor) {
     const current = latest();
+    const key = viewKey();
+    const tail = !cursor && pagedBack && key === loadedFor && rows.length > 0;
+    const w = api.windowFor();
     try {
       const res = await api.logs({
-        q: filter.q, severity: filter.severity, traceId: filter.traceId, limit: 200,
+        q: filter.q, severity: filter.severity, traceId: filter.traceId, limit: LIMIT,
         before: cursor && cursor.before, beforeId: cursor && cursor.beforeId,
-      });
+      }, { window: w });
       if (destroyed || !current()) return;
       const incoming = res.logs || [];
       total = res.total || incoming.length;
+      const kept = tail ? merged(incoming, w.from) : null;
       if (cursor) {
         const seen = new Set(rows.map((l) => l.id));
         rows = rows.concat(incoming.filter((l) => !seen.has(l.id)));
+        pagedBack = true;
+      } else if (kept) {
+        rows = kept;
       } else {
         rows = incoming;
+        pagedBack = false;
       }
+      loadedFor = key;
       if (!rows.length && !filter.q && !filter.severity && !filter.traceId
           && !((api.state.status || {}).counts || {}).logs) {
         node = null;
