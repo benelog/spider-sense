@@ -103,7 +103,7 @@ class TextTest {
         numbers.put("notes", List.of("one\ntwo"));
         Findings.Finding finding = new Findings.Finding("error:abcdefabcdef", "error", "high", "svc",
                 "Table \"X\" not found", "3 occurrences in GET /a; " + H2_MESSAGE,
-                new Findings.Subject(null, null, "abcdefabcdef", null, null, null, null, null),
+                Findings.Subject.error("abcdefabcdef"),
                 numbers, null, List.of(), List.of());
 
         String text = Text.findings(WINDOW, null, 3, List.of(finding), false, "http://localhost:4000");

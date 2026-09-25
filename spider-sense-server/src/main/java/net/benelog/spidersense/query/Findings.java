@@ -109,10 +109,65 @@ public final class Findings {
     private static final int THREADS_GROWN_BY = 50;
     private static final int THREADS_DOUBLED_FROM = 20;
 
-    /** Which group a finding is about; the fields that do not apply are null. */
+    /**
+     * Which group a finding is about; the fields that do not apply are null.
+     *
+     * <p>A rule builds one with the factory named after what it is about, so a call
+     * site says which field it sets rather than where it sits among eight strings.
+     */
     public record Subject(@Nullable String endpointId, @Nullable String queryId,
             @Nullable String errorId, @Nullable String pool, @Nullable String job,
             @Nullable String target, @Nullable String logger, @Nullable String jvm) {
+
+        /** A {@code slow-endpoint}: one endpoint. */
+        public static Subject endpoint(String endpointId) {
+            return new Subject(endpointId, null, null, null, null, null, null, null);
+        }
+
+        /** A {@code slow-query}: one query group. */
+        public static Subject query(String queryId) {
+            return new Subject(null, queryId, null, null, null, null, null, null);
+        }
+
+        /** An {@code error}: one error group. */
+        public static Subject error(String errorId) {
+            return new Subject(null, null, errorId, null, null, null, null, null);
+        }
+
+        /** A {@code pool-exhausted}: one connection pool. */
+        public static Subject pool(String name) {
+            return new Subject(null, null, null, name, null, null, null, null);
+        }
+
+        /** A {@code slow-job}: one job, by its span name. */
+        public static Subject job(String name) {
+            return new Subject(null, null, null, null, name, null, null, null);
+        }
+
+        /** A {@code slow-external}: one dependency target. */
+        public static Subject target(String target) {
+            return new Subject(null, null, null, null, null, target, null, null);
+        }
+
+        /** A {@code log-error}: one logger. */
+        public static Subject logger(String logger) {
+            return new Subject(null, null, null, null, null, null, logger, null);
+        }
+
+        /** A JVM finding: {@code heap}, {@code threads} or {@code gc:<collector>}. */
+        public static Subject jvm(String what) {
+            return new Subject(null, null, null, null, null, null, null, what);
+        }
+
+        /** An {@code n-plus-one}: one statement repeated under one endpoint. */
+        public static Subject repeatedQuery(String endpointId, String queryId) {
+            return new Subject(endpointId, queryId, null, null, null, null, null, null);
+        }
+
+        /** An {@code n-plus-one-http}: one call repeated under one endpoint, by its target. */
+        public static Subject repeatedCall(String endpointId, String target) {
+            return new Subject(endpointId, null, null, null, null, target, null, null);
+        }
     }
 
     /** When a finding was acknowledged, and why (findings.adoc#acknowledgements). */
@@ -601,7 +656,7 @@ public final class Findings {
                     ERROR, HIGH, group.service(),
                     simpleName(group.type()) + " in " + where,
                     Numbers.plural(group.count(), "occurrence") + " in " + where + "; " + group.message(),
-                    new Subject(null, null, group.errorId(), null, null, null, null, null),
+                    Subject.error(group.errorId()),
                     numbers, null,
                     frames.ofStacktrace(stacktrace),
                     evidence ? traceIds(queries.tracesContaining(window, "error_id = ?",
@@ -722,7 +777,7 @@ public final class Findings {
                     "ERROR in " + simpleName(group.logger) + ": " + cut(group.message, MESSAGE_IN_TITLE),
                     Numbers.plural(group.count, "record") + " in " + seenIn
                             + ", none of them on a failed trace; " + group.message,
-                    new Subject(null, null, null, null, null, null, group.logger, null),
+                    Subject.logger(group.logger),
                     numbers, null,
                     frames.ofStacktrace(stacktraceOf(AttrJson.decode(group.attributes))),
                     List.copyOf(traces));
@@ -901,7 +956,7 @@ public final class Findings {
                     affected.size() + " of " + Numbers.plural(requests, "request") + " repeated it; "
                             + counts(repeats) + " times; " + Numbers.millis(msPerRequest)
                             + " per request in that statement",
-                    new Subject(first.endpointId(), first.queryId(), null, null, null, null, null, null),
+                    Subject.repeatedQuery(first.endpointId(), first.queryId()),
                     numbers, first.statement(),
                     code,
                     List.copyOf(traces))
@@ -1042,7 +1097,7 @@ public final class Findings {
                     affected.size() + " of " + Numbers.plural(requests, "request") + " repeated it; "
                             + counts(repeats) + " times; " + Numbers.millis(msPerRequest)
                             + " per request in that call",
-                    new Subject(first.endpointId(), null, null, null, null, first.target(), null, null),
+                    Subject.repeatedCall(first.endpointId(), first.target()),
                     numbers, null, code, List.copyOf(traces));
             found.add(new Ranked(finding, affected.size() * (double) median));
         });
@@ -1116,7 +1171,7 @@ public final class Findings {
                             + Numbers.plural(query.calls(), "call") + ", "
                             + query.slowCalls() + " of them over " + tingles.slowQueryMs() + " ms; "
                             + Numbers.millis(query.totalMs()) + " in total",
-                    new Subject(null, query.queryId(), null, null, null, null, null, null),
+                    Subject.query(query.queryId()),
                     numbers, query.statement(),
                     frames.ofAttributes(samples.get(query.queryId())),
                     evidence ? traceIds(queries.tracesContaining(window, "query_id = ?",
@@ -1187,7 +1242,7 @@ public final class Findings {
                             + Numbers.number(perRequest) + " database calls and "
                             + Numbers.millis(msPerRequest) + " per request, "
                             + Numbers.percent(share) + " of the time",
-                    new Subject(endpoint.endpointId(), null, null, null, null, null, null, null),
+                    Subject.endpoint(endpoint.endpointId()),
                     numbers, null, List.of(), traces);
             found.add(new Ranked(finding, endpoint.totalMs()));
         }
@@ -1264,7 +1319,7 @@ public final class Findings {
                             + Numbers.number(perRun) + " database calls and "
                             + Numbers.millis(msPerRun) + " per run, "
                             + Numbers.percent(share) + " of the time",
-                    new Subject(null, null, null, null, job.name(), null, null, null),
+                    Subject.job(job.name()),
                     numbers, null,
                     evidence ? frames.ofAttributes(newestRun(window, job)) : List.of(), traces);
             found.add(new Ranked(finding, job.totalMs()));
@@ -1399,7 +1454,7 @@ public final class Findings {
                         + Numbers.plural(calls.size(), "call") + ", "
                         + Numbers.plural(errors, "error") + "; "
                         + Numbers.millis(totalMs) + " in total",
-                new Subject(null, null, null, null, null, target, null, null),
+                Subject.target(target),
                 numbers, null,
                 reads == null || newest == null ? List.of()
                         : frames.ofAttributes(attributesOf(newest.traceId(), newest.spanId())),
@@ -1533,7 +1588,7 @@ public final class Findings {
                 pool.name() + " ran out of connections",
                 "up to " + Numbers.number(usedMax) + " of " + limit + " connections in use and up to "
                         + Numbers.number(worstPending) + " requests waiting",
-                new Subject(null, null, null, pool.name(), null, null, null, null),
+                Subject.pool(pool.name()),
                 numbers, null, List.of(), List.of());
         return new Ranked(finding, worstPending * 1_000_000 + usedMax);
     }
@@ -1668,7 +1723,7 @@ public final class Findings {
                 "the longest single collection took " + Numbers.millis(worstMs) + " over "
                         + Numbers.plural(collections, "collection") + "; "
                         + Numbers.percent(shareMax) + " of an export interval at worst",
-                new Subject(null, null, null, null, null, null, null, "gc:" + name),
+                Subject.jvm("gc:" + name),
                 numbers, null, List.of(), List.of());
         return new Ranked(finding, worstMs);
     }
@@ -1709,7 +1764,7 @@ public final class Findings {
                 "heap at " + Numbers.percent(ratioMax) + " of its limit",
                 Numbers.number(usedMax / 1_048_576.0) + " MiB of "
                         + Numbers.number(limit / 1_048_576.0) + " MiB in use at the worst point",
-                new Subject(null, null, null, null, null, null, null, "heap"),
+                Subject.jvm("heap"),
                 numbers, null, List.of(), List.of());
         return new Ranked(finding, ratioMax);
     }
@@ -1754,7 +1809,7 @@ public final class Findings {
                         + Numbers.count((long) last),
                 Numbers.plural((long) (last - first), "thread") + " more than at the start of the"
                         + " window, peaking at " + Numbers.count((long) max),
-                new Subject(null, null, null, null, null, null, null, "threads"),
+                Subject.jvm("threads"),
                 numbers, null, List.of(), List.of());
         return new Ranked(finding, last - first);
     }
