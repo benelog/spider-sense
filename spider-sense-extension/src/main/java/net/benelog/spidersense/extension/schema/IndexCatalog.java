@@ -60,7 +60,6 @@ public final class IndexCatalog {
 
     /** The same threshold and the same reading of it as {@code SlowQuerySpanProcessor}. */
     static final String THRESHOLD_PROPERTY = "spidersense.slow.query.ms";
-    static final String THRESHOLD_ENV = "SPIDERSENSE_SLOW_QUERY_MS";
     static final long DEFAULT_THRESHOLD_MS = 100;
 
     /** What the sampler in the extension's own loader keys on; the two cannot share a constant. */
@@ -81,9 +80,8 @@ public final class IndexCatalog {
      * Read once, at class initialisation: this sits on the path of every statement the application
      * runs, and the value cannot change while it runs.
      *
-     * <p>{@code SlowQuerySpanProcessor} parses the same two settings with the same few lines. They
-     * are copied rather than shared because the processor lives in the extension's loader and this
-     * class in the application's, and neither can see the other.
+     * <p>{@code SlowQuerySpanProcessor} reads the same setting through the same {@link Settings},
+     * which is injected beside this class, so the two apply the one rule the server applies.
      */
     private static final long THRESHOLD_NANOS =
             TimeUnit.MILLISECONDS.toNanos(Math.max(0, configured()));
@@ -414,17 +412,8 @@ public final class IndexCatalog {
     }
 
     private static long configured() {
-        try {
-            String value = System.getProperty(THRESHOLD_PROPERTY);
-            if (value == null || value.isBlank()) {
-                value = System.getenv(THRESHOLD_ENV);
-            }
-            return value == null || value.isBlank()
-                    ? DEFAULT_THRESHOLD_MS
-                    : Long.parseLong(value.trim());
-        } catch (RuntimeException malformed) {
-            return DEFAULT_THRESHOLD_MS;
-        }
+        return Settings.millis(THRESHOLD_PROPERTY, DEFAULT_THRESHOLD_MS, System::getProperty,
+                System::getenv);
     }
 
     // ---------------------------------------------------------------- the scanner

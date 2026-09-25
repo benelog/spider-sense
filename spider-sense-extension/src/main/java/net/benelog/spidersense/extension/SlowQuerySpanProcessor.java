@@ -7,6 +7,7 @@ import io.opentelemetry.context.Context;
 import io.opentelemetry.sdk.trace.ReadWriteSpan;
 import io.opentelemetry.sdk.trace.ReadableSpan;
 import io.opentelemetry.sdk.trace.internal.ExtendedSpanProcessor;
+import net.benelog.spidersense.extension.schema.Settings;
 import org.jspecify.annotations.Nullable;
 import java.util.Iterator;
 import java.util.concurrent.ConcurrentHashMap;
@@ -78,12 +79,10 @@ public final class SlowQuerySpanProcessor implements ExtendedSpanProcessor {
 
     /** The same threshold the server calls a tingle, so what is captured is what gets reported. */
     static final String THRESHOLD_PROPERTY = "spidersense.slow.query.ms";
-    static final String THRESHOLD_ENV = "SPIDERSENSE_SLOW_QUERY_MS";
     static final long DEFAULT_THRESHOLD_MS = 100;
 
     /** The same again for an outbound call: the threshold the server calls a slow request. */
     static final String REQUEST_THRESHOLD_PROPERTY = "spidersense.slow.request.ms";
-    static final String REQUEST_THRESHOLD_ENV = "SPIDERSENSE_SLOW_REQUEST_MS";
     static final long DEFAULT_REQUEST_THRESHOLD_MS = 500;
 
     /** A finding wants a line to open, not a core dump. */
@@ -123,25 +122,15 @@ public final class SlowQuerySpanProcessor implements ExtendedSpanProcessor {
                 TimeUnit.MILLISECONDS.toNanos(Math.max(0, requestThresholdMillis));
     }
 
+    /** The property, else its variable, by {@link Settings#propertyOrEnv}; the server's rule. */
     static long configuredThresholdMillis() {
-        return configured(THRESHOLD_PROPERTY, THRESHOLD_ENV, DEFAULT_THRESHOLD_MS);
+        return Settings.millis(THRESHOLD_PROPERTY, DEFAULT_THRESHOLD_MS, System::getProperty,
+                System::getenv);
     }
 
     static long configuredRequestThresholdMillis() {
-        return configured(REQUEST_THRESHOLD_PROPERTY, REQUEST_THRESHOLD_ENV,
-                DEFAULT_REQUEST_THRESHOLD_MS);
-    }
-
-    private static long configured(String property, String environment, long fallback) {
-        try {
-            String value = System.getProperty(property);
-            if (value == null || value.isBlank()) {
-                value = System.getenv(environment);
-            }
-            return value == null || value.isBlank() ? fallback : Long.parseLong(value.trim());
-        } catch (RuntimeException e) {
-            return fallback;
-        }
+        return Settings.millis(REQUEST_THRESHOLD_PROPERTY, DEFAULT_REQUEST_THRESHOLD_MS,
+                System::getProperty, System::getenv);
     }
 
     @Override

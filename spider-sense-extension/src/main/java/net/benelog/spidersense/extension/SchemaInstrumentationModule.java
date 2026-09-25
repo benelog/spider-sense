@@ -37,7 +37,8 @@ public final class SchemaInstrumentationModule extends InstrumentationModule {
     private static final List<String> HELPERS = Collections.unmodifiableList(Arrays.asList(
             HELPER_PACKAGE + "IndexCatalog",
             HELPER_PACKAGE + "IndexCatalog$Word",
-            HELPER_PACKAGE + "IndexCatalog$Index"));
+            HELPER_PACKAGE + "IndexCatalog$Index",
+            HELPER_PACKAGE + "Settings"));
 
     public SchemaInstrumentationModule() {
         super("spider-sense-schema");
