@@ -95,6 +95,18 @@ final class SqlShape {
      */
     private static final Set<String> TYPE_WORDS = Set.of("timestamp", "time", "date", "interval", "with");
 
+    /**
+     * The units an {@code interval} is counted in ({@code interval ? day},
+     * {@code interval ? day to second}, MySQL's {@code interval ? hour_minute}):
+     * plain words, not keywords, and never a column.
+     */
+    private static final Set<String> INTERVAL_UNITS = Set.of(
+            "year", "years", "quarter", "quarters", "month", "months", "week", "weeks", "day", "days",
+            "hour", "hours", "minute", "minutes", "second", "seconds", "millisecond", "milliseconds",
+            "microsecond", "microseconds", "year_month", "day_hour", "day_minute", "day_second",
+            "day_microsecond", "hour_minute", "hour_second", "hour_microsecond", "minute_second",
+            "minute_microsecond", "second_microsecond");
+
     private enum Region { NONE, PREDICATE, ORDER }
 
     private final List<TableRef> tables = new ArrayList<>();
@@ -161,11 +173,25 @@ final class SqlShape {
                 i = skipType(tokens, i + 1);     // ?::uuid names a type, not a column
                 continue;
             }
+            if (token.isWord("at") && wordAt(tokens, i + 1, "time") && wordAt(tokens, i + 2, "zone")) {
+                i = skipOperand(tokens, i + 3);     // "created_at at time zone ?" names no column "zone"
+                continue;
+            }
+            if (token.isWord("against") && followedByParenthesis(tokens, i)) {
+                // MySQL's full-text search string and its modifier
+                // ("against (? in boolean mode)"); the columns are match()'s.
+                i = skipGroup(tokens, i + 2);
+                continue;
+            }
             String word = token.keyword();
             if (region == Region.PREDICATE && word != null && COLUMN_WORDS.contains(word)
                     && comparedAt(tokens, i + 1)) {
                 column(token);     // "where date = ?": the keyword is a column's name
                 i++;
+                continue;
+            }
+            if ("interval".equals(word)) {
+                i = skipInterval(tokens, i + 1);
                 continue;
             }
             if ("on".equals(word) && i + 1 < tokens.size()
@@ -259,6 +285,63 @@ final class SqlShape {
             i++;
         }
         return i;
+    }
+
+    /**
+     * Past an interval's operand and its unit: {@code interval ? day},
+     * {@code interval (? * 2) hour}, {@code interval ? day(3) to second}. The
+     * operand is skipped only when a unit follows it, so the {@code ?} of
+     * PostgreSQL's {@code interval ?} is left where it is.
+     */
+    private static int skipInterval(List<Token> tokens, int start) {
+        int i = start;
+        if (i < tokens.size() && tokens.get(i).is("(")) {
+            i = skipGroup(tokens, i + 1);
+        } else if (i + 1 < tokens.size() && !tokens.get(i).isKeyword()
+                && tokens.get(i).kind() != Token.Kind.PUNCTUATION && unit(tokens.get(i + 1))) {
+            i++;
+        }
+        while (i < tokens.size() && unit(tokens.get(i))) {
+            i++;
+            if (i < tokens.size() && tokens.get(i).is("(")) {
+                i = skipGroup(tokens, i + 1);     // the precision of "day(3)"
+            }
+            if (i + 1 < tokens.size() && tokens.get(i).isWord("to") && unit(tokens.get(i + 1))) {
+                i++;
+            }
+        }
+        return i;
+    }
+
+    private static boolean unit(Token token) {
+        return token.kind() == Token.Kind.NAME && !token.quoted() && token.parts().size() == 1
+                && INTERVAL_UNITS.contains(token.text());
+    }
+
+    /**
+     * Past the zone of an {@code at time zone}: a parameter, a name, a call or a
+     * parenthesised expression. A literal the tokenizer dropped leaves nothing to
+     * skip.
+     */
+    private static int skipOperand(List<Token> tokens, int start) {
+        if (start >= tokens.size()) {
+            return start;
+        }
+        Token token = tokens.get(start);
+        if (token.is("(")) {
+            return skipGroup(tokens, start + 1);
+        }
+        if (token.kind() == Token.Kind.PARAMETER) {
+            return start + 1;
+        }
+        if (token.kind() == Token.Kind.NAME && !token.isKeyword()) {
+            return followedByParenthesis(tokens, start) ? skipGroup(tokens, start + 2) : start + 1;
+        }
+        return start;
+    }
+
+    private static boolean wordAt(List<Token> tokens, int i, String word) {
+        return i < tokens.size() && tokens.get(i).isWord(word);
     }
 
     /**

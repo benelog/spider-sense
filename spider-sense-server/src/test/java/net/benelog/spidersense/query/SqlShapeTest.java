@@ -78,6 +78,30 @@ class SqlShapeTest {
                 .containsExactly("events.created", "events.kind");
     }
 
+    /** An interval's unit, a time zone and a full-text modifier are words of the expression. */
+    @Test
+    void anIntervalUnitATimeZoneAndAFullTextModifierAreNoColumns() {
+        assertThat(predicates("select * from orders where created_at > date_sub(now(), interval ? day)"))
+                .containsExactly("orders.created_at");
+        assertThat(predicates("select * from orders o where o.created_at >= now() - interval ? hour"
+                + " and o.status = ?"))
+                .containsExactly("orders.created_at", "orders.status");
+        assertThat(predicates("select * from orders where created_at > now() - interval 7 days"
+                + " and due_at < now() + interval ? day to second and paid_at > interval (? * 2) year_month"))
+                .containsExactly("orders.created_at", "orders.due_at", "orders.paid_at");
+        assertThat(predicates("select o.id from orders o where o.created_at at time zone ? > ?"
+                + " and o.status = ?"))
+                .containsExactly("orders.created_at", "orders.status");
+        assertThat(predicates("select * from orders where created_at at time zone 'UTC' = ? and id = ?"))
+                .containsExactly("orders.created_at", "orders.id");
+        assertThat(predicates("select * from orders where match(name) against (? in boolean mode)"
+                + " and status = ?"))
+                .containsExactly("orders.name", "orders.status");
+        assertThat(predicates("select * from orders where match(name) against"
+                + " (? in natural language mode with query expansion)"))
+                .containsExactly("orders.name");
+    }
+
     @Test
     void aBareColumnBelongsToTheOnlyTable() {
         assertThat(predicates("select * from items where category = ? and supplier_id = ?"))

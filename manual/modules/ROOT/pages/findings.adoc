@@ -210,6 +210,7 @@ The names use the database's spelling: `ITEMS` on H2, `items` on PostgreSQL, and
 Each is written as `table.column` in lower case whatever case the statement used, in order of first appearance and once each, and a column named without a qualifier belongs to the statement's only table.
 A subquery's `where` counts as well, and the clause it interrupts goes on after its closing parenthesis, so `where i.id in (select l.item_id from lines l) and i.name = ?` names `items.id` and `items.name`.
 The type of a cast is not a column (`where id = ?::uuid` names `items.id`), and neither is an upsert's conflict target, the unique key the write collides on (`on conflict (id) do update`, `on duplicate key update`).
+Neither is the unit of an interval (`interval ? day`, `interval ? day to second`), the zone of an `at time zone`, or the search string and modifier of a MySQL full-text search (`against (? in boolean mode)`).
 Nor is a word of a comment, which the agent's sanitiser keeps (`-- …` to the end of the line, `/* … */`, an optimizer hint, an sqlcommenter suffix).
 A name the select list gives with `as` is not a column when the `order by` sorts by it (`price * qty as total … order by total`), and `except`, `intersect` and `minus` end the clause before them as `union` does.
 A keyword that is also a common column name (`date`, `time`, `timestamp`, `first`, `last`, `next`, `row`, `rows`, `only`, `interval`) is that column in a `where` or `on` clause when a comparison follows it (`where date = ?`), and the keyword anywhere else.
