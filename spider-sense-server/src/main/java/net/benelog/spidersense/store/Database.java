@@ -209,8 +209,8 @@ public final class Database implements AutoCloseable {
             int code = t instanceof SQLException sql ? sql.getErrorCode()
                     : t instanceof DbException db ? db.getErrorCode() : -1;
             if (code >= 0) {
-                return RACE_CODES.contains(code) || code == ErrorCode.GENERAL_ERROR_1
-                        && t.getMessage() != null && t.getMessage().contains(ALREADY_EXISTS);
+                return RACE_CODES.contains(code) || (code == ErrorCode.GENERAL_ERROR_1
+                        && t.getMessage() != null && t.getMessage().contains(ALREADY_EXISTS));
             }
         }
         return false;
