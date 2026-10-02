@@ -13,6 +13,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import net.benelog.spidersense.Otlp;
 import net.benelog.spidersense.TestStore;
 import net.benelog.spidersense.ingest.OtlpDecoder;
+import net.benelog.spidersense.store.Batch;
 import net.benelog.spidersense.store.MetricPoint;
 import net.benelog.spidersense.store.Store;
 
@@ -91,6 +92,61 @@ class MetricQueriesTest {
                     .containsExactlyInAnyOrder(
                             org.assertj.core.groups.Tuple.tuple("service-a", "CUMULATIVE"),
                             org.assertj.core.groups.Tuple.tuple("service-b", "DELTA"));
+        }
+    }
+
+    /** A series whose attributes are longer than their column is stored as JSON that reads back (storage.adoc#writer). */
+    @Test
+    void aSeriesWhoseAttributesOverflowTheirColumnIsStoredAsReadableJson() {
+        long now = 1_700_000_000_000L;
+        try (Store store = new Store(Store.Settings.defaults(TestStore.memoryUrl()))) {
+            Batch batch = new Batch();
+            batch.add(new Batch.MetricSample("orders", "app.requests", "gauge", "1", "", false, "UNSPECIFIED",
+                    Map.of("http.target", "/" + "x".repeat(5_000), "http.method", "GET"),
+                    MetricPoint.number(now, 1)));
+            batch.add(new Batch.MetricSample("orders", "app.requests", "gauge", "1", "", false, "UNSPECIFIED",
+                    Map.of("http.target", "/short", "http.method", "GET"), MetricPoint.number(now, 2)));
+            store.writer().submit(batch);
+            store.writer().awaitIdle(5_000);
+            // The same long series again, as the next export would carry it: one series, two points.
+            Batch again = new Batch();
+            again.add(new Batch.MetricSample("orders", "app.requests", "gauge", "1", "", false, "UNSPECIFIED",
+                    Map.of("http.target", "/" + "x".repeat(5_000), "http.method", "GET"),
+                    MetricPoint.number(now + 1000, 3)));
+            store.writer().submit(again);
+            store.writer().awaitIdle(5_000);
+
+            List<MetricQueries.SeriesData> series = new MetricQueries(store.sql())
+                    .series("app.requests", "orders", Map.of(), Window.of(now - 60_000, now + 60_000));
+
+            assertThat(series).hasSize(2);
+            MetricQueries.SeriesData cut = series.stream()
+                    .filter(one -> !"/short".equals(one.attributes().get("http.target"))).findFirst().orElseThrow();
+            assertThat(cut.attributes().get("http.method")).isEqualTo("GET");
+            assertThat((String) cut.attributes().get("http.target")).startsWith("/xxx").endsWith("…");
+            assertThat(cut.points()).hasSize(2);
+        }
+    }
+
+    /** A row an older Spider Sense stored cut at an arbitrary character costs its own series, not the answer. */
+    @Test
+    void aSeriesWhoseStoredAttributesDoNotParseIsLeftOut() {
+        long now = 1_700_000_000_000L;
+        try (Store store = new Store(Store.Settings.defaults(TestStore.memoryUrl()))) {
+            Batch batch = new Batch();
+            batch.add(new Batch.MetricSample("orders", "app.requests", "gauge", "1", "", false, "UNSPECIFIED",
+                    Map.of("http.target", "/long"), MetricPoint.number(now, 1)));
+            batch.add(new Batch.MetricSample("orders", "app.requests", "gauge", "1", "", false, "UNSPECIFIED",
+                    Map.of("http.target", "/short"), MetricPoint.number(now, 2)));
+            store.writer().submit(batch);
+            store.writer().awaitIdle(5_000);
+            store.sql().update("UPDATE metric_series SET attributes = '{\"http.target\":\"/lo'"
+                    + " WHERE attributes LIKE '%/long%'", List.of());
+
+            List<MetricQueries.SeriesData> series = new MetricQueries(store.sql())
+                    .series("app.requests", "orders", Map.of(), Window.of(now - 60_000, now + 60_000));
+
+            assertThat(series).extracting(one -> one.attributes().get("http.target")).containsExactly("/short");
         }
     }
 }

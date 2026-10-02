@@ -47,8 +47,8 @@ public record SeriesRow(long id, String service, String name, String attributes)
                 .put("attributes", RowJson.parsed(attributes, AttrJson.EMPTY_OBJECT));
     }
 
-    /** The attributes in the sorted form the series key is hashed over. */
+    /** The attributes in the sorted form the series key is hashed over, cut to the column as the writer cuts. */
     String sortedAttributes() {
-        return AttrJson.encodeSorted(AttrJson.decode(attributes));
+        return AttrJson.encodeSorted(AttrJson.decode(attributes), Columns.SERIES_ATTRIBUTES);
     }
 }

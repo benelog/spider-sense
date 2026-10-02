@@ -561,7 +561,9 @@ public final class Writer implements AutoCloseable {
     private record Series(String cacheKey, String attrHash, String attributesJson) {
 
         static Series of(Batch.MetricSample sample) {
-            String attributes = AttrJson.encodeSorted(sample.attributes());
+            // Cut as JSON before it is hashed, so the stored text reads back and the
+            // hash is of what is stored, which is what an import looks the series up by.
+            String attributes = AttrJson.encodeSorted(sample.attributes(), Columns.SERIES_ATTRIBUTES);
             String hash = Ids.shortHash(attributes);
             return new Series(sample.service() + "\0" + sample.name() + "\0" + hash, hash, attributes);
         }

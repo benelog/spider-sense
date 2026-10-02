@@ -136,7 +136,7 @@ CREATE TABLE IF NOT EXISTS metric_series (
     service    VARCHAR(255) NOT NULL,
     name       VARCHAR(255) NOT NULL,
     attr_hash  CHAR(12) NOT NULL,
-    attributes VARCHAR(4096) NOT NULL,       -- JSON object, keys sorted
+    attributes VARCHAR(4096) NOT NULL,       -- JSON object, keys sorted; cut as span attributes are
     CONSTRAINT metric_series_key UNIQUE (service, name, attr_hash)
 );
 
@@ -250,6 +250,7 @@ A double attribute that JSON has no number for, `NaN` or an infinity, is stored 
 A key/value list, as an attribute or a log body, is stored as a JSON object however deep it nests, inside another list or an array included, and an attribute that is one reads back as that object's JSON text.
 An object too long for its column is cut as that text, like any other long string value.
 An array is stored as a JSON array, and an array longer than every string value of a row too long for its column becomes its JSON text, which is then cut in the same way and reads back as that text.
+A metric series' attributes are cut in the same way before they are hashed, so the stored text reads back, and its `attr_hash` is of that text, which is what an import looks the series up by.
 When a flush still fails, each of its batches is written again in a transaction of its own, so a row the database refuses costs only the export that carried it.
 A failed flush is rolled back whole before that, whatever failed, a stack overflow on an attribute nested thousands of levels deep included, so no batch is stored twice.
 The catalog rows of a flush are merged in the same transaction.

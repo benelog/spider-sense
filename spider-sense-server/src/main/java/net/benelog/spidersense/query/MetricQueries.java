@@ -1,13 +1,16 @@
 package net.benelog.spidersense.query;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import net.benelog.spidersense.store.AttrJson;
 import net.benelog.spidersense.store.MetricPoint;
 import net.benelog.spidersense.store.Sql;
+import net.benelog.spidersilk.json.Json;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -176,12 +179,24 @@ public final class MetricQueries {
         params.add(window.to());
 
         Map<Long, SeriesBuilder> builders = new LinkedHashMap<>();
+        Set<Long> unreadable = new HashSet<>();
         sql.forEach(query.toString(), params, rs -> {
             long id = rs.getLong("id");
+            if (unreadable.contains(id)) {
+                return;
+            }
             SeriesBuilder builder = builders.get(id);
             if (builder == null) {
-                builder = new SeriesBuilder(rs.getString("service"),
-                        AttrJson.decode(rs.getString("attributes")));
+                Map<String, Object> attributes;
+                try {
+                    attributes = AttrJson.decode(rs.getString("attributes"));
+                } catch (Json.JsonException cutAsText) {
+                    // An older Spider Sense cut a long series at a character rather than as
+                    // JSON: that series is left out, rather than every other one of the name.
+                    unreadable.add(id);
+                    return;
+                }
+                builder = new SeriesBuilder(rs.getString("service"), attributes);
                 builders.put(id, builder);
             }
             builder.points.add(point(rs));

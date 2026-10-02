@@ -82,6 +82,11 @@ public final class AttrJson {
         return encode(new TreeMap<>(attributes));
     }
 
+    /** As {@link #encodeSorted(Map)}, cut to at most {@code max} characters as {@link #encode(Map, int)} cuts. */
+    public static String encodeSorted(Map<String, Object> attributes, int max) {
+        return encode(new TreeMap<>(attributes), max);
+    }
+
     public static Map<String, Object> decode(@Nullable String json) {
         if (json == null || json.isEmpty() || EMPTY_OBJECT.equals(json)) {
             return Map.of();

@@ -24,8 +24,9 @@ final class MetricSeriesRows {
     /**
      * The id of the series, locked for the rest of the caller's transaction.
      *
-     * @param attributes the series' attributes as {@link AttrJson#encodeSorted}
-     *                   writes them, which is what its {@code attr_hash} is of
+     * @param attributes the series' attributes as {@link AttrJson#encodeSorted(java.util.Map, int)}
+     *                   writes them, cut to the column as JSON, which is what its
+     *                   {@code attr_hash} is of
      */
     static long lookupOrCreate(Connection connection, String service, String name, String attributes)
             throws SQLException {
@@ -47,7 +48,7 @@ final class MetricSeriesRows {
             insert.setString(1, service);
             insert.setString(2, name);
             insert.setString(3, hash);
-            insert.setString(4, Columns.cut(attributes, Columns.SERIES_ATTRIBUTES));
+            insert.setString(4, attributes);
             insert.executeUpdate();
             try (ResultSet keys = insert.getGeneratedKeys()) {
                 if (keys.next()) {
