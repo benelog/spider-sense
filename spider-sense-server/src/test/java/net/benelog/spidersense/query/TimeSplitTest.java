@@ -42,20 +42,35 @@ class TimeSplitTest {
     }
 
     @Test
-    void selfTimeIsTheDurationLessTheDirectChildrenNeverBelowZero() {
+    void selfTimeIsTheDurationLessTheTimeTheDirectChildrenCover() {
         List<SpanRecord> spans = List.of(
                 internal("a", null, "root", 0, 100),
                 internal("b", "a", "work", 10, 60),
                 internal("c", "b", "inner", 20, 30),
-                // Async work that outlives its parent leaves the parent no time of its own.
+                // Async work that outlives its parent takes only the part inside it: 25 to 50.
                 internal("d", "c", "async", 25, 50));
 
         Map<String, Long> self = Queries.selfNanos(spans);
 
         assertThat(self).containsEntry("a", 40 * MS)
                 .containsEntry("b", 30 * MS)
-                .containsEntry("c", 0L)
+                .containsEntry("c", 5 * MS)
                 .containsEntry("d", 50 * MS);
+    }
+
+    @Test
+    void childrenThatRunAtOnceTakeTheirOverlapOnce() {
+        // 10 to 70 and 20 to 80 cover 70 ms of the parent's 100, not 120.
+        List<SpanRecord> spans = List.of(
+                internal("p", null, "root", 0, 100),
+                internal("a", "p", "left", 10, 60),
+                internal("b", "p", "right", 20, 60),
+                // Inside "a" altogether, so it covers nothing "a" has not.
+                internal("c", "p", "nested", 30, 10),
+                // Wholly after the parent ends: nothing of the parent's.
+                internal("d", "p", "after", 150, 10));
+
+        assertThat(Queries.selfNanos(spans)).containsEntry("p", 30 * MS);
     }
 
     @Test

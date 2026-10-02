@@ -1337,31 +1337,50 @@ public final class Queries {
     }
 
     /**
-     * The self time of every span, by span id: its duration less the durations of its
-     * direct children among these spans, never below zero.
+     * The self time of every span, by span id: its duration less the time its direct
+     * children among these spans cover within it.
      *
      * <p>It is the Profile view's definition, which the hot span of a finding and the
-     * time split both use (findings.adoc#hot-span): a child whose parent is not among
-     * the spans takes nothing from anyone.
+     * time split both use (findings.adoc#hot-span): two children that run at once take
+     * their overlap once, a child that outlives its parent takes only the part inside
+     * it, and a child whose parent is not among the spans takes nothing from anyone.
      */
     static Map<String, Long> selfNanos(List<SpanRecord> spans) {
-        Map<String, Long> childNanos = new HashMap<>();
         Set<String> known = new HashSet<>();
         for (SpanRecord span : spans) {
             known.add(span.spanId());
         }
+        Map<String, List<SpanRecord>> children = new HashMap<>();
         for (SpanRecord span : spans) {
             String parent = span.parentSpanId();
             if (parent != null && known.contains(parent)) {
-                childNanos.merge(parent, span.durationNanos(), Long::sum);
+                children.computeIfAbsent(parent, key -> new ArrayList<>()).add(span);
             }
         }
         Map<String, Long> self = new LinkedHashMap<>();
         for (SpanRecord span : spans) {
-            self.put(span.spanId(), Math.max(0, span.durationNanos()
-                    - childNanos.getOrDefault(span.spanId(), 0L)));
+            long covered = coveredNanos(children.getOrDefault(span.spanId(), List.of()),
+                    span.startNanos(), span.endNanos());
+            self.put(span.spanId(), Math.max(0, span.durationNanos() - covered));
         }
         return self;
+    }
+
+    /** How much of {@code from} to {@code to} the spans cover together, each clipped to it. */
+    private static long coveredNanos(List<SpanRecord> spans, long from, long to) {
+        List<SpanRecord> byStart = new ArrayList<>(spans);
+        byStart.sort(Comparator.comparingLong(SpanRecord::startNanos));
+        long covered = 0;
+        long reached = from;
+        for (SpanRecord span : byStart) {
+            long start = Math.max(span.startNanos(), reached);
+            long end = Math.min(span.endNanos(), to);
+            if (end > start) {
+                covered += end - start;
+                reached = end;
+            }
+        }
+        return covered;
     }
 
     /**

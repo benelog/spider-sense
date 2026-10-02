@@ -250,7 +250,7 @@ Re-run the same exercise and check the query's `p95` and `total` columns in `com
 
 `numbers`: `calls`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `apdex`, `dbCallsPerRequest`, `dbMsPerRequest`, `dbShare` (0..1 in the JSON, the part of the endpoint's total time spent in database spans of the same trace and service; the text prints it as a percentage, `93.0%`), `hotSpan`, `hotSpans`, `breakdown`.
 
-`hotSpan` is where the time went in the first evidence trace: the span with the largest self time (its duration minus the durations of its direct children), that time, and its share of the trace.
+`hotSpan` is where the time went in the first evidence trace: the span with the largest self time (its duration minus the time its direct children cover within it), that time, and its share of the trace.
 It reads as one line, `hot span: SELECT order_line · 312.4 ms self · 62.0%`, and it is the first clue when `dbShare` is low, because it names the span instead of leaving the trace to be read.
 It is `null` only when the finding has no trace.
 

@@ -87,14 +87,14 @@ class AgentApiTest {
         spans.add(root);
         for (int i = 0; i < 6; i++) {
             spans.add(Otlp.child(root, "%016x".formatted(100 + i), "SELECT order_line",
-                    Span.SpanKind.SPAN_KIND_CLIENT, NOW + i, 2,
+                    Span.SpanKind.SPAN_KIND_CLIENT, NOW + 2L * i, 2,
                     Otlp.attr("db.system", "h2"),
                     Otlp.attr("db.statement", "select * from order_line where order_id = ?"),
                     Otlp.attr("db.operation", "SELECT"),
                     Otlp.attr("db.sql.table", "order_line")));
         }
         spans.add(Otlp.child(root, "00f067aa0ba902c9", "SELECT book",
-                Span.SpanKind.SPAN_KIND_CLIENT, NOW + 10, 300,
+                Span.SpanKind.SPAN_KIND_CLIENT, NOW + 20, 300,
                 Otlp.attr("db.system", "h2"),
                 Otlp.attr("db.statement", "select * from book where title like ?"),
                 Otlp.attr("db.operation", "SELECT"),

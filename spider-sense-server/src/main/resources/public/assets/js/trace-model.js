@@ -53,17 +53,44 @@ export function flattenTree(tree, collapsed = new Set()) {
   return out;
 }
 
-/** Each span's elapsed time less the durations of its direct children, never below zero. */
+/** How much of `from`..`to` the intervals cover together, each `[start, end]` clipped to it. */
+function coveredMs(intervals, from, to) {
+  const clipped = intervals
+    .map(([start, end]) => [Math.max(start, from), Math.min(end, to)])
+    .filter(([start, end]) => end > start)
+    .sort((a, b) => a[0] - b[0]);
+  let covered = 0;
+  let reached = from;
+  for (const [start, end] of clipped) {
+    if (end <= reached) continue;
+    covered += end - Math.max(start, reached);
+    reached = end;
+  }
+  return covered;
+}
+
+/**
+ * Each span's elapsed time less the time its direct children cover within it: two children
+ * that run at once take their overlap once, and a child that outlives its parent takes only
+ * the part inside it.
+ */
 export function selfTimes(spans) {
   const byId = new Map(spans.map((s) => [s.spanId, s]));
-  const childSum = new Map();
+  const childIntervals = new Map();
   for (const s of spans) {
     const parent = parentIn(byId, s);
     if (!parent) continue;
-    childSum.set(parent, (childSum.get(parent) || 0) + (s.durationMs || 0));
+    if (!childIntervals.has(parent)) childIntervals.set(parent, []);
+    const start = startMsOf(s);
+    childIntervals.get(parent).push([start, start + (s.durationMs || 0)]);
   }
   const out = new Map();
-  for (const s of spans) out.set(s.spanId, Math.max(0, (s.durationMs || 0) - (childSum.get(s.spanId) || 0)));
+  for (const s of spans) {
+    const duration = s.durationMs || 0;
+    const start = startMsOf(s);
+    const covered = coveredMs(childIntervals.get(s.spanId) || [], start, start + duration);
+    out.set(s.spanId, Math.max(0, duration - covered));
+  }
   return out;
 }
 

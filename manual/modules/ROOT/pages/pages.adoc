@@ -319,7 +319,8 @@ image::trace-profile.jpg[The same trace as a step-by-step profile with gap and e
 The profile is the view for reading what a request did, in order, and where the time went.
 It lists the same spans as a flat table: the position (`#`), the start offset (`+12.3 ms`), the gap since the previous step, the elapsed time, the *self* time, the self time as a *%* of the trace, the depth as indentation, a one-line summary, and the service.
 A summary reads, for example, `SELECT orders … (h2)` or `+GET http://localhost:8081/api/books/{id} → 200+`.
-Self time is the elapsed time minus the durations of the direct children, never below zero.
+Self time is the elapsed time minus the time the direct children cover within the span.
+Two children that run at once take their overlap once, and a child that outlives its parent takes only the part inside it, so concurrent or asynchronous children never leave a parent less than its own time.
 The order is chronological by default.
 Clicking the Elapsed or Self header sorts by that column, descending.
 The gap column then reads `-`.

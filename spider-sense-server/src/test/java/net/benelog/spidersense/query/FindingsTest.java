@@ -855,7 +855,7 @@ class FindingsTest {
         Span.Builder root = entry(1, "/orders/report", 1000);
         decoder.ingest(Otlp.traces(Otlp.service("orders"), root,
                 query(root, 100, "select * from orders", "orders", NOW, 600),
-                call(root, 101, "/api/books/1", NOW, 200)));
+                call(root, 101, "/api/books/1", NOW + 600, 200)));
         flush();
 
         @SuppressWarnings("unchecked")

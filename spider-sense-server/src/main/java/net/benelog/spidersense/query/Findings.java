@@ -1745,8 +1745,8 @@ public final class Findings {
     /**
      * Where the time went in the finding's first evidence trace.
      *
-     * <p>A span's self time is its duration less the durations of its direct
-     * children, never below zero — the Profile view's definition — and the hot span
+     * <p>A span's self time is its duration less the time its direct children
+     * cover within it — the Profile view's definition — and the hot span
      * is the largest of them, with that time's share of the trace. It is the first
      * clue when {@code dbShare} is low: the trace says "here", not "somewhere".
      *

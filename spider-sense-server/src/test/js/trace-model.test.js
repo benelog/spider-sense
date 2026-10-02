@@ -43,13 +43,26 @@ test('flattenTree walks depth first and skips what is under a collapsed span', (
   assert.equal(collapsed[1].hasChildren, false);
 });
 
-test('self time is elapsed less the direct children, and never below zero', () => {
+test('self time is elapsed less the time the direct children cover', () => {
   const self = selfTimes(spans);
   assert.equal(self.get('root'), 30);
   assert.equal(self.get('b'), 10);
   assert.equal(self.get('b1'), 30);
-  const overlapping = selfTimes([span('p', null, 0, 10), span('c1', 'p', 0, 8), span('c2', 'p', 0, 8)]);
-  assert.equal(overlapping.get('p'), 0);
+});
+
+test('children that run at once take their overlap from the parent once', () => {
+  const self = selfTimes([span('p', null, 0, 100), span('a', 'p', 10, 60), span('b', 'p', 20, 60)]);
+  assert.equal(self.get('p'), 30);
+  const same = selfTimes([span('p', null, 0, 10), span('c1', 'p', 0, 8), span('c2', 'p', 0, 8)]);
+  assert.equal(same.get('p'), 2);
+});
+
+test('a child that outlives its parent takes only the part inside it', () => {
+  const self = selfTimes([span('p', null, 100, 50), span('early', 'p', 90, 20), span('late', 'p', 140, 30)]);
+  assert.equal(self.get('p'), 30);
+  assert.equal(self.get('late'), 30);
+  const outside = selfTimes([span('p', null, 0, 10), span('after', 'p', 20, 5)]);
+  assert.equal(outside.get('p'), 10);
 });
 
 // A chain 10,000 spans deep, each the parent of the next.

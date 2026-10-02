@@ -121,7 +121,7 @@ A `regression` carries the traces of its original kind, taken after the resoluti
 "hotSpan": { "name": "SELECT order_line", "category": "db", "selfMs": 312.4, "share": 0.62 }
 ----
 
-`hotSpan` is the span with the largest self time, that is its duration minus the durations of its direct children, never below zero, as the xref:pages.adoc#traces[Profile view] computes it.
+`hotSpan` is the span with the largest self time, that is its duration minus the time its direct children cover within it, as the xref:pages.adoc#profile[Profile view] computes it.
 `share` is that self time over the trace's duration.
 `category` is `db`, `http`, `internal` or another span category.
 It is the first clue when `dbShare` is low.
@@ -269,7 +269,7 @@ Only the spans of the finding's own service count, which is the rule `dbShare` a
 The database work of a downstream service belongs to that service's own endpoint.
 Leaving the downstream server span out makes the wait on an outbound call land in `http`, where the caller can see it.
 
-Self time is a span's duration less the durations of its direct children within that set, never below zero, as the xref:pages.adoc#traces[Profile view] computes it.
+Self time is a span's duration less the time its direct children within that set cover inside it, as the xref:pages.adoc#profile[Profile view] computes it.
 A span whose parent is not in the set is a top span: the entry span of a request, or the root span of a job.
 The shares are taken over the top spans.
 

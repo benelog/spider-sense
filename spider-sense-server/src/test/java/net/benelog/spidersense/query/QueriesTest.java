@@ -436,7 +436,7 @@ class QueriesTest {
     }
 
     /**
-     * A trace of {@code queries} one-millisecond statements under a root of {@code rootMs},
+     * A trace of {@code queries} one-millisecond statements, one after another, under a root of {@code rootMs},
      * the root exported last as a server span ends last, so a read cut short misses it first.
      */
     private void traceWithQueries(int n, long rootMs, int queries) {
@@ -445,7 +445,7 @@ class QueriesTest {
         List<Span.Builder> spans = new ArrayList<>();
         for (int i = 0; i < queries; i++) {
             spans.add(Otlp.child(root, "%016x".formatted(n * 1_000_000L + i + 1), "SELECT orders",
-                    Span.SpanKind.SPAN_KIND_CLIENT, NOW, 1,
+                    Span.SpanKind.SPAN_KIND_CLIENT, NOW + i, 1,
                     Otlp.attr("db.system", "h2"), Otlp.attr("db.statement", "select * from orders where id = ?")));
         }
         spans.add(root);
