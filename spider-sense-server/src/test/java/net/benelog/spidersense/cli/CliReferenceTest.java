@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
@@ -22,6 +24,9 @@ class CliReferenceTest {
 
     private static final String PAGE = Init.SKILL_PREFIX + "spider-sense/references/cli.md";
 
+    /** The manual's CLI page, from this module's directory, which is where Gradle runs the tests. */
+    private static final Path MANUAL_PAGE = Path.of("..", "manual", "modules", "ROOT", "pages", "cli.adoc");
+
     private static final String HELP_COMMAND = "$ java -jar spider-sense.jar help\n";
 
     @Test
@@ -31,6 +36,18 @@ class CliReferenceTest {
         assertThat(start).as("the page shows a help run").isNotNegative();
         start += HELP_COMMAND.length();
         int end = page.indexOf("\n```", start);
+
+        assertThat(page.substring(start, end)).isEqualTo(Help.TEXT);
+    }
+
+    /** The manual presents the same listing as help's output, so it is the same text. */
+    @Test
+    void theManualsHelpListingIsWhatHelpPrints() throws IOException {
+        String page = Files.readString(MANUAL_PAGE, UTF_8);
+        int start = page.indexOf(HELP_COMMAND);
+        assertThat(start).as("the manual shows a help run").isNotNegative();
+        start += HELP_COMMAND.length();
+        int end = page.indexOf("\n----", start);
 
         assertThat(page.substring(start, end)).isEqualTo(Help.TEXT);
     }
