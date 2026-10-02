@@ -99,8 +99,8 @@ The loop uses the Spider Sense jar the build produced, which may already be on t
 
 [source,bash]
 ----
-SENSE="$(ls spider-sense-agent/build/libs/spider-sense-*.jar 2>/dev/null | grep -v -- '-launcher' | head -1)"
-[ -n "$SENSE" ] || { ./gradlew :spider-sense-agent:senseJar; SENSE="$(ls spider-sense-agent/build/libs/spider-sense-*.jar | grep -v -- '-launcher' | head -1)"; }
+SENSE="$(ls spider-sense-agent/build/libs/spider-sense-[0-9]*.jar 2>/dev/null | head -1)"
+[ -n "$SENSE" ] || { ./gradlew :spider-sense-agent:senseJar; SENSE="$(ls spider-sense-agent/build/libs/spider-sense-[0-9]*.jar | head -1)"; }
 ----
 
 Then, in order:

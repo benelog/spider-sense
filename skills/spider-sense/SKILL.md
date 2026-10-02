@@ -35,8 +35,8 @@ What it gives you that a dashboard does not:
 Find the jar before building it; `./gradlew :spider-sense-agent:senseJar` writes it under `spider-sense-agent/build/libs/` and it may already be there or wherever the user keeps it.
 
 ```bash
-SENSE="$(ls spider-sense-agent/build/libs/spider-sense-*.jar 2>/dev/null | grep -v -- '-launcher' | head -1)"
-[ -n "$SENSE" ] || { ./gradlew :spider-sense-agent:senseJar; SENSE="$(ls spider-sense-agent/build/libs/spider-sense-*.jar | grep -v -- '-launcher' | head -1)"; }
+SENSE="$(ls spider-sense-agent/build/libs/spider-sense-[0-9]*.jar 2>/dev/null | head -1)"
+[ -n "$SENSE" ] || { ./gradlew :spider-sense-agent:senseJar; SENSE="$(ls spider-sense-agent/build/libs/spider-sense-[0-9]*.jar | head -1)"; }
 ```
 
 Then, in order:

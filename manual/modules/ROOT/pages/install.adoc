@@ -43,7 +43,7 @@ cd spider-sense
 ----
 
 The jar is then `spider-sense-agent/build/libs/spider-sense-{project-version}.jar`.
-The `-launcher` jar beside it is a build artifact, not the jar to run.
+The `spider-sense-agent-{project-version}.jar` beside it is the launcher alone, a build artifact, not the jar to run.
 Keep the jar's absolute path in a variable, because the commands in this manual use it:
 
 [source,bash,subs="attributes+"]

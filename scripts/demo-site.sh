@@ -41,7 +41,7 @@ sense_jar() {
     if [[ "$BUILD" == 1 ]]; then
         ./gradlew --quiet :spider-sense-agent:senseJar
     fi
-    ls spider-sense-agent/build/libs/spider-sense-*.jar | grep -v -- '-launcher' | head -1
+    ls spider-sense-agent/build/libs/spider-sense-[0-9]*.jar | head -1
 }
 
 wait_for() {   # wait_for <url> <what> [seconds]

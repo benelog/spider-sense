@@ -79,7 +79,7 @@ record() {
         *) usage ;;
     esac
     prompt="$skill $question"
-    ls spider-sense-agent/build/libs/spider-sense-*.jar >/dev/null 2>&1 \
+    ls spider-sense-agent/build/libs/spider-sense-[0-9]*.jar >/dev/null 2>&1 \
         || { echo "build the jar and the examples first (scripts/demo-shared.sh builds them)" >&2; exit 1; }
     # What the agent reads of the tree is the commit, not work in progress.
     [[ -z "$(git status --porcelain)" ]] || { echo "commit or stash first: the agent would see the changes" >&2; exit 1; }

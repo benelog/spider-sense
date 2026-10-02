@@ -24,7 +24,7 @@ if [[ "${1:-}" != "--no-build" ]]; then
         :examples:load-gen:installDist
 fi
 
-SENSE_JAR="$(ls spider-sense-agent/build/libs/spider-sense-*.jar | grep -v -- '-launcher' | head -1)"
+SENSE_JAR="$(ls spider-sense-agent/build/libs/spider-sense-[0-9]*.jar | head -1)"
 BOOKSTORE="examples/silk-bookstore/build/install/silk-bookstore/bin/silk-bookstore"
 ORDERS_JAR="$(ls examples/spring-orders/build/libs/spring-orders-*.jar | grep -v -- '-plain' | head -1)"
 WAREHOUSE="examples/servlet-warehouse/build/install/servlet-warehouse/bin/servlet-warehouse"

@@ -9,11 +9,11 @@ There is no supported way to attach later, and nothing else has to be installed 
 Look for it before building it.
 
 ```bash
-ls spider-sense-agent/build/libs/spider-sense-*.jar   # in the Spider Sense repository
-./gradlew :spider-sense-agent:senseJar                # builds it if it is not there
+ls spider-sense-agent/build/libs/spider-sense-[0-9]*.jar   # in the Spider Sense repository
+./gradlew :spider-sense-agent:senseJar                    # builds it if it is not there
 ```
 
-The single distributable jar is `spider-sense-<version>.jar`; a `-launcher` jar beside it is a build artifact, not the one to use.
+The single distributable jar is `spider-sense-<version>.jar`; the `spider-sense-agent-<version>.jar` beside it is the launcher alone, a build artifact, not the one to use.
 Keep the absolute path in a variable, because every command below wants it:
 
 ```bash
@@ -44,11 +44,14 @@ The same keys, one per line, go in `spider-sense.properties` in the working dire
 | `spidersense.service` | unset | sets `otel.service.name` |
 | `spidersense.db` | `~/db/spider-sense/sense` | H2 database path or `jdbc:h2:` URL |
 | `spidersense.retention.hours` | `24` | rows older than this are swept |
+| `spidersense.retention.spans` | `1000000` | the most `span` rows kept; the sweeper deletes the oldest hour of everything until the count is under it; `0` means no cap |
+| `spidersense.ingest.max-spans-per-second` | unset | above this many spans in one second the receiver drops the spans of traces it has not seen yet, and counts them on `/api/status` |
 | `spidersense.slow.request.ms` | `500` | the slow-request threshold, and the Apdex scale |
 | `spidersense.slow.query.ms` | `100` | the slow-query threshold |
 | `spidersense.open` | `false` | open a browser at startup |
 | `spidersense.app.packages` | unset | comma-separated package prefixes that count as application code in a finding's `code` frames |
 | `spidersense.ignore.endpoints` | `/actuator/**,/health,/healthz,/livez,/readyz` | comma-separated glob patterns; a matching entry span is stored and in its trace but is not a request; an empty value ignores nothing |
+| `spidersense.source.dirs` | `src/main/java` and `src/main/kotlin` of the working directory and of each immediate subdirectory | comma-separated source roots a code frame resolves under, for source lines, editor links and the suspect-change line; an empty value turns all three off |
 
 Every `otel.*` system property and `OTEL_*` environment variable of the OpenTelemetry agent still applies; Spider Sense only fills in defaults.
 `-Dotel.service.name=` is worth setting always, because the alternative is `unknown_service:java` and `--service=` then has nothing to select.
@@ -179,8 +182,9 @@ export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 java -jar "$SENSE" status
 ```
 
-`status` names the mode (`agent` or `standalone`), the port, the OTLP endpoint, the database file and its size, the thresholds in force, the services seen and how many spans are stored.
-`counts.services` including the application's service name, and a span count that grows after a request, is the confirmation.
+`status` names the mode (`agent` or `standalone`), the port, the OTLP endpoint, the embedded service in agent mode, the database file and its size, the thresholds in force, and how many services and spans are stored.
+The service count is a number, not a list: the application's service name is the `embedded service` row in agent mode, or a row of `/api/services` behind a standalone.
+That name, and a span count that grows after a request, is the confirmation.
 The UI at <http://127.0.0.1:4000> is the same information for the user; leave the browser to them.
 
 A restart also writes an automatic `start` mark for the service, so `marks` shows a new row with the note `pid <pid>` every time the application comes up, and `--since=start` means the current run.
