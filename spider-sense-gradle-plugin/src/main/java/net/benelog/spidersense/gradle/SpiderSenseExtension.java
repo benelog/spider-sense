@@ -106,7 +106,9 @@ public abstract class SpiderSenseExtension {
     /**
      * {@code -Dspidersense.source.dirs}, joined with commas: the source roots a code frame is
      * resolved under. Unset leaves the jar's default, {@code src/main/java} and
-     * {@code src/main/kotlin} of the working directory and of each immediate subdirectory.
+     * {@code src/main/kotlin} of the working directory and of each immediate subdirectory; an
+     * empty list set explicitly passes an empty value, which names no root and turns source
+     * lines, editor links and the suspect-change line off.
      */
     public abstract ListProperty<String> getSourceDirs();
 

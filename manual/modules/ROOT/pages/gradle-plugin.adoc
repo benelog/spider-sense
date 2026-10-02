@@ -169,7 +169,7 @@ xref:configuration.adoc#properties[Configuration] lists the jar's defaults.
 | `sourceDirs`
 | `List<String>`
 | unset (the jar's default roots)
-| `-Dspidersense.source.dirs=`, the list joined with commas; relative paths are against the task's working directory, the project's
+| `-Dspidersense.source.dirs=`, the list joined with commas; relative paths are against the task's working directory, the project's; an empty list set explicitly (`sourceDirs = []`) passes an empty value, which names no root
 
 | `check { }`
 | a nested block

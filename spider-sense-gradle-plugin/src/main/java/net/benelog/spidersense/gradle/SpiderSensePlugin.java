@@ -92,8 +92,9 @@ public class SpiderSensePlugin implements Plugin<Project> {
         // A list property is present and empty until something sets it, which would
         // make "ignore nothing" indistinguishable from "say nothing". A convention of
         // null is Gradle's way of saying "no value at all", so here emptiness can mean
-        // what `ignoreEndpoints = []` says it means.
+        // what `ignoreEndpoints = []` and `sourceDirs = []` say they mean.
         extension.getIgnoreEndpoints().convention((Iterable<String>) null);
+        extension.getSourceDirs().convention((Iterable<String>) null);
         // The check block's window and scope: since the application was last
         // started, the service the block names, and a verdict over nothing is
         // not a pass.
@@ -298,19 +299,21 @@ public class SpiderSensePlugin implements Plugin<Project> {
         // Here emptiness cannot mean "unset": `ignoreEndpoints = []` is how a build
         // says "ignore nothing", and that has to reach the jar as an empty value. So
         // the convention is removed in apply() and presence is what "set" means.
-        arguments.addAll(extension.getIgnoreEndpoints()
-                .map(endpoints -> List.of("-Dspidersense.ignore.endpoints=" + String.join(",", endpoints)))
-                .orElse(List.of()));
+        arguments.addAll(listOption("ignore.endpoints", extension.getIgnoreEndpoints()));
         arguments.addAll(option("retention.spans", extension.getRetentionSpans()));
         arguments.addAll(option("ingest.max-spans-per-second", extension.getMaxSpansPerSecond()));
-        arguments.addAll(extension.getSourceDirs().map(dirs -> dirs.isEmpty()
-                ? List.<String>of()
-                : List.of("-Dspidersense.source.dirs=" + String.join(",", dirs))));
+        // The same for `sourceDirs = []`, which names no root and turns source lines off.
+        arguments.addAll(listOption("source.dirs", extension.getSourceDirs()));
         return arguments;
     }
 
     private static Provider<List<String>> option(String key, Provider<?> value) {
         return value.map(v -> List.of("-Dspidersense." + key + "=" + v)).orElse(List.of());
+    }
+
+    /** A list joined with commas when it has a value, an empty one included. */
+    private static Provider<List<String>> listOption(String key, Provider<List<String>> values) {
+        return values.map(list -> List.of("-Dspidersense." + key + "=" + String.join(",", list))).orElse(List.of());
     }
 
     /**

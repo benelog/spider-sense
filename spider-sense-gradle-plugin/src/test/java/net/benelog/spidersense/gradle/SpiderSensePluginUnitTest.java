@@ -57,6 +57,17 @@ class SpiderSensePluginUnitTest {
     }
 
     @Test
+    void anEmptySourceDirsPassesAnEmptyValueAndAnUnsetOneNothing() {
+        assertThat(systemProperties()).noneMatch(option -> option.startsWith("-Dspidersense.source.dirs"));
+
+        block.getSourceDirs().set(List.of());
+
+        assertThat(systemProperties()).containsExactly(
+                "-Dspidersense.service=orders",
+                "-Dspidersense.source.dirs=");
+    }
+
+    @Test
     void theCheckLineIsTheWindowThenTheRulesSetWrittenPlainly() {
         SpiderSenseCheckExtension check = block.getCheck();
         check.getMaxErrors().set(0L);
