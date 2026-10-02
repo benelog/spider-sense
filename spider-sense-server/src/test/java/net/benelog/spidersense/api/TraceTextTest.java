@@ -121,6 +121,26 @@ class TraceTextTest {
         assertThat(lines).extracting(Text.DiffLine::op).containsExactly('=', '=');
     }
 
+    @Test
+    void aStatementAndAnExceptionUnderASpanKeepTheirBars() {
+        long start = BASE_NS + 5_000_000L;
+        SpanRecord failed = new SpanRecord(TRACE, "0000000000000003", "0000000000000001", "orders",
+                "limit", "INTERNAL", start, start + 1_000_000L, "ERROR", null, Map.of(),
+                List.of(new SpanRecord.SpanEvent("exception", start, Map.of(
+                        "exception.type", "java.lang.IllegalStateException",
+                        "exception.message", "rate|limit\nhit"))),
+                "test");
+        Queries.TraceDetail trace = trace(List.of(
+                span("0000000000000001", null, "GET /a", 0, 500, Map.of()),
+                span("0000000000000002", "0000000000000001", "query", 10, 150,
+                        Map.of("db.system", "h2", "db.statement", "select a || b from t")),
+                failed));
+
+        assertThat(Text.trace(trace, TINGLES, FRAMES, false))
+                .contains("  select a || b from t\n")
+                .contains("  exception IllegalStateException: rate|limit hit\n");
+    }
+
     /** What {@code work} returns on a thread of 256 KiB stack, a quarter of a Jetty worker's. */
     private static <T> T onASmallStack(Supplier<T> work) throws InterruptedException {
         AtomicReference<T> result = new AtomicReference<>();

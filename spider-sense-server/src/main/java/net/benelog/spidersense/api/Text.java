@@ -647,7 +647,7 @@ final class Text {
     static String mark(Marks.Mark mark) {
         return "mark " + mark.name() + " at " + instantMillis(mark.at())
                 + (mark.service() == null ? "" : " (" + mark.service() + ")")
-                + (mark.note() == null ? "" : " — " + escapedLine(mark.note())) + "\n";
+                + (mark.note() == null ? "" : " — " + oneLine(mark.note())) + "\n";
     }
 
     // --- acknowledgements -----------------------------------------------------
@@ -655,7 +655,7 @@ final class Text {
     /** One line, as a mark's is: what happened, to which finding, and why. */
     static String ack(Acks.Ack ack) {
         return "acked " + ack.findingId()
-                + (ack.note() == null ? "" : " — " + escapedLine(ack.note())) + "\n";
+                + (ack.note() == null ? "" : " — " + oneLine(ack.note())) + "\n";
     }
 
     static String unack(String findingId) {
@@ -664,7 +664,7 @@ final class Text {
 
     static String resolve(Acks.Ack resolution) {
         return "resolved " + resolution.findingId()
-                + (resolution.note() == null ? "" : " — " + escapedLine(resolution.note())) + "\n";
+                + (resolution.note() == null ? "" : " — " + oneLine(resolution.note())) + "\n";
     }
 
     static String unresolve(String findingId) {
@@ -925,7 +925,7 @@ final class Text {
         StringBuilder line = new StringBuilder(clockMillis(log.at())).append("  ")
                 .append(pad(log.severity(), 6)).append(' ')
                 .append(orDash(log.logger())).append("  ")
-                .append(escapedLine(log.body()));
+                .append(oneLine(log.body()));
         if (withTrace && log.traceId() != null) {
             line.append("  trace ").append(log.traceId());
         }
@@ -1083,7 +1083,7 @@ final class Text {
             if (first.isError()) {
                 String message = first.errorMessage();
                 under.add("exception " + Findings.simpleName(first.errorType())
-                        + (message == null || message.isBlank() ? "" : ": " + escapedLine(message)));
+                        + (message == null || message.isBlank() ? "" : ": " + oneLine(message)));
                 under.addAll(frames.of(first.stacktrace(), first.attributes()));
             }
             lines.add(new TraceLine(group.depth, first, spanText(first, group.parentService),
@@ -1367,9 +1367,13 @@ final class Text {
         };
     }
 
-    /** A statement on a line of its own: one line, cut at 200 characters unless {@code full}. */
+    /**
+     * A statement on a line of its own: one line, cut at 200 characters unless
+     * {@code full}, and its bars as written, since no table splits it and the statement
+     * is one to paste into {@code EXPLAIN}.
+     */
     static String statementLine(@Nullable String statement, boolean full) {
-        return statement == null ? "—" : escapeBars(cutToStatement(statement, full));
+        return cutToStatement(statement, full);
     }
 
     /**
@@ -1385,9 +1389,12 @@ final class Text {
         return full || single.length() <= STATEMENT ? single : single.substring(0, STATEMENT) + "…";
     }
 
-    /** Free text on a line of its own, or inside one: no newline, and no bar a table could split on. */
-    static String escapedLine(@Nullable String value) {
-        return value == null ? "—" : escapeBars(singleLine(value));
+    /**
+     * Free text on a line of its own, or inside one that is no table row: no newline,
+     * and its bars as written, since no table splits it.
+     */
+    static String oneLine(@Nullable String value) {
+        return value == null ? "—" : singleLine(value);
     }
 
     private static String singleLine(String value) {

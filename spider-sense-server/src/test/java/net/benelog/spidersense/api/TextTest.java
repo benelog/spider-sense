@@ -18,6 +18,7 @@ import net.benelog.spidersense.query.Findings;
 import net.benelog.spidersense.query.Stats;
 import net.benelog.spidersense.query.Window;
 import net.benelog.spidersense.store.Acks;
+import net.benelog.spidersense.store.LogRecord;
 import net.benelog.spidersense.store.Marks;
 import net.benelog.spidersense.store.ReadOnlyQuery;
 
@@ -114,6 +115,28 @@ class TextTest {
                         + " SQL statement: SELECT a | b FROM x [42102-224]\n")
                 .contains("\n   count 3, message Table \"X\" not found; SQL statement: SELECT a | b FROM x"
                         + " [42102-224], endpoints [name GET /a count 3], notes one two\n");
+    }
+
+    /** A statement, a log body and a note outside a table keep their bars, so they read as written. */
+    @Test
+    void aLineThatIsNoTableRowKeepsItsBars() {
+        String statement = "select c1_0.id from customer c1_0\nwhere lower(c1_0.name) like (?||?||?) escape ?";
+        Findings.Finding finding = new Findings.Finding("n-plus-one:abcdefabcdef", "n-plus-one",
+                "medium", "svc", "GET /a runs SELECT customer 6 times", "6 times per request",
+                Findings.Subject.error("abcdefabcdef"), Map.of("count", 6L), statement, List.of(),
+                List.of());
+
+        String findings = Text.findings(WINDOW, null, 3, List.of(finding), false, "http://localhost:4000");
+        assertThat(findings).contains("\n   select c1_0.id from customer c1_0 where lower(c1_0.name)"
+                + " like (?||?||?) escape ?\n");
+
+        String logs = Text.logs(WINDOW, null, List.of(new LogRecord(1, 1_000_000L, "svc", "WARN", 13,
+                "rate|limit hit\nfor a|b", "orders.Limiter", null, null, Map.of())), 1, 1,
+                "http://localhost:4000");
+        assertThat(logs).contains("orders.Limiter  rate|limit hit for a|b\n");
+
+        assertThat(Text.mark(new Marks.Mark(1, 1_000_000L, "before", null, "a|b")))
+                .endsWith(" — a|b\n");
     }
 
     @Test
