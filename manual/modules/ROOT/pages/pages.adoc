@@ -157,6 +157,7 @@ It draws the services, the databases and the external hosts as nodes, and the ca
 A full-height panel holds one SVG, drawn by hand without a library.
 The layout runs left to right in columns: the `user` node first, then the services ordered by the longest path from a source, then the external nodes (databases, hosts, destinations) in the last column.
 A service that no traced call reaches is a source.
+A cycle has no longest path, so the call that closes it is set aside for the layout: a walk from the sources, then from the services the `user` node calls, then from the rest, each by name, finds that call, and the services of a cycle start in the first service column whatever order the API lists them in.
 Nodes within a column are sorted by name and spaced evenly.
 The layout is computed once per set of nodes and edges and kept while Live refreshes the numbers, so nodes do not jump.
 An edge that appears or leaves the window, which can move a service to another column, lays the map out again.
@@ -172,6 +173,8 @@ The service filter dims every node and edge that is neither the chosen service n
 An edge is a cubic curve from the right edge of the caller to the left edge of the callee, with an arrowhead.
 Its stroke width is `1 + log10(calls)`, capped at 5, in `--silk` at 60% opacity, or `--err` when the edge carries errors.
 An edge that skips a column bows around the nodes in between, so no edge runs under a node: its control points are pushed up or down by 0.6 row pitches, away from the nearest node it would otherwise cross.
+A call that closes a cycle runs back to an earlier column, or to its own node, so it goes the other way: from the left edge of the caller to the right edge of the callee, a quarter of the node's height below the middle, bowed below the row by 0.6 row pitches, or above it from a quarter above the middle, and further each time that is not enough to clear both end nodes and every node in the columns it spans.
+It never shares an end or a stretch with the forward edge of the same pair.
 Its label sits above the curve at 40% of its length, on a small `--bg-panel` halo so it never touches the arrowhead.
 The label gives the calls, and the errors in `--err` when there are any.
 The average and the p95 are in the hover tooltip.

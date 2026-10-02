@@ -50,9 +50,11 @@ const BOW = 0.6 * ROW_PITCH;
  * The cubic of one edge. An edge that skips a column bows around the nodes in
  * between: its control points move 0.6 row pitches away from the nearest node it
  * would otherwise cross, and a further 0.6 each time that is not yet enough to
- * keep the whole curve out of the nodes. pages.adoc#map.
+ * keep the whole curve out of the nodes. An edge to the same or an earlier column is
+ * a back edge (backCurve). pages.adoc#map.
  */
 export function edgeCurve(a, b, obstacles = []) {
+  if (b.column <= a.column) return backCurve(a, b, obstacles);
   const p0 = { x: a.x + NODE_W, y: a.y + NODE_H / 2 };
   const p3 = { x: b.x, y: b.y + NODE_H / 2 };
   const dx = Math.max(40, (p3.x - p0.x) / 2);
@@ -80,6 +82,38 @@ export function edgeCurve(a, b, obstacles = []) {
   return bowed(away, 4);
 }
 
+/**
+ * The cubic of an edge that closes a cycle, from a caller in a later column (or the same
+ * node) back to its callee. It leaves the caller's left edge and arrives at the callee's
+ * right edge, a quarter of the node's height off the middle so it shares no end with the
+ * forward edge, and always bows off the row: below first, then above, 0.6 row pitches more
+ * each time, until it clears both end nodes and every node in the columns it spans.
+ */
+function backCurve(a, b, obstacles) {
+  const isEnd = (o) => (o.x === a.x && o.y === a.y) || (o.x === b.x && o.y === b.y);
+  const spanned = obstacles.filter((o) => o.column >= b.column && o.column <= a.column && !isEnd(o));
+  const ends = [a, b];
+  const bowed = (dir, steps) => {
+    const p0 = { x: a.x, y: a.y + NODE_H / 2 + dir * NODE_H / 4 };
+    const p3 = { x: b.x + NODE_W, y: b.y + NODE_H / 2 + dir * NODE_H / 4 };
+    const dx = Math.max(40, (p0.x - p3.x) / 2);
+    return {
+      p0,
+      p3,
+      c1: { x: p0.x - dx, y: p0.y + dir * steps * BOW },
+      c2: { x: p3.x + dx, y: p3.y + dir * steps * BOW },
+    };
+  };
+  for (let steps = 1; steps <= 4; steps++) {
+    for (const dir of [1, -1]) {
+      const curve = bowed(dir, steps);
+      // The curve starts on the end nodes' edges, so only its run between them is tested against them.
+      if (!crosses(curve, spanned) && !crosses(curve, ends, 60, 0.1)) return curve;
+    }
+  }
+  return bowed(1, 4);
+}
+
 /** The box a curve occupies, so the drawing can grow the viewBox around it. */
 export function curveBounds(curve, steps = 24) {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -91,9 +125,13 @@ export function curveBounds(curve, steps = 24) {
   return { minX, minY, maxX, maxY };
 }
 
-/** Samples the curve and reports whether any sample lands inside one of the rects. */
-export function crosses(curve, rects, steps = 60) {
+/**
+ * Samples the curve and reports whether any sample lands inside one of the rects. `skip` is
+ * the share of the curve at either end left out of the test.
+ */
+export function crosses(curve, rects, steps = 60, skip = 0) {
   for (let i = 0; i <= steps; i++) {
+    if (i / steps < skip || i / steps > 1 - skip) continue;
     const p = cubicAt(curve.p0, curve.c1, curve.c2, curve.p3, i / steps);
     for (const rect of rects) if (pointInRect(p, rect)) return true;
   }
@@ -110,25 +148,47 @@ export function curvePath(curve) {
  */
 export function layout(nodes, edges) {
   const byId = new Map(nodes.map((n) => [n.id, n]));
-  const isService = (id) => (byId.get(id) || {}).kind === 'service';
-  const parents = new Map();
+  const kindOf = (id) => (byId.get(id) || {}).kind;
+  const parents = new Map(), children = new Map();
+  const add = (map, key, value) => {
+    if (!map.has(key)) map.set(key, new Set());
+    map.get(key).add(value);
+  };
   for (const e of edges) {
-    if (!isService(e.from) || !isService(e.to)) continue;
-    if (!parents.has(e.to)) parents.set(e.to, []);
-    parents.get(e.to).push(e.from);
+    if (kindOf(e.from) !== 'service' || kindOf(e.to) !== 'service') continue;
+    add(parents, e.to, e.from);
+    add(children, e.from, e.to);
   }
+  const byName = (a, b) => String(byId.get(a).name).localeCompare(String(byId.get(b).name));
+  const services = nodes.filter((n) => n.kind === 'service').map((n) => n.id).sort(byName);
+
+  // A cycle has no longest path, so the edge that closes it is set aside. A walk from the
+  // sources, then from the services the user calls, then from the rest, all by name, finds
+  // that edge whatever order the API lists the nodes in, and a cycle starts where traffic enters.
+  const fromUser = new Set(edges.filter((e) => kindOf(e.from) === 'user' && kindOf(e.to) === 'service').map((e) => e.to));
+  const starts = [...services.filter((id) => !parents.has(id)), ...services.filter((id) => fromUser.has(id)), ...services];
+  const closing = new Set();
+  const onPath = new Set(), walked = new Set();
+  const walk = (id) => {
+    onPath.add(id);
+    walked.add(id);
+    for (const c of [...(children.get(id) || [])].sort(byName)) {
+      if (onPath.has(c)) closing.add(id + '\u0000' + c);
+      else if (!walked.has(c)) walk(c);
+    }
+    onPath.delete(id);
+  };
+  for (const id of starts) if (!walked.has(id)) walk(id);
+
   const depths = new Map();
-  const depthOf = (id, seen) => {
+  const depthOf = (id) => {
     if (depths.has(id)) return depths.get(id);
-    if (seen.has(id)) return 0;                 // a cycle stops here
-    seen.add(id);
-    const ps = parents.get(id) || [];
-    const d = ps.length ? Math.max(...ps.map((p) => depthOf(p, seen) + 1)) : 0;
-    seen.delete(id);
+    const ps = [...(parents.get(id) || [])].filter((p) => !closing.has(p + '\u0000' + id));
+    const d = ps.length ? Math.max(...ps.map((p) => depthOf(p) + 1)) : 0;
     depths.set(id, d);
     return d;
   };
-  for (const n of nodes) if (n.kind === 'service') depthOf(n.id, new Set());
+  for (const id of services) depthOf(id);
 
   const maxDepth = nodes.reduce((m, n) => (n.kind === 'service' ? Math.max(m, depths.get(n.id) || 0) : m), 0);
   const columnOf = (n) => {
