@@ -542,7 +542,7 @@ const PICK_RADIUS_PX = 12;
  * The response-time scatter: one dot per request, or a density heatmap, drawn by
  * hand in a draw hook.
  * points: [start, durationMs, service, endpoint, traceId, flags]
- * opts: { height, mode, logScale, yMax, hidden:Set(service), onSelect(rect), onPick(point) }
+ * opts: { height, mode, logScale, yMax, hidden:Set(service), select, onSelect(rect), onPick(point) }
  */
 export function scatterChart(container, opts) {
   // The scatter's own view state; `state` would shadow the shared state drawMarks reads.
@@ -553,6 +553,8 @@ export function scatterChart(container, opts) {
     hidden: opts.hidden || new Set(),
     window: opts.window,
     yMax: opts.yMax,
+    /** The selection in values ({ from, to, minMs, maxMs }), which every rebuild redraws. */
+    select: opts.select || null,
   };
 
   const chart = new Chart(container, (width, height, colors) => {
@@ -674,6 +676,20 @@ export function scatterChart(container, opts) {
       ctx.restore();
     };
 
+    // uPlot keeps the rectangle in the instance a rebuild throws away, so the new one redraws
+    // it from the selection's values, clipped to the plot, without firing onSelect again.
+    const restoreSelect = (u) => {
+      const s = view.select;
+      if (!s) return;
+      const dpr = devicePixelRatio || 1;
+      const clip = (v, max) => Math.min(max, Math.max(0, v));
+      const w = u.bbox.width / dpr, hgt = u.bbox.height / dpr;
+      const left = clip(u.valToPos(s.from / 1000, 'x'), w), right = clip(u.valToPos(s.to / 1000, 'x'), w);
+      const top = clip(u.valToPos(s.maxMs, 'y'), hgt), bottom = clip(u.valToPos(Math.max(s.minMs, floor || 0.0001), 'y'), hgt);
+      if (right - left < 1 || bottom - top < 1) return;
+      u.setSelect({ left, top, width: right - left, height: bottom - top }, false);
+    };
+
     return {
       data,
       opts: {
@@ -709,8 +725,10 @@ export function scatterChart(container, opts) {
             const y1 = u.posToVal(sel.top, 'y');
             const y0 = u.posToVal(sel.top + sel.height, 'y');
             // Whole milliseconds, widened rather than rounded, so a point on the edge stays inside.
-            if (opts.onSelect) opts.onSelect({ from: Math.floor(x0), to: Math.ceil(x1), minMs: Math.max(0, y0), maxMs: y1 });
+            view.select = { from: Math.floor(x0), to: Math.ceil(x1), minMs: Math.max(0, y0), maxMs: y1 };
+            if (opts.onSelect) opts.onSelect(view.select);
           }],
+          ready: [restoreSelect],
         },
       },
       after: (plot) => {
@@ -787,7 +805,10 @@ export function scatterChart(container, opts) {
   chart.setLogScale = (on) => { view.logScale = on; chart.rebuild(); };
   chart.setHidden = (hidden) => { view.hidden = hidden; chart.rebuild(); };
   chart.setYMax = (v) => { view.yMax = v; chart.rebuild(); };
-  chart.clearSelect = () => { if (chart.plot) chart.plot.setSelect({ left: 0, top: 0, width: 0, height: 0 }, false); };
+  chart.clearSelect = () => {
+    view.select = null;
+    if (chart.plot) chart.plot.setSelect({ left: 0, top: 0, width: 0, height: 0 }, false);
+  };
   chart.view = view;
   return chart;
 }

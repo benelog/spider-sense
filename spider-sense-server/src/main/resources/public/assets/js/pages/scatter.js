@@ -219,6 +219,7 @@ export function render(root, ctx) {
       mode,
       logScale,
       yMax: yMaxOf(),
+      select: selection,
       onSelect: (rect) => {
         selection = rect;
         paintSelection();
@@ -232,15 +233,23 @@ export function render(root, ctx) {
   const loader = pageLoader({
     fetch: async () => ({ requested: scope(), res: await api.scatter({ limit: 5000 }) }),
     paint: ({ requested, res }) => {
-      loadedFor = requested;
       // Only a full load can be cut; the 10 s a Live merge asks for leaves the cut set as it was.
       truncated = !!res.truncated;
       points = res.points || [];
       const w = (res.window && res.window.from) ? res.window : api.windowFor();
       if (!points.length && !(api.state.status && api.state.status.counts && api.state.status.counts.spans)) {
+        // Nothing to keep yet: the next refresh loads again rather than merging into nothing.
+        loadedFor = null;
         fill(chartBody, noDataYet('No request has been recorded yet.'));
         fill(counts);
         return;
+      }
+      loadedFor = requested;
+      // A selection the new window no longer holds goes, so the list is not filtered by a rectangle off the chart.
+      if (selection && (selection.to < w.from || selection.from > w.to)) {
+        selection = null;
+        paintSelection();
+        loadTraces();
       }
       paintBar();
       makeChart(w);
@@ -283,9 +292,10 @@ export function render(root, ctx) {
   return {
     refresh: () => {
       startLive();
-      // The 2 s timer owns the refresh while Live is on, but it only merges the last 10 s of the
-      // same service and range: a change of either reloads the whole window and its traces.
-      if (api.state.live && loadedFor === scope()) return;
+      // Only a change of service or range reloads the whole window and its traces, Live or not.
+      // The page's own toggles write the hash and land here too, but they have already changed
+      // the view in place; under Live the 2 s timer merges the last 10 s.
+      if (loadedFor === scope()) return;
       loader.load();
       loadTraces();
     },

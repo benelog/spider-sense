@@ -267,7 +267,8 @@ The table asks `/api/traces` with `from`, `to`, `minMs` and `maxMs` from the rec
 `Esc` clears the selection.
 With Live on, points stream in from the right every 2 seconds, from a refetch of the last 10 seconds merged in and deduplicated by trace id, and the x-axis slides.
 The y-axis maximum and the `▲ n above` note follow the merged points, and the "truncated" notice stays until a full load of the window is not cut.
-A change of service or range reloads the whole window and the trace list, Live or not.
+A change of service or range reloads the whole window and the trace list, Live or not, and nothing else does: the legend, Success and Failed, Log scale and the mode change the chart in place, and only Success and Failed ask the trace list again.
+The rectangle stays on the chart through every redraw, a toggle, a Live merge or a reload, until `Esc`, *Clear* or a reload whose window no longer holds it clears the selection.
 
 [#traces]
 == Traces

@@ -204,6 +204,60 @@ test('the scatter widens a rectangle to whole milliseconds rather than rounding 
   instance.destroy();
 });
 
+test('a scatter toggle changes the view in place, without reloading the window (pages.adoc#scatter)', async () => {
+  const { root, instance } = await visit('scatter');
+  const button = (label) => root.querySelectorAll('button').find((b) => b.textContent === label);
+  for (const label of ['Failed', 'Log scale', 'Heatmap']) {
+    const urls = await asked(async () => {
+      button(label).click();
+      instance.refresh();          // what app.js does when the page's own query changes the hash
+      await settle(80);
+    });
+    assert.deepEqual(urls.filter((u) => u.startsWith('/api/scatter')), [], label + ' reloads the points');
+    assert.ok(urls.filter((u) => u.startsWith('/api/traces')).length <= 1, label + ' asks the traces twice');
+  }
+  instance.destroy();
+});
+
+test('a change of service reloads the scatter', async () => {
+  const { instance } = await visit('scatter');
+  const urls = await asked(async () => {
+    api.state.service = ids.service;
+    instance.refresh();
+    await settle(80);
+  });
+  api.state.service = '';
+  assert.equal(urls.filter((u) => u.startsWith('/api/scatter')).length, 1);
+  instance.destroy();
+});
+
+test('the scatter redraws the selection on every rebuild of its chart, until it is cleared', async () => {
+  const { root, instance } = await visit('scatter');
+  const proto = Object.getPrototypeOf(scatterPlot(root));
+  const valToPos = proto.valToPos;
+  // The inverse of the posToVal below: a pixel is a millisecond from 1000 s, and y grows upwards from 200 px.
+  proto.valToPos = (v, axis) => (axis === 'y' ? 200 - v : (v - 1000) * 1000);
+  try {
+    const plot = scatterPlot(root);
+    plot.posToVal = (v, axis) => (axis === 'y' ? 200 - v : 1000 + v / 1000);
+    plot.setSelect({ left: 0.6, width: 399.8, top: 47.6, height: 52.8 });
+    await settle(60);
+    for (const label of ['Failed', 'Log scale', 'Heatmap']) {
+      root.querySelectorAll('button').find((b) => b.textContent === label).click();
+      const rebuilt = scatterPlot(root);
+      assert.notEqual(rebuilt, plot, label + ' rebuilt the chart');
+      const near = Object.fromEntries(Object.entries(rebuilt.select).map(([k, v]) => [k, Math.round(v * 10) / 10]));
+      assert.deepEqual(near, { left: 0, top: 47.6, width: 401, height: 52.8 }, 'the rectangle after ' + label);
+    }
+    instance.onEscape();
+    root.querySelectorAll('button').find((b) => b.textContent === 'Dots').click();
+    assert.equal(scatterPlot(root).select.width, 0, 'a cleared selection is not redrawn');
+  } finally {
+    proto.valToPos = valToPos;
+    instance.destroy();
+  }
+});
+
 /** Runs `fn` while the mock's answer to `path` goes through `change` first. */
 async function withAnswer(path, change, fn) {
   const real = globalThis.fetch;
