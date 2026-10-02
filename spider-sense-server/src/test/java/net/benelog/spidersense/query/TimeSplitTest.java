@@ -120,6 +120,46 @@ class TimeSplitTest {
     }
 
     @Test
+    void aChildThatOutlivesItsParentCountsOnlyTheTimeInsideIt() {
+        // An @Async audit started at 50 ms runs 300 ms, long past the response at 100 ms.
+        Queries.TimeSplit split = Queries.TimeSplit.of(List.of(
+                internal("a", null, "GET /orders", 0, 100),
+                query("q", "a", "orders", 10, 20),
+                internal("x", "a", "OrderService.audit", 50, 300),
+                // Its own child outlives it too; only 90 to 100 is inside the request.
+                query("y", "x", "audit_log", 90, 400)));
+
+        assertThat(sum(split)).isCloseTo(1.0, offset(1e-9));
+        assertThat(split.breakdown()).containsEntry("db", 0.3).containsEntry("internal", 0.4)
+                .containsEntry("self", 0.3);
+        assertThat(split.hotSpans().get(0).name()).isEqualTo("OrderService.audit");
+        assertThat(split.hotSpans().get(0).selfMs()).isEqualTo(40.0);
+        assertThat(split.hotSpans().get(0).share()).isEqualTo(0.4);
+    }
+
+    @Test
+    void childrenThatRunAtOnceStillSplitTheTimeIntoSharesThatSumToOne() {
+        // Two calls at once: 100 ms of calls in 50 ms of the request, and 50 ms of its own.
+        Queries.TimeSplit split = Queries.TimeSplit.of(List.of(
+                internal("a", null, "GET /orders", 0, 100),
+                call("h1", "a", "http://localhost:8081/api/books/1", 10, 50),
+                call("h2", "a", "http://localhost:8081/api/books/2", 10, 50)));
+
+        assertThat(sum(split)).isCloseTo(1.0, offset(1e-9));
+        assertThat(split.breakdown().get("http")).isCloseTo(2.0 / 3, offset(1e-9));
+        assertThat(split.breakdown().get("self")).isCloseTo(1.0 / 3, offset(1e-9));
+        assertThat(split.hotSpans().get(0).share()).isCloseTo(2.0 / 3, offset(1e-9));
+    }
+
+    private static double sum(Queries.TimeSplit split) {
+        double sum = 0;
+        for (double share : split.breakdown().values()) {
+            sum += share;
+        }
+        return sum;
+    }
+
+    @Test
     void theHotSpansAreTheLargestSelfTimesByNameWithTiesByName() {
         Queries.TimeSplit split = Queries.TimeSplit.of(List.of(
                 internal("a", null, "GET /orders", 0, 100),

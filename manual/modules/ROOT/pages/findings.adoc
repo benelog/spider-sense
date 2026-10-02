@@ -263,7 +263,7 @@ One trace is an anecdote, so a `slow-endpoint` and a `slow-job` also answer "whe
 
 Both are computed over the finding's sample: the 20 slowest traces of the endpoint or the job in the window, of which the first three are the `traces` the finding carries.
 The sample is twenty traces rather than every trace because the answer is read out of the spans themselves rather than out of an aggregate, and the slowest twenty are where a slow endpoint's time is.
-A share is therefore a share of those traces' summed duration, while the finding's own `totalMs` stays the window's.
+A share is therefore a share of those traces' time, while the finding's own `totalMs` stays the window's.
 Each trace is read whole or not at all: when the service's spans in the twenty pass 20,000, the sample stops at the last whole trace under that count, slowest first, and the slowest is always read.
 A trace read in part would turn the children of every parent it missed into top spans and move their time into the wrong share.
 Only the spans of the finding's own service count, which is the rule `dbShare` already uses.
@@ -272,7 +272,9 @@ Leaving the downstream server span out makes the wait on an outbound call land i
 
 Self time is a span's duration less the time its direct children within that set cover inside it, as the xref:pages.adoc#profile[Profile view] computes it.
 A span whose parent is not in the set is a top span: the entry span of a request, or the root span of a job.
-The shares are taken over the top spans.
+Here each span counts only the part of it that lies inside its parent, down from the top span, so an `@Async` child that runs on after the response adds only what it did before it.
+The shares are taken over the sum of the self times, which is the top spans' summed duration.
+Children that run at once each count their overlap, which makes the sum the larger, and the shares still sum to 1.
 
 `hotSpans` groups every span except the top spans by category and name, sums each group's self time, and lists the three largest by `selfMs`, largest first.
 The name is the span's summary with every run of digits replaced by `?`, and an outbound call is named as <<repeated-call,the repeated call>> names it (`GET localhost:8081/api/books/?`), so one call to 40 items is one row and reads the same here as it does in an `n-plus-one-http`.

@@ -823,12 +823,12 @@ class FindingsTest {
 
     @Test
     void aSlowEndpointSumsItsHotSpansOverEveryTraceOfTheSample() {
-        // Two requests, each one slow query and one outbound call to a different item.
+        // Two requests, each one slow query and then one outbound call to a different item.
         for (int n = 1; n <= 2; n++) {
             Span.Builder root = entry(n, "/orders/report", 1000);
             decoder.ingest(Otlp.traces(Otlp.service("orders"), root,
                     query(root, 10 * n, "select * from orders", "orders", NOW, 600),
-                    call(root, 10 * n + 1, "/api/books/" + n, NOW, 200)));
+                    call(root, 10 * n + 1, "/api/books/" + n, NOW + 600, 200)));
         }
         flush();
 

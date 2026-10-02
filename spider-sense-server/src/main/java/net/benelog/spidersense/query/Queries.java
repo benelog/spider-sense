@@ -3,13 +3,16 @@ package net.benelog.spidersense.query;
 import java.net.URI;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -1238,17 +1241,25 @@ public final class Queries {
          * reads them.
          *
          * <p>A span whose parent is not among them is a top span: the entry span of a
-         * request, the root span of a job. Its duration is what the shares are taken
-         * over, and its own self time is {@code self}. Every other span's self time goes
-         * to {@code db}, {@code http} or {@code internal} by its category, and to the
-         * summary it is named by.
+         * request, the root span of a job. Its own self time is {@code self}. Every
+         * other span's self time goes to {@code db}, {@code http} or {@code internal} by
+         * its category, and to the summary it is named by.
+         *
+         * <p>The self times are taken inside the top span: each child counts only the
+         * part of it that lies inside its parent, so an {@code @Async} child that runs
+         * on after the response adds only what it did before. The shares are taken over
+         * the sum of the self times, which is the top spans' summed duration unless
+         * children ran at once; then their overlap counts in each, and the four shares
+         * still sum to 1.
          */
         static TimeSplit of(List<SpanRecord> spans) {
             if (spans.isEmpty()) {
                 return NONE;
             }
-            Map<String, Long> self = selfNanos(spans);
-            Set<String> known = self.keySet();
+            SpanTree tree = SpanTree.of(spans);
+            IdentityHashMap<SpanRecord, Long> self = selfInsideTheTop(tree);
+            Set<SpanRecord> top = Collections.newSetFromMap(new IdentityHashMap<>());
+            top.addAll(tree.roots());
 
             double totalMs = 0;
             // Insertion order is the order the JSON and the text print, so it is written out
@@ -1259,13 +1270,11 @@ public final class Queries {
             }
             Map<String, HotSpanSum> hottest = new LinkedHashMap<>();
             for (SpanRecord span : spans) {
-                double selfMs = Rows.ms(self.getOrDefault(span.spanId(), 0L));
-                String parent = span.parentSpanId();
-                if (parent == null || !known.contains(parent)) {
+                double selfMs = Rows.ms(self.getOrDefault(span, 0L));
+                totalMs += selfMs;
+                if (top.contains(span)) {
                     // A top span: the entry span of a request, the root span of a job. Its own
-                    // self time is the request's own code, and its duration is what the shares
-                    // are taken over.
-                    totalMs += span.durationMillis();
+                    // self time is the request's own code.
                     shares.merge("self", selfMs, Double::sum);
                     continue;
                 }
@@ -1299,6 +1308,35 @@ public final class Queries {
             return new TimeSplit(
                     List.copyOf(hotSpans.subList(0, Math.min(HOT_SPANS, hotSpans.size()))),
                     Collections.unmodifiableMap(shares));
+        }
+
+        /**
+         * The self time of every span of the tree, each span clipped to the part of its
+         * parent it ran in, down from its top span; walked with a stack, as a deep trace
+         * nests further than the call stack goes.
+         */
+        private static IdentityHashMap<SpanRecord, Long> selfInsideTheTop(SpanTree tree) {
+            IdentityHashMap<SpanRecord, Long> self = new IdentityHashMap<>();
+            Deque<Clipped> stack = new ArrayDeque<>();
+            for (SpanRecord root : tree.roots()) {
+                stack.push(new Clipped(root, root.startNanos(), root.startNanos() + root.durationNanos()));
+            }
+            while (!stack.isEmpty()) {
+                Clipped clipped = stack.pop();
+                List<SpanRecord> children = tree.children(clipped.span());
+                long covered = coveredNanos(children, clipped.from(), clipped.to());
+                self.put(clipped.span(), Math.max(0, clipped.to() - clipped.from() - covered));
+                for (SpanRecord child : children) {
+                    long from = Math.min(Math.max(child.startNanos(), clipped.from()), clipped.to());
+                    long to = Math.max(from, Math.min(child.endNanos(), clipped.to()));
+                    stack.push(new Clipped(child, from, to));
+                }
+            }
+            return self;
+        }
+
+        /** A span and the part of it inside its parent, as {@link #selfInsideTheTop} walks it. */
+        private record Clipped(SpanRecord span, long from, long to) {
         }
     }
 
