@@ -437,6 +437,10 @@ final class Remote {
             return add(key, String.valueOf(value));
         }
 
+        UrlBuilder add(String key, @Nullable Long value) {
+            return add(key, value == null ? null : value.toString());
+        }
+
         @Override
         public String toString() {
             return url.toString();

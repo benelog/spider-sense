@@ -394,6 +394,28 @@ class CliTest {
         }
     }
 
+    /**
+     * A threshold that is not a whole number is the same usage error over HTTP and from the
+     * file, rather than a 400 from the server in one mode and a truncated threshold in the other.
+     */
+    @Test
+    void aFractionalMinMsIsOneUsageErrorInBothModes() {
+        String expected = "spider-sense: --min-ms is not a whole number: 1.5\n";
+        serve(false, (server, base) -> {
+            Run remote = runAt(base, "traces", "--min-ms=1.5", "--url=" + base);
+            assertThat(remote.exit()).isEqualTo(2);
+            assertThat(remote.err()).startsWith(expected);
+        });
+        Run local = run("traces", "--min-ms=1.5", "--db=" + TestStore.writtenUrl());
+        assertThat(local.exit()).isEqualTo(2);
+        assertThat(local.err()).startsWith(expected);
+        assertThat(local.out()).isEmpty();
+
+        Run tail = run("tail", "--until-traces=2.5", "--url=" + closedUrl());
+        assertThat(tail.exit()).isEqualTo(2);
+        assertThat(tail.err()).startsWith("spider-sense: --until-traces is not a whole number: 2.5\n");
+    }
+
     // --- from the file -------------------------------------------------------
 
     @Test

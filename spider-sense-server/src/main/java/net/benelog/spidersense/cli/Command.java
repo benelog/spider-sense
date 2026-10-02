@@ -89,7 +89,7 @@ record Command(String commandName, Set<String> options, @Nullable String argumen
             new Command(Options.TRACES, with("since", "until", "limit", "full", "status", "min-ms", "q"), null, Method.GET,
                 options -> Remote.withWindow(options, new Remote.UrlBuilder("/api/traces"))
                         .add("status", options.valueOrNull("status"))
-                        .add("minMs", options.valueOrNull("min-ms"))
+                        .add("minMs", options.optionalLong("min-ms"))
                         .add("q", options.valueOrNull("q"))
                         .add("limit", options.limit(Limits.CLI_TRACES, Limits.TRACES_MAX)),
                 null,

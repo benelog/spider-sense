@@ -262,6 +262,7 @@ logs (2)
 
 `traces` lists the newest traces of the window.
 `--status=error` or `--status=ok` filters by outcome, `--min-ms=<n>` by duration, `--q=<text>` by free text, and `--limit=<n>` sets the page size.
+`--min-ms` takes a whole number of milliseconds, and any other value, such as `1.5`, is a usage error in both modes.
 
 [source]
 ----

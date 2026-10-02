@@ -163,8 +163,23 @@ final class Options {
         return Limits.clamp(has("limit") ? (int) number("limit") : null, fallback, max);
     }
 
+    /**
+     * A whole number the option must be, or null when it was not given.
+     *
+     * <p>Checked here, before either mode runs, rather than left to the server: the raw value
+     * would travel over HTTP and be refused there, while the file path would truncate
+     * {@code 1.5} to {@code 1} and answer for a threshold nobody typed.
+     */
     @Nullable Long optionalLong(String key) {
-        return has(key) ? (long) number(key) : null;
+        String value = valueOrNull(key);
+        if (value == null) {
+            return null;
+        }
+        try {
+            return Long.valueOf(value.trim());
+        } catch (NumberFormatException e) {
+            throw new Usage("--" + key + " is not a whole number: " + value);
+        }
     }
 
     private double number(String key) {
