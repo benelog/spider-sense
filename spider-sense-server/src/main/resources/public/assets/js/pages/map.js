@@ -427,7 +427,7 @@ export function render(root, ctx) {
     g.appendChild(line);
     if (n.kind === 'service') g.appendChild(miniHistogram(n.histogram, HIST_X, HIST_Y));
     g.addEventListener('click', () => openNode(n));
-    g.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); openNode(n); } });
+    g.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openNode(n); } });
     g.addEventListener('mouseenter', () => { highlighted = { node: n.id }; applyDim(); });
     g.addEventListener('mouseleave', () => { highlighted = null; applyDim(); });
     g.addEventListener('focus', () => { highlighted = { node: n.id }; applyDim(); });

@@ -51,6 +51,7 @@ A click opens the service page.
 . *Tingles*: the feed of slow requests, slow queries and errors, newest first.
 Each entry has an icon for its kind (a turtle for a slow request, a database for a slow query, a bolt for an error), the service chip, a title, a detail, and a relative time.
 A click opens the trace.
+A tingle without a trace, as an imported one can be, is plain text: it takes no focus and no click.
 With Live on, new tingles are prepended with a 300 ms slide.
 
 Before any service has sent anything, the page shows the logo large, one sentence, and the content of the xref:ui.adoc#dialogs[How to send data] dialog inline: the `-javaagent` line, the `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_EXPORTER_OTLP_PROTOCOL` pair, and a `curl` for OTLP/JSON.
@@ -181,7 +182,7 @@ The label gives the calls, and the errors in `--err` when there are any.
 The average and the p95 are in the hover tooltip.
 Hovering a node highlights it, its neighbours and the edges among them, and hovering an edge highlights it and the two nodes it joins; everything else dims.
 
-A click on a node opens a drawer on the right, 420 px wide like the span drawer, with the node's name and kind.
+A click on a node, or Enter or Space on a focused one, opens a drawer on the right, 420 px wide like the span drawer, with the node's name and kind.
 For a service the drawer holds the stat tiles (requests, Apdex, error rate, p95, rps), the Response summary bars, the Load chart for the window, fetched from `+/api/services/{name}+` and drawn as the Overview draws it in Load mode, and buttons for *Service*, *Scatter* and *Traces*, each filtered to that service.
 For an external node it holds the calls, the errors, the average, the p95, and the services that call it with their counts.
 
@@ -473,6 +474,7 @@ The axes carry their units, `MiB`, `ms`, `%`, and connections.
 
 `#/metrics` is the explorer for every metric that arrived.
 The catalog on the left is searchable, and lists each metric's name, type chip, unit and series count.
+It is a listbox with one tab stop on the selected metric: the arrow keys, Home and End move between the metrics, and Enter or Space picks one, as a click does.
 It lists the metrics of the top bar's service, and a change of service or a Live refresh reloads it with the chart, so a metric that starts arriving appears.
 The chart on the right draws the selected metric over the window, one line per series, with a legend of the series' attributes.
 Each series is drawn at its own timestamps, so two services that export at different offsets share the time axis without one being shifted onto the other's points.

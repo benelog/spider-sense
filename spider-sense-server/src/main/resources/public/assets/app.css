@@ -577,10 +577,10 @@ details.collapsible > summary:hover { color: var(--text); }
 .tingle {
   display: grid; grid-template-columns: 20px 1fr auto; gap: 10px; align-items: baseline;
   padding: 8px 14px; border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
-  cursor: pointer;
 }
 .tingle:last-child { border-bottom: 0; }
-.tingle:hover { background: var(--bg-raised); }
+.tingle[role="link"] { cursor: pointer; }
+.tingle[role="link"]:hover { background: var(--bg-raised); }
 .tingle .t-icon { grid-row: span 2; align-self: center; color: var(--text-muted); }
 .tingle[data-kind="error"] .t-icon { color: var(--err); }
 .tingle[data-kind="slow-request"] .t-icon { color: var(--warn); }

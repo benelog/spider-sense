@@ -146,6 +146,33 @@ test('hovering a map edge highlights it and its two nodes (pages.adoc#map-edges)
   instance.destroy();
 });
 
+test('Space opens a map node as Enter does (ui.adoc#accessibility)', async () => {
+  const { root, instance } = await visit('map');
+  const ev = root.querySelector('g.map-node').dispatch('keydown', { key: ' ' });
+  assert.equal(ui.drawerOpen(), true);
+  assert.equal(ev.defaultPrevented, true, 'the panel does not scroll');
+  instance.destroy();
+});
+
+test('the Metrics catalog is a listbox the arrow keys walk and Space picks from', async () => {
+  const { root, instance } = await visit('metrics');
+  const box = root.querySelector('.catalog');
+  assert.equal(box.getAttribute('role'), 'listbox');
+  assert.ok(box.getAttribute('aria-label'));
+  const items = () => root.querySelectorAll('.catalog-item');
+  assert.ok(items().length > 2);
+  assert.deepEqual(items().map((i) => i.getAttribute('tabindex')), items().map((i) => (i.getAttribute('aria-selected') === 'true' ? '0' : '-1')),
+    'one tab stop, on the selected option');
+  items()[0].dispatch('keydown', { key: 'ArrowDown' });
+  assert.equal(document.activeElement, items()[1]);
+  items()[1].dispatch('keydown', { key: 'ArrowUp' });
+  assert.equal(document.activeElement, items()[0]);
+  const ev = items()[1].dispatch('keydown', { key: ' ' });
+  assert.equal(ev.defaultPrevented, true);
+  assert.equal(items()[1].getAttribute('aria-selected'), 'true');
+  instance.destroy();
+});
+
 /** Runs `fn` while the mock's answer to `path` goes through `change` first. */
 async function withAnswer(path, change, fn) {
   const real = globalThis.fetch;
@@ -169,6 +196,24 @@ test('the Overview shows a worker\'s findings, services and tingles though it ha
     assert.ok(root.querySelectorAll('.service-card').length > 0, 'the service cards');
     assert.equal(root.querySelectorAll('.tingle').length, 1, 'the tingle');
     assert.equal(root.querySelector('.hist-empty').textContent, '-', 'the Response summary says -');
+    instance.destroy();
+  });
+});
+
+test('a tingle without a trace is not a link', async () => {
+  await withAnswer('/api/overview', (body) => ({
+    ...body,
+    tingles: [
+      { kind: 'slow-query', service: body.services[0].name, title: 'with', detail: '', at: Date.now(), traceId: 'abc' },
+      { kind: 'slow-query', service: body.services[0].name, title: 'without', detail: '', at: Date.now() - 1, traceId: null },
+    ],
+  }), async () => {
+    const { root, instance } = await visit('overview');
+    const [withTrace, without] = root.querySelectorAll('.tingle');
+    assert.equal(withTrace.getAttribute('role'), 'link');
+    assert.equal(withTrace.getAttribute('tabindex'), '0');
+    assert.equal(without.getAttribute('role'), null);
+    assert.equal(without.getAttribute('tabindex'), null);
     instance.destroy();
   });
 });

@@ -131,14 +131,18 @@ export function render(root, ctx) {
     if (!tingles.length) fill(tingleBody, placeholder('Nothing noteworthy in this window.'));
   }
 
+  /** A tingle with a trace is a link to it; one without, as an imported one can be, is plain text. */
   function tingleRow(t) {
+    const open = () => router.openDetail('traces', t.traceId);
     return h('div.tingle', {
       'data-kind': t.kind,
-      tabindex: 0,
-      role: 'link',
       title: TINGLE_LABEL[t.kind] || t.kind,
-      onclick: () => t.traceId && router.openDetail('traces', t.traceId),
-      onkeydown: (e) => { if (e.key === 'Enter' && t.traceId) router.openDetail('traces', t.traceId); },
+      ...(t.traceId ? {
+        tabindex: 0,
+        role: 'link',
+        onclick: open,
+        onkeydown: (e) => { if (e.key === 'Enter') open(); },
+      } : {}),
     },
       h('span.t-icon', icon(TINGLE_ICON[t.kind] || 'bolt')),
       h('div.t-title', serviceChip(t.service), h('span', t.title)),

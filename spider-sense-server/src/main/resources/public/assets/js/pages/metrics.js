@@ -24,7 +24,7 @@ export function render(root, ctx) {
   let filterText = ctx.query().find || '';
 
   const search = h('input', { type: 'search', placeholder: 'Find a metric', value: filterText, 'aria-label': 'Find a metric' });
-  const listBox = h('div.catalog', spinner());
+  const listBox = h('div.catalog', { role: 'listbox', 'aria-label': 'Metrics' }, spinner());
   const catalogPanel = panel({ title: 'Catalog' },
     h('div.querybar', h('div.search', icon('search'), search)),
     listBox);
@@ -69,16 +69,37 @@ export function render(root, ctx) {
         node.replaceChildren(...item(m).childNodes);
       },
     });
-    if (!list.length) fill(listBox, placeholder('No metric matches.'));
+    if (!list.length) {
+      fill(listBox, placeholder('No metric matches.'));
+      return;
+    }
+    // One tab stop: the selected option, or the first when the search hides it.
+    const options = [...listBox.querySelectorAll('.catalog-item')];
+    const stop = options.find((o) => o.getAttribute('aria-selected') === 'true') || options[0];
+    for (const o of options) o.setAttribute('tabindex', o === stop ? '0' : '-1');
+  }
+
+  /** The arrow keys, Home and End move the focus between the options; Enter or Space picks one. */
+  function onOptionKey(e, m) {
+    const options = [...listBox.querySelectorAll('.catalog-item')];
+    const at = options.indexOf(e.currentTarget);
+    const to = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: options.length - 1 }[e.key];
+    if (to !== undefined) {
+      e.preventDefault();
+      if (options[to]) options[to].focus();
+    } else if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      select(m.name);
+    }
   }
 
   function item(m) {
     return h('div.catalog-item', {
       role: 'option',
-      tabindex: 0,
+      tabindex: -1,
       'aria-selected': String(m.name === selected),
       onclick: () => select(m.name),
-      onkeydown: (e) => { if (e.key === 'Enter') select(m.name); },
+      onkeydown: (e) => onOptionKey(e, m),
     },
       h('span.catalog-name', m.name),
       h('div.catalog-meta',
