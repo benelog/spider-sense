@@ -45,12 +45,17 @@ public final class ServiceRegistry {
      * Records a sighting, and adopts the service as the embedded one when it
      * reports this process's own pid.
      *
+     * <p>Every sighting is a chance until a service is adopted, a name already
+     * stored included: the stored row of a name an earlier run exported carries
+     * that run's pid, so the constructor cannot adopt it, and the first export of
+     * this run is the first that names this process.
+     *
      * @return whether this is the first time this process sees the service, which
      *         is when the SSE stream sends a {@code service} event
      */
     public boolean recordSighting(String name, Map<String, Object> resource) {
         boolean isNew = seen.putIfAbsent(name, Boolean.TRUE) == null;
-        if (isNew && embedded == null) {
+        if (embedded == null) {
             adoptIfOurOwnProcess(name, resource);
         }
         return isNew;
