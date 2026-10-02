@@ -69,12 +69,25 @@ public final class SpiderSenseServer implements AutoCloseable {
     }
 
     public static void main(String[] args) {
-        Config config = Config.parse(args);
-        SpiderSenseServer server = start(config);
-        System.out.println("Spider Sense (" + config.mode() + "): " + config.baseUrl(server.port()));
-        if (!config.agentMode()) {
+        SpiderSenseServer server = startAndSay(Config.parse(args));
+        if (!server.config().agentMode()) {
             server.join();
         }
+    }
+
+    /**
+     * What the launcher calls in agent mode instead of {@link #main}: the same start and the same
+     * line, and the port Jetty bound, which differs from {@code --port} when that is {@code 0}.
+     * The launcher prints that port and exports to it, since port {@code 0} is not an address.
+     */
+    public static int launch(String[] args) {
+        return startAndSay(Config.parse(args)).port();
+    }
+
+    private static SpiderSenseServer startAndSay(Config config) {
+        SpiderSenseServer server = start(config);
+        System.out.println("Spider Sense (" + config.mode() + "): " + config.baseUrl(server.port()));
+        return server;
     }
 
     /**

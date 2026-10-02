@@ -67,6 +67,26 @@ class SpiderSenseServerTest {
         }
     }
 
+    /**
+     * The launcher's entry point hands back the port Jetty bound, so {@code spidersense.port=0}
+     * prints and exports to a real port rather than to port 0. The server it starts is the agent
+     * mode's, all daemon threads, and is left running as it is in a monitored application.
+     */
+    @Test
+    void launchReturnsThePortItBoundForPortZero() throws Exception {
+        int port = SpiderSenseServer.launch(new String[] {
+                "--port=0", "--mode=agent", "--db=" + TestStore.memoryUrl()});
+
+        assertThat(port).isPositive();
+        HttpResponse<String> status = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/api/status"))
+                        .timeout(Duration.ofSeconds(10)).build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertThat(status.statusCode()).isEqualTo(200);
+        assertThat(Json.parse(status.body()).asObject().getString("endpoint"))
+                .isEqualTo("http://127.0.0.1:" + port);
+    }
+
     @Test
     void anUnopenableDatabaseFallsBackToMemoryRatherThanFailingToStart() {
         // A path that cannot be a directory: the fallback is what keeps premain safe.

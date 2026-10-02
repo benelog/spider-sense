@@ -68,8 +68,8 @@ The extension is extracted the same way, to `extension-<version>-<crc>.jar` besi
 `SpiderSenseAgent.premain` does four things, in order.
 
 . Read configuration: the xref:configuration.adoc#properties-file[properties file], then the system properties `spidersense.*`, listed in xref:configuration.adoc#properties[Configuration].
-. Unless `spidersense.collector` is set: extract the nested jar, create the `SenseClassLoader`, and invoke `net.benelog.spidersense.server.SpiderSenseServer.main(String[])` with `--port=<port> --mode=agent ...`, on the current thread with the context class loader set to the `SenseClassLoader`.
-`main` returns once the port is bound, because Spider Silk's `start` returns after binding.
+. Unless `spidersense.collector` is set: extract the nested jar, create the `SenseClassLoader`, and invoke `net.benelog.spidersense.server.SpiderSenseServer.launch(String[])` with `--port=<port> --mode=agent ...`, on the current thread with the context class loader set to the `SenseClassLoader`.
+`launch` returns once the port is bound, because Spider Silk's `start` returns after binding, and it returns the port it bound, which steps 2 and 3 print and export to, so `spidersense.port=0` works.
 A failure here is logged to stderr and swallowed: Spider Sense must never prevent the application from starting.
 . Set defaults for the OpenTelemetry agent, only where the user has not set the property, its environment variable or a key of the file `otel.javaagent.configuration-file` names already.
 . Call `io.opentelemetry.javaagent.OpenTelemetryAgent.premain(agentArgs, inst)`.

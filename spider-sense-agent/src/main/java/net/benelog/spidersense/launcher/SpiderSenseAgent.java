@@ -5,6 +5,7 @@ import java.lang.reflect.Method;
 import java.net.URI;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.OptionalInt;
 import java.util.concurrent.Callable;
 import org.jspecify.annotations.Nullable;
 
@@ -64,7 +65,11 @@ public final class SpiderSenseAgent {
                 System.out.println(LOG_PREFIX + "forwarding to " + config.otlpEndpoint());
             } else {
                 Config serverConfig = config.withService(effectiveServiceName(config, settings));
-                if (EmbeddedServer.start(serverConfig)) {
+                OptionalInt bound = EmbeddedServer.start(serverConfig);
+                if (bound.isPresent()) {
+                    // The port Jetty bound: spidersense.port=0 asks for any free one, and port 0
+                    // is neither a URL to print nor an endpoint to export to.
+                    config = config.withPort(bound.getAsInt());
                     System.out.println(LOG_PREFIX + "UI: " + config.baseUrl());
                     maybeOpenBrowser(config);
                 }

@@ -22,7 +22,7 @@ So is an argument whose key is not in the table below, such as `--prot=4001`, `-
 
 | `spidersense.port`
 | `4000`
-| The UI and OTLP/HTTP port.
+| The UI and OTLP/HTTP port. Under `-javaagent`, `0` binds any free port, and the launcher prints that port on its `UI:` line and exports to it.
 
 | `spidersense.host`
 | `127.0.0.1`
