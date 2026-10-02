@@ -52,10 +52,26 @@ test('self time is elapsed less the direct children, and never below zero', () =
   assert.equal(overlapping.get('p'), 0);
 });
 
+// A chain 10,000 spans deep, each the parent of the next.
+const chain = Array.from({ length: 10_000 }, (_, i) => span(String(i), i ? String(i - 1) : null, i, 1));
+
+test('flattenTree walks a trace deeper than the call stack', () => {
+  const rows = flattenTree(spanTree(chain));
+  assert.equal(rows.length, chain.length);
+  assert.equal(rows.at(-1).depth, chain.length - 1);
+});
+
+test('depthMap measures a trace deeper than the call stack, children listed first', () => {
+  const depths = depthMap(chain.toReversed());
+  assert.equal(depths.get('0'), 0);
+  assert.equal(depths.get(String(chain.length - 1)), chain.length - 1);
+});
+
 test('depthMap survives a parent cycle', () => {
   const depths = depthMap([span('x', 'y', 0, 1), span('y', 'x', 0, 1), span('z', 'x', 0, 1)]);
   assert.equal(depths.size, 3);
   assert.ok([...depths.values()].every((d) => Number.isFinite(d)));
+  assert.equal(depths.get('z'), depths.get('x') + 1);
 });
 
 test('the profile numbers the steps in start order with offsets and gaps', () => {

@@ -41,13 +41,15 @@ export function spanTree(spans) {
 /** The tree depth first, one `{ span, depth, hasChildren }` per row, without the rows under a collapsed span. */
 export function flattenTree(tree, collapsed = new Set()) {
   const out = [];
-  const walk = (span, depth) => {
+  // An explicit stack, not recursion: a deep trace nests further than the call stack goes.
+  const stack = tree.roots.map((span) => ({ span, depth: 0 })).reverse();
+  while (stack.length) {
+    const { span, depth } = stack.pop();
     const kids = tree.children.get(span.spanId) || [];
     out.push({ span, depth, hasChildren: kids.length > 0 });
-    if (collapsed.has(span.spanId)) return;
-    for (const kid of kids) walk(kid, depth + 1);
-  };
-  for (const root of tree.roots) walk(root, 0);
+    if (collapsed.has(span.spanId)) continue;
+    for (let i = kids.length - 1; i >= 0; i--) stack.push({ span: kids[i], depth: depth + 1 });
+  }
   return out;
 }
 
@@ -69,16 +71,23 @@ export function selfTimes(spans) {
 export function depthMap(spans) {
   const byId = new Map(spans.map((s) => [s.spanId, s]));
   const depths = new Map();
-  const depthOf = (s, seen = new Set()) => {
-    if (depths.has(s.spanId)) return depths.get(s.spanId);
-    if (seen.has(s.spanId)) return 0;
-    seen.add(s.spanId);
-    const parent = parentIn(byId, s);
-    const d = parent ? depthOf(byId.get(parent), seen) + 1 : 0;
-    depths.set(s.spanId, d);
-    return d;
-  };
-  for (const s of spans) depthOf(s);
+  for (const s of spans) {
+    // Climb to a span whose depth is known, a root or the span that closes a cycle, without
+    // recursion (a deep trace nests further than the call stack goes), then number the way down.
+    const chain = [];
+    const seen = new Set();
+    let base = -1;
+    for (let cur = s; ;) {
+      if (depths.has(cur.spanId)) { base = depths.get(cur.spanId); break; }
+      if (seen.has(cur.spanId)) { base = 0; break; }
+      seen.add(cur.spanId);
+      chain.push(cur);
+      const parent = parentIn(byId, cur);
+      if (!parent) break;
+      cur = byId.get(parent);
+    }
+    for (let i = chain.length - 1; i >= 0; i--) depths.set(chain[i].spanId, ++base);
+  }
   return depths;
 }
 
