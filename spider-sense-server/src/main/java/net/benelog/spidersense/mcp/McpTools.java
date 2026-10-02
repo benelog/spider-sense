@@ -164,6 +164,10 @@ public final class McpTools implements McpServer.ToolRunner {
     }
 
     private McpServer.ToolResult sql(Map<String, Object> arguments) {
+        if (arguments.get("limit") instanceof Number number && number.longValue() < 1) {
+            // What POST /api/sql answers with a 400, and a 400 is a tool error (mcp.adoc#tools).
+            return McpServer.ToolResult.failed("limit must be at least 1");
+        }
         return text(reports.sql(string(arguments, "sql"),
                 limit(arguments, Limits.SQL, Limits.SQL_MAX), false));
     }
@@ -241,10 +245,14 @@ public final class McpTools implements McpServer.ToolRunner {
         return arguments.get(key) instanceof Boolean set && set;
     }
 
-    /** Clamped the way the handlers and the CLI clamp it, so the lists agree. */
+    /**
+     * Clamped the way the handlers and the CLI clamp it, so the lists agree. It is clamped as the
+     * long it arrived as: narrowed to an int first, 2^32 + 1 would be 1.
+     */
     private static int limit(Map<String, Object> arguments, int fallback, int max) {
-        return Limits.clamp(arguments.get("limit") instanceof Number number ? number.intValue() : null,
-                fallback, max);
+        return arguments.get("limit") instanceof Number number
+                ? Math.clamp(number.longValue(), 1, max)
+                : fallback;
     }
 
     /** A tool result is one message, and a host shows it as one line. */

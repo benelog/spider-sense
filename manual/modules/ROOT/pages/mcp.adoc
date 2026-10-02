@@ -124,6 +124,8 @@ A result is `{ "content": [ { "type": "text", "text": "<the Markdown>" } ] }`.
 
 An answer the CLI reports on stderr with exit code `4`, such as no such trace or no such mark, becomes a tool result with `isError: true` whose text is that message on one line.
 A refused statement, a bad selector and a `sql` call over a database that has no read-only user yet are reported the same way.
+So is a `sql` limit below 1, which `POST /api/sql` answers with a `400`.
+A `limit` past its maximum, however large, is the maximum.
 A missing required argument or an unknown tool is a JSON-RPC `-32602`.
 
 Tool descriptions are one sentence each and say when to use the tool, not how the output looks, because the output is the text rendering and needs no description.

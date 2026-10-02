@@ -197,6 +197,24 @@ class McpApiTest {
 
             Json.JsonObject badName = call(client, "mark", "{\"name\":\"two words\"}");
             assertThat(badName.getBoolean("isError")).isTrue();
+
+            // Below 1 is refused, as POST /api/sql refuses it with a 400.
+            for (String limit : new String[] {"0", "-7"}) {
+                Json.JsonObject belowOne = call(client, "sql", "{\"sql\":\"SELECT 1\",\"limit\":" + limit + "}");
+                assertThat(belowOne.getBoolean("isError")).as(limit).isTrue();
+                assertThat(text(belowOne)).isEqualTo("limit must be at least 1");
+            }
+        });
+    }
+
+    @Test
+    void aLimitPastTwoToTheThirtyOneIsTheMaximumNotOneRow() {
+        serve(client -> {
+            String threeRows = "SELECT 1 AS n UNION ALL SELECT 2 UNION ALL SELECT 3";
+            for (String limit : new String[] {"4294967297", "4294967296", "1e20"}) {
+                assertThat(text(call(client, "sql", "{\"sql\":\"" + threeRows + "\",\"limit\":" + limit + "}")))
+                        .as(limit).startsWith("# sql  3 rows").doesNotContain("truncated");
+            }
         });
     }
 
