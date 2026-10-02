@@ -25,6 +25,14 @@ test('dur has one decimal under 100 ms, none above, and seconds from 10 s', () =
   assert.equal(fmt.dur(undefined), '-');
 });
 
+test('a duration that rounds onto a unit boundary is printed as the boundary is', () => {
+  assert.equal(fmt.dur(99.96), '100 ms');
+  assert.equal(fmt.dur(99.94), '99.9 ms');
+  assert.equal(fmt.dur(9999.6), '10.0 s');
+  assert.equal(fmt.dur(9999.4), '9,999 ms');
+  assert.equal(fmt.durBare(99.96), '100');
+});
+
 test('durBare drops the unit and stays in milliseconds', () => {
   assert.equal(fmt.durBare(12.34), '12.3');
   assert.equal(fmt.durBare(250), '250');

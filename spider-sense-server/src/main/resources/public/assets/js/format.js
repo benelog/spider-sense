@@ -10,12 +10,14 @@ export function count(n) {
   return NUM.format(Math.round(n));
 }
 
-/** Durations in ms: 1 decimal under 100 ms, 0 decimals above, seconds above 10 s. */
+/**
+ * Durations in ms: 1 decimal under 100 ms, 0 decimals above, seconds above 10 s.
+ * The unit is picked on the rounded value, so 99.96 ms reads as 100.0 ms does, "100 ms".
+ */
 export function dur(ms) {
   if (ms == null || Number.isNaN(ms)) return '-';
-  if (ms >= 10000) return NUM1.format(ms / 1000) + ' s';
-  if (ms >= 100) return NUM.format(Math.round(ms)) + ' ms';
-  return NUM1.format(ms) + ' ms';
+  if (Math.round(ms) >= 10000) return NUM1.format(ms / 1000) + ' s';
+  return durBare(ms) + ' ms';
 }
 
 /**
@@ -24,7 +26,7 @@ export function dur(ms) {
  */
 export function durBare(ms) {
   if (ms == null || Number.isNaN(ms)) return '-';
-  if (ms >= 100) return NUM.format(Math.round(ms));
+  if (Math.round(ms * 10) >= 1000) return NUM.format(Math.round(ms));
   return NUM1.format(ms);
 }
 
