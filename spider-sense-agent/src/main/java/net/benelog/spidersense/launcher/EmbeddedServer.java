@@ -9,9 +9,10 @@ import org.jspecify.annotations.Nullable;
 /**
  * Starts the collector + UI inside the current JVM, in its own class loader.
  *
- * <p>{@code SpiderSenseServer.main} binds and returns in agent mode (its Jetty pool is daemon), and
- * blocks in standalone mode. It is invoked through {@link SenseClassLoader#invokeStatic}, which
- * says why that is reflective and what it does with the context class loader.
+ * <p>{@code SpiderSenseServer.launch} binds, returns the port it bound, and never blocks; its Jetty
+ * pool is daemon in agent mode and not in standalone mode. It is invoked through
+ * {@link SenseClassLoader#invokeStatic}, which says why that is reflective and what it does with
+ * the context class loader.
  */
 final class EmbeddedServer {
 
@@ -26,9 +27,13 @@ final class EmbeddedServer {
     /**
      * Starts the collector and UI in this JVM, at most once.
      *
+     * <p>It returns once the port is bound, in either mode. In standalone mode Jetty's threads are
+     * not daemons, so they keep the JVM serving after the launcher's {@code main} has returned,
+     * until it is stopped.
+     *
      * @return the port the server bound, which is the one to print and export to when
      *         {@code config} asked for port {@code 0}; empty when a server is already running in
-     *         this JVM (in standalone mode the call does not return until shutdown)
+     *         this JVM
      */
     static synchronized OptionalInt start(Config config) throws Exception {
         if (started != null) {
@@ -36,8 +41,8 @@ final class EmbeddedServer {
         }
         Path jar = NestedJar.serverJar();
         SenseClassLoader loader = new SenseClassLoader(jar);
-        // Set before the call: in standalone mode main() never returns, and in agent mode a second
-        // agentmain must not start a second server while the first is still binding.
+        // Set before the call: a second agentmain must not start a second server while the first
+        // is still binding.
         started = loader;
         @Nullable Object bound;
         try {
@@ -48,9 +53,7 @@ final class EmbeddedServer {
             if (own != null) {
                 args.add("--jar=" + own.toAbsolutePath());
             }
-            // launch returns the bound port; main, in standalone mode, blocks until shutdown.
-            bound = loader.invokeStatic(SERVER_CLASS, Config.AGENT.equals(config.mode()) ? "launch" : "main",
-                    args.toArray(new String[0]));
+            bound = loader.invokeStatic(SERVER_CLASS, "launch", args.toArray(new String[0]));
         } catch (InvocationTargetException e) {
             started = null;
             Throwable cause = e.getCause();

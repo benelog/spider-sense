@@ -391,6 +391,19 @@ class SingleJarIT {
         assertThat(unknown.err()).startsWith("spider-sense: unknown option: --prot");
     }
 
+    /** A held port is one line that says how to pick another, exit 2, and no banner announcing it. */
+    @Test
+    void aHeldPortIsOneLineAndExitTwo() throws Exception {
+        try (ServerSocket held = new ServerSocket(0, 50, java.net.InetAddress.getLoopbackAddress())) {
+            int port = held.getLocalPort();
+            Command run = cli("--port=" + port, "--db=" + throwawayDatabase());
+            assertThat(run.exit()).isEqualTo(2);
+            assertThat(run.err()).startsWith("spider-sense: port " + port + " is in use; --port= picks another (")
+                    .doesNotContain("\tat ");
+            assertThat(run.out()).doesNotContain("The UI is at");
+        }
+    }
+
     /**
      * The launcher's defaults are the server's, on every key both know: the launcher always passes
      * {@code --slow.request.ms} and {@code --slow.query.ms}, so a default changed in the server alone

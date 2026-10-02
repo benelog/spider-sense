@@ -218,6 +218,22 @@ class ConfigTest {
         }
     }
 
+    /**
+     * The standalone jar's answer to a server that did not start is one line, which for a held
+     * port says how to pick another, rather than a stack trace after the banner.
+     */
+    @Test
+    void aServerThatDidNotStartIsOneLineAndAHeldPortSaysWhatToDo() {
+        Config config = config("--port=4730");
+        IllegalStateException held = new IllegalStateException("Failed to start Jetty on port 4730",
+                new java.io.IOException("Failed to bind", new java.net.BindException("Address already in use")));
+
+        assertThat(SpiderSenseMain.startFailure(config, held))
+                .isEqualTo("port 4730 is in use; --port= picks another (java.net.BindException: Address already in use)");
+        assertThat(SpiderSenseMain.startFailure(config, new IllegalStateException("no jar", new java.io.IOException("gone"))))
+                .isEqualTo("the server did not start: java.lang.IllegalStateException: no jar (java.io.IOException: gone)");
+    }
+
     @Test
     void zeroZeroZeroZeroIsNotAnAddressToConnectTo() {
         assertThat(Config.defaults().baseUrl()).isEqualTo("http://127.0.0.1:4000");

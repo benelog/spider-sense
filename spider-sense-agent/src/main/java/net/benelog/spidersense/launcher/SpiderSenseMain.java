@@ -2,6 +2,7 @@ package net.benelog.spidersense.launcher;
 
 import java.lang.reflect.InvocationTargetException;
 import java.nio.file.Path;
+import java.util.OptionalInt;
 
 /**
  * The {@code Main-Class} of the distributable jar: {@code java -jar spider-sense.jar}.
@@ -57,9 +58,31 @@ public final class SpiderSenseMain {
         if (file != null) {
             System.out.println("Configuration: " + file.toAbsolutePath());
         }
-        printBanner(config);
-        // Blocks until the server is stopped.
-        EmbeddedServer.start(config);
+        OptionalInt bound;
+        try {
+            bound = EmbeddedServer.start(config);
+        } catch (Exception e) {
+            // One line and exit 2, as for a bad argument, rather than a stack trace after a
+            // banner that already announced a UI at that port.
+            System.err.println("spider-sense: " + startFailure(config, e));
+            System.exit(2);
+            return;
+        }
+        // After the bind, so the banner names the port that is serving: --port=0 picks any free one.
+        printBanner(config.withPort(bound.orElse(config.port())));
+        // Returning is not stopping: Jetty's threads are not daemons in standalone mode, and they
+        // keep this JVM serving until it is stopped.
+    }
+
+    /** What a server that did not start says: a held port names the way out, anything else its cause. */
+    static String startFailure(Config config, Throwable failure) {
+        for (Throwable t = failure; t != null; t = t.getCause()) {
+            if (t instanceof java.net.BindException) {
+                return "port " + config.port() + " is in use; --port= picks another (" + t + ")";
+            }
+        }
+        Throwable cause = failure.getCause();
+        return "the server did not start: " + failure + (cause != null ? " (" + cause + ")" : "");
     }
 
     /**

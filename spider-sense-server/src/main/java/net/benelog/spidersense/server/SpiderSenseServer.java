@@ -76,9 +76,12 @@ public final class SpiderSenseServer implements AutoCloseable {
     }
 
     /**
-     * What the launcher calls in agent mode instead of {@link #main}: the same start and the same
-     * line, and the port Jetty bound, which differs from {@code --port} when that is {@code 0}.
-     * The launcher prints that port and exports to it, since port {@code 0} is not an address.
+     * What the launcher calls instead of {@link #main}: the same start and the same line, and the
+     * port Jetty bound, which differs from {@code --port} when that is {@code 0}. The launcher
+     * prints that port and exports to it, since port {@code 0} is not an address.
+     *
+     * <p>It never joins, in either mode: the standalone launcher prints its banner once the port is
+     * bound, and Jetty's threads, which are not daemons in standalone mode, keep the JVM serving.
      */
     public static int launch(String[] args) {
         return startAndSay(Config.parse(args)).port();

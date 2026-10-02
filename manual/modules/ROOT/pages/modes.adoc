@@ -71,6 +71,7 @@ The collector and the UI run on port 4000 and nothing is instrumented.
 Anything that speaks OTLP/HTTP can send to it: the two modes above, another language's SDK, or an OpenTelemetry Collector.
 The standalone jar takes its properties as `--key=value` arguments as well as system properties, so `java -jar "$SENSE" --port=4001` is the same as `-Dspidersense.port=4001`.
 The difference is that an argument is checked: a malformed number such as `--port=abc`, or a key the jar does not take such as `--prot=4001`, is a usage error that exits `2` without starting, where `-Dspidersense.port=abc` is a warning and the default (xref:configuration.adoc[Configuration] lists the keys).
+A port another process holds is one line on stderr, `spider-sense: port 4001 is in use; --port= picks another (…)`, and exit `2`; the banner is printed only once the port is bound, and `--port=0` binds any free port and names it there.
 It reads xref:configuration.adoc#properties-file[the properties file] too.
 
 Two environment variables point an OpenTelemetry SDK at the standalone Spider Sense:
