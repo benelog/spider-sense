@@ -78,7 +78,7 @@ public final class TrafficApi {
     }
 
     public WebResponse service(WebRequest req) {
-        String name = req.pathParam("name");
+        String name = Params.pathParam(req, "name");
         Window window = params.window(req);
         Stats.ServiceSummary summary = Params.found(queries.service(name, window),
                 "No such service: " + name);
@@ -100,7 +100,7 @@ public final class TrafficApi {
     }
 
     public WebResponse endpoint(WebRequest req) {
-        String endpointId = req.pathParam("endpointId");
+        String endpointId = Params.pathParam(req, "endpointId");
         Window window = params.window(req);
         List<Stats.EndpointStats> found = queries.endpoints(window, null, endpointId);
         if (found.isEmpty()) {
@@ -186,7 +186,7 @@ public final class TrafficApi {
     }
 
     public WebResponse trace(WebRequest req) {
-        String traceId = req.pathParam("traceId");
+        String traceId = Params.pathParam(req, "traceId");
         String diff = req.queryParamOrNull("diff");
         if (diff != null) {
             try {
@@ -227,7 +227,7 @@ public final class TrafficApi {
     }
 
     public WebResponse query(WebRequest req) {
-        String queryId = req.pathParam("queryId");
+        String queryId = Params.pathParam(req, "queryId");
         Window window = params.window(req);
         if (Params.wantsText(req)) {
             return textOr404(reports.queryText(window, Params.service(req), queryId, Params.full(req)),
@@ -252,7 +252,7 @@ public final class TrafficApi {
     }
 
     public WebResponse error(WebRequest req) {
-        String errorId = req.pathParam("errorId");
+        String errorId = Params.pathParam(req, "errorId");
         Window window = params.window(req);
         if (Params.wantsText(req)) {
             return textOr404(reports.errorText(window, Params.service(req), errorId, Params.full(req)),

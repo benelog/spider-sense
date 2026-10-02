@@ -8,6 +8,7 @@ import java.util.Map;
 import net.benelog.spidersense.ingest.ErrorBody;
 import net.benelog.spidersense.query.Selectors;
 import net.benelog.spidersense.query.Window;
+import net.benelog.spidersense.server.EncodedSegments;
 import net.benelog.spidersilk.HttpException;
 import net.benelog.spidersilk.HttpStatus;
 import net.benelog.spidersilk.WebRequest;
@@ -119,6 +120,14 @@ public final class Params {
     /** The {@code limit} parameter, clamped by {@link Limits#clamp}. */
     static int limit(WebRequest req, int fallback, int max) {
         return Limits.clamp(req.queryParam("limit", Integer::parseInt, fallback), fallback, max);
+    }
+
+    /**
+     * A path parameter as the client sent it, one percent-encoded segment decoded: a {@code /}
+     * in it arrives as {@code %2F} and stays in its segment until here (api.adoc#conventions).
+     */
+    static String pathParam(WebRequest req, String name) {
+        return EncodedSegments.decode(req.pathParam(name));
     }
 
     static @Nullable String service(WebRequest req) {

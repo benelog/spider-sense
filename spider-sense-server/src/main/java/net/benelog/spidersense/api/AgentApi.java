@@ -85,7 +85,7 @@ public final class AgentApi {
      * findings page's Copy as Markdown copies (cli.adoc#one-finding).
      */
     public WebResponse finding(WebRequest req) {
-        String id = req.pathParam("id");
+        String id = Params.pathParam(req, "id");
         return Params.answer(req, Params.found(reports.finding(params.window(req), Params.service(req), id,
                 Params.full(req)), "No such finding in this window: " + id));
     }
@@ -99,13 +99,13 @@ public final class AgentApi {
      */
     public WebResponse ack(WebRequest req) {
         String note = note(req);
-        Acks.Ack ack = withStoreRules(() -> reports.ackStore().ack(req.pathParam("id"), note));
+        Acks.Ack ack = withStoreRules(() -> reports.ackStore().ack(Params.pathParam(req, "id"), note));
         return Params.answer(req, reports.ack(ack)).status(HttpStatus.CREATED);
     }
 
     /** {@code 204} when there was one to withdraw, {@code 404} when there was not. */
     public WebResponse unack(WebRequest req) {
-        String id = req.pathParam("id");
+        String id = Params.pathParam(req, "id");
         if (!withStoreRules(() -> reports.ackStore().unack(id))) {
             throw new HttpException(HttpStatus.NOT_FOUND, "No such acknowledgement: " + id);
         }
@@ -118,13 +118,13 @@ public final class AgentApi {
      */
     public WebResponse resolve(WebRequest req) {
         String note = note(req);
-        Acks.Ack resolution = withStoreRules(() -> reports.ackStore().resolve(req.pathParam("id"), note));
+        Acks.Ack resolution = withStoreRules(() -> reports.ackStore().resolve(Params.pathParam(req, "id"), note));
         return Params.answer(req, reports.resolve(resolution)).status(HttpStatus.CREATED);
     }
 
     /** {@code 204} when there was one to withdraw, {@code 404} when there was not. */
     public WebResponse unresolve(WebRequest req) {
-        String id = req.pathParam("id");
+        String id = Params.pathParam(req, "id");
         if (!withStoreRules(() -> reports.ackStore().unresolve(id))) {
             throw new HttpException(HttpStatus.NOT_FOUND, "No such resolution: " + id);
         }

@@ -138,19 +138,43 @@ class SpiderSenseServerTest {
         }
     }
 
-    /** A service whose name holds a slash is reached through %2F, and a miss is the JSON 404. */
+    /**
+     * A service whose name holds a slash is reached through %2F, and a miss is the handler's own
+     * JSON 404, not the router's: the name is one segment, decoded only after routing.
+     */
     @Test
     void anEncodedSlashInAPathSegmentIsPartOfTheName() throws Exception {
         SpiderSenseServer server = SpiderSenseServer.start(TestStore.config());
         try {
-            HttpResponse<String> response = HttpClient.newHttpClient().send(
-                    HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + server.port() + "/api/services/a%2Fb"))
-                            .timeout(Duration.ofSeconds(10)).build(),
-                    HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = get(server, "/api/services/a%2Fb");
 
+            assertThat(response.statusCode()).isEqualTo(404);
             assertThat(response.headers().firstValue("Content-Type")).hasValueSatisfying(
                     type -> assertThat(type).startsWith("application/json"));
-            assertThat(response.body()).contains("a/b");
+            assertThat(Json.parse(response.body()).asObject().getString("error"))
+                    .isEqualTo("No such service: a/b");
+            assertThat(Json.parse(get(server, "/api/services/a%25b").body()).asObject().getString("error"))
+                    .isEqualTo("No such service: a%b");
+            assertThat(Json.parse(get(server, "/api/services/a%252Fb").body()).asObject().getString("error"))
+                    .isEqualTo("No such service: a%2Fb");
+            assertThat(Json.parse(get(server, "/api/services/caf%C3%A9%2F%20x").body()).asObject()
+                    .getString("error")).isEqualTo("No such service: caf\u00e9/ x");
+
+            // A finding id with a slash in it, before a literal segment.
+            HttpResponse<String> ack = HttpClient.newHttpClient().send(
+                    HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + server.port()
+                                    + "/api/findings/slow-endpoint%3AGET%20%2Fa%2Fb/ack"))
+                            .POST(HttpRequest.BodyPublishers.noBody())
+                            .timeout(Duration.ofSeconds(10)).build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertThat(ack.statusCode()).as(ack.body()).isEqualTo(201);
+            assertThat(ack.body()).contains("slow-endpoint:GET /a/b");
+            HttpResponse<String> unack = HttpClient.newHttpClient().send(
+                    HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + server.port()
+                                    + "/api/findings/slow-endpoint%3AGET%20%2Fa%2Fb/ack"))
+                            .DELETE().timeout(Duration.ofSeconds(10)).build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertThat(unack.statusCode()).as(unack.body()).isEqualTo(204);
 
             for (String escape : new String[] {"/assets/..%2F..%2Fsimplelogger.properties",
                     "/assets/js/..%2F..%2F..%2Fsimplelogger.properties", "/..%2Fsimplelogger.properties"}) {

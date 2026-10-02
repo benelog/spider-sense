@@ -5,8 +5,11 @@ import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.EnumSet;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.LongSupplier;
+
+import jakarta.servlet.DispatcherType;
 
 import net.benelog.spidersense.api.AgentApi;
 import net.benelog.spidersense.api.EventsApi;
@@ -30,6 +33,7 @@ import net.benelog.spidersilk.App;
 import net.benelog.spidersilk.HttpStatus;
 import net.benelog.spidersilk.WebResponse;
 import net.benelog.spidersilk.server.JettyServer;
+import org.eclipse.jetty.ee10.servlet.FilterHolder;
 import org.eclipse.jetty.http.UriCompliance;
 import org.eclipse.jetty.util.thread.QueuedThreadPool;
 import org.eclipse.jetty.util.thread.ScheduledExecutorScheduler;
@@ -140,7 +144,12 @@ public final class SpiderSenseServer implements AutoCloseable {
                 .customizeHttpConfiguration(http -> http.setUriCompliance(UriCompliance.DEFAULT
                         .with("spider-sense", UriCompliance.Violation.AMBIGUOUS_PATH_SEPARATOR,
                                 UriCompliance.Violation.AMBIGUOUS_PATH_ENCODING)))
-                .customizeContext(context -> context.getServletHandler().setDecodeAmbiguousURIs(true))
+                .customizeContext(context -> {
+                    context.getServletHandler().setDecodeAmbiguousURIs(true);
+                    // Decoded, %2F would split the segment it belongs to before routing.
+                    context.addFilter(new FilterHolder(new EncodedSegments()), "/api/*",
+                            EnumSet.of(DispatcherType.REQUEST));
+                })
                 // What it still refuses before routing (%5C, %2E%2E) answers in the API's error
                 // shape rather than as Jetty's HTML page.
                 .customizeServer(jetty -> jetty.setErrorHandler(new JsonErrorHandler()));
