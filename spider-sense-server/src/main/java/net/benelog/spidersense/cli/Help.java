@@ -67,8 +67,10 @@ final class Help {
               --since=<selector>   default 15m
               --until=<selector>   default now
               --service=<name>     one service
-              --limit=<n>          the lists: findings, traces, queries, errors, logs, marks,
-                                   and the rows of sql (default 200, at most 5000)
+              --limit=<n>          how many rows, at least 1; the default and the cap:
+                                   findings 20/100, traces 20/1000, queries 100/1000,
+                                   errors 100/1000, logs 200/5000, marks 50/500,
+                                   sql 200/5000
               --url=<base url>     default http://127.0.0.1:4000, or SPIDERSENSE_URL, or what
                                    spider-sense.properties in the working directory implies
               --db=<path or jdbc url>   read the database directly, without asking any server

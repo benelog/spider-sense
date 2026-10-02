@@ -533,8 +533,10 @@ Common options:
   --since=<selector>   default 15m
   --until=<selector>   default now
   --service=<name>     one service
-  --limit=<n>          the lists: findings, traces, queries, errors, logs, marks,
-                       and the rows of sql (default 200, at most 5000)
+  --limit=<n>          how many rows, at least 1; the default and the cap:
+                       findings 20/100, traces 20/1000, queries 100/1000,
+                       errors 100/1000, logs 200/5000, marks 50/500,
+                       sql 200/5000
   --url=<base url>     default http://127.0.0.1:4000, or SPIDERSENSE_URL, or what
                        spider-sense.properties in the working directory implies
   --db=<path or jdbc url>   read the database directly, without asking any server
@@ -578,7 +580,7 @@ a finding id to unack or unresolve).
 
 | `--limit=<n>`
 | per list
-| how many rows: findings 20, traces 20, queries 100, errors 100, logs 200, marks 50, sql 200 (at most 5000)
+| how many rows, at least 1: findings 20 (at most 100), traces 20 (at most 1000), queries 100 (at most 1000), errors 100 (at most 1000), logs 200 (at most 5000), marks 50 (at most 500), sql 200 (at most 5000); a larger limit is lowered to the cap, and one below 1 is a usage error
 
 | `--url=<base url>`
 | `http://127.0.0.1:4000`, or `SPIDERSENSE_URL`, or what the properties file implies
@@ -972,7 +974,7 @@ The answer is a heading and a table:
 ----
 
 The column headers are H2's own labels, which upper-case an unquoted name (`SERVICE`, `SPANS`), so alias a column when the heading matters.
-At most 200 rows come back unless `--limit=<n>` says otherwise, and the cap is 5000; a limit below 1 is a `400`.
+At most 200 rows come back unless `--limit=<n>` says otherwise, and the cap is 5000; a limit below 1 is a `400` over HTTP, and a usage error on the command line.
 One row more than the limit is fetched, so `truncated` reports whether the cap cut the answer off rather than guessing at it.
 The heading carries ` (truncated at 200)` when the cap cut the answer off, and a truncated answer is a sample rather than a total.
 `--json` prints `columns`, `rows`, `rowCount`, `truncated` and `elapsedMs` instead of the table.

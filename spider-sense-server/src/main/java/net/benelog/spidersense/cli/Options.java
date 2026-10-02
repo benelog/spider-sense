@@ -158,9 +158,22 @@ final class Options {
         return Boolean.parseBoolean(value(key, "false"));
     }
 
-    /** The limit of a list, clamped the way the server clamps it (api.adoc). */
+    /**
+     * The limit of a list: a whole number of at least 1, lowered to the list's cap the way the
+     * server lowers it (api.adoc, cli.adoc#options).
+     *
+     * <p>Below 1 is a usage error rather than a clamp to 1, so {@code --limit=0} is refused as the
+     * server refuses {@code limit: 0} to {@code /api/sql}, in both modes alike.
+     */
     int limit(int fallback, int max) {
-        return Limits.clamp(has("limit") ? (int) number("limit") : null, fallback, max);
+        Long asked = optionalLong("limit");
+        if (asked == null) {
+            return fallback;
+        }
+        if (asked < 1) {
+            throw new Usage("--limit must be at least 1: " + valueOrNull("limit"));
+        }
+        return Limits.clamp((int) Math.min(asked, max), fallback, max);
     }
 
     /**

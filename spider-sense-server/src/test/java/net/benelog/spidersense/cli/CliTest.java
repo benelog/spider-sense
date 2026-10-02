@@ -416,6 +416,30 @@ class CliTest {
         assertThat(tail.err()).startsWith("spider-sense: --until-traces is not a whole number: 2.5\n");
     }
 
+    /**
+     * A limit below 1 is refused rather than raised to 1, so {@code sql --limit=0} is the error
+     * cli.adoc#sql promises; a limit above a list's cap is lowered to it (cli.adoc#options).
+     */
+    @Test
+    void aLimitBelowOneIsAUsageErrorAndOneAboveTheCapIsLowered() {
+        String db = "--db=" + TestStore.writtenUrl();
+        for (String limit : List.of("0", "-5")) {
+            Run run = run("sql", "SELECT 1", "--limit=" + limit, db);
+            assertThat(run.exit()).as(limit).isEqualTo(2);
+            assertThat(run.err()).as(limit).startsWith("spider-sense: --limit must be at least 1: " + limit + "\n");
+            assertThat(run.out()).as(limit).isEmpty();
+        }
+        assertThat(run("marks", "--limit=1.5", db).err())
+                .startsWith("spider-sense: --limit is not a whole number: 1.5\n");
+
+        Options marks = Options.parse(new String[] {"marks", "--limit=1000"});
+        assertThat(marks.limit(net.benelog.spidersense.api.Limits.MARKS, net.benelog.spidersense.api.Limits.MARKS_MAX))
+                .isEqualTo(500);
+        Options huge = Options.parse(new String[] {"logs", "--limit=99999999999"});
+        assertThat(huge.limit(net.benelog.spidersense.api.Limits.LOGS, net.benelog.spidersense.api.Limits.LOGS_MAX))
+                .as("past an int, still the cap").isEqualTo(5000);
+    }
+
     // --- from the file -------------------------------------------------------
 
     @Test
