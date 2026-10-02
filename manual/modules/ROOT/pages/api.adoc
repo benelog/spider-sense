@@ -14,6 +14,8 @@ A change here is a change to both.
 Durations are *milliseconds as doubles* (`12.34`) unless the field name ends in `Ns`.
 * Every read endpoint takes an optional window `from` and `to` (epoch ms).
 The default `to` is now, and the default `from` is `to - 15 min`.
+A window that starts before the epoch or ends past the year 9999 (`253402300799999`) is a `400`, which is what a time in microseconds or nanoseconds becomes.
+`window.bucketMs` grows with the range, by whole days past a range of 72 days, so a window of any length holds at most 75 buckets.
 * `service` filters are exact matches on `service.name`.
 A path parameter is one percent-encoded segment, so a service name or a finding id that holds a `/` travels as `%2F`, and one that holds a `%` as `%25`.
 * Lists are newest first unless stated.

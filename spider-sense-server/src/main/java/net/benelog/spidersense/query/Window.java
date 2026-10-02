@@ -14,21 +14,51 @@ public record Window(long from, long to, long bucketMs) {
     private static final long SECOND = 1000L;
     private static final long MINUTE = 60 * SECOND;
     private static final long HOUR = 60 * MINUTE;
+    private static final long DAY = 24 * HOUR;
 
     /** Widths a person reads without doing arithmetic. */
     private static final long[] NICE_WIDTHS = {
             SECOND, 5 * SECOND, 10 * SECOND, 15 * SECOND, 30 * SECOND,
             MINUTE, 5 * MINUTE, 10 * MINUTE, 15 * MINUTE, 30 * MINUTE,
-            HOUR, 2 * HOUR, 6 * HOUR, 12 * HOUR, 24 * HOUR};
+            HOUR, 2 * HOUR, 6 * HOUR, 12 * HOUR, DAY};
 
     public static final long DEFAULT_RANGE_MS = 15 * MINUTE;
 
+    /**
+     * The last instant a window may reach: the end of the year 9999. A time past it is
+     * not a moment anyone means but a unit mistake, nanoseconds or microseconds pasted where
+     * the API takes milliseconds.
+     */
+    public static final long LATEST = 253_402_300_799_999L;
+
+    /** The most buckets {@link #bucketMs} lets a window of any length hold (api.adoc#conventions). */
+    public static final int MAX_BUCKETS = 75;
+
+    /**
+     * The window from {@code from} to {@code to}, or to {@code from} when {@code to} is earlier.
+     *
+     * @throws Selectors.BadSelector when it starts before the epoch or ends past {@link #LATEST}:
+     *         a {@code 400}, since its length would overflow or its buckets would not fit in
+     *         memory
+     */
     public static Window of(long from, long to) {
         long end = Math.max(from, to);
+        if (from < 0) {
+            throw new Selectors.BadSelector("from resolves to " + from + ", which is before the epoch");
+        }
+        if (end > LATEST) {
+            throw new Selectors.BadSelector("to resolves to " + end + ", which is past the year 9999:"
+                    + " times are epoch milliseconds, not microseconds or nanoseconds");
+        }
         return new Window(from, end, bucketMs(end - from));
     }
 
-    /** The bucket width the API reports as {@code window.bucketMs}. */
+    /**
+     * The bucket width the API reports as {@code window.bucketMs}.
+     *
+     * <p>Past a range of 72 days even a day is too narrow, so the width grows by whole days
+     * and the count stays under {@link #MAX_BUCKETS} however long the window is.
+     */
     public static long bucketMs(long rangeMs) {
         if (rangeMs <= 5 * MINUTE) {
             return 5 * SECOND;
@@ -48,7 +78,7 @@ public record Window(long from, long to, long bucketMs) {
                 return width;
             }
         }
-        return NICE_WIDTHS[NICE_WIDTHS.length - 1];
+        return (target + DAY - 1) / DAY * DAY;
     }
 
     public long rangeMs() {
@@ -66,7 +96,7 @@ public record Window(long from, long to, long bucketMs) {
 
     public int bucketCount() {
         long span = to - alignedFrom();
-        return (int) Math.max(1, span / bucketMs + 1);
+        return Math.toIntExact(Math.max(1, span / bucketMs + 1));
     }
 
     /** The start of every bucket, oldest first — the {@code t} array of every series. */

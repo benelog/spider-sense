@@ -1,6 +1,7 @@
 package net.benelog.spidersense.query;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import org.junit.jupiter.api.Test;
 
@@ -14,6 +15,36 @@ class WindowTest {
         assertThat(Window.bucketMs(60 * 60_000)).isEqualTo(60_000);
         assertThat(Window.bucketMs(6 * 3_600_000)).isEqualTo(300_000);
         assertThat(Window.bucketMs(24 * 3_600_000L)).isEqualTo(30 * 60_000L);
+    }
+
+    @Test
+    void theBucketWidthKeepsWideningPastADaySoNoWindowHoldsMoreThanTheCap() {
+        assertThat(Window.bucketMs(365 * 86_400_000L)).isEqualTo(6 * 86_400_000L);
+        long[] ranges = {1, 59_999, 5 * 60_000 + 1, 6 * 3_600_000L + 1, 72 * 86_400_000L + 1,
+                365 * 86_400_000L, Window.LATEST - 1, Window.LATEST};
+        for (long range : ranges) {
+            for (long from : new long[]{0, 7_777, 1_700_000_000_123L}) {
+                long to = Math.min(Window.LATEST, from + range);
+                Window window = Window.of(from, to);
+                assertThat(window.bucketCount()).as("range %d from %d", range, from)
+                        .isBetween(1, Window.MAX_BUCKETS);
+                assertThat(window.bucketStarts()).hasSize(window.bucketCount());
+            }
+        }
+    }
+
+    @Test
+    void aWindowBeforeTheEpochOrPastTheYear9999IsTheCallersMistake() {
+        assertThatThrownBy(() -> Window.of(-1, 1_000))
+                .isInstanceOf(Selectors.BadSelector.class).hasMessageContaining("before the epoch");
+        assertThatThrownBy(() -> Window.of(Long.MIN_VALUE, Long.MAX_VALUE))
+                .isInstanceOf(Selectors.BadSelector.class);
+        // Nanoseconds pasted where milliseconds belong.
+        assertThatThrownBy(() -> Window.of(1_790_940_000_000L, 1_790_940_000_050_000_000L))
+                .isInstanceOf(Selectors.BadSelector.class).hasMessageContaining("milliseconds");
+        assertThatThrownBy(() -> Window.of(0, 100_000_000_000_000_000L))
+                .isInstanceOf(Selectors.BadSelector.class);
+        assertThat(Window.of(0, Window.LATEST).to()).isEqualTo(Window.LATEST);
     }
 
     @Test

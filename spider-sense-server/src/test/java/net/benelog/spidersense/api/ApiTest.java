@@ -442,6 +442,26 @@ class ApiTest {
         });
     }
 
+    @Test
+    void aWindowOutsideTheEpochAndTheYear9999IsA400AndAnyOtherKeepsItsBucketsFew() {
+        serve((client, assembly) -> {
+            // Nanoseconds pasted into to, and both ends at the limits of a long.
+            for (String window : List.of("from=1790940000000&to=1790940000050000000",
+                    "from=0&to=100000000000000000", "from=-9223372036854775808&to=9223372036854775807",
+                    "from=-1&to=1000")) {
+                HttpResponse<String> response = client.get("/api/overview?" + window);
+                assertThat(response.statusCode()).as(window).isEqualTo(400);
+                assertThat(Json.parse(response.body()).asObject().getString("error")).as(window)
+                        .isNotBlank();
+            }
+            Json.JsonObject everything = json(client.get("/api/overview?from=0&to=253402300799999"));
+            assertThat(everything.getObject("series").getArray("t").size())
+                    .isBetween(1, 75);
+            assertThat(client.get("/api/services/spring-orders?from=0&to=253402300799999").statusCode())
+                    .isIn(200, 404);
+        });
+    }
+
     /**
      * A two-service trace: the clients call spring-orders, which calls its database
      * and the bookstore over HTTP. The outbound HTTP span is the call to the
