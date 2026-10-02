@@ -263,7 +263,7 @@ Success and Failed both start on.
 Turning one off hides those points, and the counts, the selection and the y-axis maximum follow.
 
 Drag a rectangle in either mode to list the traces inside it, in a table beneath the chart.
-The table asks `/api/traces` with `from`, `to`, `minMs` and `maxMs` from the rectangle, plus the current service, plus `status=error` or `status=ok` when only one of Success and Failed is on.
+The table asks `/api/traces` with `from`, `to`, `minMs` and `maxMs` from the rectangle, each widened outwards to a whole millisecond so no point drawn inside it is left out, plus the current service, plus `status=error` or `status=ok` when only one of Success and Failed is on.
 `Esc` clears the selection.
 With Live on, points stream in from the right every 2 seconds, from a refetch of the last 10 seconds merged in and deduplicated by trace id, and the x-axis slides.
 The y-axis maximum and the `▲ n above` note follow the merged points, and the "truncated" notice stays until a full load of the window is not cut.

@@ -173,6 +173,37 @@ test('the Metrics catalog is a listbox the arrow keys walk and Space picks from'
   instance.destroy();
 });
 
+/** The URLs fetched while `fn` runs. */
+async function asked(fn) {
+  const real = globalThis.fetch;
+  const urls = [];
+  globalThis.fetch = (url, init) => { urls.push(String(url)); return real(url, init); };
+  try { await fn(); } finally { globalThis.fetch = real; }
+  return urls;
+}
+
+/** The scatter's uPlot, through the overlay the fake one leaves in the chart. */
+const scatterPlot = (root) => root.querySelector('div.chart').children[0].plot;
+
+test('the scatter widens a rectangle to whole milliseconds rather than rounding it (pages.adoc#scatter)', async () => {
+  const { root, instance } = await visit('scatter');
+  const plot = scatterPlot(root);
+  // A pixel is a millisecond from 1000 s on the x-axis, and the y-axis grows upwards from 200 px.
+  plot.posToVal = (v, axis) => (axis === 'y' ? 200 - v : 1000 + v / 1000);
+  const urls = await asked(async () => {
+    plot.setSelect({ left: 0.6, width: 999.8, top: 47.6, height: 52.8 });   // 1000000.6–1001000.4 ms, 99.6–152.4 ms
+    await settle(60);
+  });
+  const traces = urls.filter((u) => u.startsWith('/api/traces'));
+  assert.equal(traces.length, 1);
+  const q = new URL(traces[0], 'http://localhost').searchParams;
+  assert.equal(q.get('minMs'), '99');
+  assert.equal(q.get('maxMs'), '153');
+  assert.equal(q.get('from'), '1000000');
+  assert.equal(q.get('to'), '1001001');
+  instance.destroy();
+});
+
 /** Runs `fn` while the mock's answer to `path` goes through `change` first. */
 async function withAnswer(path, change, fn) {
   const real = globalThis.fetch;

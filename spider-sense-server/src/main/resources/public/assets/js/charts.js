@@ -708,7 +708,8 @@ export function scatterChart(container, opts) {
             const x1 = u.posToVal(sel.left + sel.width, 'x') * 1000;
             const y1 = u.posToVal(sel.top, 'y');
             const y0 = u.posToVal(sel.top + sel.height, 'y');
-            if (opts.onSelect) opts.onSelect({ from: Math.round(x0), to: Math.round(x1), minMs: Math.max(0, y0), maxMs: y1 });
+            // Whole milliseconds, widened rather than rounded, so a point on the edge stays inside.
+            if (opts.onSelect) opts.onSelect({ from: Math.floor(x0), to: Math.ceil(x1), minMs: Math.max(0, y0), maxMs: y1 });
           }],
         },
       },

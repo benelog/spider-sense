@@ -93,8 +93,16 @@ class FakePlot {
     for (const hook of ((opts.hooks || {}).setCursor || [])) hook(this);
     if (opts.axes) for (const a of opts.axes) if (a.values) a.values(this, [0, 1, 2]);
     for (const s of opts.series) if (s.value) s.value(this, 1);
+    this.select = { left: 0, top: 0, width: 0, height: 0 };
+    this.over.plot = this;           // a test reaches the plot through its overlay
+    for (const hook of ((opts.hooks || {}).ready || [])) hook(this);
   }
-  destroy() {} setSize() {} redraw() {} setData() {} setSelect() {}
+  destroy() {} setSize() {} redraw() {} setData() {}
+  /** As uPlot's: moves the rectangle, and fires the setSelect hooks unless `fire` is false. */
+  setSelect(select, fire = true) {
+    this.select = { ...select };
+    if (fire) for (const hook of ((this.opts.hooks || {}).setSelect || [])) hook(this);
+  }
   valToPos(v) { return v; } posToVal(v) { return v; }
 }
 FakePlot.paths = { bars: () => () => null };

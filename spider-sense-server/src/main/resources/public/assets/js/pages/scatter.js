@@ -187,8 +187,9 @@ export function render(root, ctx) {
       if (showOk !== showErr) extra.status = showErr ? 'error' : 'ok';
       let opts;
       if (selection) {
-        extra.minMs = Math.round(selection.minMs);
-        extra.maxMs = Math.round(selection.maxMs);
+        // The API takes whole milliseconds: the bounds widen to them, so no point drawn inside is left out.
+        extra.minMs = Math.floor(selection.minMs);
+        extra.maxMs = Math.ceil(selection.maxMs);
         opts = { window: { from: selection.from, to: selection.to } };
       }
       return api.traces(extra, opts);
