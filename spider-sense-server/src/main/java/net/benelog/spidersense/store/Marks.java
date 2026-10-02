@@ -65,6 +65,9 @@ public final class Marks {
     /**
      * Records a mark.
      *
+     * <p>The service and the note are cut to their columns, as every text value
+     * is (storage.adoc#writer), and the answer carries them as stored.
+     *
      * @param at the instant, or null for now
      * @throws IllegalArgumentException when the name is not {@link #NAME}
      */
@@ -85,7 +88,7 @@ public final class Marks {
                 }
             }
         }, "insert mark");
-        return new Mark(id, row.atMs(), name, service, row.storedNote());
+        return new Mark(id, row.atMs(), name, row.storedService(), row.storedNote());
     }
 
     /** The newest marks, newest first. */
@@ -103,10 +106,11 @@ public final class Marks {
      * the newest of any service is the honest answer rather than nothing at all.
      */
     public @Nullable Mark newest(String name, @Nullable String service) {
-        if (service != null) {
+        String storedService = Columns.cut(service, Columns.SERVICE);
+        if (storedService != null) {
             Mark ofService = sql.queryOne(
                     "SELECT * FROM mark WHERE name = ? AND service = ? ORDER BY at_ms DESC, id DESC LIMIT 1",
-                    List.of(name, service), Marks::map);
+                    List.of(name, storedService), Marks::map);
             if (ofService != null) {
                 return ofService;
             }

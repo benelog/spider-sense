@@ -64,6 +64,21 @@ class MarksTest {
     }
 
     @Test
+    void aServiceOrNoteLongerThanItsColumnIsCutAndTheAnswerShowsWhatWasStored() {
+        Marks.Mark mark = store.marks().create("before", "s".repeat(300), "n".repeat(2000), 1_000L);
+
+        assertThat(mark.service()).isEqualTo("s".repeat(255));
+        assertThat(mark.note()).isEqualTo("n".repeat(1024));
+        Marks.Mark stored = store.marks().list(1).get(0);
+        assertThat(stored.service()).isEqualTo(mark.service());
+        assertThat(stored.note()).isEqualTo(mark.note());
+        assertThat(store.marks().newest("before", "s".repeat(300)))
+                .as("the service a person typed finds the mark stored under its cut name")
+                .isNotNull()
+                .extracting(Marks.Mark::id).isEqualTo(mark.id());
+    }
+
+    @Test
     void theWriterMarksAStartWheneverAServiceReportsAProcessIdItHasNotStored() {
         export("orders", 1234, NOW);
         flush();
