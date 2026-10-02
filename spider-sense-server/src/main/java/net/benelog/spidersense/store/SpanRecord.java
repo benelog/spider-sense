@@ -41,6 +41,16 @@ public record SpanRecord(
     /** The longest statement the API ever reports; a generated SQL blob is not worth the wire. */
     public static final int MAX_STATEMENT = 2000;
 
+    /**
+     * Whether a stored statement may have been cut at {@value #MAX_STATEMENT}: the store marks
+     * nothing when it cuts, so a statement that long may end mid-token, and one of exactly that
+     * length is taken as cut too, which says less rather than something wrong. Everything that
+     * shows a stored statement or reads it as SQL asks this one question.
+     */
+    public static boolean statementMayBeCut(@Nullable String statement) {
+        return statement != null && statement.length() >= MAX_STATEMENT;
+    }
+
     /** One event on a span; the interesting one is {@code exception}. */
     public record SpanEvent(String name, long timeNanos, Map<String, Object> attributes) {
     }

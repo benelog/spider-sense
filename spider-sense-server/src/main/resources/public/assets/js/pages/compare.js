@@ -5,7 +5,7 @@ import * as api from '../api.js';
 import * as router from '../router.js';
 import { h, fill, panel, table, chip, serviceChip, markDialog, copyBlock, spinner, emptyState } from '../ui.js';
 import { pageLoader } from '../page.js';
-import { oneLineSql } from '../sql.js';
+import { oneLineSql, storedSql } from '../sql.js';
 import { errorTypeColumn, messageColumn, serviceColumn } from '../columns.js';
 import { count, dur, rate, apdex, time } from '../format.js';
 
@@ -174,7 +174,7 @@ export function render(root, ctx) {
     {
       key: 'statement', label: 'Statement', cls: 'wide',
       render: (r) => h('span.row', { style: { gap: '8px' } },
-        h('span.cell-ellipsis.mono', { title: r.statement }, oneLineSql(r.statement || '')), serviceChip(r.service)),
+        h('span.cell-ellipsis.mono', { title: storedSql(r.statement, r.statementCut) }, oneLineSql(r.statement || '')), serviceChip(r.service)),
     },
     sidesColumn('calls', 'Calls', count),
     sidesColumn('callsPerRequest', 'Calls / req', rate),

@@ -714,6 +714,8 @@ The range is rounded to the second and written in its largest units (`6s`, `2m 3
 A finding's `why` line and its `numbers` line collapse the same way, with no escape since they are not table rows, so an error message never spills onto a line of its own.
 So does every other line that is not a table row, again with no escape: a finding's statement, a trace's statement and exception, a log line and the note after a mark or an acknowledgement, so a statement reads as SQL that can be pasted into `EXPLAIN`.
 * A statement is cut at 200 characters with `…`, and `--full` keeps it whole.
+A statement of 2,000 characters or more may have been cut by the store, which keeps no more of it and records nothing when it cuts (xref:storage.adoc#schema[`db_statement`]).
+Such a statement ends in `… (cut at 2,000 characters)`, after its 200th character or, with `--full`, after all the store kept, so it never reads as a whole statement to paste into `EXPLAIN`.
 * Nothing in the body depends on when it was rendered, only on the window.
 `now` appears only in the heading.
 * An empty result says what was looked for and where, as in `no findings since 2026-09-18T12:42:26+09:00 (20s, 16 requests)`, and, when there was no request at all, how to send some: the OTLP endpoint.

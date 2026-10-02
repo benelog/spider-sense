@@ -184,6 +184,7 @@ It is fast, it never fails, and it dilutes the request count, the Apdex, `check`
 Query identity is the service, the database system, and the statement as the agent sanitised it.
 The agent replaces literals with `?` by default, which gives exactly the grouping Spider Sense needs.
 At most 2000 characters of a statement are shown.
+The store records nothing when it cuts, so a statement of 2000 characters is shown as cut wherever it is shown, which may mark a whole one but never passes a cut one off as whole.
 
 [#extension]
 == The extension

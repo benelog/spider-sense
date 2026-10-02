@@ -135,3 +135,12 @@ export function oneLineSql(sql, max = 200) {
   }
   return truncate(s.replace(/\s+/g, ' ').trim(), max);
 }
+
+/**
+ * A statement as the store kept it: one the store may have cut at 2,000 characters
+ * (api.adoc's `statementCut`) ends the way the text renderings end it, so the text
+ * shown or copied never reads as the whole statement.
+ */
+export function storedSql(text, cut) {
+  return cut ? text + '… (cut at 2,000 characters)' : text;
+}

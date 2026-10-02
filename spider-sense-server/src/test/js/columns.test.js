@@ -13,6 +13,11 @@ test('statementColumn shows one line cut at its length, the whole statement in t
   assert.equal(cell.getAttribute('title'), 'select a, b from orders where id = ?');
 });
 
+test('statementColumn says in the title when the store may have cut the statement', () => {
+  const cell = statementColumn(20).render({ statement: 'select a from t where id in (?,?', statementCut: true });
+  assert.equal(cell.getAttribute('title'), 'select a from t where id in (?,?… (cut at 2,000 characters)');
+});
+
 test('errorTypeColumn mutes the package, or shows the simple name alone', () => {
   const row = { type: 'java.lang.IllegalStateException' };
   const split = errorTypeColumn({ width: '260px' });

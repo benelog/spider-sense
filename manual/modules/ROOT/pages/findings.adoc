@@ -93,6 +93,7 @@ A run that is slow because it is collecting or swapping is therefore named for w
 
 | `statement`
 | The statement as the OpenTelemetry agent sanitised it, literals already `?`, cut at 200 characters unless `--full` is given.
+One of 2,000 characters or more, which the store may have cut, ends in `… (cut at 2,000 characters)` in xref:cli.adoc#text-rendering[the text rendering] and carries `statementCut: true` in xref:api.adoc#findings[the JSON].
 
 | `code`
 | Application frames, most specific first, at most 5, and empty when none is known.

@@ -1,7 +1,7 @@
 // sql.js: the statement pretty-printer and its one-line form.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { formatSql, oneLineSql } from '../../main/resources/public/assets/js/sql.js';
+import { formatSql, oneLineSql, storedSql } from '../../main/resources/public/assets/js/sql.js';
 
 test('formatSql puts each major clause on its own line, joins included', () => {
   assert.equal(
@@ -48,4 +48,10 @@ test('an empty statement formats as nothing', () => {
   assert.equal(formatSql(''), '');
   assert.equal(formatSql(null), '');
   assert.equal(oneLineSql(undefined), '');
+});
+
+test('storedSql marks a statement the store may have cut, and leaves a whole one alone', () => {
+  assert.equal(storedSql('SELECT x\nFROM t\nWHERE id IN (?, ?', true), 'SELECT x\nFROM t\nWHERE id IN (?, ?… (cut at 2,000 characters)');
+  assert.equal(storedSql('SELECT x\nFROM t', false), 'SELECT x\nFROM t');
+  assert.equal(storedSql('SELECT x\nFROM t', undefined), 'SELECT x\nFROM t');
 });

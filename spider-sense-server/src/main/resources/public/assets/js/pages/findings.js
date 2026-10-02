@@ -4,7 +4,7 @@
 import * as api from '../api.js';
 import * as router from '../router.js';
 import { h, fill, panel, table, chip, serviceChip, copyBlock, spinner, noDataYet, formDialog, errorText, toast, breakdownBar, breakdownLead, BREAKDOWN_BUCKETS } from '../ui.js';
-import { formatSql } from '../sql.js';
+import { formatSql, storedSql } from '../sql.js';
 import { count, dur, rate, pct, apdex, bytes, time, bothTimes, truncate, shortId } from '../format.js';
 import { codeFrame } from '../frames.js';
 import { copyButtons, cliLine } from '../copyas.js';
@@ -291,7 +291,7 @@ export function evidence(finding, onChange, listWindow) {
         h('dt', numberLabel(key)),
         h('dd', numberValue(key, value, finding.kind === 'regression' ? (finding.numbers || {}).originalKind : finding.kind)))))
       : null,
-    finding.statement ? copyBlock(formatSql(finding.statement)) : null,
+    finding.statement ? copyBlock(storedSql(formatSql(finding.statement), finding.statementCut)) : null,
     schemaLines(finding.schema),
     (finding.code || []).length
       ? h('div.f-code', h('div.sub-head', 'Code'),

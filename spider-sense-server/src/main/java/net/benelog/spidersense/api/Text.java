@@ -98,7 +98,7 @@ final class Text {
                 new Column<>("total", query -> Numbers.millis(query.totalMs())),
                 new Column<>("callers", Text::callers),
                 new Column<>("unindexed", query -> unindexed(query.schema())),
-                new Column<>("statement", query -> cutToStatement(query.statement(), full)));
+                new Column<>("statement", query -> statementLine(query.statement(), full)));
     }
 
     /** The columns of the errors table, one error group's included. */
@@ -173,7 +173,7 @@ final class Text {
                 queryPair("calls/req", Compare.QuerySide::callsPerRequest, Text::number),
                 queryPair("p95", Compare.QuerySide::p95Ms, Text::millis),
                 queryPair("total", Compare.QuerySide::totalMs, Text::millis),
-                new Column<>("statement", diff -> cutToStatement(diff.statement(), full)));
+                new Column<>("statement", diff -> statementLine(diff.statement(), full)));
     }
 
     private static <V> Column<Compare.QueryDiff> queryPair(String header, Function<Compare.QuerySide, V> field,
@@ -1367,13 +1367,24 @@ final class Text {
         };
     }
 
+    /** What a statement the store may have cut ends with, after the {@code …} where it stops. */
+    private static final String STORE_CUT = " (cut at " + Numbers.count(SpanRecord.MAX_STATEMENT) + " characters)";
+
     /**
-     * A statement on a line of its own: one line, cut at 200 characters unless
-     * {@code full}, and its bars as written, since no table splits it and the statement
-     * is one to paste into {@code EXPLAIN}.
+     * A stored statement as a line or a cell carries it: one line, cut at 200 characters unless
+     * {@code full}, and its bars as written, since the statement is one to paste into
+     * {@code EXPLAIN} ({@link #row} escapes a cell). One the store may have cut
+     * ({@link SpanRecord#statementMayBeCut}) ends in {@code …} and {@link #STORE_CUT} whether
+     * or not {@code full} was asked for, so the text the store kept never reads as the whole
+     * statement.
      */
     static String statementLine(@Nullable String statement, boolean full) {
-        return cutToStatement(statement, full);
+        if (!SpanRecord.statementMayBeCut(statement)) {
+            return cutToStatement(statement, full);
+        }
+        String single = singleLine(Objects.requireNonNull(statement, "a cut statement is one"));
+        return (full || single.length() <= STATEMENT ? single : single.substring(0, STATEMENT))
+                + "…" + STORE_CUT;
     }
 
     /**

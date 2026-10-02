@@ -4,7 +4,7 @@ import * as api from '../api.js';
 import { h, fill, panel, stat, table, chip, serviceChip, copyBlock } from '../ui.js';
 import { pageLoader, skeleton } from '../page.js';
 import { chartBox } from '../charts.js';
-import { formatSql } from '../sql.js';
+import { formatSql, storedSql } from '../sql.js';
 import { traceTable, schemaLines } from '../widgets.js';
 import { copyButtons, cliLine } from '../copyas.js';
 import { serviceColumn, countColumn } from '../columns.js';
@@ -50,7 +50,7 @@ export function render(root, ctx) {
         q.table ? chip(q.table, { title: 'db.sql.table' }) : null,
         serviceChip(q.service),
         h('span.muted', { style: { marginLeft: 'auto', fontSize: '11px' }, title: bothTimes(q.lastSeen) }, 'last seen ' + rel(q.lastSeen))),
-      copyBlock(formatSql(q.statement || '')),
+      copyBlock(storedSql(formatSql(q.statement || ''), q.statementCut)),
       schemaLines(q.schema),
       h('div.row', copyButtons({
         markdown: () => ({ path: '/api/queries/' + encodeURIComponent(id), query: api.params({}, { window: loaded.window, omitService: true }) }),

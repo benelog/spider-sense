@@ -151,5 +151,14 @@ class SpanRecordTest {
                 Map.of("db.system", "h2", "db.statement", "x".repeat(5000)));
 
         assertThat(span.dbStatement()).hasSize(SpanRecord.MAX_STATEMENT);
+        assertThat(SpanRecord.statementMayBeCut(span.dbStatement())).isTrue();
+    }
+
+    /** Nothing in the row says whether the store cut it, so one of the full length may have been. */
+    @Test
+    void aStatementOfTheFullLengthMayHaveBeenCut() {
+        assertThat(SpanRecord.statementMayBeCut("x".repeat(SpanRecord.MAX_STATEMENT))).isTrue();
+        assertThat(SpanRecord.statementMayBeCut("x".repeat(SpanRecord.MAX_STATEMENT - 1))).isFalse();
+        assertThat(SpanRecord.statementMayBeCut(null)).isFalse();
     }
 }

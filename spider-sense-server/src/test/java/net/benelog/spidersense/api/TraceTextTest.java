@@ -141,6 +141,30 @@ class TraceTextTest {
                 .contains("  exception IllegalStateException: rate|limit hit\n");
     }
 
+    /**
+     * The store keeps {@value SpanRecord#MAX_STATEMENT} characters of a statement, so one that
+     * long says it may be cut, {@code --full} included, rather than read as the whole statement.
+     */
+    @Test
+    void aStatementTheStoreMayHaveCutSaysSo() {
+        String statement = "select x from t where id in (" + "?,".repeat(1500) + "?)";
+        String whole = "select x from t where id in (" + "?,".repeat(10) + "?)";
+        Queries.TraceDetail trace = trace(List.of(
+                span("0000000000000001", null, "GET /a", 0, 500, Map.of()),
+                span("0000000000000002", "0000000000000001", "query", 10, 150,
+                        Map.of("db.system", "h2", "db.statement", statement)),
+                span("0000000000000003", "0000000000000001", "query", 200, 150,
+                        Map.of("db.system", "h2", "db.statement", whole))));
+        String stored = statement.substring(0, SpanRecord.MAX_STATEMENT);
+
+        assertThat(Text.trace(trace, TINGLES, FRAMES, true))
+                .contains("  " + stored + "… (cut at 2,000 characters)\n")
+                .contains("  " + whole + "\n");
+        assertThat(Text.trace(trace, TINGLES, FRAMES, false))
+                .contains("  " + stored.substring(0, 200) + "… (cut at 2,000 characters)\n")
+                .contains("  " + whole + "\n");
+    }
+
     /** What {@code work} returns on a thread of 256 KiB stack, a quarter of a Jetty worker's. */
     private static <T> T onASmallStack(Supplier<T> work) throws InterruptedException {
         AtomicReference<T> result = new AtomicReference<>();

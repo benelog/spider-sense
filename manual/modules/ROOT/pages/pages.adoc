@@ -79,7 +79,7 @@ A row click expands the row in place to show the evidence, in this order:
 
 * the `why` sentence;
 * the kind's `numbers` as a grid of keys and values, with durations, counts and rates formatted as everywhere else, `callers` and `endpoints` as a short list, and `hotSpan` as one line, as the CLI prints it;
-* the `statement`, pretty-printed, when there is one;
+* the `statement`, pretty-printed, when there is one, ending in `… (cut at 2,000 characters)` when the store may have cut it (`statementCut`);
 * the schema block under it;
 * the `code` frames as a monospace list;
 * the `traces` as links to the trace page.
@@ -141,7 +141,7 @@ Better is the same rule the other way.
 Every cell reads `before → after`, with `—` for a side that has no value.
 A row click opens the endpoint page.
 
-. *Queries* has the same shape, with the statement in monospace on one line and its full text in the title, then `calls`, `calls / request`, `p95`, and `total`.
+. *Queries* has the same shape, with the statement in monospace on one line and its full text in the title, marked as on the queries page when the store may have cut it, then `calls`, `calls / request`, `p95`, and `total`.
 A row click opens the query page.
 
 . *Errors* lists the verdict, the type, the message, the service chip, and the counts `before → after`.
@@ -315,6 +315,7 @@ image::span-drawer.jpg[The span drawer with the SQL statement and every attribut
 The drawer opens on the right, 420 px wide, with the span's name, service and kind, its timing (start offset, duration, share of the trace, self time), and its status.
 Then come the attributes as a table of keys and values, with long values in a `<pre>`.
 `db.statement` is pretty-printed: SQL keywords uppercased, and a line break before each major clause.
+It is the attribute as the agent sent it, so it is whole where the `db_statement` column keeps only 2,000 characters.
 The events follow with their attributes and the stack trace in a scrollable `<pre>`, and the scope name comes last.
 `Esc` closes the drawer.
 
@@ -350,7 +351,7 @@ The trace's log records come last, oldest first, each with a severity chip, its 
 image::queries.jpg[Queries grouped by statement with calls, average, p95, max and total time,800]
 
 Above the table are a sort selector (total, avg, p95, max, calls) and a text filter on the statement.
-The table gives the statement in monospace on one line, with the full text in its tooltip, then the system chip, the operation, the table, the unindexed columns, calls, avg, p95, max, total, the slow calls (in `--accent` when there are any), and when it was last seen.
+The table gives the statement in monospace on one line, with the full text in its tooltip, which ends in `… (cut at 2,000 characters)` when the store may have cut the statement (xref:api.adoc#query-stats[`statementCut`]), then the system chip, the operation, the table, the unindexed columns, calls, avg, p95, max, total, the slow calls (in `--accent` when there are any), and when it was last seen.
 The statement cell is the wide one.
 
 *Unindexed* is the xref:findings.adoc#schema[schema block]'s `unindexed`, the columns the statement filters on that no index leads with.
@@ -359,7 +360,7 @@ The cell reads `none` when every predicate is served, and `—` when the stateme
 A row click opens the statement.
 
 [#query]
-`+#/queries/{queryId}+` is one statement: the full text pretty-printed, the schema block under it as <<findings-schema-block,the Findings page renders it>>, the <<copy-as-markdown,*Copy as Markdown* and *Copy CLI line*>> pair over `+GET /api/queries/{queryId}+` and the `queries` command, the stat tiles, a chart of calls and p95, the callers as endpoints with their counts, and the slowest traces.
+`+#/queries/{queryId}+` is one statement: the full text pretty-printed, marked the same way when the store may have cut it, the schema block under it as <<findings-schema-block,the Findings page renders it>>, the <<copy-as-markdown,*Copy as Markdown* and *Copy CLI line*>> pair over `+GET /api/queries/{queryId}+` and the `queries` command, the stat tiles, a chart of calls and p95, the callers as endpoints with their counts, and the slowest traces.
 
 [#errors]
 == Errors

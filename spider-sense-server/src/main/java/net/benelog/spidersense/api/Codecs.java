@@ -350,6 +350,7 @@ public final class Codecs {
                 .put("operation", query.operation())
                 .put("table", query.table())
                 .put("statement", query.statement())
+                .put("statementCut", SpanRecord.statementMayBeCut(query.statement()))
                 .put("calls", query.calls())
                 .put("errors", query.errors());
         put(object, "avgMs", query.avgMs());
@@ -790,6 +791,7 @@ public final class Codecs {
                         .put("jvm", finding.subject().jvm()))
                 .put("numbers", numbers)
                 .put("statement", finding.statement())
+                .put("statementCut", SpanRecord.statementMayBeCut(finding.statement()))
                 .put("code", strings(finding.code()))
                 .put("traces", strings(finding.traces()))
                 .put("schema", schema(finding.schema()))
@@ -833,6 +835,7 @@ public final class Codecs {
                     .put("queryId", diff.queryId())
                     .put("service", diff.service())
                     .put("statement", diff.statement())
+                    .put("statementCut", SpanRecord.statementMayBeCut(diff.statement()))
                     .put("before", querySide(diff.before()))
                     .put("after", querySide(diff.after()))
                     .put("verdict", diff.verdict()));

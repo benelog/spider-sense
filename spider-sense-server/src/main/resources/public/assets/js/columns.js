@@ -3,7 +3,7 @@
 // `sortable` out, so a column sorts in a table that sorts; pass { sortable: false } to stop it.
 
 import { h, serviceChip } from './ui.js';
-import { oneLineSql } from './sql.js';
+import { oneLineSql, storedSql } from './sql.js';
 import { dur, count, rel, bothTimes, truncate, splitType } from './format.js';
 
 /** "12 s ago", both forms of the time in its title. */
@@ -11,11 +11,11 @@ export function timeAgo(ts) {
   return h('span', { title: bothTimes(ts) }, rel(ts));
 }
 
-/** A query group's statement on one line, cut at `max` characters, the whole of it in the title. */
+/** A query group's statement on one line, cut at `max` characters, all the store kept of it in the title. */
 export function statementColumn(max = 200, extra = {}) {
   return {
     key: 'statement', label: 'Statement', cls: 'wide',
-    render: (q) => h('span.cell-ellipsis.mono', { title: q.statement }, oneLineSql(q.statement, max)),
+    render: (q) => h('span.cell-ellipsis.mono', { title: storedSql(q.statement, q.statementCut) }, oneLineSql(q.statement, max)),
     ...extra,
   };
 }

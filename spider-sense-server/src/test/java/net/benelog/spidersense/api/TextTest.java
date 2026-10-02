@@ -21,6 +21,7 @@ import net.benelog.spidersense.store.Acks;
 import net.benelog.spidersense.store.LogRecord;
 import net.benelog.spidersense.store.Marks;
 import net.benelog.spidersense.store.ReadOnlyQuery;
+import net.benelog.spidersense.store.SpanRecord;
 
 /**
  * Every Markdown table keeps its shape whatever text the application put in a
@@ -197,6 +198,48 @@ class TextTest {
         assertTablesHoldTheirShape(text);
         assertThat(rows(text).get(0)).isEqualTo("| A\\|B | C |");
         assertThat(rows(text).get(2)).isEqualTo("| " + "x".repeat(199) + "\\|… | line break |");
+    }
+
+    /**
+     * A statement as long as the store keeps may have been cut there: a query row, a compare row
+     * and a finding say so, {@code --full} included, and so does the JSON beside them.
+     */
+    @Test
+    void aStatementTheStoreMayHaveCutSaysSoInEveryRendering() {
+        String stored = ("select x from t where id in (" + "?,".repeat(1500))
+                .substring(0, SpanRecord.MAX_STATEMENT);
+        String cut = "… (cut at 2,000 characters)";
+        Stats.QueryStats query = new Stats.QueryStats("abcdefabcdef", "svc", "h2", null, "SELECT", "t",
+                stored, 4, 0, 1.0, 1.0, 1.0, 1.0, 4.0, 0, List.of(), 1_000_000L, null);
+        Stats.QueryStats whole = new Stats.QueryStats("bcdefabcdefa", "svc", "h2", null, "SELECT", "t",
+                "select x from t", 4, 0, 1.0, 1.0, 1.0, 1.0, 4.0, 0, List.of(), 1_000_000L, null);
+
+        assertThat(rows(Text.queries(WINDOW, null, List.of(query, whole), 3, true, "http://localhost:4000")))
+                .anySatisfy(row -> assertThat(row).endsWith("| " + stored + cut + " |"))
+                .anySatisfy(row -> assertThat(row).endsWith("| select x from t |"));
+        assertThat(rows(Text.queries(WINDOW, null, List.of(query), 3, false, "http://localhost:4000")))
+                .anySatisfy(row -> assertThat(row).endsWith("| " + stored.substring(0, 200) + cut + " |"));
+
+        Compare.Comparison comparison = new Compare.Comparison(WINDOW, WINDOW,
+                Stats.Totals.EMPTY, Stats.Totals.EMPTY, List.of(),
+                List.of(new Compare.QueryDiff("abcdefabcdef", "svc", stored, null, null, "new")), List.of());
+        assertThat(rows(Text.compare(comparison, null, true)))
+                .anySatisfy(row -> assertThat(row).endsWith("| " + stored + cut + " |"));
+
+        Findings.Finding finding = new Findings.Finding("n-plus-one:abcdefabcdef", "n-plus-one",
+                "medium", "svc", "GET /a runs SELECT t 6 times", "6 times per request",
+                Findings.Subject.error("abcdefabcdef"), Map.of("count", 6L), stored, List.of(),
+                List.of());
+        assertThat(Text.findings(WINDOW, null, 3, List.of(finding), true, "http://localhost:4000"))
+                .contains("\n   " + stored + cut + "\n");
+        assertThat(Text.findings(WINDOW, null, 3, List.of(finding), false, "http://localhost:4000"))
+                .contains("\n   " + stored.substring(0, 200) + cut + "\n");
+
+        assertThat(Codecs.query(query).getBoolean("statementCut")).isTrue();
+        assertThat(Codecs.query(whole).getBoolean("statementCut")).isFalse();
+        assertThat(Codecs.finding(finding).getBoolean("statementCut")).isTrue();
+        assertThat(Codecs.comparison(comparison).getArray("queries").get(0).asObject()
+                .getBoolean("statementCut")).isTrue();
     }
 
     @Test

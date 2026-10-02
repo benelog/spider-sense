@@ -385,7 +385,7 @@ The points are arrays rather than objects because 5,000 points must stay small o
 [source,json]
 ----
 { "queryId": "…", "service": "…", "system": "h2", "namespace": "orders" | null, "operation": "SELECT" | null, "table": "orders" | null,
-  "statement": "select … from orders where … like ?",
+  "statement": "select … from orders where … like ?", "statementCut": false,
   "calls": 240, "errors": 0, "avgMs": 45.0, "p50Ms": 40.0, "p95Ms": 120.0, "maxMs": 900.0, "totalMs": 10800.0,
   "slowCalls": 12,                       // calls over slowQueryMs
   "callers": [ { "endpoint": "GET /orders/report", "service": "spring-orders", "calls": 240 } ],
@@ -393,6 +393,8 @@ The points are arrays rather than objects because 5,000 points must stay small o
   "schema": { "tables": [...], "predicates": [...], "unindexed": [...] } | null }
 ----
 
+`statement` is what the store kept, at most 2,000 characters (xref:storage.adoc#schema[`db_statement`]).
+`statementCut` is `true` when it is 2,000 characters long, since the store may then have cut it; nothing in the row says whether it did, so the UI and the text renderings mark such a statement as cut.
 `schema` is the index catalog of the statement's tables and the columns it filters on that no index serves, as xref:findings.adoc#schema[the schema block] defines it.
 It is `null` when there is no catalog to read.
 
@@ -575,7 +577,7 @@ An unknown mark name is `404`, and a `since` after `until` is `400`.
 
 `format=text`, or an `Accept` header whose first type is `text/markdown` or `text/plain`, answers `text/markdown; charset=utf-8` instead of JSON.
 It applies to `/api/status`, `/api/findings`, `+/api/findings/{id}+`, `/api/marks`, `/api/compare`, `/api/check`, `/api/sql`, `/api/traces`, `+/api/traces/{id}+`, `/api/endpoints`, `/api/queries`, `+/api/queries/{queryId}+`, `/api/errors`, `+/api/errors/{errorId}+`, `/api/logs` and `/api/services`.
-`full=true` keeps statements whole and expands collapsed spans.
+`full=true` keeps statements whole, as far as the store kept them, and expands collapsed spans.
 The format of each rendering is given in xref:cli.adoc#text-rendering[The CLI].
 
 [#marks]
@@ -627,7 +629,7 @@ xref:findings.adoc#resolutions[Resolutions] describes what a resolution means.
   "subject": { "endpointId": "…" | null, "queryId": "…" | null, "errorId": "…" | null, "pool": "…" | null, "job": "…" | null,
                "target": "…" | null, "logger": "…" | null, "jvm": "…" | null },
   "numbers": { ...kind-specific... },
-  "statement": "…" | null, "code": [ "orders.OrderService.load(OrderService.java:41)" ], "traces": [ "<traceId>" ],
+  "statement": "…" | null, "statementCut": false, "code": [ "orders.OrderService.load(OrderService.java:41)" ], "traces": [ "<traceId>" ],
   "schema": { "tables": [ { "table": "ITEMS", "schema": "PUBLIC" | null,
                             "indexes": [ { "name": "PRIMARY_KEY_8", "unique": true, "columns": [ "ID" ] } ] } ],
               "predicates": [ "items.name" ], "unindexed": [ "items.name" ] } | null,   // slow-query and n-plus-one
@@ -636,6 +638,7 @@ xref:findings.adoc#resolutions[Resolutions] describes what a resolution means.
 ----
 
 `numbers` carries the fields of the finding's kind, listed with each kind in xref:findings.adoc#kinds[Findings].
+`statementCut` is `true` when the store may have cut the statement, as on <<query-stats,QueryStats>>.
 `schema` is the xref:findings.adoc#schema[schema block], on a `slow-query` or `n-plus-one` finding and `null` everywhere else.
 
 [#compare]
@@ -648,12 +651,13 @@ xref:findings.adoc#resolutions[Resolutions] describes what a resolution means.
 { "before": { "from": …, "to": … }, "after": { "from": …, "to": … },
   "totals": { "before": <Totals>, "after": <Totals> },
   "endpoints": [ { "endpointId": "…", "service": "…", "name": "…", "before": <Side> | null, "after": <Side> | null, "verdict": "better" | "worse" | "same" | "new" | "gone" } ],
-  "queries":   [ { "queryId": "…", "service": "…", "statement": "…", "before": <QuerySide> | null, "after": <QuerySide> | null, "verdict": "…" } ],
+  "queries":   [ { "queryId": "…", "service": "…", "statement": "…", "statementCut": false, "before": <QuerySide> | null, "after": <QuerySide> | null, "verdict": "…" } ],
   "errors":    [ { "errorId": "…", "service": "…", "type": "…", "message": "…", "before": 0, "after": 3, "verdict": "…" } ] }
 ----
 
 `Side` is `{ "calls", "errors", "p50Ms", "p95Ms", "maxMs", "dbCallsPerRequest", "dbMsPerRequest" }`.
 `QuerySide` is `{ "calls", "callsPerRequest", "p95Ms", "totalMs" }`.
+A query's `statementCut` is the one of <<query-stats,QueryStats>>.
 `before` and `after` are required, and a missing one is `400`.
 
 [#check]
