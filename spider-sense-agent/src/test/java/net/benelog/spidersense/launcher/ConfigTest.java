@@ -273,16 +273,53 @@ class ConfigTest {
                 .isEqualTo("jdbc:h2:mem:it");
     }
 
+    /**
+     * The server's arguments are the user's keys spelled the same way, bar the two the launcher
+     * alone decides: the mode, and the service the server is embedded in.
+     */
     @Test
     void serverArgumentsRoundTripThroughFromArgs() {
         Config c = config(
-                "--port=4321", "--host=0.0.0.0", "--service=orders",
+                "--port=4321", "--host=0.0.0.0",
                 "--db=jdbc:h2:mem:it", "--retention.hours=6",
-                "--slow.request.ms=13", "--slow.query.ms=14").withMode("agent");
+                "--slow.request.ms=13", "--slow.query.ms=14").withMode("standalone").withService("orders");
 
-        Config again = config(c.toServerArgs().toArray(new String[0]));
+        List<String> userKeys = c.toServerArgs().stream()
+                .filter(arg -> !arg.startsWith("--mode=") && !arg.startsWith("--embedded-service="))
+                .toList();
+        Config again = config(userKeys.toArray(new String[0]));
 
-        assertThat(again).isEqualTo(c);
+        assertThat(again).isEqualTo(c.withMode("agent").withService(null));
+    }
+
+    /**
+     * configuration.adoc's table is every key the command line takes: the mode, the server's
+     * embedded service and a boolean that is not one are usage errors, not silently read.
+     */
+    @Test
+    void whatIsNotInTheTableOrNotABooleanIsAUsageError() {
+        assertThatThrownBy(() -> parse("--mode=agent"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("unknown option: --mode; java -jar spider-sense.jar --help lists them");
+        assertThatThrownBy(() -> parse("--embedded-service=x"))
+                .hasMessage("unknown option: --embedded-service; java -jar spider-sense.jar --help lists them");
+        assertThatThrownBy(() -> parse("--open=yes"))
+                .hasMessage("--open is not true or false: yes");
+        assertThat(config("--open=TRUE").open()).isTrue();
+        assertThat(config("--open=false").open()).isFalse();
+    }
+
+    /** A property that is not a boolean is the one malformed key, as a number is. */
+    @Test
+    void aMalformedBooleanPropertyFallsBackWithAWarning() {
+        Map<String, String> properties = Map.of("spidersense.open", "yes", "spidersense.port", "4100");
+
+        Config.Parsed parsed = Config.parse(null, properties::get, NONE::get);
+
+        assertThat(parsed.config()).isEqualTo(Config.defaults().withPort(4100));
+        assertThat(parsed.warnings()).containsExactly("spidersense.open=yes is not true or false; using false");
+        assertThat(Config.parse(null, Map.of("spidersense.mode", "standalone")::get, NONE::get).config().mode())
+                .as("the mode is never read from a property").isEqualTo(Config.AGENT);
     }
 
     @Test

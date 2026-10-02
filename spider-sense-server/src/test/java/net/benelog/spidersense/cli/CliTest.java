@@ -185,6 +185,24 @@ class CliTest {
         assertThat(run("marks", "--limit=many").exit()).isEqualTo(2);
     }
 
+    /**
+     * An option that takes a value, named bare, is a usage error: a bare {@code --since} would
+     * otherwise be the mark name {@code true} and exit 4. A flag is still named bare.
+     */
+    @Test
+    void anOptionThatTakesAValueNamedBareIsAUsageError() {
+        for (String option : List.of("since", "until", "limit", "service", "url", "db")) {
+            Run run = run("findings", "--" + option);
+            assertThat(run.exit()).as(option).isEqualTo(2);
+            assertThat(run.err()).as(option)
+                    .startsWith("spider-sense: --" + option + " needs a value: --" + option + "=<value>\n");
+        }
+        assertThat(run("check", "--max-p95-ms").err()).startsWith("spider-sense: --max-p95-ms needs a value");
+        assertThat(Options.parse(new String[] {"findings", "--json", "--full", "--hide-acked", "--no-git"})
+                .flag("hide-acked")).isTrue();
+        assertThat(Options.parse(new String[] {"init", "--no-skill", "--mcp"}).flag("mcp")).isTrue();
+    }
+
     @Test
     void everyCommandAsksTheUrlItsSectionOfApiMdNames() {
         assertThat(path("status")).isEqualTo("/api/status?format=text");

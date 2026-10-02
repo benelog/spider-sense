@@ -54,6 +54,7 @@ The launcher treats a first argument that does not start with `-` as a command a
 It is idempotent — the block it writes is delimited by `<!-- spider-sense:start -->` and `<!-- spider-sense:end -->`, and a second run replaces what is between them and leaves the rest of `CLAUDE.md` untouched.
 `--slow.request.ms=`, `--slow.query.ms=` and `--app.packages=` set the thresholds and the application packages in the direct-file path, where no server is there to ask.
 An option a command does not take is a usage error rather than a silently ignored word, so a mistyped `--sinse` is told rather than answered for the last 15 minutes.
+An option that takes a value is a usage error without one, so a bare `--since` is told rather than read as the mark name `true`; only `--json`, `--full`, `--hide-acked`, `--no-git` and `init`'s `--no-skill` and `--mcp` are named bare.
 
 ## Time selectors
 

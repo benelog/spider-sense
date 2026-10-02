@@ -618,6 +618,7 @@ Three commands depart from the table.
 `--slow.request.ms=`, `--slow.query.ms=` and `--app.packages=` set the thresholds and the application packages in the direct-file path, where no server is there to ask.
 
 An option a command does not take is a usage error rather than a silently ignored word, so a mistyped `--sinse` is reported rather than answered for the last 15 minutes.
+An option that takes a value is a usage error without one, so a bare `--since` is reported rather than read as the mark name `true`; only `--json`, `--full`, `--hide-acked`, `--no-git` and `init`'s `--no-skill` and `--mcp` are named bare.
 
 [#exit-codes]
 == Exit codes

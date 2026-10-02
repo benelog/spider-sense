@@ -7,7 +7,8 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * The configuration keys the jar takes, one row each: the table in
- * {@code configuration.adoc#properties}, plus the mode.
+ * {@code configuration.adoc#properties}, and nothing else. The mode is not a key: the launcher
+ * decides it, so {@code --mode=agent} on the command line is as unknown as {@code --prot=4001}.
  *
  * <p>Everything that lists the keys is derived from here: the properties file's known keys
  * ({@link ConfigFile#KNOWN_KEYS}), which {@code --key=value} arguments {@link Config#parse} accepts
@@ -22,7 +23,7 @@ enum Key {
     COLLECTOR("collector", Kind.STRING, Owner.LAUNCHER, "<url>",
             "agent mode: forward instead of starting the UI"),
     SERVICE("service", Kind.STRING, Owner.LAUNCHER, "<name>",
-            "agent mode: sets otel.service.name", "embedded-service"),
+            "agent mode: sets otel.service.name"),
     DB("db", Kind.STRING, Owner.LAUNCHER, Config.DEFAULT_DB,
             "H2 database path or jdbc:h2: URL"),
     // Both spellings: the property is retention.hours, but a dashed flag reads better.
@@ -48,14 +49,12 @@ enum Key {
             "source roots for code frames; the default is\n"
                     + "src/main/java and src/main/kotlin here and one level down"),
     OPEN("open", Kind.BOOLEAN, Owner.LAUNCHER, "false",
-            "agent mode: open the browser at startup"),
-    /**
-     * Not a user's key: the launcher decides the mode, and the argument exists so that
-     * {@link Config#toServerArgs()} reads back through {@link Config#parse}.
-     */
-    MODE("mode", Kind.STRING, Owner.LAUNCHER, Config.AGENT, null);
+            "agent mode: open the browser at startup");
 
-    /** How a value is checked: a number that does not parse is a usage error on the command line. */
+    /**
+     * How a value is checked: a number that does not parse, or a boolean that is neither
+     * {@code true} nor {@code false}, is a usage error on the command line.
+     */
     enum Kind { INT, LONG, BOOLEAN, STRING }
 
     /**
@@ -72,21 +71,21 @@ enum Key {
     private final Kind kind;
     private final Owner owner;
     private final String shown;
-    private final @Nullable String help;
+    private final String help;
     private final @Nullable String alias;
 
     /**
      * @param name    the key without the {@code spidersense.} prefix, as {@code --name=value} takes it
      * @param shown   what {@code --help} shows after the {@code =}: the default, the server's for the
      *                keys whose default the launcher leaves to it, empty for unset, or a placeholder
-     * @param help    the help text, one line per line; null for a key the help does not list
+     * @param help    the help text, one line per line
      */
-    Key(String name, Kind kind, Owner owner, String shown, @Nullable String help) {
+    Key(String name, Kind kind, Owner owner, String shown, String help) {
         this(name, kind, owner, shown, help, null);
     }
 
     /** @param alias the other spelling the command line accepts */
-    Key(String name, Kind kind, Owner owner, String shown, @Nullable String help, @Nullable String alias) {
+    Key(String name, Kind kind, Owner owner, String shown, String help, @Nullable String alias) {
         this.name = name;
         this.kind = kind;
         this.owner = owner;
@@ -115,11 +114,6 @@ enum Key {
         return shown;
     }
 
-    /** Whether the key is in configuration.adoc's table, and so in the help and the file's keys. */
-    boolean documented() {
-        return help != null;
-    }
-
     /** The key a {@code --name=value} argument names, by its name or its alias; null for none. */
     static @Nullable Key ofArgument(String name) {
         for (Key key : values()) {
@@ -130,13 +124,11 @@ enum Key {
         return null;
     }
 
-    /** The properties of the documented keys. */
+    /** The properties of the keys, which are the rows of configuration.adoc's table. */
     static Set<String> documentedProperties() {
         Set<String> properties = new HashSet<>();
         for (Key key : values()) {
-            if (key.documented()) {
-                properties.add(key.property());
-            }
+            properties.add(key.property());
         }
         return Set.copyOf(properties);
     }
@@ -152,9 +144,6 @@ enum Key {
         StringBuilder out = new StringBuilder();
         String indent = " ".repeat(HELP_COLUMN);
         for (Key key : values()) {
-            if (key.help == null) {
-                continue;
-            }
             String option = "  --" + key.name + "=" + key.shown;
             List<String> lines = key.help.lines().toList();
             if (option.length() < HELP_COLUMN) {

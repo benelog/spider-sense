@@ -150,14 +150,15 @@ public record Config(
                 values.number(Key.SLOW_REQUEST_MS, defaults.slowRequestMs()),
                 values.number(Key.SLOW_QUERY_MS, defaults.slowQueryMs()),
                 values.bool(Key.OPEN, defaults.open()),
-                values.string(Key.MODE, defaults.mode()));
+                // Not a key: the caller decides the mode with withMode.
+                defaults.mode());
         return new Parsed(config, Map.copyOf(serverProperties), List.copyOf(warnings));
     }
 
     /** One {@code --name=value} argument, both trimmed, the name as it was typed. */
     private record Argument(String name, String value) {
 
-        /** A number the key needs, or a usage error naming the argument. */
+        /** A number or a boolean the key needs, or a usage error naming the argument. */
         void check(Key.Kind kind) {
             try {
                 switch (kind) {
@@ -168,7 +169,12 @@ public record Config(
                             Long.parseLong(value);
                         }
                     }
-                    case BOOLEAN, STRING -> {
+                    case BOOLEAN -> {
+                        if (!isBoolean(value)) {
+                            throw new IllegalArgumentException("--" + name + " is not true or false: " + value);
+                        }
+                    }
+                    case STRING -> {
                     }
                 }
             } catch (NumberFormatException e) {
@@ -249,15 +255,36 @@ public record Config(
             }
         }
 
+        /**
+         * {@code true} or {@code false}, in any case; anything else, such as {@code yes}, is a
+         * usage error as an argument and the fallback with a warning as a property, as a
+         * malformed number is.
+         */
         boolean bool(Key key, boolean fallback) {
             Argument argument = given.get(key);
-            String value = argument != null ? argument.value() : read.apply(key.property());
-            return value != null ? Boolean.parseBoolean(value.trim()) : fallback;
+            if (argument != null) {
+                argument.check(Key.Kind.BOOLEAN);
+                return Boolean.parseBoolean(argument.value());
+            }
+            String value = read.apply(key.property());
+            if (value == null) {
+                return fallback;
+            }
+            if (!isBoolean(value.trim())) {
+                warnings.add(key.property() + "=" + value + " is not true or false; using " + fallback);
+                return fallback;
+            }
+            return Boolean.parseBoolean(value.trim());
         }
 
         private void warnMalformed(Key key, String value, String fallback) {
             warnings.add(key.property() + "=" + value + " is not a number; using " + fallback);
         }
+    }
+
+    /** Whether a value is {@code true} or {@code false}, in any case. */
+    private static boolean isBoolean(String value) {
+        return value.equalsIgnoreCase("true") || value.equalsIgnoreCase("false");
     }
 
     public Config withMode(String newMode) {

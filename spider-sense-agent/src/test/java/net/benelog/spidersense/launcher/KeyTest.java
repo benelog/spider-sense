@@ -31,9 +31,6 @@ class KeyTest {
     void theHelpShowsTheManualsDefaults() throws IOException {
         Map<String, String> table = manualTable();
         for (Key key : Key.values()) {
-            if (!key.documented()) {
-                continue;
-            }
             String documented = table.get(key.property());
             if (documented.matches("`[^`]*`")) {
                 assertThat(key.shown()).as("%s", key)
@@ -52,8 +49,7 @@ class KeyTest {
                 "--host=" + Key.HOST.shown(),
                 "--slow.request.ms=" + Key.SLOW_REQUEST_MS.shown(),
                 "--slow.query.ms=" + Key.SLOW_QUERY_MS.shown(),
-                "--open=" + Key.OPEN.shown(),
-                "--mode=" + Key.MODE.shown()}, key -> null, key -> null).config();
+                "--open=" + Key.OPEN.shown()}, key -> null, key -> null).config();
 
         assertThat(shown).isEqualTo(Config.defaults());
         assertThat(Key.DB.shown()).as("the server's, shown and never passed").isEqualTo(Config.DEFAULT_DB);
@@ -64,8 +60,9 @@ class KeyTest {
     void anArgumentNamesAKeyByItsNameOrItsAlias() {
         assertThat(Key.ofArgument("slow.query.ms")).isEqualTo(Key.SLOW_QUERY_MS);
         assertThat(Key.ofArgument("retention-hours")).isEqualTo(Key.RETENTION_HOURS);
-        assertThat(Key.ofArgument("embedded-service")).isEqualTo(Key.SERVICE);
         assertThat(Key.ofArgument("prot")).isNull();
+        assertThat(Key.ofArgument("mode")).as("the launcher decides the mode").isNull();
+        assertThat(Key.ofArgument("embedded-service")).as("the server's argument, not the user's").isNull();
     }
 
     /**

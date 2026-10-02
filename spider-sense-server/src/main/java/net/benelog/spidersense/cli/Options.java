@@ -69,6 +69,12 @@ final class Options {
      */
     private static final Set<String> COMMON = common();
 
+    /**
+     * The options that are flags, named bare: every other option takes a value, and naming it
+     * without one is a usage error.
+     */
+    private static final Set<String> FLAGS = Set.of("json", "full", "hide-acked", "no-git", "no-skill", "mcp");
+
     /** The rule flags of {@code check}, in the order api.adoc#check names their parameters. */
     private static final Map<String, String> RULES = ruleParameters();
 
@@ -108,6 +114,10 @@ final class Options {
                 String key = equals < 0 ? arg.substring(2) : arg.substring(2, equals);
                 if (key.isEmpty() || !allowed.contains(key)) {
                     throw new Usage("unknown option for " + command + ": --" + key);
+                }
+                if (equals < 0 && !FLAGS.contains(key)) {
+                    // A bare --since would otherwise be the value "true", which is a legal mark name.
+                    throw new Usage("--" + key + " needs a value: --" + key + "=<value>");
                 }
                 values.put(key, equals < 0 ? "true" : arg.substring(equals + 1));
             } else if (argument == null && label != null) {
