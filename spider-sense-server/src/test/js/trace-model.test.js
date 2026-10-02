@@ -87,6 +87,18 @@ test('depthMap survives a parent cycle', () => {
   assert.equal(depths.get('z'), depths.get('x') + 1);
 });
 
+test('a parent cycle enters the waterfall at its first member, as deep as the profile has it', () => {
+  const rowsOf = (list) => flattenTree(spanTree(list)).map((r) => r.span.spanId + ':' + r.depth);
+  const depthsOf = (list) => { const d = depthMap(list); return list.map((s) => s.spanId + ':' + d.get(s.spanId)); };
+  const selfParent = [span('root', null, 0, 10), span('loop', 'loop', 1, 5), span('kid', 'loop', 2, 1)];
+  assert.deepEqual(rowsOf(selfParent), ['root:0', 'loop:0', 'kid:1']);
+  assert.deepEqual(depthsOf(selfParent), ['root:0', 'loop:0', 'kid:1']);
+  const cycle = [span('root', null, 0, 10), span('x', 'y', 1, 5), span('y', 'x', 2, 3), span('z', 'x', 3, 1)];
+  assert.deepEqual(rowsOf(cycle), ['root:0', 'x:0', 'y:1', 'z:1']);
+  assert.deepEqual(depthsOf(cycle), ['root:0', 'x:0', 'y:1', 'z:1']);
+  assert.equal(selfTimes(cycle).get('y'), 3, 'the member cut from the cycle is no child of the one it named');
+});
+
 test('the profile numbers the steps in start order with offsets and gaps', () => {
   const rows = profileRows({ spans, start: 1000 });
   assert.deepEqual(rows.map((r) => r.span.spanId), ['root', 'a', 'orphan', 'b', 'b1']);

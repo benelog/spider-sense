@@ -16,18 +16,45 @@ export function traceStartMs(trace) {
   return min;
 }
 
-/** The parent a span hangs under, or null when the trace does not hold it (the span is then a root). */
-function parentIn(byId, span) {
-  return span.parentSpanId && byId.has(span.parentSpanId) ? span.parentSpanId : null;
+/**
+ * The id of the parent each span hangs under, by its own id, or null for a root: a span whose
+ * parent the trace does not hold, and the member of a parent cycle (a span that is its own
+ * parent, or two that name each other) that comes first in the spans' order, so the cycle enters
+ * the tree there and every view lists the same spans.
+ */
+function parentsOf(spans) {
+  const byId = new Map(spans.map((s) => [s.spanId, s]));
+  const order = new Map(spans.map((s, i) => [s.spanId, i]));
+  const parents = new Map(spans.map((s) => [s.spanId,
+    s.parentSpanId && byId.has(s.parentSpanId) ? s.parentSpanId : null]));
+  const ON_PATH = 1, DONE = 2;
+  const mark = new Map();
+  for (const s of spans) {
+    // Climb without recursion (a deep trace nests further than the call stack goes); meeting a
+    // span already on this climb closes a cycle.
+    const path = [];
+    let cur = s.spanId;
+    while (cur != null && !mark.has(cur)) {
+      mark.set(cur, ON_PATH);
+      path.push(cur);
+      cur = parents.get(cur);
+    }
+    if (cur != null && mark.get(cur) === ON_PATH) {
+      const cycle = path.slice(path.indexOf(cur));
+      parents.set(cycle.reduce((a, b) => (order.get(a) <= order.get(b) ? a : b)), null);
+    }
+    for (const id of path) mark.set(id, DONE);
+  }
+  return parents;
 }
 
 /** The roots, and the children of each span by its id, both in the spans' own order. */
 export function spanTree(spans) {
-  const byId = new Map(spans.map((s) => [s.spanId, s]));
+  const parents = parentsOf(spans);
   const children = new Map();
   const roots = [];
   for (const s of spans) {
-    const parent = parentIn(byId, s);
+    const parent = parents.get(s.spanId);
     if (parent) {
       if (!children.has(parent)) children.set(parent, []);
       children.get(parent).push(s);
@@ -75,10 +102,10 @@ function coveredMs(intervals, from, to) {
  * the part inside it.
  */
 export function selfTimes(spans) {
-  const byId = new Map(spans.map((s) => [s.spanId, s]));
+  const parents = parentsOf(spans);
   const childIntervals = new Map();
   for (const s of spans) {
-    const parent = parentIn(byId, s);
+    const parent = parents.get(s.spanId);
     if (!parent) continue;
     if (!childIntervals.has(parent)) childIntervals.set(parent, []);
     const start = startMsOf(s);
@@ -94,26 +121,20 @@ export function selfTimes(spans) {
   return out;
 }
 
-/** Each span's depth under its root; a parent cycle stops where it closes. */
+/** Each span's depth under its root; a parent cycle is a root at its first member, as in spanTree. */
 export function depthMap(spans) {
-  const byId = new Map(spans.map((s) => [s.spanId, s]));
+  const parents = parentsOf(spans);
   const depths = new Map();
   for (const s of spans) {
-    // Climb to a span whose depth is known, a root or the span that closes a cycle, without
-    // recursion (a deep trace nests further than the call stack goes), then number the way down.
+    // Climb to a span whose depth is known or a root, without recursion (a deep trace nests
+    // further than the call stack goes), then number the way down.
     const chain = [];
-    const seen = new Set();
     let base = -1;
-    for (let cur = s; ;) {
-      if (depths.has(cur.spanId)) { base = depths.get(cur.spanId); break; }
-      if (seen.has(cur.spanId)) { base = 0; break; }
-      seen.add(cur.spanId);
+    for (let cur = s.spanId; cur != null; cur = parents.get(cur)) {
+      if (depths.has(cur)) { base = depths.get(cur); break; }
       chain.push(cur);
-      const parent = parentIn(byId, cur);
-      if (!parent) break;
-      cur = byId.get(parent);
     }
-    for (let i = chain.length - 1; i >= 0; i--) depths.set(chain[i].spanId, ++base);
+    for (let i = chain.length - 1; i >= 0; i--) depths.set(chain[i], ++base);
   }
   return depths;
 }
