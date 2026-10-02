@@ -1198,6 +1198,32 @@ class FindingsTest {
     }
 
     @Test
+    void anErrorGroupPastTheHundredthIsStillAFindingAndCanRegress() {
+        // A hundred groups of two occurrences, and a rarer one that ranks last by count.
+        List<Span.Builder> spans = new ArrayList<>();
+        for (int g = 0; g <= 100; g++) {
+            String message = "failed at step " + (char) ('a' + g / 26) + (char) ('a' + g % 26);
+            for (int i = 0; i < (g == 100 ? 1 : 2); i++) {
+                int n = g * 2 + i + 1;
+                // No stack trace: the group is the type and the message, so each message is one.
+                spans.add(Otlp.failing(entry(n, "/a", 10), "orders.Failure", message, ""));
+            }
+        }
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), spans.toArray(Span.Builder[]::new)));
+        flush();
+
+        List<Findings.Finding> all = findings.findings(window, null, 1_000);
+        assertThat(all).filteredOn(f -> f.kind().equals(Findings.ERROR)).hasSize(101);
+        Findings.Finding rare = all.get(all.size() - 1);
+        assertThat(rare.numbers()).containsEntry("count", 1L);
+
+        resolveAt(rare.id(), NOW - 3_600_000, "fixed");
+        Findings.Finding first = findings.findings(window, null, 1).get(0);
+        assertThat(first.id()).isEqualTo(rare.id());
+        assertThat(first.kind()).isEqualTo(Findings.REGRESSION);
+    }
+
+    @Test
     void aResolutionOlderThanTheWindowMakesAnyOccurrenceInItARegression() {
         threeSlowEndpoints();
         String id = findings.findings(window, null, 20).get(1).id();

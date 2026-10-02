@@ -77,7 +77,6 @@ public final class Findings {
      * are the finding's own {@code traces} (findings.adoc#time).
      */
     private static final int SAMPLE_TRACES = 20;
-    private static final int GROUPS = 100;
 
     /** How many {@code (service, previous run, kind)} id sets a server keeps (findings.adoc#state). */
     private static final int PREVIOUS_RUNS = 256;
@@ -671,9 +670,11 @@ public final class Findings {
     private List<Ranked> errors(Window window, @Nullable String service, SharedScans reads,
             boolean evidence) {
         List<Ranked> found = new ArrayList<>();
+        // Every group, however rarely it occurred: a cut by count would hide a resolved error
+        // that came back once, and label a group past the cut new in the next run.
         List<Stats.ErrorGroup> groups = evidence
-                ? queries.errors(window, service, GROUPS, null, reads::ancestry)
-                : queries.errorGroups(window, service, GROUPS, null);
+                ? queries.errors(window, service, Queries.ALL_GROUPS, null, reads::ancestry)
+                : queries.errorGroups(window, service, Queries.ALL_GROUPS, null);
         for (Stats.ErrorGroup group : groups) {
             if (group.count() <= 0) {
                 continue;
