@@ -48,7 +48,8 @@ public final class OtlpJson {
      *
      * @throws InvalidProtocolBufferException when the document is not OTLP/JSON at all
      */
-    public static void merge(String json, Message.Builder builder) throws InvalidProtocolBufferException {
+    public static void merge(String body, Message.Builder builder) throws InvalidProtocolBufferException {
+        String json = withoutLoneSurrogates(body);
         try {
             JsonFormat.parser().ignoringUnknownFields().merge(hexIdsToBase64(json), builder);
         } catch (Json.JsonException e) {
@@ -59,6 +60,68 @@ public final class OtlpJson {
             builder.clear();
             JsonFormat.parser().ignoringUnknownFields().merge(hexIdsToBase64InText(json), builder);
         }
+    }
+
+    /**
+     * The document with every escape of an unpaired surrogate (a backslash, {@code u} and four
+     * hex digits) replaced by the escape of U+FFFD, the replacement character.
+     *
+     * <p>JSON text may escape half of a surrogate pair on its own, which protobuf's binary form
+     * cannot carry: UTF-8 has no encoding for it. Kept, it would be stored as it came, every
+     * answer written as UTF-8 would show {@code ?} where the store holds the surrogate, and an
+     * export would no longer match the rows it came from on import. Replaced here, once for
+     * every string of the document (a name, a key, a body, an attribute), what is stored is what
+     * every answer carries. A raw surrogate cannot occur: the body was decoded from UTF-8, which
+     * turned any malformed bytes into the replacement character already.
+     */
+    static String withoutLoneSurrogates(String json) {
+        if (json.indexOf("\\u") < 0) {
+            return json;
+        }
+        StringBuilder out = new StringBuilder(json.length());
+        int i = 0;
+        while (i < json.length()) {
+            char c = json.charAt(i);
+            if (c != '\\' || i + 1 >= json.length()) {
+                out.append(c);
+                i++;
+                continue;
+            }
+            int unit = escapedUnit(json, i);
+            if (unit < 0) {
+                // Any other escape, an escaped backslash among them, is copied whole, so its
+                // second character is never read as the start of an escape.
+                out.append(c).append(json.charAt(i + 1));
+                i += 2;
+            } else if (Character.isHighSurrogate((char) unit)
+                    && Character.isLowSurrogate((char) Math.max(0, escapedUnit(json, i + 6)))) {
+                out.append(json, i, i + 12);
+                i += 12;
+            } else if (Character.isSurrogate((char) unit)) {
+                out.append("\\ufffd");
+                i += 6;
+            } else {
+                out.append(json, i, i + 6);
+                i += 6;
+            }
+        }
+        return out.toString();
+    }
+
+    /** The UTF-16 unit a six-character escape at {@code at} stands for, or -1 when none is there. */
+    private static int escapedUnit(String json, int at) {
+        if (at + 6 > json.length() || json.charAt(at) != '\\' || json.charAt(at + 1) != 'u') {
+            return -1;
+        }
+        int unit = 0;
+        for (int i = at + 2; i < at + 6; i++) {
+            int digit = Character.digit(json.charAt(i), 16);
+            if (digit < 0) {
+                return -1;
+            }
+            unit = unit * 16 + digit;
+        }
+        return unit;
     }
 
     /**
