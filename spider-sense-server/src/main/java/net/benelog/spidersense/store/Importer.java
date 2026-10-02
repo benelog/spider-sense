@@ -32,7 +32,8 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>Importing the same file twice must not double the data, so every section
  * has an identity: a trace whose id already has a span is skipped whole, a log
- * line or a tingle is skipped when an identical row is already stored, a
+ * line or a tingle without a span is skipped when an identical row is already
+ * stored, a tingle of a span when one of that span and kind is stored, a
  * metric point merges on {@code (series, at)}, a series is looked up by
  * {@code (service, name, attributes)}, a service row is merged, and a mark is
  * skipped when one with the same name and instant exists, and a catalog row is
@@ -255,28 +256,40 @@ public final class Importer {
         return count;
     }
 
-    /** The file's tingles, less those of a skipped trace and those already stored, as for logs. */
+    /**
+     * The file's tingles, less those of a skipped trace and those already stored.
+     *
+     * <p>A tingle of a span is already stored when a tingle of that span and kind is,
+     * the unique key {@link TingleRow#INSERT} checks as the writer's flush does, so the
+     * file's own copies of it go in once. A tingle without a span has no key, and is
+     * recognised by its own columns, as a log line is.
+     */
     private static long insertTingles(Connection connection, Json.JsonArray tingles, Set<String> skip)
             throws SQLException {
-        long count = 0;
+        int pending = 0;
         try (PreparedStatement statement = connection.prepareStatement(TingleRow.INSERT);
                 PreparedStatement same = connection.prepareStatement(TingleRow.SAME_TINGLE)) {
             StoredDuplicates stored = new StoredDuplicates(same);
             for (Json.JsonValue value : tingles) {
                 TingleRow tingle = TingleRow.fromJson(value.asObject());
                 String traceId = tingle.traceId();
-                if ((traceId != null && skip.contains(traceId)) || stored.takeOne(tingle.sameTingle())) {
+                if ((traceId != null && skip.contains(traceId))
+                        || (!tingle.hasSpan() && stored.takeOne(tingle.sameTingle()))) {
                     continue;
                 }
                 tingle.bind(statement);
                 statement.addBatch();
-                count++;
+                pending++;
             }
-            if (count > 0) {
-                statement.executeBatch();
+            if (pending == 0) {
+                return 0;
             }
+            long count = 0;
+            for (int inserted : statement.executeBatch()) {
+                count += inserted;
+            }
+            return count;
         }
-        return count;
     }
 
     /**

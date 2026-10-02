@@ -309,6 +309,39 @@ class ExportImportTest {
     }
 
     /**
+     * A tingle of a span is keyed by its span and kind, as the writer stores it, so a
+     * file holding it twice imports it once, whatever its other columns say, rather than
+     * failing on the key.
+     */
+    @Test
+    void aTingleOfASpanIsImportedOncePerSpanAndKind() {
+        String[] document = new String[1];
+        long[] stored = new long[1];
+        serve(client -> {
+            fill(client);
+            stored[0] = rows(client, "SELECT COUNT(*) FROM tingle");
+            Json.JsonObject exported = Json.parse(client.get("/api/export" + window()).body()).asObject();
+            Json.JsonArray tingles = exported.getArray("tingles");
+            for (int i = 0; i < tingles.size(); i++) {
+                if (!tingles.get(i).asObject().get("spanId").isNull()) {
+                    Json.JsonObject copy = Json.parse(tingles.get(i).toJson()).asObject();
+                    tingles.add(copy.put("detail", "raised again"));
+                    break;
+                }
+            }
+            assertThat(tingles.size()).as("a tingle of a span, copied").isEqualTo(stored[0] + 1);
+            document[0] = exported.toJson();
+        });
+
+        serve(client -> {
+            HttpResponse<String> imported = postJson(client, "/api/import", document[0]);
+            assertThat(imported.statusCode()).isEqualTo(200);
+            assertThat(Json.parse(imported.body()).asObject().getLong("tingles")).isEqualTo(stored[0]);
+            assertThat(rows(client, "SELECT COUNT(*) FROM tingle")).isEqualTo(stored[0]);
+        });
+    }
+
+    /**
      * The point of carrying the catalog: a slow-query finding computed over the
      * imported session has the schema block the original one had (findings.adoc#schema).
      */

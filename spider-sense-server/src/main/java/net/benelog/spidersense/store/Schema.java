@@ -175,6 +175,7 @@ public final class Schema {
                 duration_ms DOUBLE
             )""",
             "CREATE INDEX IF NOT EXISTS tingle_at ON tingle (at_ms)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS tingle_span ON tingle (trace_id, span_id, kind)",
             """
             CREATE TABLE IF NOT EXISTS mark (
                 id       BIGINT AUTO_INCREMENT PRIMARY KEY,

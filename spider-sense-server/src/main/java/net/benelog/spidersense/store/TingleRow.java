@@ -25,11 +25,22 @@ public record TingleRow(
         @Nullable String spanId,
         double durationMs) {
 
+    /**
+     * The row, unless a tingle of the same span and kind is stored: {@code (trace_id, span_id,
+     * kind)} is the unique key of {@code tingle}, so an export the exporter sends again raises
+     * no second one (storage.adoc#writer). Its update count says whether the row went in, and
+     * only a tingle that did is published. A tingle without a span has no key, and goes in
+     * as a plain insert would, since a comparison with NULL matches no stored row.
+     */
     static final String INSERT = """
             INSERT INTO tingle (at_ms, kind, service, title, detail, trace_id, span_id, duration_ms)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""";
+            SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (
+                SELECT 1 FROM tingle WHERE trace_id = ? AND span_id = ? AND kind = ?)""";
 
-    /** The columns that make two tingles the same one, in the order of {@link #sameTingle()}. */
+    /**
+     * The columns that make two tingles the same one, in the order of {@link #sameTingle()}:
+     * what the importer recognises a tingle without a span by, since it has no key.
+     */
     static final String SAME_TINGLE = """
             SELECT COUNT(*) FROM tingle WHERE at_ms = ? AND kind IS NOT DISTINCT FROM ?
                 AND service IS NOT DISTINCT FROM ? AND title = ? AND detail = ?
@@ -84,7 +95,12 @@ public record TingleRow(
                 Columns.cut(detail, Columns.TINGLE_DETAIL), traceId, spanId);
     }
 
-    /** Binds the row to {@link #INSERT}, each text cut to its column. */
+    /** Whether the row has the key {@link #INSERT} checks: a tingle without a span has none. */
+    boolean hasSpan() {
+        return traceId != null && spanId != null;
+    }
+
+    /** Binds the row to {@link #INSERT}, each text cut to its column, and then its key. */
     void bind(PreparedStatement statement) throws SQLException {
         int i = 1;
         statement.setLong(i++, atMs);
@@ -94,6 +110,9 @@ public record TingleRow(
         statement.setString(i++, Columns.cut(detail, Columns.TINGLE_DETAIL));
         statement.setString(i++, traceId);
         statement.setString(i++, spanId);
-        statement.setDouble(i, durationMs);
+        statement.setDouble(i++, durationMs);
+        statement.setString(i++, traceId);
+        statement.setString(i++, spanId);
+        statement.setString(i, kind);
     }
 }

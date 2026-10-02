@@ -34,7 +34,8 @@ import org.jspecify.annotations.Nullable;
  * <p>Every flush is one transaction. After the span inserts it recomputes the
  * {@code trace} summary rows of the trace ids the flush touched — a trace arrives
  * in several exports and from several services, so the summary is only ever
- * correct as a re-aggregation — and then publishes the flush's tingles.
+ * correct as a re-aggregation — and then publishes the tingles the flush
+ * stored, which leaves out those of a span the exporter sent again.
  */
 public final class Writer implements AutoCloseable {
 
@@ -251,10 +252,9 @@ public final class Writer implements AutoCloseable {
             if (batches.isEmpty()) {
                 return;
             }
-            List<Batch> stored;
+            List<Tingle> stored;
             try {
-                writeThroughPool(batches);
-                stored = batches;
+                stored = writeThroughPool(batches);
             } catch (SQLException | RuntimeException | StackOverflowError e) {
                 // A StackOverflowError too: an absurdly nested attribute value overflows the
                 // JSON encoder, and that costs its export like any other value the store refuses.
@@ -278,13 +278,12 @@ public final class Writer implements AutoCloseable {
         }
     }
 
-    /** Each batch of a failed flush in a transaction of its own, returning the ones stored. */
-    private List<Batch> writeOneByOne(List<Batch> batches) {
-        List<Batch> stored = new ArrayList<>(batches.size());
+    /** Each batch of a failed flush in a transaction of its own, returning the tingles stored. */
+    private List<Tingle> writeOneByOne(List<Batch> batches) {
+        List<Tingle> stored = new ArrayList<>();
         for (int b = 0; b < batches.size(); b++) {
             try {
-                writeThroughPool(List.of(batches.get(b)));
-                stored.add(batches.get(b));
+                stored.addAll(writeThroughPool(List.of(batches.get(b))));
             } catch (SQLException | RuntimeException | StackOverflowError e) {
                 if (exiting) {
                     unwritten.addAll(batches.subList(b, batches.size()));
@@ -300,11 +299,13 @@ public final class Writer implements AutoCloseable {
      * One flush through a pooled connection. It returns once the transaction has
      * committed: a failure to hand the connection back after that loses nothing,
      * so it is not reported as a failed write.
+     *
+     * @return the tingles the flush stored
      */
-    private void writeThroughPool(List<Batch> batches) throws SQLException {
+    private List<Tingle> writeThroughPool(List<Batch> batches) throws SQLException {
         Connection connection = sql.connection();
         try {
-            writeInTransaction(connection, batches);
+            return writeInTransaction(connection, batches);
         } finally {
             try {
                 connection.close();
@@ -314,28 +315,27 @@ public final class Writer implements AutoCloseable {
         }
     }
 
-    /** One flush as one transaction on {@code connection}, pooled or not, which stays open. */
-    private void writeInTransaction(Connection connection, List<Batch> batches) throws SQLException {
-        // Work always answers with something; there is nothing to answer with here.
-        Boolean unused = Sql.inTransaction(connection, c -> {
+    /**
+     * One flush as one transaction on {@code connection}, pooled or not, which stays open.
+     *
+     * @return the tingles the flush stored, the only ones it publishes
+     */
+    private List<Tingle> writeInTransaction(Connection connection, List<Batch> batches) throws SQLException {
+        return Sql.inTransaction(connection, c -> {
             Set<String> touched = insertSpans(c, batches);
             insertLogs(c, batches);
-            insertTingles(c, batches);
+            List<Tingle> stored = insertTingles(c, batches);
             mergeCatalogs(c, batches);
             mergeServices(c, batches);
             writeMetrics(c, batches);
             traces.merge(c, touched);
-            return Boolean.TRUE;
+            return stored;
         });
     }
 
-    private void publish(List<Batch> batches) {
+    private void publish(List<Tingle> stored) {
         long now = clock.getAsLong();
-        for (Batch batch : batches) {
-            for (Tingle tingle : batch.tingles()) {
-                events.publish("tingle", tingle);
-            }
-        }
+        events.publishAll("tingle", stored);
         events.ingested(now);
     }
 
@@ -378,19 +378,35 @@ public final class Writer implements AutoCloseable {
         }
     }
 
-    private void insertTingles(Connection connection, List<Batch> batches) throws SQLException {
+    /**
+     * The tingles of a flush, less those whose span and kind are stored, returning the
+     * ones it stored (storage.adoc#writer).
+     *
+     * <p>An exporter sends an export again when the answer to the first was lost, and
+     * the copy's spans raise the same tingles. The statements of a batch run in order,
+     * so a copy in the same flush finds the row its first copy wrote.
+     */
+    private static List<Tingle> insertTingles(Connection connection, List<Batch> batches) throws SQLException {
+        List<Tingle> pending = new ArrayList<>();
         try (PreparedStatement statement = connection.prepareStatement(TingleRow.INSERT)) {
-            int pending = 0;
             for (Batch batch : batches) {
                 for (Tingle tingle : batch.tingles()) {
                     TingleRow.of(tingle).bind(statement);
                     statement.addBatch();
-                    pending++;
+                    pending.add(tingle);
                 }
             }
-            if (pending > 0) {
-                statement.executeBatch();
+            if (pending.isEmpty()) {
+                return List.of();
             }
+            int[] counts = statement.executeBatch();
+            List<Tingle> stored = new ArrayList<>(pending.size());
+            for (int i = 0; i < counts.length; i++) {
+                if (counts[i] > 0) {
+                    stored.add(pending.get(i));
+                }
+            }
+            return stored;
         }
     }
 

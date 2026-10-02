@@ -96,6 +96,49 @@ class WriterTest {
     }
 
     /**
+     * A tingle is derived from one span, so it is stored and published once as the span
+     * is: whether the copy of the export lands in a later flush, in the same one, or in a
+     * flush that failed and was written again batch by batch.
+     */
+    @Test
+    void aTingleOfASpanExportedTwiceIsStoredAndPublishedOnce() throws Exception {
+        Span.Builder root = Otlp.span("0af7651916cd43dd8448eb211c80319c", "b7ad6b7169203331", "GET /orders",
+                Span.SpanKind.SPAN_KIND_SERVER, AT, 900, Otlp.attr("http.route", "/orders"));
+        Span.Builder query = Otlp.child(root, "0000000000000002", "SELECT orders",
+                Span.SpanKind.SPAN_KIND_CLIENT, AT + 1, 800, Otlp.attr("db.system", "h2"),
+                Otlp.attr("db.statement", "select * from orders where id = ?"));
+        var export = Otlp.traces(Otlp.service("orders"), root, query);
+        Object nested = "leaf";
+        for (int i = 0; i < 100_000; i++) {
+            nested = List.of(nested);
+        }
+        Batch deep = new Batch();
+        deep.add(new LogRecord(0, AT, "orders", "INFO", 9, "deep", null, null, null,
+                java.util.Map.of("nested", nested)));
+
+        try (EventBus.Subscription subscription = store.events().subscribe()) {
+            decoder.ingest(export);
+            store.writer().awaitIdle(5_000);
+            decoder.ingest(export);
+            decoder.ingest(export);
+            store.writer().awaitIdle(5_000);
+            decoder.ingest(export);
+            store.writer().submit(deep);
+            store.writer().awaitIdle(5_000);
+
+            assertThat(store.sql().query("SELECT kind FROM tingle ORDER BY kind", List.of(),
+                    rs -> rs.getString(1))).containsExactly(Tingle.SLOW_QUERY, Tingle.SLOW_REQUEST);
+            List<String> published = new java.util.ArrayList<>();
+            for (EventBus.Event event = subscription.poll(0); event != null; event = subscription.poll(0)) {
+                if (event.name().equals("tingle")) {
+                    published.add(((Tingle) event.payload()).kind());
+                }
+            }
+            assertThat(published).containsExactlyInAnyOrder(Tingle.SLOW_REQUEST, Tingle.SLOW_QUERY);
+        }
+    }
+
+    /**
      * A sender that sets no severity leaves the proto default 0; its name must fit the
      * column, or the flush fails and takes every span flushed beside it along.
      */
