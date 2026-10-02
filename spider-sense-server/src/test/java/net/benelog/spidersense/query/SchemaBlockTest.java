@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.util.List;
 import java.util.Map;
 
+import net.benelog.spidersense.store.SpanRecord;
 import org.junit.jupiter.api.Test;
 
 /** Which predicate columns an index serves (findings.adoc#schema), over a catalog built by hand. */
@@ -25,6 +26,29 @@ class SchemaBlockTest {
         assertThat(block).isNotNull();
         assertThat(block.predicates()).containsExactly("customers.email", "customers.status");
         assertThat(block.unindexed()).containsExactly("customers.status");
+    }
+
+    /**
+     * The store keeps {@value SpanRecord#MAX_STATEMENT} characters of a statement; a cut inside
+     * the where clause leaves a stub ({@code … and i}) that reads like a column.
+     */
+    @Test
+    void aStatementTheStoreCutHasNoBlock() {
+        String tail = " from customers c1_0 where c1_0.email=? and c1_0.status in (?,?)";
+        int cutInTail = tail.indexOf(" and c1_0.status") + " and c".length();
+        StringBuilder select = new StringBuilder("select c1_0.id");
+        for (int n = 0; select.length() < SpanRecord.MAX_STATEMENT - cutInTail - 20; n++) {
+            select.append(",c1_0.column_").append(n);
+        }
+        select.append(" ".repeat(SpanRecord.MAX_STATEMENT - cutInTail - select.length()));
+        String statement = select + tail;
+        String stored = statement.substring(0, SpanRecord.MAX_STATEMENT);
+        Map<String, List<Catalog.Table>> catalog = catalog(new Catalog.Index("customers_pkey", true, List.of("id")));
+
+        assertThat(stored).endsWith(" and c");
+        assertThat(SqlShape.of(stored).predicates()).as("what the cut text would claim")
+                .contains(new SqlShape.ColumnRef("customers", "c"));
+        assertThat(SchemaBlock.of(stored, catalog)).isNull();
     }
 
     @Test

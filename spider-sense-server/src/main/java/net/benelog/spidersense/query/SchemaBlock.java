@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import net.benelog.spidersense.store.SpanRecord;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -35,6 +36,12 @@ public record SchemaBlock(List<Catalog.Table> tables, List<String> predicates, L
     public static @Nullable SchemaBlock of(@Nullable String statement,
             @Nullable Map<String, List<Catalog.Table>> catalog) {
         if (statement == null || statement.isBlank() || catalog == null || catalog.isEmpty()) {
+            return null;
+        }
+        if (statement.length() >= SpanRecord.MAX_STATEMENT) {
+            // The store cuts a statement at this length and marks nothing, so one
+            // this long may end inside a predicate ("… and i"), whose stub would
+            // read as a column. Only a statement known to be whole is vouched for.
             return null;
         }
         SqlShape shape = SqlShape.of(statement);
