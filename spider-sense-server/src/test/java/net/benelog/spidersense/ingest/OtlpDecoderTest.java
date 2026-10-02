@@ -67,6 +67,46 @@ class OtlpDecoderTest {
         assertThat(batch.tingles()).hasSize(1);
     }
 
+    /**
+     * A start time of 0, or one past 2^63 that a signed read makes negative, is no instant: kept, it
+     * made its trace decades long and slow. A span with no valid time at all is skipped, one with a
+     * valid end starts there, and an invalid end is the start.
+     */
+    @Test
+    void aSpanWithoutAValidStartTakesItsEndOrIsSkipped() {
+        long start = 1_790_940_000_000L * 1_000_000L;
+        Span.Builder root = Otlp.span(TRACE, ROOT, "GET /orders", Span.SpanKind.SPAN_KIND_SERVER,
+                1_790_940_000_000L, 50);
+        Span.Builder unset = Otlp.child(root, CHILD, "unset", Span.SpanKind.SPAN_KIND_INTERNAL,
+                1_790_940_000_010L, 1).setStartTimeUnixNano(0).setEndTimeUnixNano(0);
+        Span.Builder huge = Otlp.child(root, "00f067aa0ba902b9", "huge", Span.SpanKind.SPAN_KIND_INTERNAL,
+                1_790_940_000_010L, 1).setStartTimeUnixNano(-1L).setEndTimeUnixNano(-1L);
+        Span.Builder noStart = Otlp.child(root, "00f067aa0ba902ba", "no start", Span.SpanKind.SPAN_KIND_INTERNAL,
+                1_790_940_000_010L, 1).setStartTimeUnixNano(-1L).setEndTimeUnixNano(start + 20_000_000L);
+        Span.Builder noEnd = Otlp.child(root, "00f067aa0ba902bb", "no end", Span.SpanKind.SPAN_KIND_INTERNAL,
+                1_790_940_000_010L, 1).setEndTimeUnixNano(0);
+
+        Batch batch = decoder.ingest(Otlp.traces(Otlp.service("times"), root, unset, huge, noStart, noEnd));
+
+        assertThat(batch.spans()).extracting(SpanRecord::name).containsExactly("GET /orders", "no start", "no end");
+        assertThat(batch.spans().get(1).startNanos()).isEqualTo(start + 20_000_000L);
+        assertThat(batch.spans().get(1).endNanos()).isEqualTo(start + 20_000_000L);
+        assertThat(batch.spans().get(2).startNanos()).isEqualTo(start + 10_000_000L);
+        assertThat(batch.spans().get(2).endNanos()).isEqualTo(start + 10_000_000L);
+    }
+
+    /** A span that names itself as its parent would be a cycle of one; it is read as a root. */
+    @Test
+    void aSpanThatIsItsOwnParentIsARoot() {
+        Span.Builder self = Otlp.span(TRACE, ROOT, "GET /orders", Span.SpanKind.SPAN_KIND_SERVER,
+                1_700_000_000_000L, 5).setParentSpanId(Otlp.span(TRACE, ROOT, "x",
+                        Span.SpanKind.SPAN_KIND_SERVER, 1_700_000_000_000L, 5).getSpanId());
+
+        Batch batch = decoder.ingest(Otlp.traces(Otlp.service("self"), self));
+
+        assertThat(batch.spans()).singleElement().satisfies(span -> assertThat(span.parentSpanId()).isNull());
+    }
+
     @Test
     void decodesTheOlderGenerationOfAttributesToo() {
         Span.Builder root = Otlp.span(TRACE, ROOT, "GET", Span.SpanKind.SPAN_KIND_SERVER,

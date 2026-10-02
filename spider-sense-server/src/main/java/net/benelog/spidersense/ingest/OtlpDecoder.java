@@ -169,7 +169,12 @@ public final class OtlpDecoder {
      * <p>OTLP requires both ids of a span; they are the store's key, and a span
      * without them could not be written or joined to anything. Such a span is
      * skipped rather than refused, so the rest of its export is still stored.
-     * A parent id that is not a valid span id is read as none.
+     * A parent id that is not a valid span id, or that is the span's own id, is read as none.
+     *
+     * <p>OTLP requires the start time too, and a time of 0 or past 2^63 (negative as a signed
+     * long) is none: kept, it would make its trace decades long and slow. A span with a valid
+     * end starts there, a valid start with no valid end ends there, and a span with neither is
+     * skipped like one without ids.
      */
     private static @Nullable SpanRecord spanRecord(Span span, String service, String scope) {
         String traceId = Attrs.traceId(span.getTraceId());
@@ -177,6 +182,17 @@ public final class OtlpDecoder {
         if (traceId == null || spanId == null) {
             return null;
         }
+        long start = span.getStartTimeUnixNano();
+        long end = span.getEndTimeUnixNano();
+        if (start <= 0 && end <= 0) {
+            return null;
+        }
+        if (start <= 0) {
+            start = end;
+        } else if (end <= 0) {
+            end = start;
+        }
+        String parentSpanId = Attrs.spanId(span.getParentSpanId());
         List<SpanRecord.SpanEvent> events = new ArrayList<>(span.getEventsCount());
         for (Span.Event event : span.getEventsList()) {
             events.add(new SpanRecord.SpanEvent(event.getName(), event.getTimeUnixNano(),
@@ -186,12 +202,12 @@ public final class OtlpDecoder {
         return new SpanRecord(
                 traceId,
                 spanId,
-                Attrs.spanId(span.getParentSpanId()),
+                spanId.equals(parentSpanId) ? null : parentSpanId,
                 service,
                 span.getName(),
                 kind(span.getKind()),
-                span.getStartTimeUnixNano(),
-                span.getEndTimeUnixNano(),
+                start,
+                end,
                 statusCode(status.getCode()),
                 status.getMessage().isEmpty() ? null : status.getMessage(),
                 Attrs.toMap(span.getAttributesList()),
