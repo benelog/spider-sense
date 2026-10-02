@@ -587,7 +587,7 @@ The format of each rendering is given in xref:cli.adoc#text-rendering[The CLI].
 { "id": 12, "at": 1758000000000, "name": "before", "service": "spring-orders" | null, "note": "pid 12345" | null }
 ----
 
-The writer inserts a mark named `start` when a service reports a `process.pid` it has not stored for that service.
+The writer inserts a mark named `start` when a service reports a `process.pid` that no `start` mark of that service names yet (xref:marks-and-compare.adoc#start-marks[Automatic start marks]).
 
 [#findings]
 === Findings
