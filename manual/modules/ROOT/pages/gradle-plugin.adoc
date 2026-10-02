@@ -94,7 +94,7 @@ xref:configuration.adoc#properties[Configuration] lists the jar's defaults.
 | `attachTo`
 | `Set<String>`
 | `bootRun`, `bootTestRun`, `run`
-| the names of the `JavaExec` and `Test` tasks that get the agent
+| the names of the `JavaExec` and `Test` tasks that get the agent; `attachTo.add('test')` keeps the defaults and adds `test`, `attachTo = ['test']` replaces them
 
 | `configFile`
 | `RegularFile`
@@ -359,7 +359,7 @@ spiderSense {
 ./gradlew -q spiderSense --args="findings --since=before"
 ----
 
-With `collector` set, `bootRun` forwards too.
+`attachTo.add('test')` adds to the default tasks, so `bootRun` stays attached, and with `collector` set it forwards too.
 That is what you want when the tests and the running application should land in one Spider Sense.
 
 [#multi-project]

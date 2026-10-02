@@ -83,7 +83,11 @@ public class SpiderSensePlugin implements Plugin<Project> {
         SpiderSenseExtension extension = project.getExtensions().create(NAME, SpiderSenseExtension.class);
         extension.getEnabled().convention(true);
         extension.getVersion().convention(pluginVersion());
-        extension.getAttachTo().convention(DEFAULT_ATTACH_TO);
+        // A value, not a convention: Gradle's add() builds on the explicit value
+        // and drops a convention, so `attachTo.add('test')`, the line the manual
+        // gives, would otherwise detach bootRun and run. Assigning a list still
+        // replaces the defaults.
+        extension.getAttachTo().set(DEFAULT_ATTACH_TO);
         extension.getService().convention(project.getName());
         // A list property is present and empty until something sets it, which would
         // make "ignore nothing" indistinguishable from "say nothing". A convention of

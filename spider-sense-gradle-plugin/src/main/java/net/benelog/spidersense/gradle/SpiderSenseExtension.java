@@ -44,7 +44,8 @@ public abstract class SpiderSenseExtension {
 
     /**
      * The names of the tasks that get the agent: a {@link org.gradle.api.tasks.JavaExec}
-     * or a {@link org.gradle.api.tasks.testing.Test}.
+     * or a {@link org.gradle.api.tasks.testing.Test}. It starts as {@code bootRun},
+     * {@code bootTestRun} and {@code run}: {@code add} keeps those, assigning a set replaces them.
      */
     public abstract SetProperty<String> getAttachTo();
 

@@ -255,7 +255,11 @@ class SpiderSensePluginTest {
                 + ", -Dspidersense.service=scratch]");
     }
 
-    /** Gradle's test task forks a JVM but is not a {@code JavaExec}, and naming it is how tests are measured. */
+    /**
+     * Gradle's test task forks a JVM but is not a {@code JavaExec}, and naming it is how tests are measured.
+     * The line the manual gives adds to the default tasks rather than replacing them, so {@code bootRun}
+     * still forwards to the same Spider Sense.
+     */
     @Test
     void attachToAddsTheTestTask() throws IOException {
         assertThat(probe()).contains("test=[]");
@@ -266,8 +270,26 @@ class SpiderSensePluginTest {
                 collector = 'http://127.0.0.1:4000'
                 """.replace("%JAR%", stubJar.toAbsolutePath().toString()));
 
-        assertThat(probe()).contains("test=[-javaagent:" + stubJar.toAbsolutePath()
-                + ", -Dspidersense.service=scratch, -Dspidersense.collector=http://127.0.0.1:4000]");
+        String output = probe();
+        String forwarding = "[-javaagent:" + stubJar.toAbsolutePath()
+                + ", -Dspidersense.service=scratch, -Dspidersense.collector=http://127.0.0.1:4000]";
+        assertThat(output).contains("test=" + forwarding);
+        assertThat(output).contains("bootRun=" + forwarding);
+        assertThat(output).contains("run=" + forwarding);
+    }
+
+    @Test
+    void assigningAttachToReplacesTheDefaults() throws IOException {
+        buildFile("""
+                jar = file('%JAR%')
+                attachTo = ['other']
+                """.replace("%JAR%", stubJar.toAbsolutePath().toString()));
+
+        String output = probe();
+        assertThat(output).contains("other=[-javaagent:" + stubJar.toAbsolutePath()
+                + ", -Dspidersense.service=scratch]");
+        assertThat(output).contains("bootRun=[]");
+        assertThat(output).contains("run=[]");
     }
 
     @Test
