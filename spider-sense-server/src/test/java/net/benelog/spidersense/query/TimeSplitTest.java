@@ -3,8 +3,11 @@ package net.benelog.spidersense.query;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.offset;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 
 import org.junit.jupiter.api.Test;
 
@@ -154,5 +157,41 @@ class TimeSplitTest {
                 internal("o", "gone", "orphan", 10, 5)));
 
         assertThat(sorted).extracting(SpanRecord::spanId).containsExactly("b", "c1", "c0", "c2", "o");
+    }
+
+    @Test
+    void aChainDeeperThanTheCallStackGoesIsOrderedAllTheSame() throws InterruptedException {
+        // A recursive method under @WithSpan: one span per level, 20,000 levels.
+        int depth = 20_000;
+        List<SpanRecord> spans = new ArrayList<>();
+        for (int i = depth - 1; i >= 0; i--) {
+            spans.add(internal("s" + i, i == 0 ? null : "s" + (i - 1), "level", i, depth - i));
+        }
+
+        List<SpanRecord> sorted = onASmallStack(() -> Queries.sorted(spans));
+
+        assertThat(sorted).hasSize(depth);
+        for (int i = 0; i < depth; i++) {
+            assertThat(sorted.get(i).spanId()).isEqualTo("s" + i);
+        }
+    }
+
+    /** What {@code work} returns on a thread of 256 KiB stack, a quarter of a Jetty worker's. */
+    static <T> T onASmallStack(Supplier<T> work) throws InterruptedException {
+        AtomicReference<T> result = new AtomicReference<>();
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        Thread thread = new Thread(null, () -> {
+            try {
+                result.set(work.get());
+            } catch (Throwable thrown) {
+                failure.set(thrown);
+            }
+        }, "small-stack", 256 * 1024);
+        thread.start();
+        thread.join();
+        if (failure.get() != null) {
+            throw new AssertionError(failure.get());
+        }
+        return result.get();
     }
 }

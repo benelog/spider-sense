@@ -3,7 +3,9 @@ package net.benelog.spidersense.api;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -19,6 +21,7 @@ import net.benelog.spidersense.query.Findings;
 import net.benelog.spidersense.query.Numbers;
 import net.benelog.spidersense.query.Queries;
 import net.benelog.spidersense.query.SchemaBlock;
+import net.benelog.spidersense.query.SpanTree;
 import net.benelog.spidersense.query.Stats;
 import net.benelog.spidersense.query.Window;
 import net.benelog.spidersense.server.Version;
@@ -1035,53 +1038,42 @@ final class Text {
     /** The lines of one trace, in the order the tree prints them. */
     static List<TraceLine> lines(Queries.TraceDetail trace, Tingles tingles, CodeFrames frames,
             boolean full) {
-        Map<String, List<SpanRecord>> children = new LinkedHashMap<>();
-        List<SpanRecord> roots = new ArrayList<>();
-        java.util.Set<String> ids = new java.util.HashSet<>();
-        for (SpanRecord span : trace.spans()) {
-            ids.add(span.spanId());
-        }
-        for (SpanRecord span : trace.spans()) {
-            if (span.parentSpanId() == null || !ids.contains(span.parentSpanId())) {
-                roots.add(span);
-            } else {
-                children.computeIfAbsent(span.parentSpanId(), id -> new ArrayList<>()).add(span);
-            }
-        }
+        SpanTree tree = SpanTree.of(trace.spans());
         long startNs = Long.MAX_VALUE;
         for (SpanRecord span : trace.spans()) {
             startNs = Math.min(startNs, span.startNanos());
         }
         List<TraceLine> lines = new ArrayList<>();
-        collect(lines, roots, children, 0, null, startNs, tingles, frames, full);
-        return lines;
-    }
-
-    private static void collect(List<TraceLine> lines, List<SpanRecord> siblings,
-            Map<String, List<SpanRecord>> children, int depth, @Nullable String parentService,
-            long startNs,
-            Tingles tingles, CodeFrames frames, boolean full) {
-        siblings.sort((a, b) -> Long.compare(a.startNanos(), b.startNanos()));
-        int i = 0;
-        while (i < siblings.size()) {
+        // An explicit stack of sibling groups rather than recursion: a trace can nest deeper
+        // than the call stack goes. The top group is the one being printed; a span with
+        // children pushes theirs, and a group is popped once its last sibling is printed.
+        Deque<Siblings> stack = new ArrayDeque<>();
+        stack.push(new Siblings(tree.roots(), 0, null));
+        while (!stack.isEmpty()) {
+            Siblings group = stack.peek();
+            List<SpanRecord> siblings = group.spans;
+            int i = group.next;
+            if (i >= siblings.size()) {
+                stack.pop();
+                continue;
+            }
             SpanRecord first = siblings.get(i);
             int run = 1;
             while (i + run < siblings.size() && sameLine(first, siblings.get(i + run))
-                    && !children.containsKey(siblings.get(i + run).spanId())) {
+                    && tree.children(siblings.get(i + run)).isEmpty()) {
                 run++;
             }
-            boolean collapse = !full && run > COLLAPSE_AFTER
-                    && !children.containsKey(first.spanId());
+            boolean collapse = !full && run > COLLAPSE_AFTER && tree.children(first).isEmpty();
             if (collapse) {
                 double total = 0;
                 for (int j = i; j < i + run; j++) {
                     total += siblings.get(j).durationMillis();
                 }
-                lines.add(new TraceLine(depth, first, spanText(first, parentService),
+                lines.add(new TraceLine(group.depth, first, spanText(first, group.parentService),
                         offset(first, startNs), total, run,
                         first.dbStatement() == null ? List.of()
                                 : List.of(statementLine(first.dbStatement(), full))));
-                i += run;
+                group.next = i + run;
                 continue;
             }
             List<String> under = new ArrayList<>();
@@ -1094,14 +1086,29 @@ final class Text {
                         + (message == null || message.isBlank() ? "" : ": " + escapedLine(message)));
                 under.addAll(frames.of(first.stacktrace(), first.attributes()));
             }
-            lines.add(new TraceLine(depth, first, spanText(first, parentService),
+            lines.add(new TraceLine(group.depth, first, spanText(first, group.parentService),
                     offset(first, startNs), first.durationMillis(), 1, List.copyOf(under)));
-            List<SpanRecord> kids = children.get(first.spanId());
-            if (kids != null) {
-                collect(lines, kids, children, depth + 1, first.service(), startNs, tingles, frames,
-                        full);
+            group.next = i + 1;
+            List<SpanRecord> kids = tree.children(first);
+            if (!kids.isEmpty()) {
+                stack.push(new Siblings(kids, group.depth + 1, first.service()));
             }
-            i++;
+        }
+        return lines;
+    }
+
+    /** The children of one span as the tree prints them, and how far the printing has got. */
+    private static final class Siblings {
+
+        final List<SpanRecord> spans;
+        final int depth;
+        final @Nullable String parentService;
+        int next;
+
+        Siblings(List<SpanRecord> spans, int depth, @Nullable String parentService) {
+            this.spans = spans;
+            this.depth = depth;
+            this.parentService = parentService;
         }
     }
 

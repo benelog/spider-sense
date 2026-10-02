@@ -853,41 +853,7 @@ public final class Queries {
      * readings of one trace list its spans alike (cli.adoc#text-rendering).
      */
     static List<SpanRecord> sorted(List<SpanRecord> spans) {
-        Map<String, List<SpanRecord>> children = new LinkedHashMap<>();
-        Set<String> ids = new HashSet<>();
-        for (SpanRecord span : spans) {
-            ids.add(span.spanId());
-        }
-        List<SpanRecord> roots = new ArrayList<>();
-        for (SpanRecord span : spans) {
-            if (span.parentSpanId() == null || !ids.contains(span.parentSpanId())) {
-                roots.add(span);
-            } else {
-                children.computeIfAbsent(span.parentSpanId(), id -> new ArrayList<>()).add(span);
-            }
-        }
-        roots.sort(BY_START);
-        List<SpanRecord> ordered = new ArrayList<>(spans.size());
-        for (SpanRecord root : roots) {
-            append(ordered, root, children);
-        }
-        return ordered;
-    }
-
-    private static final Comparator<SpanRecord> BY_START =
-            Comparator.comparingLong(SpanRecord::startNanos).thenComparing(SpanRecord::spanId);
-
-    private static void append(List<SpanRecord> ordered, SpanRecord span,
-            Map<String, List<SpanRecord>> children) {
-        ordered.add(span);
-        List<SpanRecord> kids = children.get(span.spanId());
-        if (kids == null) {
-            return;
-        }
-        kids.sort(BY_START);
-        for (SpanRecord kid : kids) {
-            append(ordered, kid, children);
-        }
+        return SpanTree.of(spans).ordered();
     }
 
     /**
