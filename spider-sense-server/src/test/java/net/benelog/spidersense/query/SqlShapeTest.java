@@ -116,6 +116,36 @@ class SqlShapeTest {
                 .containsExactly("orders.name");
     }
 
+    /** A collation and the words of a comparison are no columns, and the from of one opens no table list. */
+    @Test
+    void aCollationAndTheWordsOfAComparisonAreNoColumns() {
+        assertThat(predicates("select * from items where name = ? order by name collate \"C\""))
+                .containsExactly("items.name");
+        assertThat(predicates("select * from items where name collate \"C\" = ? and category = ?"
+                + " order by name collate pg_catalog.\"default\" desc"))
+                .containsExactly("items.name", "items.category");
+        assertThat(predicates("select * from items where name collate utf8mb4_bin like ? and category = ?"))
+                .containsExactly("items.name", "items.category");
+        assertThat(predicates("select * from items where name similar to ? and category = ?"))
+                .containsExactly("items.name", "items.category");
+        assertThat(predicates("select * from items where name not similar to ? and category = ?"))
+                .containsExactly("items.name", "items.category");
+        assertThat(predicates("select * from items where category is distinct from ? and name = ?"))
+                .containsExactly("items.category", "items.name");
+        assertThat(predicates("select * from items where category is not distinct from ? and name = ?"))
+                .containsExactly("items.category", "items.name");
+        assertThat(predicates("select * from items where price between symmetric ? and ? and name = ?"))
+                .containsExactly("items.price", "items.name");
+        assertThat(predicates("select * from items where price not between asymmetric ? and ? and name = ?"))
+                .containsExactly("items.price", "items.name");
+        assertThat(predicates("select * from events where date similar to ? and time collate \"C\" = ?"))
+                .as("a keyword-named column before similar to or a collation")
+                .containsExactly("events.date", "events.time");
+        assertThat(predicates("select distinct name from items where category = ?"))
+                .as("a select distinct still names its table")
+                .containsExactly("items.category");
+    }
+
     @Test
     void aBareColumnBelongsToTheOnlyTable() {
         assertThat(predicates("select * from items where category = ? and supplier_id = ?"))

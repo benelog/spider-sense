@@ -211,6 +211,7 @@ Each is written as `table.column` in lower case whatever case the statement used
 A subquery's `where` counts as well, and the clause it interrupts goes on after its closing parenthesis, so `where i.id in (select l.item_id from lines l) and i.name = ?` names `items.id` and `items.name`.
 The type of a cast is not a column (`where id = ?::uuid` and `cast(? as timestamp with time zone)` name no type word), and neither is an upsert's conflict target, the unique key the write collides on (`on conflict (id) do update`, `on duplicate key update`).
 Neither is the unit of an interval (`interval ? day`, `interval ? day to second`), the zone of an `at time zone`, or the search string and modifier of a MySQL full-text search (`against (? in boolean mode)`).
+A collation is no column (`order by name collate "C"`), nor is a word of a comparison (`similar to`, `between symmetric`), and the `from` of `is [not] distinct from` opens no table list, so the clause goes on after it.
 A locking clause names no table and no column (`for update skip locked`, `for no key update of o1_0`, `for share`).
 An array constructor names no column either (`where o.id = any(array[?, ?])` names `orders.id`), and brackets quote a name only around a name's characters (`[Unit Price]`).
 Inside `extract`, `trim`, `substring` and `overlay`, `from` and `for` separate arguments rather than opening a table list, so `extract(year from created_at)` names `created_at`, and the date part that `extract`, `dateadd` or `timestampdiff` takes first is no column.

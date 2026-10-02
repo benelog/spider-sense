@@ -59,7 +59,8 @@ final class SqlShape {
             "between", "exists", "case", "when", "then", "else", "end", "true", "false", "asc",
             "desc", "nulls", "first", "last", "distinct", "all", "any", "some", "interval",
             "current_date", "current_timestamp", "current_time", "date", "time", "timestamp",
-            "cast", "only", "rows", "row", "next", "with", "recursive", "except", "intersect", "minus");
+            "cast", "only", "rows", "row", "next", "with", "recursive", "except", "intersect", "minus",
+            "symmetric", "asymmetric");
 
     /**
      * The keywords that are also common column names. In a predicate, one that a
@@ -242,6 +243,19 @@ final class SqlShape {
                 // MySQL's full-text search string and its modifier
                 // ("against (? in boolean mode)"); the columns are match()'s.
                 i = skipGroup(tokens, i + 2);
+                continue;
+            }
+            if (token.isWord("collate") && i + 1 < tokens.size()
+                    && tokens.get(i + 1).kind() == Token.Kind.NAME) {
+                i += 2;     // "order by name collate \"C\"": a collation, no column
+                continue;
+            }
+            if (token.isWord("similar") && wordAt(tokens, i + 1, "to")) {
+                i += 2;     // "name similar to ?" compares, as "like" does
+                continue;
+            }
+            if (isDistinctFrom(tokens, i)) {
+                i += 2;     // "is [not] distinct from ?" compares; its "from" opens no table list
                 continue;
             }
             String word = token.keyword();
@@ -449,7 +463,15 @@ final class SqlShape {
     }
 
     private static boolean wordAt(List<Token> tokens, int i, String word) {
-        return i < tokens.size() && tokens.get(i).isWord(word);
+        return i >= 0 && i < tokens.size() && tokens.get(i).isWord(word);
+    }
+
+    /** Whether {@code i} is the {@code distinct} of {@code is [not] distinct from}. */
+    private static boolean isDistinctFrom(List<Token> tokens, int i) {
+        if (!wordAt(tokens, i, "distinct") || !wordAt(tokens, i + 1, "from")) {
+            return false;
+        }
+        return wordAt(tokens, i - 1, "is") || (wordAt(tokens, i - 1, "not") && wordAt(tokens, i - 2, "is"));
     }
 
     /**
@@ -583,12 +605,22 @@ final class SqlShape {
         }
     }
 
-    /** Whether a comparison begins at {@code i}: an operator, or {@code is}, {@code in}, {@code like}…. */
-    private static boolean comparedAt(List<Token> tokens, int i) {
+    /**
+     * Whether a comparison begins at {@code i}: an operator, or {@code is},
+     * {@code in}, {@code like}, {@code similar to}…, after a collation if one is given.
+     */
+    private static boolean comparedAt(List<Token> tokens, int start) {
+        int i = start;
+        while (wordAt(tokens, i, "collate")) {
+            i += 2;
+        }
         if (i >= tokens.size()) {
             return false;
         }
         Token token = tokens.get(i);
+        if (token.isWord("similar")) {
+            return wordAt(tokens, i + 1, "to");
+        }
         if (token.kind() == Token.Kind.PUNCTUATION) {
             return "=<>!".contains(token.text());
         }
