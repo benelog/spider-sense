@@ -78,7 +78,7 @@ CREATE TABLE IF NOT EXISTS span (
     events         VARCHAR(65535) NOT NULL   -- JSON array; cut the same way
 );
 CREATE INDEX IF NOT EXISTS span_start   ON span (start_ms);
-CREATE INDEX IF NOT EXISTS span_trace   ON span (trace_id);
+CREATE UNIQUE INDEX IF NOT EXISTS span_trace ON span (trace_id, span_id);
 CREATE INDEX IF NOT EXISTS span_service ON span (service, start_ms);
 CREATE INDEX IF NOT EXISTS span_endpoint ON span (endpoint_id, start_ms);
 CREATE INDEX IF NOT EXISTS span_query   ON span (query_id, start_ms);
@@ -202,8 +202,9 @@ The stored `meta.schema_version` is read before any table is created.
 A database of another version therefore has its tables dropped before this version's are created, since an index of this version may be on a column an older table lacks.
 The CLI, which refuses another version, leaves such a database exactly as it found it.
 It also refuses a database without `meta`: one that holds tables is one Spider Sense never wrote, such as the application's own named by a mistaken `--db`, and an empty one, such as the one behind a `jdbc:h2:mem:` URL, gets no tables from the CLI.
-`meta.schema_version` is `8`, the version that keyed `metric` by service as well as name.
-Version 7 moved the error group key to the root cause and its frame, version 6 added the `resolved` column of `ack`, version 5 added `db_table`, version 4 added `ack`, and version 3 added `mark`.
+`meta.schema_version` is `9`, the version that made a span unique by its trace and span id.
+A database of an earlier version may hold a span twice, and a unique index cannot be built over it, so the upgrade drops its tables like any other.
+Version 8 keyed `metric` by service as well as name, version 7 moved the error group key to the root cause and its frame, version 6 added the `resolved` column of `ack`, version 5 added `db_table`, version 4 added `ack`, and version 3 added `mark`.
 A version that changes a table or the meaning of a stored id drops and recreates every table, because the data is a cache of a development session and not a record.
 Version 7 changed every `error_id`, and so the id of every `error` finding.
 Acknowledgements and resolutions recorded before the upgrade are therefore lost with the rest of the tables, rather than kept as rows nothing can reach.
@@ -253,6 +254,7 @@ An array is stored as a JSON array, and an array longer than every string value 
 A metric series' attributes are cut in the same way before they are hashed, so the stored text reads back, and its `attr_hash` is of that text, which is what an import looks the series up by.
 When a flush still fails, each of its batches is written again in a transaction of its own, so a row the database refuses costs only the export that carried it.
 A failed flush is rolled back whole before that, whatever failed, a stack overflow on an attribute nested thousands of levels deep included, so no batch is stored twice.
+A span is merged on its `(trace_id, span_id)`, the unique key of `span` (`MERGE INTO span … KEY (trace_id, span_id)`), so an export the exporter sends again, because the answer to the first was lost to a timeout or a reset connection, stores each of its spans once.
 The catalog rows of a flush are merged in the same transaction.
 After each flush the writer recomputes the `trace` rows of the trace ids the flush touched (`MERGE INTO trace ... SELECT ... FROM span WHERE trace_id IN (...) GROUP BY trace_id`), because a trace's spans arrive in several exports and from several services.
 It locks those rows first, by merging a placeholder in trace id order, and only then reads their spans.

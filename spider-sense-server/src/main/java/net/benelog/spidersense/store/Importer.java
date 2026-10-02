@@ -201,7 +201,7 @@ public final class Importer {
         long count = 0;
         long from = Long.MAX_VALUE;
         long to = Long.MIN_VALUE;
-        try (PreparedStatement statement = connection.prepareStatement(SpanRow.INSERT)) {
+        try (PreparedStatement statement = connection.prepareStatement(SpanRow.MERGE)) {
             for (Json.JsonValue value : spans) {
                 SpanRow span = SpanRow.fromJson(value.asObject());
                 String traceId = span.traceId();

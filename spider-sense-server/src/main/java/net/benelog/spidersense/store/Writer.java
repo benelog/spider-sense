@@ -343,7 +343,7 @@ public final class Writer implements AutoCloseable {
 
     Set<String> insertSpans(Connection connection, List<Batch> batches) throws SQLException {
         Set<String> touched = new LinkedHashSet<>();
-        try (PreparedStatement statement = connection.prepareStatement(SpanRow.INSERT)) {
+        try (PreparedStatement statement = connection.prepareStatement(SpanRow.MERGE)) {
             int pending = 0;
             for (Batch batch : batches) {
                 for (SpanRecord span : batch.spans()) {

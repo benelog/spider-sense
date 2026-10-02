@@ -47,6 +47,7 @@ The answer is `200` with an empty `Export{Trace,Metrics,Logs}ServiceResponse` in
 An undecodable body is `400`, another content type is `415`, and a body of more than 64 MB, counted after gunzip, is `413`.
 The receiver reads the body into the heap of the process it runs in, which in agent mode is the monitored application's.
 Partial success is never reported, so everything decodable is stored.
+A span received again, as an exporter sends an export whose answer it did not get, is stored once (xref:storage.adoc#writer[How it is written]).
 A log record carrying the attribute `spidersense.schema.table` is the index catalog of one table, as read by xref:design.adoc#extension[the extension].
 It is stored as a `db_table` row rather than as a log (xref:storage.adoc#schema[Storage]).
 

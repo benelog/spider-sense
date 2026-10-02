@@ -58,11 +58,17 @@ public record SpanRow(
         String attributes,
         String events) {
 
-    static final String INSERT = """
-            INSERT INTO span (trace_id, span_id, parent_span_id, service, name, kind, start_ms, start_ns,
+    /**
+     * The row merged on its {@code (trace_id, span_id)}, the unique key of {@code span}: an
+     * exporter sends an export again when the answer to the first was lost, and the copy
+     * replaces the row it repeats instead of adding a second one (storage.adoc#writer).
+     */
+    static final String MERGE = """
+            MERGE INTO span (trace_id, span_id, parent_span_id, service, name, kind, start_ms, start_ns,
                 duration_ns, status, status_message, entry, error, slow, category, endpoint, endpoint_id,
                 http_method, http_route, http_status, db_system, db_statement, db_namespace, db_operation,
                 db_table, query_id, error_type, error_message, error_id, scope, attributes, events)
+            KEY (trace_id, span_id)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""";
 
     /**
@@ -205,7 +211,7 @@ public record SpanRow(
                 .put("events", RowJson.parsed(events, AttrJson.EMPTY_ARRAY));
     }
 
-    /** Binds the row to {@link #INSERT}, each text cut to its column. */
+    /** Binds the row to {@link #MERGE}, each text cut to its column. */
     void bind(PreparedStatement statement) throws SQLException {
         int i = 1;
         statement.setString(i++, traceId);

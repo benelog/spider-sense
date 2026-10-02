@@ -66,6 +66,36 @@ class WriterTest {
     }
 
     /**
+     * An exporter sends an export again when the answer to the first is lost to a
+     * timeout or a reset connection: each span is stored once, whether the copy lands
+     * in a later flush or in the same one.
+     */
+    @Test
+    void aSpanExportedTwiceIsStoredOnce() {
+        Span.Builder root = Otlp.span("0af7651916cd43dd8448eb211c80319c", "b7ad6b7169203331", "GET /orders",
+                Span.SpanKind.SPAN_KIND_SERVER, AT, 50, Otlp.attr("http.route", "/orders"));
+        Span.Builder query = Otlp.child(root, "0000000000000002", "SELECT orders",
+                Span.SpanKind.SPAN_KIND_CLIENT, AT + 1, 1, Otlp.attr("db.system", "h2"),
+                Otlp.attr("db.statement", "select * from orders where id = ?"));
+        var export = Otlp.traces(Otlp.service("orders"), root, query);
+
+        decoder.ingest(export);
+        store.writer().awaitIdle(5_000);
+        decoder.ingest(export);
+        decoder.ingest(export);
+        store.writer().awaitIdle(5_000);
+
+        assertThat(store.sql().count("SELECT COUNT(*) FROM span", List.of())).isEqualTo(2);
+        assertThat(store.sql().query("SELECT span_count, db_count FROM trace", List.of(),
+                rs -> rs.getInt(1) + "/" + rs.getInt(2))).containsExactly("2/1");
+        var detail = new net.benelog.spidersense.query.Queries(store.sql(), store.tingles(), store.services())
+                .trace("0af7651916cd43dd8448eb211c80319c");
+        assertThat(detail).isNotNull();
+        assertThat(detail.spans()).extracting(SpanRecord::spanId)
+                .containsExactly("b7ad6b7169203331", "0000000000000002");
+    }
+
+    /**
      * A sender that sets no severity leaves the proto default 0; its name must fit the
      * column, or the flush fails and takes every span flushed beside it along.
      */

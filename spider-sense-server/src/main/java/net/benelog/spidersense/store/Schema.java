@@ -16,7 +16,7 @@ import org.jspecify.annotations.Nullable;
  */
 public final class Schema {
 
-    public static final int VERSION = 8;
+    public static final int VERSION = 9;
 
     /**
      * The H2 user {@code POST /api/sql} runs on: {@code SELECT} on {@code PUBLIC}
@@ -89,7 +89,7 @@ public final class Schema {
                 events         VARCHAR(65535) NOT NULL
             )""",
             "CREATE INDEX IF NOT EXISTS span_start ON span (start_ms)",
-            "CREATE INDEX IF NOT EXISTS span_trace ON span (trace_id)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS span_trace ON span (trace_id, span_id)",
             "CREATE INDEX IF NOT EXISTS span_service ON span (service, start_ms)",
             "CREATE INDEX IF NOT EXISTS span_endpoint ON span (endpoint_id, start_ms)",
             "CREATE INDEX IF NOT EXISTS span_query ON span (query_id, start_ms)",
