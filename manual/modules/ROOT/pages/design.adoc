@@ -71,7 +71,7 @@ The extension is extracted the same way, to `extension-<version>-<crc>.jar` besi
 . Unless `spidersense.collector` is set: extract the nested jar, create the `SenseClassLoader`, and invoke `net.benelog.spidersense.server.SpiderSenseServer.main(String[])` with `--port=<port> --mode=agent ...`, on the current thread with the context class loader set to the `SenseClassLoader`.
 `main` returns once the port is bound, because Spider Silk's `start` returns after binding.
 A failure here is logged to stderr and swallowed: Spider Sense must never prevent the application from starting.
-. Set defaults for the OpenTelemetry agent, only where the user has not set the property or its environment variable already.
+. Set defaults for the OpenTelemetry agent, only where the user has not set the property, its environment variable or a key of the file `otel.javaagent.configuration-file` names already.
 . Call `io.opentelemetry.javaagent.OpenTelemetryAgent.premain(agentArgs, inst)`.
 The agent's jar-location check only requires a `Premain-Class` attribute in the manifest of the jar that class came from, verified against {otel-agent-version}'s `verifyJarManifestMainClassIsThis`, so our manifest satisfies it.
 

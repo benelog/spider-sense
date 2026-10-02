@@ -1,5 +1,11 @@
 package net.benelog.spidersense.launcher;
 
+import java.io.IOException;
+import java.io.Reader;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Properties;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import org.jspecify.annotations.Nullable;
@@ -23,6 +29,56 @@ interface Settings {
 
     /** This JVM's system properties, with its environment behind them. */
     Settings SYSTEM = of(System::getProperty, System::getenv, System::setProperty);
+
+    /** The OpenTelemetry agent's own properties file, which it reads below properties and variables. */
+    String AGENT_CONFIGURATION_FILE = "otel.javaagent.configuration-file";
+
+    /**
+     * {@code settings} with the OpenTelemetry agent's configuration file behind them: a key that
+     * neither the property nor its variable sets is read from the file that
+     * {@value #AGENT_CONFIGURATION_FILE} names, as the agent itself reads it, so a default is not
+     * written over a value the file holds. Writes still go to {@code settings}.
+     *
+     * <p>Nothing here throws: a file that is not there or cannot be read is as if none were
+     * named, and the agent says so itself when it starts.
+     *
+     * @param workingDir what a relative path in {@value #AGENT_CONFIGURATION_FILE} is taken from
+     */
+    static Settings withAgentConfigurationFile(Settings settings, Path workingDir) {
+        Properties file = new Properties();
+        try {
+            String named = settings.get(AGENT_CONFIGURATION_FILE);
+            if (named == null) {
+                return settings;
+            }
+            Path path = workingDir.resolve(named.trim());
+            if (!Files.isRegularFile(path)) {
+                return settings;
+            }
+            // The agent reads the file as UTF-8 properties.
+            try (Reader in = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
+                file.load(in);
+            }
+        } catch (IOException | RuntimeException e) {
+            return settings;
+        }
+        return new Settings() {
+            @Override
+            public @Nullable String get(String name) {
+                String value = settings.get(name);
+                if (value != null) {
+                    return value;
+                }
+                String inFile = file.getProperty(name);
+                return inFile == null || inFile.isBlank() ? null : inFile.trim();
+            }
+
+            @Override
+            public void set(String name, String value) {
+                settings.set(name, value);
+            }
+        };
+    }
 
     /** Settings read from {@code property} and then {@code env}, and written through {@code set}. */
     static Settings of(Function<String, @Nullable String> property, Function<String, @Nullable String> env,

@@ -52,6 +52,46 @@ class AgentDefaultsTest {
         assertThat(SpiderSenseAgent.effectiveServiceName(config, settings)).isEqualTo("orders-api");
     }
 
+    /**
+     * The agent reads otel.javaagent.configuration-file below the properties we would set, so a
+     * key in it is the user's and no default may be written over it: the service the file names
+     * is the one the exporter and the embedded collector use.
+     */
+    @Test
+    void neverOverridesWhatTheAgentsConfigurationFileSets() throws IOException {
+        Path file = dir.resolve("otel.properties");
+        java.nio.file.Files.writeString(file, """
+                otel.service.name=fromfile
+                otel.traces.exporter=none
+                otel.bsp.schedule.delay=5000
+                otel.javaagent.extensions=/opt/acme/their-extension.jar
+                otel.metrics.exporter=
+                """);
+        properties.put("otel.javaagent.configuration-file", "otel.properties");
+        Settings withFile = Settings.withAgentConfigurationFile(settings, dir);
+        Config config = Config.defaults().withService("fromprop");
+
+        assertThat(SpiderSenseAgent.effectiveServiceName(config, withFile)).isEqualTo("fromfile");
+
+        SpiderSenseAgent.applyOtelDefaults(config, withFile, this::extensionJar);
+
+        assertThat(properties).doesNotContainKeys("otel.service.name", "otel.traces.exporter",
+                        "otel.bsp.schedule.delay")
+                .containsEntry("otel.javaagent.extensions", "/opt/acme/their-extension.jar," + extensionJar())
+                .as("an empty line in the file sets nothing").containsEntry("otel.metrics.exporter", "otlp")
+                .containsEntry("otel.logs.exporter", "otlp");
+    }
+
+    /** A file that is named but is not there is as if none were named; the agent says so itself. */
+    @Test
+    void aMissingAgentConfigurationFileChangesNothing() {
+        properties.put("otel.javaagent.configuration-file", "nowhere.properties");
+
+        assertThat(Settings.withAgentConfigurationFile(settings, dir)).isSameAs(settings);
+        assertThat(Settings.withAgentConfigurationFile(Settings.of(key -> null, key -> null, (k, v) -> { }), dir))
+                .as("nothing named").isNotNull();
+    }
+
     /** Only a Spider Sense on the port is worth exporting to; anything else is foreign. */
     @Test
     void aPortIsAnotherSpiderSensesOnlyWhenItsStatusSaysSo() throws IOException {

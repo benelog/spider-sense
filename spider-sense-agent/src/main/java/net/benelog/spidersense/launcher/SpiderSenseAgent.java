@@ -4,6 +4,7 @@ import java.lang.instrument.Instrumentation;
 import java.lang.reflect.Method;
 import java.net.URI;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.concurrent.Callable;
 import org.jspecify.annotations.Nullable;
 
@@ -47,6 +48,13 @@ public final class SpiderSenseAgent {
             config = Config.fromSystemProperties().withMode(Config.AGENT);
         } catch (Throwable t) {
             warn("could not read the spidersense.* properties, using defaults", t);
+        }
+        try {
+            // What the agent will read below the properties and variables: a default must not be
+            // written over it, since a property we set would outrank the user's file.
+            settings = Settings.withAgentConfigurationFile(settings, Paths.get(""));
+        } catch (Throwable t) {
+            warn("could not read " + Settings.AGENT_CONFIGURATION_FILE + "; its keys may be overridden", t);
         }
 
         // 2. The embedded collector + UI, unless we forward to one elsewhere.
@@ -187,7 +195,10 @@ public final class SpiderSenseAgent {
         }
     }
 
-    /** Sets a property only when neither it nor its environment variable is set already. */
+    /**
+     * Sets a property only when {@code settings} has nothing for it yet: in production neither the
+     * property, nor its environment variable, nor a line of the agent's configuration file.
+     */
     static void setDefault(Settings settings, String property, @Nullable String value) {
         if (value != null && settings.get(property) == null) {
             settings.set(property, value);

@@ -157,6 +157,7 @@ Both are read once, when the extension is built.
 
 Every `otel.*` system property and `OTEL_*` environment variable of the OpenTelemetry Java agent still works as that agent documents it.
 Spider Sense only fills in defaults, and only where you have set neither the property nor its environment variable.
+A key in the file `-Dotel.javaagent.configuration-file` names counts as set too, because the agent reads that file below the system properties Spider Sense would write.
 
 .What Spider Sense sets for the OpenTelemetry agent, unless you set it
 [cols="2,2,3",options="header"]
