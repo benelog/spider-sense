@@ -69,6 +69,21 @@ class TraceTextTest {
         assertThat(lines.get(depth - 1)).endsWith("  ".repeat(depth - 1) + "INTERNAL level " + (depth - 1));
     }
 
+    @Test
+    void aSpanOnAParentCycleIsPrintedAsARoot() {
+        Queries.TraceDetail trace = trace(List.of(
+                span("0000000000000001", null, "root", 0, 50, Map.of()),
+                span("0000000000000002", "0000000000000002", "own parent", 10, 10, Map.of()),
+                span("0000000000000003", "0000000000000004", "one", 20, 10, Map.of()),
+                span("0000000000000004", "0000000000000003", "other", 25, 5, Map.of())));
+
+        assertThat(spanLines(Text.trace(trace, TINGLES, FRAMES, false))).containsExactly(
+                "0.0 ms     50.0 ms   INTERNAL orders root",
+                "10.0 ms    10.0 ms   INTERNAL orders own parent",
+                "20.0 ms    10.0 ms   INTERNAL orders one",
+                "25.0 ms    5.0 ms      INTERNAL other");
+    }
+
     /** What {@code work} returns on a thread of 256 KiB stack, a quarter of a Jetty worker's. */
     private static <T> T onASmallStack(Supplier<T> work) throws InterruptedException {
         AtomicReference<T> result = new AtomicReference<>();

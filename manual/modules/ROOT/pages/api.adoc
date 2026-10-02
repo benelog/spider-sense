@@ -281,10 +281,14 @@ With `diff=<traceId>` it answers the two traces aligned instead, as xref:cli.ado
 {
   "traceId": "…", "start": ..., "end": ..., "durationMs": ...,
   "services": ["…"],
-  "spans": [ <Span> ],       // sorted by start then span id, parents before children; a parentSpanId not present in the trace is shown as a root
+  "spans": [ <Span> ],       // sorted by start then span id, parents before children; a parentSpanId not present in the trace is shown as a root, and so is the first member of a parent cycle
   "logs": [ <LogRecord> ]    // logs carrying this traceId, oldest first
 }
 ----
+
+Every span of the trace is listed once.
+A span that is its own parent, and spans that name each other as parents, are still listed: the first member of the cycle in the spans' order (start, then span id) is shown as a root, and the cycle's other members hang under it.
+xref:cli.adoc#trace-rendering[The text rendering] draws the same tree.
 
 [#span]
 === Span

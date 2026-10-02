@@ -160,6 +160,22 @@ class TimeSplitTest {
     }
 
     @Test
+    void aParentCycleEntersTheOrderAtItsFirstMember() {
+        List<SpanRecord> sorted = Queries.sorted(List.of(
+                internal("r", null, "root", 0, 100),
+                // Its own parent, with a child under it.
+                internal("l", "l", "loop", 10, 20),
+                internal("k", "l", "under loop", 12, 5),
+                // Each other's parent; "z" hangs under "x" and starts before both, but is not
+                // on the cycle, so the cycle's first member "y" is the root.
+                internal("x", "y", "x", 35, 10),
+                internal("y", "x", "y", 32, 5),
+                internal("z", "x", "z", 30, 2)));
+
+        assertThat(sorted).extracting(SpanRecord::spanId).containsExactly("r", "l", "k", "y", "x", "z");
+    }
+
+    @Test
     void aChainDeeperThanTheCallStackGoesIsOrderedAllTheSame() throws InterruptedException {
         // A recursive method under @WithSpan: one span per level, 20,000 levels.
         int depth = 20_000;
