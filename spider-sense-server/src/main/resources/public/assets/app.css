@@ -512,6 +512,8 @@ pre.stack {
   transition: transform 140ms ease, opacity 140ms ease;
 }
 .drawer.in { transform: none; opacity: 1; }
+/* the drawer takes the focus when it opens; the whole panel needs no ring */
+.drawer:focus-visible { box-shadow: var(--shadow); border-radius: 0; }
 @media (prefers-reduced-motion: reduce) { .drawer { transition: none; } }
 .drawer-head { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
 .drawer-titles { min-width: 0; }

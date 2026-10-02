@@ -282,6 +282,7 @@ Every icon-only control has an `aria-label`.
 Colour is never the only carrier of meaning: an error also gets a bolt, and something slow also gets a ring or a turtle.
 A clickable table row takes the focus, and Enter or Space on the row does what a click does.
 Enter on a link or a button inside the row belongs to that control: the link opens, and the row does not act.
+A drawer takes the focus when it opens, and closing it gives the focus back to the row that opened it, unless the person has moved the focus elsewhere in the meantime.
 
 [#no-external-requests]
 === No external requests

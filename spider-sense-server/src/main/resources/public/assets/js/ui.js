@@ -494,19 +494,35 @@ export function placeholder(text) {
 let drawerNode = null;
 let drawerBodyNode = null;
 let drawerCloser = null;
+let drawerOpener = null;
 
+/** Whether `el` is `node` or inside it. */
+function within(node, el) {
+  for (let n = el; n; n = n.parentNode) if (n === node) return true;
+  return false;
+}
+
+/**
+ * Opens the drawer and moves the focus into it; closing it gives the focus back to what had it
+ * before, the row that opened it, when the focus was still in the drawer.
+ */
 export function drawer({ title, subtitle, body, onClose }) {
-  closeDrawerSilently();
+  const active = document.activeElement;
+  // a drawer opened from inside another returns to the first one's opener
+  const opener = drawerNode && within(drawerNode, active) ? drawerOpener : active;
+  dropDrawer(false, false);
   const close = () => closeDrawer();
   drawerBodyNode = h('div.drawer-body', body);
-  drawerNode = h('aside.drawer', { role: 'dialog', 'aria-modal': 'false', 'aria-label': title || 'Details' },
+  drawerNode = h('aside.drawer', { role: 'dialog', 'aria-modal': 'false', 'aria-label': title || 'Details', tabindex: '-1' },
     h('header.drawer-head',
       h('div.drawer-titles', h('h2.drawer-title', title || ''), subtitle ? h('div.drawer-sub', subtitle) : null),
       iconButton('close', 'Close details', close)),
     drawerBodyNode);
   drawerCloser = onClose;
+  drawerOpener = opener;
   document.body.appendChild(drawerNode);
   document.body.classList.add('drawer-open');
+  drawerNode.focus({ preventScroll: true });
   requestAnimationFrame(() => drawerNode && drawerNode.classList.add('in'));
   return drawerNode;
 }
@@ -521,12 +537,18 @@ export function closeDrawerSilently() {
   return dropDrawer(false);
 }
 
-function dropDrawer(notify) {
+function dropDrawer(notify, restoreFocus = true) {
   if (!drawerNode) return false;
-  const node = drawerNode, onClose = drawerCloser;
-  drawerNode = null; drawerBodyNode = null; drawerCloser = null;
+  const node = drawerNode, onClose = drawerCloser, opener = drawerOpener;
+  drawerNode = null; drawerBodyNode = null; drawerCloser = null; drawerOpener = null;
+  // the focus goes back only when it was in the drawer, or lost; one moved elsewhere stays
+  const active = document.activeElement;
+  const focusInDrawer = !active || active === document.body || within(node, active);
   node.remove();
   document.body.classList.remove('drawer-open');
+  if (restoreFocus && focusInDrawer && opener && opener.isConnected && typeof opener.focus === 'function') {
+    opener.focus({ preventScroll: true });
+  }
   if (notify && onClose) onClose();
   return true;
 }
