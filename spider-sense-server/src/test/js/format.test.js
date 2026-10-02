@@ -25,10 +25,10 @@ test('dur has one decimal under 100 ms, none above, and seconds from 10 s', () =
   assert.equal(fmt.dur(undefined), '-');
 });
 
-test('durBare drops the unit but keeps the seconds suffix', () => {
+test('durBare drops the unit and stays in milliseconds', () => {
   assert.equal(fmt.durBare(12.34), '12.3');
   assert.equal(fmt.durBare(250), '250');
-  assert.equal(fmt.durBare(12000), '12.0s');
+  assert.equal(fmt.durBare(12000), '12,000');
 });
 
 test('rate, pct and bytes', () => {

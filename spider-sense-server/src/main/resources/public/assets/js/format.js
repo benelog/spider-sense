@@ -18,10 +18,12 @@ export function dur(ms) {
   return NUM1.format(ms) + ' ms';
 }
 
-/** Duration without the unit, for axis ticks and dense cells. */
+/**
+ * Milliseconds without the unit, for the ticks of an axis labelled ms: never in seconds, so the
+ * ticks of one axis are all in the unit its label names.
+ */
 export function durBare(ms) {
   if (ms == null || Number.isNaN(ms)) return '-';
-  if (ms >= 10000) return NUM1.format(ms / 1000) + 's';
   if (ms >= 100) return NUM.format(Math.round(ms));
   return NUM1.format(ms);
 }

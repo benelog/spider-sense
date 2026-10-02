@@ -260,6 +260,8 @@ A page paints only the answer to the newest of its requests: an older range, fil
 === Numbers and times
 
 Durations carry one decimal below 100 ms and none above, and are given in seconds (`s`) above 10 s.
+A chart's tooltip follows that rule, each duration carrying its own unit.
+The ticks of an axis labelled `ms` stay in milliseconds, with thousands separators, so one axis never mixes two units.
 Counts carry thousands separators, rates two decimals, and percentages one.
 A count axis only ever shows whole numbers, with uPlot `incrs` of 1, 2, 5, 10 and so on, so a series that stays at 0 or 1 does not print the same tick three times.
 Times read as `HH:mm:ss` within today, and `MMM d HH:mm:ss` otherwise.

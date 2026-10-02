@@ -1,7 +1,7 @@
 // charts.js: the legend a chart's spec implies, and the series alignment of the JVM and Metrics pages.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { legendItems, alignedTimes, alignTo, stackColumns, tipLeft } from '../../main/resources/public/assets/js/charts.js';
+import { legendItems, alignedTimes, alignTo, stackColumns, tipLeft, valueText, tickText, durationRange } from '../../main/resources/public/assets/js/charts.js';
 import { throughputSpec } from '../../main/resources/public/assets/js/throughput.js';
 
 test('the legend lists the series under their legend label, leaving out the hidden ones', () => {
@@ -63,4 +63,18 @@ test('a tooltip is centred on its anchor and kept 4 px inside the chart', () => 
   assert.equal(tipLeft(200, 100, 600), '150px');
   assert.equal(tipLeft(10, 100, 600), '4px');
   assert.equal(tipLeft(590, 100, 600), '496px');
+});
+
+test('a duration in a tooltip carries its own unit, in seconds from 10 s', () => {
+  assert.equal(valueText('ms', 12.34), '12.3 ms');
+  assert.equal(valueText('ms', 250), '250 ms');
+  assert.equal(valueText('ms', 12000), '12.0 s');
+  assert.equal(valueText('ms', null), '-');
+  assert.equal(durationRange(5000, 12000), '5,000 ms – 12.0 s');
+});
+
+test('the ticks of an axis labelled ms stay in milliseconds', () => {
+  assert.equal(tickText('ms', 50), '50.0');
+  assert.equal(tickText('ms', 5000), '5,000');
+  assert.equal(tickText('ms', 12000), '12,000');
 });

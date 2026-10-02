@@ -75,6 +75,27 @@ function isCountScale(scale) {
   return scale !== 'ms' && scale !== 'pct' && scale !== 'load';
 }
 
+/** A line series' value in a tooltip; a duration carries its own unit (ui.adoc#numbers-and-times). */
+export function valueText(scale, v) {
+  if (v == null || Number.isNaN(v)) return '-';
+  if (scale === 'ms') return fmt.dur(v);
+  if (scale === 'pct') return v.toFixed(1) + '%';
+  return fmt.count(v);
+}
+
+/** A tick of an axis; the ticks of an `ms` axis stay in milliseconds, the unit its label names. */
+export function tickText(scale, v) {
+  if (v == null) return '';
+  if (scale === 'ms') return fmt.durBare(v);
+  if (scale === 'pct') return v.toFixed(v < 10 ? 1 : 0) + '%';
+  return fmt.count(v);
+}
+
+/** A range of durations, each end in its own unit: "5,000 ms – 12.0 s". */
+export function durationRange(from, to) {
+  return fmt.dur(Math.max(0, from)) + ' – ' + fmt.dur(Math.max(0, to));
+}
+
 function valueAxis(colors, axisOpts = {}) {
   return {
     scale: axisOpts.scale || 'y',
@@ -305,7 +326,7 @@ export function timeSeries(container, spec) {
           fill: s.type === 'area' ? withAlpha(color, 0.12) : null,
           points: { show: false },
           spanGaps: true,
-          value: (u, v) => (s.scale === 'ms' ? fmt.durBare(v) + ' ms' : s.scale === 'pct' ? (v == null ? '-' : v.toFixed(1) + '%') : fmt.count(v)),
+          value: (u, v) => valueText(scale, v),
         });
       }
     }
@@ -318,11 +339,7 @@ export function timeSeries(container, spec) {
         label: a.label,
         stroke: a.color ? resolveColor(a.color, colors) : colors.muted,
         grid: i === 0,
-        values: a.values || (a.scale === 'ms'
-          ? (u, splits) => splits.map((s) => fmt.durBare(s))
-          : a.scale === 'pct'
-            ? (u, splits) => splits.map((s) => (s == null ? '' : s.toFixed(s < 10 ? 1 : 0) + '%'))
-            : undefined),
+        values: a.values || ((u, splits) => splits.map((s) => tickText(a.scale || 'y', s))),
         size: a.size,
       }));
     });
@@ -655,7 +672,7 @@ export function scatterChart(container, opts) {
         ],
         axes: [
           timeAxis(colors),
-          valueAxis(colors, { scale: 'y', count: false, label: 'Response time (ms)', size: 60, values: (u, splits) => splits.map((s) => fmt.durBare(s)) }),
+          valueAxis(colors, { scale: 'y', count: false, label: 'Response time (ms)', size: 60, values: (u, splits) => splits.map((s) => tickText('ms', s)) }),
         ],
         legend: { show: false },
         cursor: {
@@ -706,7 +723,7 @@ export function scatterChart(container, opts) {
           const yTop = plot.posToVal(cell.r * bins.cellH, 'y');
           const yBottom = plot.posToVal((cell.r + 1) * bins.cellH, 'y');
           tip.innerHTML = `<div class="t">${fmt.clock(x0)} – ${fmt.clock(x1)}</div>` +
-            `<span class="k">Response time</span><span class="v">${fmt.durBare(Math.max(0, yBottom))} – ${fmt.durBare(Math.max(0, yTop))} ms</span>` +
+            `<span class="k">Response time</span><span class="v">${durationRange(yBottom, yTop)}</span>` +
             `<span class="k">Requests</span><span class="v">${fmt.count(cell.count)}</span>` +
             (cell.errors ? `<span class="k">Errors</span><span class="v">${fmt.count(cell.errors)}</span>` : '');
           tip.classList.add('show');
@@ -721,7 +738,7 @@ export function scatterChart(container, opts) {
           if (!p) { tip.classList.remove('show'); over.style.cursor = 'crosshair'; return; }
           over.style.cursor = 'pointer';
           tip.innerHTML = `<div class="t">${escapeHtml(p[POINT.ENDPOINT])}</div>` +
-            `<span class="k"><i style="background:${serviceColor(p[POINT.SERVICE])}"></i>${escapeHtml(p[POINT.SERVICE])}</span><span class="v">${fmt.durBare(p[POINT.MS])} ms</span>` +
+            `<span class="k"><i style="background:${serviceColor(p[POINT.SERVICE])}"></i>${escapeHtml(p[POINT.SERVICE])}</span><span class="v">${fmt.dur(p[POINT.MS])}</span>` +
             `<span class="k">Time</span><span class="v">${fmt.clock(p[POINT.START])}</span>`;
           tip.classList.add('show');
           const rect = over.getBoundingClientRect();
