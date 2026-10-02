@@ -213,12 +213,24 @@ export async function copyText(text) {
 }
 
 let toastTimer = null;
+
+/**
+ * A short message in the page's live region (`#toast` in index.html). A screen reader reads a
+ * change to a region already there, not one inserted with its text, so a page without the region
+ * gets it empty first and the message a moment later.
+ */
 export function toast(message) {
-  let node = document.getElementById('toast');
+  const node = document.getElementById('toast');
   if (!node) {
-    node = h('div#toast', { role: 'status', 'aria-live': 'polite' });
-    document.body.appendChild(node);
+    const region = h('div#toast', { role: 'status', 'aria-live': 'polite' });
+    document.body.appendChild(region);
+    setTimeout(() => showToast(region, message), 50);
+    return;
   }
+  showToast(node, message);
+}
+
+function showToast(node, message) {
   node.textContent = message;
   node.classList.add('show');
   clearTimeout(toastTimer);
