@@ -1,7 +1,7 @@
 // charts.js: the legend a chart's spec implies, and the series alignment of the JVM and Metrics pages.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { legendItems, alignedTimes, alignTo, stackColumns, tipLeft, valueText, tickText, durationRange } from '../../main/resources/public/assets/js/charts.js';
+import { legendItems, alignedTimes, alignTo, stackColumns, tipLeft, valueText, tickText, durationRange, countScales } from '../../main/resources/public/assets/js/charts.js';
 import { throughputSpec } from '../../main/resources/public/assets/js/throughput.js';
 
 test('the legend lists the series under their legend label, leaving out the hidden ones', () => {
@@ -71,6 +71,26 @@ test('a duration in a tooltip carries its own unit, in seconds from 10 s', () =>
   assert.equal(valueText('ms', 12000), '12.0 s');
   assert.equal(valueText('ms', null), '-');
   assert.equal(durationRange(5000, 12000), '5,000 ms – 12.0 s');
+});
+
+test('a value that is not a count keeps its fraction in the tooltip and on the axis', () => {
+  assert.equal(valueText('y', 0.25), '0.25');
+  assert.equal(valueText('y', 0.003), '0.003');
+  assert.deepEqual([1.4, 0.7, 2.6].map((v) => valueText('load', v)), ['1.4', '0.7', '2.6']);
+  assert.equal(valueText('y', 42), '42');
+  assert.equal(valueText('y', 1234.5), '1,235');
+  assert.deepEqual([0, 0.5, 1, 1.5, 2].map((v) => tickText('load', v)), ['0', '0.5', '1', '1.5', '2']);
+});
+
+test('only a scale of whole numbers that is no duration, percentage or load counts', () => {
+  const counts = countScales([
+    { scale: 'y', values: [1, 2, null] },
+    { scale: 'ms', values: [3, 4] },
+    { scale: 'pending', values: [0, 1] },
+    { scale: 'load', values: [1, 2] },
+  ]);
+  assert.deepEqual([...counts].sort(), ['pending', 'y']);
+  assert.deepEqual([...countScales([{ values: [0.25, 0.5] }, { values: [1] }])], [], 'a metric under 1 is not a count');
 });
 
 test('the ticks of an axis labelled ms stay in milliseconds', () => {

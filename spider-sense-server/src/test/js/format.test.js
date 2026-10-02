@@ -31,6 +31,15 @@ test('durBare drops the unit and stays in milliseconds', () => {
   assert.equal(fmt.durBare(12000), '12,000');
 });
 
+test('num is whole from 100 and has three significant digits below', () => {
+  assert.equal(fmt.num(0.25), '0.25');
+  assert.equal(fmt.num(0.0031), '0.0031');
+  assert.equal(fmt.num(2.666), '2.67');
+  assert.equal(fmt.num(42), '42');
+  assert.equal(fmt.num(12345.6), '12,346');
+  assert.equal(fmt.num(null), '-');
+});
+
 test('rate, pct and bytes', () => {
   assert.equal(fmt.rate(1.5), '1.50');
   assert.equal(fmt.pct(0.0125), '1.3%');

@@ -75,12 +75,28 @@ function isCountScale(scale) {
   return scale !== 'ms' && scale !== 'pct' && scale !== 'load';
 }
 
-/** A line series' value in a tooltip; a duration carries its own unit (ui.adoc#numbers-and-times). */
+/**
+ * The scales of a chart's spec series that count things: neither a duration, a percentage nor a
+ * load, and holding whole numbers only, so a metric whose values are fractions is not forced
+ * onto whole-number ticks.
+ */
+export function countScales(specSeries) {
+  const scales = new Set();
+  const fractional = new Set();
+  for (const s of specSeries) {
+    const scale = s.scale || 'y';
+    scales.add(scale);
+    if ((s.values || []).some((v) => v != null && !Number.isInteger(v))) fractional.add(scale);
+  }
+  return new Set([...scales].filter((scale) => isCountScale(scale) && !fractional.has(scale)));
+}
+
+/** A series' value in a tooltip; a duration carries its own unit (ui.adoc#numbers-and-times). */
 export function valueText(scale, v) {
   if (v == null || Number.isNaN(v)) return '-';
   if (scale === 'ms') return fmt.dur(v);
   if (scale === 'pct') return v.toFixed(1) + '%';
-  return fmt.count(v);
+  return fmt.num(v);
 }
 
 /** A tick of an axis; the ticks of an `ms` axis stay in milliseconds, the unit its label names. */
@@ -88,7 +104,7 @@ export function tickText(scale, v) {
   if (v == null) return '';
   if (scale === 'ms') return fmt.durBare(v);
   if (scale === 'pct') return v.toFixed(v < 10 ? 1 : 0) + '%';
-  return fmt.count(v);
+  return fmt.num(v);
 }
 
 /** A range of durations, each end in its own unit: "5,000 ms – 12.0 s". */
@@ -109,8 +125,8 @@ function valueAxis(colors, axisOpts = {}) {
     labelSize: axisOpts.label ? 18 : 0,
     labelFont: uiFont(),
     labelGap: 2,
-    incrs: axisOpts.count !== false && isCountScale(axisOpts.scale || 'y') ? COUNT_INCRS : undefined,
-    values: axisOpts.values || ((u, splits) => splits.map((s) => fmt.count(s))),
+    incrs: axisOpts.count ? COUNT_INCRS : undefined,
+    values: axisOpts.values,
   };
 }
 
@@ -304,12 +320,13 @@ export function timeSeries(container, spec) {
     const { columns, order, column, slotOf, bars } = stackColumns(spec.series);
     const data = [xs, ...columns];
     const scales = { x: { time: true } };
+    const counts = countScales(spec.series);
     const series = [{ label: 'Time' }];
     for (const specIndex of order) {
       const s = spec.series[specIndex];
       const color = resolveColor(s.color, colors);
       const scale = s.scale || 'y';
-      scales[scale] = scales[scale] || { range: rangeFor(scale) };
+      scales[scale] = scales[scale] || { range: rangeFor(scale, counts.has(scale)) };
       if (s.type === 'bar') {
         const idx = slotOf.get(specIndex);
         series.push({
@@ -317,7 +334,7 @@ export function timeSeries(container, spec) {
           label: s.label, scale, stroke: color, fill: withAlpha(color, s.fillAlpha == null ? (s.stack ? 1 : 0.85) : s.fillAlpha),
           width: 0, points: { show: false },
           paths: uPlot.paths.bars({ size: [bars > 1 && idx > 0 ? 0.62 : 0.72, 24, 1], align: 0, radius: 0.15 }),
-          value: (u, v) => fmt.count(v),
+          value: (u, v) => valueText(scale, v),
         });
       } else {
         series.push({
@@ -339,6 +356,7 @@ export function timeSeries(container, spec) {
         label: a.label,
         stroke: a.color ? resolveColor(a.color, colors) : colors.muted,
         grid: i === 0,
+        count: counts.has(a.scale || 'y'),
         values: a.values || ((u, splits) => splits.map((s) => tickText(a.scale || 'y', s))),
         size: a.size,
       }));
@@ -388,11 +406,11 @@ export function timeSeries(container, spec) {
   return chart;
 }
 
-function rangeFor(scale) {
+function rangeFor(scale, count) {
   if (scale === 'pct') return (u, min, max) => [0, Math.max(1, max * 1.15)];
   // A count scale never shrinks below [0, 1], so a series that stays at 0 still
   // gets whole-number ticks rather than thirds.
-  if (isCountScale(scale)) return (u, min, max) => [0, Math.max(1, max == null || max <= 0 ? 1 : max * 1.15)];
+  if (count) return (u, min, max) => [0, Math.max(1, max == null || max <= 0 ? 1 : max * 1.15)];
   return (u, min, max) => [0, max == null || max <= 0 ? 1 : max * 1.15];
 }
 

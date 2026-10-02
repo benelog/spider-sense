@@ -28,6 +28,15 @@ export function durBare(ms) {
   return NUM1.format(ms);
 }
 
+const SIG3 = new Intl.NumberFormat('en-US', { maximumSignificantDigits: 3 });
+
+/** A value of no particular unit (a gauge, a mean, a rate): whole from 100, three significant digits below. */
+export function num(n) {
+  if (n == null || Number.isNaN(n)) return '-';
+  if (Math.abs(n) >= 100) return NUM.format(Math.round(n));
+  return SIG3.format(n);
+}
+
 /** Rates with 2 decimals. */
 export function rate(n) {
   if (n == null || Number.isNaN(n)) return '-';

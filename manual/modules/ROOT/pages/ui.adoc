@@ -263,7 +263,9 @@ Durations carry one decimal below 100 ms and none above, and are given in second
 A chart's tooltip follows that rule, each duration carrying its own unit.
 The ticks of an axis labelled `ms` stay in milliseconds, with thousands separators, so one axis never mixes two units.
 Counts carry thousands separators, rates two decimals, and percentages one.
+A value of no particular unit, a gauge, a histogram's mean or a sum's rate, is whole from 100 and keeps three significant digits below it, in a tooltip and on an axis alike.
 A count axis only ever shows whole numbers, with uPlot `incrs` of 1, 2, 5, 10 and so on, so a series that stays at 0 or 1 does not print the same tick three times.
+An axis is a count axis when it is no duration, percentage or load and every value on it is a whole number; a metric of fractions keeps its own scale.
 Times read as `HH:mm:ss` within today, and `MMM d HH:mm:ss` otherwise.
 A feed gives the relative time, "12 s ago", a table the absolute one, and a tooltip both.
 
