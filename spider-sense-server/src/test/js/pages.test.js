@@ -127,3 +127,41 @@ test('the Mark dialog marks through the API and closes', async () => {
   assert.equal(dlg.open, false);
   assert.ok(marked && marked.name);
 });
+
+/** Runs `fn` while the mock's answer to `path` goes through `change` first. */
+async function withAnswer(path, change, fn) {
+  const real = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    const res = await real(url, init);
+    if (String(url).split('?')[0] !== path) return res;
+    return new Response(JSON.stringify(change(await res.json())), { status: res.status, headers: { 'content-type': 'application/json' } });
+  };
+  try { return await fn(); } finally { globalThis.fetch = real; }
+}
+
+test('the Overview shows a worker\'s findings, services and tingles though it has no request (pages.adoc#overview)', async () => {
+  await withAnswer('/api/overview', (body) => ({
+    ...body,
+    totals: { requests: 0, errors: 0, errorRate: 0, rps: 0, p50Ms: null, p95Ms: null, p99Ms: null, maxMs: null, apdex: null, histogram: [0, 0, 0, 0, 0] },
+    series: { t: [], requests: [], errors: [], p95Ms: [], histogram: [[], [], [], []] },
+    tingles: [{ kind: 'slow-query', service: body.services[0].name, title: 'select', detail: '', at: Date.now(), traceId: 'abc' }],
+  }), async () => {
+    const { root, instance } = await visit('overview');
+    assert.equal(root.querySelectorAll('.empty-state').length, 0, 'no empty state while there is something to show');
+    assert.ok(root.querySelectorAll('.service-card').length > 0, 'the service cards');
+    assert.equal(root.querySelectorAll('.tingle').length, 1, 'the tingle');
+    assert.equal(root.querySelector('.hist-empty').textContent, '-', 'the Response summary says -');
+    instance.destroy();
+  });
+});
+
+test('the Overview shows the empty state only before anything has arrived', async () => {
+  await withAnswer('/api/findings', () => ({ findings: [] }), () => withAnswer('/api/overview', (body) => ({
+    ...body, totals: { requests: 0, histogram: [0, 0, 0, 0, 0] }, services: [], tingles: [],
+  }), async () => {
+    const { root, instance } = await visit('overview');
+    assert.equal(root.querySelectorAll('.empty-state').length, 1);
+    assert.match(root.querySelector('.empty-sentence').textContent, /^Nothing has arrived yet\./);
+    instance.destroy();
+  }));
+});

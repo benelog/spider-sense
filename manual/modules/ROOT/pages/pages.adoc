@@ -54,6 +54,7 @@ A click opens the trace.
 With Live on, new tingles are prepended with a 300 ms slide.
 
 Before any service has sent anything, the page shows the logo large, one sentence, and the content of the xref:ui.adoc#dialogs[How to send data] dialog inline: the `-javaagent` line, the `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_EXPORTER_OTLP_PROTOCOL` pair, and a `curl` for OTLP/JSON.
+Once a service is known, the page shows its five parts even when the window holds no request, as for a worker whose jobs are not entry spans: the tiles that need a request read `-`, the chart stays empty, and the findings, services and tingles are listed as usual.
 
 [#findings]
 == Findings

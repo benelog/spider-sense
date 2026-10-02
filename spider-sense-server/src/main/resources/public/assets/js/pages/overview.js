@@ -150,14 +150,13 @@ export function render(root, ctx) {
     findings = found.findings || [];
     const services = data.services || [];
     const requests = (data.totals || {}).requests || 0;
-    if (!requests) {
-      const neverSeen = !services.length;
+    // The empty state is for a collector nothing has reached. A worker sends no request, as its
+    // jobs are not entry spans, yet its findings, services and tingles are worth the page.
+    if (!requests && !services.length && !findings.length && !(data.tingles || []).length) {
       layout.replace(panel({}, emptyState(
-        neverSeen
-          ? 'Nothing has arrived yet. Attach Spider Sense to an application, or point any OTLP/HTTP sender at this collector.'
-          : 'No request in this time range. Send some traffic, or widen the range in the top bar.',
+        'Nothing has arrived yet. Attach Spider Sense to an application, or point any OTLP/HTTP sender at this collector.',
         h('div', { style: { display: 'grid', gap: '10px', justifyItems: 'center', width: '100%' } },
-          neverSeen ? h('img.empty-hero', { src: 'assets/logo.svg', alt: '', width: '96', height: '96' }) : null,
+          h('img.empty-hero', { src: 'assets/logo.svg', alt: '', width: '96', height: '96' }),
           snippetBlocks(api.collectorBase())))));
       return;
     }
