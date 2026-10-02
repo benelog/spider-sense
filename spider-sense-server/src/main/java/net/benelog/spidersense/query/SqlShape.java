@@ -28,8 +28,9 @@ import org.jspecify.annotations.Nullable;
  * the clause a token sits in is kept per parenthesis, so the {@code where} that
  * a subquery interrupts goes on after its {@code )}. The one thing it refuses
  * to guess is attribution, and
- * {@link #readable()} says so: an unqualified column in a join, a column
- * qualified by the alias of a derived table, or a statement with no table at all
+ * {@link #readable()} says so: an unqualified column in a join or beside a
+ * derived table, a column qualified by the alias of a derived table, or a
+ * statement with no table at all
  * makes the whole shape unusable rather than half right. A block that is wrong
  * is worse than no block.
  */
@@ -145,6 +146,9 @@ final class SqlShape {
     private enum Region { NONE, PREDICATE, ORDER }
 
     private final List<TableRef> tables = new ArrayList<>();
+
+    /** The derived tables of the table lists, which {@link #tables} cannot hold: they have no name. */
+    private int derivedTables;
     private final List<ColumnRef> predicates = new ArrayList<>();
     private final Set<String> predicateKeys = new LinkedHashSet<>();
 
@@ -514,6 +518,7 @@ final class SqlShape {
             Token token = tokens.get(i);
             if (token.is("(")) {
                 // A derived table: it has no name, and its alias resolves to nothing.
+                derivedTables++;
                 i = skipGroup(tokens, i + 1);
                 i = alias(tokens, i, null);
                 if (list && i < tokens.size() && tokens.get(i).is(",")) {
@@ -583,8 +588,8 @@ final class SqlShape {
         String column = parts.get(parts.size() - 1);
         String table;
         if (parts.size() == 1) {
-            if (tables.size() != 1) {
-                readable = false;     // an unqualified column in a join
+            if (tables.size() != 1 || derivedTables > 0) {
+                readable = false;     // an unqualified column in a join, or beside a derived table
                 return;
             }
             table = tables.get(0).name();

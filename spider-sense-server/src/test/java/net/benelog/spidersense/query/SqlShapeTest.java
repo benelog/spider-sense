@@ -361,6 +361,12 @@ class SqlShapeTest {
                 .as("an unqualified column in a join").isFalse();
         assertThat(SqlShape.of("select x.id from (select id from items) x where x.id = ?").readable())
                 .as("the alias of a derived table").isFalse();
+        assertThat(SqlShape.of("select * from (select item_id, sum(qty) as total from lines group by item_id) d,"
+                + " items where total > ?").readable())
+                .as("an unqualified column beside a derived table").isFalse();
+        assertThat(SqlShape.of("select * from items i join (select item_id from lines) d"
+                + " using (item_id) where name = ?").readable())
+                .as("an unqualified column beside a joined derived table").isFalse();
         assertThat(SqlShape.of(null).readable()).isFalse();
         assertThat(SqlShape.of("  ").readable()).isFalse();
     }
