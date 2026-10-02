@@ -88,11 +88,14 @@ Drop the `maven-dependency-plugin` execution and set `spider-sense.jar` to the f
 == Tests under Surefire
 
 Surefire forks its own JVM and takes its options from `argLine`.
+The plugin below goes into the `sense` profile's `<plugins>`, beside the other two, because the profile is where `spider-sense.jar` is defined and the jar copied.
+`mvn test -Psense` then runs the tests under Spider Sense, and `mvn test` runs them plain.
 Forward to a standalone Spider Sense rather than embedding one.
 A test JVM is short-lived and may be forked more than once, and several embedded servers would fight over one port.
 
 [source,xml]
 ----
+<!-- in the sense profile, under <build><plugins> -->
 <plugin>
   <groupId>org.apache.maven.plugins</groupId>
   <artifactId>maven-surefire-plugin</artifactId>
@@ -102,7 +105,7 @@ A test JVM is short-lived and may be forked more than once, and several embedded
 </plugin>
 ----
 
-Start the standalone once before the tests run, as xref:modes.adoc#forwarding[forwarding] describes.
+Start the standalone once before `mvn test -Psense` runs, as xref:modes.adoc#forwarding[forwarding] describes.
 
 [#packaged-jar]
 == The packaged jar
