@@ -178,7 +178,7 @@ It never shares an end or a stretch with the forward edge of the same pair.
 Its label sits above the curve at 40% of its length, on a small `--bg-panel` halo so it never touches the arrowhead.
 The label gives the calls, and the errors in `--err` when there are any.
 The average and the p95 are in the hover tooltip.
-Hovering a node or an edge highlights it and its neighbours.
+Hovering a node highlights it, its neighbours and the edges among them, and hovering an edge highlights it and the two nodes it joins; everything else dims.
 
 A click on a node opens a drawer on the right, 420 px wide like the span drawer, with the node's name and kind.
 For a service the drawer holds the stat tiles (requests, Apdex, error rate, p95, rps), the Response summary bars, the Load chart for the window, fetched from `+/api/services/{name}+` and drawn as the Overview draws it in Load mode, and buttons for *Service*, *Scatter* and *Traces*, each filtered to that service.

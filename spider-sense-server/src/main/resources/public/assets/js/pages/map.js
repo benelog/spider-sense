@@ -255,11 +255,20 @@ export function render(root, ctx) {
     return set;
   }
 
+  /**
+   * Dims what is not highlighted. `highlighted` is a node, which keeps its neighbours and the
+   * edges among them, or an edge, which keeps itself and its two nodes; with neither, the
+   * service filter keeps the chosen service and its neighbours.
+   */
   function applyDim() {
     const svg = svgBox.querySelector('svg');
     if (!svg) return;
     let keep = null;
-    if (highlighted) keep = neighboursOf(highlighted);
+    let keepEdge = null;
+    if (highlighted && highlighted.edge) {
+      keepEdge = highlighted.edge;
+      keep = new Set(keepEdge.split('\u0000'));
+    } else if (highlighted) keep = neighboursOf(highlighted.node);
     else if (api.state.service) {
       const id = 'svc:' + api.state.service;
       if (nodeRefs.has(id)) keep = neighboursOf(id);
@@ -267,7 +276,7 @@ export function render(root, ctx) {
     for (const [id, ref] of nodeRefs) ref.g.classList.toggle('dim', !!keep && !keep.has(id));
     for (const [key, ref] of edgeRefs) {
       const [from, to] = key.split('\u0000');
-      const dim = !!keep && !(keep.has(from) && keep.has(to));
+      const dim = keepEdge ? key !== keepEdge : !!keep && !(keep.has(from) && keep.has(to));
       ref.g.classList.toggle('dim', dim);
       ref.labelG.classList.toggle('dim', dim);
     }
@@ -352,7 +361,9 @@ export function render(root, ctx) {
   function drawEdge(e, curve) {
     if (!curve) return null;
     const width = Math.min(5, 1 + Math.log10(Math.max(1, e.calls || 1)));
-    const g = svgElement('g', { class: 'map-edge' + (e.errors ? ' is-bad' : '') });
+    const g = svgElement('g', { class: 'map-edge' + (e.errors ? ' is-bad' : ''), 'data-from': e.from, 'data-to': e.to });
+    g.addEventListener('mouseenter', () => { highlighted = { edge: edgeKey(e) }; applyDim(); });
+    g.addEventListener('mouseleave', () => { highlighted = null; applyDim(); });
     const path = svgElement('path', {
       class: 'map-edge-path', d: curvePath(curve),
       'stroke-width': width.toFixed(2), 'marker-end': 'url(#map-arrow)',
@@ -417,9 +428,9 @@ export function render(root, ctx) {
     if (n.kind === 'service') g.appendChild(miniHistogram(n.histogram, HIST_X, HIST_Y));
     g.addEventListener('click', () => openNode(n));
     g.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); openNode(n); } });
-    g.addEventListener('mouseenter', () => { highlighted = n.id; applyDim(); });
+    g.addEventListener('mouseenter', () => { highlighted = { node: n.id }; applyDim(); });
     g.addEventListener('mouseleave', () => { highlighted = null; applyDim(); });
-    g.addEventListener('focus', () => { highlighted = n.id; applyDim(); });
+    g.addEventListener('focus', () => { highlighted = { node: n.id }; applyDim(); });
     g.addEventListener('blur', () => { highlighted = null; applyDim(); });
     nodeRefs.set(n.id, { g, name, line, node: n });
     return g;

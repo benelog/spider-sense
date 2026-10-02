@@ -128,6 +128,24 @@ test('the Mark dialog marks through the API and closes', async () => {
   assert.ok(marked && marked.name);
 });
 
+test('hovering a map edge highlights it and its two nodes (pages.adoc#map-edges)', async () => {
+  const { root, instance } = await visit('map');
+  const edges = root.querySelectorAll('g.map-edge');
+  assert.ok(edges.length > 1, 'the mock draws more than one edge');
+  const edge = edges[0];
+  const from = edge.getAttribute('data-from'), to = edge.getAttribute('data-to');
+  assert.ok(from && to, 'the edge names its ends');
+  edge.dispatch('mouseenter');
+  for (const n of root.querySelectorAll('g.map-node')) {
+    const id = n.getAttribute('data-id');
+    assert.equal(n.classList.contains('dim'), id !== from && id !== to, id);
+  }
+  for (const e of root.querySelectorAll('g.map-edge')) assert.equal(e.classList.contains('dim'), e !== edge);
+  edge.dispatch('mouseleave');
+  assert.equal(root.querySelectorAll('g.dim').length, 0);
+  instance.destroy();
+});
+
 /** Runs `fn` while the mock's answer to `path` goes through `change` first. */
 async function withAnswer(path, change, fn) {
   const real = globalThis.fetch;
