@@ -9,7 +9,11 @@ export function startMsOf(span) {
 /** Where the trace's offsets count from: its earliest span, or its own start when it has none. */
 export function traceStartMs(trace) {
   const spans = trace.spans || [];
-  return spans.length ? Math.min(...spans.map(startMsOf)) : trace.start;
+  if (!spans.length) return trace.start;
+  // A loop, not Math.min(...starts): a large trace has more spans than a call takes arguments.
+  let min = Infinity;
+  for (const s of spans) min = Math.min(min, startMsOf(s));
+  return min;
 }
 
 /** The parent a span hangs under, or null when the trace does not hold it (the span is then a root). */

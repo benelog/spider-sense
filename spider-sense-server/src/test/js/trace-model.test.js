@@ -23,6 +23,11 @@ test('a span starts at its nanoseconds when it has them', () => {
   assert.equal(traceStartMs({ spans: [], start: 42 }), 42);
 });
 
+test('a trace with more spans than a call takes arguments still has a start', () => {
+  const many = Array.from({ length: 200_000 }, (_, i) => ({ start: i + 7 }));
+  assert.equal(traceStartMs({ spans: many }), 7);
+});
+
 test('a span whose parent is missing is a root', () => {
   const tree = spanTree(spans);
   assert.deepEqual(tree.roots.map((s) => s.spanId), ['root', 'orphan']);
