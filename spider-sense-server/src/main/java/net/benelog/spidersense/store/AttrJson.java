@@ -149,19 +149,36 @@ public final class AttrJson {
      * Cuts the longest string value among the maps by about {@code excess}
      * encoded characters, marking it; false when no value is long enough to cut, which
      * leaves the caller nothing to shrink but the whole document.
+     *
+     * <p>An array longer than every string becomes its JSON text instead, which the
+     * caller's next round cuts like any other string; an array that fits stays an array.
      */
     private static boolean cutLongest(List<Map<String, Object>> maps, int excess) {
         @Nullable Map<String, Object> owner = null;
         @Nullable String key = null;
         String value = "";
+        @Nullable Map<String, Object> listOwner = null;
+        @Nullable String listKey = null;
+        String listText = "";
         for (Map<String, Object> map : maps) {
             for (Map.Entry<String, Object> entry : map.entrySet()) {
                 if (entry.getValue() instanceof String text && text.length() > value.length()) {
                     owner = map;
                     key = entry.getKey();
                     value = text;
+                } else if (entry.getValue() instanceof List<?> list) {
+                    String text = toJson(list).toJson();
+                    if (text.length() > listText.length()) {
+                        listOwner = map;
+                        listKey = entry.getKey();
+                        listText = text;
+                    }
                 }
             }
+        }
+        if (listOwner != null && listKey != null && listText.length() > value.length()) {
+            listOwner.put(listKey, listText);
+            return true;
         }
         if (owner == null || key == null || value.length() <= CUT_MARK.length()) {
             return false;

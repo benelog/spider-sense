@@ -47,6 +47,36 @@ class AttrJsonTest {
         assertThat((String) decoded.get("payload")).startsWith("{\"body\":\"xxx").endsWith(AttrJson.CUT_MARK);
     }
 
+    /** An array too long for the column is cut as its text, and an array that fits stays an array. */
+    @Test
+    void anArrayTooLongForTheColumnIsCutAsItsText() {
+        Map<String, Object> attributes = new LinkedHashMap<>();
+        attributes.put("http.request.method", "GET");
+        attributes.put("http.request.header.accept", List.of("*/*"));
+        attributes.put("messaging.batch", List.of("x".repeat(100_000)));
+
+        String json = AttrJson.encode(attributes, 1000);
+
+        assertThat(json.length()).isLessThanOrEqualTo(1000);
+        Map<String, Object> decoded = AttrJson.decode(json);
+        assertThat(decoded.get("http.request.method")).isEqualTo("GET");
+        assertThat(decoded.get("http.request.header.accept")).isEqualTo(List.of("*/*"));
+        assertThat((String) decoded.get("messaging.batch")).startsWith("[\"xxx").endsWith(AttrJson.CUT_MARK);
+    }
+
+    @Test
+    void eventsWithAnArrayTooLongForTheColumnAreCutAsAttributesAre() {
+        List<SpanRecord.SpanEvent> events = List.of(new SpanRecord.SpanEvent("batch", 1,
+                Map.of("ids", List.of("1".repeat(3_000), "2".repeat(3_000)))));
+
+        String json = AttrJson.encodeEvents(events, 1000);
+
+        assertThat(json.length()).isLessThanOrEqualTo(1000);
+        SpanRecord.SpanEvent event = AttrJson.decodeEvents(json).get(0);
+        assertThat(event.name()).isEqualTo("batch");
+        assertThat((String) event.attributes().get("ids")).startsWith("[\"111").endsWith(AttrJson.CUT_MARK);
+    }
+
     @Test
     void textThatCannotBeCutFallsBackToAnEmptyObject() {
         Map<String, Object> attributes = new LinkedHashMap<>();
