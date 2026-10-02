@@ -33,7 +33,10 @@ import org.jspecify.annotations.Nullable;
  */
 final class Remote {
 
-    /** Nothing answered at the URL: a connection refused or not made in time, never a 4xx. */
+    /**
+     * No Spider Sense answered at the URL: a connection refused or not made in time, or an error
+     * answer from some other server there; never a Spider Sense's own 4xx.
+     */
     static final class Unreachable extends RuntimeException {
         Unreachable(String reason) {
             super(reason);
@@ -148,6 +151,7 @@ final class Remote {
         }
 
         if (response.statusCode() >= 400) {
+            requireSpiderSense(response);
             err.println("spider-sense: " + message(response));
             return response.statusCode() == 404 ? Cli.NOT_FOUND : Cli.USAGE;
         }
@@ -217,11 +221,43 @@ final class Remote {
                     HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
         }
         if (response.statusCode() >= 400) {
+            requireSpiderSense(response);
             err.println("spider-sense: " + message(response));
             return Cli.USAGE;
         }
         Output.print(out, response.body());
         return Cli.OK;
+    }
+
+    /**
+     * Throws {@link Unreachable} when an error answer did not come from a Spider Sense.
+     *
+     * <p>A Spider Sense answers every error with the {@code {"error": "..."}} object of
+     * api.adoc#conventions, or, to a caller that asked for text, with the one line
+     * {@code /api/sql} sends as {@code text/markdown}. Anything else, such as an HTML error page or
+     * a bare {@code 404}, is some other server at the URL: then nothing the caller named is
+     * missing, there is simply no Spider Sense to ask, which is exit {@code 2} and never the
+     * {@code 4} of a missing trace or mark (cli.adoc#exit-codes).
+     */
+    private static void requireSpiderSense(HttpResponse<String> response) {
+        if (!fromSpiderSense(response.headers().firstValue("content-type").orElse(null), response.body())) {
+            throw new Unreachable("HTTP " + response.statusCode());
+        }
+    }
+
+    /** Whether an error body is one a Spider Sense sends, as {@link #requireSpiderSense} describes. */
+    static boolean fromSpiderSense(@Nullable String contentType, @Nullable String body) {
+        if (body == null || body.isBlank()) {
+            return false;
+        }
+        try {
+            if (Json.parse(body) instanceof Json.JsonObject object && object.has("error")) {
+                return true;
+            }
+        } catch (RuntimeException e) {
+            // Not JSON: only the text line below is ours.
+        }
+        return plainText(contentType);
     }
 
     /**
@@ -335,7 +371,7 @@ final class Remote {
     /**
      * The same from the parts of a response: the {@code error} of a JSON object,
      * else a {@code text/} body as it came, trimmed, else the status line with
-     * the body, if there is one, after it.
+     * the first line of the body, if there is one, after it.
      */
     static String message(int status, @Nullable String contentType, @Nullable String body) {
         if (body != null) {
@@ -347,11 +383,16 @@ final class Remote {
                 // Not JSON: the status line and the body are all there is to say.
             }
         }
-        boolean text = contentType != null && contentType.startsWith("text/");
-        if (text && body != null && !body.isBlank()) {
+        if (plainText(contentType) && body != null && !body.isBlank()) {
             return body.trim();
         }
-        return "HTTP " + status + (body == null || body.isBlank() ? "" : ": " + body.trim());
+        return "HTTP " + status + (body == null || body.isBlank() ? "" : ": " + body.trim().lines().findFirst().orElse(""));
+    }
+
+    /** Whether a body is text a Spider Sense sends: Markdown, or plain text. */
+    private static boolean plainText(@Nullable String contentType) {
+        String type = contentType == null ? "" : contentType.trim().toLowerCase(java.util.Locale.ROOT);
+        return type.startsWith("text/markdown") || type.startsWith("text/plain");
     }
 
     /** The base URL without the trailing slashes a user may type: {@code http://h:4000/} is {@code http://h:4000}. */

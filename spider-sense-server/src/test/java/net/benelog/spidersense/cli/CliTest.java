@@ -358,6 +358,42 @@ class CliTest {
         assertThat(run.out()).isEmpty();
     }
 
+    /**
+     * A URL that answers HTTP but is not a Spider Sense, such as another application's port, is
+     * the same connection error as a URL that answers nothing: one line and exit 2, never the
+     * exit 4 of a trace or mark that is not there, and never the page it answered with.
+     */
+    @Test
+    void anExplicitUrlThatIsNotASpiderSenseIsAConnectionError() throws IOException {
+        com.sun.net.httpserver.HttpServer other = com.sun.net.httpserver.HttpServer.create(
+                new java.net.InetSocketAddress(java.net.InetAddress.getLoopbackAddress(), 0), 0);
+        other.createContext("/", exchange -> {
+            byte[] page = "<!DOCTYPE HTML>\n<html>\n<head><title>Error response</title></head>\n</html>\n"
+                    .getBytes(UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "text/html;charset=utf-8");
+            exchange.sendResponseHeaders(404, page.length);
+            exchange.getResponseBody().write(page);
+            exchange.close();
+        });
+        other.start();
+        try {
+            String base = "http://127.0.0.1:" + other.getAddress().getPort();
+            for (String command : List.of("status", "findings", "check", "trace")) {
+                List<String> args = new ArrayList<>(List.of(command));
+                if ("trace".equals(command)) {
+                    args.add("f".repeat(32));
+                }
+                args.add("--url=" + base);
+                Run run = runAt(closedUrl(), args.toArray(new String[0]));
+                assertThat(run.exit()).as(command).isEqualTo(2);
+                assertThat(run.err()).as(command).isEqualTo("spider-sense: no Spider Sense at " + base + " (HTTP 404)\n");
+                assertThat(run.out()).as(command).isEmpty();
+            }
+        } finally {
+            other.stop(0);
+        }
+    }
+
     // --- from the file -------------------------------------------------------
 
     @Test

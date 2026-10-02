@@ -65,5 +65,21 @@ class RemoteTest {
         assertThat(Remote.message(500, "application/json", "{\"detail\": 1}")).isEqualTo("HTTP 500: {\"detail\": 1}");
         assertThat(Remote.message(503, null, "Service Unavailable")).isEqualTo("HTTP 503: Service Unavailable");
         assertThat(Remote.message(500, null, null)).isEqualTo("HTTP 500");
+        assertThat(Remote.message(500, "text/html", "<!DOCTYPE HTML>\n<html>\n<body>oops</body>\n</html>\n"))
+                .as("a page that is not ours is one line, not the page").isEqualTo("HTTP 500: <!DOCTYPE HTML>");
+    }
+
+    /**
+     * A Spider Sense's error is its JSON object or its one text line; anything else is some other
+     * server at the URL, which is not a missing trace or mark (cli.adoc#exit-codes).
+     */
+    @Test
+    void anErrorIsASpiderSensesOnlyInItsOwnShape() {
+        assertThat(Remote.fromSpiderSense("application/json", "{\"error\": \"No such trace: f\"}")).isTrue();
+        assertThat(Remote.fromSpiderSense("text/markdown; charset=utf-8", "only SELECT is allowed\n")).isTrue();
+        assertThat(Remote.fromSpiderSense("text/html", "<!DOCTYPE HTML><html>Error response</html>")).isFalse();
+        assertThat(Remote.fromSpiderSense("application/json", "{\"detail\": \"Not Found\"}")).isFalse();
+        assertThat(Remote.fromSpiderSense(null, "")).isFalse();
+        assertThat(Remote.fromSpiderSense(null, null)).isFalse();
     }
 }
