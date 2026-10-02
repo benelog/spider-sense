@@ -215,8 +215,8 @@ export function foldedStack(text, mode = 'app', status = state.status) {
 // --- the plain highlighted stack trace --------------------------------------------------
 
 /**
- * A stack trace in a <pre>, nothing folded: frames whose package shares the first frame's two
- * top-level segments are "own" frames, and the other frames are dimmed.
+ * A stack trace in a <pre>, nothing folded: frames whose package shares the first non-JDK
+ * frame's two top-level segments are "own" frames, and the other frames are dimmed.
  */
 export function stackTrace(text, cls) {
   const pre = document.createElement('pre');
@@ -225,23 +225,22 @@ export function stackTrace(text, cls) {
   const lines = String(text).split('\n');
   const own = ownPrefix(lines);
   for (const line of lines) {
-    const kind = classifyLine(line);
-    const at = kind === 'frame' ? AT.exec(line) : null;
-    pre.appendChild(lineSpan(own && at && at[1].startsWith(own) ? 'st-own' : LINE_CLASS[kind], line));
+    const frame = frameOf(line);
+    pre.appendChild(lineSpan(own && frame && frame.startsWith(own) ? 'st-own' : LINE_CLASS[classifyLine(line)], line));
   }
   return pre;
 }
 
-/** The class and method an `at` line names, up to the parenthesis or a module's slash. */
-const AT = /^\s*at\s+([\w$.]+)/;
-
-/** The package prefix of the first frame outside the JDK, to two segments (com.example.). */
+/**
+ * The package prefix of the first frame outside the JDK, to two segments (com.example.), read
+ * after the module or class loader in front of it (`java.base/`, `app//`).
+ */
 function ownPrefix(lines) {
   for (const line of lines) {
-    const m = AT.exec(line);
-    if (!m) continue;
-    const parts = m[1].split('.');
-    if (parts.length < 3) return null;
+    const frame = frameOf(line);
+    if (!frame) continue;
+    const parts = frame.split('(')[0].split('.');
+    if (parts.length < 3) continue;
     const head = parts[0];
     if (head === 'java' || head === 'javax' || head === 'jdk' || head === 'sun') continue;
     return parts.slice(0, 2).join('.') + '.';

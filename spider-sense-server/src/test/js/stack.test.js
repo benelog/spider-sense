@@ -36,6 +36,22 @@ test('stackTrace marks the frames of the first non-JDK package as own and dims t
   assert.equal(pre.children[1].textContent, '\tat com.example.orders.Orders.ship(Orders.java:41)\n');
 });
 
+test('stackTrace reads past a module prefix and a JDK frame on top', () => {
+  const jdkFirst = [
+    'java.lang.NullPointerException',
+    '\tat java.base/java.util.Objects.requireNonNull(Objects.java:233)',
+    '\tat com.example.orders.Orders.ship(Orders.java:41)',
+    '\tat org.springframework.web.Servlet.service(Servlet.java:1)',
+  ].join('\n');
+  assert.deepEqual(classes(stackTrace(jdkFirst)), ['st-head', 'st-frame', 'st-own', 'st-frame']);
+  const modulePath = [
+    'java.lang.IllegalStateException: boom',
+    '\tat app//com.example.orders.Orders.ship(Orders.java:41)',
+    '\tat app//org.springframework.web.Servlet.service(Servlet.java:1)',
+  ].join('\n');
+  assert.deepEqual(classes(stackTrace(modulePath)), ['st-head', 'st-own', 'st-frame']);
+});
+
 test('foldedStack folds a run of framework frames and classifies the rest the same way', () => {
   state.status = { codeFrames: { appPackages: [], frameworkPrefixes: ['org.springframework.', 'org.apache.'] } };
   const pre = foldedStack(TRACE, 'app');
