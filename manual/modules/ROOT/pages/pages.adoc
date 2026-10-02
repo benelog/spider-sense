@@ -132,8 +132,9 @@ With fewer than two marks the page says two marks are needed, makes the xref:ui.
 Four panels follow.
 
 . *Totals* is a row of tiles, each reading `before → after` with the after value large: requests, errors, p95, and Apdex.
-The arrow and the after value are `--err` when that side got worse by the API's rule, `--ok` when it got better, and plain otherwise.
-Worse means the errors grew, or the p95 grew by more than 20% and 10 ms, or the Apdex fell.
+The arrow and the after value are `--err` when that side got worse, `--ok` when it got better, and plain otherwise.
+Worse means the errors grew or the p95 grew by more than 20% and 10 ms, by the API's rule, or the Apdex fell by at least 0.01 at the two decimals the tile shows, a rule of the page's own since the API gives the Apdex no verdict.
+Better is the same rule the other way.
 
 . *Endpoints* is a table in the API's order, worst first: a verdict chip (`worse` in `--err`, `better` in `--ok`, `new` and `gone` in `--text-muted`, `same` plain), the name with its service chip, then `calls`, `errors`, `p50`, `p95`, `max`, `db calls / request`, and `db ms / request`.
 Every cell reads `before → after`, with `—` for a side that has no value.
