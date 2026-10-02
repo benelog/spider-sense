@@ -141,6 +141,7 @@ java -jar "$SENSE" check --since=after --max-p95-ms=300 --max-queries-per-reques
 ```
 
 `compare` gives each endpoint, query and error a verdict: `worse` when errors appear or grow or p95 grows by more than 20% and at least 10 ms, `better` when the same shrinks by that much, `new`, `gone`, or `same`.
+For a query the measure is calls per request instead of p95, and the second bound is 0.5 calls, so a query whose p95 alone moved stays `same`.
 The verdict is the first column and the worst rows come first, so the top of each table is the answer; every other cell holds both windows, `before → after`, with `—` where a side has nothing.
 
 `check` prints the verdict in its heading (`# check  fail  <window>`) and then one row per rule, with its `limit`, its `actual` value, its own `pass` or `fail` and a detail naming what decided it.
