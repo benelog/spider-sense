@@ -971,7 +971,7 @@ final class Text {
          * {@code /api/books/87} are the same line of the same tree.
          */
         String key() {
-            return depth + " " + span.category() + " " + Ids.normaliseDigits(span.summary());
+            return depth + " " + span.category() + " " + Ids.normaliseDigits(summaryLine(span));
         }
     }
 
@@ -1120,7 +1120,15 @@ final class Text {
     private static String spanText(SpanRecord span, @Nullable String parentService) {
         return prefix(span)
                 + (span.service().equals(parentService) ? "" : span.service() + " ")
-                + span.summary();
+                + summaryLine(span);
+    }
+
+    /**
+     * The summary on one line: a statement written as a text block, or a span name with a
+     * newline, would otherwise spill the span over several lines of the tree.
+     */
+    private static String summaryLine(SpanRecord span) {
+        return singleLine(span.summary());
     }
 
     /** A database span reads as {@code db}; everything else as its span kind. */
@@ -1135,7 +1143,7 @@ final class Text {
     private static boolean sameLine(SpanRecord one, SpanRecord two) {
         return one.category().equals(two.category())
                 && one.service().equals(two.service())
-                && one.summary().equals(two.summary());
+                && summaryLine(one).equals(summaryLine(two));
     }
 
     // --- two traces aligned ---------------------------------------------------

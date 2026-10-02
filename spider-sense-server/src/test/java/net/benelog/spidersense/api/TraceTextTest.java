@@ -84,6 +84,43 @@ class TraceTextTest {
                 "25.0 ms    5.0 ms      INTERNAL other");
     }
 
+    @Test
+    void aSummaryWithNewlinesIsOneLineOfTheTree() {
+        // A statement the agent named no table for, written as a text block: the summary is the
+        // statement itself, newlines and all.
+        String statement = """
+                with recent as (
+                  select * from orders where created_at > ?
+                )
+                select count(*) from recent""";
+        Queries.TraceDetail trace = trace(List.of(
+                span("0000000000000001", null, "GET /orders", 0, 50, Map.of()),
+                span("0000000000000002", "0000000000000001", "query", 5, 10,
+                        Map.of("db.system", "h2", "db.statement", statement)),
+                span("0000000000000003", "0000000000000001", "line|break\nin a name", 16, 5, Map.of())));
+
+        assertThat(spanLines(Text.trace(trace, TINGLES, FRAMES, false))).containsExactly(
+                "0.0 ms     50.0 ms   INTERNAL orders GET /orders",
+                "5.0 ms     10.0 ms     db with recent as ( select * from orders where created_at > ? )"
+                        + " select count(*) from recent",
+                "16.0 ms    5.0 ms      INTERNAL line|break in a name");
+    }
+
+    @Test
+    void theDiffAlignsASummaryOnItsOneLineText() {
+        Queries.TraceDetail a = trace(List.of(
+                span("0000000000000001", null, "work", 0, 50, Map.of()),
+                span("0000000000000002", "0000000000000001", "two\nlines", 5, 10, Map.of())));
+        Queries.TraceDetail b = trace(List.of(
+                span("0000000000000001", null, "work", 0, 40, Map.of()),
+                span("0000000000000002", "0000000000000001", "two  lines", 5, 8, Map.of())));
+
+        List<Text.DiffLine> lines = Text.align(Text.lines(a, TINGLES, FRAMES, false),
+                Text.lines(b, TINGLES, FRAMES, false));
+
+        assertThat(lines).extracting(Text.DiffLine::op).containsExactly('=', '=');
+    }
+
     /** What {@code work} returns on a thread of 256 KiB stack, a quarter of a Jetty worker's. */
     private static <T> T onASmallStack(Supplier<T> work) throws InterruptedException {
         AtomicReference<T> result = new AtomicReference<>();

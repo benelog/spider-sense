@@ -749,6 +749,7 @@ offset     duration  span
 ----
 
 Two spaces of indentation mark each level of depth, and the service is named only where it changes from the parent.
+A span's summary collapses its newlines and runs of whitespace to one space, so a statement written over several lines still takes one.
 Consecutive sibling spans with the same summary and category collapse after the third into one line with `× n`, the average and the total.
 A database span that is slow, or the first of a collapsed group, shows its statement on the next line.
 An error span shows its exception and the application frames under it, and the trace's log lines follow, oldest first.
