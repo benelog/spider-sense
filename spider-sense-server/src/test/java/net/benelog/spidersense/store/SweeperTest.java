@@ -96,6 +96,61 @@ class SweeperTest {
                 .extracting(Marks.Mark::id).contains(old.id());
     }
 
+    /**
+     * A trace that started before the cap's instant goes whole, its spans that
+     * started after the instant included, rather than leaving them with no trace row.
+     */
+    @Test
+    void theSpanCapDeletesATraceThatStraddlesItsInstantWhole() {
+        fill();
+        straddling(hour(0) + 10_000, hour(1) + 30 * 60_000L);
+        assertThat(total("span")).isEqualTo(HOURS * PER_HOUR + 2);
+
+        // One hour over the cap by the 50 spans of hour 0 and the straddling root.
+        new Sweeper(store.sql(), 24, HOURS * PER_HOUR - PER_HOUR + 1, () -> NOW).sweep();
+
+        assertThat(spansOf("ab")).as("the child went with its trace").isEmpty();
+        assertThat(spansWithNoTraceRow()).isZero();
+        assertThat(total("span")).isEqualTo(HOURS * PER_HOUR - PER_HOUR);
+        assertThat(total("trace")).isEqualTo(HOURS * PER_HOUR - PER_HOUR);
+    }
+
+    /** The age sweep takes a trace by its start in the same way. */
+    @Test
+    void theRetentionDeletesATraceThatStraddlesItsCutoffWhole() {
+        straddling(NOW - 25 * HOUR, NOW - 23 * HOUR - 30 * 60_000L);
+        assertThat(total("span")).isEqualTo(2);
+
+        new Sweeper(store.sql(), 24, 0, () -> NOW).sweep();
+
+        assertThat(spansOf("ab")).isEmpty();
+        assertThat(spansWithNoTraceRow()).isZero();
+        assertThat(total("trace")).isZero();
+    }
+
+    /** Trace {@code ab…}: a root at {@code rootAt} that lasts until after {@code childAt}, and a child at it. */
+    private void straddling(long rootAt, long childAt) {
+        Span.Builder root = Otlp.span("ab".repeat(16), "a0".repeat(8), "GET /report",
+                Span.SpanKind.SPAN_KIND_SERVER, rootAt, childAt - rootAt + 60_000,
+                Otlp.attr("http.request.method", "GET"), Otlp.attr("http.route", "/report"),
+                Otlp.attr("http.response.status_code", 200));
+        Span.Builder child = Otlp.child(root, "c0".repeat(8), "SELECT report", Span.SpanKind.SPAN_KIND_CLIENT,
+                childAt, 10, Otlp.attr("db.system", "h2"), Otlp.attr("db.statement", "select 1"));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), root));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), child));
+        store.writer().awaitIdle(10_000);
+    }
+
+    private List<String> spansOf(String tracePrefix) {
+        return store.sql().query("SELECT span_id FROM span WHERE trace_id LIKE ?", List.of(tracePrefix + "%"),
+                rs -> rs.getString(1));
+    }
+
+    private long spansWithNoTraceRow() {
+        return store.sql().count("SELECT COUNT(*) FROM span s WHERE NOT EXISTS"
+                + " (SELECT 1 FROM trace t WHERE t.trace_id = s.trace_id)", List.of());
+    }
+
     @Test
     void aCapOfZeroIsNoCapAtAll() {
         fill();

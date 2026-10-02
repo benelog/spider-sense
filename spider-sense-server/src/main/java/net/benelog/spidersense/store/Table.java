@@ -1,5 +1,7 @@
 package net.benelog.spidersense.store;
 
+import java.util.List;
+
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -17,7 +19,21 @@ import org.jspecify.annotations.Nullable;
  */
 enum Table {
 
-    SPAN("span", "start_ms", true, "DELETE FROM span"),
+    /**
+     * A trace goes whole, by its start: before the spans older than the cutoff, the
+     * spans of a trace that started before it and ran past it go, the ones that
+     * started after the cutoff included, so the {@code trace} delete after it, which
+     * takes the trace by the same start, leaves no span without its row.
+     */
+    SPAN("span", "start_ms", true, "DELETE FROM span") {
+        @Override
+        List<String> deletesOlder() {
+            // trace.end_ms is the end of its last span, so a trace with a span that
+            // started at or after the cutoff ends at or after it.
+            return List.of("DELETE FROM span WHERE trace_id IN"
+                    + " (SELECT trace_id FROM trace WHERE start_ms < ?1 AND end_ms >= ?1)", deleteOlder());
+        }
+    },
     TRACE("trace", "start_ms", true, "DELETE FROM trace WHERE trace_id NOT IN (SELECT trace_id FROM span)"),
     LOG("log", "at_ms", true, "DELETE FROM log"),
     METRIC_POINT("metric_point", "at_ms", true, "DELETE FROM metric_point"),
@@ -94,5 +110,14 @@ enum Table {
             throw new IllegalStateException(sqlName + " is not swept by age");
         }
         return "DELETE FROM " + sqlName + " WHERE " + timeColumn + " < ?";
+    }
+
+    /**
+     * Every statement the retention and the span cap run on the table, in order,
+     * each with the cutoff as its one parameter: {@link #deleteOlder()}, preceded
+     * for {@code span} by the delete that keeps a trace whole.
+     */
+    List<String> deletesOlder() {
+        return List.of(deleteOlder());
     }
 }

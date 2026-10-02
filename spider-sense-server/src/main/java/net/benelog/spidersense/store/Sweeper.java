@@ -146,7 +146,7 @@ public final class Sweeper implements AutoCloseable {
         int deleted = 0;
         for (Table table : Table.values()) {
             if (table.sweptByAge()) {
-                deleted += sql.update(table.deleteOlder(), List.of(cutoff));
+                deleted += deleteOlder(table, cutoff);
             }
         }
         deleted += deleteOrphanSeries(sql);
@@ -179,7 +179,7 @@ public final class Sweeper implements AutoCloseable {
             int pruned = 0;
             for (Table table : Table.values()) {
                 if (table.cappedBySpans()) {
-                    pruned += sql.update(table.deleteOlder(), List.of(cutoff));
+                    pruned += deleteOlder(table, cutoff);
                 }
             }
             if (pruned == 0) {
@@ -190,6 +190,14 @@ public final class Sweeper implements AutoCloseable {
             LOG.log(System.Logger.Level.INFO,
                     "Spider Sense span cap: " + spans + " spans is over " + retentionSpans
                             + ", deleted " + pruned + " rows older than " + cutoff);
+        }
+        return deleted;
+    }
+
+    private int deleteOlder(Table table, long cutoff) {
+        int deleted = 0;
+        for (String delete : table.deletesOlder()) {
+            deleted += sql.update(delete, List.of(cutoff));
         }
         return deleted;
     }
