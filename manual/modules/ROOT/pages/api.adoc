@@ -79,6 +79,7 @@ It is stored as a `db_table` row rather than as a log (xref:storage.adoc#schema[
   "ingest": { "maxSpansPerSecond": null | 5000 },
   "storage": { "url": "jdbc:h2:~/db/spider-sense/sense;AUTO_SERVER=TRUE", "path": "/home/me/db/spider-sense/sense.mv.db", "sizeBytes": 12345678, "fallback": false, "fallbackReason": null, "droppedBatches": 0, "droppedSpans": 0, "queued": 0 },
   "counts": { "spans": 12345, "traces": 2345, "logs": 456, "metricSeries": 78, "services": 2 },
+  "services": ["spring-orders", "silk-bookstore"],
   "oldest": { "span": 1758000000000, "log": 1758000000000 }
 }
 ----
@@ -89,6 +90,8 @@ It is always `null` in standalone mode, which runs inside no application, even w
 `ignore.endpoints` is the configured value of `spidersense.ignore.endpoints`, which xref:configuration.adoc#ignored-endpoints[Ignored endpoints] describes.
 `codeFrames` carries the rules that make a frame the application's (xref:findings.adoc#code[Code locations]): `appPackages` is `spidersense.app.packages` as prefixes ending in a dot, empty when unset, and `frameworkPrefixes` the prefixes that count as framework when it is unset.
 The error page folds its stack trace by them (xref:pages.adoc#stack-traces[Stack traces]).
+`services` names the services the store has seen, the most recently seen first and then by name, at most 20 of them; `counts.services` is how many there are in all.
+They are what tells a reader that the application just started is the one sending.
 `jar` is the absolute path of the distributable jar the server was started from, which the launcher passes to the server.
 It is `null` when it is not known, as when the server runs from exploded classes.
 The UI's *Copy CLI line* names it (xref:pages.adoc#copy-as-markdown[Copy as Markdown]).

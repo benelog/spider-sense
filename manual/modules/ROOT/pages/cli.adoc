@@ -119,6 +119,7 @@ That Spider Sense listened on port 4100, so each command also carried `--url=htt
 
 `status` names the mode, the port, the thresholds, the database and how much it holds.
 You run it to confirm that an application really is collecting.
+The `services` row counts the services seen and names them, the most recently seen first: `2 (spring-orders, silk-bookstore)`, or `25 (newest 20: …)` past the twenty it names.
 
 [source]
 ----
@@ -142,7 +143,7 @@ $ java -jar spider-sense.jar status
 | traces | 51257 |
 | logs | 66 |
 | metric series | 67 |
-| services | 1 |
+| services | 1 (spring-orders) |
 | oldest span | 2026-09-17T08:14:07.250+09:00 |
 ----
 

@@ -227,6 +227,7 @@ public final class Codecs {
                         .put("logs", status.logs())
                         .put("metricSeries", status.metricSeries())
                         .put("services", status.services()))
+                .put("services", strings(status.serviceNames()))
                 .put("oldest", Json.obj()
                         .put("span", status.oldestSpan())
                         .put("log", status.oldestLog()));

@@ -2,6 +2,7 @@ package net.benelog.spidersense.api;
 
 import java.io.OutputStream;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -25,6 +26,7 @@ import net.benelog.spidersense.store.IgnoredEndpoints;
 import net.benelog.spidersense.store.Importer;
 import net.benelog.spidersense.store.Marks;
 import net.benelog.spidersense.store.ReadOnlyQuery;
+import net.benelog.spidersense.store.ServiceInfo;
 import net.benelog.spidersense.store.ServiceRegistry;
 import net.benelog.spidersense.store.Sql;
 import net.benelog.spidersense.store.Store;
@@ -243,7 +245,8 @@ public final class Reports implements AutoCloseable {
                 store == null ? 0 : store.writer().droppedBatches(), droppedSpans(),
                 store == null ? 0 : store.writer().queuedBatches(),
                 queries.spanCount(), queries.traceCount(), queries.logCount(),
-                queries.metricSeriesCount(), services.count(), queries.oldestSpan(), queries.oldestLog());
+                queries.metricSeriesCount(), services.count(), serviceNames(), queries.oldestSpan(),
+                queries.oldestLog());
         return new Report(Codecs.status(status), Text.status(status));
     }
 
@@ -272,6 +275,22 @@ public final class Reports implements AutoCloseable {
         services.all().forEach(known -> names.add("`" + known.name() + "`"));
         return names.isEmpty() ? null
                 : "No service is named `" + service + "`; the services are " + String.join(", ", names) + ".";
+    }
+
+    /**
+     * The services seen, the most recently seen first, then by name, at most
+     * {@link StatusSnapshot#SERVICE_NAMES}: what tells a reader that the application they started
+     * is the one sending (modes.adoc, "Knowing it worked").
+     */
+    private List<String> serviceNames() {
+        List<ServiceInfo> seen = new ArrayList<>(services.all());
+        seen.sort(Comparator.comparingLong(ServiceInfo::lastSeen).reversed()
+                .thenComparing(ServiceInfo::name));
+        List<String> names = new ArrayList<>();
+        for (ServiceInfo info : seen.subList(0, Math.min(seen.size(), StatusSnapshot.SERVICE_NAMES))) {
+            names.add(info.name());
+        }
+        return names;
     }
 
     /** How many requests the window holds, which every list's heading and empty answer say. */

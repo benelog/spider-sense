@@ -342,9 +342,22 @@ final class Text {
         fields.put("traces", String.valueOf(status.traces()));
         fields.put("logs", String.valueOf(status.logs()));
         fields.put("metric series", String.valueOf(status.metricSeries()));
-        fields.put("services", String.valueOf(status.services()));
+        fields.put("services", services(status.services(), status.serviceNames()));
         fields.put("oldest span", status.oldestSpan() <= 0 ? null : instantMillis(status.oldestSpan()));
         return status(fields);
+    }
+
+    /**
+     * {@code 2 (spring-orders, silk-bookstore)}: the count, then the names the most recently
+     * seen first, so a reader sees that the application they started is sending; past the names
+     * listed, {@code 25 (newest 20: …)}.
+     */
+    private static String services(long count, List<String> names) {
+        if (names.isEmpty()) {
+            return String.valueOf(count);
+        }
+        return count + " (" + (names.size() < count ? "newest " + names.size() + ": " : "")
+                + String.join(", ", names) + ")";
     }
 
     /** A {@code field | value} table under the {@code status} heading. */

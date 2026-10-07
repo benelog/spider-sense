@@ -333,7 +333,8 @@ java -jar "$SENSE" status
 ----
 
 `status` names the mode (`agent` or `standalone`), the port, the OTLP endpoint, the database file and its size, the thresholds in force, the services seen and how many spans are stored.
-The setup works when `counts.services` includes the application's service name and the span count grows after a request.
+The setup works when the `services` row names the application's service, as in `| services | 1 (my-app) |`, and the span count grows after a request.
+A service named `unknown_service:java` is an application started without `-Dotel.service.name=`.
 The UI at http://127.0.0.1:4000[] shows the same information to a person.
 
 A restart also writes an automatic `start` mark for the service, so `marks` shows a new row with the note `pid <pid>` every time the application comes up.

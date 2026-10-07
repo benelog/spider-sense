@@ -739,6 +739,7 @@ class ApiTest {
             assertThat(counts.getLong("spans")).isEqualTo(3);
             assertThat(counts.getLong("traces")).isEqualTo(2);
             assertThat(counts.getLong("services")).isEqualTo(1);
+            assertThat(status.getArray("services")).hasSize(1);
             assertThat(status.getObject("oldest").getLong("span")).isEqualTo(NOW);
         });
     }

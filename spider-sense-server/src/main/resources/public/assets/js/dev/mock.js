@@ -903,6 +903,7 @@ function statusBody() {
       metricSeries: METRIC_CATALOG.reduce((n, m) => n + m.series, 0),
       services: SERVICES.length,
     },
+    services: SERVICES.map((s) => s.name),
     oldest: { span: traces.length ? traces[0].start : START, log: logs.length ? logs[0].at : START },
   };
 }

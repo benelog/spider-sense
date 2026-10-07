@@ -18,6 +18,9 @@ import org.jspecify.annotations.Nullable;
  * @param startedAt   when the server started, or 0 when there is none
  * @param droppedBatches batches the writer dropped, 0 with no writer
  * @param queued      batches waiting for the writer, 0 with no writer
+ * @param services    how many services the store has seen
+ * @param serviceNames the names of the services seen, the most recently seen first, at most
+ *        {@link #SERVICE_NAMES} of them
  * @param oldestSpan  the start of the oldest span, or 0 or less when there is none
  */
 record StatusSnapshot(
@@ -45,6 +48,10 @@ record StatusSnapshot(
         long logs,
         long metricSeries,
         long services,
+        List<String> serviceNames,
         long oldestSpan,
         long oldestLog) {
+
+    /** The most service names status lists (api.adoc#status); the count says how many there are. */
+    static final int SERVICE_NAMES = 20;
 }

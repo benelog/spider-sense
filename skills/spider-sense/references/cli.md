@@ -167,7 +167,7 @@ $ java -jar spider-sense.jar status
 | traces | 51257 |
 | logs | 66 |
 | metric series | 67 |
-| services | 1 |
+| services | 1 (spring-orders) |
 | oldest span | 2026-09-17T08:14:07.250+09:00 |
 ```
 

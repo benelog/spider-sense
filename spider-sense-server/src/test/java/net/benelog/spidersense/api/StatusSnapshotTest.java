@@ -17,7 +17,7 @@ class StatusSnapshotTest {
             0, 1_700_000_000_000L, null, 500, 100, new ResponseBuckets(500), List.of(), List.of("com.acme"),
             List.of("org.springframework."), null, 24, 1_000_000, 1_500L,
             new Database.Storage("jdbc:h2:mem:x", null, 4096, false, null),
-            0, 7, 0, 12, 3, 40, 5, 2, 0, 0);
+            0, 7, 0, 12, 3, 40, 5, 2, List.of("spring-orders", "silk-bookstore"), 0, 0);
 
     @Test
     void theJsonAndTheTextReportTheSameCounts() {
@@ -27,9 +27,27 @@ class StatusSnapshotTest {
         Json.JsonObject counts = json.getObject("counts");
         assertThat(counts.getLong("spans")).isEqualTo(12);
         assertThat(text).contains("| spans | 12 |").contains("| traces | 3 |").contains("| logs | 40 |")
-                .contains("| metric series | 5 |").contains("| services | 2 |")
+                .contains("| metric series | 5 |").contains("| services | 2 (spring-orders, silk-bookstore) |")
                 .contains("| dropped spans | 7 |");
         assertThat(json.getObject("storage").getLong("droppedSpans")).isEqualTo(7);
+        assertThat(json.getArray("services")).extracting(Json.JsonValue::asString)
+                .containsExactly("spring-orders", "silk-bookstore");
+    }
+
+    @Test
+    void moreServicesThanItNamesAreCountedAndTheNamesSaySoInTheText() {
+        StatusSnapshot many = new StatusSnapshot("standalone", null, 0, 0, null, 500, 100,
+                new ResponseBuckets(500), List.of(), List.of(), List.of(), null, 24, 1_000_000, null,
+                new Database.Storage("jdbc:h2:mem:x", null, 0, false, null),
+                0, 0, 0, 0, 0, 0, 0, 25, List.of("a", "b"), 0, 0);
+        StatusSnapshot none = new StatusSnapshot("standalone", null, 0, 0, null, 500, 100,
+                new ResponseBuckets(500), List.of(), List.of(), List.of(), null, 24, 1_000_000, null,
+                new Database.Storage("jdbc:h2:mem:x", null, 0, false, null),
+                0, 0, 0, 0, 0, 0, 0, 0, List.of(), 0, 0);
+
+        assertThat(Text.status(many)).contains("| services | 25 (newest 2: a, b) |");
+        assertThat(Text.status(none)).contains("| services | 0 |");
+        assertThat(Codecs.status(none).getArray("services")).isEmpty();
     }
 
     @Test

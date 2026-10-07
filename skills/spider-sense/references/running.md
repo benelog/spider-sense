@@ -200,7 +200,7 @@ The CLI line is the one to run, as printed; `status` asks the same Spider Sense:
 java -jar "$SENSE" status
 ```
 
-`status` names the mode (`agent` or `standalone`), the port, the OTLP endpoint, the embedded service in agent mode, the database file and its size, the thresholds in force, and how many services and spans are stored.
+`status` names the mode (`agent` or `standalone`), the port, the OTLP endpoint, the embedded service in agent mode, the database file and its size, the thresholds in force, the services seen by name, the most recently seen first, and how many spans are stored; the setup works when the `services` row names the application.
 The service count is a number, not a list: the application's service name is the `embedded service` row in agent mode, or a row of `/api/services` behind a standalone.
 That name, and a span count that grows after a request, is the confirmation.
 The UI at <http://127.0.0.1:4000> is the same information for the user; leave the browser to them.
