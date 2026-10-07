@@ -683,7 +683,7 @@ A Spider Sense that accepted the connection and has not answered within 2 minute
 The CLI then prints `spider-sense: the Spider Sense at <url> did not answer within 2 minutes` and exits `2` without reading the file, since reading it in process would be slower still.
 
 Naming `--url` states that a server is there.
-When nothing answers it, the CLI prints `spider-sense: no Spider Sense at <url> (…)` and exits `2`, rather than silently falling back to a file that may hold a different application.
+When nothing answers it, the CLI prints `spider-sense: no Spider Sense at <url> (…); if the application stopped, read its database with --db=<path>` and exits `2`, rather than silently falling back to a file that may hold a different application.
 `--db=<path or jdbc url>` states the opposite, where to read, and the CLI goes straight to that file without asking any server.
 
 In that path the thresholds are the defaults, or whatever `--slow.request.ms`, `--slow.query.ms` and `--app.packages` say, since no server is there to ask.

@@ -372,7 +372,8 @@ class CliTest {
         String closed = closedUrl();
         Run run = runAt("http://127.0.0.1:1", "status", "--url=" + closed);
         assertThat(run.exit()).isEqualTo(2);
-        assertThat(run.err()).startsWith("spider-sense: no Spider Sense at " + closed + " (");
+        assertThat(run.err()).startsWith("spider-sense: no Spider Sense at " + closed + " (")
+                .endsWith("); if the application stopped, read its database with --db=<path>\n");
         assertThat(run.out()).isEmpty();
     }
 

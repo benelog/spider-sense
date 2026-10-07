@@ -43,6 +43,12 @@ public final class Cli {
      */
     static final String DEFAULT_URL = "http://" + Config.DEFAULT_HOST + ":" + Config.DEFAULT_PORT;
 
+    /**
+     * What a named {@code --url} that nothing answers adds: the way to the data that outlived the
+     * application (cli.adoc#fallback).
+     */
+    static final String STOPPED = "; if the application stopped, read its database with --db=<path>";
+
     private Cli() {
     }
 
@@ -176,7 +182,9 @@ public final class Cli {
             return USAGE;
         } catch (Remote.Unreachable e) {
             if (named != null) {
-                err.println("spider-sense: " + e.line(base));
+                // Nothing there at all is most often an application that stopped, and its
+                // database outlives it; a server that answered gets the question about its port.
+                err.println("spider-sense: " + e.line(base) + (e.answered() ? "" : STOPPED));
                 return USAGE;
             }
             Config config = Local.config(options);

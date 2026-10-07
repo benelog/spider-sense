@@ -92,7 +92,7 @@ When none answers and no `--url` was named, it opens the database in process, ru
 ```
 
 That is what `AUTO_SERVER=TRUE` buys: the application has crashed, the UI went with it, and `findings --since=start` still answers.
-A `--url` that was named is a statement that there is a server there, so nothing answering it is `spider-sense: no Spider Sense at <url> (…)` and exit `2` rather than a silent fall back to a file that may hold a different application.
+A `--url` that was named is a statement that there is a server there, so nothing answering it is `spider-sense: no Spider Sense at <url> (…); if the application stopped, read its database with --db=<path>` and exit `2` rather than a silent fall back to a file that may hold a different application.
 A server that answers with an error that is not Spider Sense's `{"error": "…"}` alone, such as an HTML page or a Spring application's JSON error, is nothing answering too: `spider-sense: no Spider Sense at http://127.0.0.1:8082 (HTTP 404 for /api/status); is that the application's port?`.
 A `--url` without a scheme, such as `127.0.0.1:4001`, is read as `http://127.0.0.1:4001`.
 `--db=<path or jdbc url>` is the opposite statement, about where to read, and goes straight to the file without asking any server.
