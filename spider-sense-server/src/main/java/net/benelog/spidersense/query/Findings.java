@@ -1221,7 +1221,7 @@ public final class Findings {
             ids.add(query.queryId());
         }
         Map<String, Map<String, Object>> samples = evidence
-                ? sampleAttributes(window, "query_id", ids) : Map.of();
+                ? queries.querySamples(window, ids) : Map.of();
 
         List<Ranked> found = new ArrayList<>();
         for (Stats.QueryStats query : slow) {
@@ -1978,25 +1978,6 @@ public final class Findings {
      */
     private static String id(String kind, String service, String subject) {
         return kind + ":" + Ids.shortHash(kind + "\0" + service + "\0" + subject);
-    }
-
-    /**
-     * The attributes of one span per group, for the {@code code.*} frames: the newest
-     * that carries {@code code.stacktrace}, which the extension writes only on a slow
-     * statement (findings.adoc#code), else the newest.
-     */
-    private Map<String, Map<String, Object>> sampleAttributes(Window window, String column,
-            Set<String> ids) {
-        Where where = Where.window(window, null).andIn(column, ids);
-        Map<String, Map<String, Object>> samples = new HashMap<>();
-        sql.forEach("SELECT * FROM (SELECT " + column + " AS group_id, attributes,"
-                + " ROW_NUMBER() OVER (PARTITION BY " + column
-                + " ORDER BY CASE WHEN attributes LIKE '%\"code.stacktrace\"%' THEN 0 ELSE 1 END,"
-                + " start_ms DESC, id DESC) AS rn"
-                + " FROM span WHERE " + where.sql() + ") WHERE rn = 1", where.params(), rs ->
-                        samples.put(rs.getString("group_id"),
-                                AttrJson.decode(rs.getString("attributes"))));
-        return samples;
     }
 
     private static List<String> traceIds(List<Stats.TraceSummary> traces) {

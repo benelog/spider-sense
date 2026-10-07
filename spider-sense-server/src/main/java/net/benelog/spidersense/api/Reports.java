@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.function.IntSupplier;
 import java.util.function.LongSupplier;
@@ -688,6 +689,15 @@ public final class Reports implements AutoCloseable {
             boolean full) {
         Stats.QueryStats query = queryStats(window, queryId);
         return query == null ? null : Text.query(window, service, query, requests(window, service), full);
+    }
+
+    /**
+     * Where in the code one query group is issued: the frames a {@code slow-query} finding
+     * on it carries, read from the same sample span (findings.adoc#code), empty when no span
+     * of the group names one.
+     */
+    public List<String> queryCode(Window window, String queryId) {
+        return frames.ofAttributes(queries.querySamples(window, Set.of(queryId)).get(queryId));
     }
 
     /** One query group over the window, whatever the service, or null when it had no call in it. */

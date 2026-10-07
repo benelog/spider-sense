@@ -65,6 +65,13 @@ const QUERIES = [
 
 const queryOf = (statement) => QUERIES.find((q) => q.statement === statement);
 
+/** Where each slow or repeated statement is issued, by index into QUERIES: the `code` of /api/queries/{id}. */
+const QUERY_CODE = {
+  1: ['net.benelog.bookstore.BookRepository.search(BookRepository.java:58)'],
+  2: ['net.benelog.bookstore.ReviewRepository.findByBook(ReviewRepository.java:41)',
+    'net.benelog.bookstore.BookHandler.reviews(BookHandler.java:74)'],
+};
+
 /**
  * The schema block of findings.adoc#schema, by index into QUERIES: the tables' indexes as
  * the extension read them, the columns the statement filters on, and the ones no
@@ -1604,6 +1611,7 @@ const ROUTES = [
     }
     return {
       query: stats,
+      code: QUERY_CODE[QUERIES.indexOf(def)] || [],
       series: { t, calls, p95Ms: buckets.map((d) => (d.length ? percentile(d.slice().sort((a, b) => a - b), 95) : null)) },
       traces: holders.sort((a, b) => b.durationMs - a.durationMs).slice(0, 20).map(summary),
     };

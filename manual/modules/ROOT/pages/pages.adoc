@@ -374,8 +374,9 @@ The cell reads `none` when every predicate is served, and `—` when the stateme
 A row click opens the statement.
 
 [#query]
-`+#/queries/{queryId}+` is one statement: the full text pretty-printed, marked the same way when the store may have cut it, the schema block under it as <<findings-schema-block,the Findings page renders it>>, the <<copy-as-markdown,*Copy as Markdown* and *Copy CLI line*>> pair over `+GET /api/queries/{queryId}+` and the `queries` command, the stat tiles, a chart of calls and p95, the callers as endpoints with their counts, and the slowest traces.
+`+#/queries/{queryId}+` is one statement: the full text pretty-printed, marked the same way when the store may have cut it, the schema block under it as <<findings-schema-block,the Findings page renders it>>, a *Code* list of where the statement is issued, the <<copy-as-markdown,*Copy as Markdown* and *Copy CLI line*>> pair over `+GET /api/queries/{queryId}+` and the `queries` command, the stat tiles, a chart of calls and p95, the callers as endpoints with their counts, and the slowest traces.
 A caller whose endpoint has a page of its own (`endpointId`, xref:api.adoc#callers[Callers and error endpoints]) is a link to that page; `(no endpoint)` stays plain text.
+The *Code* list is the `code` of `+GET /api/queries/{queryId}+`, the application frames a `slow-query` finding on the statement would carry, as <<code-frames,code frames>>; it is left out when there are none.
 
 [#errors]
 == Errors
@@ -400,7 +401,7 @@ With no chain the panel says `This error carried no stack trace.`
 [#code-frames]
 === Code frames
 
-A code frame on the Findings page or the error page asks `GET /api/source?frame=…` (xref:api.adoc#source[Source]) once.
+A code frame on the Findings page, the error page or the query page asks `GET /api/source?frame=…` (xref:api.adoc#source[Source]) once.
 An answer is reused for ten seconds, so a Live refresh does not ask again at once.
 
 A frame that resolves to a source file becomes a link that opens the file at that line, as the xref:ui.adoc#top-bar[top bar's editor setting] says:

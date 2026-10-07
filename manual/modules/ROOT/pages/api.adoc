@@ -407,7 +407,9 @@ It is `null` when there is no catalog to read.
 [#query]
 === One query
 
-*`+GET /api/queries/{queryId}?from&to+`* answers `{ "query": <QueryStats>, "series": { "t": [...], "calls": [...], "p95Ms": [...] }, "traces": [<TraceSummary> x 20 slowest containing it] }`.
+*`+GET /api/queries/{queryId}?from&to+`* answers `{ "query": <QueryStats>, "code": [ "orders.ReportRepository.revenue(ReportRepository.java:27)" ], "series": { "t": [...], "calls": [...], "p95Ms": [...] }, "traces": [<TraceSummary> x 20 slowest containing it] }`.
+`code` is where the statement is issued: the application frames a `slow-query` finding on the group carries, read from the same span, the newest that has `code.stacktrace` (xref:findings.adoc#code[Code locations]).
+It is empty when no span of the group in the window names an application frame.
 With `format=text` it answers the group as the `queries` rendering prints it (xref:cli.adoc#one-finding[One finding]), and a group with no call in the window is `404` in both JSON and text.
 
 [#errors]

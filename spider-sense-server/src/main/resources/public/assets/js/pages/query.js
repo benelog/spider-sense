@@ -7,6 +7,7 @@ import { chartBox } from '../charts.js';
 import { formatSql, storedSql } from '../sql.js';
 import { traceTable, schemaLines } from '../widgets.js';
 import { copyButtons, cliLine } from '../copyas.js';
+import { codeFrame } from '../frames.js';
 import { serviceColumn, countColumn, endpointCell } from '../columns.js';
 import { dur, count, rel, bothTimes } from '../format.js';
 
@@ -52,6 +53,9 @@ export function render(root, ctx) {
         h('span.muted', { style: { marginLeft: 'auto', fontSize: '11px' }, title: bothTimes(q.lastSeen) }, 'last seen ' + rel(q.lastSeen))),
       copyBlock(storedSql(formatSql(q.statement || ''), q.statementCut)),
       schemaLines(q.schema),
+      (data.code || []).length
+        ? h('div.f-code', h('div.sub-head', 'Code'), data.code.map((frame) => codeFrame(frame)))
+        : null,
       h('div.row', copyButtons({
         markdown: () => ({ path: '/api/queries/' + encodeURIComponent(id), query: api.params({}, { window: loaded.window, omitService: true }) }),
         cli: () => cliLine('queries', loaded.window, loaded.service),

@@ -613,6 +613,25 @@ public final class Queries {
         return withCallers;
     }
 
+    /**
+     * The attributes of one span per query group, for the {@code code.*} frames: the
+     * newest that carries {@code code.stacktrace}, which the extension writes on a slow
+     * statement and on the fifth repeat of one (findings.adoc#code), else the newest.
+     * The slow-query rule and the query page read this one span, so they name the same frames.
+     */
+    public Map<String, Map<String, Object>> querySamples(Window window, Set<String> queryIds) {
+        Where where = Where.window(window, null).andIn("query_id", queryIds);
+        Map<String, Map<String, Object>> samples = new HashMap<>();
+        sql.forEach("SELECT * FROM (SELECT query_id, attributes,"
+                + " ROW_NUMBER() OVER (PARTITION BY query_id"
+                + " ORDER BY CASE WHEN attributes LIKE '%\"code.stacktrace\"%' THEN 0 ELSE 1 END,"
+                + " start_ms DESC, id DESC) AS rn"
+                + " FROM span WHERE " + where.sql() + ") WHERE rn = 1", where.params(), rs ->
+                        samples.put(rs.getString("query_id"),
+                                AttrJson.decode(rs.getString("attributes"))));
+        return samples;
+    }
+
     /** Calls and p95 per bucket for one query group. */
     public Stats.Buckets queryBuckets(Window window, String queryId) {
         return groupBuckets(window, "query_id = ?", queryId);

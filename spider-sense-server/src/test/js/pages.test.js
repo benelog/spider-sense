@@ -116,6 +116,19 @@ test('the query page\'s callers and the error page\'s endpoints link to the endp
   }
 });
 
+test('the query page lists where the statement is issued as code frames (pages.adoc#query)', async () => {
+  let id = null;
+  for (const q of (await api.queries({ limit: 100 })).queries) {
+    if (((await api.query(q.queryId, {})).code || []).length) { id = q.queryId; break; }
+  }
+  assert.ok(id, 'the mock names the code of a query');
+  const { root, instance } = await visit('query', { id });
+  const code = root.querySelectorAll('div').find((d) => d.classList.contains('f-code'));
+  assert.ok(code, 'the Code list');
+  assert.ok(code.querySelectorAll('div').some((d) => d.classList.contains('src-frame')), 'its frames are code frames');
+  instance.destroy();
+});
+
 test('a profile row opens the span drawer, and the page closes it when it goes', async () => {
   const trace = await visit('trace', { id: ids.trace });
   trace.root.querySelectorAll('button').find((b) => b.textContent === 'Profile').click();

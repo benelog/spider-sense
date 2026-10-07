@@ -153,6 +153,8 @@ Each kind takes its `code` from one place.
 * `n-plus-one` and `n-plus-one-http` take it from the span of the repeated group that carries `code.stacktrace`, which is the fifth repeat, and fall back to the group's newest span when none does, as in an application run without the extension.
 * `slow-job` takes it from the `code.function` and `code.namespace` attributes the scheduling instrumentations set on the job's span.
 
+The *Code* list of the xref:pages.adoc#query[query page] reads a query group the way `slow-query` does, whether the group is slow or not.
+
 A stack trace is reduced to its application frames by dropping known framework prefixes: `java.`, `javax.`, `jdk.`, `sun.`, `com.sun.`, `jakarta.`, `org.springframework.`, `org.hibernate.`, `org.eclipse.jetty.`, `org.apache.`, `io.opentelemetry.`, `com.zaxxer.`, `org.h2.`, `net.benelog.spidersilk.`, `kotlin.`, `scala.`, `reactor.`, `io.netty.`, `ch.qos.logback.`, `org.slf4j.`, `org.junit.` and `gg.jte.`.
 When that heuristic guesses wrong, `spidersense.app.packages=com.acme,org.acme`, a comma-separated list, replaces it with an allowlist.
 At most five frames are kept, innermost first, which means the root cause's first.

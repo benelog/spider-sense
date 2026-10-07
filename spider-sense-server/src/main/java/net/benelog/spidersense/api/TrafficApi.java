@@ -241,6 +241,8 @@ public final class TrafficApi {
         Stats.Buckets buckets = queries.queryBuckets(window, queryId);
         return WebResponse.json(Json.obj()
                 .put("query", Codecs.query(query))
+                // Where the statement is issued, as a slow-query finding on it would say (pages.adoc#query).
+                .put("code", Codecs.strings(reports.queryCode(window, queryId)))
                 .put("series", Json.obj()
                         .put("t", Codecs.longs(buckets.t()))
                         .put("calls", Codecs.longs(buckets.requests()))

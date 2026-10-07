@@ -631,6 +631,36 @@ class ApiTest {
     }
 
     @Test
+    void aQueryGroupSaysWhereInTheCodeItIsIssued() {
+        serve((client, assembly) -> {
+            Span.Builder root = Otlp.span(TRACE, ROOT, "GET /orders/{id}", Span.SpanKind.SPAN_KIND_SERVER,
+                    NOW, 152,
+                    Otlp.attr("http.request.method", "GET"),
+                    Otlp.attr("http.route", "/orders/{id}"));
+            Span.Builder query = Otlp.child(root, CHILD, "SELECT orders", Span.SpanKind.SPAN_KIND_CLIENT,
+                    NOW + 10, 200,
+                    Otlp.attr("db.system", "h2"),
+                    Otlp.attr("db.statement", "select * from orders where id = ?"),
+                    Otlp.attr("code.stacktrace", """
+                            \tat org.h2.jdbc.JdbcPreparedStatement.executeQuery(JdbcPreparedStatement.java:120)
+                            \tat orders.OrderRepository.load(OrderRepository.java:64)
+                            \tat orders.OrderService.report(OrderService.java:18)
+                            """));
+            postProtobuf(client, "/v1/traces",
+                    Otlp.traces(Otlp.service("spring-orders"), root, query).toByteArray());
+
+            String queryId = json(client.get("/api/queries" + windowQuery()))
+                    .getArray("queries").get(0).asObject().getString("queryId");
+            Json.JsonObject detail = json(client.get("/api/queries/" + queryId + windowQuery()));
+
+            // The frames a slow-query finding on it carries (api.adoc#query).
+            assertThat(strings(detail.getArray("code"))).containsExactly(
+                    "orders.OrderRepository.load(OrderRepository.java:64)",
+                    "orders.OrderService.report(OrderService.java:18)");
+        });
+    }
+
+    @Test
     void aDeepStackTraceIsCutRatherThanLosingTheSpanAndItsBatch() {
         serve((client, assembly) -> {
             String deep = "java.lang.StackOverflowError\n"
