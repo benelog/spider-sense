@@ -101,7 +101,7 @@ function syncStateFromQuery(query) {
   state.range = router.queryParam(query, 'range', RANGES.map((r) => r.id), DEFAULT_RANGE);
   state.live = query.live === '1';
   state.chart = router.queryParam(query, 'chart', ['requests', 'load'], '');
-  shell.serviceSelect.value = state.service;
+  fillServiceSelect();
   shell.rangeSelect.value = state.range;
   shell.liveToggle.setAttribute('aria-pressed', String(state.live));
   shell.rateReadout.hidden = !state.live;
@@ -109,14 +109,23 @@ function syncStateFromQuery(query) {
   startLive();
 }
 
-function fillServiceSelect(names) {
-  const current = shell.serviceSelect.value;
-  const wanted = ['', ...names];
+let knownServices = [];
+
+/**
+ * The service filter's options: every known service, and the one the URL names when it is none
+ * of them, as `<name> (not seen)`, so a filter that matches nothing stays visible and can be cleared.
+ */
+function fillServiceSelect(names = knownServices) {
+  knownServices = names;
+  const unseen = state.service && !names.includes(state.service) ? state.service : '';
+  const wanted = ['', ...names, ...(unseen ? [unseen] : [])];
   const have = Array.from(shell.serviceSelect.options).map((o) => o.value);
-  if (have.length === wanted.length && have.every((v, i) => v === wanted[i])) return;
-  fill(shell.serviceSelect, h('option', { value: '' }, 'All services'),
-    names.map((n) => h('option', { value: n }, n)));
-  shell.serviceSelect.value = names.includes(current) ? current : '';
+  if (have.length !== wanted.length || !have.every((v, i) => v === wanted[i])) {
+    fill(shell.serviceSelect, h('option', { value: '' }, 'All services'),
+      names.map((n) => h('option', { value: n }, n)),
+      unseen ? h('option', { value: unseen }, unseen + ' (not seen)') : null);
+  }
+  shell.serviceSelect.value = state.service;
 }
 
 /** How often Live refreshes the page (ui.adoc#live-refresh). */

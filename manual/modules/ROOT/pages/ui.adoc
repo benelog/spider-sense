@@ -164,6 +164,7 @@ xref:marks-and-compare.adoc#marks[Marks] covers what a mark is and how the agent
 Service filter::
 Selects all services, or one.
 It applies to every page that takes a `service`.
+A `service=` in the URL that names no service Spider Sense has seen stays selected, as `<name> (not seen)`, so the filter that empties the pages is in sight and can be set back to all services.
 
 Time range::
 `5m`, `15m`, `1h`, `6h`, or `all`.
