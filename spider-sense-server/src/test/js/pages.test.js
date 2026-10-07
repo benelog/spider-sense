@@ -328,3 +328,27 @@ test('the Overview asks for the service the top bar names (api.adoc#overview)', 
     api.state.service = '';
   }
 });
+
+test('the Overview paints before its findings answer, and they fill their panel when they come (pages.adoc#overview)', async () => {
+  const real = globalThis.fetch;
+  let release;
+  const held = new Promise((r) => { release = r; });
+  globalThis.fetch = async (url, init) => {
+    if (String(url).startsWith('/api/findings?')) await held;
+    return real(url, init);
+  };
+  try {
+    api.state.service = '';
+    const page = await import(JS + 'pages/overview.js');
+    const root = document.createElement('main');
+    document.body.replaceChildren(root);
+    const instance = page.render(root, pageContext({}));
+    await until(() => root.querySelectorAll('.stat').length === 7, 'the stat tiles');
+    assert.equal(root.querySelectorAll('.findings .loading').length, 1, 'the findings panel waits with its own spinner');
+    release();
+    await until(() => !root.querySelector('.loading'), 'the findings');
+    instance.destroy();
+  } finally {
+    globalThis.fetch = real;
+  }
+});

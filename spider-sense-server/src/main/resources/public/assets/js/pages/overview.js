@@ -2,7 +2,7 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, icon, panel, chip, serviceChip, serviceColor, renderList, emptyState, snippetBlocks, placeholder, seedServices } from '../ui.js';
+import { h, fill, icon, panel, chip, serviceChip, serviceColor, renderList, emptyState, snippetBlocks, placeholder, seedServices, spinner } from '../ui.js';
 import { pageLoader, skeleton } from '../page.js';
 import { chartBox, sparkline } from '../charts.js';
 import { histogramBars, apdexCell, ERROR_RATE_BAD } from '../buckets.js';
@@ -16,7 +16,6 @@ const TINGLE_LABEL = { 'slow-request': 'Slow request', 'slow-query': 'Slow query
 export function render(root, ctx) {
   let tingles = [];
   let lastSeries = {};
-  let findings = [];
 
   const statsRow = h('div.stat-row', h('div.stat', h('div.stat-caption', 'Loading')));
   const modeSwitch = chartModeSwitch('requests', () => paintChart(lastSeries));
@@ -24,7 +23,8 @@ export function render(root, ctx) {
   const summaryBody = h('div');
   const summaryPanel = panel({ title: 'Response summary' }, summaryBody);
   const chartRow = h('div.grid-2-1', chart.node, summaryPanel);
-  const findingsBody = h('div.findings');
+  // The findings answer on their own time, often after the rest (pages.adoc#overview).
+  const findingsBody = h('div.findings', spinner());
   const findingsPanel = panel({
     title: 'Findings',
     actions: h('a.link-btn', { href: router.href('/findings', api.sharedQuery()) }, 'All findings'),
@@ -150,13 +150,12 @@ export function render(root, ctx) {
       h('div.t-detail', t.detail || ''));
   }
 
-  function paint([data, found]) {
-    findings = found.findings || [];
+  function paint(data) {
     const services = data.services || [];
     const requests = (data.totals || {}).requests || 0;
     // The empty state is for a collector nothing has reached. A worker sends no request, as its
-    // jobs are not entry spans, yet its findings, services and tingles are worth the page.
-    if (!requests && !services.length && !findings.length && !(data.tingles || []).length) {
+    // jobs are not entry spans, yet its services, tingles and findings are worth the page.
+    if (!requests && !services.length && !(data.tingles || []).length) {
       layout.replace(panel({}, emptyState(
         'Nothing has arrived yet. Attach Spider Sense to an application, or point any OTLP/HTTP sender at this collector.',
         h('div', { style: { display: 'grid', gap: '10px', justifyItems: 'center', width: '100%' } },
@@ -167,7 +166,6 @@ export function render(root, ctx) {
     layout.build();
     modeSwitch.sync();
     paintStats(data.totals || {}, (api.state.status || {}).thresholds);
-    paintFindings(findings);
     paintChart(data.series || {});
     fill(summaryBody, histogramBars((data.totals || {}).histogram));
     paintServices(services);
@@ -175,25 +173,26 @@ export function render(root, ctx) {
     paintTingles();
   }
 
-  const loader = pageLoader({
-    fetch: () => Promise.all([
-      api.overview(),
-      // hideAcked: the top five are the unacknowledged ones (pages.adoc#overview).
-      api.findings({ limit: 5, hideAcked: true }).catch(() => ({ findings: [] })),
-    ]),
-    paint,
-    body: layout,
+  const loader = pageLoader({ fetch: () => api.overview(), paint, body: layout });
+  // The findings are a load of their own: the rest of the page paints as soon as it answers,
+  // and a slow findings list fills its panel when it comes.
+  const findingsLoader = pageLoader({
+    // hideAcked: the top five are the unacknowledged ones (pages.adoc#overview).
+    fetch: () => api.findings({ limit: 5, hideAcked: true }),
+    paint: (found) => paintFindings(found.findings || []),
+    body: findingsBody,
   });
+  const load = () => { loader.load(); findingsLoader.load(); };
 
-  loader.load();
+  load();
 
   return {
-    refresh: loader.load,
+    refresh: load,
     onTingle: (t) => {
       if (!layout.built) return;
       tingles = [{ ...t, fresh: true }, ...tingles].slice(0, 50);
       paintTingles();
     },
-    destroy: () => { loader.destroy(); chart.destroy(); },
+    destroy: () => { loader.destroy(); findingsLoader.destroy(); chart.destroy(); },
   };
 }

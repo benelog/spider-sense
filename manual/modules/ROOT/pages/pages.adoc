@@ -33,6 +33,8 @@ A row click goes where the finding points:
 * the first evidence trace when there is nothing else.
 --
 +
+The panel loads on its own, with its own spinner: the rest of the page paints as soon as `/api/overview` answers, and the findings, which can take longer over a long window, fill the panel when they come.
+A failure of theirs puts the error box and its *Try again* in the panel, and leaves the rest of the page as it is.
 The panel head links to *All findings* (`#/findings`).
 Because the panel asks with `hideAcked=true`, acknowledged findings, and resolved ones that have not come back, are left out, so the five are always ones nobody has dismissed, and regressions come first.
 With no finding in the window the panel says `Nothing worth fixing in this window.`
