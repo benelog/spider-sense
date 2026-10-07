@@ -205,6 +205,26 @@ final class Options {
         }
     }
 
+    /**
+     * The option's value as the one of {@code allowed} it names, case aside, or null when it was
+     * not given.
+     *
+     * <p>Checked before either mode runs, like {@link #optionalLong}: a value the server does not
+     * know would otherwise narrow nothing, and {@code --severity=bogus} would print every line.
+     */
+    @Nullable String oneOf(String key, List<String> allowed) {
+        String value = valueOrNull(key);
+        if (value == null) {
+            return null;
+        }
+        for (String known : allowed) {
+            if (known.equalsIgnoreCase(value.trim())) {
+                return known;
+            }
+        }
+        throw new Usage("--" + key + " is one of " + String.join(", ", allowed) + ": " + value);
+    }
+
     private double number(String key) {
         // Every caller asks has(key) first, so there is something to parse.
         String value = Objects.requireNonNull(valueOrNull(key), "--" + key + " was not given");

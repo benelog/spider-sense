@@ -38,8 +38,9 @@ final class Help {
               endpoints                    the endpoints of the window
               queries                      the database statements of the window
               errors                       the errors of the window
-              logs [--severity=WARN] [--q=<text>] [--trace=<traceId>]
-                                           log lines
+              logs [--severity=<level>] [--q=<text>] [--trace=<traceId>]
+                                           log lines; --severity is the lowest level shown:
+                                           TRACE, DEBUG, INFO, WARN, ERROR or FATAL
               mark <name> [--note=<text>]  records a mark now
               marks                        lists marks
               compare --before=<selector> --after=<selector> [--until=<selector>]

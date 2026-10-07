@@ -39,6 +39,12 @@ record Command(String commandName, Set<String> options, @Nullable String argumen
         Command.@Nullable Method method, @Nullable Function<Options, Remote.UrlBuilder> path,
         @Nullable Function<Options, String> body, Command.@Nullable LocalAnswer local) {
 
+    /** What {@code traces --status} takes (api.adoc#traces). */
+    static final List<String> STATUSES = List.of("error", "ok");
+
+    /** What {@code logs --severity} takes, a floor, lowest first (api.adoc#logs). */
+    static final List<String> SEVERITIES = List.of("TRACE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL");
+
     /** Every row, in the order {@link Help} lists them. */
     static final List<Command> ALL = List.of(
             new Command(Options.STATUS, with(), null, Method.GET,
@@ -88,7 +94,7 @@ record Command(String commandName, Set<String> options, @Nullable String argumen
 
             new Command(Options.TRACES, with("since", "until", "limit", "full", "status", "min-ms", "q"), null, Method.GET,
                 options -> Remote.withWindow(options, new Remote.UrlBuilder("/api/traces"))
-                        .add("status", options.valueOrNull("status"))
+                        .add("status", options.oneOf("status", STATUSES))
                         .add("minMs", options.optionalLong("min-ms"))
                         .add("q", options.valueOrNull("q"))
                         .add("limit", options.limit(Limits.CLI_TRACES, Limits.TRACES_MAX)),
@@ -96,7 +102,7 @@ record Command(String commandName, Set<String> options, @Nullable String argumen
                 (options, reports, service) -> reports.traces(new Queries.TraceFilter(
                         Local.window(options, reports, service), service, null,
                         options.optionalLong("min-ms"), null,
-                        options.valueOrNull("status"), options.valueOrNull("q"), null,
+                        options.oneOf("status", STATUSES), options.valueOrNull("q"), null,
                         options.limit(Limits.CLI_TRACES, Limits.TRACES_MAX)), options.flag("full"))),
 
             new Command(Options.ENDPOINTS, with("since", "until"), null, Method.GET,
@@ -120,14 +126,14 @@ record Command(String commandName, Set<String> options, @Nullable String argumen
 
             new Command(Options.LOGS, with("since", "until", "limit", "severity", "q", "trace"), null, Method.GET,
                 options -> Remote.withWindow(options, new Remote.UrlBuilder("/api/logs"))
-                        .add("severity", options.valueOrNull("severity"))
+                        .add("severity", options.oneOf("severity", SEVERITIES))
                         .add("q", options.valueOrNull("q"))
                         .add("traceId", options.valueOrNull("trace"))
                         .add("limit", options.limit(Limits.LOGS, Limits.LOGS_MAX)),
                 null,
                 (options, reports, service) -> reports.logs(new Queries.LogFilter(
                         Local.window(options, reports, service), service,
-                        options.valueOrNull("severity"), options.valueOrNull("q"),
+                        options.oneOf("severity", SEVERITIES), options.valueOrNull("q"),
                         options.valueOrNull("trace"), null,
                         options.limit(Limits.LOGS, Limits.LOGS_MAX)))),
 

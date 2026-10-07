@@ -435,6 +435,30 @@ class CliTest {
     }
 
     /**
+     * A status or a severity the store does not know is a usage error listing what it takes, in
+     * both modes, rather than a filter that narrows nothing; the case of a known one is free.
+     */
+    @Test
+    void aStatusOrASeverityOutsideItsListIsOneUsageErrorInBothModes() {
+        String status = "spider-sense: --status is one of error, ok: bad\n";
+        String severity = "spider-sense: --severity is one of TRACE, DEBUG, INFO, WARN, ERROR, FATAL: bogus\n";
+        serve(false, (server, base) -> {
+            assertThat(runAt(base, "traces", "--status=bad", "--url=" + base).err()).startsWith(status);
+            assertThat(runAt(base, "logs", "--severity=bogus", "--url=" + base).err()).startsWith(severity);
+        });
+        String db = "--db=" + TestStore.writtenUrl();
+        Run traces = run("traces", "--status=bad", db);
+        assertThat(traces.exit()).isEqualTo(2);
+        assertThat(traces.err()).startsWith(status);
+        Run logs = run("logs", "--severity=bogus", db);
+        assertThat(logs.exit()).isEqualTo(2);
+        assertThat(logs.err()).startsWith(severity);
+
+        assertThat(path("logs", "--severity=warn")).isEqualTo("/api/logs?since=15m&severity=WARN&limit=200&format=text");
+        assertThat(path("traces", "--status=ERROR")).isEqualTo("/api/traces?since=15m&status=error&limit=20&format=text");
+    }
+
+    /**
      * A limit below 1 is refused rather than raised to 1, so {@code sql --limit=0} is the error
      * cli.adoc#sql promises; a limit above a list's cap is lowered to it (cli.adoc#options).
      */

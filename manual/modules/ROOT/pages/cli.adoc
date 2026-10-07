@@ -71,7 +71,7 @@ The launcher reads xref:configuration.adoc#properties-file[the properties file] 
 | `endpoints`, `queries`, `errors`
 | the tables of the window
 
-| `logs [--severity=WARN] [--q=] [--trace=<traceId>]`
+| `logs [--severity=<level>] [--q=] [--trace=<traceId>]`
 | log lines
 
 | `mark <name> [--note=]`
@@ -262,6 +262,7 @@ logs (2)
 
 `traces` lists the newest traces of the window.
 `--status=error` or `--status=ok` filters by outcome, `--min-ms=<n>` by duration, `--q=<text>` by free text, and `--limit=<n>` sets the page size.
+`--status` takes `error` or `ok` and nothing else, in any case, and another value is a usage error that lists the two.
 `--min-ms` takes a whole number of milliseconds, and any other value, such as `1.5`, is a usage error in both modes.
 
 [source]
@@ -329,7 +330,8 @@ $ java -jar spider-sense.jar errors --since=before
 ----
 
 `logs` prints log lines, newest first.
-`--severity=WARN` sets the floor, `--q=<text>` searches the body, and `--trace=<traceId>` narrows to one trace.
+`--severity=<level>` sets the floor, `--q=<text>` searches the body, and `--trace=<traceId>` narrows to one trace.
+The level is `TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR` or `FATAL`, in any case, and another value is a usage error that lists them, rather than a filter that lets every line through.
 The count line says how many lines were printed out of how many matched the window:
 
 [source]
@@ -504,8 +506,9 @@ Commands:
   endpoints                    the endpoints of the window
   queries                      the database statements of the window
   errors                       the errors of the window
-  logs [--severity=WARN] [--q=<text>] [--trace=<traceId>]
-                               log lines
+  logs [--severity=<level>] [--q=<text>] [--trace=<traceId>]
+                               log lines; --severity is the lowest level shown:
+                               TRACE, DEBUG, INFO, WARN, ERROR or FATAL
   mark <name> [--note=<text>]  records a mark now
   marks                        lists marks
   compare --before=<selector> --after=<selector> [--until=<selector>]

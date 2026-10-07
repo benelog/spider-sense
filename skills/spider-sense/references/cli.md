@@ -20,7 +20,7 @@ The launcher treats a first argument that does not start with `-` as a command a
 | `trace <traceId> [--full] [--diff=<traceId>]` | one trace as a tree, or with `--diff` two traces aligned in one tree, span by span |
 | `traces [--status=error\|ok] [--min-ms=] [--q=] [--limit=20]` | the newest traces |
 | `endpoints`, `queries`, `errors` | the tables of the window |
-| `logs [--severity=WARN] [--q=] [--trace=<traceId>]` | log lines |
+| `logs [--severity=<level>] [--q=] [--trace=<traceId>]` | log lines |
 | `mark <name> [--note=…]` | records a mark now |
 | `marks` | lists marks |
 | `compare --before=<selector> --after=<selector> [--until=<selector>]` | the two windows side by side |
@@ -510,8 +510,9 @@ Commands:
   endpoints                    the endpoints of the window
   queries                      the database statements of the window
   errors                       the errors of the window
-  logs [--severity=WARN] [--q=<text>] [--trace=<traceId>]
-                               log lines
+  logs [--severity=<level>] [--q=<text>] [--trace=<traceId>]
+                               log lines; --severity is the lowest level shown:
+                               TRACE, DEBUG, INFO, WARN, ERROR or FATAL
   mark <name> [--note=<text>]  records a mark now
   marks                        lists marks
   compare --before=<selector> --after=<selector> [--until=<selector>]
