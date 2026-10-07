@@ -148,6 +148,19 @@ test('the span drawer puts the statement first with a Copy button and folds a ca
   instance.destroy();
 });
 
+test('the waterfall labels a span with its summary and keeps its name in the title (pages.adoc#waterfall)', async () => {
+  const trace = await api.trace(ids.trace);
+  const { root, instance } = await visit('trace', { id: ids.trace });
+  const labels = root.querySelectorAll('span').filter((s) => s.classList.contains('wf-label') && s.getAttribute('title'));
+  assert.ok(labels.length > 0);
+  for (const label of labels) {
+    const named = trace.spans.filter((s) => s.name === label.getAttribute('title'));
+    assert.ok(named.length, 'the title is a span name');
+    assert.ok(named.some((s) => label.textContent === (s.summary || s.name)), label.textContent);
+  }
+  instance.destroy();
+});
+
 test('a profile row opens the span drawer, and the page closes it when it goes', async () => {
   const trace = await visit('trace', { id: ids.trace });
   trace.root.querySelectorAll('button').find((b) => b.textContent === 'Profile').click();

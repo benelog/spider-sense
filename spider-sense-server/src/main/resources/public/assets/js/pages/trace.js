@@ -174,7 +174,7 @@ export function render(root, ctx) {
         toggle,
         h('span.wf-svc', { style: { background: serviceColor(span.service) }, title: span.service }),
         icon(categoryIcon(span.category, 'chart')),
-        h('span.wf-label', { title: span.summary || span.name }, span.name),
+        h('span.wf-label', { title: span.name }, summaryOf(span)),
         span.error ? h('span.marker.err', { title: 'Error' }, icon('bolt')) : null),
       h('div.wf-track', bar),
       label);

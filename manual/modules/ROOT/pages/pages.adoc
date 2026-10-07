@@ -316,7 +316,7 @@ image::trace-waterfall.jpg[A trace across two services as a waterfall,800]
 
 The waterfall is the default view, a tree of spans indented by depth with collapsible nodes.
 A span whose parent the trace does not hold is a root, and so is the first member, in the spans' order, of a parent cycle (a span that is its own parent, or spans that name each other), so the waterfall and the profile list the same spans at the same depths.
-A row has a service colour bar, the name, a category icon, the span's bar on the time axis the whole trace shares (offset and duration proportional), and the duration label.
+A row has a service colour bar, a category icon, the span's `summary` (xref:api.adoc#span[Span]) with its name in the title, the span's bar on the time axis the whole trace shares (offset and duration proportional), and the duration label.
 An error has a red bar and a bolt, and a slow database span a `--warn` ring.
 A row click opens the span drawer.
 
