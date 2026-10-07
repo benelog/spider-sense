@@ -215,6 +215,56 @@ class ReportsTest {
         }
     }
 
+    /**
+     * A misspelled service is not a store that received nothing: the empty answer names the
+     * services there are instead of sending the caller to debug the exporter, and a check of an
+     * endpoint the window does not have is a usage error rather than no verdict (cli.adoc#tables).
+     */
+    @Test
+    void aFilterThatNamesNothingSaysSoInsteadOfAskingForData() {
+        Config config = TestStore.config();
+        try (Store store = new Store(config.storeSettings(System::currentTimeMillis))) {
+            Reports reports = new Reports(config, store, config::port);
+            Window window = Window.of(NOW - 60_000, NOW + 60_000);
+
+            assertThat(reports.findings(window, "nope", 20, false).text())
+                    .as("nothing has arrived at all: sending data is the advice")
+                    .contains("Nothing has been received in this window.");
+
+            OtlpDecoder decoder = new OtlpDecoder(store, () -> 4000);
+            decoder.ingest(Otlp.traces(Otlp.service("orders"),
+                    Otlp.span("%032x".formatted(1), "%016x".formatted(1), "GET /orders",
+                            Span.SpanKind.SPAN_KIND_SERVER, NOW, 20,
+                            Otlp.attr("http.request.method", "GET"),
+                            Otlp.attr("http.route", "/orders"))));
+            store.writer().awaitIdle(5_000);
+
+            for (String text : java.util.List.of(reports.findings(window, "nope", 20, false).text(),
+                    reports.endpoints(window, "nope").text(),
+                    reports.queries(window, "nope", null, 10, false).text(),
+                    reports.errors(window, "nope", 10, false).text())) {
+                assertThat(text)
+                        .contains("No service is named `nope`; the services are `orders`.")
+                        .doesNotContain("Nothing has been received");
+            }
+            assertThat(reports.endpoints(window, "orders").text()).doesNotContain("No service is named");
+
+            Reports.CheckReport unknownService = reports.check(window, "nope", null, java.util.Map.of());
+            assertThat(unknownService.verdict()).as("still no verdict").isEqualTo(
+                    reports.check(Window.of(NOW - 600_000, NOW - 500_000), null, null, java.util.Map.of())
+                            .verdict());
+            assertThat(unknownService.report().json().asObject().getString("reason"))
+                    .isEqualTo("No service is named `nope`; the services are `orders`.");
+
+            assertThatThrownBy(() -> reports.check(window, null, "nosuch", java.util.Map.of()))
+                    .isInstanceOf(Selectors.BadSelector.class)
+                    .hasMessage("No endpoint of this window is `nosuch`, by name or by id;"
+                            + " `endpoints` lists them");
+            assertThat(reports.check(window, "orders", "GET /orders", java.util.Map.of()).requests())
+                    .isEqualTo(1);
+        }
+    }
+
     @Test
     void statusReportsTheRetentionCapTheIngestCapAndWhatTheCapDropped() {
         Config config = TestStore.config("--retention.spans=250000",

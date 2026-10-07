@@ -4,6 +4,7 @@ import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import java.util.function.IntSupplier;
 import java.util.function.LongSupplier;
 
@@ -246,6 +247,33 @@ public final class Reports implements AutoCloseable {
         return new Report(Codecs.status(status), Text.status(status));
     }
 
+    /**
+     * A list's report, its text rendered with the address an empty answer sends telemetry to;
+     * or, when the service filter names no service at all, with that said in its place, since
+     * data did arrive, under other names (cli.adoc#tables).
+     */
+    private Report listed(Json.JsonValue json, @Nullable String service,
+            Function<@Nullable String, String> text) {
+        String unknown = unknownService(service);
+        return unknown == null ? new Report(json, text.apply(otlpEndpoint()))
+                : new Report(json, text.apply(null) + "\n" + unknown + "\n");
+    }
+
+    /**
+     * {@code No service is named `nope`; the services are `orders`, `billing`.}, or null when
+     * no service was named, the one named is known, or no service is known at all, which the
+     * empty answer's own advice to send some data covers.
+     */
+    private @Nullable String unknownService(@Nullable String service) {
+        if (service == null || services.get(service) != null) {
+            return null;
+        }
+        List<String> names = new ArrayList<>();
+        services.all().forEach(known -> names.add("`" + known.name() + "`"));
+        return names.isEmpty() ? null
+                : "No service is named `" + service + "`; the services are " + String.join(", ", names) + ".";
+    }
+
     /** How many requests the window holds, which every list's heading and empty answer say. */
     private long requests(Window window, @Nullable String service) {
         return queries.totals(window, service).requests();
@@ -287,8 +315,8 @@ public final class Reports implements AutoCloseable {
                 .put("acked", answer.acked())
                 .put("resolved", answer.resolved())
                 .put("findings", Codecs.findings(found));
-        return new Report(json, Text.findings(window, service, requests, answer.acked(),
-                answer.resolved(), found, full, otlpEndpoint()));
+        return listed(json, service, sendTo -> Text.findings(window, service, requests, answer.acked(),
+                answer.resolved(), found, full, sendTo));
     }
 
     /**
@@ -466,6 +494,18 @@ public final class Reports implements AutoCloseable {
     public CheckReport check(Window window, @Nullable String service, @Nullable String endpoint,
             Map<String, Double> rules) {
         Check.CheckResult result = check.check(window, service, endpoint, rules);
+        if (result.requests() == 0) {
+            String unknown = unknownService(service);
+            if (unknown != null) {
+                // Still no verdict, exit 3, but saying why: the scope is a name nothing sent.
+                result = new Check.CheckResult(null, 0, unknown, result.checks());
+            } else if (endpoint != null && requests(window, service) > 0) {
+                // A gate on an endpoint the window does not have is a mistyped command, not a
+                // run that reached nothing: "no verdict" would pass a typo through CI as exit 3.
+                throw new Selectors.BadSelector("No endpoint of this window is `" + endpoint
+                        + "`, by name or by id; `endpoints` lists them");
+            }
+        }
         return new CheckReport(
                 new Report(Codecs.checkResult(result), Text.check(result, window, service, endpoint)),
                 result.verdict(), result.requests());
@@ -486,8 +526,8 @@ public final class Reports implements AutoCloseable {
                 .put("total", total)
                 .put("window", Codecs.window(filter.window()));
         long requests = requests(filter.window(), filter.service());
-        return new Report(json, Text.traces(filter.window(), filter.service(), traces, total, requests,
-                otlpEndpoint()));
+        return listed(json, filter.service(), sendTo -> Text.traces(filter.window(), filter.service(),
+                traces, total, requests, sendTo));
     }
 
     /** One trace, or null when the id is not stored. */
@@ -530,16 +570,16 @@ public final class Reports implements AutoCloseable {
     public Report endpoints(Window window, @Nullable String service) {
         List<Stats.EndpointStats> endpoints = queries.endpoints(window, service, null);
         long requests = requests(window, service);
-        return new Report(Json.obj().put("endpoints", Codecs.endpoints(endpoints)),
-                Text.endpoints(window, service, endpoints, requests, otlpEndpoint()));
+        return listed(Json.obj().put("endpoints", Codecs.endpoints(endpoints)), service,
+                sendTo -> Text.endpoints(window, service, endpoints, requests, sendTo));
     }
 
     public Report queries(Window window, @Nullable String service, @Nullable String sort, int limit,
             boolean full) {
         List<Stats.QueryStats> list = queries.queries(window, service, sort, limit, null);
         long requests = requests(window, service);
-        return new Report(Json.obj().put("queries", Codecs.queries(list)),
-                Text.queries(window, service, list, requests, full, otlpEndpoint()));
+        return listed(Json.obj().put("queries", Codecs.queries(list)), service,
+                sendTo -> Text.queries(window, service, list, requests, full, sendTo));
     }
 
     /**
@@ -553,8 +593,8 @@ public final class Reports implements AutoCloseable {
         List<String> ids = new ArrayList<>(list.size());
         list.forEach(group -> ids.add(group.errorId()));
         Map<String, long[]> series = queries.errorSeries(window, ids);
-        return new Report(Json.obj().put("errors", Codecs.errorGroups(list, series)),
-                Text.errors(window, service, list, requests, full, frames, otlpEndpoint()));
+        return listed(Json.obj().put("errors", Codecs.errorGroups(list, series)), service,
+                sendTo -> Text.errors(window, service, list, requests, full, frames, sendTo));
     }
 
     /**
@@ -603,8 +643,8 @@ public final class Reports implements AutoCloseable {
                 .put("total", total);
         // Only an empty answer says the count, and only a window with no request says to send some.
         long requests = logs.isEmpty() ? requests(filter.window(), filter.service()) : 0;
-        return new Report(json, Text.logs(filter.window(), filter.service(), logs, total, requests,
-                otlpEndpoint()));
+        return listed(json, filter.service(), sendTo -> Text.logs(filter.window(), filter.service(), logs,
+                total, requests, sendTo));
     }
 
     /**

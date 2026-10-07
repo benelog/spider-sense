@@ -785,7 +785,7 @@ final class Text {
     // --- lists ----------------------------------------------------------------
 
     static String traces(Window window, @Nullable String service, List<Stats.TraceSummary> traces, long total,
-            long requests, String otlpEndpoint) {
+            long requests, @Nullable String otlpEndpoint) {
         if (traces.isEmpty()) {
             return heading("traces", window, service, requests) + "\n"
                     + empty("traces", window, requests, otlpEndpoint);
@@ -800,7 +800,7 @@ final class Text {
     }
 
     static String endpoints(Window window, @Nullable String service, List<Stats.EndpointStats> endpoints,
-            long requests, String otlpEndpoint) {
+            long requests, @Nullable String otlpEndpoint) {
         if (endpoints.isEmpty()) {
             return heading("endpoints", window, service, requests) + "\n"
                     + empty("endpoints", window, requests, otlpEndpoint);
@@ -812,7 +812,7 @@ final class Text {
     }
 
     static String queries(Window window, @Nullable String service, List<Stats.QueryStats> queries, long requests,
-            boolean full, String otlpEndpoint) {
+            boolean full, @Nullable String otlpEndpoint) {
         if (queries.isEmpty()) {
             return heading("queries", window, service, requests) + "\n"
                     + empty("queries", window, requests, otlpEndpoint);
@@ -843,7 +843,7 @@ final class Text {
     }
 
     static String errors(Window window, @Nullable String service, List<Stats.ErrorGroup> errors, long requests,
-            boolean full, CodeFrames frames, String otlpEndpoint) {
+            boolean full, CodeFrames frames, @Nullable String otlpEndpoint) {
         if (errors.isEmpty()) {
             return heading("errors", window, service, requests) + "\n"
                     + empty("errors", window, requests, otlpEndpoint);
@@ -902,7 +902,7 @@ final class Text {
      *        log line in a window that has requests is the healthy case, not a missing exporter
      */
     static String logs(Window window, @Nullable String service, List<LogRecord> logs, long total,
-            long requests, String otlpEndpoint) {
+            long requests, @Nullable String otlpEndpoint) {
         if (logs.isEmpty()) {
             return heading("logs", window, service, null) + "\n"
                     + empty("logs", window, requests, otlpEndpoint);

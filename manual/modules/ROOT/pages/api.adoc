@@ -668,12 +668,12 @@ A query's `statementCut` is the one of <<query-stats,QueryStats>>.
 
 [source,json]
 ----
-{ "pass": true | false | null, "requests": 12, "reason": "no requests in the window" | null,
+{ "pass": true | false | null, "requests": 12, "reason": "no requests in the window" | "No service is named `nope`; …" | null,
   "checks": [ { "rule": "maxP95Ms", "limit": 500, "actual": 812.4, "pass": false, "detail": "GET /orders/report p95 812.4 ms over 3 calls" } ] }
 ----
 
 With no rule given the defaults are `maxErrors=0`, `maxNPlusOne=0` and `maxP95Ms=<slowRequestMs>`.
-`endpoint` is an `endpointId` or an endpoint name.
+`endpoint` is an `endpointId` or an endpoint name, and one the window does not have, while the window has requests, is `400`.
 The response also carries the verdict as the header `X-Spider-Sense-Pass: true|false|none`.
 The CLI can therefore ask once for the text rendering and still exit with a code, rather than parse prose for a word.
 
