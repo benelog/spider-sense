@@ -574,7 +574,7 @@ no server is there to ask.
 
 Exit codes: 0 success, 1 check failed, 2 usage or connection error,
 3 check had no request to judge, 4 not found (a trace id, a mark name,
-a finding id to unack or unresolve).
+a finding id to ack, resolve, unack or unresolve).
 ```
 
 `help <command>`, `<command> --help` and `<command> -h` print one command's block: its entry of the table, then every option it takes, its own first and the common ones after them.

@@ -32,8 +32,9 @@ public final class McpTools implements McpServer.ToolRunner {
 
     private static final Tool.Arg SINCE = Tool.Arg.string("since",
             "Start of the window: a duration (30s, 5m, 2h, 1d), a mark name, "
-                    + "start (since the application was last restarted), now, or epoch "
-                    + "milliseconds. Defaults to " + Selectors.DEFAULT_SINCE + ".");
+                    + "start (since the application was last restarted), now, epoch "
+                    + "milliseconds, or an ISO-8601 date-time such as 2026-10-08T05:50:00. Defaults to "
+                    + Selectors.DEFAULT_SINCE + ".");
     private static final Tool.Arg UNTIL = Tool.Arg.string("until",
             "End of the window, in the same forms as since. Defaults to now.");
     private static final Tool.Arg SERVICE = Tool.Arg.string("service",

@@ -98,7 +98,7 @@ final class Help {
 
             Exit codes: 0 success, 1 check failed, 2 usage or connection error,
             3 check had no request to judge, 4 not found (a trace id, a mark name,
-            a finding id to unack or unresolve).""";
+            a finding id to ack, resolve, unack or unresolve).""";
 
     /** How a value-taking option is written in a command's block, by what it takes. */
     private static final Map<String, String> VALUES = Map.ofEntries(
