@@ -106,6 +106,11 @@ xref:configuration.adoc#properties[Configuration] lists the jar's defaults.
 | `project.name`
 | `-Dspidersense.service=`, which is `otel.service.name` unless that is set already
 
+| `testService`
+| `String`
+| `service` + `-test`
+| `-Dspidersense.service=` for a `Test` task in `attachTo`, in place of `service` (<<tests,Tests>>)
+
 | `port`
 | `Integer`
 | unset (`4000`)
@@ -257,7 +262,7 @@ spiderSense {
 
 [source,bash]
 ----
-./gradlew bootRun &                  # or the test task forwarding to a standalone, as below
+./gradlew bootRun &                  # or forward the tests to a standalone and judge their service, as in Tests below
 ./gradlew test spiderSenseCheck
 ----
 
@@ -363,6 +368,26 @@ spiderSense {
 
 `attachTo.add('test')` adds to the default tasks, so `bootRun` stays attached, and with `collector` set it forwards too.
 That is what you want when the tests and the running application should land in one Spider Sense.
+
+A `Test` task reports as `testService`, which defaults to the block's `service` with `-test` after it, so the tests of the project `orders` are the service `orders-test`.
+The `bootRun` and `run` tasks keep `service`, and so do the Spider Sense tasks.
+This is the name xref:maven.adoc#surefire[Surefire] gives tests too.
+The 404s and 500s a test provokes on purpose then stay out of the application's numbers, and `spiderSenseCheck`, which judges `service`, does not count them.
+A check that judges the tests names their service:
+
+[source,groovy]
+----
+spiderSense {
+    attachTo.add('test')
+    collector = 'http://127.0.0.1:4000'
+    check {
+        service = 'orders-test'
+        maxNPlusOne = 0
+    }
+}
+----
+
+`testService = 'orders'` puts the tests back under the application's service.
 
 [#multi-project]
 == Two applications, several modules

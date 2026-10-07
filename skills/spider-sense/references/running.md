@@ -147,7 +147,9 @@ java -javaagent:"$SENSE" -Dotel.service.name=my-app -jar target/my-app.jar
 ### A Gradle `test` task
 
 Measuring what the tests do is the same loop with the test task as the exercise step.
-With the Gradle plugin it is two lines of the block, `attachTo.add('test')` (which keeps `bootRun` and `run` attached) and `collector = 'http://127.0.0.1:4000'` ([Tests](https://spider-sense.benelog.net/gradle-plugin.html#tests) in the manual); without it, the task's own `jvmArgs`:
+With the Gradle plugin it is two lines of the block, `attachTo.add('test')` (which keeps `bootRun` and `run` attached) and `collector = 'http://127.0.0.1:4000'` ([Tests](https://spider-sense.benelog.net/gradle-plugin.html#tests) in the manual).
+The plugin reports the tests as the block's `service` with `-test` after it (`testService`), so their deliberate errors stay out of the application's numbers.
+Without the plugin, the task's own `jvmArgs` do the same:
 
 ```groovy
 tasks.named('test') {

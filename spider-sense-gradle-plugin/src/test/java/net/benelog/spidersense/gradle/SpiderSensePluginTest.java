@@ -271,11 +271,29 @@ class SpiderSensePluginTest {
                 """.replace("%JAR%", stubJar.toAbsolutePath().toString()));
 
         String output = probe();
-        String forwarding = "[-javaagent:" + stubJar.toAbsolutePath()
-                + ", -Dspidersense.service=scratch, -Dspidersense.collector=http://127.0.0.1:4000]";
-        assertThat(output).contains("test=" + forwarding);
-        assertThat(output).contains("bootRun=" + forwarding);
-        assertThat(output).contains("run=" + forwarding);
+        String agent = "[-javaagent:" + stubJar.toAbsolutePath();
+        String collector = ", -Dspidersense.collector=http://127.0.0.1:4000]";
+        assertThat(output).contains("test=" + agent + ", -Dspidersense.service=scratch-test" + collector);
+        assertThat(output).contains("bootRun=" + agent + ", -Dspidersense.service=scratch" + collector);
+        assertThat(output).contains("run=" + agent + ", -Dspidersense.service=scratch" + collector);
+        assertThat(output).as("the check judges the application, not the tests")
+                .contains("check=[check, --since=start, --service=scratch]");
+    }
+
+    @Test
+    void theBlockNamesTheTestService() throws IOException {
+        buildFile("""
+                jar = file('%JAR%')
+                attachTo.add('test')
+                service = 'orders'
+                testService = 'orders-it'
+                """.replace("%JAR%", stubJar.toAbsolutePath().toString()));
+
+        String output = probe();
+        assertThat(output).contains("test=[-javaagent:" + stubJar.toAbsolutePath()
+                + ", -Dspidersense.service=orders-it]");
+        assertThat(output).contains("bootRun=[-javaagent:" + stubJar.toAbsolutePath()
+                + ", -Dspidersense.service=orders]");
     }
 
     @Test

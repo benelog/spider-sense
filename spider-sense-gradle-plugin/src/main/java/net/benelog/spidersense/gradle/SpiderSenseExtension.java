@@ -15,9 +15,9 @@ import org.gradle.api.tasks.Nested;
  * jar's own default": the plugin passes a {@code -Dspidersense.*} option only
  * for a property the build actually set, so the defaults live in one place, the
  * jar, rather than being copied into this class where they would drift.
- * The exceptions are the four that cannot come from the jar because they are
- * about the build: {@code enabled}, {@code version}, {@code attachTo}, and
- * {@code service}, which is the project's name.
+ * The exceptions are the five that cannot come from the jar because they are
+ * about the build: {@code enabled}, {@code version}, {@code attachTo},
+ * {@code service}, which is the project's name, and {@code testService}.
  *
  * <p>The block sets only {@code spidersense.*} properties. Anything the
  * OpenTelemetry agent takes as {@code otel.*} goes on the task as an ordinary
@@ -60,6 +60,14 @@ public abstract class SpiderSenseExtension {
 
     /** {@code -Dspidersense.service}, which is {@code otel.service.name} unless that is set already. */
     public abstract Property<String> getService();
+
+    /**
+     * {@code -Dspidersense.service} for a {@link org.gradle.api.tasks.testing.Test} task in
+     * {@code attachTo}, which defaults to {@code service} with {@code -test} after it: the
+     * tests' deliberate failures are then not the application's, and {@code spiderSenseCheck},
+     * which judges {@code service}, does not count them.
+     */
+    public abstract Property<String> getTestService();
 
     /** {@code -Dspidersense.port}: where the embedded UI and OTLP receiver listen. */
     public abstract Property<Integer> getPort();

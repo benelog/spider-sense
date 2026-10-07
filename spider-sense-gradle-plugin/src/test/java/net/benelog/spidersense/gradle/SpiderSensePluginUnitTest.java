@@ -42,6 +42,18 @@ class SpiderSensePluginUnitTest {
     }
 
     @Test
+    void theTestServiceIsTheServiceWithTestAfterItUntilTheBlockSetsIt() {
+        assertThat(block.getTestService().get()).isEqualTo("orders-test");
+
+        block.getService().set("shop");
+        assertThat(block.getTestService().get()).isEqualTo("shop-test");
+
+        block.getTestService().set("shop-it");
+        assertThat(block.getTestService().get()).isEqualTo("shop-it");
+        assertThat(block.getCheck().getService().get()).as("the check judges the application").isEqualTo("shop");
+    }
+
+    @Test
     void theOptionsFollowTheOrderOfTheTable() {
         block.getSlowQueryMs().set(50L);
         block.getPort().set(4001);
@@ -126,6 +138,6 @@ class SpiderSensePluginUnitTest {
     }
 
     private List<String> systemProperties() {
-        return SpiderSensePlugin.systemProperties(project.getObjects(), block).get();
+        return SpiderSensePlugin.systemProperties(project.getObjects(), block, block.getService()).get();
     }
 }

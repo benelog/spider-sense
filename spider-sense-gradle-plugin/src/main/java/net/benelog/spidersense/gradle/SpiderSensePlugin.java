@@ -89,6 +89,9 @@ public class SpiderSensePlugin implements Plugin<Project> {
         // replaces the defaults.
         extension.getAttachTo().set(DEFAULT_ATTACH_TO);
         extension.getService().convention(project.getName());
+        // The tests are another service, so a 4xx a test provokes on purpose is
+        // not the application's, the way the Maven page's Surefire line has it.
+        extension.getTestService().convention(extension.getService().map(service -> service + "-test"));
         // A list property is present and empty until something sets it, which would
         // make "ignore nothing" indistinguishable from "say nothing". A convention of
         // null is Gradle's way of saying "no value at all", so here emptiness can mean
@@ -120,10 +123,13 @@ public class SpiderSensePlugin implements Plugin<Project> {
                         .map(path -> projectDir.toPath().resolve(path).normalize().toFile()),
                 extension.getJar().map(file -> file.getAsFile()));
 
-        Provider<List<String>> systemProperties = systemProperties(objects, extension);
+        Provider<List<String>> systemProperties = systemProperties(objects, extension, extension.getService());
+        Provider<List<String>> testSystemProperties =
+                systemProperties(objects, extension, extension.getTestService());
         Provider<List<String>> checkArguments = checkArguments(objects, providers, extension.getCheck());
 
-        attach(project, objects, extension, enabled, namedJar, configuration, systemProperties);
+        attach(project, objects, extension, enabled, namedJar, configuration, systemProperties,
+                testSystemProperties);
         registerTasks(project, objects, extension, namedJar, configuration, systemProperties, checkArguments,
                 projectDir);
     }
@@ -156,11 +162,23 @@ public class SpiderSensePlugin implements Plugin<Project> {
      * {@code enabled}, so a task added to {@code attachTo} after this ran is
      * still attached, and an unattached task neither resolves the jar nor waits
      * for whatever builds it.
+     *
+     * <p>A {@link Test} task reports as {@code testService}, every other task as
+     * {@code service}.
      */
     private void attach(Project project, ObjectFactory objects, SpiderSenseExtension extension,
             Provider<Boolean> enabled, NamedJar namedJar, Configuration configuration,
+            Provider<List<String>> systemProperties, Provider<List<String>> testSystemProperties) {
+        project.getTasks().withType(JavaExec.class).configureEach(
+                attachOne(objects, extension, enabled, namedJar, configuration, systemProperties));
+        project.getTasks().withType(Test.class).configureEach(
+                attachOne(objects, extension, enabled, namedJar, configuration, testSystemProperties));
+    }
+
+    private static Action<Task> attachOne(ObjectFactory objects, SpiderSenseExtension extension,
+            Provider<Boolean> enabled, NamedJar namedJar, Configuration configuration,
             Provider<List<String>> systemProperties) {
-        Action<Task> attachOne = task -> {
+        return task -> {
             String name = task.getName();
             Provider<Boolean> attached = enabled.zip(extension.getAttachTo(),
                     (on, names) -> on && names.contains(name));
@@ -169,8 +187,6 @@ public class SpiderSensePlugin implements Plugin<Project> {
             ((JavaForkOptions) task).getJvmArgumentProviders().add(SpiderSenseArguments.javaagent(
                     jar, systemProperties, attached, configuration.getName()));
         };
-        project.getTasks().withType(JavaExec.class).configureEach(attachOne);
-        project.getTasks().withType(Test.class).configureEach(attachOne);
     }
 
     /**
@@ -281,11 +297,14 @@ public class SpiderSensePlugin implements Plugin<Project> {
      * a value, in the order the documentation's table lists them. A property
      * left unset contributes nothing, which is how the jar's own default stays
      * the default.
+     *
+     * @param service the block's {@code service}, or its {@code testService} for a test task
      */
-    static Provider<List<String>> systemProperties(ObjectFactory objects, SpiderSenseExtension extension) {
+    static Provider<List<String>> systemProperties(ObjectFactory objects, SpiderSenseExtension extension,
+            Provider<String> service) {
         ListProperty<String> arguments = objects.listProperty(String.class);
         arguments.addAll(option("config", extension.getConfigFile().map(file -> file.getAsFile().getAbsolutePath())));
-        arguments.addAll(option("service", extension.getService()));
+        arguments.addAll(option("service", service));
         arguments.addAll(option("port", extension.getPort()));
         arguments.addAll(option("host", extension.getHost()));
         arguments.addAll(option("collector", extension.getCollector()));
