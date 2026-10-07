@@ -371,6 +371,7 @@ A call with no timeout turns the callee's bad minute into this service's bad min
 
 `numbers`: `count`, `firstSeen`, `lastSeen`, `type`, `message` (normalised, digits replaced by `?`), `endpoints` (name and count).
 A job's trace has no endpoint, so an error in it is attributed to the job: `SQLTransientConnectionException in ArchiveJob.archiveSlice`.
+An error from an outbound HTTP call names the call, `500 from GET localhost:8081/api/flaky`; when the called service failed in every sample trace too, `numbers.failedIn` names it, the finding is ranked after the other errors, and the callee's own `error` finding is the one to fix.
 
 The group is `(service, root-cause type, innermost application frame)`, so one row is one line throwing one exception, not one occurrence, whatever wrapper and message surround it; a trace without an application frame falls back to `(service, exception type or `error.type`, normalised message)`.
 `type` and `message` are the outer exception's.

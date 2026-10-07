@@ -156,6 +156,65 @@ class FindingsTest {
         assertThat(finding.title()).isEqualTo("IllegalStateException in GET /orders/{id}");
     }
 
+    /** A call the load generator makes, failed with a 500, as the http-client instrumentation records it. */
+    private static Span.Builder failedCall(int n, String path) {
+        return Otlp.span(traceId(n), spanId(n), "GET", Span.SpanKind.SPAN_KIND_CLIENT, NOW, 20,
+                        Otlp.attr("http.request.method", "GET"),
+                        Otlp.attr("url.full", "http://localhost:8081" + path),
+                        Otlp.attr("server.address", "localhost"),
+                        Otlp.attr("server.port", 8081L),
+                        Otlp.attr("http.response.status_code", 500),
+                        Otlp.attr("error.type", "500"))
+                .setStatus(io.opentelemetry.proto.trace.v1.Status.newBuilder()
+                        .setCode(io.opentelemetry.proto.trace.v1.Status.StatusCode.STATUS_CODE_ERROR));
+    }
+
+    @Test
+    void anErrorFromACallNamesTheCallAndComesAfterTheErrorOfTheServiceItCalled() {
+        List<Span.Builder> calls = new ArrayList<>();
+        List<Span.Builder> served = new ArrayList<>();
+        for (int n = 1; n <= 3; n++) {
+            Span.Builder call = failedCall(n, "/api/flaky");
+            calls.add(call);
+            served.add(Otlp.failing(Otlp.child(call, spanId(100 + n), "GET /api/flaky",
+                    Span.SpanKind.SPAN_KIND_SERVER, NOW + 1, 10,
+                    Otlp.attr("http.request.method", "GET"),
+                    Otlp.attr("http.route", "/api/flaky"),
+                    Otlp.attr("http.response.status_code", 500)),
+                    "java.lang.IllegalStateException", "flaky", STACKTRACE));
+        }
+        // The callee failed once more than the caller saw: the caller's group is the bigger one.
+        calls.add(failedCall(4, "/api/flaky"));
+        decoder.ingest(Otlp.traces(Otlp.resourceSpans(Otlp.service("load-gen"), calls.toArray(Span.Builder[]::new)),
+                Otlp.resourceSpans(Otlp.service("bookstore"), served.toArray(Span.Builder[]::new))));
+        flush();
+
+        List<Findings.Finding> errors = of(Findings.ERROR);
+
+        assertThat(errors).extracting(Findings.Finding::title).containsExactly(
+                "IllegalStateException in GET /api/flaky",
+                "500 from GET localhost:8081/api/flaky");
+        Findings.Finding call = errors.get(1);
+        assertThat(call.service()).isEqualTo("load-gen");
+        assertThat(call.numbers().get(Findings.FAILED_IN)).isEqualTo("bookstore");
+        assertThat(call.why()).isEqualTo("4 occurrences from GET localhost:8081/api/flaky;"
+                + " bookstore failed in every sample trace too, and its own error finding is the cause");
+        assertThat(errors.get(0).numbers()).doesNotContainKey(Findings.FAILED_IN);
+    }
+
+    @Test
+    void anErrorFromACallNobodyReportsIsRankedByItsCount() {
+        decoder.ingest(Otlp.traces(Otlp.service("load-gen"), failedCall(1, "/api/books/42"),
+                failedCall(2, "/api/books/43")));
+        flush();
+
+        Findings.Finding call = of(Findings.ERROR).get(0);
+
+        assertThat(call.title()).isEqualTo("500 from GET localhost:8081/api/books/?");
+        assertThat(call.numbers()).doesNotContainKey(Findings.FAILED_IN);
+        assertThat(call.why()).isEqualTo("2 occurrences from GET localhost:8081/api/books/?");
+    }
+
     @Test
     void anErrorAndAQueryInAJobAreAttributedToTheJob() {
         Span.Builder job = job(1, "Archiver.archiveSlice", 50);

@@ -17,6 +17,7 @@ Findings are computed over the window, not stored, so the same rules over the sa
 xref:marks-and-compare.adoc#time-selectors[Time selectors] define the window, which is the last 15 minutes when nothing says otherwise.
 
 Findings are ranked by severity (`high` before `medium` before `low`), then by kind, then by impact within a kind, then by id, so the list is stable between two calls over the same data.
+The one exception is an `error` that echoes another service's error, which comes after the other errors (<<error,error>>).
 No rule produces `low` today.
 The `low` severity is reserved for gentler kinds.
 The kind order is `regression`, `error`, `n-plus-one`, `n-plus-one-http`, `slow-query`, `slow-endpoint`, `slow-job`, `slow-external`, `log-error`, `pool-exhausted`, `gc-pause`, `heap-pressure`, `thread-growth`.
@@ -555,6 +556,13 @@ It is always `high`, and the impact it is ranked by is the occurrence count.
 
 `numbers`: `count`, `firstSeen`, `lastSeen`, `type`, `message` (normalised, digits replaced by `?`), `endpoints` (name and count, as xref:api.adoc#error-group[`ErrorGroup.endpoints`] has them).
 An error in a job's trace, which has no entry span, is attributed to the job, so a worker's failure reads `SQLTransientConnectionException in ArchiveJob.archiveSlice` (xref:api.adoc#callers[Callers and error endpoints]).
+The title is `<type short name> in <endpoint>`, the endpoint being the first of `endpoints`.
+
+An error group whose occurrences are mostly failed outbound HTTP calls (`CLIENT` spans of category `http`) is an error *from a call*.
+Such a span carries `error.type` `500` and no message, so its title names the call instead: `500 from GET localhost:8081/api/flaky`, the call being the span name, the target and the path with its digits made `?`, the most frequent of the group.
+The caller's endpoint follows as `in <endpoint>` when it is another span than the call itself, which a client root span, such as a load generator's request, is not.
+When the service it called also has a failed `SERVER` span in every one of the finding's `traces`, `numbers` ends with `failedIn`, that service's name, and the `why` says so: the callee's own `error` finding is the cause, and this one is its echo in the caller.
+Such an echo is ranked after every `error` that is not one, whatever its count, so the failure is read where it happened first.
 
 The group is the service, the root cause's type and the innermost application frame, so one row is one line throwing one exception rather than one occurrence.
 A wrapper such as Spring's `DataAccessException` or `ServletException` does not split a bug by the SQL or request its message embeds, and does not merge unrelated causes under its one type.

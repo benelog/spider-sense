@@ -64,6 +64,12 @@ public final class Findings {
     public static final String NOTE = "note";
     public static final String ORIGINAL_KIND = "originalKind";
 
+    /**
+     * The {@code numbers} an {@code error} from an outbound call carries when the service it
+     * called failed too, in every sample trace: that service's name (findings.adoc#error).
+     */
+    public static final String FAILED_IN = "failedIn";
+
     public static final String HIGH = "high";
     public static final String MEDIUM = "medium";
     public static final String LOW = "low";
@@ -653,6 +659,8 @@ public final class Findings {
                 .thenComparingInt(r -> KINDS.indexOf(r.finding().kind()))
                 // Regressions among themselves keep the order their kinds had.
                 .thenComparingInt(r -> KINDS.indexOf(r.finding().baseKind()))
+                // A caller's view of an error its callee reports itself comes after the callee's.
+                .thenComparing(r -> r.finding().numbers().containsKey(FAILED_IN))
                 .thenComparing(Comparator.comparingDouble(Ranked::impact).reversed())
                 .thenComparing(r -> r.finding().id());
 
@@ -675,11 +683,22 @@ public final class Findings {
         List<Stats.ErrorGroup> groups = evidence
                 ? queries.errors(window, service, Queries.ALL_GROUPS, null, reads::ancestry)
                 : queries.errorGroups(window, service, Queries.ALL_GROUPS, null);
+        Map<String, CallError> calls = evidence ? callErrors(window, groups) : Map.of();
         for (Stats.ErrorGroup group : groups) {
             if (group.count() <= 0) {
                 continue;
             }
             String where = group.endpoints().isEmpty() ? group.service() : group.endpoints().get(0).name();
+            List<String> traces = evidence ? traceIds(queries.tracesContaining(window,
+                    Queries.SpanMatch.error(group.errorId()), EVIDENCE_TRACES,
+                    Queries.TraceOrder.NEWEST)) : List.of();
+            CallError call = calls.get(group.errorId());
+            // An error from a call is said by the call; the caller's endpoint follows when it is
+            // another span than the call itself, which a client root span is not.
+            String place = call == null ? " in " + where : " from " + call.call()
+                    + (group.endpoints().isEmpty() || where.equals(call.name()) ? "" : " in " + where);
+            String failedIn = call == null ? null : failedServerIn(traces, group.service());
+
             Map<String, Object> numbers = new LinkedHashMap<>();
             numbers.put("count", group.count());
             numbers.put("firstSeen", group.firstSeen());
@@ -687,22 +706,110 @@ public final class Findings {
             numbers.put("type", group.type());
             numbers.put("message", group.message());
             numbers.put("endpoints", endpointCounts(group.endpoints()));
+            if (failedIn != null) {
+                numbers.put(FAILED_IN, failedIn);
+            }
 
+            String why = Numbers.plural(group.count(), "occurrence") + place + "; " + group.message();
+            if (call != null) {
+                why = Numbers.plural(group.count(), "occurrence") + place
+                        + (group.message() == null || group.message().isBlank() ? "" : "; " + group.message())
+                        + (failedIn == null ? "" : "; " + failedIn + " failed in every sample trace"
+                                + " too, and its own error finding is the cause");
+            }
             String stacktrace = group.sample() == null ? null : group.sample().stacktrace();
             Finding finding = new Finding(
                     id(ERROR, group.service(), group.errorId()),
                     ERROR, HIGH, group.service(),
-                    simpleName(group.type()) + " in " + where,
-                    Numbers.plural(group.count(), "occurrence") + " in " + where + "; " + group.message(),
+                    simpleName(group.type()) + place,
+                    why,
                     Subject.error(group.errorId()),
                     numbers, null,
                     frames.ofStacktrace(stacktrace),
-                    evidence ? traceIds(queries.tracesContaining(window,
-                            Queries.SpanMatch.error(group.errorId()), EVIDENCE_TRACES,
-                            Queries.TraceOrder.NEWEST)) : List.of());
+                    traces);
             found.add(new Ranked(finding, group.count()));
         }
         return found;
+    }
+
+    /**
+     * The call an error group's spans are, when most of them are outbound HTTP calls: the
+     * most frequent {@link Queries#callName} ({@code GET localhost:8081/api/flaky}) and the
+     * span name it starts with.
+     */
+    private record CallError(String call, String name) {
+    }
+
+    /**
+     * The groups whose occurrences are mostly failed outbound HTTP calls, by error id.
+     *
+     * <p>Such a span carries {@code error.type} {@code 500} and no message, so without its
+     * target the finding would read {@code 500 in GET}: the call's name and target are in the
+     * attributes, which are read here for the failed calls of the window alone
+     * (findings.adoc#error).
+     */
+    private Map<String, CallError> callErrors(Window window, List<Stats.ErrorGroup> groups) {
+        Map<String, Long> counts = new HashMap<>();
+        for (Stats.ErrorGroup group : groups) {
+            counts.put(group.errorId(), group.count());
+        }
+        if (counts.isEmpty()) {
+            return Map.of();
+        }
+        Where where = Where.window(window, null).and("error").and("kind = 'CLIENT'")
+                .and("category = 'http'").andIn("error_id", counts.keySet());
+        Map<String, Map<String, Long>> byGroup = new HashMap<>();
+        Map<String, String> names = new HashMap<>();
+        sql.forEach("SELECT error_id, " + Rows.SPAN_COLUMNS + " FROM span WHERE " + where.sql(),
+                where.params(), rs -> {
+                    SpanRecord span = Rows.span(rs);
+                    String call = Queries.callName(span);
+                    byGroup.computeIfAbsent(rs.getString("error_id"), id -> new HashMap<>())
+                            .merge(call, 1L, Long::sum);
+                    names.putIfAbsent(call, span.name());
+                });
+        Map<String, CallError> calls = new HashMap<>();
+        byGroup.forEach((errorId, byCall) -> {
+            long total = 0;
+            String top = null;
+            long most = 0;
+            for (Map.Entry<String, Long> each : byCall.entrySet()) {
+                long count = each.getValue();
+                total += count;
+                if (top == null || count > most || (count == most && each.getKey().compareTo(top) < 0)) {
+                    top = each.getKey();
+                    most = count;
+                }
+            }
+            if (top != null && total * 2 > counts.getOrDefault(errorId, 0L)) {
+                calls.put(errorId, new CallError(top, Objects.requireNonNull(names.get(top),
+                        "every call was named")));
+            }
+        });
+        return calls;
+    }
+
+    /**
+     * The service another than {@code service} whose {@code SERVER} span failed in every one
+     * of these traces, the first by name when there are several; null when there is none.
+     */
+    private @Nullable String failedServerIn(List<String> traces, String service) {
+        if (traces.isEmpty()) {
+            return null;
+        }
+        Where where = new Where("kind = 'SERVER' AND error AND service <> ?", service)
+                .andIn("trace_id", traces);
+        Map<String, Set<String>> tracesByService = new HashMap<>();
+        sql.forEach("SELECT DISTINCT trace_id, service FROM span WHERE " + where.sql(), where.params(),
+                rs -> tracesByService.computeIfAbsent(rs.getString("service"), name -> new HashSet<>())
+                        .add(rs.getString("trace_id")));
+        String failed = null;
+        for (Map.Entry<String, Set<String>> each : tracesByService.entrySet()) {
+            if (each.getValue().containsAll(traces) && (failed == null || each.getKey().compareTo(failed) < 0)) {
+                failed = each.getKey();
+            }
+        }
+        return failed;
     }
 
     // --- log error -----------------------------------------------------------
