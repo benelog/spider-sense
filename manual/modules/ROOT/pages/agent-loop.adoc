@@ -113,11 +113,12 @@ Then, in order:
 ----
 java -javaagent:"$SENSE" -jar build/libs/app.jar &   # 1. start the application under the agent
 java -jar "$SENSE" status                            # confirm it is collecting
+curl -s http://localhost:8080/orders/42 >/dev/null   #    warm each endpoint once: a cold JVM's first call is not the code's speed
 java -jar "$SENSE" mark before                       # 2. name the moment
 curl -s http://localhost:8080/orders/42 >/dev/null   #    exercise: the endpoints in question, the tests, or the load generator
 java -jar "$SENSE" findings --since=before           # 3. read the top finding
 java -jar "$SENSE" trace 4bf92f3577b34da6a3ce929d0e0e4736   #    open its evidence, locate the code
-#                                                    # 4. fix, rebuild, restart
+#                                                    # 4. fix, rebuild, restart, and warm each endpoint once again
 java -jar "$SENSE" mark after                        # 5. exercise the same way
 java -jar "$SENSE" compare --before=before --after=after
 java -jar "$SENSE" check --since=after --max-p95-ms=300 --max-n-plus-one=0
@@ -126,10 +127,12 @@ java -jar "$SENSE" resolve n-plus-one:4c5f46be8bc5 --note="fetch join"   # 6. on
 
 . *Start the application under the agent*, with `-javaagent`, or with `JAVA_TOOL_OPTIONS` when the start command is not the agent's to change, and confirm with `status`, which names the mode, the port, the database and how much it holds.
 . *Mark the moment* with `mark before`, then exercise the endpoints in question, run the tests, or run the load generator.
+Call each endpoint once before `mark before`: a cold JVM's first call is not the code's speed, and a before window that holds it makes `compare` say `better` about a change that was never made.
 . *Read the findings* with `findings --since=before`, and take the top one.
 Read its suspect-change lines first, which say whether the frame's line is in the change just made (xref:cli.adoc#suspect-change[The suspect change]), then open a trace from its `traces` and the code.
 . *Fix the code*, and rebuild and restart when the fix needs it.
 . *Verify* with `mark after`, the same exercise, then `compare --before=before --after=after` and `check`.
+After a restart, call each endpoint once again before `mark after`, for the same reason.
 . *Resolve* the finding once `check` passes, with `resolve <finding id> --note=<the fix>`, so the finding is a `regression`, ranked first, if a later change brings it back.
 
 After a restart there is a fresh `start` mark, so `--since=start` covers the new run without marking anything.
@@ -190,6 +193,7 @@ The `state` column says what the last restart changed: `new` for a finding the r
 
 [source,bash]
 ----
+# after a restart, call each endpoint once first: a cold JVM's first call is not the code's speed
 java -jar "$SENSE" mark after
 # exercise exactly as before: the same endpoints, the same number of times
 java -jar "$SENSE" compare --before=before --after=after

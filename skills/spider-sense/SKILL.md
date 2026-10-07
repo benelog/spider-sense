@@ -51,11 +51,12 @@ Then, in order:
 ```bash
 java -javaagent:"$SENSE" -jar build/libs/app.jar &   # 1. start the application under the agent
 java -jar "$SENSE" status                            # confirm it is collecting
+curl -s http://localhost:8080/orders/42 >/dev/null   #    warm each endpoint once: a cold JVM's first call is not the code's speed
 java -jar "$SENSE" mark before                       # 2. name the moment
 curl -s http://localhost:8080/orders/42 >/dev/null   #    exercise: the endpoints in question, the tests, or the load generator
 java -jar "$SENSE" findings --since=before           # 3. read the top finding, its suspect-change lines first
 java -jar "$SENSE" trace 4bf92f3577b34da6a3ce929d0e0e4736   #    open its evidence, locate the code
-#                                                    # 4. fix, rebuild, restart
+#                                                    # 4. fix, rebuild, restart, and warm each endpoint once again
 java -jar "$SENSE" mark after                        # 5. exercise the same way
 java -jar "$SENSE" compare --before=before --after=after
 java -jar "$SENSE" check --since=after --max-p95-ms=300 --max-n-plus-one=0
@@ -141,6 +142,7 @@ The difference from `ack` is only that: an acknowledged finding that recurs stay
 ## Verifying a change
 
 ```bash
+# after a restart, call each endpoint once first: a cold JVM's first call is not the code's speed
 java -jar "$SENSE" mark after
 # exercise exactly as before: the same endpoints, the same number of times
 java -jar "$SENSE" compare --before=before --after=after

@@ -245,4 +245,8 @@ $ java -jar spider-sense.jar compare --before=before --after=after
 
 Exercise the after window exactly as the before window was exercised: the same endpoints, the same number of times.
 A different exercise moves every number, and the verdicts then say what the traffic did rather than what the change did.
+
+Call each endpoint once before `mark before`, and once again before `mark after` when the application was restarted in between.
+A cold JVM's first call pays for class loading, the JIT and the connection pool, so it is not the code's speed.
+A before window that holds it makes `compare` say `better` about a change that was never made, and an after window that holds it says `worse`.
 xref:check.adoc[Check] turns the same window into a pass or a fail.
