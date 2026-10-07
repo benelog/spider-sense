@@ -153,6 +153,19 @@ export function truncate(s, max) {
   return s.length <= max ? s : s.slice(0, max - 1) + '…';
 }
 
+/**
+ * `truncate` from the other end, for a name whose tail tells it apart, such as a database file:
+ * `h2:~/db/spider-sense/bookstore` becomes `…/bookstore`. The cut moves on to the next `/`
+ * when there is one, so a path segment is never shown half.
+ */
+export function truncateStart(s, max) {
+  if (s == null) return '';
+  if (s.length <= max) return s;
+  const tail = s.slice(s.length - (max - 1));
+  const slash = tail.indexOf('/');
+  return '…' + (slash > 0 ? tail.slice(slash) : tail);
+}
+
 /** A signed offset inside a trace: "+12.3 ms". */
 export function offset(ms) {
   return (ms < 0 ? '-' : '+') + dur(Math.abs(ms));

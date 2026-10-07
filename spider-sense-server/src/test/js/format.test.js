@@ -94,6 +94,9 @@ test('shortId, splitType and truncate', () => {
   assert.deepEqual(fmt.splitType(null), { pkg: '', name: '' });
   assert.equal(fmt.truncate('abcdef', 4), 'abc…');
   assert.equal(fmt.truncate('abcd', 4), 'abcd');
+  assert.equal(fmt.truncateStart('h2:~/db/spider-sense/bookstore', 22), '…/bookstore');
+  assert.equal(fmt.truncateStart('abcdefgh', 4), '…fgh');
+  assert.equal(fmt.truncateStart('abcd', 4), 'abcd');
   assert.equal(fmt.truncate(null, 4), '');
 });
 

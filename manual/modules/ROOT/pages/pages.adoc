@@ -172,6 +172,8 @@ An edge that appears or leaves the window, which can move a service to another c
 [#map-nodes]
 A node is a rounded rectangle of 200×64 with an icon for its kind: service, database, a trace icon for `http`, a log icon for messaging, and a person for `user`.
 It carries the name, ellipsised, with the full name in a `<title>`.
+A service's name is ellipsised at the end.
+An external name with a `/` in it, a database file or a URL, is ellipsised at the start instead and keeps its last path segments, so four H2 files under one directory read `…/bookstore`, `…/orders` and so on rather than four times `h2:~/db/spide…`.
 A service node adds a second line of rps, p95 and error rate, ellipsised to the space left, and a five-bar mini histogram of 40×14 in the bucket colours in the bottom-right corner, never overlapping the text.
 The border is `--line`, and turns `--err` when the error rate is over 1% and `--warn` when the Apdex is under 0.85.
 The service filter dims every node and edge that is neither the chosen service nor one of its neighbours.

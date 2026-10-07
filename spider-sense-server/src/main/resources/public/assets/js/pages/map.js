@@ -11,7 +11,7 @@ import { pageLoader } from '../page.js';
 import { timeSeries } from '../charts.js';
 import { throughputSpec } from '../throughput.js';
 import { histogramBars, bucketVars, apdexClass, ERROR_RATE_BAD } from '../buckets.js';
-import { dur, count, rate, pct, apdex, truncate, ifRequests } from '../format.js';
+import { dur, count, rate, pct, apdex, truncate, truncateStart, ifRequests } from '../format.js';
 
 const NODE_W = 200, NODE_H = 64, COL_PITCH = 260, ROW_PITCH = 96, PAD_X = 22, PAD_Y = 20;
 const HIST_W = 40, HIST_H = 14, HIST_X = NODE_W - HIST_W - 12, HIST_Y = NODE_H - HIST_H - 10;
@@ -417,7 +417,7 @@ export function render(root, ctx) {
     const rect = svgElement('rect', { class: 'map-node-box', width: NODE_W, height: NODE_H, rx: 8 });
     const use = svgElement('use', { class: 'map-node-icon', href: '#i-' + categoryIcon(n.kind), x: 12, y: 12, width: 16, height: 16 });
     const name = svgElement('text', { class: 'map-node-name', x: 36, y: 25 },
-      truncate(n.name, fits(NODE_W - 36 - 12, 12)), svgElement('title', {}, n.name));
+      nodeName(n, fits(NODE_W - 36 - 12, 12)), svgElement('title', {}, n.name));
     g.appendChild(rect);
     g.appendChild(use);
     g.appendChild(name);
@@ -441,6 +441,14 @@ export function render(root, ctx) {
     if (n.errorRate > ERROR_RATE_BAD) return 'is-bad';
     if (apdexClass(n.apdex)) return 'is-warn';
     return '';
+  }
+
+  /**
+   * A node's name in `max` characters. An external name with a path in it, a database file or
+   * a URL, is told apart by its tail, so it is ellipsised from the start (pages.adoc#map-nodes).
+   */
+  function nodeName(n, max) {
+    return n.kind !== 'service' && n.kind !== 'user' && String(n.name || '').includes('/') ? truncateStart(n.name, max) : truncate(n.name, max);
   }
 
   /** A service line stops short of the mini histogram; anything else runs the full width. */
