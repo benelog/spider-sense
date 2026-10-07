@@ -54,7 +54,7 @@ public class SpiderSensePlugin implements Plugin<Project> {
     public static final String NAME = "spiderSense";
 
     /** The group the three tasks are in. */
-    public static final String GROUP = "spider sense";
+    public static final String GROUP = "Spider Sense";
 
     /** The launcher's main class: the standalone server and the CLI in one entry point. */
     public static final String MAIN_CLASS = "net.benelog.spidersense.launcher.SpiderSenseMain";

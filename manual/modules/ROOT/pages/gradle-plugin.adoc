@@ -55,7 +55,7 @@ The jar is a declared input of the task, so a project dependency on it is built 
 A task that is not in `attachTo`, or a run with `spiderSense.enabled` false, gets nothing: no argument, no jar resolution.
 The plugin adds a provider and never edits `jvmArgs`, so the task's own `jvmArgs` stay as the build wrote them.
 The arguments are computed when the task runs, so a `spiderSense { }` block anywhere in the build file, before or after `tasks.named('bootRun')`, is seen.
-. Registers the tasks `spiderSense`, `spiderSenseInit` and `spiderSenseCheck` in the group `spider sense`.
+. Registers the tasks `spiderSense`, `spiderSenseInit` and `spiderSenseCheck` in the group `Spider Sense`, which `./gradlew tasks` lists as "Spider Sense tasks".
 
 Nothing here touches the Gradle daemon.
 A `jvmArgumentProvider` reaches only the forked JVM.

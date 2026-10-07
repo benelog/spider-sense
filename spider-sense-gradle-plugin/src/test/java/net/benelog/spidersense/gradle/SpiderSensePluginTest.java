@@ -454,7 +454,7 @@ class SpiderSensePluginTest {
     void theCheckTaskIsInTheGroupAndJudgesTheWindowSinceTheApplicationStarted() {
         String output = probe();
 
-        assertThat(output).contains("checkGroup=spider sense");
+        assertThat(output).contains("checkGroup=Spider Sense");
         assertThat(output).contains("check=[check, --since=start, --service=scratch]");
     }
 
