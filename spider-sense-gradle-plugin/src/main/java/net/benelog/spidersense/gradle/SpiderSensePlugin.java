@@ -225,18 +225,22 @@ public class SpiderSensePlugin implements Plugin<Project> {
             configureJarRun(task, jar, standaloneProperties, configuration.getName(), url);
         });
 
-        // init writes the CLAUDE.md block and installs the skills, and both the
-        // directory it writes into and the jar path it writes down are what this
-        // build knows and the CLI does not.
+        // init writes the CLAUDE.md block and installs the skills, and the
+        // directory it writes into, the jar path it writes down, that the
+        // application starts through Gradle, and where its Spider Sense listens
+        // are what this build knows and the CLI does not.
         project.getTasks().register(NAME + "Init", JavaExec.class, task -> {
             task.setGroup(GROUP);
             task.setDescription("Writes the Spider Sense block into CLAUDE.md and installs the agent skills");
             SpiderSenseArguments options = configureJarRun(task, jar, systemProperties, configuration.getName(), url);
+            ListProperty<String> initArguments = objects.listProperty(String.class);
             // Mapped from a fixed provider so the jar is resolved when the task runs, not now.
-            Provider<List<String>> initArguments = objects.property(Boolean.class).value(true).map(ignored -> List.of(
+            initArguments.addAll(objects.property(Boolean.class).value(true).map(ignored -> List.of(
                     "init",
                     "--dir=" + projectDir.getAbsolutePath(),
-                    "--jar=" + options.singleJar().getAbsolutePath()));
+                    "--jar=" + options.singleJar().getAbsolutePath(),
+                    "--gradle")));
+            initArguments.addAll(url.map(base -> List.of("--url=" + base)).orElse(List.of()));
             task.getArgumentProviders().add(
                     SpiderSenseArguments.programArguments(objects.fileCollection(), initArguments));
         });

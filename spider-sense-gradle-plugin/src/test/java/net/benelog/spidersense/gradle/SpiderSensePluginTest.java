@@ -500,7 +500,42 @@ class SpiderSensePluginTest {
         String output = gradle("spiderSenseInit", "-q").build().getOutput();
 
         assertThat(output).contains("args=[init, --dir=" + realProjectDir()
-                + ", --jar=" + stubJar.toAbsolutePath() + "]");
+                + ", --jar=" + stubJar.toAbsolutePath() + ", --gradle]");
+    }
+
+    @Test
+    void theInitTaskNamesTheSpiderSenseTheBlockImplies() throws IOException {
+        buildFile("""
+                jar = file('%JAR%')
+                port = 4106
+                """.replace("%JAR%", stubJar.toAbsolutePath().toString()));
+
+        assertThat(gradle("spiderSenseInit", "-q").build().getOutput())
+                .contains("args=[init, --dir=" + realProjectDir() + ", --jar=" + stubJar.toAbsolutePath()
+                        + ", --gradle, --url=http://127.0.0.1:4106]");
+
+        buildFile("""
+                jar = file('%JAR%')
+                collector = 'http://127.0.0.1:4100'
+                """.replace("%JAR%", stubJar.toAbsolutePath().toString()));
+
+        assertThat(gradle("spiderSenseInit", "-q").build().getOutput())
+                .contains(", --gradle, --url=http://127.0.0.1:4100]");
+    }
+
+    /** The init task stores too: its arguments hold the jar's provider, not the project. */
+    @Test
+    void theConfigurationCacheIsReusedByTheInitTask() throws IOException {
+        buildFile("""
+                jar = file('%JAR%')
+                port = 4106
+                """.replace("%JAR%", stubJar.toAbsolutePath().toString()));
+        gradle("spiderSenseInit", "--configuration-cache").build();
+
+        BuildResult second = gradle("spiderSenseInit", "--configuration-cache").build();
+
+        assertThat(second.getOutput()).contains("Configuration cache entry reused.");
+        assertThat(second.getOutput()).contains("--url=http://127.0.0.1:4106]");
     }
 
     @Test

@@ -228,10 +228,10 @@ An `enabled` of `false` is the same as not applying the plugin, except that the 
 
 The `spiderSense` task is a `JavaExec` with the jar as its only class path, `net.benelog.spidersense.launcher.SpiderSenseMain` as its main class, and no dependency on compiling the project.
 The block's `spidersense.*` properties are passed to it as they are to the application, so a standalone started this way listens where the block says.
+Its `service` is passed as well, and a standalone ignores it: the standalone runs inside no application, so its `status` names no embedded service.
 When the block sets no `port` and forwards to a `collector` on this machine (`127.0.0.1`, `localhost` or `[::1]`, with a port written in the URL), the task passes the collector's port as `-Dspidersense.port=`.
 `./gradlew spiderSense` then starts the very Spider Sense the block forwards to.
 Only the `spiderSense` task gets that port: the application forwards and listens on nothing of its own.
-Its `service` is passed as well, and a standalone ignores it: the standalone runs inside no application, so its `status` names no embedded service.
 When the block names a `collector`, a `host` or a `port`, it also sets the environment variable `SPIDERSENSE_URL` to the base URL they imply, which is `collector` when set and otherwise `http://<host>:<port>` with the defaults filled in.
 A CLI command therefore asks the Spider Sense the application is sending to rather than the default port.
 When the block names none of them, the variable stays unset and the CLI's own default applies.
@@ -240,8 +240,11 @@ A CLI exit code other than `0` fails the task, and Gradle's failure message name
 `./gradlew` itself exits `1` for every failed task, so a script cannot tell the CLI's codes `1` to `4` apart through the task.
 A script that branches on the code runs `java -jar` on the jar itself, and `spiderSenseCheck` fails with a message of its own for each outcome of `check` (<<check-task,Check as a build step>>).
 
-`spiderSenseInit` runs `init --dir=<the project directory> --jar=<the jar>`.
+`spiderSenseInit` runs `init --dir=<the project directory> --jar=<the jar> --gradle`, and adds `--url=<base URL>` when the block names a `collector`, a `host` or a `port`.
+The URL is the one `SPIDERSENSE_URL` gets above.
 It writes the Spider Sense block into the project's `CLAUDE.md` and installs the skills into `.claude/skills/`, as xref:agent-skill.adoc#init[The Agent Skill] describes.
+With `--gradle` the `CLAUDE.md` block starts the application with `./gradlew bootRun` and runs every CLI command as `./gradlew -q spiderSense --args="…"`, so the agent asks the Spider Sense the `spiderSense { }` block configures.
+With `--url` it names the UI at that URL rather than at port `4000`.
 The jar path it writes is where Gradle resolved the jar to.
 For a Maven Central jar that is a file under `~/.gradle/caches/`, which stays valid until the version changes.
 Run it again after a `version` bump.
