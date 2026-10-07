@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   startMsOf, traceStartMs, spanTree, flattenTree, selfTimes, depthMap, profileRows, hotSpanIds,
+  siblingRuns, FOLD_AFTER,
 } from '../../main/resources/public/assets/js/trace-model.js';
 
 const span = (spanId, parentSpanId, start, durationMs) => ({ spanId, parentSpanId, start, durationMs });
@@ -119,4 +120,52 @@ test('at most three hot spans, each with at least 5% of the trace to itself', ()
   assert.deepEqual([...hotSpanIds(rows, 1000)], []);
   assert.deepEqual([...hotSpanIds(rows, 600)].sort(), ['a', 'b1', 'root']);
   assert.deepEqual([...hotSpanIds(rows, 601)], []);
+});
+
+// An N+1: under root, a SELECT of orders, then five SELECTs of product, one with a newline, and a sixth with a child.
+const db = (spanId, start, summary, extra = {}) => ({
+  spanId, parentSpanId: 'root', start, durationMs: 2, category: 'db', service: 'orders', summary, ...extra,
+});
+const nPlusOne = [
+  { spanId: 'root', parentSpanId: null, start: 0, durationMs: 100, category: 'http', service: 'orders', summary: 'GET /orders/{id}' },
+  db('o', 1, 'SELECT orders (h2)'),
+  db('p1', 10, 'SELECT product (h2)'),
+  db('p2', 20, 'SELECT  product\n(h2)'),
+  db('p3', 30, 'SELECT product (h2)', { durationMs: 4 }),
+  db('p4', 40, 'SELECT product (h2)'),
+  db('p5', 50, 'SELECT product (h2)'),
+  db('p6', 60, 'SELECT product (h2)'),
+  { spanId: 'p6c', parentSpanId: 'p6', start: 61, durationMs: 1, category: 'internal', service: 'orders', summary: 'fetch' },
+];
+
+test('more than three repeated childless siblings fold into one run, as the CLI collapses them (cli.adoc#trace-rendering)', () => {
+  const runs = siblingRuns(spanTree(nPlusOne));
+  const run = runs.get('p1');
+  assert.equal(FOLD_AFTER, 3);
+  assert.deepEqual(run.spans.map((s) => s.spanId), ['p1', 'p2', 'p3', 'p4', 'p5'], 'a span with children ends the run');
+  assert.equal(run.key, 'run:p1');
+  assert.equal(run.count, 5);
+  assert.equal(run.totalMs, 12);
+  assert.deepEqual([run.start, run.end], [10, 52]);
+  assert.equal(runs.get('p5'), run);
+  assert.equal(runs.has('o'), false);
+  assert.equal(siblingRuns(spanTree(nPlusOne.filter((s) => !['p4', 'p5'].includes(s.spanId)))).size, 0, 'three are not a run');
+});
+
+test('flattenTree shows a run as one row and its spans one level deeper when it is expanded', () => {
+  const tree = spanTree(nPlusOne);
+  const rowsOf = (expanded) => flattenTree(tree, new Set(), expanded).map((r) => (r.run ? r.run.key : r.span.spanId) + ':' + r.depth);
+  assert.deepEqual(rowsOf(new Set()), ['root:0', 'o:1', 'run:p1:1', 'p6:1', 'p6c:2']);
+  assert.deepEqual(rowsOf(new Set(['run:p1'])), ['root:0', 'o:1', 'run:p1:1', 'p1:2', 'p2:2', 'p3:2', 'p4:2', 'p5:2', 'p6:1', 'p6c:2']);
+});
+
+test('the profile folds a run where its first span stands, with the totals of its spans', () => {
+  const rows = profileRows({ spans: nPlusOne });
+  assert.deepEqual(rows.map((r) => r.key), ['root', 'o', 'run:p1', 'p6', 'p6c']);
+  const run = rows[2];
+  assert.deepEqual([run.index, run.lastIndex, run.elapsed, run.self, run.startOffset, run.depth], [3, 7, 12, 12, 10, 1]);
+  assert.deepEqual(profileRows({ spans: nPlusOne }, 'elapsed').map((r) => r.key).slice(0, 2), ['root', 'run:p1']);
+  const open = profileRows({ spans: nPlusOne }, 'start', new Set(['run:p1']));
+  assert.deepEqual(open.map((r) => r.key + ':' + r.depth).slice(2, 8), ['run:p1:1', 'p1:2', 'p2:2', 'p3:2', 'p4:2', 'p5:2']);
+  assert.ok(hotSpanIds(rows, 100).has('run:p1'), 'a run is hot on its total');
 });

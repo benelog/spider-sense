@@ -20,6 +20,21 @@ const STATEMENT_KEYS = ['db.statement', 'db.query.text'];
 /** The stack the extension captures on a slow or repeated call (findings.adoc#code). */
 const STACK_KEY = 'code.stacktrace';
 
+/** The line a span reads as: its summary, or its name when it has none. */
+function summaryOf(span) {
+  return span.summary || span.name;
+}
+
+/** `SELECT product (h2) × 21`: a run of repeated siblings as the CLI's tree says it. */
+function runLabel(run) {
+  return summaryOf(run.spans[0]) + ' × ' + run.count;
+}
+
+/** `21 × SELECT product (h2), 0.4 ms avg, 8.2 ms total`. */
+function runTitle(run) {
+  return run.count + ' × ' + summaryOf(run.spans[0]) + ', ' + dur(run.totalMs / run.count) + ' avg, ' + dur(run.totalMs) + ' total';
+}
+
 export function render(root, ctx) {
   const traceId = ctx.params.id;
   let data = null;
@@ -27,6 +42,8 @@ export function render(root, ctx) {
   let profileSort = router.queryParam(ctx.query(), 'sort', ['start', 'elapsed', 'self'], 'start');
   let selectedSpan = ctx.query().span || null;
   const collapsed = new Set();
+  // The runs of repeated siblings opened in place; both views share them (trace-model.js#siblingRuns).
+  const expandedRuns = new Set();
   let lastShape = '';
 
   const head = h('div.trace-head');
@@ -73,36 +90,76 @@ export function render(root, ctx) {
   function paintWaterfall() {
     const t0 = traceStartMs(data);
     const total = Math.max(1, data.durationMs || 1);
-    const rows = flattenTree(spanTree(data.spans || []), collapsed);
+    const rows = flattenTree(spanTree(data.spans || []), collapsed, expandedRuns);
     const box = h('div.waterfall',
       h('div.wf-head', h('span', 'Span'), h('span', 'Timeline'), h('span.right', dur(total) + ' total')));
-    for (const { span, depth, hasChildren } of rows) {
-      box.appendChild(waterfallRow(span, depth, hasChildren, t0, total));
+    for (const { span, depth, hasChildren, run } of rows) {
+      box.appendChild(run ? runRow(run, depth, t0, total) : waterfallRow(span, depth, hasChildren, t0, total));
     }
     fill(bodyBox, box);
   }
 
-  function waterfallRow(span, depth, hasChildren, t0, total) {
-    const startPct = Math.max(0, ((startMsOf(span) - t0) / total) * 100);
-    const widthPct = Math.max(0.4, Math.min(100 - startPct, (span.durationMs / total) * 100));
-    const bar = h('span.wf-bar', {
-      class: span.error ? 'err' : null,
-      style: { left: startPct + '%', width: widthPct + '%', background: span.error ? undefined : serviceColor(span.service) },
+  /** Flips a span's collapse or a run's expansion, repaints, and keeps the focus on the toggle pressed. */
+  function flip(set, key) {
+    if (set.has(key)) set.delete(key); else set.add(key);
+    paintBody();
+    // The rows are new: keep a keyboard user on the control they pressed.
+    const again = bodyBox.querySelector('[data-key="' + CSS.escape(key) + '"]');
+    const target = again && (again.querySelector('.wf-toggle') || again);
+    if (target) target.focus();
+  }
+
+  function barOf(fromMs, durationMs, t0, total, error, service) {
+    const startPct = Math.max(0, ((fromMs - t0) / total) * 100);
+    const widthPct = Math.max(0.4, Math.min(100 - startPct, (durationMs / total) * 100));
+    return h('span.wf-bar', {
+      class: error ? 'err' : null,
+      style: { left: startPct + '%', width: widthPct + '%', background: error ? undefined : serviceColor(service) },
     });
+  }
+
+  /**
+   * A run of repeated siblings as one row, as the CLI's tree has it (`SELECT product × 21`): its
+   * bar spans the run, its duration is the run's total, and it expands in place.
+   */
+  function runRow(run, depth, t0, total) {
+    const first = run.spans[0];
+    const open = expandedRuns.has(run.key);
+    const error = run.spans.some((s) => s.error);
+    const name = runLabel(run);
+    const toggle = () => flip(expandedRuns, run.key);
+    return h('div.wf-row.wf-run', {
+      class: [run.spans.some((s) => s.slow) && 'slow'],
+      dataset: { key: run.key },
+      tabindex: 0,
+      title: runTitle(run),
+      onclick: toggle,
+      onkeydown: (e) => { if (e.key === 'Enter' && e.target === e.currentTarget) toggle(); },
+    },
+      h('div.wf-name', { style: { paddingLeft: depth * 14 + 'px' } },
+        h('button.wf-toggle', {
+          type: 'button',
+          'aria-expanded': String(open),
+          'aria-label': (open ? 'Fold ' : 'Show the ') + run.count + ' ' + summaryOf(first),
+          onclick: (e) => { e.stopPropagation(); toggle(); },
+        }, icon('chevron')),
+        h('span.wf-svc', { style: { background: serviceColor(first.service) }, title: first.service }),
+        icon(categoryIcon(first.category, 'chart')),
+        h('span.wf-label', name),
+        error ? h('span.marker.err', { title: 'Error' }, icon('bolt')) : null),
+      h('div.wf-track', barOf(run.start, run.end - run.start, t0, total, error, first.service)),
+      h('span.wf-dur', { class: error ? 'bad' : null }, dur(run.totalMs)));
+  }
+
+  function waterfallRow(span, depth, hasChildren, t0, total) {
+    const bar = barOf(startMsOf(span), span.durationMs, t0, total, span.error, span.service);
     const label = h('span.wf-dur', { class: span.error ? 'bad' : null }, dur(span.durationMs));
     const toggle = hasChildren
       ? h('button.wf-toggle', {
         type: 'button',
         'aria-expanded': String(!collapsed.has(span.spanId)),
         'aria-label': (collapsed.has(span.spanId) ? 'Expand ' : 'Collapse ') + span.name,
-        onclick: (e) => {
-          e.stopPropagation();
-          if (collapsed.has(span.spanId)) collapsed.delete(span.spanId); else collapsed.add(span.spanId);
-          paintWaterfall();
-          // The rows are new: keep a keyboard user on the toggle they pressed.
-          const again = bodyBox.querySelector('[data-key="' + CSS.escape(span.spanId) + '"] .wf-toggle');
-          if (again) again.focus();
-        },
+        onclick: (e) => { e.stopPropagation(); flip(collapsed, span.spanId); },
       }, icon('chevron'))
       : h('span.wf-spacer');
     const row = h('div.wf-row', {
@@ -129,7 +186,7 @@ export function render(root, ctx) {
   function paintProfile() {
     const total = Math.max(1, data.durationMs || 1);
     const slowMs = slowRequestMs();
-    const rows = profileRows(data, profileSort);
+    const rows = profileRows(data, profileSort, expandedRuns);
     // The three steps that actually spent the time, and only when they spent enough of it to be worth reading.
     const hot = hotSpanIds(rows, total);
     const chronological = profileSort === 'start';
@@ -139,29 +196,41 @@ export function render(root, ctx) {
       router.setQuery({ sort: key }, { defaults: { sort: 'start' } });
       paintProfile();
     };
+    const members = (r) => (r.run ? r.run.spans : [r.span]);
     fill(bodyBox, table([
-      { key: 'index', label: '#', align: 'right', sortable: false, width: '44px', render: (r) => h('span.muted.mono', String(r.index)) },
+      { key: 'index', label: '#', align: 'right', sortable: false, width: '58px', render: (r) => h('span.muted.mono', r.run ? r.index + '–' + r.lastIndex : String(r.index)) },
       { key: 'start', label: 'Start', align: 'right', width: '84px', render: (r) => h('span.mono', offset(r.startOffset)) },
       { key: 'gap', label: 'Gap', align: 'right', sortable: false, width: '76px', render: (r) => (chronological && r.gap > 0.5 ? h('span.mono.muted', dur(r.gap)) : h('span.muted', '-')) },
-      { key: 'elapsed', label: 'Elapsed', align: 'right', width: '84px', render: (r) => h('span.mono', dur(r.span.durationMs)) },
+      { key: 'elapsed', label: 'Elapsed', align: 'right', width: '84px', render: (r) => h('span.mono', dur(r.elapsed)) },
       { key: 'self', label: 'Self', align: 'right', width: '84px', render: (r) => h('span.mono.self-value', dur(r.self)) },
       { key: 'pct', label: '%', align: 'right', sortable: false, width: '58px', render: (r) => h('span.mono.muted', ((r.self / total) * 100).toFixed(1)) },
       {
         key: 'step', label: 'Step', sortable: false, cls: 'wide',
-        render: (r) => h('span.cell-ellipsis', { style: { paddingLeft: r.depth * 14 + 'px' }, title: r.span.summary || r.span.name },
+        render: (r) => h('span.cell-ellipsis', { style: { paddingLeft: r.depth * 14 + 'px' }, title: r.run ? runTitle(r.run) : summaryOf(r.span) },
           h('span.row', { style: { gap: '6px' } },
+            r.run
+              ? h('button.wf-toggle', {
+                type: 'button',
+                'aria-expanded': String(expandedRuns.has(r.run.key)),
+                'aria-label': (expandedRuns.has(r.run.key) ? 'Fold ' : 'Show the ') + r.run.count + ' ' + summaryOf(r.span),
+                onclick: (e) => { e.stopPropagation(); flip(expandedRuns, r.run.key); },
+              }, icon('chevron'))
+              : null,
             icon(categoryIcon(r.span.category, 'chart')),
-            h('span', r.span.summary || r.span.name),
-            r.span.error ? icon('bolt') : null)),
+            h('span', r.run ? runLabel(r.run) : summaryOf(r.span)),
+            members(r).some((s) => s.error) ? icon('bolt') : null)),
       },
       { key: 'service', label: 'Service', sortable: false, width: '150px', render: (r) => serviceChip(r.span.service) },
     ], {
       rows,
       sort: sortState,
       onSort,
-      rowKey: (r) => r.span.spanId,
-      rowClass: (r) => 'profile-row' + (r.span.error ? ' err' : r.span.slow || r.span.durationMs > slowMs ? ' warn' : '') + (hot.has(r.span.spanId) ? ' hot' : ''),
-      onRowClick: (r) => openSpan(r.span),
+      rowKey: (r) => r.key,
+      rowClass: (r) => 'profile-row'
+        + (members(r).some((s) => s.error) ? ' err' : members(r).some((s) => s.slow || s.durationMs > slowMs) ? ' warn' : '')
+        + (hot.has(r.key) ? ' hot' : ''),
+      // A run's row opens and folds it in place; a span's opens the span.
+      onRowClick: (r) => (r.run ? flip(expandedRuns, r.run.key) : openSpan(r.span)),
       empty: 'This trace has no span.',
     }));
   }

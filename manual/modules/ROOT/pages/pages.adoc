@@ -320,6 +320,11 @@ A row has a service colour bar, the name, a category icon, the span's bar on the
 An error has a red bar and a bolt, and a slow database span a `--warn` ring.
 A row click opens the span drawer.
 
+Repeated siblings fold as the xref:cli.adoc#trace-rendering[CLI's tree] collapses them: more than three consecutive children of one span, none with children of its own, with the same category, service and summary, are one row, such as `SELECT product (h2) × 21`.
+Its bar runs from the first span's start to the last one's end, its duration is the total of the spans, and its title gives the count, the average and the total.
+A click on the row or its chevron, or Enter, expands it in place, with the spans one level deeper under it, and another folds it again.
+The expanded runs stay across a Live refresh and are the same in the profile.
+
 [#span-drawer]
 === The span drawer
 
@@ -353,6 +358,7 @@ The gap column then reads `-`.
 Clicking the Start header restores the chronological order.
 The three largest self times that are at least 5% of the trace are marked `hot`, with an `--accent` tint and a bold value, so the step that spent the time is visible without reading every row.
 A step over the slow threshold is tinted `--warn`, and an error `--err`.
+A run of repeated siblings is one row where its first span stands, folded as in the <<waterfall,waterfall>>: its position reads `3–23`, its elapsed and self times are the totals of its spans, and a row click expands it in place rather than opening a span.
 
 [#trace-logs]
 === Logs

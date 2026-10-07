@@ -65,17 +65,88 @@ export function spanTree(spans) {
   return { roots, children };
 }
 
-/** The tree depth first, one `{ span, depth, hasChildren }` per row, without the rows under a collapsed span. */
-export function flattenTree(tree, collapsed = new Set()) {
+/** A run of repeated siblings folds when it has more spans than this, as the CLI's trace tree does (cli.adoc#trace-rendering). */
+export const FOLD_AFTER = 3;
+
+/** A span's summary on one line, as the CLI compares it: its whitespace runs made one space. */
+function summaryLine(span) {
+  return String(span.summary || span.name || '').replace(/\s+/g, ' ').trim();
+}
+
+function sameLine(a, b) {
+  return a.category === b.category && a.service === b.service && summaryLine(a) === summaryLine(b);
+}
+
+/**
+ * The runs of repeated siblings the CLI's tree collapses into one `× n` line (cli.adoc#trace-rendering):
+ * more than FOLD_AFTER consecutive children of one parent, none with children of its own, with
+ * the same category, service and summary. Each is `{ key, spans, count, start, end, totalMs }`,
+ * keyed `run:` and its first span's id, by the id of every span in it.
+ */
+export function siblingRuns(tree) {
+  const runs = new Map();
+  const lists = [tree.roots, ...tree.children.values()];
+  for (const list of lists) {
+    let i = 0;
+    while (i < list.length) {
+      const first = list[i];
+      const childless = (s) => !(tree.children.get(s.spanId) || []).length;
+      if (!childless(first)) { i++; continue; }
+      let j = i + 1;
+      while (j < list.length && sameLine(first, list[j]) && childless(list[j])) j++;
+      if (j - i > FOLD_AFTER) {
+        const spans = list.slice(i, j);
+        let start = Infinity, end = -Infinity, totalMs = 0;
+        for (const s of spans) {
+          const at = startMsOf(s);
+          start = Math.min(start, at);
+          end = Math.max(end, at + (s.durationMs || 0));
+          totalMs += s.durationMs || 0;
+        }
+        const run = { key: 'run:' + first.spanId, spans, count: spans.length, start, end, totalMs };
+        for (const s of spans) runs.set(s.spanId, run);
+      }
+      i = j;
+    }
+  }
+  return runs;
+}
+
+/**
+ * The tree depth first, one `{ span, depth, hasChildren }` per row, without the rows under a
+ * collapsed span. A run of repeated siblings is one row `{ span: its first, depth, hasChildren:
+ * true, run }`, followed, when `expanded` holds its key, by its spans one level deeper.
+ */
+export function flattenTree(tree, collapsed = new Set(), expanded = new Set()) {
+  const runs = siblingRuns(tree);
   const out = [];
+  // Pushes a list of siblings, a run as one entry, so the stack pops them in order.
+  const pushAll = (stack, list, depth) => {
+    const items = [];
+    for (const span of list) {
+      const run = runs.get(span.spanId);
+      if (!run) items.push({ span, depth });
+      else if (run.spans[0] === span) items.push({ span, depth, run });
+    }
+    for (let i = items.length - 1; i >= 0; i--) stack.push(items[i]);
+  };
   // An explicit stack, not recursion: a deep trace nests further than the call stack goes.
-  const stack = tree.roots.map((span) => ({ span, depth: 0 })).reverse();
+  const stack = [];
+  pushAll(stack, tree.roots, 0);
   while (stack.length) {
-    const { span, depth } = stack.pop();
+    const { span, depth, run } = stack.pop();
+    if (run) {
+      out.push({ span, depth, hasChildren: true, run });
+      // Its spans have no children, so they go in as they are.
+      if (expanded.has(run.key)) {
+        for (const member of run.spans) out.push({ span: member, depth: depth + 1, hasChildren: false });
+      }
+      continue;
+    }
     const kids = tree.children.get(span.spanId) || [];
     out.push({ span, depth, hasChildren: kids.length > 0 });
     if (collapsed.has(span.spanId)) continue;
-    for (let i = kids.length - 1; i >= 0; i--) stack.push({ span: kids[i], depth: depth + 1 });
+    pushAll(stack, kids, depth + 1);
   }
   return out;
 }
@@ -142,39 +213,63 @@ export function depthMap(spans) {
 /**
  * The profile's rows (pages.adoc#trace): every span numbered in start order, the longer first
  * of two that start together, with its offset from the trace start, the gap since the latest
- * start before it, its depth and its self time. `sort` is `start`, `elapsed` or `self`; the
- * last two put the largest first.
+ * start before it, its depth, its elapsed time and its self time, and its `key`, the span's id.
+ * A run of repeated siblings (siblingRuns) is one row where its first span stands, keyed by the
+ * run, numbered `index` to `lastIndex`, with the run's total as its elapsed and self times;
+ * when `expanded` holds its key, the row heads its spans, each one level deeper where it
+ * stands. `sort` is `start`, `elapsed` or `self`; the last two put the largest first.
  */
-export function profileRows(trace, sort = 'start') {
+export function profileRows(trace, sort = 'start', expanded = new Set()) {
   const all = trace.spans || [];
   const spans = all.slice().sort((a, b) => startMsOf(a) - startMsOf(b) || b.durationMs - a.durationMs);
   const depths = depthMap(all);
   const self = selfTimes(all);
+  const runs = siblingRuns(spanTree(all));
   const t0 = traceStartMs(trace);
   let latestStart = t0;
-  const rows = spans.map((span, i) => {
+  const numbered = spans.map((span, i) => {
     const start = startMsOf(span);
     const gap = start - latestStart;
     latestStart = Math.max(latestStart, start);
     return {
-      span, index: i + 1, startOffset: start - t0, gap,
+      span, key: span.spanId, index: i + 1, startOffset: start - t0, gap,
       depth: depths.get(span.spanId) || 0,
+      elapsed: span.durationMs || 0,
       self: self.get(span.spanId) || 0,
     };
   });
+  const rows = [];
+  const heads = new Map();
+  for (const row of numbered) {
+    const run = runs.get(row.span.spanId);
+    if (!run) { rows.push(row); continue; }
+    let head = heads.get(run);
+    if (!head) {
+      head = { ...row, key: run.key, run, lastIndex: row.index, elapsed: 0, self: 0 };
+      heads.set(run, head);
+      rows.push(head);
+    }
+    head.lastIndex = row.index;
+    head.elapsed += row.elapsed;
+    head.self += row.self;
+    if (expanded.has(run.key)) rows.push({ ...row, depth: row.depth + 1 });
+  }
   if (sort === 'self') return rows.sort((a, b) => b.self - a.self);
-  if (sort === 'elapsed') return rows.sort((a, b) => b.span.durationMs - a.span.durationMs);
+  if (sort === 'elapsed') return rows.sort((a, b) => b.elapsed - a.elapsed);
   return rows;
 }
 
 /** A step is hot when it spent at least this share of the trace in itself. */
 const HOT_SPAN_MIN_SHARE = 0.05;
 
-/** The three steps that spent the most time in themselves, each of them at least 5% of the trace. */
+/**
+ * The keys of the three steps that spent the most time in themselves, each of them at least 5%
+ * of the trace: a span's id, or a folded run's key for the run's total.
+ */
 export function hotSpanIds(rows, totalMs) {
   return new Set(rows.slice()
     .sort((a, b) => b.self - a.self)
     .filter((r) => r.self > 0 && r.self / totalMs >= HOT_SPAN_MIN_SHARE)
     .slice(0, 3)
-    .map((r) => r.span.spanId));
+    .map((r) => r.key || r.span.spanId));
 }
