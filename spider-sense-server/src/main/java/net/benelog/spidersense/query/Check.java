@@ -167,9 +167,12 @@ public final class Check {
                 yield atMost(rule, limit, actual, detail);
             }
             case MAX_ERRORS -> {
-                long count = errorCount(window, service, endpoint);
-                yield atMost(rule, limit, (double) count, count == 0 ? "no error in the window"
-                        : Numbers.plural(count, "occurrence") + " over the window");
+                ErrorCount counted = errorCount(window, service, endpoint);
+                Stats.ErrorGroup largest = counted.largest();
+                yield atMost(rule, limit, (double) counted.count(), largest == null
+                        ? "no error in the window"
+                        : Numbers.plural(counted.count(), "occurrence") + ": "
+                                + errorTitle(largest, ranked.get()) + " ×" + counted.largestCount());
             }
             case MAX_ERROR_RATE -> {
                 double actual = requests == 0 ? 0 : (double) errors / requests;
@@ -286,24 +289,54 @@ public final class Check {
         return matching;
     }
 
-    private long errorCount(Window window, @Nullable String service, @Nullable String endpoint) {
+    /**
+     * The occurrences of the scope, and its largest error group with that group's occurrences in
+     * the scope; the group is null when there was none.
+     */
+    private record ErrorCount(long count, Stats.@Nullable ErrorGroup largest, long largestCount) {
+    }
+
+    private ErrorCount errorCount(Window window, @Nullable String service, @Nullable String endpoint) {
         long count = 0;
+        Stats.ErrorGroup largest = null;
+        long largestCount = 0;
         // Only an endpoint scope needs where each group occurred.
         List<Stats.ErrorGroup> groups = endpoint == null
                 ? queries.errorGroups(window, service, Queries.ALL_GROUPS, null)
                 : queries.errors(window, service, Queries.ALL_GROUPS, null);
         for (Stats.ErrorGroup group : groups) {
+            long inScope = 0;
             if (endpoint == null) {
-                count += group.count();
-                continue;
-            }
-            for (Stats.EndpointCount each : group.endpoints()) {
-                if (matchesName(endpoint, each.name(), group.service())) {
-                    count += each.count();
+                inScope = group.count();
+            } else {
+                for (Stats.EndpointCount each : group.endpoints()) {
+                    if (matchesName(endpoint, each.name(), group.service())) {
+                        inScope += each.count();
+                    }
                 }
             }
+            count += inScope;
+            // The groups come most frequent first, so a tie keeps the one the errors list shows first.
+            if (inScope > largestCount) {
+                largest = group;
+                largestCount = inScope;
+            }
         }
-        return count;
+        return new ErrorCount(count, largest, largestCount);
+    }
+
+    /**
+     * What the {@code error} finding of a group is titled, so the detail names the error as
+     * {@code findings} does (check.adoc#rules); the short type alone when there is no such finding.
+     */
+    private static String errorTitle(Stats.ErrorGroup group, List<Findings.Finding> ranked) {
+        for (Findings.Finding finding : ranked) {
+            if (Findings.ERROR.equals(finding.baseKind())
+                    && group.errorId().equals(finding.subject().errorId())) {
+                return finding.title();
+            }
+        }
+        return Findings.simpleName(group.type());
     }
 
     private static boolean matchesName(String endpoint, String name, String service) {

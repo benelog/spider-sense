@@ -443,7 +443,7 @@ $ java -jar spider-sense.jar check --since=before
 | rule | limit | actual | verdict | detail |
 | --- | --- | --- | --- | --- |
 | maxP95Ms | 500 | 1,202.5 | fail | GET /api/slow p95 1,202.5 ms over 3 calls |
-| maxErrors | 0 | 2 | fail | 2 occurrences over the window |
+| maxErrors | 0 | 2 | fail | 2 occurrences: IllegalStateException in GET /api/flaky ×2 |
 | maxNPlusOne | 0 | 2 | fail | 2 findings: GET /api/orders/{id} runs SELECT product 5 times per request |
 | maxRegressions | 0 | 0 | pass | no resolved finding came back |
 

@@ -114,6 +114,7 @@ A window that reaches back before the change drags the old numbers into the verd
 
 The heading carries the verdict, then the window.
 One row follows per rule, with its limit, its actual value, its own verdict and a detail naming what decided it.
+A detail names its worst offender the way `findings` does: `maxErrors` gives the occurrences of the scope, then the largest error group by the title of its `error` finding and its own occurrences (`2 occurrences: IllegalStateException in GET /api/flaky ×2`), and `maxNPlusOne` and `maxLogErrors` give the title of their first finding.
 
 [source]
 ----
@@ -123,7 +124,7 @@ $ java -jar spider-sense.jar check --since=before
 | rule | limit | actual | verdict | detail |
 | --- | --- | --- | --- | --- |
 | maxP95Ms | 500 | 1,202.5 | fail | GET /api/slow p95 1,202.5 ms over 3 calls |
-| maxErrors | 0 | 2 | fail | 2 occurrences over the window |
+| maxErrors | 0 | 2 | fail | 2 occurrences: IllegalStateException in GET /api/flaky ×2 |
 | maxNPlusOne | 0 | 2 | fail | 2 findings: GET /api/orders/{id} runs SELECT product 5 times per request |
 | maxRegressions | 0 | 0 | pass | no resolved finding came back |
 

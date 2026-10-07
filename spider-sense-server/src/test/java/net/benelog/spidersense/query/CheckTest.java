@@ -105,11 +105,33 @@ class CheckTest {
         assertThat(result.checks()).extracting(Check.RuleCheck::rule)
                 .containsExactly(Check.MAX_ERRORS, Check.MAX_ERROR_RATE, Check.MIN_APDEX);
         assertThat(rule(result, Check.MAX_ERRORS).actual()).isEqualTo(1.0);
+        assertThat(rule(result, Check.MAX_ERRORS).detail())
+                .isEqualTo("1 occurrence: IllegalStateException in GET /ship ×1");
         assertThat(rule(result, Check.MAX_ERROR_RATE).actual()).isEqualTo(1.0);
         assertThat(rule(result, Check.MAX_ERROR_RATE).pass()).isFalse();
         assertThat(rule(result, Check.MIN_APDEX).actual()).isEqualTo(0.0);
         assertThat(rule(result, Check.MIN_APDEX).pass()).isFalse();
         assertThat(result.pass()).isFalse();
+    }
+
+    @Test
+    void maxErrorsNamesTheLargestGroupOfTheScope() {
+        decoder.ingest(Otlp.traces(Otlp.service("orders"),
+                Otlp.failing(entry("/ship", 10), "java.lang.IllegalStateException", "already shipped",
+                        "at orders.Ship.run(Ship.java:1)"),
+                Otlp.failing(entry("/pay", 10), "java.lang.IllegalArgumentException", "no card",
+                        "at orders.Pay.run(Pay.java:1)"),
+                Otlp.failing(entry("/pay", 10), "java.lang.IllegalArgumentException", "no card",
+                        "at orders.Pay.run(Pay.java:1)")));
+        flush();
+
+        Check.CheckResult all = check.check(window, null, null, Map.of(Check.MAX_ERRORS, 0.0));
+        Check.CheckResult ship = check.check(window, null, "GET /ship", Map.of(Check.MAX_ERRORS, 0.0));
+
+        assertThat(rule(all, Check.MAX_ERRORS).detail())
+                .isEqualTo("3 occurrences: IllegalArgumentException in GET /pay ×2");
+        assertThat(rule(ship, Check.MAX_ERRORS).detail())
+                .isEqualTo("1 occurrence: IllegalStateException in GET /ship ×1");
     }
 
     /** A statement run slow by one endpoint does not count against another that runs it fast. */
