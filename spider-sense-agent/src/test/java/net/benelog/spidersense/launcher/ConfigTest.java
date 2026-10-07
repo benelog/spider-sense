@@ -220,7 +220,8 @@ class ConfigTest {
 
     /**
      * The standalone jar's answer to a server that did not start is one line, which for a held
-     * port says how to pick another, rather than a stack trace after the banner.
+     * port says how to pick another, by every name the key has, rather than a stack trace after
+     * the banner; and when what holds it is a Spider Sense, says that one is there.
      */
     @Test
     void aServerThatDidNotStartIsOneLineAndAHeldPortSaysWhatToDo() {
@@ -228,8 +229,12 @@ class ConfigTest {
         IllegalStateException held = new IllegalStateException("Failed to start Jetty on port 4730",
                 new java.io.IOException("Failed to bind", new java.net.BindException("Address already in use")));
 
-        assertThat(SpiderSenseMain.startFailure(config, held))
-                .isEqualTo("port 4730 is in use; --port= picks another (java.net.BindException: Address already in use)");
+        assertThat(SpiderSenseMain.startFailure(config, held, url -> false, "/opt/spider-sense.jar"))
+                .isEqualTo("port 4730 is in use; set spidersense.port to a free one (--port= on the command line,"
+                        + " port in the Gradle block) (java.net.BindException: Address already in use)");
+        assertThat(SpiderSenseMain.startFailure(config, held, "http://127.0.0.1:4730"::equals, "/opt/spider-sense.jar"))
+                .isEqualTo("a Spider Sense is already running at http://127.0.0.1:4730; open it, or ask it from a"
+                        + " terminal (java -jar /opt/spider-sense.jar help lists the commands); --port= starts a second one");
         assertThat(SpiderSenseMain.startFailure(config, new IllegalStateException("no jar", new java.io.IOException("gone"))))
                 .isEqualTo("the server did not start: java.lang.IllegalStateException: no jar (java.io.IOException: gone)");
     }

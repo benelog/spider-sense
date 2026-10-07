@@ -3,6 +3,7 @@ package net.benelog.spidersense.launcher;
 import java.lang.reflect.InvocationTargetException;
 import java.nio.file.Path;
 import java.util.OptionalInt;
+import java.util.function.Predicate;
 
 /**
  * The {@code Main-Class} of the distributable jar: {@code java -jar spider-sense.jar}.
@@ -74,11 +75,31 @@ public final class SpiderSenseMain {
         // keep this JVM serving until it is stopped.
     }
 
-    /** What a server that did not start says: a held port names the way out, anything else its cause. */
+    /**
+     * What a server that did not start says: a port held by a Spider Sense names that one, a port
+     * held by anything else names the key that moves this one, and any other failure its cause.
+     */
     static String startFailure(Config config, Throwable failure) {
+        return startFailure(config, failure, SpiderSenseAgent::spiderSenseAt, NestedJar.commandPath());
+    }
+
+    /**
+     * The same with the probe and this jar's path given, for a test.
+     *
+     * @param spiderSenseAt whether a Spider Sense answers at a base URL
+     */
+    static String startFailure(Config config, Throwable failure, Predicate<String> spiderSenseAt, String jar) {
         for (Throwable t = failure; t != null; t = t.getCause()) {
             if (t instanceof java.net.BindException) {
-                return "port " + config.port() + " is in use; --port= picks another (" + t + ")";
+                String url = config.baseUrl();
+                if (spiderSenseAt.test(url)) {
+                    // Most likely what the user wanted is already there: say where, and how to ask it.
+                    return "a Spider Sense is already running at " + url + "; open it, or ask it from a terminal ("
+                            + "java -jar " + jar + " help lists the commands); --port= starts a second one";
+                }
+                // The key by every name a user may be holding: the plugin's block has no --port=.
+                return "port " + config.port() + " is in use; set spidersense.port to a free one"
+                        + " (--port= on the command line, port in the Gradle block) (" + t + ")";
             }
         }
         Throwable cause = failure.getCause();

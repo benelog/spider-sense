@@ -474,9 +474,35 @@ class SingleJarIT {
             int port = held.getLocalPort();
             Command run = cli("--port=" + port, "--db=" + throwawayDatabase());
             assertThat(run.exit()).isEqualTo(2);
-            assertThat(run.err()).startsWith("spider-sense: port " + port + " is in use; --port= picks another (")
+            assertThat(run.err()).startsWith("spider-sense: port " + port + " is in use; set spidersense.port to a free one"
+                            + " (--port= on the command line, port in the Gradle block) (")
                     .doesNotContain("\tat ");
             assertThat(run.out()).doesNotContain("The UI is at");
+        }
+    }
+
+    /** A port held by a Spider Sense already is that one, named, rather than a port to move away from. */
+    @Test
+    void aSecondStandaloneOnTheSamePortNamesTheFirst() throws Exception {
+        int port = freePort();
+        String base = "http://127.0.0.1:" + port;
+        Path log = work.resolve("first-standalone.log");
+        Process first = start(log, javaBinary.toString(), "-jar", senseJar.toString(),
+                "--port=" + port, "--db=" + throwawayDatabase());
+        try {
+            await("the first standalone answering", log, first,
+                    () -> get(base + "/api/status"),
+                    body -> compact(body).contains("\"mode\":\"standalone\""));
+            Command second = cli("--port=" + port, "--db=" + throwawayDatabase());
+            assertThat(second.exit()).isEqualTo(2);
+            assertThat(second.err()).isEqualTo("spider-sense: a Spider Sense is already running at " + base
+                    + "; open it, or ask it from a terminal (java -jar " + senseJar.toAbsolutePath()
+                    + " help lists the commands); --port= starts a second one\n");
+        } finally {
+            first.destroy();
+            if (!first.waitFor(15, TimeUnit.SECONDS)) {
+                first.destroyForcibly();
+            }
         }
     }
 
