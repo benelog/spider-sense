@@ -1291,7 +1291,7 @@ class FindingsTest {
         decoder.ingest(Otlp.traces(Otlp.service("orders"),
                 entryAt(1, "/a", NOW - 50_000, 2000)));
         flush();
-        store.marks().create("start", "orders", "pid 2", NOW - 30_000);
+        TestStore.startMark(store.sql(), "orders", "pid 2", NOW - 30_000);
         decoder.ingest(Otlp.traces(Otlp.service("orders"),
                 entryAt(2, "/a", NOW, 2000), entryAt(3, "/b", NOW, 1500)));
         flush();
@@ -1310,8 +1310,8 @@ class FindingsTest {
         decoder.ingest(Otlp.traces(Otlp.service("orders"),
                 entryAt(1, "/a", NOW - 50_000, 2000)));
         flush();
-        store.marks().create("start", "orders", "pid 2", NOW - 40_000);
-        store.marks().create("start", "orders", "pid 3", NOW - 30_000);
+        TestStore.startMark(store.sql(), "orders", "pid 2", NOW - 40_000);
+        TestStore.startMark(store.sql(), "orders", "pid 3", NOW - 30_000);
         decoder.ingest(Otlp.traces(Otlp.service("orders"), entryAt(2, "/a", NOW, 2000)));
         flush();
 
@@ -1352,7 +1352,7 @@ class FindingsTest {
     @Test
     void anNPlusOneOfThePreviousRunIsOngoing() {
         nPlusOneAt(1, NOW - 50_000);
-        store.marks().create("start", "orders", "pid 2", NOW - 30_000);
+        TestStore.startMark(store.sql(), "orders", "pid 2", NOW - 30_000);
         nPlusOneAt(2, NOW);
 
         List<Findings.Finding> ranked = findings.findings(Window.of(NOW - 30_000, NOW + 60_000), null, 20);
@@ -1365,7 +1365,7 @@ class FindingsTest {
     void whatThePreviousRunHadIsAskedOnceAndKept() {
         decoder.ingest(Otlp.traces(Otlp.service("orders"), entryAt(1, "/a", NOW - 50_000, 2000)));
         flush();
-        store.marks().create("start", "orders", "pid 2", NOW - 30_000);
+        TestStore.startMark(store.sql(), "orders", "pid 2", NOW - 30_000);
         decoder.ingest(Otlp.traces(Otlp.service("orders"),
                 entryAt(2, "/a", NOW, 2000), entryAt(3, "/b", NOW, 1500)));
         flush();

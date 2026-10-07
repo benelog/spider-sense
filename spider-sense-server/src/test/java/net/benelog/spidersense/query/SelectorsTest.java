@@ -72,8 +72,8 @@ class SelectorsTest {
 
     @Test
     void startPrefersTheMarkOfTheServiceAskedAboutAndFallsBackToAny() {
-        store.marks().create("start", "orders", "pid 1", 1_000L);
-        store.marks().create("start", "books", "pid 2", 2_000L);
+        TestStore.startMark(store.sql(), "orders", "pid 1", 1_000L);
+        TestStore.startMark(store.sql(), "books", "pid 2", 2_000L);
 
         assertThat(selectors.resolve("start", NOW, "orders")).isEqualTo(1_000L);
         assertThat(selectors.resolve("start", NOW, "nobody")).isEqualTo(2_000L);

@@ -64,6 +64,32 @@ class MarksTest {
     }
 
     @Test
+    void aNameASelectorReadsAsSomethingElseIsRejectedWithTheReason() {
+        assertThatThrownBy(() -> store.marks().create("5m", null, null, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("A mark cannot be named 5m: --since and --until read 5m as a duration;"
+                        + " choose another name");
+        assertThatThrownBy(() -> store.marks().create("now", null, null, null))
+                .hasMessageContaining("current moment");
+        assertThatThrownBy(() -> store.marks().create(Marks.START, "orders", null, null))
+                .as("start is the writer's")
+                .hasMessageContaining("--since=start");
+        assertThatThrownBy(() -> store.marks().create("1758000000000", null, null, null))
+                .hasMessageContaining("epoch milliseconds");
+        assertThatThrownBy(() -> store.marks().create("5min", null, null, null))
+                .hasMessageContaining("mistyped duration");
+        assertThatThrownBy(() -> store.marks().create("300", null, null, null))
+                .hasMessageContaining("mistyped duration");
+        assertThatThrownBy(() -> store.marks().create("2026-10-08T0550", null, null, null))
+                .hasMessageContaining("date-time");
+
+        assertThat(store.marks().create("v2", null, null, null).name()).isEqualTo("v2");
+        assertThat(store.marks().create("starting", null, null, null).name()).isEqualTo("starting");
+        assertThat(store.marks().create("2026-10-08", null, null, null).name())
+                .as("a date alone is no selector form").isEqualTo("2026-10-08");
+    }
+
+    @Test
     void aServiceOrNoteLongerThanItsColumnIsCutAndTheAnswerShowsWhatWasStored() {
         Marks.Mark mark = store.marks().create("before", "s".repeat(300), "n".repeat(2000), 1_000L);
 

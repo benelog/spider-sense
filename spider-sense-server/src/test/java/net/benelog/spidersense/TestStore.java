@@ -1,10 +1,13 @@
 package net.benelog.spidersense;
 
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import net.benelog.spidersense.server.Config;
 import net.benelog.spidersense.store.Database;
+import net.benelog.spidersense.store.Marks;
 import net.benelog.spidersense.store.Schema;
+import net.benelog.spidersense.store.Sql;
 
 /**
  * Configuration for a test: always an in-memory H2 with a name of its own, so a
@@ -41,6 +44,15 @@ public final class TestStore {
             older.sql().execute("DROP USER " + Schema.READER);
         }
         return url;
+    }
+
+    /**
+     * A {@code start} mark as the writer records one when a service reports a new process id
+     * (marks-and-compare.adoc#start-marks), which {@link Marks#create} refuses to a person.
+     */
+    public static void startMark(Sql sql, String service, String note, long at) {
+        sql.update("INSERT INTO mark (at_ms, name, service, note) VALUES (?, ?, ?, ?)",
+                List.of(at, Marks.START, service, note));
     }
 
     public static Config config(String... extra) {

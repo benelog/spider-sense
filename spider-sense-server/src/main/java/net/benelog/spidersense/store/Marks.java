@@ -48,6 +48,13 @@ public final class Marks {
     /** The name the writer uses for an automatic mark. */
     public static final String START = "start";
 
+    /** The selector for the current moment, which no mark may be called. */
+    public static final String NOW = "now";
+
+    private static final Pattern DURATION = Pattern.compile("\\d{1,9}[smhd]");
+    private static final Pattern EPOCH = Pattern.compile("\\d{13,}");
+    private static final Pattern DATE_TIME = Pattern.compile("\\d{4}-\\d{2}-\\d{2}T.*");
+
     /**
      * A condition on {@code mark o} that spares each service's newest start mark,
      * for the deletes that would otherwise leave a running service without one:
@@ -76,14 +83,25 @@ public final class Marks {
      * <p>The service and the note are cut to their columns, as every text value
      * is (storage.adoc#writer), and the answer carries them as stored.
      *
+     * <p>A name that a selector would read as something else is refused, because the mark
+     * could never be asked for by it: {@code 5m} is a duration, {@code now} the current
+     * moment, and {@code start} the mark the writer keeps, which a mark of a person's
+     * would move (marks-and-compare.adoc#marks).
+     *
      * @param at the instant, or null for now
-     * @throws IllegalArgumentException when the name is not {@link #NAME}
+     * @throws IllegalArgumentException when the name is not {@link #NAME}, or a selector
+     *         reads it as something other than this mark
      */
     public Mark create(@Nullable String name, @Nullable String service, @Nullable String note,
             @Nullable Long at) {
         if (name == null || !NAME.matcher(name).matches()) {
             throw new IllegalArgumentException(
                     "A mark name is 1 to " + MAX_NAME + " characters of [A-Za-z0-9._-]: " + name);
+        }
+        String reading = selectorReading(name);
+        if (reading != null) {
+            throw new IllegalArgumentException("A mark cannot be named " + name + ": " + reading
+                    + "; choose another name");
         }
         MarkRow row = new MarkRow(at == null ? clock.getAsLong() : at, name, service, note);
         long id = sql.withConnection(connection -> {
@@ -97,6 +115,33 @@ public final class Marks {
             }
         }, "insert mark");
         return new Mark(id, row.atMs(), name, row.storedService(), row.storedNote());
+    }
+
+    /**
+     * What {@code --since} and {@code --until} read this name as instead of a mark, or null
+     * when they read it as the mark (marks-and-compare.adoc#time-selectors).
+     */
+    static @Nullable String selectorReading(String name) {
+        if (NOW.equals(name)) {
+            return "--since and --until read now as the current moment";
+        }
+        if (START.equals(name)) {
+            return "start is the mark Spider Sense writes when a service starts, which --since=start"
+                    + " reads, and a mark of that name would move it";
+        }
+        if (DURATION.matcher(name).matches()) {
+            return "--since and --until read " + name + " as a duration";
+        }
+        if (EPOCH.matcher(name).matches()) {
+            return "--since and --until read " + name + " as epoch milliseconds";
+        }
+        if (NUMBER_LIKE.matcher(name).matches()) {
+            return "--since and --until refuse " + name + " as a mistyped duration";
+        }
+        if (DATE_TIME.matcher(name).matches()) {
+            return "--since and --until read " + name + " as a date-time";
+        }
+        return null;
     }
 
     /** The newest marks, newest first. */

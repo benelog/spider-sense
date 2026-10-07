@@ -65,6 +65,15 @@ mark after at 2026-09-17T08:19:35.837+09:00 — after the fix
 ----
 
 The name is required and matches `[A-Za-z0-9._-]{1,64}`.
+A name that a selector reads as something else is refused, because `--since` could never ask for the mark: a duration such as `5m`, a mistyped one such as `5min`, a number, a date-time, `now`, and `start`, which is the writer's own (<<start-marks>>).
+The refusal says why, as a `400` over HTTP and a usage error in the CLI:
+
+[source]
+----
+$ java -jar spider-sense.jar mark 5m
+spider-sense: A mark cannot be named 5m: --since and --until read 5m as a duration; choose another name
+----
+
 `--note=<text>` keeps a note with the moment, and `--service=<name>` ties the mark to one service.
 Over HTTP, you record a mark with `POST /api/marks` and the body `{ "name": "before", "note": "…", "service": "…", "at": … }`, where everything but the name is optional and `at` defaults to now.
 

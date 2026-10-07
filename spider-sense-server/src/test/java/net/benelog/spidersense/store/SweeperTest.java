@@ -199,9 +199,9 @@ class SweeperTest {
     void eachServicesNewestStartMarkOutlivesTheRetentionAndAClear() {
         Marks marks = new Marks(store.sql());
         long old = NOW - 30 * HOUR;
-        marks.create(Marks.START, "orders", "pid 1", old - HOUR);
-        marks.create(Marks.START, "orders", "pid 2", old);
-        marks.create(Marks.START, "billing", "pid 3", old);
+        TestStore.startMark(store.sql(), "orders", "pid 1", old - HOUR);
+        TestStore.startMark(store.sql(), "orders", "pid 2", old);
+        TestStore.startMark(store.sql(), "billing", "pid 3", old);
         marks.create("before", null, null, old);
 
         new Sweeper(store.sql(), 24, Sweeper.DEFAULT_RETENTION_SPANS, () -> NOW).sweep();

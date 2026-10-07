@@ -157,6 +157,7 @@ The name matches `[A-Za-z0-9._-]{1,64}`: letters, digits, dots, underscores and 
 It is prefilled with `before` when no mark in the window is named `before`, and with `after` otherwise.
 When the service filter names one service, the mark records that service as its `service`.
 OK sends `POST /api/marks` and shows a toast naming the mark.
+The server refuses a name a selector reads as something else, such as `5m`, `now` or `start`, and the dialog stays open with the reason.
 Marking is your half of the loop an agent runs: mark, exercise, compare.
 xref:marks-and-compare.adoc#marks[Marks] covers what a mark is and how the agent's side reads it.
 

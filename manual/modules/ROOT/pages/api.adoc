@@ -587,7 +587,7 @@ The format of each rendering is given in xref:cli.adoc#text-rendering[The CLI].
 *`GET /api/marks?limit=50`* answers `{ "marks": [ <Mark> ] }`, newest first.
 
 *`POST /api/marks`* with `{ "name": "before", "note": "…" | null, "service": "…" | null, "at": <epoch ms> | absent }` answers `201` and the `<Mark>`.
-`name` is required and matches `[A-Za-z0-9._-]{1,64}`, and is otherwise `400`.
+`name` is required and matches `[A-Za-z0-9._-]{1,64}`, and is otherwise `400`; so is a name a selector reads as something else, such as `5m`, `now` or `start` (xref:marks-and-compare.adoc#marks[Marks]).
 `service` is cut to 255 characters and `note` to 1024, the widths of their columns, and the answer carries them as stored.
 
 `Mark`:

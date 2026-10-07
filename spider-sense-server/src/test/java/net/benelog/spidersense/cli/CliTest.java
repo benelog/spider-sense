@@ -383,6 +383,10 @@ class CliTest {
 
             assertThat(runAt(base, "marks", "--url=" + base).out()).contains("before");
             assertThat(runAt(base, "mark", "two words", "--url=" + base).exit()).isEqualTo(2);
+
+            Run duration = runAt(base, "mark", "5m", "--url=" + base);
+            assertThat(duration.exit()).as("a name --since would read as a duration").isEqualTo(2);
+            assertThat(duration.err()).contains("A mark cannot be named 5m");
         });
     }
 

@@ -117,7 +117,7 @@ Every argument is the CLI option of the same meaning, and a selector is a string
 | the sql text (xref:cli.adoc#sql[SQL])
 |===
 
-A mark name matches `[A-Za-z0-9._-]{1,64}`.
+A mark name matches `[A-Za-z0-9._-]{1,64}`, and is not one a selector reads as something else, such as `5m`, `now` or `start`.
 
 A result is `{ "content": [ { "type": "text", "text": "<the Markdown>" } ] }`.
 `check` also carries `structuredContent` with `pass` and `requests`, so a host need not read the heading for the verdict.
