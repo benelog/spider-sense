@@ -4,17 +4,21 @@ import * as api from '../api.js';
 import * as router from '../router.js';
 import {
   h, fill, icon, panel, table, chip, serviceChip, serviceColor, severityChip, idButton, segmented, categoryIcon,
-  drawer, drawerBody, closeDrawer, closeDrawerSilently, spinner,
+  drawer, drawerBody, closeDrawer, closeDrawerSilently, spinner, copyBlock,
 } from '../ui.js';
 import { pageLoader, skeleton } from '../page.js';
 import { formatSql } from '../sql.js';
-import { stackTrace } from '../frames.js';
+import { stackTrace, foldedStack, appFrames, codeFrame } from '../frames.js';
 import { slowRequestMs } from '../buckets.js';
 import { dur, count, timeMs, bothTimes, offset, full } from '../format.js';
 import {
   startMsOf, traceStartMs, spanTree, flattenTree, selfTimes, profileRows, hotSpanIds,
 } from '../trace-model.js';
 
+/** The attributes that hold a span's statement, the old semantic convention's and the new one's. */
+const STATEMENT_KEYS = ['db.statement', 'db.query.text'];
+/** The stack the extension captures on a slow or repeated call (findings.adoc#code). */
+const STACK_KEY = 'code.stacktrace';
 
 export function render(root, ctx) {
   const traceId = ctx.params.id;
@@ -186,7 +190,14 @@ export function render(root, ctx) {
     const t0 = traceStartMs(data);
     const total = Math.max(1, data.durationMs || 1);
     const selfMs = selfTimes(data.spans || []).get(span.spanId) || 0;
-    const attrs = Object.entries(span.attributes || {}).sort((a, b) => a[0].localeCompare(b[0]));
+    const all = span.attributes || {};
+    // The statement and the captured stack are read, not scanned: each gets a section of its own,
+    // the statement before the other attributes and the stack after them (pages.adoc#span-drawer).
+    const statements = STATEMENT_KEYS.filter((k) => all[k] != null);
+    const stack = all[STACK_KEY] != null ? String(all[STACK_KEY]) : null;
+    const attrs = Object.entries(all)
+      .filter(([k]) => !statements.includes(k) && k !== STACK_KEY)
+      .sort((a, b) => a[0].localeCompare(b[0]));
     return [
       h('dl.kv',
         h('dt', 'span id'), h('dd', span.spanId),
@@ -197,21 +208,36 @@ export function render(root, ctx) {
         h('dt', 'self'), h('dd', dur(selfMs) + ' · ' + ((selfMs / total) * 100).toFixed(1) + '% of trace'),
         h('dt', 'status'), h('dd', { class: span.error ? 'bad' : '' }, (span.status || 'UNSET') + (span.statusMessage ? ' — ' + span.statusMessage : '')),
         h('dt', 'scope'), h('dd', span.scope || '—')),
+      statements.map((k) => h('div',
+        h('div.sub-head.mono', { style: { marginBottom: '6px' } }, k),
+        copyBlock(formatSql(String(all[k]))))),
       attrs.length ? h('div',
         h('div.sub-head', { style: { marginBottom: '6px' } }, 'Attributes'),
-        h('dl.kv', attrs.map(([k, v]) => [h('dt', k), h('dd', attrValue(k, v))]))) : null,
+        h('dl.kv', attrs.map(([k, v]) => [h('dt', k), h('dd', attrValue(v))]))) : null,
+      stack !== null ? stackSection(stack) : null,
       (span.events || []).length ? h('div',
         h('div.sub-head', { style: { marginBottom: '6px' } }, 'Events'),
         h('div', { style: { display: 'grid', gap: '10px' } }, (span.events || []).map((ev) => eventBlock(ev, t0)))) : null,
     ];
   }
 
-  function attrValue(key, value) {
+  function attrValue(value) {
     if (Array.isArray(value)) return h('pre', value.join('\n'));
     const text = String(value);
-    if (key === 'db.statement' || key === 'db.query.text') return h('pre', formatSql(text));
     if (text.length > 120 || text.includes('\n')) return h('pre', text);
     return document.createTextNode(text);
+  }
+
+  /**
+   * `code.stacktrace`, the stack the extension captured where the span ended: its application
+   * frames as code frames, then the stack with its framework runs folded.
+   */
+  function stackSection(text) {
+    const code = appFrames(text);
+    return h('div', { style: { display: 'grid', gap: '6px' } },
+      h('div.sub-head.mono', STACK_KEY),
+      code.length ? h('div.f-code', code.map((frame) => codeFrame(frame))) : null,
+      foldedStack(text, 'app'));
   }
 
   function eventBlock(ev, t0) {

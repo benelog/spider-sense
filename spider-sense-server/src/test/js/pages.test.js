@@ -129,6 +129,25 @@ test('the query page lists where the statement is issued as code frames (pages.a
   instance.destroy();
 });
 
+test('the span drawer puts the statement first with a Copy button and folds a captured stack (pages.adoc#span-drawer)', async () => {
+  const id = (await api.traces({ q: 'JdbcPreparedStatement', limit: 1 })).traces[0].traceId;
+  const span = (await api.trace(id)).spans.find((s) => s.attributes['code.stacktrace']);
+  assert.ok(span, 'the mock captures a stack on a slow statement');
+  const { root, instance } = await visit('trace', { id });
+  root.querySelectorAll('div').find((d) => d.dataset && d.dataset.key === span.spanId).click();
+  const body = ui.drawerBody();
+  const divs = body.querySelectorAll('div');
+  const sections = divs.filter((d) => d.classList.contains('sub-head')).map((d) => d.textContent);
+  assert.deepEqual(sections, ['db.statement', 'Attributes', 'code.stacktrace'], 'the statement first, the stack after the attributes');
+  assert.ok(divs.some((d) => d.classList.contains('code-block')), 'the statement has a Copy button');
+  assert.ok(!body.querySelectorAll('dt').some((dt) => dt.textContent === 'db.statement' || dt.textContent === 'code.stacktrace'),
+    'neither is repeated among the attributes');
+  const frames = divs.filter((d) => d.classList.contains('src-frame')).map((d) => d.textContent);
+  assert.deepEqual(frames, ['net.benelog.bookstore.BookRepository.search(BookRepository.java:58)']);
+  assert.ok(body.querySelectorAll('span').some((s) => s.classList.contains('st-fold')), 'the framework frames are folded');
+  instance.destroy();
+});
+
 test('a profile row opens the span drawer, and the page closes it when it goes', async () => {
   const trace = await visit('trace', { id: ids.trace });
   trace.root.querySelectorAll('button').find((b) => b.textContent === 'Profile').click();

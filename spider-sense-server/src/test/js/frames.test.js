@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  editorHref, frameOf, frameworkOf, foldLabel, framesMode,
+  editorHref, frameOf, frameworkOf, foldLabel, framesMode, appFrames,
 } from '../../main/resources/public/assets/js/frames.js';
 
 test('editorHref opens IntelliJ IDEA with the path encoded', () => {
@@ -49,4 +49,20 @@ test('framesMode is app unless the query says all', () => {
   assert.equal(framesMode(null), 'app');
   assert.equal(framesMode({ frames: 'all' }), 'all');
   assert.equal(framesMode({ frames: 'other' }), 'app');
+});
+
+test('appFrames lists the application frames of a captured stack, top first, each once, at most five', () => {
+  const status = { codeFrames: { appPackages: [], frameworkPrefixes: ['org.h2.', 'java.'] } };
+  const stack = [
+    '\tat org.h2.jdbc.JdbcPreparedStatement.executeQuery(JdbcPreparedStatement.java:120)',
+    '\tat orders.OrderRepository.load(OrderRepository.java:64)',
+    '\tat orders.OrderRepository.load(OrderRepository.java:64)',
+    '\tat java.base/java.lang.Thread.run(Thread.java:1583)',
+    '\tat orders.OrderService.report(OrderService.java:18)',
+  ].join('\n');
+  assert.deepEqual(appFrames(stack, status), [
+    'orders.OrderRepository.load(OrderRepository.java:64)', 'orders.OrderService.report(OrderService.java:18)']);
+  const deep = Array.from({ length: 8 }, (_, i) => '\tat orders.A.m' + i + '(A.java:' + i + ')').join('\n');
+  assert.equal(appFrames(deep, status).length, 5);
+  assert.deepEqual(appFrames(stack, {}), [], 'without the rules nothing is told apart');
 });

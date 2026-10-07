@@ -1,7 +1,7 @@
 // Code frames as links into the editor, with the lines around them (pages.adoc#code-frames).
 // Each frame asks GET /api/source once; a frame that does not resolve stays plain text.
 // A whole stack trace folds its framework frames by the same rules (pages.adoc#stack-traces),
-// or, in the span drawer and the Logs page, is a plain highlighted <pre>.
+// or, for a span event in the span drawer and on the Logs page, is a plain highlighted <pre>.
 
 import { getJSON, state } from './api.js';
 import { h } from './ui.js';
@@ -119,6 +119,27 @@ export function frameworkOf(frame, r) {
   const lower = frame.toLowerCase();
   const prefix = r.framework.find((p) => lower.startsWith(p));
   return prefix ? prefix.replace(/\.$/, '') : null;
+}
+
+/** A finding keeps at most this many frames in its `code` (findings.adoc#code). */
+const MAX_APP_FRAMES = 5;
+
+/**
+ * The application frames of one stack, top first, each once and at most five, by the rules a
+ * finding's `code` follows: what the span drawer lists above a `code.stacktrace`. Empty without
+ * the rules, as nothing can be told apart then.
+ */
+export function appFrames(text, status = state.status) {
+  const r = rules(status);
+  const out = [];
+  if (!r || !text) return out;
+  for (const line of String(text).split('\n')) {
+    const frame = frameOf(line);
+    if (!frame || frameworkOf(frame, r) !== null || out.includes(frame)) continue;
+    out.push(frame);
+    if (out.length >= MAX_APP_FRAMES) break;
+  }
+  return out;
 }
 
 /** `app` (the default) or `all`, from the hash query's `frames`. */

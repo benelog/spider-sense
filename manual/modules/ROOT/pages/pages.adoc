@@ -327,9 +327,12 @@ A row click opens the span drawer.
 image::span-drawer.jpg[The span drawer with the SQL statement and every attribute,800]
 
 The drawer opens on the right, 420 px wide, with the span's name, service and kind, its timing (start offset, duration, share of the trace, self time), and its status.
-Then come the attributes as a table of keys and values, with long values in a `<pre>`.
-`db.statement` is pretty-printed: SQL keywords uppercased, and a line break before each major clause.
+A database span's statement comes next, under its key, `db.statement` or `db.query.text`, with a *Copy* button.
+It is pretty-printed: SQL keywords uppercased, and a line break before each major clause.
 It is the attribute as the agent sent it, so it is whole where the `db_statement` column keeps only 2,000 characters.
+Then come the other attributes as a table of keys and values, in key order, with long values in a `<pre>`.
+A `code.stacktrace` the extension captured (xref:findings.adoc#code[Code locations]) comes after them, under its key.
+Its application frames, at most five, top first, are listed as <<code-frames,code frames>>, and the stack follows <<stack-traces,folded>> as the error page folds one, with no toggle.
 The events follow with their attributes and the stack trace in a scrollable `<pre>`, and the scope name comes last.
 `Esc` closes the drawer.
 
@@ -401,7 +404,7 @@ With no chain the panel says `This error carried no stack trace.`
 [#code-frames]
 === Code frames
 
-A code frame on the Findings page, the error page or the query page asks `GET /api/source?frame=…` (xref:api.adoc#source[Source]) once.
+A code frame on the Findings page, the error page, the query page or in the span drawer asks `GET /api/source?frame=…` (xref:api.adoc#source[Source]) once.
 An answer is reused for ten seconds, so a Live refresh does not ask again at once.
 
 A frame that resolves to a source file becomes a link that opens the file at that line, as the xref:ui.adoc#top-bar[top bar's editor setting] says:
@@ -441,7 +444,7 @@ A Live refresh repaints the trace only when the trace or the mode changed, so an
 Under *All* nothing is folded.
 
 When `/api/status` carries no `codeFrames`, as in a recording made before it did, nothing is folded or highlighted.
-The span drawer and the Logs page keep the plain highlighted `<pre>`.
+The stack trace of a span event in the span drawer and that of a log record on the Logs page keep the plain highlighted `<pre>`.
 
 [#copy-as-markdown]
 === Copy as Markdown

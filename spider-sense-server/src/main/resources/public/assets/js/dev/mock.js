@@ -241,8 +241,21 @@ function dbSpan(q, parent, start, service, slowBoost) {
       'db.statement': q.statement,
       'server.address': 'localhost',
       'server.port': 9092,
+      ...(slow && QUERY_CODE[QUERIES.indexOf(q)] ? { 'code.stacktrace': capturedStack(QUERY_CODE[QUERIES.indexOf(q)]) } : {}),
     },
   });
+}
+
+/** The stack the extension captures on a slow statement: the driver, the application, the framework under it. */
+function capturedStack(frames) {
+  return ['org.h2.jdbc.JdbcPreparedStatement.executeQuery(JdbcPreparedStatement.java:120)']
+    .concat(frames, [
+      'net.benelog.spidersilk.web.Router.handle(Router.java:88)',
+      'org.eclipse.jetty.server.handler.ContextHandler.handle(ContextHandler.java:1201)',
+      'org.eclipse.jetty.server.Server.handle(Server.java:521)',
+      'java.base/java.lang.Thread.run(Thread.java:1583)',
+    ])
+    .map((frame) => '\tat ' + frame).join('\n');
 }
 
 function makeTrace(at) {
