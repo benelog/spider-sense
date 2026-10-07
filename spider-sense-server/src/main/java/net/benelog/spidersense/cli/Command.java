@@ -182,9 +182,11 @@ record Command(String commandName, Set<String> options, @Nullable String argumen
                 (options, reports, service) -> reports.imported(reports.importDocument(
                         Json.parse(Sessions.read(options.requiredArgument())).asObject()))),
 
-            // init reads nothing, so none of the common options mean anything to it: --url, --db and the
-            // thresholds are all about a window it never opens.
-            new Command(Options.INIT, Options.only("dir", "jar", "no-skill", "mcp"), null, null, null, null, null),
+            // init reads nothing, so none of the common options mean anything to it: --db and the
+            // thresholds are all about a window it never opens. Its --url asks nothing either; it is
+            // the address the block it writes tells the agent to ask (agent-skill.adoc#init).
+            new Command(Options.INIT, Options.only("dir", "jar", "url", "gradle", "no-skill", "mcp"),
+                    null, null, null, null, null),
 
             // mcp is not one question but a session of them, so a window, a format and a service belong
             // to each message rather than to the command: only where to read is decided here

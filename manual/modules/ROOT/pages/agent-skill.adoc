@@ -50,7 +50,7 @@ Run `check` before calling a fix done, and say which rules it passed with which 
 
 [source,bash]
 ----
-java -jar spider-sense.jar init [--dir=<project dir>] [--jar=<path>] [--no-skill] [--mcp]
+java -jar spider-sense.jar init [--dir=<project dir>] [--jar=<path>] [--url=<base url>] [--gradle] [--no-skill] [--mcp]
 ----
 
 `init` prepares a project to be worked on under Spider Sense.
@@ -65,10 +65,19 @@ The launcher sets the system property `spidersense.jar` to its own absolute path
 The path is written absolute, as given or as discovered, and never made relative to the project.
 When no jar path is known, which happens with exploded classes in an IDE and no `--jar`, `init` says which option it needs and exits `2`.
 
+`--url` is the base URL of the Spider Sense the project's application sends to, such as `http://127.0.0.1:4106`.
+`init` asks nothing there.
+It writes the URL into the block, so the agent asks that Spider Sense rather than the one on the default port.
+
+`--gradle` says that the project applies the Gradle plugin.
+The block then starts the application with the plugin's `bootRun` and runs the CLI through the plugin's `spiderSense` task.
+`spiderSenseInit` passes both options (<<gradle-task,The Gradle task>>).
+
 [#block]
 === The block
 
-The block is delimited by `<!-- spider-sense:start -->` and `<!-- spider-sense:end -->`, each on a line of its own, and reads as follows:
+The block is delimited by `<!-- spider-sense:start -->` and `<!-- spider-sense:end -->`, each on a line of its own.
+In a Gradle project, with neither `--url` nor `--gradle`, it reads as follows:
 
 [source,markdown]
 ----
@@ -99,7 +108,35 @@ Query tuning — an index to add, a rewrite, a fetch join, a batch — is in the
 
 The jar path above, `/home/me/tools/spider-sense.jar`, is the one `init` resolved, and every other line is written exactly as shown.
 The block is generated from one place in the code.
-The block names no port of the project, only the Spider Sense UI's own default, `http://127.0.0.1:4000`.
+Without `--url` the block names no port of the project, only the Spider Sense UI's own default, `http://127.0.0.1:4000`.
+
+[#block-variants]
+The build files in `--dir` and the options `--gradle` and `--url` change a few lines, and nothing else does, so one directory and one command line always give the same block.
+
+[cols="2,5",options="header"]
+|===
+| When
+| What changes
+
+| `build.gradle`, `build.gradle.kts`, `settings.gradle` or `settings.gradle.kts` in `--dir`, and no `pom.xml`
+| nothing: the block above
+
+| `pom.xml` in `--dir`, and none of the Gradle files
+| The Gradle sentence becomes "Under Maven, run `mvn spring-boot:run -Dspring-boot.run.agents=<jar>`: the Spring Boot plugin puts the agent on the JVM it forks for the application."
+The `JAVA_TOOL_OPTIONS` sentence ends at `attaches it.`, with nothing about `./gradlew` (xref:maven.adoc[Maven]).
+
+| Both, or neither
+| Both sentences, the Gradle one first, because a directory that does not say is not guessed at.
+
+| `--gradle`
+| The build-tool sentences become "This project applies the `net.benelog.spidersense` Gradle plugin, so `./gradlew bootRun` (or `run`) starts it under Spider Sense: the plugin puts the agent on the application's JVM and not on the Gradle daemon."
+Every CLI line becomes the plugin's task, such as `./gradlew -q spiderSense --args="findings --since=start"`, which asks the Spider Sense the build's `spiderSense { }` block names (xref:gradle-plugin.adoc#tasks[Tasks]).
+
+| `--url=<base url>`
+| The UI sentence becomes `The UI is then at <base url>.`
+Without `--gradle`, every CLI line but `help` ends in `--url=<base url>`, such as `java -jar /home/me/tools/spider-sense.jar findings --since=start --url=http://127.0.0.1:4106`.
+|===
+
 When `--no-skill` kept the skills from being installed, the last two lines name `skills/spider-sense/` and `skills/spider-sense-sql-tuning/` of the https://github.com/{project-repo}[Spider Sense repository] instead of the project's own copies.
 
 `init` is idempotent.
@@ -133,6 +170,7 @@ installed skill to /home/me/project/.claude/skills/spider-sense-sql-tuning (4 fi
 `init` prints one line each on stdout: the block, then one line per skill in the index's order, each with the number of files it wrote.
 The first line is `updated CLAUDE.md block (…)` when the markers were already in the file.
 The skill lines become the single line `skipped skills (--no-skill)` when the skills were not installed.
+`--url` and `--gradle` change the block and none of these lines.
 `--mcp` adds a last line, `wrote .mcp.json (spider-sense over stdio)` or `updated .mcp.json (…)`, and writes the stdio MCP server into the project's `.mcp.json` (xref:mcp.adoc#configuring[Configuring a host]).
 Without `--mcp` nothing is written and nothing is printed about it, because a host with a shell is meant to use the CLI (xref:agent-loop.adoc#choosing-an-interface[Choosing an interface]), and `init` should not hand it a second tool for the same answers.
 
@@ -147,6 +185,9 @@ The command then exits `0`.
 ----
 ./gradlew spiderSenseInit
 ----
+
+It also passes `--gradle`, so the block starts the application with `./gradlew bootRun` and asks with `./gradlew -q spiderSense --args="…"`.
+When the `spiderSense { }` block names a `collector`, a `host` or a `port`, it passes `--url=` with the base URL they imply, so the block's UI line names the port the application's Spider Sense listens on.
 
 The jar path it writes is wherever Gradle resolved the jar to, which for a Maven Central jar is a file under `~/.gradle/caches/`.
 That path stays valid until the version changes, so run the task again after a version bump.

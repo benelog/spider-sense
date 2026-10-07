@@ -18,8 +18,9 @@ import net.benelog.spidersilk.json.Json;
  * {@code init --mcp}: the project's {@code .mcp.json}, for a host that has no
  * shell and launches its tools as a process (agent-skill.adoc#init).
  *
- * <p>Everything else {@code init} writes is covered by {@link CliTest}; what is
- * here is the third line and the file it names.
+ * <p>The skills and the idempotence are covered by {@link CliTest}; what is here
+ * is the third line and the file it names, and the lines of the block that the
+ * project's build and the options {@code --gradle} and {@code --url} change.
  */
 class InitTest {
 
@@ -127,6 +128,101 @@ class InitTest {
         assertThat(run.err()).contains(".mcp.json").contains("not a JSON object");
         assertThat(Files.readString(file, UTF_8)).isEqualTo("[\"not an object\"]\n");
         assertThat(run.out()).doesNotContain(".mcp.json");
+    }
+
+    private static String block(Path project) throws IOException {
+        return Files.readString(project.resolve("CLAUDE.md"), UTF_8);
+    }
+
+    /** The manual prints the block of a Gradle project as it is, so the two are one text (agent-skill.adoc#block). */
+    @Test
+    void theManualPrintsTheBlockOfAGradleProject() throws IOException {
+        String page = Files.readString(Path.of("../manual/modules/ROOT/pages/agent-skill.adoc"), UTF_8);
+        int start = page.indexOf("\n" + Init.START + "\n") + 1;
+        int end = page.indexOf(Init.END, start) + Init.END.length();
+        assertThat(start).as("the page shows the block").isPositive();
+        assertThat(page.substring(start, end)).isEqualTo(Init.block(new Init.Setup(
+                "/home/me/tools/spider-sense.jar", true, null, false, Init.Build.GRADLE)));
+    }
+
+    /** A Gradle build gets the Gradle sentence and not the Maven one (agent-skill.adoc#block-variants). */
+    @Test
+    void aGradleProjectGetsTheGradleSentenceAlone(@TempDir Path project) throws IOException {
+        Files.writeString(project.resolve("build.gradle.kts"), "", UTF_8);
+
+        assertThat(init("--dir=" + project, "--jar=" + JAR, "--no-skill").exit()).isZero();
+
+        assertThat(block(project))
+                .contains("./gradlew bootRun -PspiderSense.jar=" + JAR)
+                .contains("`--no-daemon`")
+                .doesNotContain("mvn spring-boot:run");
+    }
+
+    /** A Maven build gets the Spring Boot plugin's agents parameter, and nothing about Gradle. */
+    @Test
+    void aMavenProjectGetsTheMavenSentenceAlone(@TempDir Path project) throws IOException {
+        Files.writeString(project.resolve("pom.xml"), "<project/>\n", UTF_8);
+
+        assertThat(init("--dir=" + project, "--jar=" + JAR, "--no-skill").exit()).isZero();
+
+        assertThat(block(project))
+                .contains("Under Maven, run `mvn spring-boot:run -Dspring-boot.run.agents=" + JAR + "`")
+                .contains("`JAVA_TOOL_OPTIONS=\"-javaagent:" + JAR + "\" <command>` attaches it.\n")
+                .doesNotContain("gradlew")
+                .contains("java -jar " + JAR + " findings --since=start");
+    }
+
+    /** A directory that names no build, or both, gets both sentences rather than a guess. */
+    @Test
+    void aDirectoryWithNoBuildFileGetsBothSentences(@TempDir Path project) throws IOException {
+        assertThat(init("--dir=" + project, "--jar=" + JAR, "--no-skill").exit()).isZero();
+
+        String text = block(project);
+        assertThat(text).contains("./gradlew bootRun -PspiderSense.jar=" + JAR)
+                .contains("mvn spring-boot:run -Dspring-boot.run.agents=" + JAR);
+        assertThat(text.indexOf("./gradlew bootRun")).isLessThan(text.indexOf("mvn spring-boot:run"));
+    }
+
+    /**
+     * Under the plugin, the plugin's own tasks start the application and ask the Spider Sense
+     * the build names: no jar property to pass and no port to repeat.
+     */
+    @Test
+    void gradleWritesThePluginsTasks(@TempDir Path project) throws IOException {
+        Files.writeString(project.resolve("pom.xml"), "<project/>\n", UTF_8);
+
+        Run run = init("--dir=" + project, "--jar=" + JAR, "--no-skill", "--gradle",
+                "--url=http://127.0.0.1:4106/");
+
+        assertThat(run.exit()).as("stderr: %s", run.err()).isZero();
+        assertThat(block(project))
+                .contains("`./gradlew bootRun` (or `run`) starts it under Spider Sense")
+                .doesNotContain("-PspiderSense.jar=")
+                .doesNotContain("mvn spring-boot:run")
+                .contains("./gradlew -q spiderSense --args=\"findings --since=start\"  # ranked:")
+                .contains("./gradlew -q spiderSense --args=\"check --max-p95-ms=300 --max-n-plus-one=0\"\n")
+                .doesNotContain("java -jar " + JAR)
+                .doesNotContain("--url=")
+                .contains("The UI is then at <http://127.0.0.1:4106>.\n");
+    }
+
+    /** Without the plugin, a named URL goes on every line that asks, so none asks port 4000. */
+    @Test
+    void urlGoesOnEveryLineThatAsks(@TempDir Path project) throws IOException {
+        Run run = init("--dir=" + project, "--jar=" + JAR, "--no-skill", "--url=http://127.0.0.1:4106");
+
+        assertThat(run.exit()).as("stderr: %s", run.err()).isZero();
+        String text = block(project);
+        assertThat(text)
+                .contains("java -jar " + JAR + " findings --since=start --url=http://127.0.0.1:4106  # ranked")
+                .contains("java -jar " + JAR + " compare --before=before --after=after --url=http://127.0.0.1:4106\n")
+                .contains("java -jar " + JAR + " help  # every command")
+                .contains("The UI is then at <http://127.0.0.1:4106>.\n")
+                .doesNotContain("unless the port was changed");
+        assertThat(text.lines().filter(line -> line.startsWith("java -jar ")
+                && !line.contains("--url=http://127.0.0.1:4106")))
+                .as("help asks nothing")
+                .containsExactly("java -jar " + JAR + " help  # every command and every option");
     }
 
     @Test

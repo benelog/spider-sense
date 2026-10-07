@@ -90,7 +90,8 @@ final class Options {
      * The options that are flags, named bare: every other option takes a value, and naming it
      * without one is a usage error.
      */
-    private static final Set<String> FLAGS = Set.of("json", "full", "hide-acked", "no-git", "no-skill", "mcp");
+    private static final Set<String> FLAGS =
+            Set.of("json", "full", "hide-acked", "no-git", "no-skill", "mcp", "gradle");
 
     /** The rule flags of {@code check}, in the order api.adoc#check names their parameters. */
     private static final Map<String, String> RULES = ruleParameters();

@@ -53,27 +53,57 @@ final class Init {
     /** The placeholder the jar path replaces; the block is written once, here. */
     private static final String JAR_PLACEHOLDER = "${jar}";
 
-    private static final String BODY = """
-            ## Spider Sense
+    /** One CLI line of the block: the command, and the comment beside it when it has one. */
+    private record Line(String command, @Nullable String comment) {
+    }
 
-            Spider Sense is a local-development observability tool for this project, and the jar is at `${jar}`.
-            Start the application under it with `java -javaagent:${jar} -jar <app jar>`.
-            Under Gradle, apply the `net.benelog.spidersense` plugin and run `./gradlew bootRun -PspiderSense.jar=${jar}` (or `run`): it puts the agent on the application's JVM and not on the Gradle daemon.
-            When the start command is not yours to change, `JAVA_TOOL_OPTIONS="-javaagent:${jar}" <command>` attaches it; a `./gradlew` command then needs `--no-daemon`, or the daemon hosts a Spider Sense of its own on port 4000.
-            The UI is then at <http://127.0.0.1:4000> unless the port was changed.
+    /** The CLI lines, which {@link #ask} writes as {@code java -jar} or as the Gradle task. */
+    private static final List<Line> COMMANDS = List.of(
+            new Line("findings --since=start", "ranked: N+1, slow queries, slow endpoints, errors, exhausted pools"),
+            new Line("trace <id>", "one request as a tree"),
+            new Line("mark before", "name a moment, exercise, then compare"),
+            new Line("compare --before=before --after=after", null),
+            new Line("check --max-p95-ms=300 --max-n-plus-one=0", null),
+            new Line("help", "every command and every option"));
 
-            Ask it from the terminal; every answer is Markdown made for an agent:
+    /** The files that make {@code --dir} a Gradle build. */
+    private static final List<String> GRADLE_FILES =
+            List.of("build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts");
 
-            ```bash
-            java -jar ${jar} findings --since=start  # ranked: N+1, slow queries, slow endpoints, errors, exhausted pools
-            java -jar ${jar} trace <id>  # one request as a tree
-            java -jar ${jar} mark before  # name a moment, exercise, then compare
-            java -jar ${jar} compare --before=before --after=after
-            java -jar ${jar} check --max-p95-ms=300 --max-n-plus-one=0
-            java -jar ${jar} help  # every command and every option
-            ```
+    /** The file that makes {@code --dir} a Maven build. */
+    private static final String MAVEN_FILE = "pom.xml";
 
-            """;
+    /** Which build tool's start-up sentence the block carries, read from the files in {@code --dir}. */
+    enum Build {
+        GRADLE, MAVEN, UNKNOWN;
+
+        /**
+         * Gradle when a Gradle build or settings file is there and no {@code pom.xml}, Maven the other
+         * way round, and unknown when there are both or neither: a directory that does not say is not
+         * guessed at, and the block then carries both sentences.
+         */
+        static Build of(Path dir) {
+            boolean gradle = GRADLE_FILES.stream().anyMatch(name -> Files.isRegularFile(dir.resolve(name)));
+            boolean maven = Files.isRegularFile(dir.resolve(MAVEN_FILE));
+            if (gradle == maven) {
+                return UNKNOWN;
+            }
+            return gradle ? GRADLE : MAVEN;
+        }
+    }
+
+    /**
+     * What the block is written for (agent-skill.adoc#block).
+     *
+     * @param jar            the jar's absolute path
+     * @param skillInstalled whether the skills were copied into the project
+     * @param url            the Spider Sense the application sends to ({@code --url}), or null for the default
+     * @param gradlePlugin   the project applies the Gradle plugin ({@code --gradle}), so its tasks
+     *                       start the application and run the CLI
+     * @param build          the build tool the project directory shows
+     */
+    record Setup(String jar, boolean skillInstalled, @Nullable String url, boolean gradlePlugin, Build build) {
+    }
 
     private static final String SKILL_HERE = "The loop — start, mark, exercise, findings, fix, compare, "
             + "check — is in the skill at `.claude/skills/spider-sense/SKILL.md`.\n"
@@ -89,10 +119,73 @@ final class Init {
     private Init() {
     }
 
-    /** The block exactly as agent-skill.adoc#block prints it, with the jar path filled in. */
-    static String block(String jar, boolean skillInstalled) {
-        String body = BODY + (skillInstalled ? SKILL_HERE : SKILL_ELSEWHERE);
-        return (START + "\n" + body + END).replace(JAR_PLACEHOLDER, jar);
+    /**
+     * The block exactly as agent-skill.adoc#block prints it, with the jar path filled in: the
+     * start-up sentences of the project's build tool, the CLI lines in the form that reaches the
+     * project's Spider Sense, and the skill lines last.
+     */
+    static String block(Setup setup) {
+        boolean plugin = setup.gradlePlugin();
+        boolean gradle = plugin || setup.build() != Build.MAVEN;
+        StringBuilder body = new StringBuilder("## Spider Sense\n\n")
+                .append("Spider Sense is a local-development observability tool for this project, "
+                        + "and the jar is at `${jar}`.\n")
+                .append("Start the application under it with `java -javaagent:${jar} -jar <app jar>`.\n");
+        if (plugin) {
+            body.append("This project applies the `net.benelog.spidersense` Gradle plugin, so "
+                    + "`./gradlew bootRun` (or `run`) starts it under Spider Sense: the plugin puts the "
+                    + "agent on the application's JVM and not on the Gradle daemon.\n");
+        } else if (gradle) {
+            body.append("Under Gradle, apply the `net.benelog.spidersense` plugin and run "
+                    + "`./gradlew bootRun -PspiderSense.jar=${jar}` (or `run`): it puts the agent on the "
+                    + "application's JVM and not on the Gradle daemon.\n");
+        }
+        if (!plugin && setup.build() != Build.GRADLE) {
+            body.append("Under Maven, run `mvn spring-boot:run -Dspring-boot.run.agents=${jar}`: the "
+                    + "Spring Boot plugin puts the agent on the JVM it forks for the application.\n");
+        }
+        body.append("When the start command is not yours to change, "
+                + "`JAVA_TOOL_OPTIONS=\"-javaagent:${jar}\" <command>` attaches it")
+                .append(gradle
+                        ? "; a `./gradlew` command then needs `--no-daemon`, or the daemon hosts a "
+                                + "Spider Sense of its own on port 4000.\n"
+                        : ".\n");
+        String url = setup.url();
+        body.append(url == null
+                ? "The UI is then at <http://127.0.0.1:4000> unless the port was changed.\n"
+                : "The UI is then at <" + url + ">.\n");
+        body.append("\nAsk it from the terminal; every answer is Markdown made for an agent:\n\n")
+                .append(ask(setup))
+                .append('\n')
+                .append(setup.skillInstalled() ? SKILL_HERE : SKILL_ELSEWHERE);
+        return (START + "\n" + body + END).replace(JAR_PLACEHOLDER, setup.jar());
+    }
+
+    /**
+     * The fenced CLI lines: {@code ./gradlew -q spiderSense --args="…"} under the plugin, whose
+     * task already asks the Spider Sense the build names, and {@code java -jar} otherwise, with
+     * {@code --url=} on every line that asks a Spider Sense when one was named.
+     */
+    private static String ask(Setup setup) {
+        String url = setup.url();
+        StringBuilder lines = new StringBuilder("```bash\n");
+        for (Line line : COMMANDS) {
+            String command = line.command();
+            if (setup.gradlePlugin()) {
+                lines.append("./gradlew -q spiderSense --args=\"").append(command).append('"');
+            } else {
+                lines.append("java -jar ${jar} ").append(command);
+                if (url != null && !"help".equals(command)) {
+                    lines.append(" --url=").append(url);
+                }
+            }
+            String comment = line.comment();
+            if (comment != null) {
+                lines.append("  # ").append(comment);
+            }
+            lines.append('\n');
+        }
+        return lines.append("```\n").toString();
     }
 
     static int run(Options options, PrintStream out, PrintStream err) {
@@ -104,8 +197,11 @@ final class Init {
             return Cli.USAGE;
         }
         boolean withSkill = !options.flag("no-skill");
+        String url = options.valueOrNull("url");
+        Setup setup = new Setup(jar, withSkill, url == null || url.isBlank() ? null : Remote.trimSlash(url),
+                options.flag("gradle"), Build.of(dir));
         try {
-            out.println(writeBlock(dir, block(jar, withSkill)) + " CLAUDE.md block (jar: " + jar + ")");
+            out.println(writeBlock(dir, block(setup)) + " CLAUDE.md block (jar: " + jar + ")");
             if (withSkill) {
                 Path target = dir.resolve(Paths.get(SKILL_TARGET));
                 installSkills(target).forEach((skill, files) ->

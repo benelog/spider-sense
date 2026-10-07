@@ -98,7 +98,7 @@ The launcher reads xref:configuration.adoc#properties-file[the properties file] 
 | `import <file>`
 | that document back into the store
 
-| `init [--dir=] [--jar=] [--no-skill] [--mcp]`
+| `init [--dir=] [--jar=] [--url=] [--gradle] [--no-skill] [--mcp]`
 | writes the Spider Sense block into the project's `CLAUDE.md` and installs the skills
 
 | `mcp`
@@ -465,7 +465,8 @@ See <<sql,SQL>>.
 
 `init` writes the Spider Sense block into the project's `CLAUDE.md` and installs the skills into its `.claude/skills/`.
 It is the one command that reads nothing: no HTTP, no database, no running Spider Sense.
-It takes none of the common options, and its own are `--dir`, `--jar`, `--no-skill` and `--mcp`.
+It takes none of the common options, and its own are `--dir`, `--jar`, `--url`, `--gradle`, `--no-skill` and `--mcp`.
+Its `--url` asks nothing: it is the address of the project's Spider Sense, which the block it writes tells the agent to ask.
 See xref:agent-skill.adoc#init[init].
 
 [#mcp]
@@ -528,7 +529,8 @@ Commands:
                                stdout; a name ending in .gz is gzipped
   import <file>                that document back into the store, and one line
                                saying what arrived
-  init [--dir=<project dir>] [--jar=<path>] [--no-skill] [--mcp]
+  init [--dir=<project dir>] [--jar=<path>] [--url=<base url>] [--gradle]
+       [--no-skill] [--mcp]
                                writes the Spider Sense block into the project's
                                CLAUDE.md and installs the skills into .claude/skills/;
                                --mcp also writes the stdio MCP server into .mcp.json
@@ -651,13 +653,13 @@ xref:marks-and-compare.adoc#time-selectors[Time selectors] states every form.
 
 Three commands depart from the table.
 `compare` takes no `--since`, because its windows are the two selectors, and its `--until` closes the second window.
-`init` takes none of these options at all, and its own are `--dir`, `--jar`, `--no-skill` and `--mcp`.
+`init` takes none of these options but `--url`, which it writes into its block rather than asks, and its own are `--dir`, `--jar`, `--gradle`, `--no-skill` and `--mcp`.
 `mcp` takes only `--url` and `--db`.
 
 `--slow.request.ms=`, `--slow.query.ms=` and `--app.packages=` set the thresholds and the application packages in the direct-file path, where no server is there to ask.
 
 An option a command does not take is a usage error rather than a silently ignored word, so a mistyped `--sinse` is reported, with `did you mean --since?`, rather than answered for the last 15 minutes.
-An option that takes a value is a usage error without one, so a bare `--since` is reported rather than read as the mark name `true`; only `--json`, `--full`, `--hide-acked`, `--no-git` and `init`'s `--no-skill` and `--mcp` are named bare.
+An option that takes a value is a usage error without one, so a bare `--since` is reported rather than read as the mark name `true`; only `--json`, `--full`, `--hide-acked`, `--no-git` and `init`'s `--gradle`, `--no-skill` and `--mcp` are named bare.
 
 [#exit-codes]
 == Exit codes

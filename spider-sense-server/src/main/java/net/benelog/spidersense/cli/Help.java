@@ -60,7 +60,8 @@ final class Help {
                                            stdout; a name ending in .gz is gzipped
               import <file>                that document back into the store, and one line
                                            saying what arrived
-              init [--dir=<project dir>] [--jar=<path>] [--no-skill] [--mcp]
+              init [--dir=<project dir>] [--jar=<path>] [--url=<base url>] [--gradle]
+                   [--no-skill] [--mcp]
                                            writes the Spider Sense block into the project's
                                            CLAUDE.md and installs the skills into .claude/skills/;
                                            --mcp also writes the stdio MCP server into .mcp.json

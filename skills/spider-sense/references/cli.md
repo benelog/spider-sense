@@ -29,7 +29,7 @@ The launcher treats a first argument that does not start with `-` as a command a
 | `sql "<statement>" [--limit=200]` | one read-only statement over the store, for a question no other command answers ([sql.md](sql.md)) |
 | `export [--out=<file>]` | the window as one JSON document, to the file or to stdout; a name ending in `.gz` is gzipped |
 | `import <file>` | that document back into the store, and one line saying what arrived |
-| `init [--dir=<project dir>] [--jar=<path>] [--no-skill] [--mcp]` | writes the Spider Sense block into the project's `CLAUDE.md` and installs the skills into its `.claude/skills/`; `--mcp` also writes the stdio MCP server into its `.mcp.json` |
+| `init [--dir=<project dir>] [--jar=<path>] [--url=<base url>] [--gradle] [--no-skill] [--mcp]` | writes the Spider Sense block into the project's `CLAUDE.md` and installs the skills into its `.claude/skills/`; `--mcp` also writes the stdio MCP server into its `.mcp.json` |
 | `mcp` | the MCP server over stdio, for a host that has no shell; it takes `--url` and `--db` and nothing else ([MCP over stdio](#mcp-over-stdio)) |
 | `help [<command>]` | this table, or what one command takes; `<command> --help` and `-h` print the same block |
 | `version` | the version of the jar, as `--version` prints it |
@@ -50,12 +50,12 @@ The launcher treats a first argument that does not start with `-` as a command a
 | `--no-git` | off | `findings` only: no suspect-change line under the code frames |
 
 `compare` takes no `--since`: its windows are the two selectors, and `--until` closes the second one.
-`init` takes none of these: it reads nothing, and its own options are `--dir=<project dir>` (the working directory by default), `--jar=<path>` (the jar it was started from by default), `--no-skill` and `--mcp`.
+`init` takes none of these: it reads nothing, and its own options are `--dir=<project dir>` (the working directory by default), `--jar=<path>` (the jar it was started from by default), `--url=<base url>` (the Spider Sense the block's commands ask, written into them rather than asked), `--gradle` (the project applies the Gradle plugin, so the block starts the application with `./gradlew bootRun` and runs the CLI as `./gradlew -q spiderSense --args="…"`), `--no-skill` and `--mcp`.
 `mcp` takes only `--url` and `--db`, because a window, a format and a service belong to each message of the session rather than to the command.
 It is idempotent — the block it writes is delimited by `<!-- spider-sense:start -->` and `<!-- spider-sense:end -->`, and a second run replaces what is between them and leaves the rest of `CLAUDE.md` untouched.
 `--slow.request.ms=`, `--slow.query.ms=` and `--app.packages=` set the thresholds and the application packages in the direct-file path, where no server is there to ask.
 An option a command does not take is a usage error rather than a silently ignored word, so a mistyped `--sinse` is told, with `did you mean --since?`, rather than answered for the last 15 minutes.
-An option that takes a value is a usage error without one, so a bare `--since` is told rather than read as the mark name `true`; only `--json`, `--full`, `--hide-acked`, `--no-git` and `init`'s `--no-skill` and `--mcp` are named bare.
+An option that takes a value is a usage error without one, so a bare `--since` is told rather than read as the mark name `true`; only `--json`, `--full`, `--hide-acked`, `--no-git` and `init`'s `--gradle`, `--no-skill` and `--mcp` are named bare.
 
 ## Time selectors
 
@@ -532,7 +532,8 @@ Commands:
                                stdout; a name ending in .gz is gzipped
   import <file>                that document back into the store, and one line
                                saying what arrived
-  init [--dir=<project dir>] [--jar=<path>] [--no-skill] [--mcp]
+  init [--dir=<project dir>] [--jar=<path>] [--url=<base url>] [--gradle]
+       [--no-skill] [--mcp]
                                writes the Spider Sense block into the project's
                                CLAUDE.md and installs the skills into .claude/skills/;
                                --mcp also writes the stdio MCP server into .mcp.json
