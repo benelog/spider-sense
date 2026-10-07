@@ -7,7 +7,7 @@ import { pageLoader } from '../page.js';
 import { sparkline } from '../charts.js';
 import { apdexCell, ERROR_RATE_BAD } from '../buckets.js';
 import { seenColumn, durationColumn, countColumn } from '../columns.js';
-import { rate, pct } from '../format.js';
+import { rate, pct, dur, ifRequests } from '../format.js';
 
 export function render(root, ctx) {
   let rows = [];
@@ -27,12 +27,13 @@ export function render(root, ctx) {
     },
     { key: 'language', label: 'Language', width: '92px', render: (s) => (s.language ? chip(s.language) : h('span.muted', 'unknown')) },
     countColumn('requests', 'Requests', '84px'),
-    { key: 'rps', label: 'rps', align: 'right', width: '64px', render: (s) => rate(s.rps || 0) },
-    { key: 'errorRate', label: 'Errors', align: 'right', width: '72px', render: (s) => h('span', { class: s.errorRate > ERROR_RATE_BAD ? 'bad' : '' }, pct(s.errorRate || 0)) },
+    // A service with no request in the window reads - for what needs one (pages.adoc#services).
+    { key: 'rps', label: 'rps', align: 'right', width: '64px', render: (s) => ifRequests(s, () => rate(s.rps || 0)) },
+    { key: 'errorRate', label: 'Errors', align: 'right', width: '72px', render: (s) => h('span', { class: s.errorRate > ERROR_RATE_BAD ? 'bad' : '' }, ifRequests(s, () => pct(s.errorRate || 0))) },
     { key: 'apdex', label: 'Apdex', align: 'right', width: '70px', render: (s) => apdexCell(s.apdex) },
-    durationColumn('p50Ms', 'p50', '78px'),
-    durationColumn('p95Ms', 'p95', '78px'),
-    durationColumn('p99Ms', 'p99', '78px'),
+    durationColumn('p50Ms', 'p50', '78px', { render: (s) => ifRequests(s, () => dur(s.p50Ms)) }),
+    durationColumn('p95Ms', 'p95', '78px', { render: (s) => ifRequests(s, () => dur(s.p95Ms)) }),
+    durationColumn('p99Ms', 'p99', '78px', { render: (s) => ifRequests(s, () => dur(s.p99Ms)) }),
     { key: 'spark', label: 'Requests over time', sortable: false, width: '130px', render: (s) => sparkline(s.sparkline || [], { color: serviceColor(s.name), label: s.name + ' requests per bucket' }) },
     seenColumn(),
   ];

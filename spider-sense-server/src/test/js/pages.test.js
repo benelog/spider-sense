@@ -281,6 +281,9 @@ test('the Overview shows a worker\'s findings, services and tingles though it ha
     assert.ok(root.querySelectorAll('.service-card').length > 0, 'the service cards');
     assert.equal(root.querySelectorAll('.tingle').length, 1, 'the tingle');
     assert.equal(root.querySelector('.hist-empty').textContent, '-', 'the Response summary says -');
+    const tiles = Object.fromEntries(root.querySelectorAll('.stat').map((t) => [t.querySelector('.stat-caption').textContent, t.querySelector('.stat-number').textContent]));
+    assert.equal(tiles['error rate'], '-', 'no error rate without a request');
+    assert.equal(tiles['requests per second'], '-', 'no rate without a request');
     instance.destroy();
   });
 });

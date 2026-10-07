@@ -4,6 +4,14 @@ const NUM = new Intl.NumberFormat('en-US');
 const NUM1 = new Intl.NumberFormat('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const NUM2 = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+/**
+ * `text()` for a row that counted a request, and `-` for one that counted none: a quiet
+ * service's rate, error rate and percentiles measure nothing, as its Apdex does (pages.adoc#services).
+ */
+export function ifRequests(row, text) {
+  return row && row.requests ? text() : '-';
+}
+
 /** Counts with thousands separators. */
 export function count(n) {
   if (n == null || Number.isNaN(n)) return '-';

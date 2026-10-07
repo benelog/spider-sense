@@ -199,6 +199,8 @@ When no call has been traced at all, the page shows the usual sentence and the s
 == Services
 
 `#/services` lists every service: name, language, requests, rps, error rate, Apdex, p50, p95, p99, a sparkline, and when it was last seen.
+A service with no request in the window, such as a worker or one that has gone quiet, reads `-` for rps, error rate, p50, p95 and p99, as it does for Apdex, rather than `0.0 ms` and `0.0%`.
+The Overview's service cards, the Overview's tiles and the map's service nodes follow the same rule.
 A row click opens the service.
 
 `+#/services/{name}+` is the page of one service, in seven parts.

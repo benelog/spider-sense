@@ -11,7 +11,7 @@ import { pageLoader } from '../page.js';
 import { timeSeries } from '../charts.js';
 import { throughputSpec } from '../throughput.js';
 import { histogramBars, bucketVars, apdexClass, ERROR_RATE_BAD } from '../buckets.js';
-import { dur, count, rate, pct, apdex, truncate } from '../format.js';
+import { dur, count, rate, pct, apdex, truncate, ifRequests } from '../format.js';
 
 const NODE_W = 200, NODE_H = 64, COL_PITCH = 260, ROW_PITCH = 96, PAD_X = 22, PAD_Y = 20;
 const HIST_W = 40, HIST_H = 14, HIST_X = NODE_W - HIST_W - 12, HIST_Y = NODE_H - HIST_H - 10;
@@ -449,8 +449,9 @@ export function render(root, ctx) {
     return fits(avail, 10.5);
   }
 
+  /** A service with no request in the window says so rather than 0/s · 0.0 ms · 0.0%. */
   function serviceLine(n) {
-    return rate(n.rps || 0) + '/s · ' + dur(n.p95Ms) + ' · ' + pct(n.errorRate || 0);
+    return ifRequests(n, () => rate(n.rps || 0) + '/s · ' + dur(n.p95Ms) + ' · ' + pct(n.errorRate || 0));
   }
 
   function externalLine(n) {
@@ -532,9 +533,9 @@ export function render(root, ctx) {
       h('div.stat-row',
         stat(count(n.requests), 'total', 'requests'),
         stat(apdex(n.apdex), '', 'apdex', { class: apdexClass(n.apdex) }),
-        stat(pct(n.errorRate || 0), '', 'error rate', { class: n.errorRate > ERROR_RATE_BAD ? 'is-bad' : '' }),
-        stat(dur(n.p95Ms), '', 'p95'),
-        stat(rate(n.rps || 0), '/s', 'requests per second')),
+        stat(ifRequests(n, () => pct(n.errorRate || 0)), '', 'error rate', { class: n.errorRate > ERROR_RATE_BAD ? 'is-bad' : '' }),
+        stat(ifRequests(n, () => dur(n.p95Ms)), '', 'p95'),
+        stat(ifRequests(n, () => rate(n.rps || 0)), '/s', 'requests per second')),
       h('div', h('div.sub-head', { style: { marginBottom: '6px' } }, 'Response summary'), histogramBars(n.histogram)),
       h('div', h('div.sub-head', { style: { marginBottom: '6px' } }, 'Load'), chartBody),
       h('div.row', { style: { gap: '8px' } },

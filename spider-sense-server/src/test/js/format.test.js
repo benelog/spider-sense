@@ -102,3 +102,9 @@ test('apdex has two decimals and a dash for no request', () => {
   assert.equal(fmt.apdex(1), '1.00');
   assert.equal(fmt.apdex(null), '-');
 });
+
+test('ifRequests reads - for a row that counted no request (pages.adoc#services)', () => {
+  assert.equal(fmt.ifRequests({ requests: 0, rps: 0 }, () => fmt.rate(0)), '-');
+  assert.equal(fmt.ifRequests(null, () => 'x'), '-');
+  assert.equal(fmt.ifRequests({ requests: 3 }, () => fmt.pct(0)), '0.0%');
+});

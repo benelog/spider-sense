@@ -8,7 +8,7 @@ import { chartBox, sparkline } from '../charts.js';
 import { histogramBars, bucketFilter, apdexCell, ERROR_RATE_BAD } from '../buckets.js';
 import { chartModeSwitch, throughputSpec } from '../throughput.js';
 import { statTiles, severityDot, kindChip, goToFinding } from '../widgets.js';
-import { dur, rate, pct, rel, bothTimes } from '../format.js';
+import { dur, rate, pct, rel, bothTimes, ifRequests } from '../format.js';
 
 const TINGLE_ICON = { 'slow-request': 'turtle', 'slow-query': 'database', error: 'bolt' };
 const TINGLE_LABEL = { 'slow-request': 'Slow request', 'slow-query': 'Slow query', error: 'Error' };
@@ -105,9 +105,9 @@ export function render(root, ctx) {
         s.language ? chip(s.language) : null,
         s.embedded ? chip('embedded', { class: 'chip-accent' }) : null),
       h('div.sc-stats',
-        h('div', h('b', rate(s.rps || 0)), 'rps'),
-        h('div', h('b', dur(s.p95Ms)), 'p95'),
-        h('div', h('b', { class: s.errorRate > ERROR_RATE_BAD ? 'bad' : '' }, pct(s.errorRate || 0)), 'errors'),
+        h('div', h('b', ifRequests(s, () => rate(s.rps || 0))), 'rps'),
+        h('div', h('b', ifRequests(s, () => dur(s.p95Ms))), 'p95'),
+        h('div', h('b', { class: s.errorRate > ERROR_RATE_BAD ? 'bad' : '' }, ifRequests(s, () => pct(s.errorRate || 0))), 'errors'),
         h('div', apdexCell(s.apdex, 'b'), 'apdex')),
       h('div.sc-foot',
         sparkline(s.sparkline || [], { color, label: s.name + ' requests per bucket' }),
