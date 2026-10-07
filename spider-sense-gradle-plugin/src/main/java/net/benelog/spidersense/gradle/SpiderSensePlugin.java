@@ -112,10 +112,13 @@ public class SpiderSensePlugin implements Plugin<Project> {
 
         // Where the jar comes from, in order: the project property, the block,
         // the single file of the configuration. The first two are a path and
-        // need no resolution; only the third reaches a repository.
-        Provider<File> namedJar = providers.gradleProperty(JAR_PROPERTY)
-                .map(path -> projectDir.toPath().resolve(path).normalize().toFile())
-                .orElse(extension.getJar().map(file -> file.getAsFile()));
+        // need no resolution; only the third reaches a repository. A blank
+        // property is no path at all, not the project directory.
+        NamedJar namedJar = new NamedJar(
+                providers.gradleProperty(JAR_PROPERTY)
+                        .filter(path -> !path.isBlank())
+                        .map(path -> projectDir.toPath().resolve(path).normalize().toFile()),
+                extension.getJar().map(file -> file.getAsFile()));
 
         Provider<List<String>> systemProperties = systemProperties(objects, extension);
         Provider<List<String>> checkArguments = checkArguments(objects, providers, extension.getCheck());
@@ -155,7 +158,7 @@ public class SpiderSensePlugin implements Plugin<Project> {
      * for whatever builds it.
      */
     private void attach(Project project, ObjectFactory objects, SpiderSenseExtension extension,
-            Provider<Boolean> enabled, Provider<File> namedJar, Configuration configuration,
+            Provider<Boolean> enabled, NamedJar namedJar, Configuration configuration,
             Provider<List<String>> systemProperties) {
         Action<Task> attachOne = task -> {
             String name = task.getName();
@@ -189,7 +192,7 @@ public class SpiderSensePlugin implements Plugin<Project> {
      * build starts one.
      */
     private void registerTasks(Project project, ObjectFactory objects, SpiderSenseExtension extension,
-            Provider<File> namedJar, Configuration configuration, Provider<List<String>> systemProperties,
+            NamedJar namedJar, Configuration configuration, Provider<List<String>> systemProperties,
             Provider<List<String>> checkArguments, File projectDir) {
         FileCollection jar = objects.fileCollection().from(JarSource.always(namedJar, configuration));
         Provider<String> url = baseUrl(extension);
@@ -390,10 +393,10 @@ public class SpiderSensePlugin implements Plugin<Project> {
 
         /** Null for always. */
         private final @Nullable Provider<Boolean> attached;
-        private final Provider<File> namedJar;
+        private final NamedJar namedJar;
         private final Configuration configuration;
 
-        private JarSource(@Nullable Provider<Boolean> attached, Provider<File> namedJar,
+        private JarSource(@Nullable Provider<Boolean> attached, NamedJar namedJar,
                 Configuration configuration) {
             this.attached = attached;
             this.namedJar = namedJar;
@@ -401,12 +404,12 @@ public class SpiderSensePlugin implements Plugin<Project> {
         }
 
         /** The jar, for a task that runs it. */
-        static JarSource always(Provider<File> namedJar, Configuration configuration) {
+        static JarSource always(NamedJar namedJar, Configuration configuration) {
             return new JarSource(null, namedJar, configuration);
         }
 
         /** The jar when {@code attached} holds, else nothing, for a task that attaches it. */
-        static JarSource whenAttached(Provider<Boolean> attached, Provider<File> namedJar,
+        static JarSource whenAttached(Provider<Boolean> attached, NamedJar namedJar,
                 Configuration configuration) {
             return new JarSource(attached, namedJar, configuration);
         }
@@ -416,8 +419,49 @@ public class SpiderSensePlugin implements Plugin<Project> {
             if (attached != null && !attached.get()) {
                 return List.of();
             }
-            File named = namedJar.getOrNull();
+            File named = namedJar.get();
             return named != null ? named : configuration;
+        }
+    }
+
+    /**
+     * The jar a build names by path rather than resolves: the project property
+     * {@code spiderSense.jar}, which wins, and the block's {@code jar}. Two
+     * providers rather than one, so that a path that is not a file is reported
+     * with where it was written.
+     */
+    static final class NamedJar {
+
+        private final Provider<File> fromProperty;
+        private final Provider<File> fromBlock;
+
+        NamedJar(Provider<File> fromProperty, Provider<File> fromBlock) {
+            this.fromProperty = fromProperty;
+            this.fromBlock = fromBlock;
+        }
+
+        /**
+         * The named jar, or null when the build names none and the configuration
+         * decides. A path that is not a regular file fails here, before a JVM is
+         * forked with a {@code -javaagent:} or a class path it cannot open.
+         */
+        @Nullable File get() {
+            File file = fromProperty.getOrNull();
+            String origin = "-P" + JAR_PROPERTY;
+            if (file == null) {
+                file = fromBlock.getOrNull();
+                origin = "jar in the " + NAME + " block";
+            }
+            if (file != null && !file.isFile()) {
+                throw new GradleException(notAFile(file, origin));
+            }
+            return file;
+        }
+
+        /** What the build says of a named jar that is not there. */
+        static String notAFile(File file, String origin) {
+            return "The Spider Sense jar " + file.getAbsolutePath()
+                    + (file.exists() ? " is not a file" : " does not exist") + " (from " + origin + ").";
         }
     }
 

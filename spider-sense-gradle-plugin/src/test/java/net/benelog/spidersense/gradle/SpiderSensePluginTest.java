@@ -320,6 +320,26 @@ class SpiderSensePluginTest {
     }
 
     @Test
+    void aBlankProjectPropertyJarIsUnset() {
+        assertThat(probe("-PspiderSense.jar="))
+                .contains("bootRun=[-javaagent:" + stubJar.toAbsolutePath() + ", -Dspidersense.service=scratch]");
+    }
+
+    @Test
+    void aNamedJarThatIsNotAFileFailsWithItsPathAndWhereItCameFrom() throws IOException {
+        assertThat(gradle("probe", "-q", "-PspiderSense.jar=missing.jar").buildAndFail().getOutput())
+                .contains("The Spider Sense jar " + realProjectDir() + "/missing.jar does not exist"
+                        + " (from -PspiderSense.jar).");
+
+        buildFile("jar = file('build')");
+        Files.createDirectories(projectDir.resolve("build"));
+
+        assertThat(gradle("spiderSense", "-q").buildAndFail().getOutput())
+                .contains("The Spider Sense jar " + realProjectDir() + "/build is not a file"
+                        + " (from jar in the spiderSense block).");
+    }
+
+    @Test
     void theConfigurationDefaultsToTheJarOfTheSameVersion() throws IOException {
         String version = rootVersion();
         Path repository = mavenRepository(version);

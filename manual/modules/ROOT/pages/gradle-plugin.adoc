@@ -179,7 +179,9 @@ xref:configuration.adoc#properties[Configuration] lists the jar's defaults.
 
 [#jar-resolution]
 The plugin looks for the jar in this order: the project property `spiderSense.jar`, then the block's `jar`, then the single file of the `spiderSense` configuration.
+A blank property (`-PspiderSense.jar=`) counts as unset.
 When a task that needs the jar runs, a configuration with more than one file, or none, is an error that names the configuration.
+A path from the property or the block that is not a regular file is an error too, and it names the path and which of the two gave it: `The Spider Sense jar /home/me/spider-sense.jar does not exist (from -PspiderSense.jar).`
 
 The block sets only `spidersense.*` properties.
 The launcher also reads a `spider-sense.properties` in the project directory, because the forked JVM's working directory is the project's.
