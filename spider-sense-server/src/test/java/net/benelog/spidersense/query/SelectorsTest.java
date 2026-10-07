@@ -84,7 +84,13 @@ class SelectorsTest {
     void anUnknownMarkAndAMalformedSelectorAreDifferentFailures() {
         assertThatThrownBy(() -> selectors.resolve("after-fix", NOW, null))
                 .isInstanceOf(Selectors.UnknownMark.class)
-                .hasMessageContaining("after-fix");
+                .hasMessage("No mark named after-fix; `mark after-fix` records one, `marks` lists them");
+        assertThatThrownBy(() -> selectors.resolve("start", NOW, "orders"))
+                .as("no start mark says what writes one and what to ask instead")
+                .isInstanceOf(Selectors.UnknownMark.class)
+                .hasMessage(Selectors.NO_START_MARK)
+                .hasMessageContaining("-javaagent")
+                .hasMessageContaining("--since=15m");
 
         assertThatThrownBy(() -> selectors.resolve("5 minutes ago", NOW, null))
                 .isInstanceOf(Selectors.BadSelector.class);

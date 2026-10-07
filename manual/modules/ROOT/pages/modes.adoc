@@ -201,6 +201,10 @@ The reader exports every ten seconds instead of the SDK's default of sixty, so a
 `otelhttp` names each server span after the `ServeMux` pattern, so the Endpoints page shows `GET /hello` rather than one row for the whole server.
 The queries appear only when the database calls make spans too, which in Go means wrapping `database/sql` with an instrumentation library, and in Python and Node.js happens for the drivers the packages above cover.
 
+A start mark, the moment `--since=start` reads, is written when a service reports a `process.pid` it has not reported before (xref:marks-and-compare.adoc#start-marks[Automatic start marks]).
+The Node.js example reports one through its `process` detector.
+Python reports one with `OTEL_EXPERIMENTAL_RESOURCE_DETECTORS=otel,process`, and Go with `resource.WithProcessPID()` in the resource it gives the tracer provider; without it there is no start mark, and `--since=15m`, or `mark before` and `--since=before`, names the window instead.
+
 The receiver is the same for all three, so the pages, the findings and the CLI treat them as they treat a Java service.
 The Java-only parts do not apply: the `code.stacktrace` of a slow query and the index catalog come from the Spider Sense jar's extension.
 

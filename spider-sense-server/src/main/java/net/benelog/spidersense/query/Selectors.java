@@ -130,11 +130,23 @@ public final class Selectors {
         }
         Marks.Mark mark = marks.newest(value, service);
         if (mark == null) {
-            throw new UnknownMark("No mark named " + value
-                    + (service == null ? "" : " for service " + service));
+            throw new UnknownMark(Marks.START.equals(value) ? NO_START_MARK
+                    : "No mark named " + value + (service == null ? "" : " for service " + service)
+                            + "; `mark " + value + "` records one, `marks` lists them");
         }
         return mark.at();
     }
+
+    /**
+     * What {@code since=start} answers before any start mark exists: what writes one, and what
+     * to ask instead, since "No mark named start" reads as a typo of a mark nobody chose
+     * (marks-and-compare.adoc#start-marks).
+     */
+    static final String NO_START_MARK = "No start mark yet: Spider Sense writes one when a service"
+            + " reports a process id it has not seen, which an application under"
+            + " -javaagent:spider-sense.jar does as it starts; a service sending from its own SDK"
+            + " writes one only when the SDK reports process.pid. Use --since=15m, or name a moment"
+            + " with `mark before` and use --since=before";
 
     /**
      * An ISO-8601 date-time as an instant: with an offset or {@code Z} as written, and

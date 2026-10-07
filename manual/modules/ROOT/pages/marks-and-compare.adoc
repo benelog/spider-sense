@@ -96,6 +96,11 @@ The mark is at the earliest span start, log record or metric point of that servi
 `--since=start` therefore means "since the application was last restarted", which is what an agent that just rebuilt the application wants, and it needs no cooperation from anyone.
 The retention sweeper and `DELETE /api/data` spare each service's newest start mark, so it lasts as long as the process does.
 
+A service that reports no `process.pid` gets no start mark.
+The Java agent always reports one, so every application under `-javaagent:spider-sense.jar` has a start mark from its first export on.
+A service sending from its own SDK reports one only when the SDK's process resource detector is on, which xref:modes.adoc#other-languages[Python, Node.js and Go] covers.
+Until some service has a start mark, `--since=start` is a not-found that says so and suggests `--since=15m`, or `mark before` and `--since=before`.
+
 The Mark button on the UI's top bar records a mark the same way.
 The charts draw marks as vertical lines.
 xref:ui.adoc#top-bar[Layout and Controls] covers the button and the lines.
