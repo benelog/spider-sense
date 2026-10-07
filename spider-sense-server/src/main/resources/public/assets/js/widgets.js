@@ -61,18 +61,25 @@ export function traceTable(rows, opts = {}) {
 
 // --- a service's numbers and charts --------------------------------------
 
-/** The seven tiles of pages.adoc#overview item 1; the Service page shows the same row. */
-export function statTiles(totals, thresholds) {
+/**
+ * The seven tiles of pages.adoc#overview item 1; the Service page shows the same row. With
+ * `opts.links` each tile but Apdex links to the page behind its number: the requests and the
+ * rate to the traces, the error rate to the errors, the percentiles to the scatter.
+ */
+export function statTiles(totals, thresholds, opts = {}) {
   const t = totals || {};
   const slow = (thresholds && thresholds.slowRequestMs) || DEFAULT_SLOW_REQUEST_MS;
+  const to = (path, title) => (opts.links ? { href: router.href(path, api.sharedQuery()), title } : {});
+  const traces = to('/traces', 'Open the traces');
+  const scatter = to('/scatter', 'Open the scatter');
   return [
-    stat(count(t.requests), 'total', 'requests'),
+    stat(count(t.requests), 'total', 'requests', traces),
     stat(apdex(t.apdex), '', 'apdex', { class: apdexClass(t.apdex), title: 'Apdex, T = ' + dur(slow) }),
-    stat(pct(t.errorRate || 0), '', 'error rate', { class: t.errorRate > ERROR_RATE_BAD ? 'is-bad' : '' }),
-    stat(dur(t.p50Ms), '', 'p50'),
-    stat(dur(t.p95Ms), '', 'p95', { class: t.p95Ms > slow ? 'is-warn' : '' }),
-    stat(dur(t.p99Ms), '', 'p99'),
-    stat(rate(t.rps || 0), '/s', 'requests per second'),
+    stat(pct(t.errorRate || 0), '', 'error rate', { class: t.errorRate > ERROR_RATE_BAD ? 'is-bad' : '', ...to('/errors', 'Open the errors') }),
+    stat(dur(t.p50Ms), '', 'p50', scatter),
+    stat(dur(t.p95Ms), '', 'p95', { class: t.p95Ms > slow ? 'is-warn' : '', ...scatter }),
+    stat(dur(t.p99Ms), '', 'p99', scatter),
+    stat(rate(t.rps || 0), '/s', 'requests per second', traces),
   ];
 }
 

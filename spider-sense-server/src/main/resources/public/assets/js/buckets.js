@@ -74,9 +74,24 @@ export function histogramTitle(histogram) {
 }
 
 /**
+ * The Traces page filter that lists the requests of bucket `i` (pages.adoc#overview): the
+ * successful ones between its bounds, or the failed ones for the error bucket.
+ */
+export function bucketFilter(i, status = api.state.status) {
+  const [a, b, c] = bucketBounds(status);
+  return [
+    { status: 'ok', maxMs: a },
+    { status: 'ok', minMs: a, maxMs: b },
+    { status: 'ok', minMs: b, maxMs: c },
+    { status: 'ok', minMs: c },
+    { status: 'error' },
+  ][i];
+}
+
+/**
  * The response summary: five vertical bars in the bucket colours, the count above
  * each and the label beneath. `compact` is the 120x28 form for a header, with the
- * counts and the labels in the title instead.
+ * counts and the labels in the title instead. With `href(i)` each bar is a link.
  */
 export function histogramBars(histogram, opts = {}) {
   const values = (histogram || []).slice(0, 5);
@@ -87,12 +102,18 @@ export function histogramBars(histogram, opts = {}) {
   const colors = bucketVars();
   const max = Math.max(...values.map((v) => v || 0), 1);
   const title = histogramTitle(values);
+  const linked = !opts.compact && typeof opts.href === 'function';
   return h('div.hist', {
     class: opts.compact ? 'compact' : null,
     title: opts.compact ? title : null,
-    role: 'img',
-    'aria-label': 'Response summary. ' + title.replace(/\n/g, ', '),
-  }, values.map((v, i) => h('div.hist-bar', { title: opts.compact ? null : labels[i] + ': ' + fmt.count(v || 0) + (total ? ' (' + fmt.pct((v || 0) / total) + ')' : '') },
+    // Links inside an image would be hidden from a screen reader, so linked bars are a group.
+    role: linked ? 'group' : 'img',
+    'aria-label': linked ? 'Response summary' : 'Response summary. ' + title.replace(/\n/g, ', '),
+  }, values.map((v, i) => h(linked ? 'a.hist-bar.hist-link' : 'div.hist-bar', {
+    href: linked ? opts.href(i) : null,
+    title: opts.compact ? null : labels[i] + ': ' + fmt.count(v || 0) + (total ? ' (' + fmt.pct((v || 0) / total) + ')' : '')
+      + (linked ? ', open these traces' : ''),
+  },
     h('span.hist-count', fmt.count(v || 0)),
     h('span.hist-track', h('span.hist-fill', { style: { height: Math.max(v ? 2 : 0, ((v || 0) / max) * 100) + '%', background: colors[i] } })),
     h('span.hist-label', labels[i]))));

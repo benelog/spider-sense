@@ -5,7 +5,7 @@ import * as router from '../router.js';
 import { h, fill, icon, panel, chip, serviceChip, serviceColor, renderList, emptyState, snippetBlocks, placeholder, seedServices, spinner } from '../ui.js';
 import { pageLoader, skeleton } from '../page.js';
 import { chartBox, sparkline } from '../charts.js';
-import { histogramBars, apdexCell, ERROR_RATE_BAD } from '../buckets.js';
+import { histogramBars, bucketFilter, apdexCell, ERROR_RATE_BAD } from '../buckets.js';
 import { chartModeSwitch, throughputSpec } from '../throughput.js';
 import { statTiles, severityDot, kindChip, goToFinding } from '../widgets.js';
 import { dur, rate, pct, rel, bothTimes } from '../format.js';
@@ -40,7 +40,7 @@ export function render(root, ctx) {
   const layout = skeleton(root, () => [statsRow, findingsPanel, chartRow, servicesPanel, tinglePanel]);
 
   function paintStats(totals, thresholds) {
-    fill(statsRow, statTiles(totals, thresholds));
+    fill(statsRow, statTiles(totals, thresholds, { links: true }));
   }
 
   function paintChart(series) {
@@ -167,7 +167,9 @@ export function render(root, ctx) {
     modeSwitch.sync();
     paintStats(data.totals || {}, (api.state.status || {}).thresholds);
     paintChart(data.series || {});
-    fill(summaryBody, histogramBars((data.totals || {}).histogram));
+    fill(summaryBody, histogramBars((data.totals || {}).histogram, {
+      href: (i) => router.href('/traces', { ...api.sharedQuery(), ...bucketFilter(i) }),
+    }));
     paintServices(services);
     tingles = data.tingles || [];
     paintTingles();

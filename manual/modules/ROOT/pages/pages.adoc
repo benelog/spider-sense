@@ -17,6 +17,7 @@ Each tile has the number large, the unit small, and a one-word caption.
 Colour appears only where it carries meaning.
 An error rate above 1% is `--err`, a p95 above the slow threshold is `--warn`, and Apdex is coloured as xref:ui.adoc#response-buckets[Response-time buckets and Apdex] says: `--err` below 0.7 and `--warn` below 0.85.
 The Apdex tile reads, for example, `0.93`, and its title names the T it was computed with.
+Every tile but Apdex is a link to the page behind its number, with the top bar's filter and range: requests and rps to the Traces page, the error rate to the Errors page, and p50, p95 and p99 to the Scatter.
 
 . *Findings*: the top five of `GET /api/findings?from&to&service&limit=5&hideAcked=true`, which are the UI's side of xref:findings.adoc[findings].
 A row carries a severity dot (`--err` for `high`, `--warn` for `medium`, `--text-muted` for `low`), the kind as a chip, the service chip, the title in bold, and the finding's `why` sentence dimmed on a second line.
@@ -45,6 +46,7 @@ Load splits the same bars into the four response-time buckets, stacked bottom-up
 In both, p95 is a line on a second y-axis in the accent colour.
 Beside the chart, one third of the width, the *Response summary* draws five vertical bars, one per response-time bucket and one for errors, in the bucket colours, with the count above each bar and the label beneath.
 The tallest bar sets the scale, and a tooltip gives each bar's share.
+Each bar is a link to the Traces page filtered to it: `status=ok` with `minMs` and `maxMs` set to the bucket's bounds for a response-time bucket, and `status=error` for the error bar.
 The bars are labelled from the bucket bounds, `≤125 ms`, `≤500 ms`, `≤2 s`, `>2 s`, and `error`, and they keep those colours wherever a histogram or a load chart appears (xref:ui.adoc#response-buckets[Response-time buckets]).
 Below 900 px the chart and the summary stack.
 

@@ -352,3 +352,14 @@ test('the Overview paints before its findings answer, and they fill their panel 
     globalThis.fetch = real;
   }
 });
+
+test('the Overview\'s tiles and Response summary bars link to the pages behind them (pages.adoc#overview)', async () => {
+  const { root, instance } = await visit('overview');
+  const tiles = root.querySelectorAll('.stat-row a.stat-link').map((a) => a.getAttribute('href').split('?')[0]);
+  assert.deepEqual(tiles, ['#/traces', '#/errors', '#/scatter', '#/scatter', '#/scatter', '#/traces']);
+  const bars = root.querySelectorAll('a.hist-link').map((a) => a.getAttribute('href'));
+  assert.equal(bars.length, 5);
+  assert.match(bars[1], /^#\/traces\?.*minMs=\d+.*maxMs=\d+/);
+  assert.match(bars[4], /status=error/);
+  instance.destroy();
+});

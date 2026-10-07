@@ -304,6 +304,9 @@ input::placeholder { color: var(--text-muted); opacity: 0.8; }
 .stat-caption { font-size: 11px; color: var(--text-muted); }
 .stat.is-bad .stat-number { color: var(--err); }
 .stat.is-warn .stat-number { color: var(--warn); }
+a.stat-link { color: inherit; text-decoration: none; }
+a.stat-link:hover { background: var(--bg-raised); }
+a.stat-link:focus-visible, a.hist-link:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 /* ---------- tables ---------- */
 
@@ -616,6 +619,9 @@ details.collapsible > summary:hover { color: var(--text); }
 .hist-count { font-size: 11px; color: var(--text); max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 .hist-track { display: flex; align-items: flex-end; width: 100%; height: 72px; background: color-mix(in srgb, var(--line) 45%, transparent); border-radius: 2px; }
 .hist-fill { width: 100%; border-radius: 2px; }
+a.hist-link { color: inherit; text-decoration: none; border-radius: 3px; }
+a.hist-link:hover .hist-track { background: color-mix(in srgb, var(--line) 80%, transparent); }
+a.hist-link:hover .hist-label { color: var(--text); }
 .hist-label { font-size: 10.5px; color: var(--text-muted); white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 .hist.compact { width: 120px; height: 28px; gap: 2px; padding: 0; flex: none; }
 .hist.compact .hist-track { height: 28px; }

@@ -482,8 +482,9 @@ export function panel(title, opts = {}, ...children) {
   return h('section.panel', { class: opts.class }, head, ...children);
 }
 
+/** A stat tile; with `opts.href` the tile is a link to the page that lists what it counts. */
 export function stat(value, unit, caption, opts = {}) {
-  return h('div.stat', { class: opts.class, title: opts.title || null },
+  return h(opts.href ? 'a.stat.stat-link' : 'div.stat', { class: opts.class, title: opts.title || null, href: opts.href || null },
     h('div.stat-value', h('span.stat-number', value), unit ? h('span.stat-unit', unit) : null),
     h('div.stat-caption', caption));
 }

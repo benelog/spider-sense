@@ -3,7 +3,7 @@ import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { state } from '../../main/resources/public/assets/js/api.js';
 import {
-  bucketBounds, bucketLabels, apdexClass, histogramTitle, slowRequestMs,
+  bucketBounds, bucketLabels, apdexClass, histogramTitle, slowRequestMs, bucketFilter,
 } from '../../main/resources/public/assets/js/buckets.js';
 
 afterEach(() => { state.status = null; });
@@ -49,4 +49,13 @@ test('the bounds can come from a status handed in rather than the shared one', (
 test('the slow-request threshold comes from the status, 500 ms before it arrives', () => {
   assert.equal(slowRequestMs(), 500);
   assert.equal(slowRequestMs({ thresholds: { slowRequestMs: 250 } }), 250);
+});
+
+test('a bucket opens the traces between its bounds, and the error bar the failed ones (pages.adoc#overview)', () => {
+  state.status = { thresholds: { responseBucketsMs: [100, 400, 1600] } };
+  assert.deepEqual(bucketFilter(0), { status: 'ok', maxMs: 100 });
+  assert.deepEqual(bucketFilter(1), { status: 'ok', minMs: 100, maxMs: 400 });
+  assert.deepEqual(bucketFilter(2), { status: 'ok', minMs: 400, maxMs: 1600 });
+  assert.deepEqual(bucketFilter(3), { status: 'ok', minMs: 1600 });
+  assert.deepEqual(bucketFilter(4), { status: 'error' });
 });
