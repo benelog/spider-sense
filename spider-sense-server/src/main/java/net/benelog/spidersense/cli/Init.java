@@ -60,6 +60,8 @@ final class Init {
     /** The CLI lines, which {@link #ask} writes as {@code java -jar} or as the Gradle task. */
     private static final List<Line> COMMANDS = List.of(
             new Line("findings --since=start", "ranked: N+1, slow queries, slow endpoints, errors, exhausted pools"),
+            new Line("findings --since=15m",
+                    "the last 15 minutes instead; start exists once the application has reported"),
             new Line("trace <id>", "one request as a tree"),
             new Line("mark before", "name a moment, exercise, then compare"),
             new Line("compare --before=before --after=after", null),

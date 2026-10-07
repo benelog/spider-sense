@@ -837,6 +837,8 @@ class CliTest {
                 .contains("`--no-daemon`")
                 .doesNotContain("JAVA_TOOL_OPTIONS=\"-javaagent:/x/spider-sense.jar\" ./gradlew")
                 .contains("java -jar /x/spider-sense.jar findings --since=start")
+                .as("the window to use before an application has left a start mark")
+                .contains("java -jar /x/spider-sense.jar findings --since=15m  # the last 15 minutes instead")
                 .contains("<http://127.0.0.1:4000>")
                 .contains("The loop — start, mark, exercise, findings, fix, compare, check — is in the "
                         + "skill at `.claude/skills/spider-sense/SKILL.md`.")

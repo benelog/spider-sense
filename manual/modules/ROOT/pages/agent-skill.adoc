@@ -94,6 +94,7 @@ Ask it from the terminal; every answer is Markdown made for an agent:
 
 ```bash
 java -jar /home/me/tools/spider-sense.jar findings --since=start  # ranked: N+1, slow queries, slow endpoints, errors, exhausted pools
+java -jar /home/me/tools/spider-sense.jar findings --since=15m  # the last 15 minutes instead; start exists once the application has reported
 java -jar /home/me/tools/spider-sense.jar trace <id>  # one request as a tree
 java -jar /home/me/tools/spider-sense.jar mark before  # name a moment, exercise, then compare
 java -jar /home/me/tools/spider-sense.jar compare --before=before --after=after
@@ -109,6 +110,7 @@ Query tuning — an index to add, a rewrite, a fetch join, a batch — is in the
 The jar path above, `/home/me/tools/spider-sense.jar`, is the one `init` resolved, and every other line is written exactly as shown.
 The block is generated from one place in the code.
 Without `--url` the block names no port of the project, only the Spider Sense UI's own default, `http://127.0.0.1:4000`.
+The `--since=15m` line stands beside `--since=start` because `start` is a mark Spider Sense records when an application first reports (xref:marks-and-compare.adoc#start-marks[Automatic start marks]), so before that `--since=start` names no mark.
 
 [#block-variants]
 The build files in `--dir` and the options `--gradle` and `--url` change a few lines, and nothing else does, so one directory and one command line always give the same block.
