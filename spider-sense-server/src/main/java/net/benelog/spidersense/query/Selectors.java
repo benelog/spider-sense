@@ -115,6 +115,14 @@ public final class Selectors {
         if (DATE_TIME.matcher(value).matches()) {
             return dateTime(value);
         }
+        if (Marks.NUMBER_LIKE.matcher(value).matches()) {
+            // 5min, 1w, 30sec, 0: a duration mistyped, which a mark lookup would answer as "no
+            // mark named 5min", a not-found that sends the caller looking for a mark.
+            throw new BadSelector("Not a duration: " + value + " (a duration is 30s, 5m, 2h or 1d"
+                    + (value.chars().allMatch(Character::isDigit)
+                            ? ", and epoch milliseconds have 13 or more digits" : "")
+                    + "; `marks` lists the mark names)");
+        }
         if (!Marks.NAME.matcher(value).matches()) {
             throw new BadSelector("Not a time selector: " + value
                     + " (expected a duration like 5m, a date-time like 2026-10-08T05:50:00,"

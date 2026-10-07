@@ -97,6 +97,24 @@ class SelectorsTest {
     }
 
     @Test
+    void aMistypedDurationIsTheCallersMistakeNotAMissingMark() {
+        for (String typo : new String[] {"5min", "1w", "30sec", "1.5h", "10M"}) {
+            assertThatThrownBy(() -> selectors.resolve(typo, NOW, null))
+                    .as(typo)
+                    .isInstanceOf(Selectors.BadSelector.class)
+                    .hasMessage("Not a duration: " + typo
+                            + " (a duration is 30s, 5m, 2h or 1d; `marks` lists the mark names)");
+        }
+        for (String number : new String[] {"0", "300", "1758000000"}) {
+            assertThatThrownBy(() -> selectors.resolve(number, NOW, null))
+                    .as(number)
+                    .isInstanceOf(Selectors.BadSelector.class)
+                    .hasMessage("Not a duration: " + number + " (a duration is 30s, 5m, 2h or 1d,"
+                            + " and epoch milliseconds have 13 or more digits; `marks` lists the mark names)");
+        }
+    }
+
+    @Test
     void theWindowDefaultsToTheLastFifteenMinutesAndFromAndToWin() {
         Window fifteen = selectors.window(null, NOW, null, null, null);
         assertThat(fifteen.from()).isEqualTo(NOW - 900_000);

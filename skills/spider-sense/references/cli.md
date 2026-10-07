@@ -70,7 +70,7 @@ An option that takes a value is a usage error without one, so a bare `--since` i
 | `start` | `start` | the newest automatic start mark, of `--service` when one is given |
 | `now` | `now` | now; the default for `until` |
 
-A `since` that resolves to a moment after `until` is an error, and a mark name that matches no mark is a not-found naming it.
+A `since` that resolves to a moment after `until` is an error, and so is a mistyped duration such as `5min` or `1w` (exit 2); a mark name that matches no mark is a not-found naming it.
 
 ## Exit codes
 

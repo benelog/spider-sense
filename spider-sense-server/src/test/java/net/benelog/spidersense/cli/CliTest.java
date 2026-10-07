@@ -367,6 +367,10 @@ class CliTest {
             Run bad = runAt(base, "findings", "--since=5 minutes", "--url=" + base);
             assertThat(bad.exit()).isEqualTo(2);
             assertThat(bad.err()).contains("Not a time selector");
+
+            Run typo = runAt(base, "findings", "--since=5min", "--url=" + base);
+            assertThat(typo.exit()).as("a mistyped duration is not a missing mark").isEqualTo(2);
+            assertThat(typo.err()).contains("Not a duration: 5min");
         });
     }
 

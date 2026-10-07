@@ -684,6 +684,7 @@ An option that takes a value is a usage error without one, so a bare `--since` i
 
 A trace id that matches nothing prints `spider-sense: No such trace: <id>` on stderr and exits `4`, whether the answer came over HTTP or from the file.
 A mark name that matches no mark also exits `4`, with a message naming the mark.
+A mistyped duration such as `--since=5min` is not a mark name: it is a usage error and exits `2`.
 `unack` of a finding that has no acknowledgement prints `spider-sense: No such acknowledgement: <id>` and exits `4` as well.
 `unresolve` of a finding that has no resolution prints `spider-sense: No such resolution: <id>` and exits `4`.
 

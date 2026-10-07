@@ -41,10 +41,11 @@ A selector takes one of six forms.
 |===
 
 The default `since` is `15m`, and the default `until` is `now`.
-A heading prints its window's start as a date-time, such as `2026-10-08T05:50:00+09:00`, so that time pasted into `--since` asks for the same window again.
 `since=start` therefore means "since the application was last restarted", which is what an agent that just rebuilt the application wants.
+A heading prints its window's start as a date-time, such as `2026-10-08T05:50:00+09:00`, so that time pasted into `--since` asks for the same window again.
 
 A `since` that resolves to a moment after `until` is answered with `400` over HTTP and is a usage error in the CLI.
+So is a value that begins with a number but is no duration, such as `5min`, `1w`, `30sec` or `300`: it is a mistyped duration, never a mark name, and the answer says `Not a duration: 5min` with the forms a duration takes.
 A mark name that matches no mark is answered with a `404` that names it over HTTP and exits `4` in the CLI.
 The `from` and `to` parameters of the UI endpoints still work everywhere, and they win when both pairs are given.
 

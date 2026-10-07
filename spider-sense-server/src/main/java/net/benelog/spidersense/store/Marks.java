@@ -37,6 +37,14 @@ public final class Marks {
     /** What a mark may be called; the same expression api.adoc#marks states. */
     public static final Pattern NAME = Pattern.compile("[A-Za-z0-9._-]{1," + MAX_NAME + "}");
 
+    /**
+     * What begins with a number and goes on in letters, if at all: a duration such as
+     * {@code 5m}, a mistyped one such as {@code 5min}, or a number. A selector reads it
+     * as a duration or an instant, or refuses it as a mistyped one, but never as a mark
+     * (marks-and-compare.adoc#time-selectors).
+     */
+    public static final Pattern NUMBER_LIKE = Pattern.compile("\\d+(\\.\\d+)?[A-Za-z]*");
+
     /** The name the writer uses for an automatic mark. */
     public static final String START = "start";
 
