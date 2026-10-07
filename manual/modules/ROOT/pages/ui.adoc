@@ -138,6 +138,8 @@ An empty state explains how to send data, with the OTLP endpoint from `/api/stat
 
 The sidebar lists the pages: Overview, Findings, Compare, Map, Services, Scatter, Traces, Queries, Errors, Logs, JVM, and Metrics.
 It is 220 px wide, collapses to icons below 1100 px, and becomes a drawer behind a hamburger button below 720 px.
+Every entry carries its name as a `title` and an `aria-label`, so a collapsed icon still says where it goes.
+Collapsed, the foot's *How to send data* and *Clear data* stay reachable as two icon buttons, a tray and a bin, with the same titles.
 The selected page fills the rest of the window, under the top bar.
 
 [#sidebar-foot]

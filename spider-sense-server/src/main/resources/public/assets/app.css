@@ -210,6 +210,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .link-btn:hover { color: var(--accent); }
 .link-btn.danger:hover { color: var(--err); }
+/* The foot's two actions: words in the wide sidebar, icons with a title in the collapsed one. */
+.foot-action .icon { display: none; }
 
 #content { flex: 1; min-width: 0; margin-left: var(--side); display: flex; flex-direction: column; }
 /* the drawer sits beside the content on a wide screen, over it on a narrow one */
@@ -825,7 +827,10 @@ tr.is-acked:hover > td { opacity: 1; }
 
 @media (max-width: 1100px) {
   :root { --side: 60px; }
-  .brand-name, #nav a span, .side-foot .meta, .side-foot .link-btn, .tingle-link span:not(.badge) { display: none; }
+  .brand-name, #nav a span, .side-foot .meta, .foot-action span, .tingle-link span:not(.badge) { display: none; }
+  .foot-action { display: inline-flex; padding: 6px; border-radius: var(--r); text-decoration: none; }
+  .foot-action .icon { display: block; }
+  .foot-action:hover { background: color-mix(in srgb, var(--text) 7%, transparent); }
   .brand { justify-content: center; padding: 12px 0; }
   .brand-mark { width: 40px; height: 40px; }
   #nav a { justify-content: center; padding: 9px 0; border-left: 0; border-right: 2px solid transparent; }
@@ -844,7 +849,10 @@ tr.is-acked:hover > td { opacity: 1; }
   #sidebar { transform: translateX(-100%); transition: transform 160ms ease; width: 220px; }
   body.nav-open #sidebar { transform: none; }
   :root { --side: 0px; }
-  .brand-name, #nav a span, .side-foot .meta, .side-foot .link-btn, .tingle-link span:not(.badge) { display: initial; }
+  .brand-name, #nav a span, .side-foot .meta, .foot-action span, .tingle-link span:not(.badge) { display: initial; }
+  .foot-action { display: block; padding: 0; text-decoration: underline; }
+  .foot-action .icon { display: none; }
+  .foot-action:hover { background: none; }
   .brand { justify-content: flex-start; padding: 12px 16px 14px; }
   .brand-mark { width: 64px; height: 64px; }
   #nav a { justify-content: flex-start; padding: 7px 10px; border-left: 2px solid transparent; border-right: 0; }

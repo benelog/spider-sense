@@ -92,6 +92,9 @@
     <g id="i-download" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
       <path d="M8 2v7.5M5 7l3 3 3-3"/><path d="M2.5 12.5h11"/>
     </g>
+    <g id="i-trash" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M2.5 4.5h11M6 4.5V3h4v1.5"/><path d="M4 4.5l.7 9h6.6l.7-9"/><path d="M6.8 7v4M9.2 7v4"/>
+    </g>
   </defs>
 </svg>
 
@@ -133,18 +136,18 @@
     </a>
 
     <nav id="nav" aria-label="Main">
-      <a href="#/" data-nav="/"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-overview"/></svg><span>Overview</span></a>
-      <a href="#/findings" data-nav="/findings"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-findings"/></svg><span>Findings</span></a>
-      <a href="#/compare" data-nav="/compare"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-compare"/></svg><span>Compare</span></a>
-      <a href="#/map" data-nav="/map"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-map"/></svg><span>Map</span></a>
-      <a href="#/services" data-nav="/services"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-service"/></svg><span>Services</span></a>
-      <a href="#/scatter" data-nav="/scatter"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-scatter"/></svg><span>Scatter</span></a>
-      <a href="#/traces" data-nav="/traces"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-trace"/></svg><span>Traces</span></a>
-      <a href="#/queries" data-nav="/queries"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-database"/></svg><span>Queries</span></a>
-      <a href="#/errors" data-nav="/errors"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-bolt"/></svg><span>Errors</span></a>
-      <a href="#/logs" data-nav="/logs"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-log"/></svg><span>Logs</span></a>
-      <a href="#/jvm" data-nav="/jvm"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-jvm"/></svg><span>JVM</span></a>
-      <a href="#/metrics" data-nav="/metrics"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-chart"/></svg><span>Metrics</span></a>
+      <a href="#/" data-nav="/" title="Overview" aria-label="Overview"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-overview"/></svg><span>Overview</span></a>
+      <a href="#/findings" data-nav="/findings" title="Findings" aria-label="Findings"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-findings"/></svg><span>Findings</span></a>
+      <a href="#/compare" data-nav="/compare" title="Compare" aria-label="Compare"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-compare"/></svg><span>Compare</span></a>
+      <a href="#/map" data-nav="/map" title="Map" aria-label="Map"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-map"/></svg><span>Map</span></a>
+      <a href="#/services" data-nav="/services" title="Services" aria-label="Services"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-service"/></svg><span>Services</span></a>
+      <a href="#/scatter" data-nav="/scatter" title="Scatter" aria-label="Scatter"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-scatter"/></svg><span>Scatter</span></a>
+      <a href="#/traces" data-nav="/traces" title="Traces" aria-label="Traces"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-trace"/></svg><span>Traces</span></a>
+      <a href="#/queries" data-nav="/queries" title="Queries" aria-label="Queries"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-database"/></svg><span>Queries</span></a>
+      <a href="#/errors" data-nav="/errors" title="Errors" aria-label="Errors"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-bolt"/></svg><span>Errors</span></a>
+      <a href="#/logs" data-nav="/logs" title="Logs" aria-label="Logs"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-log"/></svg><span>Logs</span></a>
+      <a href="#/jvm" data-nav="/jvm" title="JVM" aria-label="JVM"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-jvm"/></svg><span>JVM</span></a>
+      <a href="#/metrics" data-nav="/metrics" title="Metrics" aria-label="Metrics"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-chart"/></svg><span>Metrics</span></a>
     </nav>
 
     <div class="side-foot">
@@ -161,8 +164,8 @@
       </dl>
       <span class="chip chip-warn" id="foot-storage-warn" hidden></span>
       <span class="chip chip-warn" id="foot-dropping" aria-live="polite" hidden></span>
-      <button class="link-btn" type="button" id="send-data-btn">How to send data</button>
-      <button class="link-btn danger" type="button" id="clear-data-btn">Clear data</button>
+      <button class="link-btn foot-action" type="button" id="send-data-btn" title="How to send data" aria-label="How to send data"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-download"/></svg><span>How to send data</span></button>
+      <button class="link-btn foot-action danger" type="button" id="clear-data-btn" title="Clear data" aria-label="Clear data"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-trash"/></svg><span>Clear data</span></button>
     </div>
   </aside>
 
