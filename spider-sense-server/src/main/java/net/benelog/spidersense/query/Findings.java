@@ -995,9 +995,12 @@ public final class Findings {
 
     // --- n + 1 ---------------------------------------------------------------
 
-    /** What a statement's occurrence carries beyond the fold: its text, its name and its attributes. */
+    /**
+     * What a statement's occurrence carries beyond the fold: its text, its name, its
+     * attributes, and its span id, which orders two occurrences of one instant.
+     */
     private record StatementRun(@Nullable String statement, String queryName,
-            Map<String, Object> attributes) {
+            Map<String, Object> attributes, String spanId) {
     }
 
     /**
@@ -1008,6 +1011,14 @@ public final class Findings {
      * back and attributed to their entry span by the parent-chain walk the query
      * callers already use, because two endpoints of one trace each running the
      * statement four times is not an N+1 and grouping by trace alone cannot tell.
+     *
+     * <p>The spans are read back by one more pass over the window's database spans,
+     * in the order the window's index holds them, and the pairs are picked out here.
+     * Read by their trace ids instead, in lists of 500, every span of every candidate
+     * trace came back through the primary key, one page read per span, which cost
+     * ten times the scan on a worker whose traces run a hundred statements each
+     * (storage.adoc#reads). The occurrences are then sorted by start and span id, the
+     * order the statement had, so the first occurrence of a group is the same one.
      */
     private List<Ranked> nPlusOne(Window window, @Nullable String service, SharedScans reads,
             boolean evidence) {
@@ -1015,45 +1026,38 @@ public final class Findings {
         if (candidates.isEmpty()) {
             return List.of();
         }
-        Set<String> traceIds = new LinkedHashSet<>();
-        Set<String> queryIds = new LinkedHashSet<>();
-        for (Candidate candidate : candidates) {
-            traceIds.add(candidate.traceId());
-            queryIds.add(candidate.queryId());
-        }
         Set<Candidate> pairs = Set.copyOf(candidates);
 
         Queries.Ancestry ancestry = reads.ancestry();
         List<Repeats.Occurrence<StatementRun>> occurrences = new ArrayList<>();
-        for (List<String> chunk : Sql.chunks(List.copyOf(traceIds))) {
-            Where where = Where.window(window, service).andIn("trace_id", chunk).andIn("query_id", queryIds);
-            sql.forEach("SELECT span_id, trace_id, query_id, service, start_ms, duration_ns, db_statement,"
-                    + " db_operation, db_table, attributes FROM span WHERE " + where.sql()
-                    + " ORDER BY start_ms, span_id", where.params(), rs -> {
-                        String traceId = rs.getString("trace_id");
-                        String queryId = rs.getString("query_id");
-                        if (!pairs.contains(new Candidate(traceId, queryId))) {
-                            return;
-                        }
-                        Queries.Ancestry.Entry entry = ancestry.entryOf(rs.getString("span_id"));
-                        if (entry == null) {
-                            return;
-                        }
-                        Map<String, Object> attributes = evidence
-                                ? AttrJson.decode(rs.getString("attributes")) : Map.of();
-                        occurrences.add(new Repeats.Occurrence<>(traceId, entry.spanId(),
-                                Ids.endpointId(entry.service(), entry.endpoint()), entry.endpoint(),
-                                entry.service(), queryId, Rows.ms(rs, "duration_ns"),
-                                rs.getLong("start_ms"),
-                                // The extension captures the stack on the fifth repeat, so that one
-                                // span of the group knows where the statement is issued from.
-                                attributes.containsKey("code.stacktrace"),
-                                new StatementRun(rs.getString("db_statement"),
-                                        queryName(rs.getString("db_operation"), rs.getString("db_table"),
-                                                rs.getString("db_statement")),
-                                        attributes)));
-                    });
-        }
+        Where where = Where.window(window, service).and("query_id IS NOT NULL");
+        sql.forEach("SELECT span_id, trace_id, query_id, service, start_ms, duration_ns, db_statement,"
+                + " db_operation, db_table, attributes FROM span WHERE " + where.sql(), where.params(), rs -> {
+                    String traceId = rs.getString("trace_id");
+                    String queryId = rs.getString("query_id");
+                    if (!pairs.contains(new Candidate(traceId, queryId))) {
+                        return;
+                    }
+                    Queries.Ancestry.Entry entry = ancestry.entryOf(rs.getString("span_id"));
+                    if (entry == null) {
+                        return;
+                    }
+                    Map<String, Object> attributes = evidence
+                            ? AttrJson.decode(rs.getString("attributes")) : Map.of();
+                    occurrences.add(new Repeats.Occurrence<>(traceId, entry.spanId(),
+                            Ids.endpointId(entry.service(), entry.endpoint()), entry.endpoint(),
+                            entry.service(), queryId, Rows.ms(rs, "duration_ns"),
+                            rs.getLong("start_ms"),
+                            // The extension captures the stack on the fifth repeat, so that one
+                            // span of the group knows where the statement is issued from.
+                            attributes.containsKey("code.stacktrace"),
+                            new StatementRun(rs.getString("db_statement"),
+                                    queryName(rs.getString("db_operation"), rs.getString("db_table"),
+                                            rs.getString("db_statement")),
+                                    attributes, rs.getString("span_id"))));
+                });
+        occurrences.sort(Comparator.comparingLong((Repeats.Occurrence<StatementRun> o) -> o.startMs())
+                .thenComparing(o -> o.detail().spanId()));
 
         Map<String, Long> requestsByEndpoint = new HashMap<>();
         // The catalog is one read per service, not one per repeated statement.
@@ -1390,15 +1394,16 @@ public final class Findings {
      * {@code slow-endpoint} measures over the requests of an endpoint.
      */
     private List<Ranked> slowJobs(Window window, @Nullable String service, boolean evidence) {
-        List<SlowGroup> slow = queries.slowJobGroups(window, service);
+        List<Queries.JobRuns> slow = queries.slowJobGroups(window, service);
         if (slow.isEmpty()) {
             return List.of();
         }
         // Only the jobs that crossed the threshold become findings, so only they are
         // joined with their database spans, one service at a time.
         Map<String, Set<String>> slowNames = new LinkedHashMap<>();
-        for (SlowGroup job : slow) {
-            slowNames.computeIfAbsent(job.service(), name -> new LinkedHashSet<>()).add(job.name());
+        for (Queries.JobRuns runs : slow) {
+            slowNames.computeIfAbsent(runs.group().service(), name -> new LinkedHashSet<>())
+                    .add(runs.group().name());
         }
         Map<String, Queries.DbWork> databaseWork = new HashMap<>();
         if (evidence) {
@@ -1407,7 +1412,8 @@ public final class Findings {
         }
 
         List<Ranked> found = new ArrayList<>();
-        for (SlowGroup job : slow) {
+        for (Queries.JobRuns runs : slow) {
+            SlowGroup job = runs.group();
             String key = job.service() + "\0" + job.name();
             Queries.DbWork work = databaseWork.getOrDefault(key, Queries.DbWork.NONE);
             TimeEvidence time = timeEvidence(window, job.service(), evidence
@@ -1429,7 +1435,7 @@ public final class Findings {
                     slowWhy(job, work, "run", "run"),
                     Subject.job(job.name()),
                     numbers, null,
-                    evidence ? frames.ofAttributes(newestRun(window, job)) : List.of(), time.traces());
+                    evidence ? frames.ofAttributes(newestRun(window, runs)) : List.of(), time.traces());
             found.add(new Ranked(finding, job.totalMs()));
         }
         return found;
@@ -1438,15 +1444,18 @@ public final class Findings {
     /**
      * The attributes of a job's newest run, for the {@code code.*} frames.
      *
-     * <p>One statement per slow job rather than one over every job group: the
-     * service's {@code (service, start_ms)} index is read backwards from the end of
-     * the window and stops at the first run, where a statement over every group
-     * would read every span of the window.
+     * <p>The run is read at the instant the group's aggregate named, so the service's
+     * {@code (service, start_ms)} index reads the spans of that millisecond alone;
+     * ordered by the newest start and read with a second sort key, the statement
+     * read and sorted every span of the service in the window (storage.adoc#reads).
+     * The row id breaks a tie between two runs started in the same millisecond.
      */
-    private @Nullable Map<String, Object> newestRun(Window window, SlowGroup job) {
-        Where where = Where.jobs(window, job.service()).and("name = ?", job.name());
+    private @Nullable Map<String, Object> newestRun(Window window, Queries.JobRuns runs) {
+        SlowGroup job = runs.group();
+        Where where = Where.jobs(window, job.service()).and("name = ?", job.name())
+                .and("start_ms = ?", runs.newestStartMs());
         return sql.queryOne("SELECT attributes FROM span WHERE " + where.sql()
-                + " ORDER BY start_ms DESC, id DESC LIMIT 1", where.params(),
+                + " ORDER BY id DESC LIMIT 1", where.params(),
                 rs -> AttrJson.decode(rs.getString("attributes")));
     }
 

@@ -690,6 +690,25 @@ class FindingsTest {
     }
 
     @Test
+    void aSlowJobTakesItsCodeFromItsNewestRun() {
+        Span.Builder older = Otlp.span(traceId(11), spanId(11), "ReportJob.run",
+                Span.SpanKind.SPAN_KIND_INTERNAL, NOW - 30_000, 900,
+                Otlp.attr("code.namespace", "orders.OldReportJob"),
+                Otlp.attr("code.function", "run"));
+        Span.Builder newest = Otlp.span(traceId(12), spanId(12), "ReportJob.run",
+                Span.SpanKind.SPAN_KIND_INTERNAL, NOW, 800,
+                Otlp.attr("code.namespace", "orders.ReportJob"),
+                Otlp.attr("code.function", "run"));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), older, newest));
+        flush();
+
+        List<Findings.Finding> slowJobs = of(Findings.SLOW_JOB);
+
+        assertThat(slowJobs).hasSize(1);
+        assertThat(slowJobs.get(0).code()).containsExactly("orders.ReportJob.run");
+    }
+
+    @Test
     void aJobUnderTheThresholdIsNoFinding() {
         decoder.ingest(Otlp.traces(Otlp.service("orders"),
                 job(11, "ReportJob.run", 100), job(12, "ReportJob.run", 120)));

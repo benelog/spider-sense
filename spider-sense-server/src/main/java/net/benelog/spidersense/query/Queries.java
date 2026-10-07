@@ -419,6 +419,15 @@ public final class Queries {
     }
 
     /**
+     * A slow job's runs: the group, and when its newest run in the window started.
+     *
+     * @param newestStartMs the {@code start_ms} of the newest run, by which the run's
+     *                      attributes are read without a scan of the service's window
+     */
+    record JobRuns(SlowGroup group, long newestStartMs) {
+    }
+
+    /**
      * The job groups of the window whose p95 exceeds {@code slow.request.ms}, the
      * heaviest first (storage.adoc).
      *
@@ -426,18 +435,19 @@ public final class Queries {
      * low by total time is still a finding (findings.adoc#slow-job). It is
      * {@link #queryGroups} over the runs of the jobs, grouped by service and span name.
      */
-    List<SlowGroup> slowJobGroups(Window window, @Nullable String service) {
+    List<JobRuns> slowJobGroups(Window window, @Nullable String service) {
         Where where = Where.jobs(window, service);
         return sql.query("SELECT service, name, COUNT(*) AS runs,"
                         + " PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY duration_ns) AS p50_ns,"
                         + " " + SpanSql.P95 + " AS p95_ns,"
-                        + " MAX(duration_ns) AS max_ns, SUM(duration_ns) AS total_ns FROM span WHERE "
+                        + " MAX(duration_ns) AS max_ns, SUM(duration_ns) AS total_ns,"
+                        + " MAX(start_ms) AS newest_ms FROM span WHERE "
                         + where.sql() + " GROUP BY service, name"
                         + " HAVING " + SpanSql.slowerThan(SpanSql.P95, tingles.slowRequestMs())
                         + " ORDER BY total_ns DESC, service, name",
-                where.params(), rs -> new SlowGroup(rs.getString("service"), rs.getString("name"),
+                where.params(), rs -> new JobRuns(new SlowGroup(rs.getString("service"), rs.getString("name"),
                         rs.getLong("runs"), Rows.ms(rs, "p50_ns"), Rows.ms(rs, "p95_ns"),
-                        Rows.ms(rs, "max_ns"), Rows.ms(rs, "total_ns")));
+                        Rows.ms(rs, "max_ns"), Rows.ms(rs, "total_ns")), rs.getLong("newest_ms")));
     }
 
     /** How many of {@code alias}'s spans ran past {@code slow.query.ms}, as an aggregate. */
@@ -1443,7 +1453,9 @@ public final class Queries {
         }
         Where where = Where.window(window, service).andIn("trace_id", traceIds);
         Map<String, Long> counts = new HashMap<>();
-        sql.forEach("SELECT trace_id, COUNT(*) AS spans FROM span WHERE " + where.sql()
+        // By trace, as timeSplit reads them: the service's index would read every span of
+        // the service in the window for a sample of twenty traces (storage.adoc#reads).
+        sql.forEach("SELECT trace_id, COUNT(*) AS spans FROM span USE INDEX (span_trace) WHERE " + where.sql()
                         + " GROUP BY trace_id",
                 where.params(), rs -> counts.put(rs.getString("trace_id"), rs.getLong("spans")));
         List<String> whole = new ArrayList<>();
@@ -1507,7 +1519,9 @@ public final class Queries {
             return TimeSplit.NONE;
         }
         Where where = Where.window(window, service).andIn("trace_id", whole);
-        return TimeSplit.of(sql.query("SELECT " + Rows.SPAN_COLUMNS + " FROM span WHERE "
+        // By trace: the sample is a few traces out of the service's window, and the
+        // trace index reads their spans alone where the service's reads the window.
+        return TimeSplit.of(sql.query("SELECT " + Rows.SPAN_COLUMNS + " FROM span USE INDEX (span_trace) WHERE "
                 + where.sql(), where.params(), Rows::span));
     }
 

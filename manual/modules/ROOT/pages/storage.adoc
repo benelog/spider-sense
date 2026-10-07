@@ -318,9 +318,13 @@ The external targets reuse the dependency scan, which is the outbound spans of t
 The span id breaks a tie, so two readings of one trace list its spans alike.
 * Findings (xref:findings.adoc[Findings]): `n-plus-one` is `GROUP BY trace_id, query_id HAVING COUNT(*) >= 5` over the database spans of the window, attributed to the entry span by the same parent-chain walk the query callers use.
 Every such pair of the window is read, with no limit, so a finding's `affected` counts the same requests its `requests` does.
+The spans of those pairs are read by one more pass over the window's database spans, in the order of the window's index, and the pairs are picked out of it in Java; the occurrences are then sorted by start and span id.
+Read by their trace ids instead, in `IN` lists of 500, every span of every candidate trace came back through the primary key, one page read per span, which cost ten times the pass on a worker whose traces run a hundred statements each; and left to choose, H2 read the groups' spans by the query index and tested each against the list, which cost ten times more again.
 `dbCallsPerRequest` and `dbMsPerRequest` of an endpoint join the endpoint's entry spans with the database spans of the same trace and service.
 `slow-job` is the same aggregation over `span WHERE parent_span_id IS NULL AND kind = 'INTERNAL'` grouped by `(service, name)`, with the database work joined the same way.
-Only the endpoints and jobs that crossed the threshold are joined, since only they become findings; a job's runs are read by its service's `(service, start_ms)` index, and so is its newest run, whose attributes give the code frames.
+Only the endpoints and jobs that crossed the threshold are joined, since only they become findings; a job's runs are read by its service's `(service, start_ms)` index.
+The job's aggregate carries `MAX(start_ms)`, and its newest run, whose attributes give the code frames, is read at that instant through the same index, with the row id breaking a tie; ordered by start with a second sort key, the read sorted every span of the service in the window.
+The sample of traces a `slow-endpoint` or `slow-job` splits its time over is read by the `(trace_id, span_id)` index (`USE INDEX (span_trace)`), as the database work is: left to itself, H2 read every span of the service in the window for a sample of twenty traces.
 `slow-query` and `slow-job` put their threshold in the statement, `HAVING PERCENTILE_DISC(0.95) WITHIN GROUP (ORDER BY duration_ns) > :thresholdNs`, and read every group that passes it rather than the top of a list.
 The other kinds are the endpoint, query and error aggregations above, filtered by the thresholds.
 A scan of the window that several rules need is made once per answer and handed to each of them.
