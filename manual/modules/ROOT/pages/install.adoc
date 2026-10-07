@@ -11,6 +11,9 @@ Nothing else has to be installed: no Docker, no account, and no server to run.
 Releases are published to https://central.sonatype.com/namespace/net.benelog.spidersense[Maven Central], so a build needs no repository beyond the default one.
 The current version is `{project-version}`.
 
+IMPORTANT: `{project-version}` is not on Maven Central yet, so the coordinates below do not resolve and a download from Maven Central answers `404`.
+Until it is published, build the jar from a checkout (<<from-source,From a checkout>>), and run `./gradlew publishToMavenLocal` there for a build that resolves the jar or the plugin from `mavenLocal()`.
+
 [cols="1,2,2",options="header"]
 |===
 | Artifact | Coordinates | What it is

@@ -10,6 +10,9 @@ The chapters after it document every command, finding, and transport in full.
 Everything below runs from one jar, so the first step is to have it.
 Which way depends on the project's build.
 
+IMPORTANT: `{project-version}` is not on Maven Central yet, so the first two rows below do not work as written until it is published.
+Until then, build the jar from a checkout, the last row, whatever the project's build (xref:install.adoc#coordinates[Coordinates]).
+
 [cols="1,3",options="header"]
 |===
 | Build

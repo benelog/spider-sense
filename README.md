@@ -62,7 +62,7 @@ Follow https://spider-sense.benelog.net/agent-quickstart.html to set up Spider S
 Run the application under Spider Sense, exercise it, and tell me the three biggest problems and the lines that cause them.
 ```
 
-By hand, it requires Java 21 or later.
+By hand, it requires Java 21 or later, and the jar is built from a checkout of this repository, because 0.1.0 is not on Maven Central yet.
 
 ```bash
 ./gradlew :spider-sense-agent:senseJar
