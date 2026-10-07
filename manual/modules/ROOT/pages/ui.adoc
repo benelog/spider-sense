@@ -257,6 +257,9 @@ A URL can therefore be shared as it is, and opens on the same view.
 
 Every list re-renders in place when Live refreshes it, without losing the scroll position or the selection.
 A page paints only the answer to the newest of its requests: an older range, filter or page that answers last is dropped, so a slow `all` never overwrites the `5m` asked after it, and a *Load more* still pending when the filter changes adds nothing to the new list.
+A Live tick that comes while a load of the page has not answered yet leaves that load alone, so a slow answer, such as the findings over a long window, is not asked for again behind itself.
+Meanwhile the page keeps showing what it has, and the Live button carries a small spinning ring.
+A change of filter, range or page is no tick, and always loads at once.
 
 [#numbers-and-times]
 === Numbers and times

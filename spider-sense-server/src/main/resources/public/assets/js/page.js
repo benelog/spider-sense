@@ -39,9 +39,14 @@ export function skeleton(root, parts) {
 export function pageLoader({ fetch, paint, body, onError, retry }) {
   let destroyed = false;
   const startRequest = requestSequence();
+  const self = {};
 
   async function load(...args) {
+    // A Live tick leaves a load that is still out alone: asking again would only queue
+    // another slow answer behind it, and the page keeps what it shows until it comes.
+    if (inLiveTick && busyLoaders.has(self)) return;
     const isNewest = startRequest();
+    setBusy(self, true);
     try {
       const result = await fetch(...args);
       if (destroyed || !isNewest()) return;
@@ -52,12 +57,50 @@ export function pageLoader({ fetch, paint, body, onError, retry }) {
       const box = errorBox(e, retry || (() => load()));
       if (body.replace) body.replace(box);
       else fill(body, box);
+    } finally {
+      if (destroyed || isNewest()) setBusy(self, false);
     }
   }
 
-  return {
+  return Object.assign(self, {
     load,
-    destroy: () => { destroyed = true; },
+    destroy: () => { destroyed = true; setBusy(self, false); },
     isDestroyed: () => destroyed,
-  };
+  });
+}
+
+// --- busy -----------------------------------------------------------------
+
+/** The loaders of the pages on screen whose newest load has not answered yet. */
+const busyLoaders = new Set();
+const busyListeners = new Set();
+
+function setBusy(loader, on) {
+  const was = busyLoaders.size > 0;
+  if (on) busyLoaders.add(loader);
+  else busyLoaders.delete(loader);
+  const now = busyLoaders.size > 0;
+  if (was !== now) for (const listener of busyListeners) listener(now);
+}
+
+/** Whether a load of the page on screen is still waiting for its answer. */
+export function pageBusy() {
+  return busyLoaders.size > 0;
+}
+
+let inLiveTick = false;
+
+/**
+ * Runs `refresh` as a Live tick (ui.adoc#live-refresh): a loader whose previous load has not
+ * answered skips the load the tick asks for. A filter or range change is no tick, and always loads.
+ */
+export function liveRefresh(refresh) {
+  inLiveTick = true;
+  try { refresh(); } finally { inLiveTick = false; }
+}
+
+/** Calls `listener(busy)` whenever pageBusy() changes. */
+export function onBusyChange(listener) {
+  busyListeners.add(listener);
+  return () => busyListeners.delete(listener);
 }

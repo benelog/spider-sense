@@ -2,7 +2,7 @@
 import './fake-dom.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { pageLoader, skeleton } from '../../main/resources/public/assets/js/page.js';
+import { pageLoader, skeleton, liveRefresh } from '../../main/resources/public/assets/js/page.js';
 
 /** A fetch whose answers the test hands out in any order. */
 function deferred() {
@@ -88,4 +88,24 @@ test('a skeleton builds once, and again after something replaced it', async () =
   calls[1].resolve({});
   await settle();
   assert.deepEqual(page.children, [a]);
+});
+
+test('a Live tick skips a loader whose last load is still out, and a filter change does not', async () => {
+  const { fetch, calls } = deferred();
+  const painted = [];
+  const loader = pageLoader({ fetch, paint: (res) => painted.push(res), body: document.createElement('div') });
+  loader.load();
+  liveRefresh(() => loader.load());
+  assert.equal(calls.length, 1, 'the tick waits for the answer still out');
+  calls[0].resolve('A');
+  await settle();
+  liveRefresh(() => loader.load());
+  assert.equal(calls.length, 2, 'the next tick loads once it has come');
+  loader.load('filter');
+  assert.equal(calls.length, 3, 'a change the person made loads at once');
+  calls[2].resolve('C');
+  await settle();
+  assert.deepEqual(painted, ['A', 'C']);
+  liveRefresh(() => loader.load());
+  assert.equal(calls.length, 4, 'the superseded load does not hold the page busy');
 });

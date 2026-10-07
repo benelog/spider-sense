@@ -8,6 +8,7 @@ import { h, fill, dialog, copyBlock, closeDrawer, closeDrawerSilently, drawerOpe
 import { EDITORS, editor, setEditor } from './frames.js';
 import { retheme, redrawAll } from './charts.js';
 import * as fmt from './format.js';
+import { liveRefresh, onBusyChange } from './page.js';
 
 import * as overview from './pages/overview.js';
 import * as findingsPage from './pages/findings.js';
@@ -128,11 +129,14 @@ function startLive() {
   liveTimer = setInterval(liveTick, LIVE_PERIOD_MS);
 }
 
-/** Under `all` the refresh waits for the status, whose oldest span is where the window starts. */
+/**
+ * Under `all` the refresh waits for the status, whose oldest span is where the window starts.
+ * A load of the page still out when the tick comes is left to answer (page.js#liveRefresh).
+ */
 function liveTick() {
   const status = freshStatus();
-  if (state.range === 'all') status.then(() => { if (state.live) refreshPage(); });
-  else refreshPage();
+  if (state.range === 'all') status.then(() => { if (state.live) liveRefresh(refreshPage); });
+  else liveRefresh(refreshPage);
   loadMarks();
 }
 
@@ -415,6 +419,11 @@ async function boot() {
   editorSelect.addEventListener('change', () => setEditor(editorSelect.value));
   applyTheme(storedTheme());
 
+  // While a load is out the Live button says so, so a slow answer reads as one on its way.
+  onBusyChange((busy) => {
+    shell.liveToggle.classList.toggle('is-busy', busy);
+    shell.main.setAttribute('aria-busy', String(busy));
+  });
   shell.themeToggle.addEventListener('click', toggleTheme);
   shell.serviceSelect.addEventListener('change', () => router.setQuery({ service: shell.serviceSelect.value }));
   shell.rangeSelect.addEventListener('change', () => router.setQuery({ range: shell.rangeSelect.value }, { defaults: { range: DEFAULT_RANGE } }));

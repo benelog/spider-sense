@@ -251,6 +251,9 @@ input::placeholder { color: var(--text-muted); opacity: 0.8; }
 .btn-live[aria-pressed="true"] .icon { color: var(--accent); animation: live-blink 2s ease-in-out infinite; }
 @keyframes live-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 @media (prefers-reduced-motion: reduce) { .btn-live[aria-pressed="true"] .icon { animation: none; } }
+/* Live, and a load still out: a small ring after the label, while the page keeps what it shows. */
+.btn-live[aria-pressed="true"].is-busy::after { content: ""; width: 8px; height: 8px; border: 1.5px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 700ms linear infinite; }
+@media (prefers-reduced-motion: reduce) { .btn-live[aria-pressed="true"].is-busy::after { animation-duration: 2s; } }
 
 .icon-btn {
   display: inline-flex; align-items: center; justify-content: center;
