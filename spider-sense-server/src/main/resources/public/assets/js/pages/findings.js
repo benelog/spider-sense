@@ -70,8 +70,8 @@ export function impactText(finding) {
   // A regression is ranked by the number its original kind is ranked by.
   if (finding.kind === 'regression' && n.originalKind) return impactText({ ...finding, kind: n.originalKind });
   switch (finding.kind) {
-    case 'error': return { text: count(n.count) + ' times', cls: 'bad', title: counted(n.count, 'occurrence') };
-    case 'log-error': return { text: count(n.count) + ' times', cls: 'bad', title: counted(n.count, 'error log') };
+    case 'error': return { text: counted(n.count, 'time'), cls: 'bad', title: counted(n.count, 'occurrence') };
+    case 'log-error': return { text: counted(n.count, 'time'), cls: 'bad', title: counted(n.count, 'error log') };
     case 'n-plus-one':
     case 'n-plus-one-http': return {
       text: count(n.medianRepeats) + ' × ' + count(n.affected),
@@ -333,10 +333,12 @@ export function evidence(finding, onChange, listWindow) {
             title: id,
           }, shortId(id, 12))))
         : null,
-      [target, query].filter(Boolean).map((t) => h('a.btn.btn-ghost', {
-        href: router.href(t.path, t.query),
-        title: TARGET_TITLE[t.label],
-      }, t.label)),
+      target
+        ? h('span.row.f-targets', { style: { gap: '6px' } }, [target, query].filter(Boolean).map((t) => h('a.btn.btn-ghost', {
+          href: router.href(t.path, t.query),
+          title: TARGET_TITLE[t.label],
+        }, t.label)))
+        : null,
       listWindow ? copyButtons({
         markdown: () => ({ path: '/api/findings/' + encodeURIComponent(finding.id), query: api.params({}, { window: listWindow() }) }),
         cli: () => cliLine('findings', listWindow(), api.state.service),

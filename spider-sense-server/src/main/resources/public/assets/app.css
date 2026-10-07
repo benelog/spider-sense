@@ -778,8 +778,8 @@ a.hist-link:hover .hist-label { color: var(--text); }
 .f-breakdown { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 11.5px; }
 .f-schema-line { white-space: pre-wrap; word-break: break-word; }
 .f-links { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.f-links .btn { margin-left: auto; }
-.f-links .copy-as .btn { margin-left: 0; }
+.f-links .btn, .f-links .f-targets { margin-left: auto; }
+.f-links .copy-as .btn, .f-links .f-targets .btn { margin-left: 0; }
 
 /* An acknowledged finding is still listed, last and dimmed, never hidden. */
 tr.is-acked > td { opacity: 0.55; }

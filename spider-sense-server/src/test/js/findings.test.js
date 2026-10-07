@@ -7,6 +7,7 @@ import { bothTimes } from '../../main/resources/public/assets/js/format.js';
 test('each kind is ranked by its own number, with its unit in words in the title', () => {
   assert.deepEqual(impactText({ kind: 'error', numbers: { count: 1234 } }), { text: '1,234 times', cls: 'bad', title: '1,234 occurrences' });
   assert.deepEqual(impactText({ kind: 'log-error', numbers: { count: 3 } }), { text: '3 times', cls: 'bad', title: '3 error logs' });
+  assert.deepEqual(impactText({ kind: 'error', numbers: { count: 1 } }), { text: '1 time', cls: 'bad', title: '1 occurrence' });
   assert.deepEqual(impactText({ kind: 'n-plus-one', numbers: { medianRepeats: 12, affected: 3 } }),
     { text: '12 × 3', title: '12 repeats (the median) × 3 affected requests' });
   assert.deepEqual(impactText({ kind: 'pool-exhausted', numbers: { pendingMax: 1 } }),
