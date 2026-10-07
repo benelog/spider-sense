@@ -12,9 +12,9 @@ import org.jspecify.annotations.Nullable;
 /**
  * The {@code Premain-Class}/{@code Agent-Class} of the distributable jar.
  *
- * <p>It does the four steps of {@code design.adoc#premain}, in order: read the configuration (the
+ * <p>It does the steps of {@code design.adoc#premain}, in order: read the configuration (the
  * properties file, then the system properties), start the embedded collector + UI unless we are forwarding, fill in the OpenTelemetry defaults a local tool
- * wants, then hand over to the stock agent's own {@code premain}.
+ * wants, hand over to the stock agent's own {@code premain}, and then say in one line where the UI is.
  *
  * <p>Nothing here may stop the monitored application from starting, so every step is wrapped: a
  * failure becomes one line on stderr and is swallowed.
@@ -60,6 +60,7 @@ public final class SpiderSenseAgent {
 
         // 2. The embedded collector + UI, unless we forward to one elsewhere.
         boolean exportNowhere = false;
+        boolean serving = false;
         try {
             if (config.collector() != null) {
                 System.out.println(LOG_PREFIX + "forwarding to " + config.otlpEndpoint());
@@ -70,8 +71,7 @@ public final class SpiderSenseAgent {
                     // The port Jetty bound: spidersense.port=0 asks for any free one, and port 0
                     // is neither a URL to print nor an endpoint to export to.
                     config = config.withPort(bound.getAsInt());
-                    System.out.println(LOG_PREFIX + "UI: " + config.baseUrl());
-                    maybeOpenBrowser(config);
+                    serving = true;
                 }
             }
         } catch (Throwable t) {
@@ -109,6 +109,71 @@ public final class SpiderSenseAgent {
             entry.invoke(null, agentArgs, inst);
         } catch (Throwable t) {
             warn("the OpenTelemetry agent did not install; the application runs uninstrumented", t);
+        }
+
+        // 5. One line saying where to look, once the agent has named the service.
+        try {
+            if (serving) {
+                String service = agentServiceName();
+                System.out.println(LOG_PREFIX + startLine(config.baseUrl(),
+                        service != null ? service : effectiveServiceName(config, settings),
+                        NestedJar.commandPath()));
+                maybeOpenBrowser(config);
+            }
+        } catch (Throwable t) {
+            warn("could not say where the UI is", t);
+        }
+    }
+
+    /** What every CLI line assumes when it is given no {@code --url}. */
+    static final String DEFAULT_URL = Config.defaults().baseUrl();
+
+    /**
+     * The one line agent mode prints (modes.adoc#agent): where the UI is, which service the
+     * application is, and the command that asks it from a terminal, with {@code --url} when the UI
+     * is not where the CLI looks by default.
+     *
+     * @param service the service name, or {@code null} when it is not known
+     * @param jar     this jar as {@link NestedJar#commandPath()} names it
+     */
+    static String startLine(String baseUrl, @Nullable String service, String jar) {
+        StringBuilder line = new StringBuilder("UI: ").append(baseUrl);
+        if (service != null && !service.isEmpty()) {
+            line.append("  service: ").append(service);
+        }
+        return line.append("  CLI: ").append(cliLine(jar, baseUrl)).toString();
+    }
+
+    /** {@code java -jar <jar> findings --since=start}, with {@code --url=} for a UI elsewhere than the default. */
+    static String cliLine(String jar, String baseUrl) {
+        return "java -jar " + jar + " findings --since=start"
+                + (DEFAULT_URL.equals(baseUrl) ? "" : " --url=" + baseUrl);
+    }
+
+    static final String AGENT_INITIALIZER_CLASS = "io.opentelemetry.javaagent.bootstrap.AgentInitializer";
+    static final String EXTENSION_CLASS = "net.benelog.spidersense.extension.SpiderSenseExtension";
+
+    /**
+     * The {@code service.name} the agent's resource ended up with, as our extension noted it, or
+     * {@code null} when that cannot be told: no extension, an agent that delays its start, or an
+     * agent whose internals moved. It is the name a detector gave, such as
+     * {@code spring.application.name}, which the launcher cannot work out before the agent runs.
+     *
+     * <p>Reflectively, through the extension class loader the agent's bootstrap class hands out:
+     * the launcher is on the application class path and the extension is not.
+     */
+    static @Nullable String agentServiceName() {
+        try {
+            Class<?> initializer = Class.forName(AGENT_INITIALIZER_CLASS, false, null);
+            Object loader = initializer.getMethod("getExtensionsClassLoader").invoke(null);
+            if (!(loader instanceof ClassLoader extensions)) {
+                return null;
+            }
+            Class<?> extension = Class.forName(EXTENSION_CLASS, false, extensions);
+            Object name = extension.getMethod("serviceName").invoke(null);
+            return name instanceof String s ? s : null;
+        } catch (ReflectiveOperationException | LinkageError | RuntimeException e) {
+            return null;
         }
     }
 

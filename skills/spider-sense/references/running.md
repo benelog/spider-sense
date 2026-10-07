@@ -186,6 +186,14 @@ export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 
 ## Knowing it worked
 
+In agent mode the application's first line of output says where to look, with `--url=` added when the port is not 4000:
+
+```text
+[spider-sense] UI: http://127.0.0.1:4001  service: orders  CLI: java -jar /home/me/tools/spider-sense-0.1.0.jar findings --since=start --url=http://127.0.0.1:4001
+```
+
+The CLI line is the one to run, as printed; `status` asks the same Spider Sense:
+
 ```bash
 java -jar "$SENSE" status
 ```

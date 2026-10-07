@@ -126,6 +126,11 @@ public final class SpiderSenseMain {
     }
 
     static void printBanner(Config config) {
+        System.out.println(banner(config, NestedJar.commandPath()));
+    }
+
+    /** The standalone banner, every command in it naming {@code jar}, this jar's own path. */
+    static String banner(Config config, String jar) {
         String url = config.baseUrl();
         StringBuilder banner = new StringBuilder();
         banner.append("Spider Sense ").append(NestedJar.version())
@@ -139,26 +144,35 @@ public final class SpiderSenseMain {
                 .append("  OTEL_EXPORTER_OTLP_ENDPOINT=").append(url).append('\n')
                 .append("  OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf\n")
                 .append("or attach this very jar to it:\n")
-                .append("  java -javaagent:spider-sense.jar -Dspidersense.collector=")
-                .append(url).append(" -jar app.jar\n");
-        System.out.println(banner);
+                .append("  java -javaagent:").append(jar).append(" -Dspidersense.collector=")
+                .append(url).append(" -jar app.jar\n")
+                .append("Ask it from a terminal (help lists the commands):\n")
+                .append("  ").append(SpiderSenseAgent.cliLine(jar, url)).append('\n');
+        return banner.toString();
     }
 
     static void printHelp() {
-        System.out.println(HELP_HEAD + Key.helpLines() + HELP_TAIL);
+        System.out.println(help(NestedJar.commandPath()));
+    }
+
+    /** {@code --help}, every command in it naming {@code jar}, this jar's own path. */
+    static String help(String jar) {
+        return HELP_HEAD.replace("spider-sense.jar", jar) + Key.helpLines() + HELP_TAIL;
     }
 
     private static final String HELP_HEAD = """
                 Spider Sense — a local-development observability tool: one jar, OpenTelemetry-native.
 
-                  java -javaagent:spider-sense.jar -jar app.jar          instrument an app, UI inside it
+                Instrument an app, with the UI inside it:
+                  java -javaagent:spider-sense.jar -jar app.jar
+                Instrument an app, with the UI elsewhere:
                   java -javaagent:spider-sense.jar -Dspidersense.collector=http://127.0.0.1:4000 -jar app.jar
-                                                                        instrument an app, UI elsewhere
-                  java -jar spider-sense.jar                             the collector and UI alone
-                  java -jar spider-sense.jar <command> [options]         ask a running Spider Sense, or the
-                                                                        database file, from the terminal;
-                                                                        java -jar spider-sense.jar help
-                                                                        lists every command
+                The collector and UI alone:
+                  java -jar spider-sense.jar
+                Ask a running Spider Sense, or the database file, from the terminal (help lists
+                every command):
+                  java -jar spider-sense.jar <command> [options]
+                  java -jar spider-sense.jar help
 
                 Options (as --key=value here, as -Dspidersense.key=value under -javaagent, or as
                 spidersense.key=value lines in spider-sense.properties in the working directory,

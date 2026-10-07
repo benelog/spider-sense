@@ -76,15 +76,17 @@ public final class SpiderSenseServer implements AutoCloseable {
     }
 
     /**
-     * What the launcher calls instead of {@link #main}: the same start and the same line, and the
+     * What the launcher calls instead of {@link #main}: the same start without the line, and the
      * port Jetty bound, which differs from {@code --port} when that is {@code 0}. The launcher
-     * prints that port and exports to it, since port {@code 0} is not an address.
+     * prints that port and exports to it, since port {@code 0} is not an address, and it says where
+     * the UI is itself, in one line under {@code -javaagent} and in the banner standalone
+     * (modes.adoc), so a second line here would only repeat it.
      *
      * <p>It never joins, in either mode: the standalone launcher prints its banner once the port is
      * bound, and Jetty's threads, which are not daemons in standalone mode, keep the JVM serving.
      */
     public static int launch(String[] args) {
-        return startAndSay(Config.parse(args)).port();
+        return start(Config.parse(args)).port();
     }
 
     private static SpiderSenseServer startAndSay(Config config) {

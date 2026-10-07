@@ -20,7 +20,7 @@ Agent mode, Glowroot style: the application is instrumented and the UI runs insi
 
 ```bash
 java -javaagent:spider-sense.jar -jar app.jar
-# [spider-sense] UI: http://127.0.0.1:4000
+# [spider-sense] UI: http://127.0.0.1:4000  service: app  CLI: java -jar /abs/path/spider-sense.jar findings --since=start
 ```
 
 Agent mode, forwarding: the same instrumentation, no embedded UI, several applications sharing one Spider Sense.
@@ -72,7 +72,7 @@ The launcher also fills in OpenTelemetry defaults, and only where neither the pr
 
 **The application runs on Java 17 or older.** The embedded UI needs Java 21, so agent mode cannot serve it there; run Spider Sense standalone in a Java 21 JVM and put the application in forwarding mode with `-Dspidersense.collector=http://127.0.0.1:4000`, which works on any JVM the OpenTelemetry agent supports.
 
-**Nothing appears in the UI.** Check the first lines of the application's output for `[otel.javaagent ... version: 2.31.1` (the agent installed) and `[spider-sense] UI: ...` (the collector bound); an `otel.*` property or environment variable you set yourself always wins over our defaults, so `OTEL_TRACES_EXPORTER=none` or an `OTEL_EXPORTER_OTLP_ENDPOINT` pointing elsewhere silently sends the data somewhere else.
+**Nothing appears in the UI.** Check the first lines of the application's output for `[otel.javaagent ... version: 2.31.1` (the agent installed) and `[spider-sense] UI: ...` (the collector bound, with the service the telemetry carries); an `otel.*` property or environment variable you set yourself always wins over our defaults, so `OTEL_TRACES_EXPORTER=none` or an `OTEL_EXPORTER_OTLP_ENDPOINT` pointing elsewhere silently sends the data somewhere else.
 
 **Two processes may share the database at once** (H2 `AUTO_SERVER`), so the UI in a standalone `java -jar spider-sense.jar` shows what the applications wrote even after they stopped; point a run at its own file with `-Dspidersense.db=~/db/spider-sense/experiment` when you want a clean slate, or use `DELETE /api/data`.
 

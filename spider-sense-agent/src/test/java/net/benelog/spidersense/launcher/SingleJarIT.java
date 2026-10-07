@@ -144,10 +144,38 @@ class SingleJarIT {
         assertThat(output)
                 .as("the packaged agent reports its own version, not Spider Sense's")
                 .contains("2.31.1");
-        assertThat(output).contains("[spider-sense] UI: " + base);
+        assertThat(output).as("one start-up line: the UI, the service, and the CLI line that asks it")
+                .contains("[spider-sense] UI: " + base + "  service: sample  CLI: java -jar "
+                        + senseJar.toAbsolutePath() + " findings --since=start --url=" + base + "\n")
+                .doesNotContain("Spider Sense (agent)");
         assertThat(output)
                 .as("the embedded server keeps its logging quiet without touching the application's")
                 .contains("sample: slf4j level null");
+    }
+
+    /**
+     * A service nothing names is named after the project whose classes directory holds its main
+     * class (configuration.adoc#service-name), and the start-up line reads that name back from the
+     * resource the agent built, which the launcher cannot work out before the agent runs.
+     */
+    @Test
+    void anUnnamedServiceIsNamedAfterItsProjectAndTheStartLineSaysSo() throws Exception {
+        int port = freePort();
+        Path log = work.resolve("unnamed.log");
+        Process app = start(log,
+                javaBinary.toString(),
+                "-javaagent:" + senseJar,
+                "-Dspidersense.port=" + port,
+                "-Dspidersense.db=" + throwawayDatabase(),
+                "-cp", testClasses,
+                "net.benelog.spidersense.launcher.SampleApp");
+        if (!app.waitFor(60, TimeUnit.SECONDS)) {
+            app.destroyForcibly();
+            throw new AssertionError("the sample did not finish\n--- output ---\n" + read(log));
+        }
+        String output = read(log);
+        assertThat(output).as(output)
+                .contains("[spider-sense] UI: http://127.0.0.1:" + port + "  service: spider-sense-agent  CLI: ");
     }
 
     // --- the extension ------------------------------------------------------------------------
@@ -370,6 +398,10 @@ class SingleJarIT {
             String banner = read(log);
             assertThat(banner).as("the banner").contains("OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf");
             assertThat(banner).as("the banner names the database").contains("jdbc:h2:mem:it-");
+            assertThat(banner).as("the banner names the jar that runs, not a file that may not exist")
+                    .contains("java -javaagent:" + senseJar.toAbsolutePath() + " -Dspidersense.collector=" + base)
+                    .contains("java -jar " + senseJar.toAbsolutePath() + " findings --since=start --url=" + base)
+                    .doesNotContain("Spider Sense (standalone)");
         } finally {
             server.destroy();
             if (!server.waitFor(15, TimeUnit.SECONDS)) {

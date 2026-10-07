@@ -40,7 +40,15 @@ The OpenTelemetry Java agent instruments the application, and a collector and UI
 The agent exports to them over loopback.
 Agent mode is one option, one process, and the UI at http://127.0.0.1:4000[].
 
-`-Dspidersense.port=4001` moves the UI when 4000 is taken.
+Before the application's own output, the launcher prints one line on stdout:
+
+[source,text]
+----
+[spider-sense] UI: http://127.0.0.1:4000  service: my-app  CLI: java -jar /home/me/tools/spider-sense-0.1.0.jar findings --since=start
+----
+
+It names the UI, the service the telemetry carries, and the command that asks this Spider Sense from a terminal, with the jar's own absolute path.
+`-Dspidersense.port=4001` moves the UI when 4000 is taken, and the line's command then carries `--url=http://127.0.0.1:4001`, because the CLI asks port 4000 when it is not told otherwise.
 Spider Sense never prevents the application from starting: a failure in its own startup is logged to the application's stderr and swallowed.
 
 [#forwarding]
@@ -70,6 +78,7 @@ java -jar "$SENSE"
 The collector and the UI run on port 4000 and nothing is instrumented.
 Anything that speaks OTLP/HTTP can send to it: the two modes above, another language's SDK, or an OpenTelemetry Collector.
 The standalone jar takes its properties as `--key=value` arguments as well as system properties, so `java -jar "$SENSE" --port=4001` is the same as `-Dspidersense.port=4001`.
+The banner names the UI, the database, and the commands to send to it and to ask it, each with the jar's own absolute path.
 The difference is that an argument is checked: a malformed number such as `--port=abc`, or a key the jar does not take such as `--prot=4001`, is a usage error that exits `2` without starting, where `-Dspidersense.port=abc` is a warning and the default (xref:configuration.adoc[Configuration] lists the keys).
 A port another process holds is one line on stderr, `spider-sense: port 4001 is in use; --port= picks another (…)`, and exit `2`; the banner is printed only once the port is bound, and `--port=0` binds any free port and names it there.
 It reads xref:configuration.adoc#properties-file[the properties file] too.
