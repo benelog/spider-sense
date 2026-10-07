@@ -195,23 +195,38 @@ The `state` column says what the last restart changed: `new` for a finding the r
 [#suspect-change]
 ==== The suspect change
 
-Under each code frame whose file is in the repository the CLI runs in, `findings` adds one line naming the change that last touched that line:
+Under each code frame whose file it finds, when it runs in a repository, `findings` adds one line naming the file and the change that last touched the frame's line:
 
 [source]
 ----
    orders.OrderService.load(OrderService.java:41)
-     changed in 4743e1d (2 hours ago): Run Error Prone and NullAway in every javac
+     src/main/java/orders/OrderService.java:41 — changed in 4743e1d (2 hours ago): Run Error Prone and NullAway in every javac
    orders.web.OrderController.show(OrderController.java:28)
-     uncommitted
+     src/main/java/orders/web/OrderController.java:28 — uncommitted
 ----
 
 The line is indented two spaces past the frame, so a reader of the block sees it as the frame's.
-It is one of three things.
+It starts with the file's path relative to the working directory and the frame's line, `<path>:<line>`, so an agent opens the file without searching for it.
+After ` — ` comes one of two verdicts, or none.
 
 * `uncommitted` when the file is in `git diff --name-only` or `git diff --cached --name-only`, or is untracked (`git ls-files --others --exclude-standard`), because a file the agent has just created is the most likely suspect of all.
 It is also `uncommitted` when `git blame` says the line itself is not committed yet.
 * Otherwise `changed in <hash> (<age>): <subject>`, from the commit `git blame -L <n>,<n> --porcelain` names for the frame's line: the first seven characters of its hash, its author date as an age in the largest whole unit (`45 seconds ago`, `2 hours ago`, `3 days ago`, `3 weeks ago`, `4 months ago`, `2 years ago`), and its subject.
-* Nothing when the frame does not resolve under xref:configuration.adoc#source-dirs[the source roots] (xref:findings.adoc#source-lines[Source lines and the suspect change]), when the file lies outside the repository, or when `git blame` has nothing to say about the line, as for a file edited to be shorter than the frame's line.
+* The path alone when the file lies outside the repository, or when `git blame` has nothing to say about the line, as for a file edited to be shorter than the frame's line.
+
+The file is found under xref:configuration.adoc#source-dirs[the source roots] first (xref:findings.adoc#source-lines[Source lines and the suspect change]).
+A frame no root resolves is looked up among the repository's files, tracked or untracked, by its package path, with `git ls-files --cached --others --exclude-standard -- ':(glob)**/<package path>/<file>'`.
+That finds a module one directory deeper than the default roots reach, as `examples/servlet-warehouse/src/main/java` from the repository's root.
+The one file it lists is the frame's, or, among several, the one under a `src/main/` directory; two candidates there leave nothing to choose by, and the frame gets no line.
+At most 20 files are looked up this way, and the lookups together get the 10 seconds one `git` command gets.
+An empty `spidersense.source.dirs` turns the lookup off with the roots.
+
+When the working directory is in a repository and the findings have code frames but not one of them resolves, `findings` prints one line on stderr naming the property that says where the sources are:
+
+[source]
+----
+spider-sense: no code frame resolved to a source file under /home/me/project; -Dspidersense.source.dirs=<dir>[,<dir>…] names the source roots, as in java -Dspidersense.source.dirs=app/src/main/java -jar spider-sense.jar findings
+----
 
 The line answers the question an agent has first: is the line this finding points at in the change I just made.
 It is off when the working directory is not in a repository or `git` cannot be run, and `--no-git` turns it off.

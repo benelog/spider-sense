@@ -71,7 +71,7 @@ public final class Cli {
     /** With stdin too, which only {@code mcp} reads. */
     static int run(String[] args, String defaultUrl, InputStream in, PrintStream out,
             PrintStream err) {
-        return run(args, defaultUrl, in, out, err, Cli::withSuspectChanges);
+        return run(args, defaultUrl, in, out, err, findings -> withSuspectChanges(findings, err));
     }
 
     /**
@@ -169,12 +169,21 @@ public final class Cli {
     /**
      * The findings text with the suspect change under each code frame, from the repository the
      * working directory is in, as of now; the text as it is when there is no repository or no
-     * {@code git} to ask.
+     * {@code git} to ask. When not one frame resolved, the hint naming
+     * {@code spidersense.source.dirs} goes to {@code err} (cli.adoc#suspect-change).
      */
-    static String withSuspectChanges(String findings) {
+    static String withSuspectChanges(String findings, PrintStream err) {
         SuspectChange suspects = SuspectChange.forWorkingDirectory(Path.of(""), SourceRoots.fromSystemProperties(),
                 System.currentTimeMillis());
-        return suspects == null ? findings : suspects.annotate(findings);
+        if (suspects == null) {
+            return findings;
+        }
+        String annotated = suspects.annotate(findings);
+        String hint = suspects.hint();
+        if (hint != null) {
+            err.println(hint);
+        }
+        return annotated;
     }
 
     /** HTTP first, the file second, as {@link #dispatch} describes. */

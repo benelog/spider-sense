@@ -159,7 +159,10 @@ class SourceRootsTest {
         write("src/main/java/orders/OrderService.java", 3);
 
         assertThat(SourceRoots.of("", project).roots()).isEmpty();
+        assertThat(SourceRoots.of("", project).turnedOff()).isTrue();
         assertThat(SourceRoots.of("nowhere, src/main/java", project).roots())
                 .containsExactly(project.resolve("src/main/java").toRealPath());
+        assertThat(SourceRoots.of("nowhere", project).turnedOff()).as("a root named, if missing").isFalse();
+        assertThat(SourceRoots.of(null, project).turnedOff()).isFalse();
     }
 }

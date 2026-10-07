@@ -80,13 +80,86 @@ class SuspectChangeTest {
         String annotated = suspects.annotate(FINDINGS);
         assertThat(annotated).matches("(?s).*"
                 + "   orders\\.OrderService\\.load\\(OrderService\\.java:2\\)\n"
-                + "     changed in [0-9a-f]{7} \\(2 hours ago\\): Load orders by id\n"
+                + "     src/main/java/orders/OrderService\\.java:2 — changed in [0-9a-f]{7} \\(2 hours ago\\):"
+                + " Load orders by id\n"
                 + "   orders\\.Draft\\.save\\(Draft\\.java:1\\)\n"
-                + "     uncommitted\n"
+                + "     src/main/java/orders/Draft\\.java:1 — uncommitted\n"
                 + "   orders\\.Staged\\.run\\(Staged\\.java:1\\)\n"
-                + "     uncommitted\n"
+                + "     src/main/java/orders/Staged\\.java:1 — uncommitted\n"
                 + "   orders\\.Missing\\.run\\(Missing\\.java:1\\)\n"
                 + "   traces: .*");
+        assertThat(suspects.hint()).as("a frame resolved").isNull();
+    }
+
+    /**
+     * A module the default roots do not reach, one directory deeper than they look, is found
+     * among the repository's files, and its path is said from where the CLI runs.
+     */
+    @Test
+    void aFrameNoRootResolvesIsFoundAmongTheRepositorysFiles() throws IOException {
+        assumeTrue(git(repo, "init", "-q"), "git is not available");
+        write("examples/warehouse/src/main/java/warehouse/web/ItemServlet.java",
+                "class ItemServlet {\n  void supplierName() {}\n}\n");
+        assertThat(git(repo, "add", ".")).isTrue();
+        assertThat(git(repo, "-c", "core.hooksPath=/dev/null", "commit", "-q",
+                "--date=@" + COMMITTED + " +0000", "-m", "Name the supplier")).isTrue();
+        long now = (COMMITTED + 2 * 60 * 60) * 1000;
+        String frame = "warehouse.web.ItemServlet.supplierName(ItemServlet.java:2)";
+
+        SuspectChange fromTop = SuspectChange.forWorkingDirectory(repo, SourceRoots.of(null, repo), now);
+        Path examples = repo.resolve("examples");
+        SuspectChange fromExamples = SuspectChange.forWorkingDirectory(examples,
+                SourceRoots.of(null, examples), now);
+
+        assertThat(fromTop.lineFor(frame)).matches("examples/warehouse/src/main/java/warehouse/web/"
+                + "ItemServlet\\.java:2 — changed in [0-9a-f]{7} \\(2 hours ago\\): Name the supplier");
+        assertThat(fromExamples.lineFor(frame)).startsWith("warehouse/src/main/java/warehouse/web/"
+                + "ItemServlet.java:2 — changed in ");
+    }
+
+    @Test
+    void twoModulesWithTheSameClassLeaveNothingToChooseBy() throws IOException {
+        write("a/src/main/java/orders/OrderService.java", "class OrderService {}\n");
+        write("b/src/main/java/orders/OrderService.java", "class OrderService {}\n");
+        write("b/src/test/java/orders/Probe.java", "class Probe {}\n");
+        write("b/src/main/java/orders/Probe.java", "class Probe {}\n");
+        Path top = repo.toRealPath();
+        SuspectChange.Git git = (dir, args) -> switch (args[0]) {
+            case "rev-parse" -> List.of(top.toString());
+            case "diff" -> List.of();
+            case "ls-files" -> args.length == 3 ? List.of()
+                    : args[args.length - 1].endsWith("OrderService.java")
+                            ? List.of("x/a/src/main/java/orders/OrderService.java",
+                                    "x/b/src/main/java/orders/OrderService.java")
+                            : List.of("b/src/test/java/orders/Probe.java", "b/src/main/java/orders/Probe.java");
+            case "blame" -> List.of();
+            default -> null;
+        };
+        // Roots that reach neither module, so only the repository's files can.
+        SuspectChange suspects = SuspectChange.forWorkingDirectory(repo, SourceRoots.of("nowhere", repo), 0L, git);
+        SuspectChange off = SuspectChange.forWorkingDirectory(repo, SourceRoots.of(" ", repo), 0L, git);
+
+        assertThat(suspects.lineFor("orders.OrderService.load(OrderService.java:1)")).isNull();
+        assertThat(suspects.lineFor("orders.Probe.run(Probe.java:1)"))
+                .as("the one under src/main/").isEqualTo("b/src/main/java/orders/Probe.java:1");
+        assertThat(off.lineFor("orders.Probe.run(Probe.java:1)")).as("no root named, nothing looked up").isNull();
+        assertThat(off.hint()).as("turned off on purpose").isNull();
+    }
+
+    @Test
+    void whenNoFrameResolvesTheHintNamesTheSourceDirsProperty() {
+        Path top = repo.toAbsolutePath();
+        SuspectChange.Git git = (dir, args) -> switch (args[0]) {
+            case "rev-parse" -> List.of(top.toString());
+            case "diff", "ls-files" -> List.of();
+            default -> null;
+        };
+        SuspectChange suspects = SuspectChange.forWorkingDirectory(repo, SourceRoots.of(null, repo), 0L, git);
+
+        assertThat(suspects.hint()).as("no frame met yet").isNull();
+        assertThat(suspects.annotate(FINDINGS)).isEqualTo(FINDINGS);
+        assertThat(suspects.hint()).startsWith("spider-sense: no code frame resolved to a source file under ")
+                .contains("-Dspidersense.source.dirs=");
     }
 
     @Test
@@ -234,9 +307,9 @@ class SuspectChangeTest {
         assertThat(suspects).isNotNull();
         assertThat(suspects.annotate(FINDINGS)).contains("""
                    orders.OrderService.load(OrderService.java:2)
-                     changed in 4e5f6a7 (3 days ago): Load orders by id
+                     src/main/java/orders/OrderService.java:2 — changed in 4e5f6a7 (3 days ago): Load orders by id
                    orders.Draft.save(Draft.java:1)
-                     uncommitted
+                     src/main/java/orders/Draft.java:1 — uncommitted
                    orders.Staged.run(Staged.java:1)
                    orders.Missing.run(Missing.java:1)
                 """);

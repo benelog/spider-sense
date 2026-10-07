@@ -182,7 +182,7 @@ The lines are read on request by `GET /api/source?frame=…` (xref:api.adoc#sour
 A frame that does not resolve shows nothing more than itself.
 
 The text rendering does not carry the lines, because an agent opens the file itself.
-What it gains instead, in the CLI's `findings`, is the suspect change: one line under each frame that resolves to a file of the repository the CLI runs in, saying whether that line is in the change just made.
+What it gains instead, in the CLI's `findings`, is the suspect change: one line under each frame that resolves to a file, naming the file relative to the working directory and saying whether that line is in the change just made.
 xref:cli.adoc#suspect-change[The suspect change] specifies that line.
 
 [#schema]

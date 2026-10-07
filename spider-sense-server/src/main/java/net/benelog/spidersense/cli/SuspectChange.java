@@ -3,6 +3,7 @@ package net.benelog.spidersense.cli;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -32,6 +33,11 @@ import org.jspecify.annotations.Nullable;
  * the code frame lines in it, resolves each under {@code spidersense.source.dirs}
  * as the server does, and asks {@code git} about the file and the line.
  *
+ * <p>The line names the frame's file relative to the working directory, so an agent
+ * opens it without searching. A frame no source root resolves is looked up among the
+ * repository's files by its package path, which finds the module of a build the
+ * default roots do not reach.
+ *
  * <p>Everything here is best effort. A directory that is not a repository, a
  * {@code git} that is not installed or does not answer, a frame that does not
  * resolve: each leaves the text as it was.
@@ -46,6 +52,9 @@ final class SuspectChange {
     /** How long stdout may take to drain once {@code git} has exited, however late that was. */
     private static final long DRAIN_NANOS = TimeUnit.MILLISECONDS.toNanos(100);
 
+    /** How many files the repository is searched for when no source root has them. */
+    private static final int MAX_LOOKUPS = 20;
+
     /**
      * One {@code git} command in a directory: its stdout as lines, or null when it could not run
      * or did not succeed. {@link SuspectChange#git(Path, String...)} runs the real one; a test
@@ -58,14 +67,26 @@ final class SuspectChange {
 
     private final SourceRoots roots;
     private final Path repository;
+    private final Path workingDir;
     private final Set<String> uncommitted;
     private final long now;
     private final Git git;
     private final Map<String, @Nullable String> noteByFrame = new HashMap<>();
+    private final Map<String, @Nullable String> lineByFrame = new HashMap<>();
+    private final Map<String, @Nullable Path> foundByPath = new HashMap<>();
 
-    private SuspectChange(SourceRoots roots, Path repository, Set<String> uncommitted, long now, Git git) {
+    /** The time the repository searches have taken, which together get what one git command gets. */
+    private long lookupNanos;
+
+    /** Frames with a file and a line that {@link #annotate} met, and how many of them it located. */
+    private int framesWithFile;
+    private int framesLocated;
+
+    private SuspectChange(SourceRoots roots, Path repository, Path workingDir, Set<String> uncommitted,
+            long now, Git git) {
         this.roots = roots;
         this.repository = repository;
+        this.workingDir = workingDir;
         this.uncommitted = uncommitted;
         this.now = now;
         this.git = git;
@@ -106,7 +127,13 @@ final class SuspectChange {
                 }
             }
         }
-        return new SuspectChange(roots, repository, uncommitted, now, git);
+        Path cwd;
+        try {
+            cwd = workingDir.toRealPath();
+        } catch (IOException e) {
+            cwd = workingDir.toAbsolutePath().normalize();
+        }
+        return new SuspectChange(roots, repository, cwd, uncommitted, now, git);
     }
 
     /** The text with one line under each code frame that resolves to a file of the repository. */
@@ -122,7 +149,7 @@ final class SuspectChange {
             }
             Matcher frame = FRAME_LINE.matcher(line);
             if (frame.matches()) {
-                String note = noteFor(frame.group(1));
+                String note = lineFor(frame.group(1));
                 if (note != null) {
                     if (end < 0) {
                         out.append('\n');
@@ -135,13 +162,50 @@ final class SuspectChange {
         return out.toString();
     }
 
+    /**
+     * The line under a frame: its file relative to the working directory and its line, then
+     * the suspect change when git has one, as in {@code src/main/java/orders/OrderService.java:41
+     * — uncommitted}; null when the frame does not resolve to a file.
+     */
+    @Nullable String lineFor(String frame) {
+        if (lineByFrame.containsKey(frame)) {
+            return lineByFrame.get(frame);
+        }
+        if (SourceRoots.parse(frame) != null) {
+            framesWithFile++;
+        }
+        SourceRoots.Location location = locate(frame);
+        String line = null;
+        if (location != null) {
+            framesLocated++;
+            String note = noteFor(frame);
+            line = shown(location.file()) + ":" + location.line() + (note == null ? "" : " — " + note);
+        }
+        lineByFrame.put(frame, line);
+        return line;
+    }
+
+    /**
+     * The hint {@code findings} prints on stderr when none of its frames resolved to a file:
+     * the roots are elsewhere, and {@code spidersense.source.dirs} says where; null when a frame
+     * resolved, or when there was no frame to resolve.
+     */
+    @Nullable String hint() {
+        if (roots.turnedOff() || framesWithFile == 0 || framesLocated > 0) {
+            return null;
+        }
+        return "spider-sense: no code frame resolved to a source file under " + workingDir
+                + "; -Dspidersense.source.dirs=<dir>[,<dir>…] names the source roots, as in"
+                + " java -Dspidersense.source.dirs=app/src/main/java -jar spider-sense.jar findings";
+    }
+
     /** {@code uncommitted}, or {@code changed in <hash> (<age>): <subject>}; null when git says nothing. */
     @Nullable String noteFor(String frame) {
         if (noteByFrame.containsKey(frame)) {
             return noteByFrame.get(frame);
         }
         String note = null;
-        SourceRoots.Location location = roots.resolve(frame);
+        SourceRoots.Location location = locate(frame);
         if (location != null && location.file().startsWith(repository)) {
             String relative = repository.relativize(location.file()).toString()
                     .replace(java.io.File.separatorChar, '/');
@@ -149,6 +213,87 @@ final class SuspectChange {
         }
         noteByFrame.put(frame, note);
         return note;
+    }
+
+    /**
+     * The frame's file under the source roots, else the one file of the repository it names;
+     * never a file when {@code spidersense.source.dirs} turned the roots off.
+     */
+    private SourceRoots.@Nullable Location locate(String frame) {
+        SourceRoots.Location location = roots.resolve(frame);
+        if (location != null) {
+            return location;
+        }
+        SourceRoots.Frame parsed = SourceRoots.parse(frame);
+        if (parsed == null || roots.turnedOff()) {
+            return null;
+        }
+        Path found = find(parsed.path());
+        return found == null ? null : new SourceRoots.Location(found, parsed.line());
+    }
+
+    /**
+     * The file of the repository whose path ends in {@code path} ({@code orders/OrderService.java}),
+     * tracked or new: the one there is, else the one under a {@code src/main/} directory, else
+     * none, since two modules with the same class leave nothing to choose by.
+     *
+     * <p>One {@code git ls-files} per distinct path, at most {@link #MAX_LOOKUPS} of them, and none
+     * once the searches together have taken {@link #GIT_TIMEOUT}.
+     */
+    private @Nullable Path find(String path) {
+        if (foundByPath.containsKey(path)) {
+            return foundByPath.get(path);
+        }
+        Path found = null;
+        if (foundByPath.size() < MAX_LOOKUPS && lookupNanos < GIT_TIMEOUT.toNanos()) {
+            long started = System.nanoTime();
+            List<String> names = git.run(repository, "ls-files", "--cached", "--others",
+                    "--exclude-standard", "--", ":(glob)**/" + path);
+            lookupNanos += System.nanoTime() - started;
+            found = pick(names);
+        }
+        foundByPath.put(path, found);
+        return found;
+    }
+
+    private @Nullable Path pick(@Nullable List<String> names) {
+        if (names == null) {
+            return null;
+        }
+        List<String> all = new ArrayList<>();
+        List<String> main = new ArrayList<>();
+        for (String name : names) {
+            String trimmed = name.trim();
+            if (trimmed.isEmpty() || all.contains(trimmed)) {
+                continue;
+            }
+            all.add(trimmed);
+            if (trimmed.startsWith("src/main/") || trimmed.contains("/src/main/")) {
+                main.add(trimmed);
+            }
+        }
+        String chosen = all.size() == 1 ? all.get(0) : main.size() == 1 ? main.get(0) : null;
+        if (chosen == null) {
+            return null;
+        }
+        Path file = repository.resolve(chosen).normalize();
+        try {
+            Path real = file.toRealPath();
+            return real.startsWith(repository) && Files.isRegularFile(real) ? real : null;
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    /** A file as the working directory reaches it, with {@code /} between its names. */
+    private String shown(Path file) {
+        String path;
+        try {
+            path = workingDir.relativize(file).toString();
+        } catch (IllegalArgumentException e) {
+            path = file.toString();
+        }
+        return path.replace(java.io.File.separatorChar, '/');
     }
 
     private @Nullable String blame(String relative, int line) {

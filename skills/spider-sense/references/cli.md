@@ -258,11 +258,13 @@ Run where the frame's file is, inside a repository, the CLI adds one under each 
 
 ```
    orders.web.MiscController.flaky(MiscController.java:24)
-     changed in 4743e1d (2 hours ago): Add a flaky endpoint to the example
+     examples/spring-orders/src/main/java/orders/web/MiscController.java:24 — changed in 4743e1d (2 hours ago): Add a flaky endpoint to the example
 ```
 
-`uncommitted` in its place means the file is in `git diff`, staged or not, or is untracked; `changed in` names the commit `git blame` gives for that line, its age and its subject.
-The frame resolves under `spidersense.source.dirs`, by default `src/main/java` and `src/main/kotlin` of the working directory and of each immediate subdirectory.
+The path is the frame's file relative to the working directory, then its line.
+`uncommitted` after it means the file is in `git diff`, staged or not, or is untracked; `changed in` names the commit `git blame` gives for that line, its age and its subject; the path alone means git had nothing to say about the line.
+The frame resolves under `spidersense.source.dirs`, by default `src/main/java` and `src/main/kotlin` of the working directory and of each immediate subdirectory, and failing that among the repository's own files by its package path (`git ls-files`), which reaches a module one directory deeper.
+When no frame resolves at all, one line on stderr names `-Dspidersense.source.dirs`.
 It is the one line of any answer the CLI adds itself, so the HTTP API and MCP never carry it; `--no-git` and `--json` leave it out.
 
 ### `trace <traceId>`

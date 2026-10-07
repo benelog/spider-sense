@@ -64,9 +64,11 @@ public final class SourceRoots {
                     + "\\((" + FILE_PART + "+\\.(?:java|kt|groovy|scala)):([0-9]{1,9})\\)");
 
     private final List<Path> roots;
+    private final boolean turnedOff;
 
-    private SourceRoots(List<Path> roots) {
+    private SourceRoots(List<Path> roots, boolean turnedOff) {
         this.roots = List.copyOf(roots);
+        this.turnedOff = turnedOff;
     }
 
     /**
@@ -79,6 +81,7 @@ public final class SourceRoots {
     public static SourceRoots of(@Nullable String configured, Path workingDir) {
         Path base = workingDir.toAbsolutePath().normalize();
         List<Path> candidates = new ArrayList<>();
+        boolean named = false;
         if (configured == null) {
             candidates.addAll(conventional(base));
             for (Path child : children(base)) {
@@ -88,6 +91,7 @@ public final class SourceRoots {
             for (String each : configured.split(",", -1)) {
                 String dir = each.trim();
                 if (!dir.isEmpty()) {
+                    named = true;
                     candidates.add(base.resolve(Config.expandHome(dir)));
                 }
             }
@@ -105,7 +109,7 @@ public final class SourceRoots {
                 // A root that cannot be read is no root; the others still answer.
             }
         }
-        return new SourceRoots(roots);
+        return new SourceRoots(roots, configured != null && !named);
     }
 
     /** {@code spidersense.source.dirs} of this JVM against its working directory. */
@@ -116,6 +120,15 @@ public final class SourceRoots {
     /** The roots that exist, in the order they are tried. */
     public List<Path> roots() {
         return roots;
+    }
+
+    /**
+     * Whether {@code spidersense.source.dirs} was set to name no root, which turns every use of
+     * a frame's file off rather than leaving the default roots to be guessed
+     * (configuration.adoc#source-dirs).
+     */
+    public boolean turnedOff() {
+        return turnedOff;
     }
 
     /** A frame's path under a root and its line, as parsed; null when it is not a frame with a file. */

@@ -100,18 +100,20 @@ The `state` column says what the last restart changed: `new` for a finding the r
 Each finding carries `why` (the numbers in a sentence), `numbers` (kind-specific), `statement` (when the finding is about one), `code` (application frames, innermost first, empty when none is known), and `traces` (at most three, the evidence).
 The table is the ranked answer and the numbered blocks under it are that evidence, one per row, in the same order.
 
-**Read the suspect-change line first.** Under each `code` frame whose file is in the repository you run in, the CLI prints the change that last touched that line:
+**Read the suspect-change line first.** Under each `code` frame whose file it finds, in the repository you run in, the CLI prints the file's path from where you are and the change that last touched that line:
 
 ```
    orders.OrderService.load(OrderService.java:41)
-     uncommitted
+     src/main/java/orders/OrderService.java:41 — uncommitted
    orders.web.OrderController.show(OrderController.java:28)
-     changed in 4743e1d (2 hours ago): Run Error Prone and NullAway in every javac
+     src/main/java/orders/web/OrderController.java:28 — changed in 4743e1d (2 hours ago): Run Error Prone and NullAway in every javac
 ```
+
+The path is the file to open.
 
 `uncommitted` means the file is in your working tree's diff, staged or not, or is new: the finding most likely comes from the change you just made, so start there, at that line.
 `changed in <hash> (<age>): <subject>` names the commit behind the line; a recent one is the next suspect, an old one says the problem was there before you started.
-No line under a frame means it does not resolve to a source file here (a library, another module outside `spidersense.source.dirs`) or the directory is not a repository.
+No line under a frame means it does not resolve to a source file here (a library, or a class two modules both have) or the directory is not a repository; when no frame resolves at all, stderr says so and names `-Dspidersense.source.dirs`.
 `--no-git` leaves the lines out.
 When a finding is known and accepted — the user says it is slow by design, or the fix waits on something else — `ack <finding id> --note=<why>` moves it to the bottom of every later list, its severity reading `acked`, so the top of the list stays about what is new; `unack <finding id>` puts it back, and `findings --hide-acked` leaves the acknowledged ones out altogether.
 `check` ignores acknowledgements: its rules are explicit thresholds, so an acknowledged `n-plus-one` still counts against `--max-n-plus-one`.

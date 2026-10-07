@@ -272,6 +272,7 @@ A root that does not exist is left out.
 A frame without a file and a line, such as `Unknown Source`, does not resolve.
 Neither does a frame whose path would leave its root: only dotted Java identifiers and a plain file name with a `.java`, `.kt`, `.groovy` or `.scala` extension make a path, and the file, symbolic links followed, must lie under its root.
 The CLI reads the same property, as `-Dspidersense.source.dirs` before `-jar` or from `spider-sense.properties`, to find a frame's file for its xref:cli.adoc#suspect-change[suspect-change line].
+When no root has the file, the CLI also looks for it among the files of the repository it runs in, unless the property is empty.
 
 == How to send data
 
