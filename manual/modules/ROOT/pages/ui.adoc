@@ -175,7 +175,7 @@ The shell re-reads `/api/status` on every route change and every Live refresh, a
 With no span in storage, `oldest.span` is `0` and `all` is the last 15 minutes.
 
 Editor::
-A select of *IntelliJ IDEA*, the default, or *VS Code*: what a code frame link opens, on the Findings page and the error page (xref:pages.adoc#code-frames[Code frames]).
+A select of *Open code in IntelliJ IDEA*, the default, or *Open code in VS Code*: what a code frame link opens, on the Findings page and the error page (xref:pages.adoc#code-frames[Code frames]).
 The choice is remembered in `localStorage` and applied at once to every link on the page.
 Every access to the storage is wrapped in `try`, so a browser that refuses storage keeps the default.
 

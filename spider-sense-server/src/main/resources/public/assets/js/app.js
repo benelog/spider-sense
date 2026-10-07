@@ -421,7 +421,8 @@ async function boot() {
 
   fill(shell.rangeSelect, RANGES.map((r) => h('option', { value: r.id }, r.label)));
   const editorSelect = document.getElementById('editor-select');
-  fill(editorSelect, EDITORS.map((x) => h('option', { value: x.id }, x.label)));
+  // The option says what the setting does, since the select carries no visible label (ui.adoc#top-bar).
+  fill(editorSelect, EDITORS.map((x) => h('option', { value: x.id }, 'Open code in ' + x.label)));
   editorSelect.value = editor();
   editorSelect.addEventListener('change', () => setEditor(editorSelect.value));
   applyTheme(storedTheme());
