@@ -109,7 +109,9 @@ The unindexed names are in `--accent`, behind the word `unindexed` that already 
 A finding whose `schema` is `null` shows nothing for it.
 Nothing is computed in the page: the names are the ones the API carries, so they are the CLI's.
 
-The row also carries a *Go to* link to the subject's page, the same destination as a row click on the Overview, and the <<copy-as-markdown,*Copy as Markdown* and *Copy CLI line*>> pair over `+GET /api/findings/{id}+` and the `findings` command.
+The row also carries a link to the subject's page, the same destination as a row click on the Overview, named by where it goes: *Endpoint*, *Query*, *Error*, *JVM*, *Logs* or *Trace*.
+A finding whose subject names a statement as well as an endpoint, an `n-plus-one`, adds a second link, *Query*, to the statement's page.
+Then comes the <<copy-as-markdown,*Copy as Markdown* and *Copy CLI line*>> pair over `+GET /api/findings/{id}+` and the `findings` command.
 An expanded row stays expanded across a Live refresh while the finding is still in the list, keyed by its `id`.
 
 The state chip is the finding's `state` (xref:findings.adoc#state[State]), with a title saying what it means.

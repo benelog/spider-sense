@@ -165,22 +165,33 @@ export function kindChip(kind) {
 /**
  * Where a finding points: its subject's page, and the first evidence trace when the
  * subject has no page of its own (a job) or names nothing (pages.adoc#findings).
+ * `label` names the destination, for the button that goes there.
  */
 export function findingTarget(finding, shared = api.sharedQuery()) {
   const subject = finding.subject || {};
-  if (subject.endpointId) return { path: router.detailPath('endpoints', subject.endpointId), query: shared };
-  if (subject.queryId) return { path: router.detailPath('queries', subject.queryId), query: shared };
-  if (subject.errorId) return { path: router.detailPath('errors', subject.errorId), query: shared };
-  if (subject.pool || subject.jvm) return { path: '/jvm', query: { ...shared, service: finding.service || shared.service } };
+  if (subject.endpointId) return { path: router.detailPath('endpoints', subject.endpointId), query: shared, label: 'Endpoint' };
+  if (subject.queryId) return queryTarget(finding, shared);
+  if (subject.errorId) return { path: router.detailPath('errors', subject.errorId), query: shared, label: 'Error' };
+  if (subject.pool || subject.jvm) return { path: '/jvm', query: { ...shared, service: finding.service || shared.service }, label: 'JVM' };
   if (subject.logger) {
     return {
       path: '/logs',
       query: { ...shared, service: finding.service || shared.service, severity: 'ERROR', q: subject.logger },
+      label: 'Logs',
     };
   }
   const trace = (finding.traces || [])[0];
-  if (trace) return { path: router.detailPath('traces', trace), query: shared };
+  if (trace) return { path: router.detailPath('traces', trace), query: shared, label: 'Trace' };
   return null;
+}
+
+/**
+ * The query page of a finding that names a statement, or null: an N+1 points at its endpoint
+ * first, and this is the second place it leads to (pages.adoc#findings).
+ */
+export function queryTarget(finding, shared = api.sharedQuery()) {
+  const queryId = (finding.subject || {}).queryId;
+  return queryId ? { path: router.detailPath('queries', queryId), query: shared, label: 'Query' } : null;
 }
 
 export function goToFinding(finding) {

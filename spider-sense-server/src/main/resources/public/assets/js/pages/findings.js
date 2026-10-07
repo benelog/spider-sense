@@ -9,7 +9,7 @@ import { count, dur, rate, pct, apdex, bytes, time, bothTimes, truncate, shortId
 import { codeFrame } from '../frames.js';
 import { copyButtons, cliLine } from '../copyas.js';
 import { pageLoader } from '../page.js';
-import { severityDot, kindChip, findingTarget, schemaLines } from '../widgets.js';
+import { severityDot, kindChip, findingTarget, queryTarget, schemaLines } from '../widgets.js';
 
 /** The dot and the word, so the severity is not carried by colour alone. */
 export function severityMark(severity) {
@@ -277,6 +277,16 @@ function ackLine(finding, onChange) {
     }, 'Acknowledge'));
 }
 
+/** The title of each link to a finding's subject, by the label findingTarget gives it. */
+const TARGET_TITLE = {
+  Endpoint: 'Open the endpoint page',
+  Query: 'Open the query page',
+  Error: 'Open the error page',
+  JVM: 'Open the JVM page',
+  Logs: 'Open the error logs of this logger',
+  Trace: 'Open the first evidence trace',
+};
+
 /**
  * The expanded row: why, the numbers, the statement, the code and the evidence.
  *
@@ -297,6 +307,8 @@ export function evidence(finding, onChange, listWindow) {
     });
   const traces = finding.traces || [];
   const target = findingTarget(finding);
+  // An N+1 goes to its endpoint, and its statement has a page too.
+  const query = target && target.label !== 'Query' ? queryTarget(finding) : null;
   return h('div.f-evidence',
     finding.why ? h('p.f-why', finding.why) : null,
     numbers.length
@@ -321,9 +333,10 @@ export function evidence(finding, onChange, listWindow) {
             title: id,
           }, shortId(id, 12))))
         : null,
-      target
-        ? h('a.btn.btn-ghost', { href: router.href(target.path, target.query) }, 'Go to')
-        : null,
+      [target, query].filter(Boolean).map((t) => h('a.btn.btn-ghost', {
+        href: router.href(t.path, t.query),
+        title: TARGET_TITLE[t.label],
+      }, t.label)),
       listWindow ? copyButtons({
         markdown: () => ({ path: '/api/findings/' + encodeURIComponent(finding.id), query: api.params({}, { window: listWindow() }) }),
         cli: () => cliLine('findings', listWindow(), api.state.service),
