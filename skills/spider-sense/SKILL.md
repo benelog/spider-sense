@@ -32,12 +32,19 @@ What it gives you that a dashboard does not:
 
 ## The loop
 
-Find the jar before building it; `./gradlew :spider-sense-agent:senseJar` writes it under `spider-sense-agent/build/libs/` and it may already be there or wherever the user keeps it.
+`$SENSE` below is the Spider Sense jar's absolute path, and where it comes from depends on the project:
+
+- **A project `init` prepared**: the Spider Sense block of `CLAUDE.md` or `AGENTS.md` names it ("the jar is at `…`"); set `SENSE` to that path, and use the block's own start and CLI lines, which already carry the project's build tool and port.
+- **Under the Gradle plugin** (the block says the project applies `net.benelog.spidersense`): `./gradlew bootRun` (or `run`) is step 1, and `./gradlew -q spiderSense --args="<command>"` takes the place of every `java -jar "$SENSE" <command>`.
+- **Only inside the Spider Sense repository itself** does `./gradlew :spider-sense-agent:senseJar` build it, under `spider-sense-agent/build/libs/`:
 
 ```bash
+# in the Spider Sense repository only
 SENSE="$(ls spider-sense-agent/build/libs/spider-sense-[0-9]*.jar 2>/dev/null | head -1)"
 [ -n "$SENSE" ] || { ./gradlew :spider-sense-agent:senseJar; SENSE="$(ls spider-sense-agent/build/libs/spider-sense-[0-9]*.jar | head -1)"; }
 ```
+
+Anywhere else with no block, ask the user where the jar is; [references/running.md](references/running.md) says how to get one.
 
 Then, in order:
 
@@ -56,7 +63,7 @@ java -jar "$SENSE" resolve n-plus-one:4c5f46be8bc5 --note="fetch join"   # 6. on
 ```
 
 After a restart there is a fresh `start` mark, so `--since=start` covers the new run without marking anything.
-`java -jar "$SENSE" init` writes the Spider Sense block into the project's `CLAUDE.md` — where the jar is, how to start the application under it, what the CLI answers — and installs the skills into `.claude/skills/`, so the next session finds both without being told.
+`java -jar "$SENSE" init` writes the Spider Sense block into the project's `CLAUDE.md` (or its `AGENTS.md`) — where the jar is, how to start the application under it, what the CLI answers — and installs the skills into `.claude/skills/`, so the next session finds both without being told.
 `--url=<base url>` (or `SPIDERSENSE_URL`) points the CLI at a Spider Sense on another port; `--db=<path>` reads a database directly.
 
 ## Starting the application under the agent

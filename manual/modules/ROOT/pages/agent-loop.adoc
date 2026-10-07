@@ -94,11 +94,15 @@ The MCP server's `instructions` field carries the same loop in one paragraph, so
 [#the-loop]
 == The loop
 
-The loop uses the Spider Sense jar the build produced, which may already be on the machine.
-`./gradlew :spider-sense-agent:senseJar` writes it under `spider-sense-agent/build/libs/`.
+`$SENSE` below is the Spider Sense jar's absolute path, and where it comes from depends on the project.
+
+* In a project `init` prepared, the Spider Sense block of `CLAUDE.md` or `AGENTS.md` names it (xref:agent-skill.adoc#block[The block]).
+* Under the Gradle plugin, `./gradlew bootRun` (or `run`) is step 1, and `./gradlew -q spiderSense --args="<command>"` takes the place of every `java -jar "$SENSE" <command>` (xref:gradle-plugin.adoc#tasks[Tasks]).
+* Only inside the Spider Sense repository itself does `./gradlew :spider-sense-agent:senseJar` build it, under `spider-sense-agent/build/libs/`:
 
 [source,bash]
 ----
+# in the Spider Sense repository only
 SENSE="$(ls spider-sense-agent/build/libs/spider-sense-[0-9]*.jar 2>/dev/null | head -1)"
 [ -n "$SENSE" ] || { ./gradlew :spider-sense-agent:senseJar; SENSE="$(ls spider-sense-agent/build/libs/spider-sense-[0-9]*.jar | head -1)"; }
 ----

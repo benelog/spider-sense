@@ -6,18 +6,23 @@ There is no supported way to attach later, and nothing else has to be installed 
 
 ## The jar
 
-Look for it before building it.
+Look for it before building it, and where to look depends on the project.
+
+- In a project `init` prepared, the Spider Sense block of `CLAUDE.md` or `AGENTS.md` names it: "the jar is at `…`".
+- Under the Gradle plugin the build resolves the jar itself: `./gradlew bootRun` starts the application under it, and `./gradlew -q spiderSense --args="<command>"` replaces `java -jar "$SENSE" <command>` ([The Gradle plugin](#the-gradle-plugin)).
+- Only inside the Spider Sense repository itself is it built, by `./gradlew :spider-sense-agent:senseJar`:
 
 ```bash
 ls spider-sense-agent/build/libs/spider-sense-[0-9]*.jar   # in the Spider Sense repository
 ./gradlew :spider-sense-agent:senseJar                    # builds it if it is not there
 ```
 
+Anywhere else, ask the user where the jar is; a project with none gets one built from a checkout of <https://github.com/benelog/spider-sense>, as the manual's Installation chapter describes.
 The single distributable jar is `spider-sense-<version>.jar`; the `spider-sense-agent-<version>.jar` beside it is the launcher alone, a build artifact, not the one to use.
 Keep the absolute path in a variable, because every command below wants it:
 
 ```bash
-SENSE="$PWD/spider-sense-agent/build/libs/spider-sense-0.1.0.jar"
+SENSE="$PWD/spider-sense-agent/build/libs/spider-sense-0.1.0.jar"   # in the Spider Sense repository
 ```
 
 ## The three modes
