@@ -1090,7 +1090,7 @@ public final class Findings {
             Finding finding = new Finding(
                     id(SLOW_QUERY, query.service(), query.queryId()),
                     SLOW_QUERY, severity, query.service(),
-                    name + " is slow",
+                    slowQueryTitle(name, query),
                     "p95 " + Numbers.millis(query.p95Ms()) + " over "
                             + Numbers.plural(query.calls(), "call") + ", "
                             + query.slowCalls() + " of them over " + tingles.slowQueryMs() + " ms; "
@@ -1107,6 +1107,17 @@ public final class Findings {
             found.add(new Ranked(finding, query.totalMs()));
         }
         return found;
+    }
+
+    /**
+     * {@code SELECT items is slow: p95 812.0 ms in GET /items}: the statement summary alone
+     * names three different report queries over one table the same, so the title adds the p95
+     * and the caller that ran the group most (findings.adoc#slow-query). Both are numbers of
+     * the window, so the title is the same on every call over it.
+     */
+    private static String slowQueryTitle(String name, Stats.QueryStats query) {
+        String title = name + " is slow: p95 " + Numbers.millis(query.p95Ms());
+        return query.callers().isEmpty() ? title : title + " in " + query.callers().get(0).endpoint();
     }
 
     // --- slow endpoint -------------------------------------------------------

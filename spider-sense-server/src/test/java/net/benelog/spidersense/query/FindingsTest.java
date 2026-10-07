@@ -406,11 +406,25 @@ class FindingsTest {
         assertThat(slow).hasSize(1);
         Findings.Finding finding = slow.get(0);
         assertThat(finding.severity()).isEqualTo(Findings.MEDIUM);
-        assertThat(finding.title()).isEqualTo("SELECT book is slow");
+        assertThat(finding.title()).isEqualTo("SELECT book is slow: p95 300.0 ms in GET /books");
         assertThat(finding.numbers().get("calls")).isEqualTo(1L);
         assertThat(finding.numbers().get("slowCalls")).isEqualTo(1L);
         assertThat((Double) finding.numbers().get("p95Ms")).isEqualTo(300.0);
         assertThat(finding.traces()).containsExactly(traceId(1));
+    }
+
+    @Test
+    void twoSlowQueriesOverOneTableAreToldApartByTheirTitles() {
+        Span.Builder search = entry(1, "/items", 400);
+        Span.Builder report = entry(2, "/report", 400);
+        decoder.ingest(Otlp.traces(Otlp.service("warehouse"), search, report,
+                query(search, 100, "select * from items where name like ?", "items", NOW, 300),
+                query(report, 101, "select kind, count(*) from items group by kind", "items", NOW, 200)));
+        flush();
+
+        assertThat(of(Findings.SLOW_QUERY)).extracting(Findings.Finding::title).containsExactly(
+                "SELECT items is slow: p95 300.0 ms in GET /items",
+                "SELECT items is slow: p95 200.0 ms in GET /report");
     }
 
     /** Two letters for {@code n}, so that no digit is normalised away and two names stay two groups. */

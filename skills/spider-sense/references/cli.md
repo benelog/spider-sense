@@ -215,8 +215,8 @@ $ java -jar spider-sense.jar findings --since=before
 | 1 | high | new | error | error:eecf9878a68f | spring-orders | IllegalStateException in GET /api/flaky |
 | 2 | medium | new | n-plus-one | n-plus-one:4c5f46be8bc5 | spring-orders | GET /api/orders/{id}/enriched runs SELECT product 5 times per request |
 | 3 | medium | new | n-plus-one | n-plus-one:e6d97708ab26 | spring-orders | GET /api/orders/{id} runs SELECT product 5 times per request |
-| 4 | medium | new | slow-query | slow-query:6b3aae6f9bef | spring-orders | SELECT p.id AS product_id, p.sku AS sku, p.name AS name, SUM… is slow |
-| 5 | medium | new | slow-query | slow-query:aae3ff87821a | spring-orders | SELECT o.status AS status, CAST(o.created_at AS DATE) AS ord… is slow |
+| 4 | medium | new | slow-query | slow-query:6b3aae6f9bef | spring-orders | SELECT p.id AS product_id, p.sku AS sku, p.name AS name, SUM… is slow: p95 269.7 ms in GET /api/reports/revenue |
+| 5 | medium | new | slow-query | slow-query:aae3ff87821a | spring-orders | SELECT o.status AS status, CAST(o.created_at AS DATE) AS ord… is slow: p95 200.2 ms in GET /api/reports/revenue |
 | 6 | medium | new | slow-endpoint | slow-endpoint:786b594455d0 | spring-orders | GET /api/reports/revenue is slow |
 
 1. error:eecf9878a68f — 1 occurrence in GET /api/flaky; Payment gateway timeout
