@@ -8,7 +8,7 @@ import {
 } from '../ui.js';
 import { pageLoader, skeleton } from '../page.js';
 import { formatSql } from '../sql.js';
-import { stackTrace, foldedStack, appFrames, codeFrame } from '../frames.js';
+import { stackTrace, foldedStack, appFrames, codeFrames } from '../frames.js';
 import { slowRequestMs } from '../buckets.js';
 import { detailOf } from './logs.js';
 import { dur, count, timeMs, bothTimes, offset, full } from '../format.js';
@@ -315,7 +315,7 @@ export function render(root, ctx) {
     const code = appFrames(text);
     return h('div', { style: { display: 'grid', gap: '6px' } },
       h('div.sub-head.mono', STACK_KEY),
-      code.length ? h('div.f-code', code.map((frame) => codeFrame(frame))) : null,
+      code.length ? codeFrames(h('div.f-code'), code) : null,
       foldedStack(text, 'app'));
   }
 

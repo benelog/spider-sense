@@ -422,7 +422,8 @@ A frame that resolves to a source file becomes a link that opens the file at tha
 
 The link's title is the path and the line.
 The five lines around the frame's line follow under it in monospace, numbered, with the frame's own line on `--accent-soft`.
-A frame that does not resolve stays the plain monospace text it was, with nothing under it.
+A frame that does not resolve stays the plain monospace text it was, with nothing under it, and its title says that no source file was found for it under `spidersense.source.dirs`.
+When no frame of a *Code* list on the error page, the query page or in the span drawer resolves, one muted line under the list says so and how to change it: `No source found for these frames. Set spidersense.source.dirs to your source roots to open them in IntelliJ IDEA (Source roots).`, with the editor the top bar names and a link to xref:configuration.adoc#source-dirs[Source roots] in the published manual.
 
 The source is read when the page asks and never stored.
 The lines are therefore those of the file as it is now, which after an edit may no longer be the lines the frame meant.

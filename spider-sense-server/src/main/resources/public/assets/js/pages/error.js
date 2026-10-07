@@ -5,7 +5,7 @@ import * as router from '../router.js';
 import { h, fill, panel, stat, table, serviceChip, idButton, segmented } from '../ui.js';
 import { pageLoader, skeleton } from '../page.js';
 import { chartBox } from '../charts.js';
-import { codeFrame, foldedStack, framesMode } from '../frames.js';
+import { codeFrames, foldedStack, framesMode } from '../frames.js';
 import { copyButtons, cliLine } from '../copyas.js';
 import { countColumn, endpointCell } from '../columns.js';
 import { traceTable } from '../widgets.js';
@@ -116,8 +116,7 @@ export function render(root, ctx) {
     lastChain = data.chain || [];
     fill(stackBody,
       code.length
-        ? h('div.f-code', { style: { marginBottom: '12px' } }, h('div.sub-head', 'Code'),
-          code.map((frame) => codeFrame(frame)))
+        ? codeFrames(h('div.f-code', { style: { marginBottom: '12px' } }, h('div.sub-head', 'Code')), code)
         : null,
       stackTraceBox);
     paintStack();

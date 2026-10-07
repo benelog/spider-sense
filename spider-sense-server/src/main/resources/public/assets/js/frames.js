@@ -63,15 +63,21 @@ function snippet(src) {
   }));
 }
 
-/**
- * One frame: its text at once, then, when it resolves, a link to the editor in place of the
- * text and the lines around it underneath.
- */
-export function codeFrame(frame) {
+/** Where the manual says how to name the source roots (configuration.adoc#source-dirs). */
+export const SOURCE_ROOTS_URL = 'https://spider-sense.benelog.net/configuration.html#source-dirs';
+
+/** What an unresolved frame says in its title. */
+const UNRESOLVED_TITLE = 'No source file for this frame under spidersense.source.dirs';
+
+/** One frame's node, and a promise of whether it resolved to a file. */
+function frameNode(frame) {
   const label = h('span', frame);
   const node = h('div.src-frame', h('div.mono.f-frame', label));
-  lookup(frame).then((src) => {
-    if (!src || !src.file) return;
+  const resolved = lookup(frame).then((src) => {
+    if (!src || !src.file) {
+      label.title = UNRESOLVED_TITLE;
+      return false;
+    }
     label.replaceWith(h('a.src-link', {
       href: editorHref(src.file, src.line),
       title: src.file + ':' + src.line,
@@ -79,8 +85,41 @@ export function codeFrame(frame) {
     }, frame));
     const lines = snippet(src);
     if (lines) node.appendChild(lines);
+    return true;
   });
-  return node;
+  return { node, resolved };
+}
+
+/**
+ * One frame: its text at once, then, when it resolves, a link to the editor in place of the
+ * text and the lines around it underneath. A frame that does not resolve says so in its title.
+ */
+export function codeFrame(frame) {
+  return frameNode(frame).node;
+}
+
+/** The line under a list none of whose frames resolved: how to make them resolve. */
+export function sourceHint(which = editor()) {
+  const name = (EDITORS.find((x) => x.id === which) || EDITORS[0]).label;
+  return h('div.muted.src-hint', { style: { fontSize: '11px', marginTop: '4px' } },
+    'No source found for these frames. Set ', h('code', 'spidersense.source.dirs'),
+    ' to your source roots to open them in ' + name + ' (',
+    h('a', { href: SOURCE_ROOTS_URL, target: '_blank', rel: 'noopener' }, 'Source roots'), ').');
+}
+
+/**
+ * The frames as code frames, appended to `container`, and, once every one has been asked and
+ * none resolved, the hint (pages.adoc#code-frames). Returns the container.
+ */
+export function codeFrames(container, frames) {
+  const parts = frames.map(frameNode);
+  for (const part of parts) container.appendChild(part.node);
+  if (parts.length) {
+    Promise.all(parts.map((part) => part.resolved)).then((resolved) => {
+      if (!resolved.some(Boolean)) container.appendChild(sourceHint());
+    });
+  }
+  return container;
 }
 
 // --- folding a stack trace (pages.adoc#stack-traces) -------------------------------------

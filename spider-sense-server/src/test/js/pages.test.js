@@ -181,6 +181,22 @@ test('the trace page\'s log rows open to their detail, and the panel links to th
   assert.equal(rangeHolding(now - 7 * 3_600_000, now), 'all');
 });
 
+test('a list none of whose frames resolve says how to name the source roots (pages.adoc#code-frames)', async () => {
+  const frames = await import(JS + 'frames.js');
+  const hintOf = (box) => box.querySelectorAll('div').find((d) => d.classList.contains('src-hint'));
+  // The mock resolves a frame with a file and a line, and nothing else.
+  const lost = frames.codeFrames(document.createElement('div'), ['orders.Proxy.getName(Unknown Source)', 'orders.Gen.run(<generated>)']);
+  await until(() => hintOf(lost), 'the hint');
+  assert.match(hintOf(lost).textContent, /^No source found for these frames\. Set spidersense\.source\.dirs to your source roots/);
+  assert.equal(hintOf(lost).querySelector('a').getAttribute('href'), frames.SOURCE_ROOTS_URL);
+  assert.equal(lost.querySelectorAll('span').filter((s) => s.title).length, 2, 'each unresolved frame says so in its title');
+
+  const found = frames.codeFrames(document.createElement('div'), ['orders.Proxy.getName(Unknown Source)', 'orders.OrderService.load(OrderService.java:41)']);
+  await until(() => found.querySelectorAll('a').length === 1, 'the resolved frame');
+  await settle(20);
+  assert.equal(hintOf(found), undefined, 'one frame that resolves is enough');
+});
+
 test('a profile row opens the span drawer, and the page closes it when it goes', async () => {
   const trace = await visit('trace', { id: ids.trace });
   trace.root.querySelectorAll('button').find((b) => b.textContent === 'Profile').click();
