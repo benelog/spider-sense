@@ -161,6 +161,26 @@ test('the waterfall labels a span with its summary and keeps its name in the tit
   instance.destroy();
 });
 
+test('the trace page\'s log rows open to their detail, and the panel links to the Logs page (pages.adoc#trace-logs)', async () => {
+  const traces = (await api.traces({ limit: 200 })).traces;
+  let id = null;
+  for (const t of traces) if (((await api.trace(t.traceId)).logs || []).length) { id = t.traceId; break; }
+  assert.ok(id, 'the mock has a trace with logs');
+  const { root, instance } = await visit('trace', { id });
+  const panel = root.querySelectorAll('section').find((s) => s.id === 'trace-logs');
+  const link = panel.querySelectorAll('a').find((a) => a.textContent === 'Logs page');
+  assert.match(link.href, new RegExp('^#/logs\\?.*traceId=' + id));
+  panel.querySelector('tbody tr').dispatch('keydown', { key: 'Enter' });
+  assert.equal(panel.querySelectorAll('tr').filter((tr) => tr.classList.contains('log-detail')).length, 1);
+  instance.destroy();
+
+  const { rangeHolding } = await import(JS + 'pages/trace.js');
+  const now = 10_000_000;
+  assert.equal(rangeHolding(now - 60_000, now), '5m');
+  assert.equal(rangeHolding(now - 10 * 60_000, now), '15m');
+  assert.equal(rangeHolding(now - 7 * 3_600_000, now), 'all');
+});
+
 test('a profile row opens the span drawer, and the page closes it when it goes', async () => {
   const trace = await visit('trace', { id: ids.trace });
   trace.root.querySelectorAll('button').find((b) => b.textContent === 'Profile').click();

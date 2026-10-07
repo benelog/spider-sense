@@ -10,6 +10,7 @@ import { pageLoader, skeleton } from '../page.js';
 import { formatSql } from '../sql.js';
 import { stackTrace, foldedStack, appFrames, codeFrame } from '../frames.js';
 import { slowRequestMs } from '../buckets.js';
+import { detailOf } from './logs.js';
 import { dur, count, timeMs, bothTimes, offset, full } from '../format.js';
 import {
   startMsOf, traceStartMs, spanTree, flattenTree, selfTimes, profileRows, hotSpanIds,
@@ -19,6 +20,12 @@ import {
 const STATEMENT_KEYS = ['db.statement', 'db.query.text'];
 /** The stack the extension captures on a slow or repeated call (findings.adoc#code). */
 const STACK_KEY = 'code.stacktrace';
+
+/** The narrowest top-bar range that still holds an instant, so the Logs page finds a trace's records. */
+export function rangeHolding(at, now = Date.now()) {
+  const range = api.RANGES.find((r) => r.ms != null && now - r.ms <= at);
+  return range ? range.id : 'all';
+}
 
 /** The line a span reads as: its summary, or its name when it has none. */
 function summaryOf(span) {
@@ -51,8 +58,11 @@ export function render(root, ctx) {
   const bodyBox = h('div', spinner());
   const bodyPanel = panel({ title: 'Spans' }, bodyBox);
   const logsBox = h('div');
+  // The open log rows, kept across a Live repaint.
+  const openLogs = new Set();
+  const logsLink = h('a.link-btn', { title: 'These records on the Logs page' }, 'Logs page');
   const logsPanel = h('section.panel#trace-logs',
-    h('div.panel-head', h('h2.panel-title', 'Logs')), logsBox);
+    h('div.panel-head', h('h2.panel-title', 'Logs'), h('div.panel-actions', logsLink)), logsBox);
 
   const layout = skeleton(root, () => [headPanel, bodyPanel, logsPanel]);
 
@@ -326,12 +336,24 @@ export function render(root, ctx) {
   function paintLogs() {
     const logs = data.logs || [];
     const t0 = traceStartMs(data);
+    // Every service's records, over a range that still holds the trace.
+    logsLink.href = router.href('/logs', {
+      ...api.sharedQuery(), service: '', range: rangeHolding(t0), traceId: data.traceId || traceId,
+    });
     fill(logsBox, table([
       { key: 'offset', label: 'Offset', align: 'right', sortable: false, width: '80px', render: (l) => h('span.mono.muted', offset(l.at - t0)) },
       { key: 'severity', label: 'Level', sortable: false, width: '68px', render: (l) => severityChip(l.severity) },
       { key: 'logger', label: 'Logger', sortable: false, width: '180px', render: (l) => h('span.cell-ellipsis.mono.muted', { title: l.logger }, l.logger || '-') },
       { key: 'body', label: 'Message', sortable: false, cls: 'wide', render: (l) => h('span.log-body', l.body) },
-    ], { rows: logs, rowKey: (l) => l.id, empty: 'No log carries this trace id.' }));
+    ], {
+      rows: logs,
+      rowKey: (l) => l.id,
+      // A row opens to its attributes and the exception it carries, as on the Logs page.
+      detail: detailOf,
+      detailClass: 'log-detail',
+      expanded: openLogs,
+      empty: 'No log carries this trace id.',
+    }));
   }
 
   /** What a late export changes: the spans, the extent, the services and the logs. */

@@ -364,6 +364,8 @@ A run of repeated siblings is one row where its first span stands, folded as in 
 === Logs
 
 The trace's log records come last, oldest first, each with a severity chip, its offset in the trace, the logger, and the body.
+A row click, or Enter, opens it to its attributes and the stack trace of the exception it carries, as on the <<logs,Logs page>>, and the open rows stay across a Live refresh.
+The panel head links to the Logs page filtered by the trace id, over all services and over the narrowest range that still holds the trace's start.
 
 [#queries]
 == Queries

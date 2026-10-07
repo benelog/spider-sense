@@ -26,6 +26,16 @@ export function mergeNewestPage(rows, incoming, from, limit) {
     .sort((a, b) => (b.at - a.at) || (b.id - a.id));
 }
 
+/** An open row, here and on the trace page: its attributes, and the stack trace an exception carries. */
+export function detailOf(log) {
+  const attrs = { ...(log.attributes || {}) };
+  const stack = attrs['exception.stacktrace'];
+  delete attrs['exception.stacktrace'];
+  return h('div', { style: { display: 'grid', gap: '10px', padding: '4px 0' } },
+    Object.keys(attrs).length ? h('dl.kv', Object.entries(attrs).map(([k, v]) => [h('dt', k), h('dd', String(v))])) : h('span.muted', 'No attribute.'),
+    stack ? stackTrace(stack) : null);
+}
+
 export function render(root, ctx) {
   let rows = [];
   let total = 0;
@@ -104,16 +114,6 @@ export function render(root, ctx) {
     }
     node.setRows(rows);
     foot.hidden = rows.length >= total || !rows.length;
-  }
-
-  /** An open row: its attributes, and the stack trace an exception carries. */
-  function detailOf(log) {
-    const attrs = { ...(log.attributes || {}) };
-    const stack = attrs['exception.stacktrace'];
-    delete attrs['exception.stacktrace'];
-    return h('div', { style: { display: 'grid', gap: '10px', padding: '4px 0' } },
-      Object.keys(attrs).length ? h('dl.kv', Object.entries(attrs).map(([k, v]) => [h('dt', k), h('dd', String(v))])) : h('span.muted', 'No attribute.'),
-      stack ? stackTrace(stack) : null);
   }
 
   /** The top-bar state and the filter the rows answer: a change of either starts over. */
