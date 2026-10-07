@@ -52,6 +52,20 @@ class CliReferenceTest {
         assertThat(page.substring(start, end)).isEqualTo(Help.TEXT);
     }
 
+    /** One command's block, as both pages show it, is what {@code mark --help} prints. */
+    @Test
+    void theCommandBlockShownIsWhatMarkHelpPrints() throws IOException {
+        String block = Help.of(java.util.Objects.requireNonNull(Command.named("mark")));
+        String run = "$ java -jar spider-sense.jar mark --help\n";
+        for (String[] page : List.of(new String[] {page(), "\n```"},
+                new String[] {Files.readString(MANUAL_PAGE, UTF_8), "\n----"})) {
+            int start = page[0].indexOf(run);
+            assertThat(start).as("the page shows a mark --help run").isNotNegative();
+            start += run.length();
+            assertThat(page[0].substring(start, page[0].indexOf(page[1], start))).isEqualTo(block);
+        }
+    }
+
     @Test
     void theCommandTableHasARowForEveryCommand() throws IOException {
         String page = page();

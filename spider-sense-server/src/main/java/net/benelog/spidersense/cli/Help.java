@@ -1,8 +1,12 @@
 package net.benelog.spidersense.cli;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
 /**
- * The table cli.adoc#help prints, and the same table a usage error
- * prints after its one line.
+ * The table cli.adoc#help prints, and the block of one command that {@code help <command>} and
+ * {@code <command> --help} print.
  *
  * <p>Plain ASCII on purpose: this is the one output of the CLI that is written
  * here rather than rendered by the server, and a console that cannot show an
@@ -62,7 +66,9 @@ final class Help {
                                            --mcp also writes the stdio MCP server into .mcp.json
               mcp                          the MCP server over stdio, for a host with no shell;
                                            takes --url and --db and nothing else
-              help                         this table
+              help [<command>]             this table, or what one command takes, which
+                                           <command> --help prints too
+              version                      the version of this jar, as --version prints it
 
             Common options:
               --since=<selector>   default 15m
@@ -91,6 +97,99 @@ final class Help {
             3 check had no request to judge, 4 not found (a trace id, a mark name,
             a finding id to unack or unresolve).""";
 
+    /** How a value-taking option is written in a command's block, by what it takes. */
+    private static final Map<String, String> VALUES = Map.ofEntries(
+            Map.entry("since", "<selector>"), Map.entry("until", "<selector>"),
+            Map.entry("before", "<selector>"), Map.entry("after", "<selector>"),
+            Map.entry("limit", "<n>"), Map.entry("min-ms", "<n>"), Map.entry("until-traces", "<n>"),
+            Map.entry("timeout", "<duration>"), Map.entry("url", "<base url>"),
+            Map.entry("db", "<path or jdbc url>"), Map.entry("service", "<name>"),
+            Map.entry("note", "<text>"), Map.entry("q", "<text>"),
+            Map.entry("trace", "<traceId>"), Map.entry("diff", "<traceId>"),
+            Map.entry("status", "error|ok"), Map.entry("severity", "<level>"),
+            Map.entry("kind", "<kind>"), Map.entry("endpoint", "<endpoint>"), Map.entry("out", "<file>"),
+            Map.entry("dir", "<project dir>"), Map.entry("jar", "<path>"),
+            Map.entry("slow.request.ms", "<ms>"), Map.entry("slow.query.ms", "<ms>"),
+            Map.entry("app.packages", "<packages>"));
+
+    private static final int WIDTH = 80;
+
     private Help() {
+    }
+
+    /**
+     * One command's block: its entry of {@link #TEXT}, then every option its row of
+     * {@link Command} takes, the command's own first and the common ones after them.
+     *
+     * <p>The entry is cut from the table rather than written again, so the two cannot disagree,
+     * and the options are the row's, so the block lists exactly what the parser accepts.
+     */
+    static String of(Command command) {
+        List<String> own = new ArrayList<>();
+        List<String> common = new ArrayList<>();
+        for (String option : command.options()) {
+            (Options.isCommon(option) ? common : own).add(spelled(option));
+        }
+        StringBuilder block = new StringBuilder(entry(command.commandName()));
+        if (!own.isEmpty() || !common.isEmpty()) {
+            block.append('\n');
+        }
+        if (!own.isEmpty()) {
+            block.append('\n').append(wrapped("Options: ", own));
+        }
+        if (!common.isEmpty()) {
+            block.append('\n').append(wrapped("Common options: ", common));
+        }
+        return block.append("\n\njava -jar spider-sense.jar help lists every command, the selector forms and the")
+                .append("\nexit codes.")
+                .toString();
+    }
+
+    /** A command's lines of the table, without the table's indent. */
+    private static String entry(String name) {
+        List<String> lines = new ArrayList<>();
+        boolean in = false;
+        for (String line : TEXT.lines().dropWhile(line -> !line.equals("Commands:")).skip(1)
+                .takeWhile(line -> !line.isEmpty()).toList()) {
+            boolean starts = !line.startsWith("   ");
+            if (starts) {
+                in = line.trim().split("[ \\[]", 2)[0].equals(name);
+            }
+            if (in) {
+                lines.add(line.substring(2));
+            }
+        }
+        return String.join("\n", lines);
+    }
+
+    private static String spelled(String option) {
+        if (Options.isFlag(option)) {
+            return "--" + option;
+        }
+        // The rules of check are the rest: a count, a rate, a score or milliseconds, each a number.
+        return "--" + option + "=" + VALUES.getOrDefault(option, "<number>");
+    }
+
+    /** The options after the label, as many to a line as fit in {@link #WIDTH}, the rest indented under. */
+    private static String wrapped(String label, List<String> options) {
+        StringBuilder out = new StringBuilder(label);
+        String indent = " ".repeat(label.length());
+        int column = label.length();
+        boolean first = true;
+        for (String option : options) {
+            if (!first && column + 1 + option.length() > WIDTH) {
+                out.append('\n').append(indent);
+                column = indent.length();
+                first = true;
+            }
+            if (!first) {
+                out.append(' ');
+                column++;
+            }
+            out.append(option);
+            column += option.length();
+            first = false;
+        }
+        return out.toString();
     }
 }

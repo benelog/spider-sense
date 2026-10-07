@@ -160,8 +160,12 @@ class CliTest {
                 .isEqualTo("http://elsewhere:4000");
     }
 
+    /**
+     * A usage error is its one line and one line naming the help to read, never the whole table
+     * after it, and a near miss is named (cli.adoc#help).
+     */
     @Test
-    void helpIsTheTableAndEveryUsageErrorPrintsItOnStderr() {
+    void helpIsTheTableAndAUsageErrorIsOneLineAndWhereToLook() {
         Run help = run("help");
         assertThat(help.exit()).isZero();
         assertThat(help.out()).contains("Commands:").contains("compare --before=");
@@ -170,12 +174,22 @@ class CliTest {
         Run unknown = run("nonsense");
         assertThat(unknown.exit()).isEqualTo(2);
         assertThat(unknown.out()).isEmpty();
-        assertThat(unknown.err()).startsWith("spider-sense: unknown command: nonsense");
-        assertThat(unknown.err()).contains("Commands:");
+        assertThat(unknown.err()).isEqualTo("""
+                spider-sense: unknown command: nonsense
+                see: java -jar spider-sense.jar help
+                """);
 
-        assertThat(run("findings", "--sinse=5m").err())
-                .startsWith("spider-sense: unknown option for findings: --sinse");
-        assertThat(run("findings", "--sinse=5m").exit()).isEqualTo(2);
+        Run typo = run("findings", "--sinse=5m");
+        assertThat(typo.exit()).isEqualTo(2);
+        assertThat(typo.err()).isEqualTo("""
+                spider-sense: unknown option for findings: --sinse; did you mean --since?
+                see: java -jar spider-sense.jar findings --help
+                """);
+        assertThat(run("fidnings").err()).startsWith("spider-sense: unknown command: fidnings; did you mean findings?\n");
+        assertThat(run("findings", "--json", "--bogus=1").err())
+                .startsWith("spider-sense: unknown option for findings: --bogus\n");
+        assertThat(run("marks", "--limit=many").err()).as("an error found after parsing points the same way")
+                .endsWith("\nsee: java -jar spider-sense.jar marks --help\n");
         assertThat(run("trace").err()).startsWith("spider-sense: trace needs a trace id");
         assertThat(run("trace").exit()).isEqualTo(2);
         assertThat(run("mark").err()).startsWith("spider-sense: mark needs a mark name");
@@ -183,6 +197,53 @@ class CliTest {
                 .startsWith("spider-sense: compare needs both --before and --after");
         assertThat(run("--json").exit()).isEqualTo(2);
         assertThat(run("marks", "--limit=many").exit()).isEqualTo(2);
+    }
+
+    /** {@code <command> --help}, {@code -h} and {@code help <command>} print the command's block. */
+    @Test
+    void aCommandsHelpIsItsBlockHoweverItIsAskedFor() {
+        String block = Help.of(Objects.requireNonNull(Command.named("findings"))) + "\n";
+        for (List<String> line : List.of(List.of("findings", "--help"), List.of("findings", "-h"),
+                List.of("help", "findings"), List.of("findings", "--sinse=5m", "--help"))) {
+            Run run = run(line.toArray(new String[0]));
+            assertThat(run.exit()).as(line.toString()).isZero();
+            assertThat(run.out()).as(line.toString()).isEqualTo(block);
+            assertThat(run.err()).as(line.toString()).isEmpty();
+        }
+        assertThat(run("trace", "--help").out()).as("without the trace id it would need")
+                .startsWith("trace <traceId> [--full] [--diff=<traceId>]\n");
+
+        Run unknown = run("help", "trcae");
+        assertThat(unknown.exit()).isEqualTo(2);
+        assertThat(unknown.err()).startsWith("spider-sense: unknown command: trcae; did you mean trace?\n");
+    }
+
+    /** The block lists exactly what the parser accepts for the command. */
+    @Test
+    void aCommandsBlockListsEveryOptionItsRowTakes() {
+        for (Command command : Command.ALL) {
+            String block = Help.of(command);
+            assertThat(block).as(command.commandName()).startsWith(command.commandName());
+            for (String option : command.options()) {
+                assertThat(block).as(command.commandName()).containsPattern("--" + java.util.regex.Pattern.quote(option) + "(=|\\s|$)");
+            }
+        }
+    }
+
+    @Test
+    void versionIsWhatTheLaunchersVersionFlagPrints() {
+        Run run = run("version");
+        assertThat(run.exit()).isZero();
+        assertThat(run.out()).isEqualTo("Spider Sense " + net.benelog.spidersense.server.Version.CURRENT + "\n");
+    }
+
+    @Test
+    void aNearMissIsWithinTwoEdits() {
+        assertThat(Options.distance("sinse", "since")).isEqualTo(1);
+        assertThat(Options.distance("sicne", "since")).isEqualTo(2);
+        assertThat(Options.distance("", "abc")).isEqualTo(3);
+        assertThat(Options.didYouMean("limt", List.of("since", "limit"), "--")).isEqualTo("; did you mean --limit?");
+        assertThat(Options.didYouMean("xyz", List.of("since", "limit"), "--")).isEmpty();
     }
 
     /**

@@ -104,8 +104,11 @@ The launcher reads xref:configuration.adoc#properties-file[the properties file] 
 | `mcp`
 | the MCP server over stdio
 
-| `help`
-| this table
+| `help [<command>]`
+| this table, or what one command takes
+
+| `version`
+| the version of the jar, as `--version` prints it
 |===
 
 Every example below is the real output of one session against the `spring-orders` example application.
@@ -530,7 +533,9 @@ Commands:
                                --mcp also writes the stdio MCP server into .mcp.json
   mcp                          the MCP server over stdio, for a host with no shell;
                                takes --url and --db and nothing else
-  help                         this table
+  help [<command>]             this table, or what one command takes, which
+                               <command> --help prints too
+  version                      the version of this jar, as --version prints it
 
 Common options:
   --since=<selector>   default 15m
@@ -558,6 +563,35 @@ no server is there to ask.
 Exit codes: 0 success, 1 check failed, 2 usage or connection error,
 3 check had no request to judge, 4 not found (a trace id, a mark name,
 a finding id to unack or unresolve).
+----
+
+`help <command>` prints one command's block instead: its entry of the table, then every option it takes, its own first and the common ones after them.
+`<command> --help` and `<command> -h` print the same block whatever else the line holds, so `trace --help` needs no trace id.
+
+[source]
+----
+$ java -jar spider-sense.jar mark --help
+mark <name> [--note=<text>]  records a mark now
+
+Options: --note=<text>
+Common options: --url=<base url> --json --service=<name> --db=<path or jdbc url>
+                --slow.request.ms=<ms> --slow.query.ms=<ms>
+                --app.packages=<packages>
+
+java -jar spider-sense.jar help lists every command, the selector forms and the
+exit codes.
+----
+
+`version` prints the version of the jar, the line `java -jar spider-sense.jar --version` prints.
+
+A usage error prints two lines on stderr and exits `2`: what is wrong, and which help to read, the command's block when the line named a command and the table otherwise.
+A command or an option that is not known but is within two edits of one that is gets a `did you mean …?`:
+
+[source]
+----
+$ java -jar spider-sense.jar findings --sinse=5m
+spider-sense: unknown option for findings: --sinse; did you mean --since?
+see: java -jar spider-sense.jar findings --help
 ----
 
 [#options]
@@ -620,7 +654,7 @@ Three commands depart from the table.
 
 `--slow.request.ms=`, `--slow.query.ms=` and `--app.packages=` set the thresholds and the application packages in the direct-file path, where no server is there to ask.
 
-An option a command does not take is a usage error rather than a silently ignored word, so a mistyped `--sinse` is reported rather than answered for the last 15 minutes.
+An option a command does not take is a usage error rather than a silently ignored word, so a mistyped `--sinse` is reported, with `did you mean --since?`, rather than answered for the last 15 minutes.
 An option that takes a value is a usage error without one, so a bare `--since` is reported rather than read as the mark name `true`; only `--json`, `--full`, `--hide-acked`, `--no-git` and `init`'s `--no-skill` and `--mcp` are named bare.
 
 [#exit-codes]

@@ -31,7 +31,8 @@ The launcher treats a first argument that does not start with `-` as a command a
 | `import <file>` | that document back into the store, and one line saying what arrived |
 | `init [--dir=<project dir>] [--jar=<path>] [--no-skill] [--mcp]` | writes the Spider Sense block into the project's `CLAUDE.md` and installs the skills into its `.claude/skills/`; `--mcp` also writes the stdio MCP server into its `.mcp.json` |
 | `mcp` | the MCP server over stdio, for a host that has no shell; it takes `--url` and `--db` and nothing else ([MCP over stdio](#mcp-over-stdio)) |
-| `help` | this table |
+| `help [<command>]` | this table, or what one command takes; `<command> --help` and `-h` print the same block |
+| `version` | the version of the jar, as `--version` prints it |
 
 ## Common options
 
@@ -53,7 +54,7 @@ The launcher treats a first argument that does not start with `-` as a command a
 `mcp` takes only `--url` and `--db`, because a window, a format and a service belong to each message of the session rather than to the command.
 It is idempotent — the block it writes is delimited by `<!-- spider-sense:start -->` and `<!-- spider-sense:end -->`, and a second run replaces what is between them and leaves the rest of `CLAUDE.md` untouched.
 `--slow.request.ms=`, `--slow.query.ms=` and `--app.packages=` set the thresholds and the application packages in the direct-file path, where no server is there to ask.
-An option a command does not take is a usage error rather than a silently ignored word, so a mistyped `--sinse` is told rather than answered for the last 15 minutes.
+An option a command does not take is a usage error rather than a silently ignored word, so a mistyped `--sinse` is told, with `did you mean --since?`, rather than answered for the last 15 minutes.
 An option that takes a value is a usage error without one, so a bare `--since` is told rather than read as the mark name `true`; only `--json`, `--full`, `--hide-acked`, `--no-git` and `init`'s `--no-skill` and `--mcp` are named bare.
 
 ## Time selectors
@@ -536,7 +537,9 @@ Commands:
                                --mcp also writes the stdio MCP server into .mcp.json
   mcp                          the MCP server over stdio, for a host with no shell;
                                takes --url and --db and nothing else
-  help                         this table
+  help [<command>]             this table, or what one command takes, which
+                               <command> --help prints too
+  version                      the version of this jar, as --version prints it
 
 Common options:
   --since=<selector>   default 15m
@@ -564,4 +567,28 @@ no server is there to ask.
 Exit codes: 0 success, 1 check failed, 2 usage or connection error,
 3 check had no request to judge, 4 not found (a trace id, a mark name,
 a finding id to unack or unresolve).
+```
+
+`help <command>`, `<command> --help` and `<command> -h` print one command's block: its entry of the table, then every option it takes, its own first and the common ones after them.
+
+```
+$ java -jar spider-sense.jar mark --help
+mark <name> [--note=<text>]  records a mark now
+
+Options: --note=<text>
+Common options: --url=<base url> --json --service=<name> --db=<path or jdbc url>
+                --slow.request.ms=<ms> --slow.query.ms=<ms>
+                --app.packages=<packages>
+
+java -jar spider-sense.jar help lists every command, the selector forms and the
+exit codes.
+```
+
+A usage error is two lines on stderr and exit `2`: what is wrong, and which help to read.
+A command or an option within two edits of a known one gets a `did you mean …?`:
+
+```
+$ java -jar spider-sense.jar findings --sinse=5m
+spider-sense: unknown option for findings: --sinse; did you mean --since?
+see: java -jar spider-sense.jar findings --help
 ```

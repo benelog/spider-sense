@@ -89,7 +89,7 @@ record Command(String commandName, Set<String> options, @Nullable String argumen
                                 options.flag("full"))
                         : reports.trace(options.requiredArgument(), options.flag("full"))),
 
-            new Command(Options.TAIL, Set.of("url", "json", "service", "kind", "until-traces", "timeout"), null, null,
+            new Command(Options.TAIL, Options.only("kind", "until-traces", "timeout", "url", "json", "service"), null, null,
                 null, null, null),
 
             new Command(Options.TRACES, with("since", "until", "limit", "full", "status", "min-ms", "q"), null, Method.GET,
@@ -178,20 +178,23 @@ record Command(String commandName, Set<String> options, @Nullable String argumen
 
             // import names a file and a store to write it into; a window and a service belong to the
             // export that made it, not to reading it back.
-            new Command(Options.IMPORT, Set.of("url", "db", "json"), "a file to read", null, null, null,
+            new Command(Options.IMPORT, Options.only("url", "db", "json"), "a file to read", null, null, null,
                 (options, reports, service) -> reports.imported(reports.importDocument(
                         Json.parse(Sessions.read(options.requiredArgument())).asObject()))),
 
             // init reads nothing, so none of the common options mean anything to it: --url, --db and the
             // thresholds are all about a window it never opens.
-            new Command(Options.INIT, Set.of("dir", "jar", "no-skill", "mcp"), null, null, null, null, null),
+            new Command(Options.INIT, Options.only("dir", "jar", "no-skill", "mcp"), null, null, null, null, null),
 
             // mcp is not one question but a session of them, so a window, a format and a service belong
             // to each message rather than to the command: only where to read is decided here
             // (mcp.adoc#stdio).
-            new Command(Options.MCP, Set.of("url", "db"), null, null, null, null, null),
+            new Command(Options.MCP, Options.only("url", "db"), null, null, null, null, null),
 
-            new Command(Options.HELP, with(), null, null, null, null, null));
+            // help takes a command name of its own, which Options#parse reads beside the row.
+            new Command(Options.HELP, with(), null, null, null, null, null),
+
+            new Command(Options.VERSION, Options.only(), null, null, null, null, null));
 
     /** How {@link Remote} sends a command's request. */
     enum Method { GET, POST, DELETE }

@@ -57,6 +57,7 @@ class CliParityTest {
      */
     private static final Map<String, String> ONE_WAY = Map.of(
             Options.HELP, "prints the table and asks nobody",
+            Options.VERSION, "prints the jar's version and asks nobody",
             Options.INIT, "writes into a project and asks nobody (agent-skill.adoc#init)",
             Options.TAIL, "has no direct-file path, because there is no file to tail (cli.adoc)");
 

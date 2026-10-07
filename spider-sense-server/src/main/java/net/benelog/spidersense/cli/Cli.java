@@ -6,11 +6,13 @@ import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Objects;
 import java.util.function.Function;
 
 import net.benelog.spidersense.api.Reports;
 import net.benelog.spidersense.query.Selectors;
 import net.benelog.spidersense.server.Config;
+import net.benelog.spidersense.server.Version;
 import net.benelog.spidersense.source.SourceRoots;
 import org.jspecify.annotations.Nullable;
 
@@ -86,16 +88,23 @@ public final class Cli {
         try {
             options = Options.parse(args);
         } catch (Options.Usage e) {
-            return usage(e, err);
+            return usage(e, e.command(), err);
         }
         if (Options.HELP.equals(options.command())) {
-            out.println(Help.TEXT);
+            String about = options.argument();
+            out.println(about == null ? Help.TEXT : Help.of(Objects.requireNonNull(Command.named(about),
+                    "help was parsed with a command that is none")));
+            return OK;
+        }
+        if (Options.VERSION.equals(options.command())) {
+            // What the launcher's --version prints, from the same version (design.adoc#jar).
+            out.println(Version.NAME + " " + Version.CURRENT);
             return OK;
         }
         try {
             return dispatch(options, defaultUrl, in, out, err, annotateFindings);
         } catch (Options.Usage e) {
-            return usage(e, err);
+            return usage(e, options.command(), err);
         } catch (Reports.NoSuchTrace | Selectors.UnknownMark e) {
             err.println("spider-sense: " + e.getMessage());
             return NOT_FOUND;
@@ -193,10 +202,22 @@ public final class Cli {
         }
     }
 
-    private static int usage(Options.Usage e, PrintStream err) {
+    /**
+     * The usage error and one line naming the help to read: the command's own block when the line
+     * named a command, else the table (cli.adoc#help). The whole table after every typo buried the
+     * one line that said what was wrong.
+     */
+    private static int usage(Options.Usage e, @Nullable String command, PrintStream err) {
         err.println("spider-sense: " + e.getMessage());
-        err.println(Help.TEXT);
+        err.println(pointer(command));
         return USAGE;
+    }
+
+    /** The second line of a usage error. */
+    static String pointer(@Nullable String command) {
+        return command == null || Command.named(command) == null
+                ? "see: java -jar spider-sense.jar help"
+                : "see: java -jar spider-sense.jar " + command + " --help";
     }
 
     static String defaultUrl() {
