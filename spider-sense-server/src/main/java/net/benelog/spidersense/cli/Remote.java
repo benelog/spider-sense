@@ -38,13 +38,39 @@ final class Remote {
      * answer from some other server there; never a Spider Sense's own 4xx.
      */
     static final class Unreachable extends RuntimeException {
+
+        /** Whether something at the URL did answer, only not as a Spider Sense does. */
+        private final boolean answered;
+
         Unreachable(String reason) {
-            super(reason);
+            this(reason, false);
         }
 
-        /** The line a caller says it with, the reason in parentheses (cli.adoc). */
+        private Unreachable(String reason, boolean answered) {
+            super(reason);
+            this.answered = answered;
+        }
+
+        /**
+         * An error answer that is not a Spider Sense's, to a path every Spider Sense has: some
+         * other server is at the URL, most often the application's own port.
+         */
+        static Unreachable answered(int status, String path) {
+            int query = path.indexOf('?');
+            return new Unreachable("HTTP " + status + " for " + (query < 0 ? path : path.substring(0, query)), true);
+        }
+
+        boolean answered() {
+            return answered;
+        }
+
+        /**
+         * The line a caller says it with, the reason in parentheses (cli.adoc#fallback), and the
+         * question to ask when a server did answer.
+         */
         String line(String base) {
-            return "no Spider Sense at " + base + " (" + getMessage() + ")";
+            return "no Spider Sense at " + base + " (" + getMessage() + ")"
+                    + (answered ? "; is that the application's port?" : "");
         }
     }
 
@@ -102,6 +128,16 @@ final class Remote {
         return HttpClient.newBuilder().connectTimeout(CONNECT).build();
     }
 
+    /**
+     * A base URL as the CLI asks it: the trailing slashes gone, and {@code http://} in front of one
+     * typed without a scheme, so {@code --url=127.0.0.1:4000} is the server it names rather than a
+     * URI the client refuses.
+     */
+    static String base(String url) {
+        String trimmed = trimSlash(url);
+        return trimmed.contains("://") ? trimmed : "http://" + trimmed;
+    }
+
     /** A request to a path of the Spider Sense at {@code base}, which waits {@link #READ} for the answer. */
     private static HttpRequest.Builder request(String base, String path) {
         return HttpRequest.newBuilder(URI.create(trimSlash(base) + path)).timeout(READ);
@@ -132,7 +168,8 @@ final class Remote {
         if (Options.IMPORT.equals(options.command())) {
             return importFile(options, base, out, err);
         }
-        HttpRequest.Builder request = request(base, pathAndQuery(options));
+        String path = pathAndQuery(options);
+        HttpRequest.Builder request = request(base, path);
         // A statement and a mark are what the caller says rather than what it asks about, so they
         // travel in a body; everything else is a window and some filters (api.adoc).
         String body = command(options).bodyOf(options);
@@ -151,7 +188,7 @@ final class Remote {
         }
 
         if (response.statusCode() >= 400) {
-            requireSpiderSense(response);
+            requireSpiderSense(response, path);
             err.println("spider-sense: " + message(response));
             return response.statusCode() == 404 ? Cli.NOT_FOUND : Cli.USAGE;
         }
@@ -176,11 +213,16 @@ final class Remote {
      */
     private static int export(Options options, String base, PrintStream out, PrintStream err) {
         String name = options.valueOrNull("out");
-        HttpRequest request = request(base, withWindow(options, new UrlBuilder("/api/export")).toString()).GET().build();
+        String path = withWindow(options, new UrlBuilder("/api/export")).toString();
+        HttpRequest request = request(base, path).GET().build();
         HttpClient client = client();
         try {
             HttpResponse<InputStream> response =
                     send(client, base, request, HttpResponse.BodyHandlers.ofInputStream());
+            if (response.statusCode() == 404 || response.statusCode() == 405) {
+                // Every Spider Sense has GET /api/export: whatever answered this is something else.
+                throw Unreachable.answered(response.statusCode(), path);
+            }
             if (response.statusCode() >= 400) {
                 err.println("spider-sense: HTTP " + response.statusCode());
                 return Cli.USAGE;
@@ -209,7 +251,8 @@ final class Remote {
         String name = options.requiredArgument();
         byte[] body = Sessions.bytes(name);
         String format = options.flag("json") ? "json" : "text";
-        HttpRequest.Builder request = request(base, "/api/import?format=" + format)
+        String path = "/api/import?format=" + format;
+        HttpRequest.Builder request = request(base, path)
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofByteArray(body));
         if (Sessions.gzipped(name)) {
@@ -221,7 +264,7 @@ final class Remote {
                     HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
         }
         if (response.statusCode() >= 400) {
-            requireSpiderSense(response);
+            requireSpiderSense(response, path);
             err.println("spider-sense: " + message(response));
             return Cli.USAGE;
         }
@@ -233,31 +276,36 @@ final class Remote {
      * Throws {@link Unreachable} when an error answer did not come from a Spider Sense.
      *
      * <p>A Spider Sense answers every error with the {@code {"error": "..."}} object of
-     * api.adoc#conventions, or, to a caller that asked for text, with the one line
-     * {@code /api/sql} sends as {@code text/markdown}. Anything else, such as an HTML error page or
-     * a bare {@code 404}, is some other server at the URL: then nothing the caller named is
-     * missing, there is simply no Spider Sense to ask, which is exit {@code 2} and never the
-     * {@code 4} of a missing trace or mark (cli.adoc#exit-codes).
+     * api.adoc#conventions, and nothing beside the {@code error}, or, to a caller that asked for
+     * text, with the one line {@code /api/sql} sends as {@code text/markdown} with a {@code 400}.
+     * Anything else, such as an HTML error page, a bare {@code 404}, or the
+     * {@code {"status": 404, "error": "Not Found", "path": ...}} of a Spring application, is some
+     * other server at the URL: then nothing the caller named is missing, there is simply no Spider
+     * Sense to ask, which is exit {@code 2} and never the {@code 4} of a missing trace or mark
+     * (cli.adoc#exit-codes).
+     *
+     * @param path the path asked, which the reason names
      */
-    private static void requireSpiderSense(HttpResponse<String> response) {
-        if (!fromSpiderSense(response.headers().firstValue("content-type").orElse(null), response.body())) {
-            throw new Unreachable("HTTP " + response.statusCode());
+    private static void requireSpiderSense(HttpResponse<String> response, String path) {
+        if (!fromSpiderSense(response.statusCode(), response.headers().firstValue("content-type").orElse(null),
+                response.body())) {
+            throw Unreachable.answered(response.statusCode(), path);
         }
     }
 
     /** Whether an error body is one a Spider Sense sends, as {@link #requireSpiderSense} describes. */
-    static boolean fromSpiderSense(@Nullable String contentType, @Nullable String body) {
+    static boolean fromSpiderSense(int status, @Nullable String contentType, @Nullable String body) {
         if (body == null || body.isBlank()) {
             return false;
         }
         try {
-            if (Json.parse(body) instanceof Json.JsonObject object && object.has("error")) {
-                return true;
+            if (Json.parse(body) instanceof Json.JsonObject object) {
+                return object.size() == 1 && object.has("error");
             }
         } catch (RuntimeException e) {
             // Not JSON: only the text line below is ours.
         }
-        return plainText(contentType);
+        return status == 400 && plainText(contentType);
     }
 
     /**
@@ -287,7 +335,7 @@ final class Remote {
         }
         int status = response.statusCode();
         if (status == 404 || status == 405) {
-            throw new Unreachable("HTTP " + status);
+            throw Unreachable.answered(status, path);
         }
         if (status >= 400) {
             throw new Refused(base, "HTTP " + status + ", " + message(response));

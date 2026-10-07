@@ -63,7 +63,7 @@ final class Mcp {
             PrintStream err) {
         String url = options.valueOrNull("url");
         // --db says where to read, which leaves no question to ask a server.
-        String base = options.has("db") ? null : url == null ? defaultUrl : url;
+        String base = options.has("db") ? null : Remote.base(url == null ? defaultUrl : url);
         Mcp mcp = new Mcp(options, base, url != null, out, err);
         try {
             return mcp.serve(in);

@@ -668,7 +668,17 @@ When nothing answers at the default URL, the CLI opens the H2 database in proces
 After the application has crashed and taken the UI with it, `findings --since=start` still answers.
 
 "Nothing answers" means the connection was refused or not made within 2 seconds.
-A server that answers with an error in a shape that is not Spider Sense's, such as another application's HTML error page, counts as nothing answering, with the reason `HTTP <status>`, so it is never the exit `4` of a missing trace or mark.
+A server that answers with an error in a shape that is not Spider Sense's counts as nothing answering, with the reason `HTTP <status> for <path>`, so it is never the exit `4` of a missing trace or mark.
+Spider Sense's own error is the `{"error": "…"}` object with nothing beside it, or, from `sql`, the one line of a `400`.
+Another application's HTML error page is not, and neither is a Spring application's JSON error, which carries a `status` and a `path` beside its `error`.
+That is most often the application's own port named as `--url`, and the line says so:
+
+[source]
+----
+spider-sense: no Spider Sense at http://127.0.0.1:8082 (HTTP 404 for /api/status); is that the application's port?
+----
+
+A `--url` typed without a scheme, such as `127.0.0.1:4001`, is read as `http://127.0.0.1:4001`.
 A Spider Sense that accepted the connection and has not answered within 2 minutes is busy, not gone.
 The CLI then prints `spider-sense: the Spider Sense at <url> did not answer within 2 minutes` and exits `2` without reading the file, since reading it in process would be slower still.
 

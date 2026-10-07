@@ -168,7 +168,7 @@ public final class Cli {
             return Local.run(options, out, err);
         }
         String named = options.valueOrNull("url");
-        String base = named == null ? defaultUrl : named;
+        String base = Remote.base(named == null ? defaultUrl : named);
         try {
             return Remote.run(options, base, out, err);
         } catch (Remote.Busy e) {

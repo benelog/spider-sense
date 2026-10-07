@@ -396,7 +396,10 @@ class CliTest {
         other.start();
         try {
             String base = "http://127.0.0.1:" + other.getAddress().getPort();
+            Map<String, String> paths = Map.of("status", "/api/status", "findings", "/api/findings",
+                    "check", "/api/check", "trace", "/api/traces/" + "f".repeat(32));
             for (String command : List.of("status", "findings", "check", "trace")) {
+                String path = paths.get(command);
                 List<String> args = new ArrayList<>(List.of(command));
                 if ("trace".equals(command)) {
                     args.add("f".repeat(32));
@@ -404,11 +407,42 @@ class CliTest {
                 args.add("--url=" + base);
                 Run run = runAt(closedUrl(), args.toArray(new String[0]));
                 assertThat(run.exit()).as(command).isEqualTo(2);
-                assertThat(run.err()).as(command).isEqualTo("spider-sense: no Spider Sense at " + base + " (HTTP 404)\n");
+                assertThat(run.err()).as(command).isEqualTo("spider-sense: no Spider Sense at " + base + " (HTTP 404 for "
+                        + path + "); is that the application's port?\n");
                 assertThat(run.out()).as(command).isEmpty();
             }
         } finally {
             other.stop(0);
+        }
+    }
+
+    /**
+     * A Spring application's JSON 404 carries an {@code error} too, but beside a status and a
+     * path: it is the application's port, not a missing trace, and a URL typed without its scheme
+     * is still that server (cli.adoc#fallback).
+     */
+    @Test
+    void anApplicationsJsonErrorIsNotASpiderSensesAndAUrlNeedsNoScheme() throws IOException {
+        com.sun.net.httpserver.HttpServer app = com.sun.net.httpserver.HttpServer.create(
+                new java.net.InetSocketAddress(java.net.InetAddress.getLoopbackAddress(), 0), 0);
+        app.createContext("/", exchange -> {
+            byte[] body = ("{\"timestamp\":\"2026-10-08T00:00:00.000+00:00\",\"status\":404,"
+                    + "\"error\":\"Not Found\",\"path\":\"/api/status\"}").getBytes(UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(404, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        app.start();
+        try {
+            String hostAndPort = "127.0.0.1:" + app.getAddress().getPort();
+            Run run = runAt(closedUrl(), "status", "--url=" + hostAndPort);
+            assertThat(run.exit()).isEqualTo(2);
+            assertThat(run.err()).isEqualTo("spider-sense: no Spider Sense at http://" + hostAndPort
+                    + " (HTTP 404 for /api/status); is that the application's port?\n");
+            assertThat(run.out()).isEmpty();
+        } finally {
+            app.stop(0);
         }
     }
 

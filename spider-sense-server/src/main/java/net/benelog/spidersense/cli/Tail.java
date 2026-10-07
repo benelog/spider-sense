@@ -67,7 +67,7 @@ final class Tail {
     }
 
     static int run(Options options, String defaultUrl, PrintStream out, PrintStream err) {
-        String base = Remote.trimSlash(options.value("url", defaultUrl));
+        String base = Remote.base(options.value("url", defaultUrl));
         Watch watch = watch(options);
         // No read timeout: the stream is meant to stay open (--timeout closes it from the side).
         HttpRequest request = HttpRequest.newBuilder(URI.create(base + "/api/events"))
@@ -78,7 +78,7 @@ final class Tail {
             HttpResponse<InputStream> response =
                     Remote.send(client, base, request, HttpResponse.BodyHandlers.ofInputStream());
             if (response.statusCode() >= 400) {
-                return unreachable(err, new Remote.Unreachable("HTTP " + response.statusCode()), base);
+                return unreachable(err, Remote.Unreachable.answered(response.statusCode(), "/api/events"), base);
             }
             try (InputStream body = response.body()) {
                 return follow(body, watch, out);
@@ -259,7 +259,8 @@ final class Tail {
     }
 
     private static int unreachable(PrintStream err, Remote.Unreachable e, String base) {
-        err.println("spider-sense: " + e.line(base) + "; there is no file to tail");
+        // A server that answered gets the question about its port instead: the file is not the point.
+        err.println("spider-sense: " + e.line(base) + (e.answered() ? "" : "; there is no file to tail"));
         return Cli.USAGE;
     }
 

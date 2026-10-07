@@ -40,6 +40,21 @@ class RemoteTest {
         assertThat(Remote.reason(new HttpConnectTimeoutException(null))).isEqualTo("HttpConnectTimeoutException");
     }
 
+    /** Something that answered, only not as a Spider Sense, is asked about its port (cli.adoc#fallback). */
+    @Test
+    void aServerThatIsNotASpiderSenseIsAskedAboutItsPort() {
+        assertThat(Remote.Unreachable.answered(404, "/api/status?format=text").line("http://127.0.0.1:8082"))
+                .isEqualTo("no Spider Sense at http://127.0.0.1:8082 (HTTP 404 for /api/status);"
+                        + " is that the application's port?");
+    }
+
+    @Test
+    void aBaseUrlWithoutASchemeIsHttp() {
+        assertThat(Remote.base("127.0.0.1:4000/")).isEqualTo("http://127.0.0.1:4000");
+        assertThat(Remote.base("localhost:4000")).isEqualTo("http://localhost:4000");
+        assertThat(Remote.base("https://box:4000")).isEqualTo("https://box:4000");
+    }
+
     @Test
     void aBaseUrlLosesItsTrailingSlashes() {
         assertThat(Remote.trimSlash(" http://box:4000// ")).isEqualTo("http://box:4000");
@@ -75,11 +90,16 @@ class RemoteTest {
      */
     @Test
     void anErrorIsASpiderSensesOnlyInItsOwnShape() {
-        assertThat(Remote.fromSpiderSense("application/json", "{\"error\": \"No such trace: f\"}")).isTrue();
-        assertThat(Remote.fromSpiderSense("text/markdown; charset=utf-8", "only SELECT is allowed\n")).isTrue();
-        assertThat(Remote.fromSpiderSense("text/html", "<!DOCTYPE HTML><html>Error response</html>")).isFalse();
-        assertThat(Remote.fromSpiderSense("application/json", "{\"detail\": \"Not Found\"}")).isFalse();
-        assertThat(Remote.fromSpiderSense(null, "")).isFalse();
-        assertThat(Remote.fromSpiderSense(null, null)).isFalse();
+        assertThat(Remote.fromSpiderSense(404, "application/json", "{\"error\": \"No such trace: f\"}")).isTrue();
+        assertThat(Remote.fromSpiderSense(400, "text/markdown; charset=utf-8", "only SELECT is allowed\n")).isTrue();
+        assertThat(Remote.fromSpiderSense(404, "text/plain", "404 page not found\n"))
+                .as("only a 400 of ours is a line of text").isFalse();
+        assertThat(Remote.fromSpiderSense(404, "text/html", "<!DOCTYPE HTML><html>Error response</html>")).isFalse();
+        assertThat(Remote.fromSpiderSense(404, "application/json", "{\"detail\": \"Not Found\"}")).isFalse();
+        assertThat(Remote.fromSpiderSense(404, "application/json",
+                "{\"timestamp\": \"2026-10-08T00:00:00Z\", \"status\": 404, \"error\": \"Not Found\", \"path\": \"/api/status\"}"))
+                .as("a Spring application's error has more than the error").isFalse();
+        assertThat(Remote.fromSpiderSense(404, null, "")).isFalse();
+        assertThat(Remote.fromSpiderSense(404, null, null)).isFalse();
     }
 }
