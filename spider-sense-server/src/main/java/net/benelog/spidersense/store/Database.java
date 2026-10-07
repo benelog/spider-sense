@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.List;
@@ -312,18 +313,102 @@ public final class Database implements AutoCloseable {
     }
 
     /**
+     * The least a file must be for its close to consider compacting it, 256 MiB: a
+     * store of a day at local-development volumes stays under it, and reading the
+     * fill rates of a smaller one at exit would never change the answer.
+     */
+    static final long COMPACT_MIN_BYTES = 256L * 1024 * 1024;
+
+    /**
      * Closes the engine {@code connection} is a session of when it runs in this
      * process, as H2's own exit hook would: the other sessions go, and the file is
      * written and closed before this returns. A session of another process's
      * engine, joined through {@code AUTO_SERVER}, leaves that engine alone.
+     *
+     * <p>A file that has grown past its data is compacted on the way
+     * (storage.adoc#file-size): H2 appends a chunk per commit and reuses a chunk's
+     * space only once no statement reads the version it belongs to, so a store
+     * whose statements ran for seconds under load is mostly chunks nobody reads any
+     * more. H2's own close compacts for {@code MAX_COMPACT_TIME}, 200 ms, which moved
+     * nothing in a 3.2 GB file of 100 MiB of data; {@code SHUTDOWN COMPACT} rewrote
+     * it to 106 MiB in under two seconds. Its time grows with the live data, so it
+     * is asked for only when at least half of a file of {@link #COMPACT_MIN_BYTES}
+     * or more is dead.
      */
     void shutdownEngine(Connection connection) throws SQLException {
         if (!(connection.unwrap(JdbcConnection.class).getSession() instanceof SessionLocal)) {
             return;
         }
+        shutdownEngine(connection, compactsAtClose(connection));
+    }
+
+    /** The same, with the decision to compact made by the caller. */
+    void shutdownEngine(Connection connection, boolean compact) throws SQLException {
         try (Statement statement = connection.createStatement()) {
-            statement.execute("SHUTDOWN");
+            statement.execute(compact ? "SHUTDOWN COMPACT" : "SHUTDOWN");
         }
+    }
+
+    /**
+     * Whether the file is worth reopening at exit for a look at its fill rates: it is
+     * a file, and it is {@link #COMPACT_MIN_BYTES} or more. Nothing here needs the
+     * engine, so a flush at exit with nothing queued can ask before it connects.
+     */
+    boolean mayNeedCompaction() {
+        if (file == null) {
+            return false;
+        }
+        try {
+            return Files.exists(file) && Files.size(file) >= COMPACT_MIN_BYTES;
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    /**
+     * Whether a close should compact, read from H2's own numbers: the file size, the
+     * share of it that chunks occupy and the share of the chunks that is live. A
+     * failure to read them means no compaction, as the close before this one did.
+     */
+    private boolean compactsAtClose(Connection connection) {
+        if (file == null) {
+            return false;
+        }
+        long size = 0;
+        int fillRate = 100;
+        int chunksFillRate = 100;
+        try (Statement statement = connection.createStatement();
+                ResultSet rs = statement.executeQuery("SELECT SETTING_NAME, SETTING_VALUE"
+                        + " FROM INFORMATION_SCHEMA.SETTINGS WHERE SETTING_NAME IN"
+                        + " ('info.FILE_SIZE', 'info.FILL_RATE', 'info.CHUNKS_FILL_RATE')")) {
+            while (rs.next()) {
+                String name = rs.getString(1);
+                long value = Long.parseLong(rs.getString(2).trim());
+                switch (name) {
+                    case "info.FILE_SIZE" -> size = value;
+                    case "info.FILL_RATE" -> fillRate = (int) value;
+                    case "info.CHUNKS_FILL_RATE" -> chunksFillRate = (int) value;
+                    default -> { }
+                }
+            }
+        } catch (SQLException | RuntimeException e) {
+            LOG.log(System.Logger.Level.DEBUG, "Spider Sense could not read the store's fill rates: " + e.getMessage());
+            return false;
+        }
+        return compactsAtClose(size, COMPACT_MIN_BYTES, fillRate, chunksFillRate);
+    }
+
+    /**
+     * The decision: a file of {@code minBytes} or more of which less than half is
+     * live data, the live data being the chunks' share of the file times the live
+     * share of the chunks, both in percent.
+     */
+    static boolean compactsAtClose(long fileBytes, long minBytes, int fillRate, int chunksFillRate) {
+        if (fileBytes < minBytes) {
+            return false;
+        }
+        long live = fileBytes / 100 * fillRate / 100 * chunksFillRate;
+        return live < fileBytes / 2;
     }
 
     private boolean hasReader() {

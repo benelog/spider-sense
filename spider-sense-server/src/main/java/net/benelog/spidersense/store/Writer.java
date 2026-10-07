@@ -177,7 +177,9 @@ public final class Writer implements AutoCloseable {
      * Once the rows are in, the engine this process holds is shut down, so the
      * file is written and closed before the JVM halts, whichever of the two hooks
      * ran first. Nothing to write and nothing written since the exit began means
-     * nothing to close: H2's own hook does that.
+     * nothing to close: H2's own hook does that, unless the file is large enough
+     * that its close may need to compact it ({@link Database#mayNeedCompaction}),
+     * which H2's own close never does (storage.adoc#file-size).
      */
     void exit(Database database) {
         exiting = true;
@@ -186,7 +188,7 @@ public final class Writer implements AutoCloseable {
             unwritten.clear();
             queue.drainTo(batches);
             queuedRecords.set(0);
-            if (batches.isEmpty() && !wroteWhileExiting) {
+            if (batches.isEmpty() && !wroteWhileExiting && !database.mayNeedCompaction()) {
                 return;
             }
             Throwable failure = null;

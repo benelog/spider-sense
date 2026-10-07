@@ -275,7 +275,7 @@ H2 closes a file database from an exit hook of its own, and the JVM runs its hoo
 `DB_CLOSE_ON_EXIT=FALSE`, which turns H2's hook off, is refused beside `AUTO_SERVER=TRUE`, so the flush survives the race instead of avoiding it.
 It writes through a connection of its own outside the pool.
 Opened while H2 is closing the file, that connection waits for the close to finish and opens the file again, and a write that H2 closed under it is tried again the same way.
-Once the rows are in, the flush shuts down the engine this process holds, so the file is written and closed before the JVM halts, whichever hook ran first.
+Once the rows are in, the flush shuts down the engine this process holds, so the file is written and closed before the JVM halts, whichever hook ran first; a file that has grown past its data is compacted on the way (<<file-size,The size of the file>>).
 After the flush at exit has begun, the writer's thread writes nothing more, since writing through the pool after H2 closed the file would open it again behind that flush.
 
 Metric points are written on the same path.
@@ -378,7 +378,20 @@ It runs them in one transaction, after the writer of its process has flushed wha
 A flush between two of the deletes would otherwise keep its spans and lose its `trace` rows.
 A writer of another process sharing the file may still commit while the transaction runs, so the `trace` delete keeps a trace whose spans are still there (`DELETE FROM trace WHERE trace_id NOT IN (SELECT trace_id FROM span)`).
 At 24 hours of a few requests per second the file stays in the low hundreds of megabytes.
-H2 reclaims space on the next compaction, when the database closes.
+
+[#file-size]
+=== The size of the file
+
+H2 appends a chunk to the file for every commit, which is every flush: the new rows, and a copy of every index page that leads to them.
+A chunk's space is reused once no page in it is current any more and no statement is still reading the version it belongs to, 45 seconds after that (H2's `RETENTION_TIME`).
+The file therefore grows while a statement runs for seconds: every chunk written meanwhile is kept for it.
+Several agents asking for findings in a loop, each answer taking twenty seconds, grew a store of 100 MiB of data to 3.2 GB in forty minutes, and the same loop over a fresh store grew it 2.5 MB a second once a statement held a version for minutes.
+Every statement of Spider Sense's own is bounded by its window (<<reads,How it is read>>), and the findings of a 15-minute window of the shared demo answer in a few seconds; `sql` is bounded by nothing but what it asks.
+The file never shrinks while it is open, and an H2 close compacts for `MAX_COMPACT_TIME`, 200 ms, which moved nothing in that file.
+The flush at exit (<<writer,How it is written>>) therefore shuts the engine down itself when the file is 256 MiB or more, whether or not anything was queued, and reads H2's fill rates first: when less than half of the file is live data, the chunks' share of the file times the live share of the chunks, it closes with `SHUTDOWN COMPACT`, which rewrites the file to its live data.
+The 3.2 GB file became 106 MiB in under two seconds.
+A smaller file, or one that is mostly live, closes as before, since the rewrite costs time in proportion to the live data and would save little.
+A store that has grown therefore shrinks at the next exit of the application or standalone server that writes to it; deleting the file is the other way, since it is a cache.
 
 Retention is by time, with one row cap as a guard: `spidersense.retention.spans`, default 1,000,000, and `0` for none.
 After the time sweep, while `SELECT COUNT(*) FROM span` is above the cap, the sweeper takes the oldest hour of data (`MIN(start_ms)` of `span`, plus one hour) and deletes every row of `span`, `trace`, `log`, `metric_point` and `tingle` before that instant.

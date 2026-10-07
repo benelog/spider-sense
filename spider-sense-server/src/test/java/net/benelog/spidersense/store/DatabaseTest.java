@@ -3,6 +3,8 @@ package net.benelog.spidersense.store;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.ResultSet;
@@ -195,6 +197,46 @@ class DatabaseTest {
     private static String cacheSize(Database database) {
         return database.sql().queryOne("SELECT SETTING_VALUE FROM INFORMATION_SCHEMA.SETTINGS"
                 + " WHERE SETTING_NAME = 'CACHE_SIZE'", List.of(), rs -> rs.getString(1));
+    }
+
+    /**
+     * storage.adoc#retention: a close compacts a file of 256 MiB or more of which less
+     * than half is live data, the chunks' share of the file times the chunks' live share.
+     */
+    @Test
+    void aCloseCompactsALargeFileThatIsMostlyDeadChunks() {
+        long mib = 1024 * 1024;
+        // The store the shared demo left behind: 3.2 GB, 11% of it chunks, 85% of those live.
+        assertThat(Database.compactsAtClose(3_268_505_600L, Database.COMPACT_MIN_BYTES, 11, 85)).isTrue();
+        // Under load, with versions pinned: every block a chunk, a quarter of the chunks live.
+        assertThat(Database.compactsAtClose(512 * mib, Database.COMPACT_MIN_BYTES, 100, 24)).isTrue();
+        assertThat(Database.compactsAtClose(512 * mib, Database.COMPACT_MIN_BYTES, 90, 70))
+                .as("63% live is not worth a rewrite").isFalse();
+        assertThat(Database.compactsAtClose(200 * mib, Database.COMPACT_MIN_BYTES, 11, 85))
+                .as("a file under the floor is left to H2's own close").isFalse();
+    }
+
+    @Test
+    void shutdownCompactRewritesTheFileToItsLiveData() throws SQLException, IOException {
+        Path file = dir.resolve("grown.mv.db");
+        String url = "jdbc:h2:" + dir.resolve("grown") + ";NON_KEYWORDS=KEY,VALUE";
+        Database database = Database.open(url, file);
+        assertThat(database.mayNeedCompaction()).as("a small file is never reopened for a look").isFalse();
+        database.sql().update("INSERT INTO log (at_ms, service, severity_number, severity, body, attributes)"
+                + " SELECT X, 'svc', 9, 'INFO', REPEAT('x', 2000), '{}' FROM SYSTEM_RANGE(1, 20000)", List.of());
+        database.sql().update("DELETE FROM log WHERE at_ms > 100", List.of());
+        long grown = Files.size(file);
+
+        try (Connection connection = database.connectOutsidePool()) {
+            database.shutdownEngine(connection, true);
+        }
+
+        assertThat(Files.size(file)).as("rewritten to its live data").isLessThan(grown / 2);
+        try (Database reopened = Database.open(url, file)) {
+            assertThat(reopened.storage().fallback()).isFalse();
+            assertThat(reopened.sql().count("SELECT COUNT(*) FROM log", List.of())).isEqualTo(100);
+        }
+        database.close();
     }
 
     /**
