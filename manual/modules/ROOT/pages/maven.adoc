@@ -17,7 +17,7 @@ mvn spring-boot:run -Dspring-boot.run.agents=/home/me/tools/spider-sense.jar \
     -Dspring-boot.run.jvmArguments="-Dspidersense.port=4001 -Dspidersense.service=orders"
 ----
 
-Without `spidersense.service` the service is `unknown_service:java`, because Maven has no equivalent of the Gradle plugin's project-name default.
+Without `spidersense.service` the service is `spring.application.name`, and without that the directory of the project whose `target/classes` holds the main class, as xref:configuration.adoc#service-name[The service name] describes.
 Every property the jar takes is listed in xref:configuration.adoc#properties[Configuration].
 
 [#pom]

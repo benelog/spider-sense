@@ -134,8 +134,9 @@ public final class SpiderSenseAgent {
         setDefault(settings, "otel.exporter.otlp.protocol", "http/protobuf");
         setDefault(settings, "otel.exporter.otlp.endpoint", config.otlpEndpoint());
         if (config.service() != null) {
-            // Otherwise the agent's own default (unknown_service:java) stands, and the UI shows the
-            // main-class hint from the resource attributes instead.
+            // Otherwise the agent's detectors name the service (spring.application.name, the
+            // manifest), and the extension's ServiceNameDefault when they do not; a property set
+            // here would outrank them all (configuration.adoc#service-name).
             setDefault(settings, "otel.service.name", config.service());
         }
         // A local tool should show a request within a second or two.

@@ -26,6 +26,8 @@ dependencies {
     testImplementation "io.opentelemetry:opentelemetry-sdk-trace:${rootProject.ext.otelSdkVersion}"
     testImplementation "io.opentelemetry:opentelemetry-sdk-logs:${rootProject.ext.otelSdkVersion}"
     testImplementation "io.opentelemetry:opentelemetry-sdk-testing:${rootProject.ext.otelSdkVersion}"
+    // For ServiceNameDefaultTest: the resource provider SPI and the ConfigProperties it is asked with.
+    testImplementation "io.opentelemetry:opentelemetry-sdk-extension-autoconfigure:${rootProject.ext.otelSdkVersion}"
     testImplementation "io.opentelemetry.instrumentation:opentelemetry-instrumentation-api:${rootProject.ext.otelAgentVersion}"
     // For SchemaInstrumentationModuleTest, which checks the helper list the module hands the agent.
     testImplementation "io.opentelemetry.javaagent:opentelemetry-javaagent-extension-api:${rootProject.ext.otelAgentVersion}-alpha"

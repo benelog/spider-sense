@@ -59,7 +59,8 @@ The same keys, one per line, go in `spider-sense.properties` in the working dire
 | `spidersense.source.dirs` | `src/main/java` and `src/main/kotlin` of the working directory and of each immediate subdirectory | comma-separated source roots a code frame resolves under, for source lines, editor links and the suspect-change line; an empty value turns all three off |
 
 Every `otel.*` system property and `OTEL_*` environment variable of the OpenTelemetry agent still applies; Spider Sense only fills in defaults.
-`-Dotel.service.name=` is worth setting always, because the alternative is `unknown_service:java` and `--service=` then has nothing to select.
+Without `-Dotel.service.name=` the service is `spring.application.name` in a Spring Boot application, else the jar without its version (`build/libs/orders-0.1.0.jar` is `orders`), else the project whose `build/` or `target/` classes hold the main class.
+Set it when that is not the name `--service=` should select, such as two applications started from jars of the same name.
 
 ## Per build tool
 
@@ -202,7 +203,7 @@ A restart also writes an automatic `start` mark for the service, so `marks` show
 |---|---|
 | `status` says there is no Spider Sense at the url | Nothing is running on that port, or the application was started on another one. Pass `--url=http://127.0.0.1:<port>`, or read the file directly with `--db=` |
 | The application starts but `counts.spans` stays at 0 | The agent did not attach: `-javaagent:` was not on the JVM's own command line (a wrapper script, a container, an IDE run configuration). Check the application's own stdout, where a failure in `premain` is logged |
-| The service is called `unknown_service:java` | No `-Dotel.service.name=`; set it and restart |
+| The service is not called what you expected | Without `-Dotel.service.name=` the name is `spring.application.name`, else the jar or the project; set it and restart |
 | Port 4000 is already in use | Another Spider Sense, or another application under the agent, has it. Use `-Dspidersense.port=4001` and `--url=http://127.0.0.1:4001`, or point the second application at the first with `-Dspidersense.collector=http://127.0.0.1:4000` |
 | Two applications, and each trace stops at the service boundary | Both are embedding their own Spider Sense. Put them in forwarding mode against one standalone |
 | The application crashed and the UI went with it | The CLI reads the H2 file directly and says so on stderr; `findings --since=start` still answers |

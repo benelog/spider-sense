@@ -70,6 +70,7 @@ java -javaagent:spider-sense-agent/build/libs/spider-sense-0.1.0.jar -jar your-a
 ```
 
 Open <http://localhost:4000>.
+The service is named after `spring.application.name`, or else after the jar without its version; `-Dotel.service.name=` names it explicitly.
 
 | Mode | Command | When |
 |---|---|---|

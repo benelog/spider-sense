@@ -63,12 +63,13 @@ This is how a build outside this repository uses an unreleased version.
 
 [source,bash]
 ----
-java -javaagent:"$SENSE" -Dotel.service.name=my-app -jar your-app.jar
+java -javaagent:"$SENSE" -jar build/libs/my-app-0.1.0.jar
 ----
 
 Open http://localhost:4000[].
 The collector and the UI run inside the application's JVM, and the first request appears a second or two after it is served.
-Always set `-Dotel.service.name=`, because without it the service gets the OpenTelemetry agent's own default name, `unknown_service:java`.
+The service is named after `spring.application.name` in a Spring Boot application, and otherwise after the jar without its version, `my-app` here.
+`-Dotel.service.name=my-app` names it explicitly, and xref:configuration.adoc#service-name[The service name] has the whole order.
 
 `java -jar "$SENSE" status` checks the setup from a terminal.
 It names the mode, the port, the database file, the thresholds in force, the services seen and how many spans are stored.

@@ -83,8 +83,8 @@ The protocol the embedded receiver speaks.
 Or `spidersense.collector` when it is set.
 The launcher uses the literal address rather than `localhost`, which may resolve to `::1` while the UI binds `127.0.0.1`.
 `otel.service.name`::
-`spidersense.service` if given, else the OpenTelemetry agent's own default (`unknown_service:java`).
-The UI shows the jar or main class hint from the resource attributes when the name is the default.
+`spidersense.service` if given, else unset.
+Unset, the agent's detectors name the service, and the extension's <<service-name-default,service name default>> names it when they do not.
 `otel.bsp.schedule.delay=1000`, `otel.blrp.schedule.delay=1000`, `otel.metric.export.interval=5000`::
 A local tool should show a request within a second or two.
 `otel.metrics.exporter=otlp`, `otel.logs.exporter=otlp`, `otel.traces.exporter=otlp`::
@@ -191,6 +191,7 @@ The store records nothing when it cuts, so a statement of 2000 characters is sho
 
 The Gradle module `spider-sense-extension` is packaged as `spider-sense/extension.jar`, and is the only piece of Spider Sense that is not the stock OpenTelemetry agent.
 It exists for three things the agent cannot do: say where a slow query was issued from, say which indexes the table it read carries, and say which route of a Spider Silk application a request matched.
+It also names a service nothing else named (<<service-name-default,below>>).
 
 It registers, through `META-INF/services/io.opentelemetry.sdk.autoconfigure.spi.AutoConfigurationCustomizerProvider`, a span processor, `CallSiteSpanProcessor`, that implements `io.opentelemetry.sdk.trace.internal.ExtendedSpanProcessor` and applies its thresholds in `onEnding(ReadWriteSpan)`.
 That callback runs on the thread that is ending the span, before the span becomes immutable: the duration is already known and an attribute can still be set, which no ordinary `SpanProcessor` callback allows.
@@ -322,6 +323,18 @@ The module is therefore compiled `compileOnly` against `spider-silk-core` and sh
 `Route.path()` is the only member it calls, and every Spider Silk release has it.
 `SingleJarIT` runs a Spider Silk sample under the packaged jar and checks that two ids of one route are one endpoint whose spans carry the route.
 `-Dotel.instrumentation.spider-sense-spider-silk.enabled=false` switches the module off, as it does any agent instrumentation.
+
+[#service-name-default]
+=== The service name default
+
+Without `-Dotel.service.name`, the OpenTelemetry agent names a Spring Boot application after `spring.application.name`, a jar after the `Implementation-Title` of its manifest, and any other jar after its file name with the version left in, so `orders-0.1.0` is a new service on every release.
+A main class run from a class path, which is what an `installDist` start script and an IDE do, is `unknown_service:java`.
+
+The extension registers `ServiceNameDefault` through `META-INF/services/io.opentelemetry.sdk.autoconfigure.spi.ResourceProvider`.
+It is a `ConditionalResourceProvider` that applies only when neither `otel.service.name` nor `service.name` in `otel.resource.attributes` is configured and the resource built so far is still `unknown_service:java`.
+Its order is 900: after the agent's Spring Boot detector (100) and manifest detector (300), so either of them wins, and before the agent's jar-name detector (1000), which then finds the service named and leaves it.
+It reads `sun.java.command`: a jar is named without `.jar` and without a trailing version, and a main class after the class path entry that holds it, a jar named the same way or a classes directory named after the project above its `build/` or `target/`, and failing both after its simple name.
+xref:configuration.adoc#service-name[The service name] lists the whole order a user sees.
 
 [#extension-build]
 === How the extension is built

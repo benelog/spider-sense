@@ -173,8 +173,8 @@ A key in the file `-Dotel.javaagent.configuration-file` names counts as set too,
 | The literal address rather than `localhost`, which may resolve to `::1` while the UI binds `127.0.0.1`.
 
 | `otel.service.name`
-| `spidersense.service` when given, otherwise the agent's own default `unknown_service:java`
-| The UI shows the jar or main class hint from the resource attributes when the name is the default.
+| `spidersense.service` when given, otherwise unset
+| Left unset, the service is named by the OpenTelemetry agent's detectors and then by the jar or the project, as <<service-name,The service name>> describes.
 
 | `otel.bsp.schedule.delay`, `otel.blrp.schedule.delay`
 | `1000`
@@ -198,13 +198,31 @@ A key in the file `-Dotel.javaagent.configuration-file` names counts as set too,
 
 | `otel.javaagent.extensions`
 | The extension jar Spider Sense extracted, appended to a list you set
-| The extension records `code.stacktrace` on a slow query, on the fifth repeat of an N+1, and on a slow outbound call. It also reads the index catalog of the tables a slow statement touches, which is a finding's xref:findings.adoc#schema[schema block].
+| The extension records `code.stacktrace` on a slow query, on the fifth repeat of an N+1, and on a slow outbound call. It also reads the index catalog of the tables a slow statement touches, which is a finding's xref:findings.adoc#schema[schema block], and names a service nothing else named (<<service-name,The service name>>).
 |===
 
 Beyond this table, Spider Sense sets in the application's JVM only the `spidersense.*` keys of <<properties-file,the properties file>>, each as the system property of the same name, and no other system property.
 Its own server logs at `warn` through a `simplelogger.properties` only its class loader sees, so an application that logs through slf4j-simple keeps its own level, and `-Dorg.slf4j.simpleLogger.defaultLogLevel=` still raises the server's.
 
-Always set `-Dotel.service.name=`, because without it the service is `unknown_service:java` and the service filter has nothing to select.
+[#service-name]
+== The service name
+
+The first of these that names the service wins:
+
+. `otel.service.name`, or the environment variable `OTEL_SERVICE_NAME`.
+. `spidersense.service`, which the launcher hands on as `otel.service.name` when that is unset.
+. `service.name` in `otel.resource.attributes`, or in `OTEL_RESOURCE_ATTRIBUTES`.
+. `spring.application.name` of a Spring Boot application, which the OpenTelemetry agent reads from its configuration.
+. `Implementation-Title` in the manifest of the jar `java -jar` runs, which a Spring Boot jar carries.
+. The jar or the project the application was started from, which Spider Sense's extension fills in.
+
+The last one is Spider Sense's own, and it applies only when the service would otherwise be `unknown_service:java`.
+`java -jar build/libs/orders-0.1.0.jar` is `orders`: the jar's name without `.jar` and without a trailing version, so a release does not start a new service.
+A main class is named after the class path entry that holds it.
+A jar there is named the same way, which covers the start script of `installDist`, and a classes directory under `build/` or `target/` is named after its project, so `orders/build/classes/java/main` is `orders`.
+Failing both, the main class's simple name is the service.
+
+Set `-Dotel.service.name=` when the default is not the name you want, such as two applications started from jars of the same name.
 `-Dspidersense.service=` does the same thing in agent mode.
 
 [#ignored-endpoints]

@@ -83,7 +83,7 @@ The application has to be restarted with the agent on its command line; Spider S
 Useful properties, all after `-javaagent:` on the same command line:
 
 - `-Dspidersense.port=4001` when 4000 is taken, and every CLI call then needs `--url=http://127.0.0.1:4001`; once that application has stopped, `no Spider Sense at <url>` says so, and `--db=<path>` reads its database instead.
-- `-Dotel.service.name=spring-orders` so the service has a name instead of `unknown_service:java`; `-Dspidersense.service=` does the same.
+- `-Dotel.service.name=spring-orders` to choose the service's name; without it the name is `spring.application.name`, else the jar or the project the application was started from; `-Dspidersense.service=` does the same.
 - `-Dspidersense.collector=http://127.0.0.1:4000` to forward to a Spider Sense running elsewhere instead of hosting one, which is how two applications share a UI and how a trace that crosses them shows up in one place.
 - `-Dspidersense.app.packages=com.acme` when a finding's `code` frames come out empty or full of framework classes.
 - `-Dspidersense.source.dirs=core/src/main/java,web/src/main/java` when the sources are not under `src/main/java` or `src/main/kotlin` of the working directory or of one of its immediate subdirectories; the frames then resolve for the suspect-change lines and the UI's source view.
