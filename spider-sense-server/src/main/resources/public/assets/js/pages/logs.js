@@ -6,6 +6,7 @@ import { h, fill, icon, panel, table, serviceChip, severityChip, debounce, spinn
 import { pageLoader } from '../page.js';
 import { stackTrace } from '../frames.js';
 import { timeMs, bothTimes, count, shortId } from '../format.js';
+import { fitTable } from '../columns.js';
 
 const SEVERITIES = ['TRACE', 'DEBUG', 'INFO', 'WARN', 'ERROR'];
 const LIMIT = 200;
@@ -87,13 +88,13 @@ export function render(root, ctx) {
     body, foot));
 
   const columns = [
-    { key: 'at', label: 'Time', sortable: false, width: '112px', render: (log) => h('span.mono', { title: bothTimes(log.at) }, timeMs(log.at)) },
-    { key: 'severity', label: 'Level', sortable: false, width: '64px', render: (log) => severityChip(log.severity) },
-    { key: 'service', label: 'Service', sortable: false, width: '148px', render: (log) => serviceChip(log.service) },
-    { key: 'logger', label: 'Logger', sortable: false, width: '180px', render: (log) => h('span.cell-ellipsis.mono.muted', { title: log.logger }, log.logger || '-') },
+    { key: 'at', label: 'Time', sortable: false, width: '96px', render: (log) => h('span.mono', { title: bothTimes(log.at) }, timeMs(log.at)) },
+    { key: 'severity', label: 'Level', sortable: false, width: '58px', render: (log) => severityChip(log.severity) },
+    { key: 'service', label: 'Service', sortable: false, width: '130px', render: (log) => serviceChip(log.service) },
+    { key: 'logger', label: 'Logger', sortable: false, width: '170px', render: (log) => h('span.cell-ellipsis.mono.muted', { title: log.logger }, log.logger || '-') },
     { key: 'body', label: 'Message', sortable: false, cls: 'wide', render: (log) => h('span.log-body', log.body) },
     {
-      key: 'traceId', label: 'Trace', sortable: false, width: '88px',
+      key: 'traceId', label: 'Trace', sortable: false, width: '80px',
       render: (log) => (log.traceId
         ? h('a.mono', { href: router.detailHref('traces', log.traceId), title: log.traceId, onclick: (e) => e.stopPropagation() }, shortId(log.traceId))
         : h('span.muted', '-')),
@@ -110,6 +111,7 @@ export function render(root, ctx) {
         expanded,
         empty: 'No log in this window.',
       });
+      fitTable(node, columns);
       fill(body, node);
     }
     node.setRows(rows);

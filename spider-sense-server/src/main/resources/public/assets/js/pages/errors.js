@@ -4,7 +4,7 @@ import * as api from '../api.js';
 import * as router from '../router.js';
 import { h, fill, panel, table, chip, spinner } from '../ui.js';
 import { pageLoader } from '../page.js';
-import { errorTypeColumn, messageColumn, serviceColumn, seenColumn } from '../columns.js';
+import { errorTypeColumn, messageColumn, serviceColumn, seenColumn, fitTable } from '../columns.js';
 import { sparkline, themeColors } from '../charts.js';
 import { count } from '../format.js';
 
@@ -17,12 +17,12 @@ export function render(root, ctx) {
   root.appendChild(panel({ title: 'Errors' }, body));
 
   const columns = [
-    errorTypeColumn({ width: '260px' }),
+    errorTypeColumn({ width: '190px' }),
     messageColumn(160),
-    serviceColumn(),
-    { key: 'count', label: 'Count', align: 'right', sortable: false, width: '68px', render: (e) => h('span.bad', count(e.count)) },
+    serviceColumn('120px'),
+    { key: 'count', label: 'Count', align: 'right', sortable: false, width: '56px', render: (e) => h('span.bad', count(e.count)) },
     {
-      key: 'endpoints', label: 'Endpoints', sortable: false, width: '220px',
+      key: 'endpoints', label: 'Endpoints', sortable: false, width: '150px',
       render: (e) => {
         const list = e.endpoints || [];
         return h('span.row', { style: { gap: '4px' } },
@@ -31,11 +31,11 @@ export function render(root, ctx) {
       },
     },
     {
-      key: 'series', label: 'Occurrences', sortable: false, width: '130px',
+      key: 'series', label: 'Occurrences', sortable: false, width: '134px',
       render: (e) => sparkline(e.series || [], { color: errColor, label: (e.type || 'error') + ' occurrences over the window' }),
     },
-    seenColumn('firstSeen', 'First seen'),
-    seenColumn(),
+    seenColumn('firstSeen', 'First seen', '84px'),
+    seenColumn('lastSeen', 'Last seen', '84px'),
   ];
 
   const opts = {
@@ -49,6 +49,7 @@ export function render(root, ctx) {
     errColor = themeColors().err;
     if (!node) {
       node = table(columns, { ...opts, rows });
+      fitTable(node, columns);
       fill(body, node);
     } else {
       node.setRows(rows);

@@ -68,6 +68,19 @@ export function countColumn(key, label, width = '72px', extra = {}) {
 }
 
 /**
+ * Makes a list table fit its panel (ui.adoc#narrow-screens): the columns keep their widths, the
+ * wide one takes the rest and cuts its text, but never gets less than `wideMin`, below which
+ * the table scrolls sideways instead. Returns the table's wrap.
+ */
+export function fitTable(node, columns, wideMin = 200) {
+  const fixed = columns.reduce((sum, col) => sum + (parseFloat(col.width) || 0), 0);
+  node.classList.add('table-fit');
+  const t = node.querySelector('table');
+  if (t) t.style.minWidth = fixed + wideMin + 'px';
+  return node;
+}
+
+/**
  * An endpoint's name as a link to its page, or plain text when it has no page: `(no endpoint)`,
  * or an entry span with no endpoint name (api.adoc#query-stats).
  */

@@ -7,7 +7,7 @@ import { h, fill, panel, table, chip, serviceChip, markDialog, copyBlock, spinne
 import { pageLoader } from '../page.js';
 import { commandLine } from '../copyas.js';
 import { oneLineSql, storedSql } from '../sql.js';
-import { errorTypeColumn, messageColumn, serviceColumn } from '../columns.js';
+import { errorTypeColumn, messageColumn, serviceColumn, fitTable } from '../columns.js';
 import { count, dur, rate, apdex, time } from '../format.js';
 
 const VERDICTS = ['worse', 'new', 'same', 'better', 'gone'];
@@ -30,7 +30,8 @@ function beforeAfterCell(before, after, format) {
 /** One measure of a row's two sides, `before → after`. */
 function sidesColumn(key, label, format) {
   const sideValue = (side) => (side ? side[key] : null);
-  return { key, label, align: 'right', render: (r) => beforeAfterCell(sideValue(r.before), sideValue(r.after), format) };
+  // Narrow enough for the tables to fit 1280 px: a pair that does not fit wraps its after value.
+  return { key, label, align: 'right', width: '86px', render: (r) => beforeAfterCell(sideValue(r.before), sideValue(r.after), format) };
 }
 
 /** More than a fifth bigger and bigger by at least 10 ms: Compare.java's bounds for a p95. */
@@ -155,7 +156,7 @@ export function render(root, ctx) {
   // --- the tables ---------------------------------------------------------
 
   const endpointColumns = [
-    { key: 'verdict', label: '', width: '78px', render: (r) => verdictChip(r.verdict) },
+    { key: 'verdict', label: '', width: '70px', render: (r) => verdictChip(r.verdict) },
     {
       key: 'name', label: 'Endpoint', cls: 'wide',
       render: (r) => h('span.row', { style: { gap: '8px' } },
@@ -171,7 +172,7 @@ export function render(root, ctx) {
   ];
 
   const queryColumns = [
-    { key: 'verdict', label: '', width: '78px', render: (r) => verdictChip(r.verdict) },
+    { key: 'verdict', label: '', width: '70px', render: (r) => verdictChip(r.verdict) },
     {
       key: 'statement', label: 'Statement', cls: 'wide',
       render: (r) => h('span.row', { style: { gap: '8px' } },
@@ -184,11 +185,11 @@ export function render(root, ctx) {
   ];
 
   const errorColumns = [
-    { key: 'verdict', label: '', width: '78px', render: (r) => verdictChip(r.verdict) },
-    errorTypeColumn({ width: '260px' }),
+    { key: 'verdict', label: '', width: '70px', render: (r) => verdictChip(r.verdict) },
+    errorTypeColumn({ width: '220px' }),
     messageColumn(160),
-    serviceColumn(),
-    { key: 'count', label: 'Count', align: 'right', width: '120px', render: (r) => beforeAfterCell(r.before, r.after, count) },
+    serviceColumn('130px'),
+    { key: 'count', label: 'Count', align: 'right', width: '110px', render: (r) => beforeAfterCell(r.before, r.after, count) },
   ];
 
   const nodes = {};
@@ -196,6 +197,7 @@ export function render(root, ctx) {
   function paintTable(key, title, columns, rows, opts) {
     if (!nodes[key]) {
       const node = table(columns, { ...opts, rows });
+      fitTable(node, columns);
       nodes[key] = { table: node, panel: panel({ title }, node) };
     } else {
       nodes[key].table.setRows(rows);

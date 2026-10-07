@@ -1,9 +1,9 @@
 // columns.js and buckets.apdexCell: the cells one API shape gets on every page.
-import './fake-dom.js';
+import './browser-env.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  statementColumn, errorTypeColumn, messageColumn, seenColumn, durationColumn, countColumn,
+  statementColumn, errorTypeColumn, messageColumn, seenColumn, durationColumn, countColumn, fitTable, endpointCell,
 } from '../../main/resources/public/assets/js/columns.js';
 import { apdexCell } from '../../main/resources/public/assets/js/buckets.js';
 
@@ -53,4 +53,22 @@ test('apdexCell grades as apdexClass does', () => {
   assert.equal(apdexCell(0.5).className, 'bad');
   assert.equal(apdexCell(0.5).textContent, '0.50');
   assert.equal(apdexCell(0.95, 'b').tagName, 'B');
+});
+
+test('fitTable fixes the layout and keeps the wide column at least its minimum (ui.adoc#narrow-screens)', () => {
+  const wrap = document.createElement('div');
+  wrap.appendChild(document.createElement('table'));
+  const columns = [statementColumn(), durationColumn('avgMs', 'avg', '70px'), countColumn('calls', 'Calls', '54px')];
+  assert.equal(fitTable(wrap, columns, 200), wrap);
+  assert.ok(wrap.classList.contains('table-fit'));
+  assert.equal(wrap.querySelector('table').style.minWidth, '324px');
+});
+
+test('endpointCell links an endpoint with a page and leaves the others plain (api.adoc#callers)', () => {
+  const linked = endpointCell('GET /orders/{id}', 'abc123');
+  assert.equal(linked.tagName, 'A');
+  assert.equal(linked.getAttribute('href'), '#/endpoints/abc123');
+  const plain = endpointCell('(no endpoint)', null);
+  assert.equal(plain.tagName, 'SPAN');
+  assert.equal(plain.textContent, '(no endpoint)');
 });

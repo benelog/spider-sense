@@ -299,6 +299,12 @@ A feed gives the relative time, "12 s ago", a table the absolute one, and a tool
 
 The whole UI works at 360 px wide: a table scrolls horizontally inside its panel, the charts shrink, and the drawer becomes a full-screen sheet.
 
+The Queries, Logs, Errors and Compare tables fit the page at 1280 px and wider, so every column is on screen without scrolling.
+Their columns have fixed widths, and the wide column takes the rest: a statement, an error message or an endpoint is cut with an ellipsis, the whole of it in the title, and a log body wraps.
+No other cell widens the table: its text is cut the same way.
+Below 200 px for the wide column the table scrolls instead.
+A table that scrolls sideways fades at the edge there is more of, and the fade goes once that edge is reached.
+
 [#accessibility]
 === Accessibility
 

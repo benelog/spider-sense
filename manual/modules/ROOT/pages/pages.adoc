@@ -148,7 +148,7 @@ Worse means the errors grew or the p95 grew by more than 20% and 10 ms, by the A
 Better is the same rule the other way.
 
 . *Endpoints* is a table in the API's order, worst first: a verdict chip (`worse` in `--err`, `better` in `--ok`, `new` and `gone` in `--text-muted`, `same` plain), the name with its service chip, then `calls`, `errors`, `p50`, `p95`, `max`, `db calls / request`, and `db ms / request`.
-Every cell reads `before → after`, with `—` for a side that has no value.
+Every cell reads `before → after`, with `—` for a side that has no value, and a pair too wide for its column puts the after value under the before one.
 A row click opens the endpoint page.
 
 . *Queries* has the same shape, with the statement in monospace on one line and its full text in the title, marked as on the queries page when the store may have cut it, then `calls`, `calls / request`, `p95`, and `total`.
@@ -376,8 +376,8 @@ The panel head links to the Logs page filtered by the trace id, over all service
 image::queries.jpg[Queries grouped by statement with calls, average, p95, max and total time,800]
 
 Above the table are a sort selector (total, avg, p95, max, calls) and a text filter on the statement.
-The table gives the statement in monospace on one line, with the full text in its tooltip, which ends in `… (cut at 2,000 characters)` when the store may have cut the statement (xref:api.adoc#query-stats[`statementCut`]), then the system chip, the operation, the table, the unindexed columns, calls, avg, p95, max, total, the slow calls (in `--accent` when there are any), and when it was last seen.
-The statement cell is the wide one.
+The table gives the statement in monospace on one line, with the full text in its tooltip, which ends in `… (cut at 2,000 characters)` when the store may have cut the statement (xref:api.adoc#query-stats[`statementCut`]), then one *Op · Table* cell with the operation, the table dimmed and the system dimmer (all three in its title), the unindexed columns, calls, avg, p95, max, total, the slow calls (in `--accent` when there are any), and when it was last seen.
+The statement cell is the wide one: it takes the width the other columns leave and cuts its text with an ellipsis, so the table fits the page (xref:ui.adoc#narrow-screens[Narrow screens]).
 
 *Unindexed* is the xref:findings.adoc#schema[schema block]'s `unindexed`, the columns the statement filters on that no index leads with.
 They are joined by `, ` in `--accent` and cut to the column width, with the full list in the title.

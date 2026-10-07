@@ -2,9 +2,9 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, icon, panel, table, chip, debounce, spinner } from '../ui.js';
+import { h, fill, icon, panel, table, debounce, spinner } from '../ui.js';
 import { pageLoader } from '../page.js';
-import { statementColumn, serviceColumn, seenColumn, durationColumn, countColumn } from '../columns.js';
+import { statementColumn, serviceColumn, seenColumn, durationColumn, countColumn, fitTable } from '../columns.js';
 import { count } from '../format.js';
 
 const SORTS = [
@@ -26,6 +26,14 @@ function unindexedCell(schema) {
   if (!columns.length) return h('span.muted', 'none');
   const text = columns.join(', ');
   return h('span.cell-ellipsis.mono.accent', { title: text }, text);
+}
+
+/** `SELECT orders h2`: the operation, the table dimmed, the system dimmer, all three in the title. */
+function opTableCell(q) {
+  const title = [q.operation, q.table, q.system ? '(' + q.system + ')' : null].filter(Boolean).join(' ');
+  return h('span.op-table.mono', { title },
+    q.operation || '-', ' ', h('span.muted', q.table || '-'),
+    q.system ? h('span.muted', { style: { opacity: 0.7 } }, ' ' + q.system) : null);
 }
 
 export function render(root, ctx) {
@@ -55,20 +63,20 @@ export function render(root, ctx) {
     h('div.querybar', h('div.search', icon('search'), input), h('label', 'Sort', sortSelect)),
     body));
 
+  // Fixed widths that leave the statement the rest of the panel, so the table fits 1280 px
+  // (ui.adoc#narrow-screens).
   const columns = [
     statementColumn(220),
-    { key: 'system', label: 'System', sortable: false, width: '68px', render: (q) => (q.system ? chip(q.system) : h('span.muted', '-')) },
-    { key: 'operation', label: 'Op', sortable: false, width: '68px', render: (q) => h('span.mono', q.operation || '-') },
-    { key: 'table', label: 'Table', sortable: false, width: '110px', render: (q) => h('span.cell-ellipsis.mono.muted', { title: q.table || '' }, q.table || '-') },
-    { key: 'unindexed', label: 'Unindexed', sortable: false, width: '140px', render: (q) => unindexedCell(q.schema) },
-    serviceColumn(),
-    countColumn('calls', 'Calls', '70px'),
-    durationColumn('avgMs', 'avg'),
-    durationColumn('p95Ms', 'p95'),
-    durationColumn('maxMs', 'max'),
-    durationColumn('totalMs', 'Total', '84px'),
-    { key: 'slowCalls', label: 'Slow', align: 'right', sortable: false, width: '62px', render: (q) => (q.slowCalls ? h('span.accent', count(q.slowCalls)) : h('span.muted', '0')) },
-    seenColumn('lastSeen', 'Last seen', '88px'),
+    { key: 'operation', label: 'Op · Table', sortable: false, width: '130px', render: opTableCell },
+    { key: 'unindexed', label: 'Unindexed', sortable: false, width: '96px', render: (q) => unindexedCell(q.schema) },
+    serviceColumn('116px'),
+    countColumn('calls', 'Calls', '54px'),
+    durationColumn('avgMs', 'avg', '70px'),
+    durationColumn('p95Ms', 'p95', '70px'),
+    durationColumn('maxMs', 'max', '70px'),
+    durationColumn('totalMs', 'Total', '72px'),
+    { key: 'slowCalls', label: 'Slow', align: 'right', sortable: false, width: '44px', render: (q) => (q.slowCalls ? h('span.accent', count(q.slowCalls)) : h('span.muted', '0')) },
+    seenColumn('lastSeen', 'Last seen', '84px'),
   ];
 
   const opts = {
@@ -86,6 +94,7 @@ export function render(root, ctx) {
   function paint() {
     if (!node) {
       node = table(columns, { ...opts, rows: filtered() });
+      fitTable(node, columns);
       fill(body, node);
     } else {
       node.setRows(filtered());
