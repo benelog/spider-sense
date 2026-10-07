@@ -5,6 +5,7 @@ import * as api from '../api.js';
 import * as router from '../router.js';
 import { h, fill, panel, table, chip, serviceChip, markDialog, copyBlock, spinner, emptyState } from '../ui.js';
 import { pageLoader } from '../page.js';
+import { commandLine } from '../copyas.js';
 import { oneLineSql, storedSql } from '../sql.js';
 import { errorTypeColumn, messageColumn, serviceColumn } from '../columns.js';
 import { count, dur, rate, apdex, time } from '../format.js';
@@ -148,7 +149,7 @@ export function render(root, ctx) {
       'Compare needs two marks: one before the change and one after it. Mark a moment, exercise the application, change the code, mark again.',
       h('div', { style: { display: 'grid', gap: '10px', justifyItems: 'center', width: 'min(640px, 100%)' } },
         h('button.btn.btn-primary', { type: 'button', onclick: () => markDialog({ onDone: () => loadMarks() }) }, 'Mark this moment'),
-        copyBlock('java -jar spider-sense.jar mark before')))));
+        copyBlock(commandLine('mark before'))))));
   }
 
   // --- the tables ---------------------------------------------------------

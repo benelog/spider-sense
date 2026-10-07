@@ -131,7 +131,7 @@ Until lists the same marks plus `now`, which is the default.
 The three selectors live in the hash query, so a comparison can be shared as a URL.
 When both are set, the page fetches `GET /api/compare?before&after&until&service`.
 When the URL names neither window, the page takes the two newest marks, the newest as After and the one before it as Before, and fills the selects.
-With fewer than two marks the page says two marks are needed, makes the xref:ui.adoc#top-bar[Mark] button's dialog reachable from there, and shows the CLI's `mark before` line in a copyable block.
+With fewer than two marks the page says two marks are needed, makes the xref:ui.adoc#top-bar[Mark] button's dialog reachable from there, and shows the CLI's `mark before` line in a copyable block, naming the jar and the `--url` as <<copy-as-markdown,Copy CLI line>> does.
 
 Four panels follow.
 
@@ -445,6 +445,7 @@ Copies `java -jar <jar> <command> --since=<from> --until=<to>`, with the window'
 The Findings page uses `findings`, with `--service=<name>` when the top bar's service filter is on.
 The error page uses `errors` and the query page `queries`, each with `--service=` the group's service.
 `<jar>` is `/api/status.jar`, the jar the server was started from, single-quoted when it holds a character a shell would read, and `spider-sense.jar` when the server does not know its jar.
+The line ends in `--url=<endpoint>`, `/api/status.endpoint`, when that is not `http://127.0.0.1:4000`, the CLI's default, so the line asks the Spider Sense the page came from.
 
 The window is the one the page last loaded, so both answer for what is on the screen rather than for a moment later.
 

@@ -204,6 +204,28 @@ export function collectorBase() {
   return (state.status || {}).endpoint || location.origin;
 }
 
+// --- what a command line names --------------------------------------------
+
+/** The Spider Sense the CLI asks, and an application started under the agent opens, when told no other (cli.adoc). */
+export const DEFAULT_URL = 'http://127.0.0.1:4000';
+
+/** Whether a base URL is DEFAULT_URL, so a command line can leave it out. */
+export function isDefaultUrl(base) {
+  return String(base || '').replace(/\/+$/, '') === DEFAULT_URL;
+}
+
+/** A word as the shell reads it: as it is when `safe` matches it, in single quotes otherwise. */
+export function shellWord(word, safe = /^[\w@%+=:,./-]+$/) {
+  const text = String(word);
+  return safe.test(text) ? text : "'" + text.replace(/'/g, "'\\''") + "'";
+}
+
+/** The jar a command line names: /api/status.jar, else the name the manual uses. */
+export function jarOf(status = state.status) {
+  const path = (status || {}).jar;
+  return path ? shellWord(path) : 'spider-sense.jar';
+}
+
 // --- reads --------------------------------------------------------------
 
 export function overview(opts) { return getJSON('/api/overview', params({}, opts)); }
