@@ -64,6 +64,7 @@ An option that takes a value is a usage error without one, so a bare `--since` i
 | Form | Example | Meaning |
 |---|---|---|
 | duration | `30s`, `5m`, `2h`, `1d` | that long before `until` (for `since`) or before now (for `until`) |
+| date-time | `2026-10-08T05:50:00+09:00`, `2026-10-08T05:50:00` | the instant, in ISO-8601; without an offset, in this machine's time zone, so the time a heading prints can be pasted back |
 | epoch milliseconds | `1758000000000` | the instant, 13 or more digits |
 | mark name | `before`, `after-fix` | the newest mark with that name |
 | `start` | `start` | the newest automatic start mark, of `--service` when one is given |
@@ -557,8 +558,9 @@ Common options:
   --hide-acked         findings only: leave acknowledged findings out
   --no-git             findings only: no suspect-change line under the code frames
 
-A selector is a duration (30s, 5m, 2h, 1d), epoch milliseconds, a mark name,
-start (the newest automatic start mark) or now.
+A selector is a duration (30s, 5m, 2h, 1d), a date-time (2026-10-08T05:50:00,
+with or without an offset), epoch milliseconds, a mark name, start (the newest
+automatic start mark) or now.
 
 With no --url and nothing listening, the database file is read in process; the
 thresholds are then --slow.request.ms, --slow.query.ms and --app.packages, since

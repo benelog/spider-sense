@@ -3,6 +3,9 @@ package net.benelog.spidersense.query;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -34,6 +37,29 @@ class SelectorsTest {
     void epochMillisecondsAndNowAreTakenAsWritten() {
         assertThat(selectors.resolve("1758000000000", NOW, null)).isEqualTo(1_758_000_000_000L);
         assertThat(selectors.resolve("now", NOW - 60_000, null)).isEqualTo(NOW);
+    }
+
+    @Test
+    void aDateTimeIsTakenWithItsOffsetOrInThisMachinesZone() {
+        assertThat(selectors.resolve("2026-10-08T05:50:00+09:00", NOW, null)).isEqualTo(1_791_406_200_000L);
+        assertThat(selectors.resolve("2026-10-07T20:50:00Z", NOW, null)).isEqualTo(1_791_406_200_000L);
+        assertThat(selectors.resolve("2026-10-08T05:50:00 09:00", NOW, null))
+                .as("the plus a query string decoded as a space")
+                .isEqualTo(1_791_406_200_000L);
+        assertThat(selectors.resolve("2026-10-08T05:50:00.250+09:00", NOW, null))
+                .as("the milliseconds a mark's line prints")
+                .isEqualTo(1_791_406_200_250L);
+        assertThat(selectors.resolve("2026-10-08T05:50:00", NOW, null))
+                .as("no offset is this machine's zone, the one the headings print")
+                .isEqualTo(LocalDateTime.of(2026, 10, 8, 5, 50).atZone(ZoneId.systemDefault())
+                        .toInstant().toEpochMilli());
+
+        assertThatThrownBy(() -> selectors.resolve("2026-13-08T05:50:00", NOW, null))
+                .isInstanceOf(Selectors.BadSelector.class)
+                .hasMessageStartingWith("Not a date-time: 2026-13-08T05:50:00");
+        assertThatThrownBy(() -> selectors.resolve("2026-10-08T0550", NOW, null))
+                .as("a date-time is never read as a mark name")
+                .isInstanceOf(Selectors.BadSelector.class);
     }
 
     @Test

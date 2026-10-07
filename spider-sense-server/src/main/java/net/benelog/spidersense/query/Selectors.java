@@ -1,5 +1,9 @@
 package net.benelog.spidersense.query;
 
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeParseException;
 import java.util.function.LongSupplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -9,7 +13,7 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * The time selectors of the agent interface: {@code since=15m}, {@code until=now},
- * {@code since=before}, {@code since=start}.
+ * {@code since=before}, {@code since=start}, {@code since=2026-10-08T05:50:00}.
  *
  * <p>An agent thinks in "since I changed the code", not in epoch milliseconds, so
  * every agent-facing endpoint takes a selector where the UI takes {@code from} and
@@ -51,6 +55,12 @@ public final class Selectors {
     private static final Pattern DURATION = Pattern.compile("(\\d{1,9})([smhd])");
     private static final Pattern EPOCH = Pattern.compile("\\d{13,}");
 
+    /**
+     * What begins as an ISO-8601 date-time, which no mark name can be: a colon is not
+     * one of its characters, so the time a heading prints can be pasted back.
+     */
+    private static final Pattern DATE_TIME = Pattern.compile("\\d{4}-\\d{2}-\\d{2}T.*");
+
     private final Marks marks;
     private final LongSupplier clock;
 
@@ -85,8 +95,8 @@ public final class Selectors {
     private long resolve(@Nullable String selector, long anchor, long now, @Nullable String service) {
         String value = selector == null ? null : selector.trim();
         if (value == null || value.isEmpty()) {
-            throw new BadSelector("An empty time selector: expected a duration, epoch milliseconds,"
-                    + " now, start or a mark name");
+            throw new BadSelector("An empty time selector: expected a duration, a date-time,"
+                    + " epoch milliseconds, now, start or a mark name");
         }
         if ("now".equals(value)) {
             return now;
@@ -102,9 +112,13 @@ public final class Selectors {
                 throw new BadSelector("Epoch milliseconds out of range: " + value);
             }
         }
+        if (DATE_TIME.matcher(value).matches()) {
+            return dateTime(value);
+        }
         if (!Marks.NAME.matcher(value).matches()) {
             throw new BadSelector("Not a time selector: " + value
-                    + " (expected a duration like 5m, epoch milliseconds, now, start or a mark name)");
+                    + " (expected a duration like 5m, a date-time like 2026-10-08T05:50:00,"
+                    + " epoch milliseconds, now, start or a mark name)");
         }
         Marks.Mark mark = marks.newest(value, service);
         if (mark == null) {
@@ -112,6 +126,28 @@ public final class Selectors {
                     + (service == null ? "" : " for service " + service));
         }
         return mark.at();
+    }
+
+    /**
+     * An ISO-8601 date-time as an instant: with an offset or {@code Z} as written, and
+     * without one in this process's time zone, which is the zone the text renderings print
+     * their times in (marks-and-compare.adoc#time-selectors).
+     *
+     * <p>A space is read as the plus of an offset, because an unencoded {@code +09:00} in a
+     * query string arrives as {@code  09:00}, and a date-time has no space of its own.
+     */
+    private static long dateTime(String written) {
+        String value = written.replace(' ', '+');
+        try {
+            return OffsetDateTime.parse(value).toInstant().toEpochMilli();
+        } catch (DateTimeParseException withOffset) {
+            try {
+                return LocalDateTime.parse(value).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
+            } catch (DateTimeParseException local) {
+                throw new BadSelector("Not a date-time: " + written + " (a date-time is 2026-10-08T05:50:00,"
+                        + " with an offset such as +09:00 or Z, or without one in this machine's time zone)");
+            }
+        }
     }
 
     /**

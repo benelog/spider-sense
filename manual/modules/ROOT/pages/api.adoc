@@ -568,8 +568,9 @@ The semantics are specified elsewhere in this manual: the time selectors and ver
 
 `since` and `until` are accepted by the endpoints below and by every windowed endpoint of this page, as an alternative to `from` and `to`.
 `from` and `to` win when both are given.
-A selector is a duration (`30s`, `5m`, `2h`, `1d`), epoch milliseconds (13 or more digits), a mark name (the newest mark with that name), `start` (the newest automatic start mark, of `service` when given) or `now`.
+A selector is a duration (`30s`, `5m`, `2h`, `1d`), an ISO-8601 date-time (`2026-10-08T05:50:00+09:00`, or without an offset in the server's time zone), epoch milliseconds (13 or more digits), a mark name (the newest mark with that name), `start` (the newest automatic start mark, of `service` when given) or `now`.
 `since` defaults to `15m`, and `until` to `now`.
+The `+` of an offset is `%2B` in a query string, and a space in its place, which is what an unencoded `+` arrives as, is read as one.
 An unknown mark name is `404`, and a `since` after `until` is `400`.
 
 [#text-rendering]
