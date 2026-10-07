@@ -18,6 +18,24 @@ class KeyTest {
     private static final Path CONFIGURATION =
             Path.of("..", "manual", "modules", "ROOT", "pages", "configuration.adoc");
 
+    /** A -Dspidersense.* typo is a warning naming the key it most likely meant. */
+    @Test
+    void aPropertyThatIsNoKeyIsAWarningNamingTheNearestKey() {
+        assertThat(Key.unknownProperties(List.of(
+                "spidersense.prot", "spidersense.port", "spidersense.slow.query", "spidersense.colector",
+                "spidersense.foo", "spidersense.config", "spidersense.jar", "spidersense.extensionJar",
+                "java.version", "otel.service.name"), "/opt/spider-sense.jar"))
+                .containsExactly(
+                        "spidersense.colector is not a Spider Sense key (did you mean spidersense.collector?)",
+                        "spidersense.foo is not a Spider Sense key; java -jar /opt/spider-sense.jar --help lists them",
+                        "spidersense.prot is not a Spider Sense key (did you mean spidersense.port?)",
+                        "spidersense.slow.query is not a Spider Sense key (did you mean spidersense.slow.query.ms?)");
+        assertThat(Key.nearest("spidersense.retention.hour")).isEqualTo("spidersense.retention.hours");
+        assertThat(Key.nearest("spidersense.app.package")).isEqualTo("spidersense.app.packages");
+        assertThat(Key.nearest("spidersense.mode")).as("too far from every key").isNull();
+        assertThat(Key.distance("prot", "port")).as("a swap is one edit").isEqualTo(1);
+    }
+
     @Test
     void theDocumentedKeysAreTheManualsTable() throws IOException {
         assertThat(Key.documentedProperties()).isEqualTo(manualTable().keySet());

@@ -94,8 +94,10 @@ final class ConfigFile {
                 continue;
             }
             if (!KNOWN_KEYS.contains(key)) {
+                String nearest = Key.nearest(key);
                 System.err.println(SpiderSenseAgent.LOG_PREFIX + file + ": " + key
-                        + " is not a Spider Sense property; applying it anyway");
+                        + " is not a Spider Sense property; applying it anyway"
+                        + (nearest != null ? " (did you mean " + nearest + "?)" : ""));
             }
             // What every reader of the key would find without the file wins over the file: an
             // empty variable hides nothing, and an empty property hides the file's key only where

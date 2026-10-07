@@ -42,6 +42,8 @@ public final class SpiderSenseAgent {
         // 1. Configuration: the properties file first, so that the system properties it fills in
         // are read exactly as the ones from the command line.
         try {
+            // Before the file, whose unknown keys are warned about as they are applied.
+            warnUnknownProperties();
             Path file = ConfigFile.apply();
             if (file != null) {
                 System.out.println(LOG_PREFIX + "configuration: " + file.toAbsolutePath());
@@ -133,6 +135,17 @@ public final class SpiderSenseAgent {
             }
         } catch (Throwable t) {
             warn("could not say where the UI is", t);
+        }
+    }
+
+    /**
+     * One line on stderr for each {@code -Dspidersense.*} system property that is not a key, with
+     * the nearest key when one is close (configuration.adoc).
+     */
+    static void warnUnknownProperties() {
+        for (String warning : Key.unknownProperties(System.getProperties().stringPropertyNames(),
+                NestedJar.commandPath())) {
+            System.err.println(LOG_PREFIX + warning);
         }
     }
 

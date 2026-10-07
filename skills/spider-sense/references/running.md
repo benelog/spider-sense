@@ -40,6 +40,7 @@ Start the standalone first, then each application with `-Dspidersense.collector=
 
 All are system properties, given after `-javaagent:` on the same command line; the standalone jar also takes them as `--key=value`.
 The same keys, one per line, go in `spider-sense.properties` in the working directory (or the file `-Dspidersense.config=<path>` names), which every mode and the CLI read; a system property wins over the file.
+A `spidersense.*` property that is not a key is a warning on stderr at start-up, such as `[spider-sense] spidersense.prot is not a Spider Sense key (did you mean spidersense.port?)`, and has no effect; look for it when a setting seems ignored.
 
 | Property | Default | Meaning |
 |---|---|---|

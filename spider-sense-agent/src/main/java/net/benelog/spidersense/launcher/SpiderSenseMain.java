@@ -42,6 +42,7 @@ public final class SpiderSenseMain {
                 return;
             }
         }
+        SpiderSenseAgent.warnUnknownProperties();
         Path file = ConfigFile.apply();
         Config.Parsed parsed;
         try {

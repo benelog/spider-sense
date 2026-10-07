@@ -12,6 +12,8 @@ A numeric key whose value is not a number, such as `spidersense.slow.query.ms=1x
 The launcher's own arguments are the exception: the standalone jar answers a numeric `--key=value` argument that is not a number, such as `--slow.query.ms=1x` or `--retention.spans=1x`, as a usage error, printing `spider-sense: --slow.query.ms is not a number: 1x` on stderr and exiting `2` without starting.
 So is `--open=` with a value other than `true` or `false`, such as `--open=yes`.
 So is an argument whose key is not in the table below, such as `--prot=4001`, `--mode=agent` or `--embedded-service=orders`; `java -jar spider-sense.jar --help` lists the keys.
+A system property that starts with `spidersense.` but is not in the table, such as `-Dspidersense.prot=4001`, is a warning on stderr when the application or the standalone jar starts, naming the nearest key when one is close: `[spider-sense] spidersense.prot is not a Spider Sense key (did you mean spidersense.port?)`.
+The application starts all the same, and the misspelt key has no effect.
 
 [#properties]
 == Properties
@@ -125,7 +127,7 @@ From then on the launcher, the server, the extension and the CLI read the system
 A key given as a system property, or as an environment variable of the same name, therefore wins over the file.
 A value is trimmed, and an empty value counts: `spidersense.ignore.endpoints=` ignores nothing, as it does on the command line.
 Keys without the `spidersense.` prefix are left alone, so the same file can be handed to the OpenTelemetry agent with `-Dotel.javaagent.configuration-file=spider-sense.properties` and then carry `otel.*` keys as well.
-A `spidersense.*` key that is not in the table is applied with a warning, so a typo is visible.
+A `spidersense.*` key that is not in the table is applied with a warning naming the nearest key, so a typo is visible.
 
 The file is read in every mode: under `-javaagent`, by the standalone jar, and by the xref:cli.adoc[CLI].
 The CLI's default `--url` is then the Spider Sense that the file's `spidersense.collector`, or `spidersense.host` and `spidersense.port` with the defaults filled in, point to.
