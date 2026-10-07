@@ -61,6 +61,7 @@ public final class SpiderSenseAgent {
         // 2. The embedded collector + UI, unless we forward to one elsewhere.
         boolean exportNowhere = false;
         boolean serving = false;
+        boolean anotherSpiderSense = false;
         try {
             if (config.collector() != null) {
                 System.out.println(LOG_PREFIX + "forwarding to " + config.otlpEndpoint());
@@ -75,15 +76,24 @@ public final class SpiderSenseAgent {
                 }
             }
         } catch (Throwable t) {
-            warn("the embedded UI did not start; the application is unaffected", t);
+            boolean probed = false;
             try {
-                exportNowhere = portInUse(t) && !spiderSenseAt(config.baseUrl());
-                if (exportNowhere) {
-                    System.err.println(LOG_PREFIX + "port " + config.port() + " is held by something that is not"
-                            + " Spider Sense; telemetry is not exported. Set -Dspidersense.port= to a free port.");
+                if (portInUse(t)) {
+                    // Another Spider Sense on the port is no failure: the telemetry goes to it, as
+                    // step 5 says, and its UI is the one to open (modes.adoc#troubleshooting).
+                    anotherSpiderSense = spiderSenseAt(config.baseUrl());
+                    probed = true;
                 }
             } catch (Throwable probe) {
                 warn("could not tell what holds the port", probe);
+            }
+            if (!anotherSpiderSense) {
+                warn("the embedded UI did not start; the application is unaffected", t);
+            }
+            exportNowhere = probed && !anotherSpiderSense;
+            if (exportNowhere) {
+                System.err.println(LOG_PREFIX + "port " + config.port() + " is held by something that is not"
+                        + " Spider Sense; telemetry is not exported. Set -Dspidersense.port= to a free port.");
             }
         }
 
@@ -113,11 +123,12 @@ public final class SpiderSenseAgent {
 
         // 5. One line saying where to look, once the agent has named the service.
         try {
-            if (serving) {
+            if (serving || anotherSpiderSense) {
                 String service = agentServiceName();
-                System.out.println(LOG_PREFIX + startLine(config.baseUrl(),
+                String line = startLine(config.baseUrl(),
                         service != null ? service : effectiveServiceName(config, settings),
-                        NestedJar.commandPath()));
+                        NestedJar.commandPath());
+                System.out.println(LOG_PREFIX + (serving ? line : heldBy(config.port(), line)));
                 maybeOpenBrowser(config);
             }
         } catch (Throwable t) {
@@ -142,6 +153,14 @@ public final class SpiderSenseAgent {
             line.append("  service: ").append(service);
         }
         return line.append("  CLI: ").append(cliLine(jar, baseUrl)).toString();
+    }
+
+    /**
+     * The start-up line when the port is held by another Spider Sense, the embedded one of another
+     * application or a standalone one: the telemetry goes there, and its UI is the one to open.
+     */
+    static String heldBy(int port, String startLine) {
+        return "port " + port + " is held by another Spider Sense; the telemetry is exported to it. " + startLine;
     }
 
     /** {@code java -jar <jar> findings --since=start}, with {@code --url=} for a UI elsewhere than the default. */

@@ -30,6 +30,13 @@ class StartLineTest {
     }
 
     @Test
+    void aPortHeldByAnotherSpiderSenseSaysTheTelemetryGoesThere() {
+        assertThat(SpiderSenseAgent.heldBy(4000, SpiderSenseAgent.startLine("http://127.0.0.1:4000", "orders", JAR)))
+                .isEqualTo("port 4000 is held by another Spider Sense; the telemetry is exported to it."
+                        + " UI: http://127.0.0.1:4000  service: orders  CLI: java -jar " + JAR + " findings --since=start");
+    }
+
+    @Test
     void theJarIsItsAbsolutePathQuotedWhenItHoldsASpace() {
         assertThat(NestedJar.commandPath(Path.of("/opt/tools/spider-sense-0.1.0.jar")))
                 .isEqualTo("/opt/tools/spider-sense-0.1.0.jar");

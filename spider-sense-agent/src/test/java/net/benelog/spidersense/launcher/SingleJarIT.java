@@ -379,6 +379,50 @@ class SingleJarIT {
         }
     }
 
+    /**
+     * A port held by another Spider Sense is where the telemetry goes: no failure is reported, and
+     * the start-up line says so and names that one's UI (modes.adoc#agent).
+     */
+    @Test
+    void aPortHeldByAnotherSpiderSenseIsWhereTheTelemetryGoes() throws Exception {
+        int port = freePort();
+        String base = "http://127.0.0.1:" + port;
+        Path serverLog = work.resolve("held-standalone.log");
+        Process server = start(serverLog,
+                javaBinary.toString(), "-jar", senseJar.toString(),
+                "--port=" + port, "--db=" + throwawayDatabase());
+        try {
+            await("the standalone answering", serverLog, server,
+                    () -> get(base + "/api/status"),
+                    body -> compact(body).contains("\"mode\":\"standalone\""));
+            Path log = work.resolve("held-agent.log");
+            Process app = start(log,
+                    javaBinary.toString(),
+                    "-javaagent:" + senseJar,
+                    "-Dspidersense.port=" + port,
+                    "-Dotel.service.name=sample",
+                    "-cp", testClasses,
+                    "net.benelog.spidersense.launcher.SampleApp");
+            if (!app.waitFor(60, TimeUnit.SECONDS)) {
+                app.destroyForcibly();
+                throw new AssertionError("the sample did not finish\n--- output ---\n" + read(log));
+            }
+            String output = read(log);
+            assertThat(output).as(output)
+                    .contains("[spider-sense] port " + port + " is held by another Spider Sense;"
+                            + " the telemetry is exported to it. UI: " + base + "  service: sample  CLI: ")
+                    .doesNotContain("did not start");
+            await("the sample's service at the standalone", serverLog, server,
+                    () -> get(base + "/api/services"),
+                    body -> compact(body).contains("\"name\":\"sample\""));
+        } finally {
+            server.destroy();
+            if (!server.waitFor(15, TimeUnit.SECONDS)) {
+                server.destroyForcibly();
+            }
+        }
+    }
+
     // --- standalone mode ----------------------------------------------------------------------
 
     @Test

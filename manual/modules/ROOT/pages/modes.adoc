@@ -336,7 +336,7 @@ xref:marks-and-compare.adoc#marks[Marks] describes them.
 | Without `-Dotel.service.name=` the service is `spring.application.name`, else the jar or the project it was started from (xref:configuration.adoc#service-name[The service name]). Set `-Dotel.service.name=` and restart.
 
 | Port 4000 is already in use
-| Another Spider Sense, or another application under the agent, has it, and the application's telemetry goes to that one. Use `-Dspidersense.port=4001` and `--url=http://127.0.0.1:4001`, or point the second application at the first with `-Dspidersense.collector=http://127.0.0.1:4000`. When what holds the port is not a Spider Sense, the agent says so on stderr and exports nothing, rather than failing an export to it every few seconds.
+| When another Spider Sense, standalone or embedded in another application, has it, the application's telemetry goes to that one, and the start-up line says so on stdout: `[spider-sense] port 4000 is held by another Spider Sense; the telemetry is exported to it. UI: http://127.0.0.1:4000  service: my-app  CLI: …`. To keep the two apart, use `-Dspidersense.port=4001` and `--url=http://127.0.0.1:4001`; to share on purpose, point the second application at the first with `-Dspidersense.collector=http://127.0.0.1:4000`. When what holds the port is not a Spider Sense, the agent says so on stderr and exports nothing, rather than failing an export to it every few seconds.
 
 | Two applications, and each trace stops at the service boundary
 | Both are embedding their own Spider Sense. Put them in forwarding mode against one standalone.
