@@ -34,7 +34,7 @@ So is an argument whose key is not in the table below, such as `--prot=4001`, `-
 
 | `spidersense.service`
 | unset
-| Agent mode: the default of `otel.service.name`. When both are set, `otel.service.name` names the service, for the exporter and for the embedded Spider Sense alike.
+| Agent mode: the default of `otel.service.name`. When both are set, `otel.service.name` names the service, for the exporter and for the embedded Spider Sense alike. Once either is set, the OpenTelemetry agent no longer reads Spring Boot's `spring.application.name`, so the Gradle plugin, which sets this to the project's name, wins over it; `spiderSense { service = 'spring-orders' }` names it otherwise (xref:gradle-plugin.adoc#block[The block]).
 
 | `spidersense.db`
 | `~/db/spider-sense/sense`

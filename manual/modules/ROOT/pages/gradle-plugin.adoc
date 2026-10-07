@@ -104,7 +104,7 @@ xref:configuration.adoc#properties[Configuration] lists the jar's defaults.
 | `service`
 | `String`
 | `project.name`
-| `-Dspidersense.service=`, which is `otel.service.name` unless that is set already
+| `-Dspidersense.service=`, which is `otel.service.name` unless that is set already. It therefore wins over Spring Boot's `spring.application.name`, which the OpenTelemetry agent reads only when no `otel.service.name` is set; `service = 'spring-orders'` names the service after the application instead
 
 | `testService`
 | `String`
