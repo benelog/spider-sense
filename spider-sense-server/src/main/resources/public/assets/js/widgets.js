@@ -76,9 +76,9 @@ export function statTiles(totals, thresholds, opts = {}) {
     stat(count(t.requests), 'total', 'requests', traces),
     stat(apdex(t.apdex), '', 'apdex', { class: apdexClass(t.apdex), title: 'Apdex, T = ' + dur(slow) }),
     stat(ifRequests(t, () => pct(t.errorRate || 0)), '', 'error rate', { class: t.errorRate > ERROR_RATE_BAD ? 'is-bad' : '', ...to('/errors', 'Open the errors') }),
-    stat(dur(t.p50Ms), '', 'p50', scatter),
-    stat(dur(t.p95Ms), '', 'p95', { class: t.p95Ms > slow ? 'is-warn' : '', ...scatter }),
-    stat(dur(t.p99Ms), '', 'p99', scatter),
+    stat(ifRequests(t, () => dur(t.p50Ms)), '', 'p50', scatter),
+    stat(ifRequests(t, () => dur(t.p95Ms)), '', 'p95', { class: t.p95Ms > slow ? 'is-warn' : '', ...scatter }),
+    stat(ifRequests(t, () => dur(t.p99Ms)), '', 'p99', scatter),
     stat(ifRequests(t, () => rate(t.rps || 0)), '/s', 'requests per second', traces),
   ];
 }
