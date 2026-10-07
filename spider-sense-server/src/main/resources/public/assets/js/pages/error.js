@@ -7,7 +7,7 @@ import { pageLoader, skeleton } from '../page.js';
 import { chartBox } from '../charts.js';
 import { codeFrame, foldedStack, framesMode } from '../frames.js';
 import { copyButtons, cliLine } from '../copyas.js';
-import { countColumn } from '../columns.js';
+import { countColumn, endpointCell } from '../columns.js';
 import { traceTable } from '../widgets.js';
 import { count, rel, bothTimes, full, splitType } from '../format.js';
 
@@ -61,7 +61,7 @@ export function render(root, ctx) {
   // The two tables are built once, and a Live refresh gives them new rows, so a focused row
   // and a scrolled table survive it (ui.adoc#live-refresh).
   const endpointsTable = table([
-    { key: 'name', label: 'Endpoint', cls: 'wide', render: (x) => h('span.cell-ellipsis', { title: x.name }, x.name) },
+    { key: 'name', label: 'Endpoint', cls: 'wide', render: (x) => endpointCell(x.name, x.endpointId) },
     countColumn('count', 'Count'),
   ], {
     rowKey: (x) => x.name,

@@ -581,6 +581,7 @@ public final class Queries {
         Ancestry ancestry = ancestors.get();
         Map<String, Map<String, Long>> callers = new HashMap<>();
         Map<String, Map<String, String>> callerService = new HashMap<>();
+        Map<String, Map<String, String>> callerEndpointId = new HashMap<>();
         Where where = Where.window(window, null).andIn("query_id", ids);
         sql.forEach("SELECT query_id, trace_id, span_id, service FROM span WHERE " + where.sql(),
                 where.params(), rs -> {
@@ -591,15 +592,21 @@ public final class Queries {
                             .merge(name, 1L, Long::sum);
                     callerService.computeIfAbsent(queryId, id -> new HashMap<>())
                             .putIfAbsent(name, entry == null ? rs.getString("service") : entry.service());
+                    if (entry != null && entry.endpointId() != null) {
+                        callerEndpointId.computeIfAbsent(queryId, id -> new HashMap<>())
+                                .putIfAbsent(name, entry.endpointId());
+                    }
                 });
 
         List<Stats.QueryStats> withCallers = new ArrayList<>(stats.size());
         for (Stats.QueryStats query : stats) {
             List<Stats.Caller> list = new ArrayList<>();
+            Map<String, String> endpointIds = callerEndpointId.getOrDefault(query.queryId(), Map.of());
             callers.getOrDefault(query.queryId(), Map.of()).forEach((name, count) ->
                     list.add(new Stats.Caller(name,
                             callerService.getOrDefault(query.queryId(), Map.of())
-                                    .getOrDefault(name, query.service()), count)));
+                                    .getOrDefault(name, query.service()), count,
+                            endpointIds.get(name))));
             list.sort(Stats.Caller.MOST_FIRST);
             withCallers.add(query.withCallers(list));
         }
@@ -751,15 +758,23 @@ public final class Queries {
         Ancestry ancestry = ancestors.get();
         Where where = Where.window(window, null).andIn("error_id", ids);
         Map<String, Map<String, Long>> counts = new LinkedHashMap<>();
+        Map<String, Map<String, String>> endpointIds = new HashMap<>();
         sql.forEach("SELECT error_id, span_id FROM span WHERE " + where.sql(), where.params(), rs -> {
+            String errorId = rs.getString("error_id");
             Ancestry.Entry entry = ancestry.placeOf(rs.getString("span_id"));
-            counts.computeIfAbsent(rs.getString("error_id"), id -> new LinkedHashMap<>())
-                    .merge(entry == null ? Ancestry.NO_ENDPOINT : entry.endpoint(), 1L, Long::sum);
+            String name = entry == null ? Ancestry.NO_ENDPOINT : entry.endpoint();
+            counts.computeIfAbsent(errorId, id -> new LinkedHashMap<>()).merge(name, 1L, Long::sum);
+            if (entry != null && entry.endpointId() != null) {
+                endpointIds.computeIfAbsent(errorId, id -> new HashMap<>())
+                        .putIfAbsent(name, entry.endpointId());
+            }
         });
         Map<String, List<Stats.EndpointCount>> endpoints = new HashMap<>();
         counts.forEach((errorId, byEndpoint) -> {
             List<Stats.EndpointCount> list = new ArrayList<>();
-            byEndpoint.forEach((name, count) -> list.add(new Stats.EndpointCount(name, count)));
+            Map<String, String> pages = endpointIds.getOrDefault(errorId, Map.of());
+            byEndpoint.forEach((name, count) ->
+                    list.add(new Stats.EndpointCount(name, count, pages.get(name))));
             list.sort(Stats.EndpointCount.MOST_FIRST);
             endpoints.put(errorId, list);
         });
@@ -1730,8 +1745,13 @@ public final class Queries {
          */
         private static final int MAX_PARENT_HOPS = 64;
 
-        /** The entry span itself, so a finding can count the requests it affected. */
-        record Entry(String spanId, String endpoint, String service) {
+        /**
+         * The entry span itself, so a finding can count the requests it affected.
+         *
+         * @param endpointId the stored {@code endpoint_id}, null when the entry span has
+         *        no endpoint name and {@code endpoint} is its span name
+         */
+        record Entry(String spanId, String endpoint, String service, @Nullable String endpointId) {
         }
 
         /**
@@ -1753,8 +1773,8 @@ public final class Queries {
                 where = where.and("trace_id IN (SELECT trace_id FROM span WHERE " + traced.sql() + ")",
                         traced.params().toArray());
             }
-            sql.forEach("SELECT span_id, parent_span_id, entry, endpoint, service, name FROM span"
-                    + " WHERE " + where.sql(), where.params(), rs -> {
+            sql.forEach("SELECT span_id, parent_span_id, entry, endpoint, endpoint_id, service, name"
+                    + " FROM span WHERE " + where.sql(), where.params(), rs -> {
                         String spanId = rs.getString("span_id");
                         String parent = rs.getString("parent_span_id");
                         if (parent != null) {
@@ -1764,11 +1784,12 @@ public final class Queries {
                             String endpoint = rs.getString("endpoint");
                             entries.put(spanId, new Entry(spanId,
                                     endpoint == null ? rs.getString("name") : endpoint,
-                                    rs.getString("service")));
+                                    rs.getString("service"),
+                                    endpoint == null ? null : rs.getString("endpoint_id")));
                         } else if (parent == null) {
                             // A root that is no entry span: a job, named by its span name.
                             roots.put(spanId, new Entry(spanId, rs.getString("name"),
-                                    rs.getString("service")));
+                                    rs.getString("service"), null));
                         }
                     });
             return new Ancestry(entries, parents, roots);

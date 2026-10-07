@@ -3,6 +3,7 @@
 // `sortable` out, so a column sorts in a table that sorts; pass { sortable: false } to stop it.
 
 import { h, serviceChip } from './ui.js';
+import { detailHref } from './router.js';
 import { oneLineSql, storedSql } from './sql.js';
 import { dur, count, rel, bothTimes, truncate, splitType } from './format.js';
 
@@ -64,4 +65,14 @@ export function durationColumn(key, label, width = '74px', extra = {}) {
 /** A count, right-aligned. */
 export function countColumn(key, label, width = '72px', extra = {}) {
   return { key, label, align: 'right', width, render: (x) => count(x[key]), ...extra };
+}
+
+/**
+ * An endpoint's name as a link to its page, or plain text when it has no page: `(no endpoint)`,
+ * or an entry span with no endpoint name (api.adoc#query-stats).
+ */
+export function endpointCell(name, endpointId) {
+  return endpointId
+    ? h('a.cell-ellipsis', { href: detailHref('endpoints', endpointId), title: 'Open ' + name }, name)
+    : h('span.cell-ellipsis', { title: name }, name);
 }

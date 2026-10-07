@@ -394,7 +394,7 @@ The points are arrays rather than objects because 5,000 points must stay small o
   "statement": "select … from orders where … like ?", "statementCut": false,
   "calls": 240, "errors": 0, "avgMs": 45.0, "p50Ms": 40.0, "p95Ms": 120.0, "maxMs": 900.0, "totalMs": 10800.0,
   "slowCalls": 12,                       // calls over slowQueryMs
-  "callers": [ { "endpoint": "GET /orders/report", "service": "spring-orders", "calls": 240 } ],
+  "callers": [ { "endpoint": "GET /orders/report", "endpointId": "…" | null, "service": "spring-orders", "calls": 240 } ],
   "lastSeen": 1758000900000,
   "schema": { "tables": [...], "predicates": [...], "unindexed": [...] } | null }
 ----
@@ -428,7 +428,7 @@ With `format=text` it answers the group as the `queries` rendering prints it (xr
 ----
 { "errorId": "…", "service": "…", "type": "java.lang.IllegalStateException", "message": "Order ? is already shipped",
   "count": 12, "firstSeen": ..., "lastSeen": ...,
-  "endpoints": [ { "name": "POST /orders/{id}/ship", "count": 12 } ],
+  "endpoints": [ { "name": "POST /orders/{id}/ship", "endpointId": "…" | null, "count": 12 } ],
   "sample": { "traceId": "…", "spanId": "…", "at": ..., "message": "Order 42 is already shipped", "stacktrace": "…" } | null,
   "series": [0, 2, 0, 1, ...] }
 ----
@@ -757,6 +757,8 @@ A query issued by the second service of a two-service trace is therefore attribu
 A span whose chain reaches no entry span but ends at a root span, as every span of a job's trace does, is attributed to that root span's name, which for a job is the job (xref:design.adoc#endpoint-identity[Endpoint identity]).
 It is a label only: a job is still no endpoint, counts no request, and no id hashes the label.
 A span whose chain leaves the window is reported as `(no endpoint)`.
+`endpointId` is that entry span's endpoint, the id `+GET /api/endpoints/{endpointId}+` answers, so the UI links the row to the endpoint's page.
+It is `null` for `(no endpoint)` and for an entry span that has no endpoint name, which the list names by its span name.
 Both lists are sorted by count descending, then by name, so the endpoint an `error` finding's title names is the same on every call over the same window.
 
 [#nulls]

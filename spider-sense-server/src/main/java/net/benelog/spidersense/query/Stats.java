@@ -69,8 +69,18 @@ public final class Stats {
             Map<String, Long> statusCodes) {
     }
 
-    /** Which endpoint issued a query, and how often. */
-    public record Caller(String endpoint, String service, long calls) {
+    /**
+     * Which endpoint issued a query, and how often.
+     *
+     * @param endpointId the endpoint's id, for a link to its page; null for
+     *        {@code (no endpoint)} and for an entry span with no endpoint name
+     */
+    public record Caller(String endpoint, String service, long calls, @Nullable String endpointId) {
+
+        /** A caller with no endpoint page to link to. */
+        public Caller(String endpoint, String service, long calls) {
+            this(endpoint, service, calls, null);
+        }
 
         /** The most frequent first, and the endpoint name between equals. */
         public static final Comparator<Caller> MOST_FIRST =
@@ -104,7 +114,18 @@ public final class Stats {
         }
     }
 
-    public record EndpointCount(String name, long count) {
+    /**
+     * Where an error group occurred, and how often.
+     *
+     * @param endpointId the endpoint's id, for a link to its page; null for
+     *        {@code (no endpoint)} and for an entry span with no endpoint name
+     */
+    public record EndpointCount(String name, long count, @Nullable String endpointId) {
+
+        /** A place with no endpoint page to link to. */
+        public EndpointCount(String name, long count) {
+            this(name, count, null);
+        }
 
         /**
          * The most frequent first, and the name between equals, so the endpoint a

@@ -107,6 +107,15 @@ test('the chart switches press their buttons and the legends follow the series',
   error.instance.destroy();
 });
 
+test('the query page\'s callers and the error page\'s endpoints link to the endpoint page (api.adoc#callers)', async () => {
+  for (const [name, id] of [['query', ids.query], ['error', ids.error]]) {
+    const { root, instance } = await visit(name, { id });
+    const links = root.querySelectorAll('a').map((a) => a.getAttribute('href') || '').filter((href) => href.startsWith('#/endpoints/'));
+    assert.ok(links.length > 0, name + ' links an endpoint');
+    instance.destroy();
+  }
+});
+
 test('a profile row opens the span drawer, and the page closes it when it goes', async () => {
   const trace = await visit('trace', { id: ids.trace });
   trace.root.querySelectorAll('button').find((b) => b.textContent === 'Profile').click();

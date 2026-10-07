@@ -375,6 +375,7 @@ A row click opens the statement.
 
 [#query]
 `+#/queries/{queryId}+` is one statement: the full text pretty-printed, marked the same way when the store may have cut it, the schema block under it as <<findings-schema-block,the Findings page renders it>>, the <<copy-as-markdown,*Copy as Markdown* and *Copy CLI line*>> pair over `+GET /api/queries/{queryId}+` and the `queries` command, the stat tiles, a chart of calls and p95, the callers as endpoints with their counts, and the slowest traces.
+A caller whose endpoint has a page of its own (`endpointId`, xref:api.adoc#callers[Callers and error endpoints]) is a link to that page; `(no endpoint)` stays plain text.
 
 [#errors]
 == Errors
@@ -386,6 +387,7 @@ A row click opens the error.
 
 [#error]
 `+#/errors/{errorId}+` gives the header with the <<copy-as-markdown,*Copy as Markdown* and *Copy CLI line*>> pair over `+GET /api/errors/{errorId}+` and the `errors` command, a chart of the count, the sample's exception chain, the endpoints, and the recent traces.
+The endpoints link to their pages as the query page's callers do.
 
 The chain is the `chain` of `+GET /api/errors/{errorId}+`, one section per cause, innermost first.
 The root cause is headed *Root cause*, then each exception wrapping it is headed *Wrapped by*, out to the outer one.

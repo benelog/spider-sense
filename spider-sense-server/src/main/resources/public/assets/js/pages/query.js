@@ -7,7 +7,7 @@ import { chartBox } from '../charts.js';
 import { formatSql, storedSql } from '../sql.js';
 import { traceTable, schemaLines } from '../widgets.js';
 import { copyButtons, cliLine } from '../copyas.js';
-import { serviceColumn, countColumn } from '../columns.js';
+import { serviceColumn, countColumn, endpointCell } from '../columns.js';
 import { dur, count, rel, bothTimes } from '../format.js';
 
 export function render(root, ctx) {
@@ -21,7 +21,7 @@ export function render(root, ctx) {
   // The two tables are built once, and a Live refresh gives them new rows, so a focused row
   // and a scrolled table survive it (ui.adoc#live-refresh).
   const callersTable = table([
-    { key: 'endpoint', label: 'Endpoint', cls: 'wide', render: (c) => h('span.cell-ellipsis', { title: c.endpoint }, c.endpoint) },
+    { key: 'endpoint', label: 'Endpoint', cls: 'wide', render: (c) => endpointCell(c.endpoint, c.endpointId) },
     serviceColumn(),
     countColumn('calls', 'Calls'),
   ], {

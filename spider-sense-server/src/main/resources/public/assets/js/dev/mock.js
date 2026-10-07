@@ -623,7 +623,10 @@ function queryStats(w, service) {
       totalMs: Math.round(total * 100) / 100,
       slowCalls: slow,
       schema: q.schema || null,
-      callers: [...callers.entries()].map(([k, calls]) => ({ endpoint: k.split('|')[1], service: k.split('|')[0], calls })).sort((a, b) => b.calls - a.calls),
+      callers: [...callers.entries()].map(([k, calls]) => ({
+        endpoint: k.split('|')[1], service: k.split('|')[0], calls,
+        endpointId: (ENDPOINTS.find((e) => e.service + '|' + e.name === k) || {}).endpointId || null,
+      })).sort((a, b) => b.calls - a.calls),
       lastSeen,
     };
   });
@@ -637,19 +640,20 @@ function errorGroups(w, service) {
     if (!def) continue;
     if (service && def.service !== service) continue;
     let agg = byId.get(def.errorId);
-    if (!agg) { agg = { def, count: 0, first: Infinity, last: 0, endpoints: new Map(), traces: [] }; byId.set(def.errorId, agg); }
+    if (!agg) { agg = { def, count: 0, first: Infinity, last: 0, endpoints: new Map(), endpointIds: new Map(), traces: [] }; byId.set(def.errorId, agg); }
     agg.count++;
     agg.first = Math.min(agg.first, t.start);
     agg.last = Math.max(agg.last, t.start);
     agg.endpoints.set(t.rootName, (agg.endpoints.get(t.rootName) || 0) + 1);
+    agg.endpointIds.set(t.rootName, t.endpointId || null);
     agg.traces.push(t);
   }
-  return [...byId.values()].map(({ def, count, first, last, endpoints, traces: ts }) => {
+  return [...byId.values()].map(({ def, count, first, last, endpoints, endpointIds, traces: ts }) => {
     const sample = ts[ts.length - 1];
     return {
       errorId: def.errorId, service: def.service, type: def.type, message: def.message,
       count, firstSeen: first, lastSeen: last,
-      endpoints: [...endpoints.entries()].map(([name, c]) => ({ name, count: c })).sort((a, b) => b.count - a.count),
+      endpoints: [...endpoints.entries()].map(([name, c]) => ({ name, endpointId: endpointIds.get(name), count: c })).sort((a, b) => b.count - a.count),
       sample: sample ? { traceId: sample.traceId, spanId: sample.spans[0].spanId, at: sample.start, message: def.sample, stacktrace: def.stack } : null,
       _traces: ts,
     };

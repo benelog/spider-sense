@@ -18,6 +18,7 @@ import net.benelog.spidersense.TestStore;
 import net.benelog.spidersense.server.Config;
 import net.benelog.spidersense.server.SpiderSenseServer;
 import net.benelog.spidersense.server.Version;
+import net.benelog.spidersense.store.Ids;
 import net.benelog.spidersilk.json.Json;
 import net.benelog.spidersilk.test.TestClient;
 import net.benelog.spidersilk.test.WebTest;
@@ -317,6 +318,9 @@ class ApiTest {
             assertThat(query.getLong("slowCalls")).isEqualTo(1);
             assertThat(query.getArray("callers").get(0).asObject().getString("endpoint"))
                     .isEqualTo("GET /orders/{id}");
+            // The caller links to the endpoint page (api.adoc#callers).
+            assertThat(query.getArray("callers").get(0).asObject().getString("endpointId"))
+                    .isEqualTo(Ids.endpointId("spring-orders", "GET /orders/{id}"));
             assertThat(json(client.get("/api/queries/" + query.getString("queryId") + windowQuery()))
                     .getObject("series").has("calls")).isTrue();
 
@@ -329,6 +333,10 @@ class ApiTest {
             Json.JsonObject errorDetail =
                     json(client.get("/api/errors/" + error.getString("errorId") + windowQuery()));
             assertThat(errorDetail.getObject("series").has("count")).isTrue();
+            Json.JsonObject place = errorDetail.getObject("error").getArray("endpoints").get(0).asObject();
+            assertThat(place.getString("name")).isEqualTo("POST /orders/{id}/ship");
+            assertThat(place.getString("endpointId"))
+                    .isEqualTo(Ids.endpointId("spring-orders", "POST /orders/{id}/ship"));
             Json.JsonObject cause = errorDetail.getArray("chain").get(0).asObject();
             assertThat(cause.getString("type")).isEmpty();
             assertThat(cause.getArray("frames").get(0).asString()).isEqualTo("Orders.ship(..)");

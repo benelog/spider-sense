@@ -341,6 +341,7 @@ public final class Codecs {
         Json.JsonArray callers = Json.arr();
         query.callers().forEach(caller -> callers.add(Json.obj()
                 .put("endpoint", caller.endpoint())
+                .put("endpointId", caller.endpointId())
                 .put("service", caller.service())
                 .put("calls", caller.calls())));
         Json.JsonObject object = Json.obj()
@@ -415,6 +416,7 @@ public final class Codecs {
         Json.JsonArray endpoints = Json.arr();
         group.endpoints().forEach(endpoint -> endpoints.add(Json.obj()
                 .put("name", endpoint.name())
+                .put("endpointId", endpoint.endpointId())
                 .put("count", endpoint.count())));
         Json.JsonObject sample = null;
         if (group.sample() != null) {
