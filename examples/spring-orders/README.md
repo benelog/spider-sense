@@ -9,6 +9,7 @@ Several endpoints are slow or broken on purpose; that is the point, because an o
 The database is `jdbc:h2:~/db/spider-sense/orders;AUTO_SERVER=TRUE` and the schema is created by `ddl-auto=update`.
 On the first start a `CommandLineRunner` seeds 500 customers, 200 products and 50 000 orders of one to five lines each, in batches of 500 with `hibernate.order_inserts=true`, which takes about 1.7 s.
 On later starts the seed is skipped and the log says how many orders were already there.
+`hibernate.query.insert_strategy` is Hibernate's local temporary table strategy, because the default on H2 creates a global temporary table `HTE_<entity>` per entity at every start, and in a file database every start after the first then fails on `Table "HTE_PRODUCT" already exists`, which Spider Sense would rank as an `error` finding.
 Delete `~/db/spider-sense/orders.mv.db` to start over.
 The seed sizes are the properties `orders.seed.customers`, `orders.seed.products` and `orders.seed.orders`, and the tests set them to 10, 10 and 50.
 
