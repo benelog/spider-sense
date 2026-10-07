@@ -760,7 +760,7 @@ A span whose chain reaches no entry span but ends at a root span, as every span 
 It is a label only: a job is still no endpoint, counts no request, and no id hashes the label.
 A span whose chain leaves the window is reported as `(no endpoint)`.
 `endpointId` is that entry span's endpoint, the id `+GET /api/endpoints/{endpointId}+` answers, so the UI links the row to the endpoint's page.
-It is `null` for `(no endpoint)` and for an entry span that has no endpoint name, which the list names by its span name.
+It is `null` for `(no endpoint)`, for a job named by its root span, and for an entry span that has no endpoint name, which the list names by its span name.
 Both lists are sorted by count descending, then by name, so the endpoint an `error` finding's title names is the same on every call over the same window.
 
 [#nulls]

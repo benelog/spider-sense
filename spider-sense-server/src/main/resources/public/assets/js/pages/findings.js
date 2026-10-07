@@ -6,7 +6,7 @@ import * as router from '../router.js';
 import { h, fill, panel, table, chip, serviceChip, copyBlock, spinner, noDataYet, formDialog, errorText, toast, breakdownBar, breakdownLead, BREAKDOWN_BUCKETS } from '../ui.js';
 import { formatSql, storedSql } from '../sql.js';
 import { count, dur, rate, pct, apdex, bytes, time, bothTimes, truncate, shortId } from '../format.js';
-import { codeFrame } from '../frames.js';
+import { codeFrames } from '../frames.js';
 import { copyButtons, cliLine } from '../copyas.js';
 import { pageLoader } from '../page.js';
 import { severityDot, kindChip, findingTarget, queryTarget, schemaLines } from '../widgets.js';
@@ -322,8 +322,7 @@ export function evidence(finding, onChange, listWindow) {
     finding.statement ? copyBlock(storedSql(formatSql(finding.statement), finding.statementCut)) : null,
     schemaLines(finding.schema),
     (finding.code || []).length
-      ? h('div.f-code', h('div.sub-head', 'Code'),
-        (finding.code || []).map((frame) => codeFrame(frame)))
+      ? codeFrames(h('div.f-code', h('div.sub-head', 'Code')), finding.code || [])
       : null,
     h('div.f-links',
       traces.length
