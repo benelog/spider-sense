@@ -355,10 +355,18 @@ public record Config(
         return c;
     }
 
-    /** What to print for the database: the H2 file, or the JDBC URL when one was given. */
+    /**
+     * What to print for the database: the H2 file, or the JDBC URL when one was given. A path that
+     * already ends in the file's suffix names the same file, as the server reads it.
+     */
     public String databaseDescription() {
         String value = db == null || db.isEmpty() ? DEFAULT_DB : db;
-        return value.startsWith("jdbc:") ? value : value + ".mv.db";
+        if (value.startsWith("jdbc:")) {
+            return value;
+        }
+        return value.endsWith(".mv.db") || value.endsWith(".h2.db")
+                ? value.substring(0, value.length() - ".mv.db".length()) + ".mv.db"
+                : value + ".mv.db";
     }
 
     // --- property / environment lookup -------------------------------------------------------

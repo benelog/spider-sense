@@ -167,6 +167,18 @@ class ConfigTest {
         assertThat(config.databaseFile()).hasToString("/home/tester/db/other/sense.mv.db");
     }
 
+    /** The path {@code status} prints, suffix and all, names the same file (cli.adoc#options). */
+    @Test
+    void aPathWithTheFilesSuffixNamesTheSameFile() {
+        for (String db : List.of("~/db/other/sense.mv.db", "~/db/other/sense.h2.db")) {
+            Config config = parse("--db=" + db);
+
+            assertThat(config.jdbcUrl()).as(db)
+                    .isEqualTo("jdbc:h2:/home/tester/db/other/sense;AUTO_SERVER=TRUE;NON_KEYWORDS=KEY,VALUE");
+            assertThat(config.databaseFile()).as(db).hasToString("/home/tester/db/other/sense.mv.db");
+        }
+    }
+
     @Test
     void aJdbcUrlIsTakenAsWrittenApartFromTheReservedWords() {
         Config config = parse("--db=jdbc:h2:mem:sample;DB_CLOSE_DELAY=-1");

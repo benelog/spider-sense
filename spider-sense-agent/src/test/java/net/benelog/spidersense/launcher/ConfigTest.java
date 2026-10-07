@@ -285,6 +285,8 @@ class ConfigTest {
         assertThat(Config.defaults().databaseDescription()).isEqualTo("~/db/spider-sense/sense.mv.db");
         assertThat(Config.defaults().withDb("~/db/other/sense").databaseDescription())
                 .isEqualTo("~/db/other/sense.mv.db");
+        assertThat(Config.defaults().withDb("~/db/other/sense.mv.db").databaseDescription())
+                .isEqualTo("~/db/other/sense.mv.db");
         assertThat(Config.defaults().withDb("jdbc:h2:mem:it").databaseDescription())
                 .isEqualTo("jdbc:h2:mem:it");
     }

@@ -588,7 +588,7 @@ a finding id to unack or unresolve).
 
 | `--db=<path or jdbc url>`
 | `~/db/spider-sense/sense`
-| read that database directly, without asking any server
+| read that database directly, without asking any server; a path is taken with or without its `.mv.db` suffix, so the file `status` prints can be pasted
 
 | `--json`
 | off

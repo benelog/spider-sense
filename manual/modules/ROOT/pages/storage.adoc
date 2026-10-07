@@ -10,6 +10,7 @@ The UI therefore still answers after the monitored application has stopped, and 
 The default JDBC URL is `jdbc:h2:~/db/spider-sense/sense;AUTO_SERVER=TRUE`, which is the file `~/db/spider-sense/sense.mv.db`.
 `sense.trace.db` appears beside it when H2 logs a problem.
 `spidersense.db` overrides the URL with a path (`~/db/other/sense`) or a full `jdbc:h2:` URL.
+A path may end in the file's own `.mv.db` suffix (or the older `.h2.db`), which is dropped because H2 adds it, so the file `status` prints names the same database.
 
 `AUTO_SERVER=TRUE` lets embedded and standalone Spider Sense processes share the file without any setup:
 

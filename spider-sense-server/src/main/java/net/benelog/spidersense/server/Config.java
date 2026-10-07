@@ -232,6 +232,8 @@ public record Config(
      * resolve it too, but then the status page could not report the file), and
      * {@code AUTO_SERVER=TRUE} is appended so that several Spider Sense processes
      * share one database.
+     * A path that ends in the file's own suffix, {@code .mv.db} or the older {@code .h2.db}, loses
+     * it, since H2 adds it: the path {@code status} prints can be pasted back as {@code --db}.
      *
      * <p>{@code NON_KEYWORDS=KEY,VALUE} is appended to every URL: {@code KEY} and
      * {@code VALUE} are reserved words in H2 2.x and storage.adoc#schema uses both as
@@ -240,7 +242,7 @@ public record Config(
     public String jdbcUrl() {
         String url = db.startsWith("jdbc:")
                 ? db
-                : "jdbc:h2:" + expandHome(db, home) + ";AUTO_SERVER=TRUE";
+                : "jdbc:h2:" + expandHome(withoutFileSuffix(db), home) + ";AUTO_SERVER=TRUE";
         if (!url.toUpperCase(java.util.Locale.ROOT).contains("NON_KEYWORDS")) {
             url = url + ";NON_KEYWORDS=KEY,VALUE";
         }
@@ -260,6 +262,16 @@ public record Config(
             path = path.substring("file:".length());
         }
         return Path.of(expandHome(path, home) + ".mv.db");
+    }
+
+    /** A database path without the suffix H2 adds to it, {@code .mv.db} or {@code .h2.db}. */
+    private static String withoutFileSuffix(String path) {
+        for (String suffix : List.of(".mv.db", ".h2.db")) {
+            if (path.endsWith(suffix)) {
+                return path.substring(0, path.length() - suffix.length());
+            }
+        }
+        return path;
     }
 
     /** What the server's store is opened with: this configuration, read with {@code clock}. */

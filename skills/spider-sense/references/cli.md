@@ -42,7 +42,7 @@ The launcher treats a first argument that does not start with `-` as a command a
 | `--service=<name>` | every service | narrow to one service |
 | `--limit=<n>` | per list | how many rows, at least 1: findings 20 (at most 100), traces 20 (at most 1000), queries 100 (at most 1000), errors 100 (at most 1000), logs 200 (at most 5000), marks 50 (at most 500), sql 200 (at most 5000); a larger limit is lowered to the cap, and one below 1 is a usage error |
 | `--url=<base url>` | `http://127.0.0.1:4000`, or `SPIDERSENSE_URL`, or what `spider-sense.properties` in the working directory implies | which Spider Sense to ask |
-| `--db=<path or jdbc url>` | `~/db/spider-sense/sense` | read that database directly, without asking any server |
+| `--db=<path or jdbc url>` | `~/db/spider-sense/sense` | read that database directly, without asking any server; a path is taken with or without its `.mv.db` suffix, so the file `status` prints can be pasted |
 | `--json` | off | print the JSON of the HTTP API instead of the text |
 | `--full` | off | keep statements whole and expand collapsed spans |
 | `--hide-acked` | off | `findings` only: leave the acknowledged findings out instead of ranking them last |
