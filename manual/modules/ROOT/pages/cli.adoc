@@ -151,6 +151,7 @@ $ java -jar spider-sense.jar status
 
 `findings` is the primary answer: a ranked, bounded list of things worth fixing over the window.
 The table is the answer, and the numbered blocks under it are the evidence, one per row in the same order.
+It holds 20 findings unless `--limit` says otherwise, at most 100, and when there were more, a line under the heading says so: `20 of 54 findings; --limit=54 shows them all` (xref:findings.adoc#text-rendering[The text rendering]).
 xref:findings.adoc[Findings] has every kind with its rule and its numbers.
 
 [source]

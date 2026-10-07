@@ -290,6 +290,9 @@ class AgentApiTest {
             Json.JsonObject before = json(client.get("/api/findings?since=5m"));
             assertThat(before.getLong("acked")).isZero();
             Json.JsonArray all = before.getArray("findings");
+            assertThat(before.getLong("total")).isEqualTo(all.size());
+            assertThat(json(client.get("/api/findings?since=5m&limit=1")).getLong("total"))
+                    .as("counted before the limit").isEqualTo(all.size());
             String first = all.get(0).asObject().getString("id");
             String last = all.get(all.size() - 1).asObject().getString("id");
             assertThat(all.get(0).asObject().get("ack").isNull()).isTrue();

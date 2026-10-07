@@ -26,6 +26,7 @@ A `regression` is always `high`, so regressions come first, ranked among themsel
 
 The list is bounded.
 `limit` defaults to 20 and is at most 100.
+A list the limit cut says so: the JSON carries `total`, the number of findings before the limit, and the text rendering says how many there are and how to see the rest (<<text-rendering>>).
 
 Two thresholds decide the slow kinds: `slow.request.ms` is 500 milliseconds by default and `slow.query.ms` is 100.
 `status` prints the thresholds in force, and xref:configuration.adoc#properties[Configuration] says how to change them.
@@ -298,9 +299,18 @@ In the text rendering, `hotSpans` and `breakdown` come after the numbers and bef
    breakdown: db 44.0% · http 21.0% · internal 7.0% · self 28.0%
 ----
 
+[#text-rendering]
 == The text rendering
 
 The ranked table comes first, and the fields follow as one numbered block per row, in the same order.
+When the limit cut the list, a line between the heading and the table says how many findings there are and how to see the rest, as `traces` says it:
+
+* `20 of 54 findings; --limit=54 shows them all` when every finding fits under the largest limit,
+* `20 of 154 findings; --limit=100 shows the first 100` when they do not,
+* `100 of 154 findings; --service= or a shorter window shows the rest` when the largest limit is already in force.
+
+The options named are the CLI's; over HTTP and MCP the limit is the `limit` parameter and the service `service`.
+A list that holds every finding has no such line.
 The table's `state` column is the finding's <<state,state>>.
 A block is `<n>. <id> — <why>`, then the `numbers` on one line, then the hot span line when the kind has one, then the <<time,hot spans and the breakdown>> when it has those, then the statement when there is one, then the <<schema,schema lines>> when the finding has that block, then the `code` frames one per line, then the trace ids.
 

@@ -314,9 +314,10 @@ public final class Reports implements AutoCloseable {
                 .put("requests", requests)
                 .put("acked", answer.acked())
                 .put("resolved", answer.resolved())
+                .put("total", answer.total())
                 .put("findings", Codecs.findings(found));
         return listed(json, service, sendTo -> Text.findings(window, service, requests, answer.acked(),
-                answer.resolved(), found, full, sendTo));
+                answer.resolved(), answer.total(), found, full, sendTo));
     }
 
     /**

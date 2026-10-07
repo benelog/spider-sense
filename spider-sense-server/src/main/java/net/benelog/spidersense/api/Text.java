@@ -359,7 +359,7 @@ final class Text {
 
     static String findings(Window window, @Nullable String service, long requests,
             List<Findings.Finding> findings, boolean full, @Nullable String otlpEndpoint) {
-        return findings(window, service, requests, 0, 0, findings, full, otlpEndpoint);
+        return findings(window, service, requests, 0, 0, findings.size(), findings, full, otlpEndpoint);
     }
 
     /**
@@ -370,9 +370,14 @@ final class Text {
      * come back: it is still last in the table, and the one word says why without
      * a column of its own (agent.md, "Acknowledgements"). The state column says
      * what the last restart changed (agent.md, "State").
+     *
+     * <p>When the limit cut the list, a line under the heading says how many there are and
+     * how to see the rest, as {@code traces} says it (findings.adoc, "The text rendering").
+     *
+     * @param total how many findings the list was cut from
      */
     static String findings(Window window, @Nullable String service, long requests, int acked,
-            int resolved, List<Findings.Finding> findings, boolean full,
+            int resolved, int total, List<Findings.Finding> findings, boolean full,
             @Nullable String otlpEndpoint) {
         if (findings.isEmpty()) {
             return heading("findings", window, service, requests, acked, resolved) + "\n"
@@ -381,6 +386,10 @@ final class Text {
         StringBuilder text =
                 new StringBuilder(heading("findings", window, service, requests, acked, resolved));
         text.append('\n');
+        if (findings.size() < total) {
+            text.append(findings.size()).append(" of ").append(plural(total, "finding")).append("; ")
+                    .append(rest(findings.size(), total)).append("\n\n");
+        }
         List<Ranked> ranked = new ArrayList<>(findings.size());
         for (Findings.Finding finding : findings) {
             ranked.add(new Ranked(ranked.size() + 1, finding));
@@ -390,6 +399,20 @@ final class Text {
             findingEvidence(text, each.rank(), each.finding(), full);
         }
         return text.toString();
+    }
+
+    /**
+     * How to see the findings the limit left out: a limit that shows them all, the largest
+     * limit when there are more than it, and a narrower scope when even that is in force.
+     */
+    private static String rest(int shown, int total) {
+        if (total <= Limits.FINDINGS_MAX) {
+            return "--limit=" + total + " shows them all";
+        }
+        if (shown < Limits.FINDINGS_MAX) {
+            return "--limit=" + Limits.FINDINGS_MAX + " shows the first " + Limits.FINDINGS_MAX;
+        }
+        return "--service= or a shorter window shows the rest";
     }
 
     /**

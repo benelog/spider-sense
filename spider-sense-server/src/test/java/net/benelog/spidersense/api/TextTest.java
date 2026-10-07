@@ -118,6 +118,24 @@ class TextTest {
                         + " [42102-224], endpoints [name GET /a count 3], notes one two\n");
     }
 
+    /** A list the limit cut says how many there are, and how to see the rest. */
+    @Test
+    void aCutListSaysHowManyFindingsThereAre() {
+        Findings.Finding finding = new Findings.Finding("slow-endpoint:abcdefabcdef", "slow-endpoint",
+                "medium", "svc", "GET /a is slow", "p95 600.0 ms over 3 calls",
+                Findings.Subject.endpoint("abcdefabcdef"), Map.of("calls", 3L), null, List.of(),
+                List.of());
+
+        assertThat(Text.findings(WINDOW, null, 3, 0, 0, 54, List.of(finding), false, null))
+                .contains(")\n\n1 of 54 findings; --limit=54 shows them all\n\n| # |");
+        assertThat(Text.findings(WINDOW, null, 3, 0, 0, 154, List.of(finding), false, null))
+                .contains("\n1 of 154 findings; --limit=100 shows the first 100\n");
+        assertThat(Text.findings(WINDOW, null, 3, 0, 0, 154, java.util.Collections.nCopies(100, finding),
+                false, null)).contains("\n100 of 154 findings; --service= or a shorter window shows the rest\n");
+        assertThat(Text.findings(WINDOW, null, 3, 0, 0, 1, List.of(finding), false, null))
+                .doesNotContain(" of 1 finding");
+    }
+
     /** A statement, a log body and a note outside a table keep their bars, so they read as written. */
     @Test
     void aLineThatIsNoTableRowKeepsItsBars() {

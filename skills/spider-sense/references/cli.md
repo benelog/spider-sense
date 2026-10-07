@@ -249,6 +249,8 @@ $ java -jar spider-sense.jar findings --since=before
    traces: 42800a1fc7ca5ee2dec08f804cef8be6 a86465f5a9242ac8496577740771fcb7 cbc8be4f6ec5a1c033e57cbb7f269bd5
 ```
 
+When the limit cut the list, a line under the heading says how many there are and how to see the rest, `20 of 54 findings; --limit=54 shows them all`; no such line means the table holds every finding of the window.
+
 The table is the answer and the blocks under it are the evidence, one per row in the same order: the `why` sentence after the id, then the `numbers`, then the statement when the finding has one, then the application frames when any are known, then the trace ids.
 
 The run above was made outside the example's repository, so its frame carries no suspect-change line.

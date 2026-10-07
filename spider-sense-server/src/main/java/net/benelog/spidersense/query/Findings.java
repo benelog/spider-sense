@@ -257,14 +257,17 @@ public final class Findings {
     }
 
     /**
-     * The findings of one window, how many of them were acknowledged, and how
-     * many were resolved and have not come back.
+     * The findings of one window, how many of them were acknowledged, how many
+     * were resolved and have not come back, and how many there are in all.
      *
      * <p>The counts are taken before the limit, because they answer "how much is
      * being kept out of the way" rather than "how much of this page is dimmed"
      * (api.adoc).
+     *
+     * @param total the findings the limit cut {@code findings} from: every one of the
+     *        window, less the ones {@code hideAcked} left out (findings.adoc#rules)
      */
-    public record Answer(List<Finding> findings, int acked, int resolved) {
+    public record Answer(List<Finding> findings, int acked, int resolved, int total) {
     }
 
     private final Sql sql;
@@ -369,7 +372,8 @@ public final class Findings {
         Answer ranked = rank(found, acks.byId(ids),
                 (each, resolvedAt) -> recurrence(each, resolvedAt, window, since), limit, hideAcked);
         return labelled
-                ? new Answer(states(ranked.findings(), window), ranked.acked(), ranked.resolved())
+                ? new Answer(states(ranked.findings(), window), ranked.acked(), ranked.resolved(),
+                        ranked.total())
                 : ranked;
     }
 
@@ -434,10 +438,11 @@ public final class Findings {
 
         List<Finding> page = new ArrayList<>(open);
         page.addAll(aside);
+        int total = page.size();
         if (page.size() > limit) {
             page = new ArrayList<>(page.subList(0, Math.max(0, limit)));
         }
-        return new Answer(page, acked, resolved);
+        return new Answer(page, acked, resolved, total);
     }
 
     /**

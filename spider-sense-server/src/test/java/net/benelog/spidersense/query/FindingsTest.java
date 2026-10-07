@@ -1244,6 +1244,18 @@ class FindingsTest {
         assertThat(hidden.findings()).hasSize(2);
         assertThat(hidden.findings()).noneMatch(f -> f.id().equals(first));
         assertThat(hidden.acked()).as("counted before the limit and before hiding").isEqualTo(1);
+        assertThat(shown.total()).isEqualTo(3);
+        assertThat(hidden.total()).as("what is hidden is not there to be shown").isEqualTo(2);
+    }
+
+    @Test
+    void theTotalIsTakenBeforeTheLimit() {
+        threeSlowEndpoints();
+
+        Findings.Answer answer = findings.answer(window, null, 1, false);
+
+        assertThat(answer.findings()).hasSize(1);
+        assertThat(answer.total()).isEqualTo(3);
     }
 
     @Test

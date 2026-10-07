@@ -605,10 +605,11 @@ The writer inserts a mark named `start` when a service reports a `process.pid` t
 [#findings]
 === Findings
 
-*`GET /api/findings?since&until&service&limit=20&hideAcked=false`* answers `{ "window": {...}, "requests": 120, "acked": 2, "resolved": 1, "findings": [ <Finding> ] }`.
+*`GET /api/findings?since&until&service&limit=20&hideAcked=false`* answers `{ "window": {...}, "requests": 120, "acked": 2, "resolved": 1, "total": 54, "findings": [ <Finding> ] }`.
 The findings are ranked as xref:findings.adoc[Findings] specifies, with regressions first and acknowledged findings and resolved findings that have not come back last.
 `hideAcked=true` leaves the acknowledged and the resolved findings out.
 `limit` is at most 100.
+`total` is how many findings the list was cut from, counted before the limit and after `hideAcked`, so `findings` holding fewer than `total` means the limit cut it (xref:findings.adoc#rules[The rules]).
 
 *`+GET /api/findings/{id}?since&until&service+`* answers `{ "window": {...}, "requests": 120, "rank": 3, "finding": <Finding> }`, or `404` when the rules do not produce that id over the window.
 `rank` is the finding's place among every finding the list would answer over the same window and service, acknowledged and resolved ones included, whatever `limit` would have cut.

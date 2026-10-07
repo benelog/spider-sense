@@ -9,6 +9,7 @@ Findings are ranked by severity (`high` before `medium` before `low`), then by k
 The kind order is `regression`, `error`, `n-plus-one`, `n-plus-one-http`, `slow-query`, `slow-endpoint`, `slow-job`, `slow-external`, `log-error`, `pool-exhausted`, `gc-pause`, `heap-pressure`, `thread-growth`, the order of the table below.
 A `regression` is always `high`, so regressions come first, ranked among themselves by the order of their original kinds before their impact.
 The list is bounded: 20 by default, 100 at most.
+When it was cut, the text says so under the heading, `20 of 54 findings; --limit=54 shows them all`, and the JSON's `total` is the count before the limit: a `high` finding can sit below the twentieth row.
 
 ## The rules
 
