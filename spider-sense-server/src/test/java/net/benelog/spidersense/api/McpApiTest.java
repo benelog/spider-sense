@@ -117,7 +117,7 @@ class McpApiTest {
             Json.JsonArray tools = Json.parse(post(client, "/mcp",
                     "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}").body())
                     .asObject().getObject("result").getArray("tools");
-            assertThat(tools.size()).isEqualTo(7);
+            assertThat(tools.size()).isEqualTo(8);
         });
     }
 
@@ -153,6 +153,30 @@ class McpApiTest {
             assertThat(overMcp).isEqualTo(overHttp);
             assertThat(overMcp).startsWith("# findings  ");
         });
+    }
+
+    /**
+     * The step the instructions name first has a tool: status is /api/status's own text, the
+     * server's mode and address included. The database's size is left out of the comparison,
+     * because a flush between the two calls may grow it.
+     */
+    @Test
+    void statusIsTheStatusEndpointsText() {
+        serve(client -> {
+            ingest(client);
+
+            String overHttp = client.get("/api/status?format=text").body();
+            String overMcp = text(call(client, "status", "{}"));
+
+            assertThat(overMcp).startsWith("# status\n");
+            assertThat(withoutSize(overMcp)).isEqualTo(withoutSize(overHttp));
+            assertThat(overMcp).doesNotContain("| mode | file |");
+        });
+    }
+
+    private static String withoutSize(String text) {
+        return text.lines().filter(line -> !line.startsWith("| database size |"))
+                .collect(java.util.stream.Collectors.joining("\n"));
     }
 
     @Test

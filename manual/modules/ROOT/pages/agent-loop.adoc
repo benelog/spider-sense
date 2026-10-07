@@ -54,7 +54,7 @@ Every answer is served by the same `Queries` the UI uses, so the numbers an agen
 | Hosts without a shell. Seven tools over the same handlers, answering the same text.
 |===
 
-xref:cli.adoc[The CLI] documents every command, xref:mcp.adoc[MCP] the two transports and the seven tools, xref:agent-skill.adoc[The Agent Skill] the skill and its installation, and xref:api.adoc#agent-endpoints[The HTTP API] the wire shapes.
+xref:cli.adoc[The CLI] documents every command, xref:mcp.adoc[MCP] the two transports and the eight tools, xref:agent-skill.adoc[The Agent Skill] the skill and its installation, and xref:api.adoc#agent-endpoints[The HTTP API] the wire shapes.
 
 [#choosing-an-interface]
 === Choosing an interface
@@ -131,7 +131,7 @@ Read its suspect-change lines first, which say whether the frame's line is in th
 After a restart there is a fresh `start` mark, so `--since=start` covers the new run without marking anything.
 `--url=<base url>`, or the `SPIDERSENSE_URL` environment variable, points the CLI at a Spider Sense on another port.
 `--db=<path>` reads a database directly.
-xref:agent-skill.adoc#init[`init`] writes the Spider Sense block into the project's `CLAUDE.md` and installs the skills into `.claude/skills/`, so the next session finds both without being told.
+xref:agent-skill.adoc#init[`init`] writes the Spider Sense block into the project's `CLAUDE.md` or `AGENTS.md` and installs the skills into `.claude/skills/`, so the next session finds both without being told.
 
 [#starting]
 == Starting the application under the agent

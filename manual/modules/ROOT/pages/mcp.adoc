@@ -3,7 +3,7 @@
 
 Spider Sense speaks the Model Context Protocol, so a host that cannot run a command still gets the answers the CLI gives.
 
-Seven tools cover the loop: `findings`, `trace`, `mark`, `resolve`, `compare`, `check` and `sql`.
+Eight tools cover the loop: `status`, `findings`, `trace`, `mark`, `resolve`, `compare`, `check` and `sql`.
 Each one is the thinnest possible adapter over the agent-facing endpoints (xref:api.adoc#agent-endpoints[Agent-facing endpoints]).
 A tool call is one call into the same handlers the CLI and the UI use, and its result is the same text rendering the matching command prints, so an MCP answer and a CLI answer over the same window are the same bytes.
 
@@ -115,7 +115,14 @@ Every argument is the CLI option of the same meaning, and a selector is a string
 | `sql`
 | `sql` (required), `limit` (1 to 5000)
 | the sql text (xref:cli.adoc#sql[SQL])
+
+| `status`
+| none
+| the status text, as `status` prints it: the mode, the port, the database, the thresholds in force, the services seen and how much is stored
 |===
+
+`status` is the step the `instructions` name first, confirming that the application is collecting, so every step they name has a tool.
+Over HTTP it is `GET /api/status` of the server that answers; over stdio with no server it is the file's status, whose mode is `file`, as the CLI's `status` prints it there.
 
 A mark name matches `[A-Za-z0-9._-]{1,64}`, and is not one a selector reads as something else, such as `5m`, `now` or `start`.
 
@@ -134,9 +141,9 @@ Tool descriptions are one sentence each and say when to use the tool, not how th
 == Methods
 
 `initialize` answers the client's `protocolVersion` when it is one the server knows (`2025-06-18`, `2025-03-26`, `2024-11-05`), and `2025-06-18` otherwise.
-It also answers `capabilities: { "tools": {} }`, `serverInfo: { "name": "spider-sense", "version": "<version>" }`, and `instructions`, which is the loop in one paragraph: start the application under the agent, `mark`, exercise, `findings`, fix, `mark`, `compare`, `check`, and `resolve` once the fix holds.
+It also answers `capabilities: { "tools": {} }`, `serverInfo: { "name": "spider-sense", "version": "<version>" }`, and `instructions`, which is the loop in one paragraph: start the application under the agent, `status` to confirm it is collecting, `mark`, exercise, `findings`, fix, `mark`, `compare`, `check`, and `resolve` once the fix holds.
 
-`notifications/initialized` is accepted and ignored, `ping` answers an empty object, `tools/list` is the seven tools, and `tools/call` runs one.
+`notifications/initialized` is accepted and ignored, `ping` answers an empty object, `tools/list` is the eight tools, and `tools/call` runs one.
 Anything else is `-32601`.
 
 [#configuring]
@@ -151,7 +158,11 @@ java -jar spider-sense.jar init --mcp
 
 It sets `mcpServers.spider-sense` to `{ "command": "java", "args": ["-jar", "<jar path>", "mcp"] }`, with the same absolute jar path the `CLAUDE.md` block names (xref:agent-skill.adoc#init[init]).
 An existing file is parsed as JSON and every other entry is kept, though the file is rewritten in Spider Sense's own JSON formatting.
-A file that is not a JSON object is left alone, with a message on stderr and exit code `2`.
+A file that is not a JSON object is left alone, with a message on stderr and exit code `2`, and `init` then writes nothing at all.
+
+`--mcp` hands the host MCP instead of the CLI, never beside it, as the warning under <<when,When to use it>> asks.
+The block it writes still says where the jar is and how to start the application under it, and names the MCP server's tools where the CLI's lines would be.
+It installs no skill, because both skills teach the loop through the CLI, and the server's `instructions` carry the same loop (xref:agent-skill.adoc#init-output[What it prints]).
 
 Without `--mcp` nothing is written and nothing is printed about it, because a host with a shell is meant to use the CLI.
 

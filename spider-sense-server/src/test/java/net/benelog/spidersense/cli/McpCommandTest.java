@@ -86,7 +86,7 @@ class McpCommandTest {
 
         Json.JsonObject tools = Json.parse(lines.get(1)).asObject();
         assertThat(tools.getLong("id")).isEqualTo(2);
-        assertThat(tools.getObject("result").getArray("tools").size()).isEqualTo(7);
+        assertThat(tools.getObject("result").getArray("tools").size()).isEqualTo(8);
 
         Json.JsonObject answered = Json.parse(lines.get(2)).asObject();
         assertThat(answered.getLong("id")).isEqualTo(3);
@@ -116,6 +116,20 @@ class McpCommandTest {
         assertThat(Json.parse(lines.get(1)).asObject().getObject("result").getBoolean("isError"))
                 .as("the mark resolved, so it is in the file").isFalse();
         assertThat(text(lines.get(1))).startsWith("# findings  ");
+    }
+
+    /** Over the file, status is what the CLI's own status prints there: the file mode, no endpoint. */
+    @Test
+    void statusOverTheFileIsTheCliStatusOfTheFile() {
+        String db = "--db=" + TestStore.writtenUrl();
+        String status = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":"
+                + "{\"name\":\"status\",\"arguments\":{}}}";
+
+        Run run = run(status + "\n", "mcp", db);
+
+        List<String> lines = run.out().lines().toList();
+        assertThat(lines).hasSize(1);
+        assertThat(text(lines.get(0))).startsWith("# status\n").contains("| mode | file |");
     }
 
     /**
@@ -174,7 +188,7 @@ class McpCommandTest {
         List<String> lines = run.out().lines().toList();
         assertThat(lines).hasSize(2);
         assertThat(Json.parse(lines.get(0)).asObject().getObject("result").getArray("tools").size())
-                .as("tools/list is answered in process either way").isEqualTo(7);
+                .as("tools/list is answered in process either way").isEqualTo(8);
         Json.JsonObject failed = Json.parse(lines.get(1)).asObject().getObject("result");
         assertThat(failed.getBoolean("isError")).isTrue();
         assertThat(failed.getArray("content").get(0).asObject().getString("text"))

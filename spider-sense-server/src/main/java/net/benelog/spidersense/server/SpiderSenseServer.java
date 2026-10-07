@@ -126,12 +126,14 @@ public final class SpiderSenseServer implements AutoCloseable {
         new OtlpReceiver(new OtlpDecoder(store, boundPort::get), store.writer(), config.awaitWrites())
                 .register(app);
         Params params = new Params(reports.selectors());
-        new StatusApi(config, store, queries, reports, params, boundPort::get).register(app);
+        StatusApi status = new StatusApi(config, store, queries, reports, params, boundPort::get);
+        status.register(app);
         new TrafficApi(queries, reports, params).register(app);
         new MetricsApi(metrics, store.services(), params).register(app);
         new AgentApi(reports, params).register(app);
         new SourceApi(SourceRoots.of(config.sourceDirs(), Path.of(""))).register(app);
-        new McpApi(new McpServer(McpTools.TOOLS, new McpTools(reports), Version.CURRENT)).register(app);
+        new McpApi(new McpServer(McpTools.TOOLS, new McpTools(reports, status::report), Version.CURRENT))
+                .register(app);
         new EventsApi(store, queries).register(app);
         app.error(HttpStatus.NOT_FOUND, SpiderSenseServer::notFound);
         app.server((a, port) -> server(a, port, config));

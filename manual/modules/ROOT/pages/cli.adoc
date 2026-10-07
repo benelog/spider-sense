@@ -99,7 +99,7 @@ The launcher reads xref:configuration.adoc#properties-file[the properties file] 
 | that document back into the store
 
 | `init [--dir=] [--jar=] [--url=] [--gradle] [--no-skill] [--mcp]`
-| writes the Spider Sense block into the project's `CLAUDE.md` and installs the skills
+| writes the Spider Sense block into the project's `CLAUDE.md` or `AGENTS.md` and installs the skills, or with `--mcp` writes the stdio MCP server into `.mcp.json` instead of them
 
 | `mcp`
 | the MCP server over stdio
@@ -463,7 +463,7 @@ See <<sql,SQL>>.
 [#init]
 === init
 
-`init` writes the Spider Sense block into the project's `CLAUDE.md` and installs the skills into its `.claude/skills/`.
+`init` writes the Spider Sense block into the project's `CLAUDE.md` or `AGENTS.md` and installs the skills into its `.claude/skills/`.
 It is the one command that reads nothing: no HTTP, no database, no running Spider Sense.
 It takes none of the common options, and its own are `--dir`, `--jar`, `--url`, `--gradle`, `--no-skill` and `--mcp`.
 Its `--url` asks nothing: it is the address of the project's Spider Sense, which the block it writes tells the agent to ask.
@@ -532,8 +532,9 @@ Commands:
   init [--dir=<project dir>] [--jar=<path>] [--url=<base url>] [--gradle]
        [--no-skill] [--mcp]
                                writes the Spider Sense block into the project's
-                               CLAUDE.md and installs the skills into .claude/skills/;
-                               --mcp also writes the stdio MCP server into .mcp.json
+                               CLAUDE.md or AGENTS.md and installs the skills into
+                               .claude/skills/; --mcp writes the stdio MCP server
+                               into .mcp.json instead of the skills
   mcp                          the MCP server over stdio, for a host with no shell;
                                takes --url and --db and nothing else
   help [<command>]             this table, or what one command takes, which

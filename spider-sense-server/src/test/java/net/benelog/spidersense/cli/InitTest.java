@@ -68,6 +68,59 @@ class InitTest {
                 .as("a file people open and edit").contains("\n  \"mcpServers\": {");
     }
 
+    /**
+     * The MCP server instead of the CLI, never beside it: the block names the tools, not the
+     * CLI's lines, and no skill teaching the CLI is installed (agent-skill.adoc#init-output).
+     */
+    @Test
+    void mcpWritesABlockThatNamesTheToolsAndInstallsNoSkill(@TempDir Path project) throws IOException {
+        Run run = init("--dir=" + project, "--jar=" + JAR, "--mcp");
+
+        assertThat(run.exit()).as("stderr: %s", run.err()).isZero();
+        assertThat(run.out().lines().toList()).containsExactly(
+                "wrote CLAUDE.md block (jar: " + JAR + ")",
+                "skipped skills (--mcp)",
+                "wrote .mcp.json (spider-sense over stdio)");
+        assertThat(project.resolve(".claude")).doesNotExist();
+        assertThat(block(project))
+                .contains("java -javaagent:" + JAR + " -jar <app jar>")
+                .contains("the `spider-sense` MCP server in `.mcp.json`: `status` first")
+                .doesNotContain("java -jar " + JAR)
+                .doesNotContain("Ask it from the terminal")
+                .doesNotContain("SKILL.md")
+                .endsWith("the loop.\n" + Init.END + "\n");
+    }
+
+    /** Codex and the others read AGENTS.md, so a project that keeps only that file gets the block there. */
+    @Test
+    void anAgentsFileAloneGetsTheBlock(@TempDir Path project) throws IOException {
+        Files.writeString(project.resolve("AGENTS.md"), "# Rules\n", UTF_8);
+
+        Run run = init("--dir=" + project, "--jar=" + JAR, "--no-skill");
+
+        assertThat(run.out()).startsWith("wrote AGENTS.md block (jar: " + JAR + ")\n");
+        assertThat(project.resolve("CLAUDE.md")).doesNotExist();
+        assertThat(Files.readString(project.resolve("AGENTS.md"), UTF_8))
+                .startsWith("# Rules\n\n" + Init.START);
+    }
+
+    /** A project that keeps both files gets the block in both, one line each, CLAUDE.md first. */
+    @Test
+    void bothFilesGetTheBlock(@TempDir Path project) throws IOException {
+        Files.writeString(project.resolve("AGENTS.md"), "# Rules\n", UTF_8);
+        Files.writeString(project.resolve("CLAUDE.md"), "# Notes\n", UTF_8);
+
+        init("--dir=" + project, "--jar=" + JAR, "--no-skill");
+        Run again = init("--dir=" + project, "--jar=" + JAR, "--no-skill");
+
+        assertThat(again.out().lines().toList()).containsExactly(
+                "updated CLAUDE.md block (jar: " + JAR + ")",
+                "updated AGENTS.md block (jar: " + JAR + ")",
+                "skipped skills (--no-skill)");
+        assertThat(Files.readString(project.resolve("CLAUDE.md"), UTF_8)).contains(Init.START);
+        assertThat(Files.readString(project.resolve("AGENTS.md"), UTF_8)).contains(Init.START);
+    }
+
     @Test
     void withoutMcpNothingIsWrittenAndNothingIsSaidAboutIt(@TempDir Path project) {
         Run run = init("--dir=" + project, "--jar=" + JAR, "--no-skill");
@@ -127,7 +180,8 @@ class InitTest {
         assertThat(run.exit()).isEqualTo(2);
         assertThat(run.err()).contains(".mcp.json").contains("not a JSON object");
         assertThat(Files.readString(file, UTF_8)).isEqualTo("[\"not an object\"]\n");
-        assertThat(run.out()).doesNotContain(".mcp.json");
+        assertThat(run.out()).as("nothing is written before the file is known to be ours").isEmpty();
+        assertThat(project.resolve("CLAUDE.md")).doesNotExist();
     }
 
     private static String block(Path project) throws IOException {
@@ -142,7 +196,7 @@ class InitTest {
         int end = page.indexOf(Init.END, start) + Init.END.length();
         assertThat(start).as("the page shows the block").isPositive();
         assertThat(page.substring(start, end)).isEqualTo(Init.block(new Init.Setup(
-                "/home/me/tools/spider-sense.jar", true, null, false, Init.Build.GRADLE)));
+                "/home/me/tools/spider-sense.jar", true, null, false, Init.Build.GRADLE, false)));
     }
 
     /** A Gradle build gets the Gradle sentence and not the Maven one (agent-skill.adoc#block-variants). */

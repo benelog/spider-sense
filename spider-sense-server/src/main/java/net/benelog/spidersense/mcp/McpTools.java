@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 
 import net.benelog.spidersense.api.Limits;
 import net.benelog.spidersense.api.Reports;
@@ -15,7 +16,7 @@ import net.benelog.spidersense.store.Marks;
 import org.jspecify.annotations.Nullable;
 
 /**
- * The seven tools, as the seven {@link Reports} calls the CLI makes.
+ * The eight tools, as the eight {@link Reports} calls the CLI makes.
  *
  * <p>This is the whole of the MCP adapter's behaviour, and it is deliberately the
  * same calls as {@code cli/Local.answer}: the same defaults, the same caps, the
@@ -39,7 +40,7 @@ public final class McpTools implements McpServer.ToolRunner {
             "Narrow the answer to one service by name; every service by default.");
 
     /**
-     * The seven tools of mcp.adoc#tools, their schemas, their descriptions and their handlers.
+     * The eight tools of mcp.adoc#tools, their schemas, their descriptions and their handlers.
      *
      * <p>The check rules come from {@link Check#RULES} and the list caps from {@link Limits}, so a
      * new rule or a changed cap reaches MCP without anyone writing it here.
@@ -117,7 +118,12 @@ public final class McpTools implements McpServer.ToolRunner {
                                             + "EXPLAIN or SHOW; nothing that writes is allowed."),
                             Tool.Arg.integer("limit", "How many rows to return; "
                                     + Limits.SQL + " by default.", 1, Limits.SQL_MAX)),
-                    List.of("sql"), McpTools::sql));
+                    List.of("sql"), McpTools::sql),
+            new Tool("status",
+                    "Use this once the application has started under the agent, to confirm it "
+                            + "is collecting: what is running, where its database is, the "
+                            + "thresholds in force, the services seen and how much is stored.",
+                    List.of(), List.of(), McpTools::status));
 
     /** The window and scope of {@code check}, then one number per rule of {@link Check#RULES}. */
     private static List<Tool.Arg> checkArgs() {
@@ -132,8 +138,15 @@ public final class McpTools implements McpServer.ToolRunner {
 
     private final Reports reports;
 
-    public McpTools(Reports reports) {
+    /**
+     * The status report, as whoever answers {@code status} for the CLI makes it: the server
+     * with its mode, its address and its start, the stdio fallback as a read of the file.
+     */
+    private final Supplier<Reports.Report> status;
+
+    public McpTools(Reports reports, Supplier<Reports.Report> status) {
         this.reports = reports;
+        this.status = status;
     }
 
     @Override
@@ -161,6 +174,11 @@ public final class McpTools implements McpServer.ToolRunner {
     private McpServer.ToolResult resolve(Map<String, Object> arguments) {
         return text(reports.resolve(
                 reports.resolve(string(arguments, "findingId"), string(arguments, "note"))));
+    }
+
+    /** The same report {@code /api/status} and the CLI's {@code status} print; it takes no argument. */
+    private McpServer.ToolResult status(Map<String, Object> arguments) {
+        return text(status.get());
     }
 
     private McpServer.ToolResult sql(Map<String, Object> arguments) {

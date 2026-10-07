@@ -701,7 +701,7 @@ A refused statement and a statement H2 would not run are both `400`: `{ "error":
 === MCP
 
 *`POST /mcp`* takes one JSON-RPC 2.0 message as `application/json`.
-xref:mcp.adoc[MCP] specifies the semantics, the seven tools and their arguments.
+xref:mcp.adoc[MCP] specifies the semantics, the eight tools and their arguments.
 
 * A request (`id` present) is answered `200` with the JSON-RPC response as `application/json`.
 A notification is answered `202` with no body.

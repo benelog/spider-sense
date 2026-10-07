@@ -18,8 +18,9 @@ import org.jspecify.annotations.Nullable;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 /**
- * {@code java -jar spider-sense.jar init}: the few lines a project's {@code CLAUDE.md}
- * needs about Spider Sense, and a copy of the agent skills beside them (agent-skill.adoc#init).
+ * {@code java -jar spider-sense.jar init}: the few lines a project's {@code CLAUDE.md} or
+ * {@code AGENTS.md} needs about Spider Sense, and a copy of the agent skills beside them
+ * (agent-skill.adoc#init).
  *
  * <p>The one command that reads nothing: no HTTP, no database, no running Spider
  * Sense, so {@link Cli} answers it before it ever decides between {@link Remote} and
@@ -103,9 +104,25 @@ final class Init {
      * @param gradlePlugin   the project applies the Gradle plugin ({@code --gradle}), so its tasks
      *                       start the application and run the CLI
      * @param build          the build tool the project directory shows
+     * @param mcp            the host asks through the MCP server ({@code --mcp}), so the block
+     *                       names its tools instead of the CLI's lines and the skills
      */
-    record Setup(String jar, boolean skillInstalled, @Nullable String url, boolean gradlePlugin, Build build) {
+    record Setup(String jar, boolean skillInstalled, @Nullable String url, boolean gradlePlugin, Build build,
+            boolean mcp) {
     }
+
+    /** The files the block goes into, as Claude Code and as Codex and the others read them. */
+    private static final String CLAUDE_FILE = "CLAUDE.md";
+    private static final String AGENTS_FILE = "AGENTS.md";
+
+    /** Where {@code --mcp} writes the stdio server, which is where a host that reads it looks. */
+    private static final String MCP_FILE = ".mcp.json";
+
+    /** What stands in place of the CLI lines and the skill lines under {@code --mcp}. */
+    private static final String ASK_MCP = "Ask it through the tools of the `spider-sense` MCP server in "
+            + "`.mcp.json`: `status` first, to confirm the application is collecting, then `mark`, "
+            + "`findings`, `trace`, `compare`, `check` and `resolve`; the server's instructions carry "
+            + "the loop.\n";
 
     private static final String SKILL_HERE = "The loop — start, mark, exercise, findings, fix, compare, "
             + "check — is in the skill at `.claude/skills/spider-sense/SKILL.md`.\n"
@@ -156,10 +173,14 @@ final class Init {
         body.append(url == null
                 ? "The UI is then at <http://127.0.0.1:4000> unless the port was changed.\n"
                 : "The UI is then at <" + url + ">.\n");
-        body.append("\nAsk it from the terminal; every answer is Markdown made for an agent:\n\n")
-                .append(ask(setup))
-                .append('\n')
-                .append(setup.skillInstalled() ? SKILL_HERE : SKILL_ELSEWHERE);
+        if (setup.mcp()) {
+            body.append('\n').append(ASK_MCP);
+        } else {
+            body.append("\nAsk it from the terminal; every answer is Markdown made for an agent:\n\n")
+                    .append(ask(setup))
+                    .append('\n')
+                    .append(setup.skillInstalled() ? SKILL_HERE : SKILL_ELSEWHERE);
+        }
         return (START + "\n" + body + END).replace(JAR_PLACEHOLDER, setup.jar());
     }
 
@@ -198,25 +219,76 @@ final class Init {
                     + "java -jar <path>/spider-sense.jar init, or name the jar with --jar=<path>");
             return Cli.USAGE;
         }
-        boolean withSkill = !options.flag("no-skill");
+        // --mcp hands the host the MCP server instead of the CLI, never beside it: two tools for
+        // the same answers make the model choose between them (agent-loop.adoc#choosing-an-interface).
+        boolean mcp = options.flag("mcp");
+        boolean withSkill = !mcp && !options.flag("no-skill");
         String url = options.valueOrNull("url");
         Setup setup = new Setup(jar, withSkill, url == null || url.isBlank() ? null : Remote.trimSlash(url),
-                options.flag("gradle"), Build.of(dir));
+                options.flag("gradle"), Build.of(dir), mcp);
         try {
-            out.println(writeBlock(dir, block(setup)) + " CLAUDE.md block (jar: " + jar + ")");
+            Path mcpFile = dir.resolve(MCP_FILE);
+            // Read before anything is written, so a file that is not ours to rewrite stops init
+            // before the block names a server it could not configure.
+            Json.JsonObject mcpConfig = mcp ? mcpConfig(mcpFile) : null;
+            if (mcp && mcpConfig == null) {
+                err.println("spider-sense: " + mcpFile + " is not a JSON object; "
+                        + "--mcp left it as it was, and wrote nothing else");
+                return Cli.USAGE;
+            }
+            String block = block(setup);
+            for (String name : blockFiles(dir)) {
+                out.println(writeBlock(dir.resolve(name), block) + " " + name + " block (jar: " + jar + ")");
+            }
             if (withSkill) {
                 Path target = dir.resolve(Paths.get(SKILL_TARGET));
                 installSkills(target).forEach((skill, files) ->
                         out.println("installed skill to " + target.resolve(skill) + " (" + files + " files)"));
             } else {
-                out.println("skipped skills (--no-skill)");
+                out.println(mcp ? "skipped skills (--mcp)" : "skipped skills (--no-skill)");
             }
             // Without --mcp nothing is written and nothing is said: a host with a shell
-            // is meant to use the CLI, and init should not hand it a second tool for
-            // the same answers (agent-loop.adoc#choosing-an-interface).
-            return options.flag("mcp") ? writeMcpServer(dir, jar, out, err) : Cli.OK;
+            // is meant to use the CLI.
+            if (mcpConfig != null) {
+                writeMcpServer(mcpFile, mcpConfig, jar, out);
+            }
+            return Cli.OK;
         } catch (IOException e) {
             throw new UncheckedIOException(e);
+        }
+    }
+
+    /**
+     * The files the block goes into: {@code AGENTS.md} when the project has one and no
+     * {@code CLAUDE.md}, both when it has both, and {@code CLAUDE.md} otherwise, created
+     * when it is not there (agent-skill.adoc#init).
+     */
+    private static List<String> blockFiles(Path dir) {
+        boolean claude = Files.exists(dir.resolve(CLAUDE_FILE));
+        boolean agents = Files.exists(dir.resolve(AGENTS_FILE));
+        if (agents) {
+            return claude ? List.of(CLAUDE_FILE, AGENTS_FILE) : List.of(AGENTS_FILE);
+        }
+        return List.of(CLAUDE_FILE);
+    }
+
+    /**
+     * The project's {@code .mcp.json} as an object to add to, an empty one when there is no
+     * file, or null when the file is not a JSON object.
+     *
+     * <p>A file that is not a JSON object is left exactly as it is: it is not ours
+     * to guess at, and overwriting a host's configuration would be worse than
+     * refusing.
+     */
+    private static Json.@Nullable JsonObject mcpConfig(Path file) throws IOException {
+        if (!Files.exists(file)) {
+            return Json.obj();
+        }
+        try {
+            return Json.parse(Files.readString(file, UTF_8)) instanceof Json.JsonObject object ? object : null;
+        } catch (RuntimeException e) {
+            // Not JSON at all, which is answered as any other file that is not an object.
+            return null;
         }
     }
 
@@ -228,30 +300,10 @@ final class Init {
      * project's and Spider Sense is one server in it. It is rewritten in this
      * server's own JSON rather than in whatever formatting it had, which is the one
      * thing that is not preserved and the one thing a JSON parser does not carry.
-     *
-     * <p>A file that is not a JSON object is left exactly as it is: it is not ours
-     * to guess at, and overwriting a host's configuration would be worse than
-     * refusing.
      */
-    private static int writeMcpServer(Path dir, String jar, PrintStream out, PrintStream err)
+    private static void writeMcpServer(Path file, Json.JsonObject root, String jar, PrintStream out)
             throws IOException {
-        Path file = dir.resolve(".mcp.json");
         boolean existed = Files.exists(file);
-        Json.JsonObject root = Json.obj();
-        if (existed) {
-            Json.JsonValue parsed = null;
-            try {
-                parsed = Json.parse(Files.readString(file, UTF_8));
-            } catch (RuntimeException e) {
-                // Not JSON at all; the message below says the same thing either way.
-            }
-            if (!(parsed instanceof Json.JsonObject object)) {
-                err.println("spider-sense: " + file + " is not a JSON object; "
-                        + "--mcp left it as it was");
-                return Cli.USAGE;
-            }
-            root = object;
-        }
         Json.JsonObject servers = root.has("mcpServers")
                 && root.get("mcpServers") instanceof Json.JsonObject existing ? existing : Json.obj();
         servers.put(net.benelog.spidersense.mcp.McpServer.NAME, Json.obj()
@@ -260,7 +312,6 @@ final class Init {
         root.put("mcpServers", servers);
         Files.writeString(file, pretty(root) + "\n", UTF_8);
         out.println((existed ? "updated" : "wrote") + " .mcp.json (spider-sense over stdio)");
-        return Cli.OK;
     }
 
     /**
@@ -322,15 +373,14 @@ final class Init {
     }
 
     /**
-     * Writes the block into {@code <dir>/CLAUDE.md} and says which of the two things it
-     * did: {@code wrote} or {@code updated}.
+     * Writes the block into {@code CLAUDE.md} or {@code AGENTS.md} and says which of the two
+     * things it did: {@code wrote} or {@code updated}.
      *
      * <p>Only the span between the markers is ever rewritten. The file is not parsed,
      * not reformatted and not re-encoded beyond UTF-8 in and UTF-8 out, because it is
      * the project's file and Spider Sense is a guest in it.
      */
-    private static String writeBlock(Path dir, String block) throws IOException {
-        Path file = dir.resolve("CLAUDE.md");
+    private static String writeBlock(Path file, String block) throws IOException {
         if (!Files.exists(file)) {
             Files.writeString(file, block + "\n", UTF_8);
             return "wrote";

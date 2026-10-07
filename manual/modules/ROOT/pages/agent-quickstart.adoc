@@ -49,7 +49,7 @@ Run `init` in the project:
 java -jar spider-sense.jar init
 ----
 
-`init` writes a Spider Sense block into the project's `CLAUDE.md`, with the jar's absolute path and the commands, and copies the skills into `.claude/skills/spider-sense/` and `.claude/skills/spider-sense-sql-tuning/`.
+`init` writes a Spider Sense block into the project's `CLAUDE.md` (or its `AGENTS.md`, as below), with the jar's absolute path and the commands, and copies the skills into `.claude/skills/spider-sense/` and `.claude/skills/spider-sense-sql-tuning/`.
 The next Claude Code session finds both without being told.
 In a project that applies the Gradle plugin, you run `./gradlew spiderSenseInit` instead.
 It does the same with the jar the build resolved (xref:agent-skill.adoc#init[init]).
@@ -68,7 +68,9 @@ mkdir -p .codex/skills
 cp -r .claude/skills/spider-sense .claude/skills/spider-sense-sql-tuning .codex/skills/
 ----
 
-Codex reads `AGENTS.md` rather than `CLAUDE.md`, so paste the block between `<!-- spider-sense:start -->` and `<!-- spider-sense:end -->` into `AGENTS.md` so that Codex finds it the same way.
+Codex reads `AGENTS.md` rather than `CLAUDE.md`.
+`init` writes the block into `AGENTS.md` when the project has one and no `CLAUDE.md`, and into both when it has both (xref:agent-skill.adoc#block-file[which file]).
+A project with neither gets `CLAUDE.md`, so for Codex create `AGENTS.md` first, even empty, and run `init` then.
 
 Cursor and GitHub Copilot read the project's `.claude/skills/`, so the `init` step alone serves them (xref:agent-skill.adoc#by-hand[Installing the skills by hand]).
 
@@ -98,6 +100,8 @@ What the host can reach decides the choice.
 |===
 
 For MCP, `init --mcp` adds the stdio server to the project's `.mcp.json`.
+It then installs no skill and writes a block that names the server's tools instead of the CLI's commands, so the host is handed one of the two and not both.
+The server's `status` tool confirms the application is collecting, as the CLI's `status` does.
 A host that reaches a running Spider Sense over HTTP is configured with `http://127.0.0.1:4000/mcp` (xref:mcp.adoc[MCP]).
 
 WARNING: Do not enable both the CLI and MCP in one host.

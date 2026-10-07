@@ -63,8 +63,9 @@ final class Help {
               init [--dir=<project dir>] [--jar=<path>] [--url=<base url>] [--gradle]
                    [--no-skill] [--mcp]
                                            writes the Spider Sense block into the project's
-                                           CLAUDE.md and installs the skills into .claude/skills/;
-                                           --mcp also writes the stdio MCP server into .mcp.json
+                                           CLAUDE.md or AGENTS.md and installs the skills into
+                                           .claude/skills/; --mcp writes the stdio MCP server
+                                           into .mcp.json instead of the skills
               mcp                          the MCP server over stdio, for a host with no shell;
                                            takes --url and --db and nothing else
               help [<command>]             this table, or what one command takes, which

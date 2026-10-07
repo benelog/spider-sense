@@ -64,8 +64,12 @@ public final class StatusApi {
     }
 
     public WebResponse status(WebRequest req) {
-        return Params.answer(req,
-                reports.status(config.mode(), config.baseUrl(port.getAsInt()), startedAt));
+        return Params.answer(req, report());
+    }
+
+    /** What {@code /api/status} answers, which the MCP {@code status} tool answers too (mcp.adoc#tools). */
+    public Reports.Report report() {
+        return reports.status(config.mode(), config.baseUrl(port.getAsInt()), startedAt);
     }
 
     public WebResponse clear(WebRequest req) {

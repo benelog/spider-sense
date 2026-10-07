@@ -29,7 +29,7 @@ The launcher treats a first argument that does not start with `-` as a command a
 | `sql "<statement>" [--limit=200]` | one read-only statement over the store, for a question no other command answers ([sql.md](sql.md)) |
 | `export [--out=<file>]` | the window as one JSON document, to the file or to stdout; a name ending in `.gz` is gzipped |
 | `import <file>` | that document back into the store, and one line saying what arrived |
-| `init [--dir=<project dir>] [--jar=<path>] [--url=<base url>] [--gradle] [--no-skill] [--mcp]` | writes the Spider Sense block into the project's `CLAUDE.md` and installs the skills into its `.claude/skills/`; `--mcp` also writes the stdio MCP server into its `.mcp.json` |
+| `init [--dir=<project dir>] [--jar=<path>] [--url=<base url>] [--gradle] [--no-skill] [--mcp]` | writes the Spider Sense block into the project's `CLAUDE.md` (or `AGENTS.md`, when only that one exists, or both when both do) and installs the skills into its `.claude/skills/`; `--mcp` writes the stdio MCP server into its `.mcp.json` instead of the skills, and a block that names its tools instead of the CLI |
 | `mcp` | the MCP server over stdio, for a host that has no shell; it takes `--url` and `--db` and nothing else ([MCP over stdio](#mcp-over-stdio)) |
 | `help [<command>]` | this table, or what one command takes; `<command> --help` and `-h` print the same block |
 | `version` | the version of the jar, as `--version` prints it |
@@ -52,7 +52,7 @@ The launcher treats a first argument that does not start with `-` as a command a
 `compare` takes no `--since`: its windows are the two selectors, and `--until` closes the second one.
 `init` takes none of these: it reads nothing, and its own options are `--dir=<project dir>` (the working directory by default), `--jar=<path>` (the jar it was started from by default), `--url=<base url>` (the Spider Sense the block's commands ask, written into them rather than asked), `--gradle` (the project applies the Gradle plugin, so the block starts the application with `./gradlew bootRun` and runs the CLI as `./gradlew -q spiderSense --args="…"`), `--no-skill` and `--mcp`.
 `mcp` takes only `--url` and `--db`, because a window, a format and a service belong to each message of the session rather than to the command.
-It is idempotent — the block it writes is delimited by `<!-- spider-sense:start -->` and `<!-- spider-sense:end -->`, and a second run replaces what is between them and leaves the rest of `CLAUDE.md` untouched.
+It is idempotent — the block it writes is delimited by `<!-- spider-sense:start -->` and `<!-- spider-sense:end -->`, and a second run replaces what is between them and leaves the rest of the file untouched.
 `--slow.request.ms=`, `--slow.query.ms=` and `--app.packages=` set the thresholds and the application packages in the direct-file path, where no server is there to ask.
 An option a command does not take is a usage error rather than a silently ignored word, so a mistyped `--sinse` is told, with `did you mean --since?`, rather than answered for the last 15 minutes.
 An option that takes a value is a usage error without one, so a bare `--since` is told rather than read as the mark name `true`; only `--json`, `--full`, `--hide-acked`, `--no-git` and `init`'s `--gradle`, `--no-skill` and `--mcp` are named bare.
@@ -112,7 +112,7 @@ A file that holds tables but no Spider Sense schema, such as the application's o
 
 ## MCP over stdio
 
-`mcp` is the same seven answers spoken as the Model Context Protocol, for a host that cannot run a command at all.
+`mcp` is the same eight answers spoken as the Model Context Protocol, for a host that cannot run a command at all.
 You have a shell, so this is not your interface: use the commands above, and reach for `mcp` only when the user asks how to wire Spider Sense into Claude Desktop, an IDE chat panel or another host without one.
 
 ```
@@ -121,9 +121,9 @@ java -jar spider-sense.jar mcp [--url=<base url>] [--db=<path or jdbc url>]
 
 It reads newline-delimited JSON-RPC on stdin and writes it on stdout, nothing else on stdout, and ends at end of input.
 `initialize`, `ping` and `tools/list` are answered in the process; a tool call goes to the Spider Sense at `--url` when one answers and to the H2 file when none does, exactly as every command here decides it, so MCP still answers after the application has crashed.
-The tools are `findings`, `trace`, `mark`, `resolve`, `compare`, `check` and `sql`, their arguments are the options of the same name, and each answers the same Markdown the matching command prints over the same window.
+The tools are `findings`, `trace`, `mark`, `resolve`, `compare`, `check`, `sql` and `status`, their arguments are the options of the same name, and each answers the same Markdown the matching command prints over the same window.
 
-`java -jar spider-sense.jar init --mcp` writes that server into the project's `.mcp.json` as `mcpServers.spider-sense`, keeping every other entry, and prints a last line saying so; a host that reaches a running Spider Sense over HTTP instead is configured by hand with `{"type": "http", "url": "http://127.0.0.1:4000/mcp"}`.
+`java -jar spider-sense.jar init --mcp` writes that server into the project's `.mcp.json` as `mcpServers.spider-sense`, keeping every other entry, and prints a last line saying so; it then installs no skill and writes a block that names the tools instead of the CLI, because the host is to use one or the other; a host that reaches a running Spider Sense over HTTP instead is configured by hand with `{"type": "http", "url": "http://127.0.0.1:4000/mcp"}`.
 Do not enable both the CLI and MCP in one host: two tools that give the same answer make the model choose between them and cost the schema twice.
 
 ## Text rendering conventions
@@ -535,8 +535,9 @@ Commands:
   init [--dir=<project dir>] [--jar=<path>] [--url=<base url>] [--gradle]
        [--no-skill] [--mcp]
                                writes the Spider Sense block into the project's
-                               CLAUDE.md and installs the skills into .claude/skills/;
-                               --mcp also writes the stdio MCP server into .mcp.json
+                               CLAUDE.md or AGENTS.md and installs the skills into
+                               .claude/skills/; --mcp writes the stdio MCP server
+                               into .mcp.json instead of the skills
   mcp                          the MCP server over stdio, for a host with no shell;
                                takes --url and --db and nothing else
   help [<command>]             this table, or what one command takes, which

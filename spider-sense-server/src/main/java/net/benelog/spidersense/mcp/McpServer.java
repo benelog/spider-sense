@@ -15,7 +15,7 @@ import org.jspecify.annotations.Nullable;
  * {@link #handle(String)} and send back what it returns, so the protocol is
  * written once and neither transport can drift from the other.
  *
- * <p>Nothing here computes an answer. The seven tools are calls on
+ * <p>Nothing here computes an answer. The eight tools are calls on
  * {@link net.benelog.spidersense.api.Reports} through a {@link ToolRunner}, which
  * is also what lets the stdio transport put a proxy behind them, and their text is
  * the same Markdown the CLI prints over the same window.
@@ -45,7 +45,7 @@ public final class McpServer {
     public static final String INSTRUCTIONS = """
             Spider Sense is an observability tool for the local development loop: it watches a JVM application \
             started under its agent and answers in Markdown made to be read by a model. \
-            Run the loop: start the application under the agent and confirm it is collecting, \
+            Run the loop: start the application under the agent and call status to confirm it is collecting, \
             call mark to name the moment, exercise the endpoints in question, call findings to read \
             the ranked list of what is worth fixing and trace to open the evidence behind the top one, \
             fix the code and restart if it needs one, call mark again, exercise exactly the same way, \

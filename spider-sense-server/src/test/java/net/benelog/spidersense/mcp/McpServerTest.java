@@ -57,6 +57,7 @@ class McpServerTest {
         assertThat(result.getString("instructions"))
                 .as("the loop, in one paragraph")
                 .contains("mark").contains("findings").contains("compare").contains("check")
+                .as("every step it names has a tool").contains("call status to confirm")
                 .doesNotContain("\n");
 
         Json.JsonObject unknown = answer(server.handle(request(2, "initialize",
@@ -83,7 +84,7 @@ class McpServerTest {
     }
 
     @Test
-    void toolsListIsTheSevenToolsOfAgentMdWithTheirSchemas() {
+    void toolsListIsTheEightToolsOfMcpAdocWithTheirSchemas() {
         Json.JsonArray tools = answer(server.handle(request(4, "tools/list", null)))
                 .getObject("result").getArray("tools");
 
@@ -92,7 +93,8 @@ class McpServerTest {
             byName.put(tool.asObject().getString("name"), tool.asObject());
         }
         assertThat(byName.keySet())
-                .containsExactly("findings", "trace", "mark", "resolve", "compare", "check", "sql");
+                .containsExactly("findings", "trace", "mark", "resolve", "compare", "check", "sql",
+                        "status");
 
         for (Json.JsonObject tool : byName.values()) {
             assertThat(tool.getString("description")).isNotBlank();
@@ -106,6 +108,8 @@ class McpServerTest {
         assertThat(required(byName.get("compare"))).containsExactly("before", "after");
         assertThat(required(byName.get("check"))).isEmpty();
         assertThat(required(byName.get("sql"))).containsExactly("sql");
+        assertThat(required(byName.get("status"))).isEmpty();
+        assertThat(properties(byName.get("status")).size()).as("status takes no argument").isZero();
 
         Json.JsonObject limit = properties(byName.get("findings")).getObject("limit");
         assertThat(limit.getString("type")).isEqualTo("integer");

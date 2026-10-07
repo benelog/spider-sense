@@ -55,7 +55,7 @@ java -jar spider-sense.jar init [--dir=<project dir>] [--jar=<path>] [--url=<bas
 
 `init` prepares a project to be worked on under Spider Sense.
 It is the one command that reads nothing: no HTTP, no database, no running Spider Sense.
-It writes a short block into the project's `CLAUDE.md` and copies the skills into the project's `.claude/skills/`.
+It writes a short block into the project's `CLAUDE.md` or `AGENTS.md` (<<block-file,which file>>) and copies the skills into the project's `.claude/skills/`.
 
 `--dir` is the project directory, and it defaults to the working directory.
 
@@ -144,13 +144,32 @@ When `--no-skill` kept the skills from being installed, the last two lines name 
 `init` is idempotent.
 A second run replaces everything between the markers, including the jar path when it has changed, and leaves the rest of the file byte for byte as it was.
 Nothing else in the file is parsed or reformatted.
-When `CLAUDE.md` does not exist it is created with the block alone, and when it exists without the markers the block is appended after one blank line.
+A file that does not exist is created with the block alone, and one that exists without the markers gets the block appended after one blank line.
+
+[#block-file]
+The block goes into the file the project's agent reads.
+Claude Code reads `CLAUDE.md`, and Codex and most other agents read `AGENTS.md`.
+
+[cols="2,3",options="header"]
+|===
+| The project has
+| The block goes into
+
+| `CLAUDE.md`, or neither file
+| `CLAUDE.md`, created when it is not there
+
+| `AGENTS.md` and no `CLAUDE.md`
+| `AGENTS.md`
+
+| both
+| both, the same block in each
+|===
 
 [#skill-copy]
 === The skill copy
 
 `init` copies every directory under `skills/`, with its `SKILL.md` and `references/*.md`, into `<dir>/.claude/skills/` under the same name.
-`--no-skill` skips all of them.
+`--no-skill` skips all of them, and so does `--mcp`.
 It overwrites the files it owns and leaves anything else in those directories alone.
 
 It is a copy rather than a pointer, because the jar is the distributable and the repository it was built from may not be on the machine at all.
@@ -170,11 +189,23 @@ installed skill to /home/me/project/.claude/skills/spider-sense-sql-tuning (4 fi
 ----
 
 `init` prints one line each on stdout: the block, then one line per skill in the index's order, each with the number of files it wrote.
-The first line is `updated CLAUDE.md block (…)` when the markers were already in the file.
+The first line is `updated CLAUDE.md block (…)` when the markers were already in the file, and names `AGENTS.md` when the block went there.
+When it went into both files, there are two block lines, `CLAUDE.md` first.
 The skill lines become the single line `skipped skills (--no-skill)` when the skills were not installed.
 `--url` and `--gradle` change the block and none of these lines.
-`--mcp` adds a last line, `wrote .mcp.json (spider-sense over stdio)` or `updated .mcp.json (…)`, and writes the stdio MCP server into the project's `.mcp.json` (xref:mcp.adoc#configuring[Configuring a host]).
-Without `--mcp` nothing is written and nothing is printed about it, because a host with a shell is meant to use the CLI (xref:agent-loop.adoc#choosing-an-interface[Choosing an interface]), and `init` should not hand it a second tool for the same answers.
+
+`--mcp` hands the host the MCP server instead of the CLI, because the manual warns against enabling both in one host (xref:agent-loop.adoc#choosing-an-interface[Choosing an interface]).
+It writes the stdio MCP server into the project's `.mcp.json` and adds a last line, `wrote .mcp.json (spider-sense over stdio)` or `updated .mcp.json (…)` (xref:mcp.adoc#configuring[Configuring a host]).
+It installs no skill, and the skill lines become `skipped skills (--mcp)`, because both skills teach the loop through the CLI and the server's `instructions` carry it instead.
+The block keeps its first paragraph, with the jar and the ways to start the application under it, and in place of the CLI's lines and the skill lines it reads:
+
+[source,markdown]
+----
+Ask it through the tools of the `spider-sense` MCP server in `.mcp.json`: `status` first, to confirm the application is collecting, then `mark`, `findings`, `trace`, `compare`, `check` and `resolve`; the server's instructions carry the loop.
+----
+
+An existing `.mcp.json` that is not a JSON object stops `init` before it writes anything, with a message on stderr and exit code `2`.
+Without `--mcp` nothing is written and nothing is printed about MCP, because a host with a shell is meant to use the CLI, and `init` should not hand it a second tool for the same answers.
 
 The command then exits `0`.
 

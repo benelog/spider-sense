@@ -132,7 +132,9 @@ final class Mcp {
             opened = Reports.readOnly(config());
             reports = opened;
         }
-        return new McpTools(opened).call(name, arguments);
+        Reports file = opened;
+        // status of the file, as the CLI's own status prints it when no server answers.
+        return new McpTools(file, () -> file.status(Local.FILE_MODE, null, 0)).call(name, arguments);
     }
 
     private Config config() {
