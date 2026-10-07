@@ -273,6 +273,14 @@ A Live tick that comes while a load of the page has not answered yet leaves that
 Meanwhile the page keeps showing what it has, and the Live button carries a small spinning ring.
 A change of filter, range or page is no tick, and always loads at once.
 
+[#not-answering]
+=== When the server is not answering
+
+A request that gets no answer at all, because the Spider Sense the page came from has stopped, shows an error box headed `Not answering`.
+It says `Spider Sense at <origin> is not answering. Start it again and reload, or try again.`, with the page's own origin, and carries a *Try again* button.
+The sidebar foot's mode reads `not answering` until the status answers again.
+A refusal, an answer with an error status, keeps the `Request failed` heading and the server's sentence.
+
 [#numbers-and-times]
 === Numbers and times
 

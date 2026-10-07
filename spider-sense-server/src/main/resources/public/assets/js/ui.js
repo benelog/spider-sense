@@ -494,7 +494,7 @@ export function spinner() { return h('div.loading', h('span.spin'), 'Loading'); 
 export function errorBox(err, retry) {
   return h('div.error-box',
     icon('bolt'),
-    h('div', h('div.error-title', 'Request failed'), h('div.muted', errorText(err))),
+    h('div', h('div.error-title', api.isUnreachable(err) ? 'Not answering' : 'Request failed'), h('div.muted', errorText(err))),
     retry ? h('button.btn', { type: 'button', onclick: retry }, 'Try again') : null);
 }
 

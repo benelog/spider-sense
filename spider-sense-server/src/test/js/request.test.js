@@ -2,7 +2,7 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  getJSON, getText, postJSON, clearData, unackFinding, ackFinding, ApiError,
+  getJSON, getText, postJSON, clearData, unackFinding, ackFinding, ApiError, isUnreachable,
 } from '../../main/resources/public/assets/js/api.js';
 
 const realFetch = globalThis.fetch;
@@ -66,4 +66,18 @@ test('getText asks for the text rendering and answers it as it came', async () =
   assert.equal(await getText('/api/findings', { from: 1 }), '# Findings\n');
   assert.equal(calls[0].url, '/api/findings?from=1&format=text');
   assert.equal(calls[0].init.headers.accept, 'text/markdown');
+});
+
+test('no answer at all names the origin that is not answering (ui.adoc#not-answering)', async () => {
+  globalThis.fetch = async () => { throw new TypeError('Failed to fetch'); };
+  const hadLocation = 'location' in globalThis;
+  const saved = globalThis.location;
+  globalThis.location = { origin: 'http://127.0.0.1:4000' };
+  try {
+    await assert.rejects(getJSON('/api/gone'), (e) => isUnreachable(e)
+      && e.message === 'Spider Sense at http://127.0.0.1:4000 is not answering. Start it again and reload, or try again.');
+  } finally {
+    if (hadLocation) globalThis.location = saved;
+    else delete globalThis.location;
+  }
 });

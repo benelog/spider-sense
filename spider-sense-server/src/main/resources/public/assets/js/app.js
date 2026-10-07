@@ -155,7 +155,12 @@ function liveTick() {
  * long as the page was first opened on an empty store. It never fails; a stale status is kept.
  */
 function freshStatus() {
-  return api.refreshStatus().then(paintFoot).catch(() => {});
+  return api.refreshStatus().then(paintFoot).catch(noteStatusFailure);
+}
+
+/** The foot's mode says `not answering` while the server gives no answer (ui.adoc#not-answering). */
+function noteStatusFailure(e) {
+  if (api.isUnreachable(e)) document.getElementById('foot-mode').textContent = 'not answering';
 }
 
 /**
@@ -476,7 +481,7 @@ async function boot() {
     await api.refreshStatus();
     paintFoot();
   } catch (e) {
-    document.getElementById('foot-mode').textContent = 'offline';
+    noteStatusFailure(e);
   }
 
   try {

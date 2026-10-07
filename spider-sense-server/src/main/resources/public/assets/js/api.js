@@ -107,6 +107,23 @@ export class ApiError extends Error {
 }
 
 /**
+ * No answer at all, where the browser's own word is `Failed to fetch`: the server has stopped,
+ * or never ran at this address (ui.adoc#not-answering). Its message names the origin.
+ */
+export class UnreachableError extends Error {
+  constructor(origin) {
+    super('Spider Sense at ' + origin + ' is not answering. Start it again and reload, or try again.');
+    this.name = 'UnreachableError';
+    this.origin = origin;
+  }
+}
+
+/** Whether a failure is UnreachableError: nothing answered. */
+export function isUnreachable(e) {
+  return !!e && e.name === 'UnreachableError';
+}
+
+/**
  * One request and its answer's text. `query` goes into the URL as compactQuery leaves it and
  * `body` is sent as JSON. A status outside 2xx throws an ApiError whose message is the server's
  * `error` sentence when the answer carries one, and the status line otherwise, whatever the verb.
@@ -117,7 +134,13 @@ async function request(method, path, { query, body, accept = 'application/json' 
     init.headers['content-type'] = 'application/json';
     init.body = JSON.stringify(body);
   }
-  const res = await fetch(path + qs(query), init);
+  let res;
+  try {
+    res = await fetch(path + qs(query), init);
+  } catch (e) {
+    // fetch rejects only when no answer came at all; an HTTP error status is an answer.
+    throw new UnreachableError(globalThis.location ? location.origin : '');
+  }
   const text = await res.text();
   if (!res.ok) throw errorFrom(res, text);
   return text;
