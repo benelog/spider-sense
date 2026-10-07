@@ -80,6 +80,9 @@ That number is:
 * `ratioMax` as a percentage for `heap-pressure`;
 * `last` minus `first` for `thread-growth`.
 
+A number that is no duration or percentage carries its unit word, as in `12 times`, `3 pending` or `+173 threads`.
+Each cell's title says the number in words, since the column mixes units: `1,234 occurrences`, `21 repeats (the median) × 228 affected requests`, `72.7 s in total`, `1 request waiting for a connection at the peak`, `+173 threads over the window`.
+
 A row click expands the row in place to show the evidence, in this order:
 
 * the `why` sentence;

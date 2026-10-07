@@ -4,19 +4,21 @@ import assert from 'node:assert/strict';
 import { impactText, numberText } from '../../main/resources/public/assets/js/pages/findings.js';
 import { bothTimes } from '../../main/resources/public/assets/js/format.js';
 
-test('each kind is ranked by its own number', () => {
-  assert.deepEqual(impactText({ kind: 'error', numbers: { count: 1234 } }), { text: '1,234', cls: 'bad' });
-  assert.deepEqual(impactText({ kind: 'log-error', numbers: { count: 3 } }), { text: '3', cls: 'bad' });
-  assert.deepEqual(impactText({ kind: 'n-plus-one', numbers: { medianRepeats: 12, affected: 3 } }), { text: '12 × 3' });
-  assert.deepEqual(impactText({ kind: 'pool-exhausted', numbers: { pendingMax: 7 } }), { text: '7' });
-  assert.deepEqual(impactText({ kind: 'gc-pause', numbers: { worstMs: 312.4 } }), { text: '312 ms' });
-  assert.deepEqual(impactText({ kind: 'heap-pressure', numbers: { ratioMax: 0.62 } }), { text: '62.0%' });
-  assert.deepEqual(impactText({ kind: 'thread-growth', numbers: { first: 20, last: 32 } }), { text: '+12' });
-  assert.deepEqual(impactText({ kind: 'slow-query', numbers: { totalMs: 1500 } }), { text: '1,500 ms' });
+test('each kind is ranked by its own number, with its unit in words in the title', () => {
+  assert.deepEqual(impactText({ kind: 'error', numbers: { count: 1234 } }), { text: '1,234 times', cls: 'bad', title: '1,234 occurrences' });
+  assert.deepEqual(impactText({ kind: 'log-error', numbers: { count: 3 } }), { text: '3 times', cls: 'bad', title: '3 error logs' });
+  assert.deepEqual(impactText({ kind: 'n-plus-one', numbers: { medianRepeats: 12, affected: 3 } }),
+    { text: '12 × 3', title: '12 repeats (the median) × 3 affected requests' });
+  assert.deepEqual(impactText({ kind: 'pool-exhausted', numbers: { pendingMax: 1 } }),
+    { text: '1 pending', title: '1 request waiting for a connection at the peak' });
+  assert.deepEqual(impactText({ kind: 'gc-pause', numbers: { worstMs: 312.4 } }), { text: '312 ms', title: '312 ms, the longest pause' });
+  assert.deepEqual(impactText({ kind: 'heap-pressure', numbers: { ratioMax: 0.62 } }), { text: '62.0%', title: '62.0% of the heap limit at the peak' });
+  assert.deepEqual(impactText({ kind: 'thread-growth', numbers: { first: 20, last: 32 } }), { text: '+12 threads', title: '+12 threads over the window' });
+  assert.deepEqual(impactText({ kind: 'slow-query', numbers: { totalMs: 1500 } }), { text: '1,500 ms', title: '1,500 ms in total' });
 });
 
 test('a regression is ranked by the number of the kind it was', () => {
-  assert.deepEqual(impactText({ kind: 'regression', numbers: { originalKind: 'error', count: 2 } }), { text: '2', cls: 'bad' });
+  assert.deepEqual(impactText({ kind: 'regression', numbers: { originalKind: 'error', count: 2 } }), { text: '2 times', cls: 'bad', title: '2 occurrences' });
 });
 
 test('usedMax is bytes on a heap-pressure and connections on a pool-exhausted', () => {

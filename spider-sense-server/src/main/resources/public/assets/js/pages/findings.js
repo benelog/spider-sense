@@ -54,24 +54,40 @@ export function stateChip(state) {
   return chip(state, { class: 'chip-state state-' + state, title: STATE_TITLE[state] || state });
 }
 
+/** `1 request`, `2 requests`: a count and its noun. */
+function counted(n, one, many = one + 's') {
+  return count(n) + ' ' + (n === 1 ? one : many);
+}
+
 /**
  * The number the kind is ranked by, as pages.adoc#findings spells the column out:
- * `{ text, cls }`, `cls` the class of its span when it has one.
+ * `{ text, cls, title }`, `cls` the class of its span when it has one, and `title` the number
+ * in words, since the column mixes units. A number that is no duration or share carries its
+ * unit word in `text` too.
  */
 export function impactText(finding) {
   const n = finding.numbers || {};
   // A regression is ranked by the number its original kind is ranked by.
   if (finding.kind === 'regression' && n.originalKind) return impactText({ ...finding, kind: n.originalKind });
   switch (finding.kind) {
-    case 'error': return { text: count(n.count), cls: 'bad' };
-    case 'log-error': return { text: count(n.count), cls: 'bad' };
+    case 'error': return { text: count(n.count) + ' times', cls: 'bad', title: counted(n.count, 'occurrence') };
+    case 'log-error': return { text: count(n.count) + ' times', cls: 'bad', title: counted(n.count, 'error log') };
     case 'n-plus-one':
-    case 'n-plus-one-http': return { text: count(n.medianRepeats) + ' × ' + count(n.affected) };
-    case 'pool-exhausted': return { text: count(n.pendingMax) };
-    case 'gc-pause': return { text: dur(n.worstMs) };
-    case 'heap-pressure': return { text: pct(n.ratioMax) };
-    case 'thread-growth': return { text: '+' + count((n.last || 0) - (n.first || 0)) };
-    default: return { text: dur(n.totalMs) };
+    case 'n-plus-one-http': return {
+      text: count(n.medianRepeats) + ' × ' + count(n.affected),
+      title: counted(n.medianRepeats, 'repeat') + ' (the median) × ' + counted(n.affected, 'affected request'),
+    };
+    case 'pool-exhausted': return {
+      text: count(n.pendingMax) + ' pending',
+      title: counted(n.pendingMax, 'request') + ' waiting for a connection at the peak',
+    };
+    case 'gc-pause': return { text: dur(n.worstMs), title: dur(n.worstMs) + ', the longest pause' };
+    case 'heap-pressure': return { text: pct(n.ratioMax), title: pct(n.ratioMax) + ' of the heap limit at the peak' };
+    case 'thread-growth': {
+      const grown = (n.last || 0) - (n.first || 0);
+      return { text: '+' + counted(grown, 'thread'), title: '+' + counted(grown, 'thread') + ' over the window' };
+    }
+    default: return { text: dur(n.totalMs), title: dur(n.totalMs) + ' in total' };
   }
 }
 
