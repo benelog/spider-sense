@@ -66,7 +66,11 @@ public final class SpiderSenseAgent {
         boolean anotherSpiderSense = false;
         try {
             if (config.collector() != null) {
-                System.out.println(LOG_PREFIX + "forwarding to " + config.otlpEndpoint());
+                String collector = config.otlpEndpoint();
+                System.out.println(LOG_PREFIX + "forwarding to " + collector);
+                if (!answers(collector)) {
+                    System.err.println(LOG_PREFIX + nothingAnswers(collector, NestedJar.commandPath()));
+                }
             } else {
                 Config serverConfig = config.withService(effectiveServiceName(config, settings));
                 OptionalInt bound = EmbeddedServer.start(serverConfig);
@@ -332,6 +336,51 @@ public final class SpiderSenseAgent {
         Throwable cause = t.getCause();
         // The cause says why: "Failed to start Jetty on port 4000" alone does not name the BindException.
         System.err.println(LOG_PREFIX + what + ": " + t + (cause != null ? " (" + cause + ")" : ""));
+    }
+
+    /**
+     * Whether anything accepts a connection at the host and port of {@code url}, within a second:
+     * the collector forwarded to may be any OTLP receiver, so a connection is all that is asked.
+     */
+    static boolean answers(String url) {
+        try {
+            URI uri = URI.create(url);
+            String host = uri.getHost();
+            if (host == null) {
+                // Not a URL to probe; the exporter will say what it makes of it.
+                return true;
+            }
+            int port = uri.getPort() >= 0 ? uri.getPort() : "https".equalsIgnoreCase(uri.getScheme()) ? 443 : 80;
+            try (java.net.Socket socket = new java.net.Socket()) {
+                socket.connect(new java.net.InetSocketAddress(host, port), 1_000);
+                return true;
+            }
+        } catch (java.io.IOException | RuntimeException e) {
+            return false;
+        }
+    }
+
+    /**
+     * What forwarding to a collector nothing answers at says, once (modes.adoc#forwarding): the
+     * exporter retries on every interval, so the one thing to do is start it, and for one on this
+     * machine the command that does is this jar, standalone, on that port.
+     */
+    static String nothingAnswers(String collector, String jar) {
+        String line = "nothing answers at " + collector + " yet";
+        try {
+            URI uri = URI.create(collector);
+            String host = uri.getHost();
+            boolean local = host != null && (host.equals("localhost") || host.equals("127.0.0.1")
+                    || host.equals("[::1]") || host.equals("::1"));
+            if (local) {
+                int port = uri.getPort() >= 0 ? uri.getPort() : 80;
+                return line + "; start it with: java -jar " + jar
+                        + (port == Config.DEFAULT_PORT ? "" : " --port=" + port) + " (exports are retried)";
+            }
+        } catch (RuntimeException e) {
+            // Not a URL to take apart: the line without the command.
+        }
+        return line + "; exports are retried";
     }
 
     /** Whether the embedded server failed because its port was taken. */

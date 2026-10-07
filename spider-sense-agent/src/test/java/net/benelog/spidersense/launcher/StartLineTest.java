@@ -37,6 +37,26 @@ class StartLineTest {
     }
 
     @Test
+    void aCollectorNothingAnswersAtSaysHowToStartIt() throws Exception {
+        assertThat(SpiderSenseAgent.nothingAnswers("http://127.0.0.1:4199", JAR))
+                .isEqualTo("nothing answers at http://127.0.0.1:4199 yet; start it with: java -jar " + JAR
+                        + " --port=4199 (exports are retried)");
+        assertThat(SpiderSenseAgent.nothingAnswers("http://localhost:4000", JAR))
+                .isEqualTo("nothing answers at http://localhost:4000 yet; start it with: java -jar " + JAR
+                        + " (exports are retried)");
+        assertThat(SpiderSenseAgent.nothingAnswers("http://collector.internal:4318", JAR))
+                .as("a collector elsewhere is not this jar's to start")
+                .isEqualTo("nothing answers at http://collector.internal:4318 yet; exports are retried");
+
+        try (java.net.ServerSocket listening = new java.net.ServerSocket(0, 50, java.net.InetAddress.getLoopbackAddress())) {
+            int port = listening.getLocalPort();
+            assertThat(SpiderSenseAgent.answers("http://127.0.0.1:" + port)).isTrue();
+            listening.close();
+            assertThat(SpiderSenseAgent.answers("http://127.0.0.1:" + port)).isFalse();
+        }
+    }
+
+    @Test
     void theJarIsItsAbsolutePathQuotedWhenItHoldsASpace() {
         assertThat(NestedJar.commandPath(Path.of("/opt/tools/spider-sense-0.1.0.jar")))
                 .isEqualTo("/opt/tools/spider-sense-0.1.0.jar");

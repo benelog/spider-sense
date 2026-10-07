@@ -35,6 +35,7 @@ SENSE="$PWD/spider-sense-agent/build/libs/spider-sense-0.1.0.jar"   # in the Spi
 
 Forwarding is what to use when two applications call each other, because a trace that crosses them then arrives in one place.
 Start the standalone first, then each application with `-Dspidersense.collector=` pointing at it.
+When nothing answers there, the application's stderr says `[spider-sense] nothing answers at http://127.0.0.1:4000 yet; start it with: java -jar …` and the exporter's stack traces follow every few seconds; start the standalone with that command and the exports are retried.
 
 ## Properties
 

@@ -64,6 +64,17 @@ The agent exports to a Spider Sense running elsewhere, so several applications c
 
 Use forwarding when two applications call each other, so that a trace crossing both arrives in one place.
 Start the standalone Spider Sense first, then each application with `-Dspidersense.collector=` pointing at it.
+
+When nothing accepts a connection at the collector as the application starts, the launcher says so once on stderr, with the command that starts a Spider Sense there when the collector is on this machine:
+
+[source,text]
+----
+[spider-sense] nothing answers at http://127.0.0.1:4199 yet; start it with: java -jar /home/me/tools/spider-sense-0.1.0.jar --port=4199 (exports are retried)
+----
+
+The application starts and exports all the same, and the first export after the collector is up arrives.
+Until then the OpenTelemetry agent logs each failed export with its stack trace, a few times a minute at most.
+They are left on: the agent's only switch for them, `-Dotel.javaagent.logging=none`, would also silence every export error that has another cause.
 Forwarding is also the right mode for a test task.
 A test JVM is short-lived and may be forked more than once, and several embedded instances would fight over the port.
 
@@ -346,6 +357,9 @@ xref:marks-and-compare.adoc#marks[Marks] describes them.
 
 | Port 4000 is already in use
 | When another Spider Sense, standalone or embedded in another application, has it, the application's telemetry goes to that one, and the start-up line says so on stdout: `[spider-sense] port 4000 is held by another Spider Sense; the telemetry is exported to it. UI: http://127.0.0.1:4000  service: my-app  CLI: …`. To keep the two apart, use `-Dspidersense.port=4001` and `--url=http://127.0.0.1:4001`; to share on purpose, point the second application at the first with `-Dspidersense.collector=http://127.0.0.1:4000`. When what holds the port is not a Spider Sense, the agent says so on stderr and exports nothing, rather than failing an export to it every few seconds.
+
+| `nothing answers at http://127.0.0.1:4000 yet`, then a stack trace every few seconds
+| The application forwards to a Spider Sense that is not running. Start it with the command the line gives; the exports are retried, and the stack traces stop once it answers.
 
 | Two applications, and each trace stops at the service boundary
 | Both are embedding their own Spider Sense. Put them in forwarding mode against one standalone.
