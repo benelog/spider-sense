@@ -104,6 +104,8 @@
 }
 
 *, *::before, *::after { box-sizing: border-box; }
+/* hidden always hides: a class that sets display, such as .chip, must not bring the element back. */
+[hidden] { display: none !important; }
 
 html, body { height: 100%; }
 
@@ -495,7 +497,6 @@ pre.stack {
 .st-own { color: var(--text); }
 .st-fold { color: var(--text-muted); opacity: 0.75; cursor: pointer; font-style: italic; }
 .st-fold:hover, .st-fold:focus-visible { opacity: 1; color: var(--text); outline: none; text-decoration: underline; }
-.st-run[hidden] { display: none; }
 
 /* ---------- tabs ---------- */
 
