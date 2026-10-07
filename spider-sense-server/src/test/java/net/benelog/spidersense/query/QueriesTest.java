@@ -144,7 +144,7 @@ class QueriesTest {
                 .containsExactly("GET /orders");
         assertThat(queries.totals(window, null).requests()).isEqualTo(1);
         // Slower than the 500 ms threshold, and still not a slow-request tingle.
-        assertThat(queries.tingles(window, 50)).isEmpty();
+        assertThat(queries.tingles(window, null, 50)).isEmpty();
 
         Queries.TraceDetail trace = queries.trace(traceId(2));
         assertThat(trace).isNotNull();

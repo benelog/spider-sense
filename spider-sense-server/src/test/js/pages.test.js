@@ -313,3 +313,18 @@ test('the Overview shows the empty state only before anything has arrived', asyn
     instance.destroy();
   }));
 });
+
+test('the Overview asks for the service the top bar names (api.adoc#overview)', async () => {
+  const real = globalThis.fetch;
+  const asked = [];
+  globalThis.fetch = (url, init) => { asked.push(String(url)); return real(url, init); };
+  try {
+    const { instance } = await visit('overview', {}, ids.service);
+    const overview = asked.find((u) => u.startsWith('/api/overview?'));
+    assert.equal(new URLSearchParams(overview.split('?')[1]).get('service'), ids.service);
+    instance.destroy();
+  } finally {
+    globalThis.fetch = real;
+    api.state.service = '';
+  }
+});

@@ -993,10 +993,15 @@ public final class Queries {
 
     // --- tingles, logs, dependencies -----------------------------------------
 
-    public List<Tingle> tingles(Window window, int limit) {
-        return sql.query("SELECT * FROM tingle WHERE at_ms BETWEEN ? AND ?"
+    /** The newest tingles of the window, of one service when {@code service} names one. */
+    public List<Tingle> tingles(Window window, @Nullable String service, int limit) {
+        Where where = new Where("at_ms BETWEEN ? AND ?", window.from(), window.to());
+        if (service != null) {
+            where = where.and("service = ?", service);
+        }
+        return sql.query("SELECT * FROM tingle WHERE " + where.sql()
                         + " ORDER BY at_ms DESC, id DESC LIMIT " + Math.max(1, limit),
-                List.of(window.from(), window.to()),
+                where.params(),
                 rs -> new Tingle(rs.getString("kind"), rs.getLong("at_ms"), rs.getString("service"),
                         rs.getString("title"), rs.getString("detail"), rs.getString("trace_id"),
                         rs.getString("span_id"), rs.getDouble("duration_ms")));

@@ -1450,7 +1450,7 @@ const ROUTES = [
 
   [/^\/api\/overview$/, (m, q) => {
     const w = windowOf(q);
-    const entries = entrySpans(inWindow(w), null);
+    const entries = entrySpans(inWindow(w), q.service || null);
     const durations = entries.map((e) => e.span.durationMs).sort((a, b) => a - b);
     const errors = entries.filter((e) => e.span.error).length;
     const series = seriesFor(entries, w);
@@ -1468,7 +1468,7 @@ const ROUTES = [
         histogram,
       },
       services: SERVICES.map((s) => summaryFor(s.name, w)),
-      tingles: tingles.filter((t) => t.at >= w.from && t.at <= w.to).slice(-50).reverse(),
+      tingles: tingles.filter((t) => t.at >= w.from && t.at <= w.to && (!q.service || t.service === q.service)).slice(-50).reverse(),
       series: { t: series.t, requests: series.requests, errors: series.errors, p95Ms: series.p95Ms, histogram: series.histogram },
     };
   }],

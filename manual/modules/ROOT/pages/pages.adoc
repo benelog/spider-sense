@@ -10,6 +10,7 @@ The colours, the numbers and the times follow xref:ui.adoc#look-and-feel[Look an
 
 `#/` answers whether anything is wrong right now.
 It has five parts.
+With a service chosen in the top bar, the tiles, the chart, the Response summary, the findings and the tingles are that service's, from `GET /api/overview?from&to&service` (xref:api.adoc#overview[Overview]); the Services panel still lists every service.
 
 . *Stat tiles*, in one row: requests, Apdex, error rate, p50, p95, p99, and rps.
 Each tile has the number large, the unit small, and a one-word caption.

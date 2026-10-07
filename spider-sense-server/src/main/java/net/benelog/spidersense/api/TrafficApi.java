@@ -65,12 +65,15 @@ public final class TrafficApi {
 
     public WebResponse overview(WebRequest req) {
         Window window = params.window(req);
+        // The service narrows the totals, the series and the tingles; the services stay
+        // whole, so the cards still offer every other one (api.adoc#overview).
+        String service = Params.service(req);
         return WebResponse.json(Json.obj()
                 .put("window", Codecs.window(window))
-                .put("totals", Codecs.totals(queries.totals(window, null)))
+                .put("totals", Codecs.totals(queries.totals(window, service)))
                 .put("services", Codecs.serviceSummaries(queries.services(window)))
-                .put("tingles", Codecs.tingles(queries.tingles(window, Limits.OVERVIEW_TINGLES)))
-                .put("series", Codecs.overviewSeries(queries.buckets(window, null, null))));
+                .put("tingles", Codecs.tingles(queries.tingles(window, service, Limits.OVERVIEW_TINGLES)))
+                .put("series", Codecs.overviewSeries(queries.buckets(window, service, null))));
     }
 
     public WebResponse services(WebRequest req) {

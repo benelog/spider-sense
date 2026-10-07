@@ -206,7 +206,7 @@ export function collectorBase() {
 
 // --- reads --------------------------------------------------------------
 
-export function overview(opts) { return getJSON('/api/overview', params({}, { ...opts, omitService: true })); }
+export function overview(opts) { return getJSON('/api/overview', params({}, opts)); }
 
 export function services(opts) { return getJSON('/api/services', params({}, { ...opts, omitService: true })); }
 

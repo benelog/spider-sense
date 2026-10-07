@@ -132,7 +132,10 @@ A `: keepalive` comment is sent every 15 s.
 [#overview]
 == Overview
 
-*`GET /api/overview?from&to`*
+*`GET /api/overview?from&to&service`*
+
+`service` narrows `totals`, `series` and `tingles` to one service.
+`services` stays the list of every service, so the Overview's cards still offer the others.
 
 [source,json]
 ----

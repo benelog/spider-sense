@@ -423,6 +423,16 @@ class ApiTest {
                 assertThat(bucket.asArray().size()).isEqualTo(series.getArray("t").size());
             }
 
+            // A service narrows the totals, the series and the tingles; the services stay whole.
+            Json.JsonObject one = json(client.get("/api/overview" + windowQuery() + "&service=spring-orders"));
+            assertThat(one.getObject("totals").getLong("requests")).isEqualTo(2);
+            assertThat(one.getArray("tingles")).hasSameSizeAs(overview.getArray("tingles"));
+            Json.JsonObject other = json(client.get("/api/overview" + windowQuery() + "&service=nope"));
+            assertThat(other.getObject("totals").getLong("requests")).isZero();
+            assertThat(other.getArray("tingles")).isEmpty();
+            assertThat(counts(other.getObject("series").getArray("requests"))).containsOnly(0L);
+            assertThat(other.getArray("services")).hasSize(1);
+
             Json.JsonObject scatter = json(client.get("/api/scatter" + windowQuery()));
             assertThat(scatter.getBoolean("truncated")).isFalse();
             Json.JsonArray points = scatter.getArray("points");
