@@ -396,18 +396,8 @@ public final class Reports implements AutoCloseable {
      */
     public Report compare(long before, long after, long until, @Nullable String service,
             boolean full) {
-        if (before >= after) {
-            throw new Selectors.BadSelector("before resolves to " + before
-                    + ", which is not before after " + after);
-        }
-        if (after >= until) {
-            throw new Selectors.BadSelector("after resolves to " + after
-                    + ", which is not before until " + until);
-        }
-        Window first = Window.of(before, after - 1);
-        Window second = Window.of(after, until - 1);
-        Compare.Comparison comparison = compare.compare(first, second, service);
-        return new Report(Codecs.comparison(comparison), Text.compare(comparison, service, full));
+        return compare(new Selectors.CompareBounds(before, after, until), String.valueOf(before),
+                String.valueOf(after), String.valueOf(until), service, full);
     }
 
     /**
@@ -418,7 +408,52 @@ public final class Reports implements AutoCloseable {
     public Report compare(@Nullable String before, @Nullable String after, @Nullable String until,
             @Nullable String service, boolean full) {
         Selectors.CompareBounds bounds = selectors.compareBounds(before, after, until, service);
-        return compare(bounds.before(), bounds.after(), bounds.until(), service, full);
+        return compare(bounds, String.valueOf(before).trim(), String.valueOf(after).trim(),
+                until == null ? "now" : until.trim(), service, full);
+    }
+
+    /**
+     * The comparison of resolved moments, each beside the selector it was written as, so a
+     * refusal names both selectors, the local times they resolved to and what to do, rather
+     * than two epoch milliseconds (marks-and-compare.adoc#compare).
+     */
+    private Report compare(Selectors.CompareBounds bounds, String before, String after, String until,
+            @Nullable String service, boolean full) {
+        if (bounds.before() >= bounds.after()) {
+            throw new Selectors.BadSelector(moment("before", before, bounds.before(), service)
+                    + " is not before " + moment("after", after, bounds.after(), service)
+                    + ", so the before window would be empty; "
+                    + (Marks.START.equals(after)
+                            ? "restart the application so a new start mark is written, or record"
+                                    + " `mark after` once the change is in and use after=after"
+                            : "name an earlier before or a later after (`marks` lists the marks)"));
+        }
+        if (bounds.after() >= bounds.until()) {
+            throw new Selectors.BadSelector(moment("after", after, bounds.after(), service)
+                    + " is not before " + moment("until", until, bounds.until(), service)
+                    + ", so the after window would be empty; "
+                    + ("now".equals(after)
+                            ? "after=now leaves no time after it: name the moment the change went in,"
+                                    + " such as a mark recorded after it"
+                            : "name an earlier after or a later until"));
+        }
+        Window first = Window.of(bounds.before(), bounds.after() - 1);
+        Window second = Window.of(bounds.after(), bounds.until() - 1);
+        Compare.Comparison comparison = compare.compare(first, second, service);
+        return new Report(Codecs.comparison(comparison), Text.compare(comparison, service, full));
+    }
+
+    /**
+     * {@code after=start (the start of silk-bookstore, 2026-10-08T05:58:11+09:00)}: a compare
+     * selector as written and the local time it resolved to, with the service a start mark is of.
+     */
+    private String moment(String role, String selector, long at, @Nullable String service) {
+        Marks.Mark mark = selectors.mark(selector, service);
+        String when = Text.instant(at);
+        return role + "=" + selector + " ("
+                + (mark != null && Marks.START.equals(mark.name()) && mark.service() != null
+                        ? "the start of " + mark.service() + ", " + when : when)
+                + ")";
     }
 
     /**

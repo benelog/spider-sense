@@ -130,6 +130,14 @@ It takes no `--since`, because its windows are the two selectors.
 *Before* is the window `[before, after)` and *after* is the window `[after, until)`, with `until` defaulting to now.
 A span that starts exactly at `after` belongs to the after window, and one that starts exactly at `until` belongs to neither.
 A `before` that does not resolve to a moment earlier than `after`, or an `after` that does not resolve to one earlier than `until`, would be an empty window, so it is answered with `400` over HTTP and is a usage error in the CLI, as an inverted `since` is.
+The refusal names both selectors, the local times they resolved to, the service of a `start` mark, and what to do:
+
+[source]
+----
+$ java -jar spider-sense.jar compare --before=onboarding-before --after=start
+spider-sense: before=onboarding-before (2026-10-08T06:05:28+09:00) is not before after=start (the start of silk-bookstore, 2026-10-08T05:58:11+09:00), so the before window would be empty; restart the application so a new start mark is written, or record `mark after` once the change is in and use after=after
+----
+
 The usual use is two marks: `mark before`, exercise, change the code, `mark after`, exercise the same way, then `compare --before=before --after=after`.
 
 The answer has four parts.

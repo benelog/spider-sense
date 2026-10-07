@@ -2,7 +2,9 @@ package net.benelog.spidersense.query;
 
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
+import java.time.Instant;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.function.LongSupplier;
 import java.util.regex.Matcher;
@@ -60,6 +62,9 @@ public final class Selectors {
      * one of its characters, so the time a heading prints can be pasted back.
      */
     private static final Pattern DATE_TIME = Pattern.compile("\\d{4}-\\d{2}-\\d{2}T.*");
+
+    /** How a refusal names an instant: the form a heading prints, which a selector reads back. */
+    private static final DateTimeFormatter LOCAL = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX");
 
     private final Marks marks;
     private final LongSupplier clock;
@@ -201,7 +206,7 @@ public final class Selectors {
         long start = from != null ? from
                 : resolve(since == null ? DEFAULT_SINCE : since, end, now, service);
         if (start > end) {
-            throw new BadSelector("since resolves to " + start + ", which is after until " + end);
+            throw new BadSelector("since resolves to " + local(start) + ", which is after until " + local(end));
         }
         return Window.of(start, end);
     }
@@ -222,6 +227,25 @@ public final class Selectors {
         long afterAt = resolve(after, untilAt, now, service);
         long beforeAt = resolve(before, afterAt, now, service);
         return new CompareBounds(beforeAt, afterAt, untilAt);
+    }
+
+    /**
+     * The mark a selector names, or null when the selector is another form or no mark has the
+     * name: what a refusal shows beside the instant, such as which service a {@code start} is of.
+     */
+    public Marks.@Nullable Mark mark(@Nullable String selector, @Nullable String service) {
+        String value = selector == null ? "" : selector.trim();
+        if (value.isEmpty() || "now".equals(value) || DURATION.matcher(value).matches()
+                || Marks.NUMBER_LIKE.matcher(value).matches() || DATE_TIME.matcher(value).matches()
+                || !Marks.NAME.matcher(value).matches()) {
+            return null;
+        }
+        return marks.newest(value, service);
+    }
+
+    /** {@code 2026-10-08T05:50:00+09:00}: an instant in this machine's zone, as a heading prints it. */
+    public static String local(long at) {
+        return LOCAL.format(Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault()));
     }
 
     private static long unitMillis(char unit) {

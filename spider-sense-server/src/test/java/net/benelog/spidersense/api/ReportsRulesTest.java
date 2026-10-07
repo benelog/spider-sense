@@ -71,12 +71,48 @@ class ReportsRulesTest {
 
             assertThatThrownBy(() -> reports.compare(NOW, NOW, NOW + 10, null, false))
                     .isInstanceOf(Selectors.BadSelector.class)
-                    .hasMessage("before resolves to " + NOW + ", which is not before after " + NOW);
+                    .hasMessage("before=" + NOW + " (" + Text.instant(NOW) + ") is not before after=" + NOW
+                            + " (" + Text.instant(NOW) + "), so the before window would be empty;"
+                            + " name an earlier before or a later after (`marks` lists the marks)");
             assertThatThrownBy(() -> reports.compare(NOW - 10, NOW + 10, NOW, null, false))
                     .isInstanceOf(Selectors.BadSelector.class)
-                    .hasMessage("after resolves to " + (NOW + 10) + ", which is not before until " + NOW);
+                    .hasMessage("after=" + (NOW + 10) + " (" + Text.instant(NOW + 10) + ") is not before until="
+                            + NOW + " (" + Text.instant(NOW) + "), so the after window would be empty;"
+                            + " name an earlier after or a later until");
             assertThat(reports.compare(NOW - 10, NOW, NOW + 10, null, false).json().asObject().has("before"))
                     .as("adjacent windows are answered").isTrue();
+        }
+    }
+
+    /**
+     * The refusal an agent met in onboarding: a mark taken after the application started,
+     * compared against that start. It names both selectors, their local times and the start's
+     * service, and what to do, rather than two epoch milliseconds.
+     */
+    @Test
+    void aCompareRefusalNamesTheSelectorsTheirTimesAndWhatToDo() {
+        Config config = TestStore.config();
+        try (Database database = Database.open(config.jdbcUrl(), null)) {
+            Marks marks = new Marks(database.sql(), () -> NOW);
+            Reports.Parts parts = Reports.Parts.of(config, database, new Tingles(500, 100),
+                    new ServiceRegistry(database.sql(), null), marks, () -> NOW);
+            Reports reports = new Reports(config, database, null, () -> 0, parts, false, () -> NOW);
+            TestStore.startMark(database.sql(), "silk-bookstore", "pid 1", NOW - 600_000);
+            marks.create("onboarding-before", null, null, NOW - 60_000);
+
+            assertThatThrownBy(() -> reports.compare("onboarding-before", "start", null, null, false))
+                    .isInstanceOf(Selectors.BadSelector.class)
+                    .hasMessage("before=onboarding-before (" + Text.instant(NOW - 60_000)
+                            + ") is not before after=start (the start of silk-bookstore, "
+                            + Text.instant(NOW - 600_000) + "), so the before window would be empty;"
+                            + " restart the application so a new start mark is written, or record"
+                            + " `mark after` once the change is in and use after=after");
+            assertThatThrownBy(() -> reports.compare("5m", "now", null, null, false))
+                    .isInstanceOf(Selectors.BadSelector.class)
+                    .hasMessage("after=now (" + Text.instant(NOW) + ") is not before until=now ("
+                            + Text.instant(NOW) + "), so the after window would be empty; after=now leaves"
+                            + " no time after it: name the moment the change went in, such as a mark"
+                            + " recorded after it");
         }
     }
 }

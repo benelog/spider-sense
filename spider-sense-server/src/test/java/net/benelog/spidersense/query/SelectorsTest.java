@@ -162,7 +162,8 @@ class SelectorsTest {
     void aSinceAfterTheUntilIsTheCallersMistake() {
         assertThatThrownBy(() -> selectors.window(null, null, "now", "5m", null))
                 .isInstanceOf(Selectors.BadSelector.class)
-                .hasMessage("since resolves to " + NOW + ", which is after until " + (NOW - 300_000));
+                .hasMessage("since resolves to " + Selectors.local(NOW) + ", which is after until "
+                        + Selectors.local(NOW - 300_000));
         assertThatThrownBy(() -> selectors.window(null, null,
                 String.valueOf(NOW), String.valueOf(NOW - 1000), null))
                 .isInstanceOf(Selectors.BadSelector.class);
