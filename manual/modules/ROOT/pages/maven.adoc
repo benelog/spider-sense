@@ -129,4 +129,8 @@ java -jar target/spider-sense.jar findings --since=start
 java -jar target/spider-sense.jar init            # the CLAUDE.md block and the skills
 ----
 
+The CLI asks `http://127.0.0.1:4000` unless told otherwise, and it does not read the POM.
+When the POM gives the application another port, add `--url=http://127.0.0.1:<port>` to each command.
+Or set the port as `spidersense.port=<port>` in `spider-sense.properties` in the project directory instead, which the application and the CLI both read (xref:configuration.adoc#properties-file[The properties file]).
+
 xref:cli.adoc[The CLI] documents every command, and xref:agent-skill.adoc#init[The Agent Skill] documents what `init` writes.
