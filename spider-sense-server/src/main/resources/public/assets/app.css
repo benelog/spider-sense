@@ -905,6 +905,9 @@ kbd {
 .table-fit td.wide > .row > .chip { flex: none; }
 .op-table { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* The line under code frames none of which resolved (pages.adoc#code-frames). */
+.src-hint a { text-decoration: underline; }
+
 /* A table wider than its panel fades at the edge there is more of: the covers scroll with the
    content and hide the shadows once that edge is reached. */
 .table-wrap {
