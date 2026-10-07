@@ -157,6 +157,38 @@ class FindingsTest {
     }
 
     @Test
+    void anErrorAndAQueryInAJobAreAttributedToTheJob() {
+        Span.Builder job = job(1, "Archiver.archiveSlice", 50);
+        Span.Builder failing = Otlp.failing(Otlp.child(job, spanId(2), "Archiver.write",
+                Span.SpanKind.SPAN_KIND_INTERNAL, NOW + 1, 5), "java.lang.IllegalStateException",
+                "pool closed", STACKTRACE);
+        decoder.ingest(Otlp.traces(Otlp.service("worker"), job, failing,
+                query(job, 3, "SELECT * FROM archive WHERE id = ?", "archive", NOW + 10, 150)));
+        flush();
+
+        Findings.Finding error = of(Findings.ERROR).get(0);
+        Findings.Finding slow = of(Findings.SLOW_QUERY).get(0);
+
+        assertThat(error.title()).isEqualTo("IllegalStateException in Archiver.archiveSlice");
+        assertThat(error.why()).startsWith("1 occurrence in Archiver.archiveSlice;");
+        assertThat(slow.numbers().get("callers")).isEqualTo(List.of(Map.of(
+                "endpoint", "Archiver.archiveSlice", "service", "worker", "calls", 1L)));
+    }
+
+    @Test
+    void aSpanWhoseChainLeavesTheWindowHasNoEndpoint() {
+        Span.Builder outside = Otlp.span(traceId(1), spanId(1), "Archiver.archiveSlice",
+                Span.SpanKind.SPAN_KIND_INTERNAL, NOW - 3_600_000, 10);
+        Span.Builder failing = Otlp.failing(Otlp.child(outside, spanId(2), "Archiver.write",
+                Span.SpanKind.SPAN_KIND_INTERNAL, NOW, 5), "java.lang.IllegalStateException",
+                "pool closed", STACKTRACE);
+        decoder.ingest(Otlp.traces(Otlp.service("worker"), outside, failing));
+        flush();
+
+        assertThat(of(Findings.ERROR).get(0).title()).isEqualTo("IllegalStateException in (no endpoint)");
+    }
+
+    @Test
     void aStatementRepeatedUnderOneEntrySpanIsAnNPlusOne() {
         Span.Builder root = entry(1, "/orders/{id}", 60);
         List<Span.Builder> spans = new ArrayList<>();

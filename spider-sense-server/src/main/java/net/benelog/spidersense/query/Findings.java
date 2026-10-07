@@ -827,7 +827,7 @@ public final class Findings {
     private static String endpointOf(@Nullable SharedScans reads, @Nullable String spanId,
             @Nullable String rootName) {
         if (reads != null && spanId != null && !spanId.isBlank()) {
-            Queries.Ancestry.Entry entry = reads.ancestry().entryOf(spanId);
+            Queries.Ancestry.Entry entry = reads.ancestry().placeOf(spanId);
             if (entry != null) {
                 return entry.endpoint();
             }
@@ -1381,7 +1381,7 @@ public final class Findings {
         Map<String, Long> counts = new LinkedHashMap<>();
         Map<String, String> byService = new LinkedHashMap<>();
         for (Queries.OutboundCall call : calls) {
-            Queries.Ancestry.Entry entry = ancestry.entryOf(call.spanId());
+            Queries.Ancestry.Entry entry = ancestry.placeOf(call.spanId());
             String endpoint = entry == null ? Queries.Ancestry.NO_ENDPOINT : entry.endpoint();
             counts.merge(endpoint, 1L, Long::sum);
             byService.putIfAbsent(endpoint, entry == null ? service : entry.service());

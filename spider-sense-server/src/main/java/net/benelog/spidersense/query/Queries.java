@@ -562,7 +562,8 @@ public final class Queries {
 
     /**
      * The endpoint each query was issued from: the nearest entry span up the
-     * parent chain, within the trace.
+     * parent chain, within the trace, or the job at its root when there is none
+     * ({@link Ancestry#placeOf}).
      *
      * <p>A query id hashes its service (storage.adoc), so every span read here is a
      * span of the groups' service, and the walk over that service's traces reaches
@@ -584,7 +585,7 @@ public final class Queries {
         sql.forEach("SELECT query_id, trace_id, span_id, service FROM span WHERE " + where.sql(),
                 where.params(), rs -> {
                     String queryId = rs.getString("query_id");
-                    Ancestry.Entry entry = ancestry.entryOf(rs.getString("span_id"));
+                    Ancestry.Entry entry = ancestry.placeOf(rs.getString("span_id"));
                     String name = entry == null ? Ancestry.NO_ENDPOINT : entry.endpoint();
                     callers.computeIfAbsent(queryId, id -> new LinkedHashMap<>())
                             .merge(name, 1L, Long::sum);
@@ -751,7 +752,7 @@ public final class Queries {
         Where where = Where.window(window, null).andIn("error_id", ids);
         Map<String, Map<String, Long>> counts = new LinkedHashMap<>();
         sql.forEach("SELECT error_id, span_id FROM span WHERE " + where.sql(), where.params(), rs -> {
-            Ancestry.Entry entry = ancestry.entryOf(rs.getString("span_id"));
+            Ancestry.Entry entry = ancestry.placeOf(rs.getString("span_id"));
             counts.computeIfAbsent(rs.getString("error_id"), id -> new LinkedHashMap<>())
                     .merge(entry == null ? Ancestry.NO_ENDPOINT : entry.endpoint(), 1L, Long::sum);
         });
@@ -1715,9 +1716,12 @@ public final class Queries {
      * every query and every error group of one page from a single scan, which
      * storage.adoc accepts at local-development volumes.
      */
-    record Ancestry(Map<String, Entry> entries, Map<String, String> parents) {
+    record Ancestry(Map<String, Entry> entries, Map<String, String> parents, Map<String, Entry> roots) {
 
-        /** What a span with no entry span up its chain is attributed to, as a caller or a place. */
+        /**
+         * What a span is attributed to, as a caller or a place, when its chain reaches neither
+         * an entry span nor a root span: the chain left the window (api.adoc#callers).
+         */
         static final String NO_ENDPOINT = "(no endpoint)";
 
         /**
@@ -1742,6 +1746,7 @@ public final class Queries {
         static Ancestry of(Sql sql, Window window, @Nullable String service) {
             Map<String, Entry> entries = new HashMap<>();
             Map<String, String> parents = new HashMap<>();
+            Map<String, Entry> roots = new HashMap<>();
             Where where = Where.window(window, null);
             if (service != null) {
                 Where traced = Where.window(window, service);
@@ -1760,9 +1765,34 @@ public final class Queries {
                             entries.put(spanId, new Entry(spanId,
                                     endpoint == null ? rs.getString("name") : endpoint,
                                     rs.getString("service")));
+                        } else if (parent == null) {
+                            // A root that is no entry span: a job, named by its span name.
+                            roots.put(spanId, new Entry(spanId, rs.getString("name"),
+                                    rs.getString("service")));
                         }
                     });
-            return new Ancestry(entries, parents);
+            return new Ancestry(entries, parents, roots);
+        }
+
+        /**
+         * Where a span is said to have happened: its entry span, or, when the chain reaches no
+         * entry span, the root span it ends at, which in a job's trace names the job
+         * (api.adoc#callers). Null when the chain leaves the window.
+         *
+         * <p>Only a label: what counts requests, such as an N+1, asks {@link #entryOf}.
+         */
+        @Nullable Entry placeOf(@Nullable String spanId) {
+            String current = spanId;
+            String last = null;
+            for (int depth = 0; current != null && depth < MAX_PARENT_HOPS; depth++) {
+                Entry entry = entries.get(current);
+                if (entry != null) {
+                    return entry;
+                }
+                last = current;
+                current = parents.get(current);
+            }
+            return current == null && last != null ? roots.get(last) : null;
         }
 
         @Nullable Entry entryOf(@Nullable String spanId) {

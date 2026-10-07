@@ -553,6 +553,7 @@ An error group with at least one occurrence in the window.
 It is always `high`, and the impact it is ranked by is the occurrence count.
 
 `numbers`: `count`, `firstSeen`, `lastSeen`, `type`, `message` (normalised, digits replaced by `?`), `endpoints` (name and count, as xref:api.adoc#error-group[`ErrorGroup.endpoints`] has them).
+An error in a job's trace, which has no entry span, is attributed to the job, so a worker's failure reads `SQLTransientConnectionException in ArchiveJob.archiveSlice` (xref:api.adoc#callers[Callers and error endpoints]).
 
 The group is the service, the root cause's type and the innermost application frame, so one row is one line throwing one exception rather than one occurrence.
 A wrapper such as Spring's `DataAccessException` or `ServletException` does not split a bug by the SQL or request its message embeds, and does not merge unrelated causes under its one type.
@@ -584,7 +585,7 @@ It is always `high`, and the impact it is ranked by is the uncovered count.
 The message is normalised as an error message is.
 `subject.logger` is the logger, and the title is `ERROR in <logger short name>: <message cut at 80 characters>`.
 
-`numbers`: `count` (the uncovered records), `firstSeen`, `lastSeen`, `logger`, `message` (normalised), `endpoints` (the entry span of each record's trace, as `error` counts them, and `(no endpoint)` for a record without one).
+`numbers`: `count` (the uncovered records), `firstSeen`, `lastSeen`, `logger`, `message` (normalised), `endpoints` (the entry span of each record's trace, as `error` counts them, the job for a record of a job's trace, and `(no endpoint)` for a record without either).
 `count` covers every uncovered record of the window, never the first rows read, because `check --max-log-errors` sums it.
 
 This is what `catch (Exception e) { log.error(…, e); return fallback; }` leaves behind: no span error, no exception event, one line in the log, and a request that answered 200 with the wrong answer.

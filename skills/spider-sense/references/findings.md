@@ -370,6 +370,7 @@ A call with no timeout turns the callee's bad minute into this service's bad min
 ## `error`
 
 `numbers`: `count`, `firstSeen`, `lastSeen`, `type`, `message` (normalised, digits replaced by `?`), `endpoints` (name and count).
+A job's trace has no endpoint, so an error in it is attributed to the job: `SQLTransientConnectionException in ArchiveJob.archiveSlice`.
 
 The group is `(service, root-cause type, innermost application frame)`, so one row is one line throwing one exception, not one occurrence, whatever wrapper and message surround it; a trace without an application frame falls back to `(service, exception type or `error.type`, normalised message)`.
 `type` and `message` are the outer exception's.
@@ -400,7 +401,7 @@ A message that carries the identifier (`Order 42 is already shipped`) groups cor
 
 ## `log-error`
 
-`numbers`: `count` (the uncovered records), `firstSeen`, `lastSeen`, `logger`, `message` (normalised, digits replaced by `?`), `endpoints` (the entry span of each record's trace, `(no endpoint)` for a record without one).
+`numbers`: `count` (the uncovered records), `firstSeen`, `lastSeen`, `logger`, `message` (normalised, digits replaced by `?`), `endpoints` (the entry span of each record's trace, the job for a record of a job's trace, `(no endpoint)` for a record without either).
 
 This is what `catch (Exception e) { log.error(…, e); return fallback; }` leaves behind: no span error, no exception event, one line in the log, and a request that answered 200 with the wrong answer.
 A record whose trace has an error span is already reported by an `error` finding and is not counted here, so a `log-error` is by construction the failure nothing else tells you about.
