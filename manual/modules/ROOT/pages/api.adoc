@@ -616,11 +616,12 @@ The findings are ranked as xref:findings.adoc[Findings] specifies, with regressi
 Its text rendering is the list's row and evidence block for it (xref:cli.adoc#one-finding[One finding]).
 
 *`+POST /api/findings/{id}/ack+`* with `{ "note": "…" | null }` answers `201` and `{ "findingId": "…", "at": …, "note": … }`.
+It answers `400` when the id is not `<kind>:<12 hex digits>`, and `404` when no rule produces it over the data kept (xref:findings.adoc#acknowledgements[Acknowledgements]).
 *`+DELETE /api/findings/{id}/ack+`* answers `204` or `404`.
 *`GET /api/acks`* answers `{ "acks": [ { "findingId", "at", "note" } ] }`, newest first.
 xref:findings.adoc#acknowledgements[Acknowledgements] describes what an acknowledgement means.
 
-*`+POST /api/findings/{id}/resolve+`* with `{ "note": "…" | null }` answers `201` and `{ "findingId": "…", "at": …, "note": … }`.
+*`+POST /api/findings/{id}/resolve+`* with `{ "note": "…" | null }` answers `201` and `{ "findingId": "…", "at": …, "note": … }`, or `400` and `404` as `ack` does.
 *`+DELETE /api/findings/{id}/resolve+`* answers `204` or `404`.
 xref:findings.adoc#resolutions[Resolutions] describes what a resolution means.
 

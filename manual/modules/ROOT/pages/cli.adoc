@@ -181,6 +181,7 @@ It is then ranked after every other finding, and its severity column reads `acke
 `unack <finding id>` withdraws the acknowledgement, and exits `4` when there was none.
 `findings --hide-acked` leaves the acknowledged findings out altogether.
 The finding id is the one `findings` printed in its `id` column, and it is stable across windows (xref:findings.adoc#acknowledgements[Acknowledgements]).
+`ack` and `resolve` refuse any other id and record nothing: one that is not `<kind>:<12 hex digits>`, such as an id of the `errors`, `queries` or `endpoints` table, is a usage error and exits `2`, and a well-formed one that no finding has in the data kept exits `4`.
 
 `resolve <finding id> [--note=<text>]` records that a finding is fixed.
 If it occurs again after that, `findings` reports it as a `regression`, severity `high`, first in the list, and `check` fails on it by default.
@@ -684,7 +685,7 @@ An option that takes a value is a usage error without one, so a bare `--since` i
 | `check` had no request to judge
 
 | `4`
-| not found: a trace id, a mark name, a finding id to `unack` or `unresolve`
+| not found: a trace id, a mark name, a finding id to `ack` or `resolve` that no finding has, a finding id to `unack` or `unresolve`
 |===
 
 A trace id that matches nothing prints `spider-sense: No such trace: <id>` on stderr and exits `4`, whether the answer came over HTTP or from the file.
@@ -692,6 +693,7 @@ A mark name that matches no mark also exits `4`, with a message naming the mark.
 A mistyped duration such as `--since=5min` is not a mark name: it is a usage error and exits `2`.
 `unack` of a finding that has no acknowledgement prints `spider-sense: No such acknowledgement: <id>` and exits `4` as well.
 `unresolve` of a finding that has no resolution prints `spider-sense: No such resolution: <id>` and exits `4`.
+`ack` or `resolve` of a well-formed id that no rule produces over the data kept prints `spider-sense: No finding <id> in the data kept (the last 24 hours); the id column of findings names one` and exits `4`, while an id that is not a finding id at all exits `2`.
 
 Exit code `3` means the exercise step did not reach the application, not that a fix worked.
 

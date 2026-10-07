@@ -402,6 +402,30 @@ class AgentApiTest {
         });
     }
 
+    /** findings.adoc#acknowledgements: only an id the findings list printed can be accepted or resolved. */
+    @Test
+    void anIdNoFindingHasIsRefusedAndNothingIsRecorded() {
+        serve((client, assembly) -> {
+            postProtobuf(client, "/v1/traces", sample());
+            for (String action : List.of("ack", "resolve")) {
+                HttpResponse<String> malformed = client.post("/api/findings/nosuch/" + action);
+                assertThat(malformed.statusCode()).as(action).isEqualTo(400);
+                assertThat(Json.parse(malformed.body()).asObject().getString("error"))
+                        .startsWith("Not a finding id: nosuch. A finding id is <kind>:<12 hex digits>")
+                        .contains("the ids of errors, queries and endpoints are table ids");
+
+                HttpResponse<String> unknown = client.post("/api/findings/n-plus-one:000000000000/" + action);
+                assertThat(unknown.statusCode()).as(action).isEqualTo(404);
+                assertThat(Json.parse(unknown.body()).asObject().getString("error"))
+                        .startsWith("No finding n-plus-one:000000000000 in the data kept (the last 24 hours)");
+
+                assertThat(client.post("/api/findings/regression:000000000000/" + action).statusCode())
+                        .as("a regression keeps its finding's id").isEqualTo(400);
+            }
+            assertThat(json(client.get("/api/acks")).getArray("acks").size()).isZero();
+        });
+    }
+
     @Test
     void aNoteThatIsNotAnObjectsStringIsTheCallersMistake() {
         serve((client, assembly) -> {

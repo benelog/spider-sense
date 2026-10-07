@@ -51,10 +51,9 @@ public final class Acks {
     /**
      * The most an id may be, which is the column's width.
      *
-     * <p>The shape is checked loosely rather than against the {@code kind:hex}
-     * grammar: findings.adoc#kinds may add kinds, and an id that matches no
-     * finding is an acknowledgement of nothing rather than an error worth
-     * refusing.
+     * <p>The store checks the id loosely, for its width alone: the {@code kind:hex}
+     * shape and whether the rules produce the id are asked before a decision reaches
+     * it, by the answers that know the rules (findings.adoc#acknowledgements).
      */
     public static final int MAX_ID = 64;
 

@@ -105,7 +105,7 @@ public final class Cli {
             return dispatch(options, defaultUrl, in, out, err, annotateFindings);
         } catch (Options.Usage e) {
             return usage(e, options.command(), err);
-        } catch (Reports.NoSuchTrace | Selectors.UnknownMark e) {
+        } catch (Reports.NoSuchTrace | Reports.NoSuchFinding | Selectors.UnknownMark e) {
             err.println("spider-sense: " + e.getMessage());
             return NOT_FOUND;
         } catch (Selectors.BadSelector | IllegalArgumentException | IllegalStateException e) {

@@ -102,7 +102,7 @@ Every argument is the CLI option of the same meaning, and a selector is a string
 
 | `resolve`
 | `findingId` (required), `note`
-| the resolution, as the CLI prints it (xref:findings.adoc#resolutions[Resolutions])
+| the resolution, as the CLI prints it (xref:findings.adoc#resolutions[Resolutions]); a failure naming the id when no finding has it
 
 | `compare`
 | `before`, `after` (both required), `until`, `service`

@@ -700,6 +700,22 @@ class CliTest {
         Run none = run("unresolve", id, db);
         assertThat(none.exit()).isEqualTo(4);
         assertThat(none.err()).contains("No such resolution: " + id);
+
+        // findings.adoc#acknowledgements: an id of another table is a usage error, an id of no
+        // finding is not found, and neither is recorded.
+        String tableId = id.substring(id.indexOf(':') + 1);
+        for (String command : List.of("ack", "resolve")) {
+            Run malformed = run(command, tableId, db);
+            assertThat(malformed.exit()).as(command).isEqualTo(2);
+            assertThat(malformed.err()).contains("Not a finding id: " + tableId + ".")
+                    .contains("the ids of errors, queries and endpoints are table ids");
+            Run unknown = run(command, "error:000000000000", db);
+            assertThat(unknown.exit()).as(command).isEqualTo(4);
+            assertThat(unknown.err()).contains("No finding error:000000000000 in the data kept");
+        }
+        try (Store store = new Store(Store.Settings.defaults(url))) {
+            assertThat(store.sql().count("SELECT COUNT(*) FROM ack", List.of())).isZero();
+        }
     }
 
     @Test

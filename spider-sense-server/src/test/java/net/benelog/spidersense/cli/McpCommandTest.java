@@ -11,10 +11,15 @@ import java.io.UncheckedIOException;
 import java.net.ServerSocket;
 import java.util.List;
 
+import io.opentelemetry.proto.trace.v1.Span;
+
 import org.junit.jupiter.api.Test;
 
+import net.benelog.spidersense.Otlp;
 import net.benelog.spidersense.TestStore;
+import net.benelog.spidersense.ingest.OtlpDecoder;
 import net.benelog.spidersense.server.SpiderSenseServer;
+import net.benelog.spidersense.store.Store;
 import net.benelog.spidersilk.json.Json;
 
 /**
@@ -156,20 +161,35 @@ class McpCommandTest {
     /** The {@code resolve} tool writes to the file as the CLI's {@code resolve} does. */
     @Test
     void aResolutionIsRecordedInTheFileJustAsTheCliRecordsItThere() {
-        String db = "--db=" + TestStore.writtenUrl();
+        String url = TestStore.memoryUrl();
+        try (Store store = new Store(Store.Settings.defaults(url))) {
+            new OtlpDecoder(store, () -> 4000).ingest(Otlp.traces(Otlp.service("orders"),
+                    Otlp.failing(Otlp.span("%032x".formatted(1), "%016x".formatted(1), "GET /a",
+                            Span.SpanKind.SPAN_KIND_SERVER, System.currentTimeMillis(), 5),
+                            "java.lang.IllegalStateException", "boom", "")));
+            store.writer().awaitIdle(5_000);
+        }
+        String db = "--db=" + url;
+        String id = Json.parse(run("", "findings", "--json", db).out()).asObject()
+                .getArray("findings").get(0).asObject().getString("id");
         String resolve = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":"
-                + "{\"name\":\"resolve\",\"arguments\":{\"findingId\":\"n-plus-one:0011223344ff\","
+                + "{\"name\":\"resolve\",\"arguments\":{\"findingId\":\"" + id + "\","
                 + "\"note\":\"fetch join\"}}}";
         String missing = "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":"
                 + "{\"name\":\"resolve\",\"arguments\":{}}}";
+        String unknown = "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":"
+                + "{\"name\":\"resolve\",\"arguments\":{\"findingId\":\"n-plus-one:0011223344ff\"}}}";
 
-        Run run = run(resolve + "\n" + missing + "\n", "mcp", db);
+        Run run = run(resolve + "\n" + missing + "\n" + unknown + "\n", "mcp", db);
 
         List<String> lines = run.out().lines().toList();
-        assertThat(lines).hasSize(2);
-        assertThat(text(lines.get(0))).isEqualTo("resolved n-plus-one:0011223344ff — fetch join\n");
+        assertThat(lines).hasSize(3);
+        assertThat(text(lines.get(0))).isEqualTo("resolved " + id + " — fetch join\n");
         assertThat(Json.parse(lines.get(1)).asObject().getObject("error").getLong("code"))
                 .as("findingId is required").isEqualTo(-32602);
+        assertThat(Json.parse(lines.get(2)).asObject().getObject("result").getBoolean("isError"))
+                .as("an id no finding has is the tool's failure").isTrue();
+        assertThat(text(lines.get(2))).startsWith("No finding n-plus-one:0011223344ff in the data kept");
     }
 
     /**

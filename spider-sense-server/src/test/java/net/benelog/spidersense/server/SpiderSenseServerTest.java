@@ -187,14 +187,16 @@ class SpiderSenseServerTest {
                             .POST(HttpRequest.BodyPublishers.noBody())
                             .timeout(Duration.ofSeconds(10)).build(),
                     HttpResponse.BodyHandlers.ofString());
-            assertThat(ack.statusCode()).as(ack.body()).isEqualTo(201);
-            assertThat(ack.body()).contains("slow-endpoint:GET /a/b");
+            // No finding id has that shape, and the refusal names the id the route decoded.
+            assertThat(ack.statusCode()).as(ack.body()).isEqualTo(400);
+            assertThat(ack.body()).contains("Not a finding id: slow-endpoint:GET /a/b.");
             HttpResponse<String> unack = HttpClient.newHttpClient().send(
                     HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + server.port()
                                     + "/api/findings/slow-endpoint%3AGET%20%2Fa%2Fb/ack"))
                             .DELETE().timeout(Duration.ofSeconds(10)).build(),
                     HttpResponse.BodyHandlers.ofString());
-            assertThat(unack.statusCode()).as(unack.body()).isEqualTo(204);
+            assertThat(unack.statusCode()).as(unack.body()).isEqualTo(404);
+            assertThat(unack.body()).contains("No such acknowledgement: slow-endpoint:GET /a/b");
 
             for (String escape : new String[] {"/assets/..%2F..%2Fsimplelogger.properties",
                     "/assets/js/..%2F..%2F..%2Fsimplelogger.properties", "/..%2Fsimplelogger.properties"}) {

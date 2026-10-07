@@ -158,7 +158,7 @@ public final class McpTools implements McpServer.ToolRunner {
         }
         try {
             return tool.handler().answer(this, arguments);
-        } catch (Reports.NoSuchTrace | Selectors.UnknownMark | Selectors.BadSelector
+        } catch (Reports.NoSuchTrace | Reports.NoSuchFinding | Selectors.UnknownMark | Selectors.BadSelector
                 | Database.ReaderUnavailable | IllegalArgumentException e) {
             return McpServer.ToolResult.failed(oneLine(e.getMessage()));
         }

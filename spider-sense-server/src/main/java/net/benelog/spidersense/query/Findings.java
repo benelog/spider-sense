@@ -519,6 +519,42 @@ public final class Findings {
         return byId;
     }
 
+    // --- what an acknowledgement or a resolution may name ------------------------
+
+    /** {@code <kind>:<12 hex digits>}, the shape {@link #id} gives every finding. */
+    private static final java.util.regex.Pattern ID =
+            java.util.regex.Pattern.compile("([a-z-]+):[0-9a-f]{12}");
+
+    /**
+     * Whether an id has the shape of a finding id: a kind the rules produce, a colon and 12 hex
+     * digits (findings.adoc#acknowledgements). A {@code regression} keeps the id of the finding
+     * it is, so no id starts with that kind.
+     */
+    public static boolean isFindingId(@Nullable String id) {
+        if (id == null) {
+            return false;
+        }
+        java.util.regex.Matcher m = ID.matcher(id);
+        return m.matches() && !REGRESSION.equals(m.group(1)) && Ranked.KINDS.contains(m.group(1));
+    }
+
+    /**
+     * Whether the rules produce this id over the window, for any service: the rules of the id's
+     * kind alone, for the ids alone, as the state of a finding asks them (findings.adoc#state).
+     */
+    public boolean exists(String id, Window window) {
+        if (!isFindingId(id)) {
+            return false;
+        }
+        String kind = id.substring(0, id.indexOf(':'));
+        for (Ranked each : rules(window, null, new Scope(Set.of(kind), false))) {
+            if (each.finding().id().equals(id)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     // --- resolutions and states ------------------------------------------------
 
     /**

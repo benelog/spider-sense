@@ -13,9 +13,9 @@ The launcher treats a first argument that does not start with `-` as a command a
 |---|---|
 | `status` | what is running, where the database is, how much it holds |
 | `findings [--hide-acked] [--no-git]` | the findings of the window, with the suspect change under each code frame |
-| `ack <finding id> [--note=…]` | accepts a known finding, which is then ranked after every other one, its severity reading `acked` |
+| `ack <finding id> [--note=…]` | accepts a known finding, which is then ranked after every other one, its severity reading `acked`; the id is the `findings` id column's, and any other is refused: exit `2` for an id that is not `<kind>:<12 hex>` (the ids of `errors`, `queries` and `endpoints` are table ids), exit `4` for one no finding has |
 | `unack <finding id>` | withdraws that acknowledgement; exit code `4` when there was none |
-| `resolve <finding id> [--note=…]` | marks a finding fixed: it is set aside, its severity reading `resolved`, until it occurs again, and then it is a `regression`, first in the list |
+| `resolve <finding id> [--note=…]` | marks a finding fixed: it is set aside, its severity reading `resolved`, until it occurs again, and then it is a `regression`, first in the list; it refuses the ids `ack` refuses |
 | `unresolve <finding id>` | withdraws that resolution; exit code `4` when there was none |
 | `trace <traceId> [--full] [--diff=<traceId>]` | one trace as a tree, or with `--diff` two traces aligned in one tree, span by span |
 | `traces [--status=error\|ok] [--min-ms=] [--q=] [--limit=20]` | the newest traces |
@@ -80,7 +80,7 @@ A `since` that resolves to a moment after `until` is an error, and so is a misty
 | `1` | `check` failed |
 | `2` | usage or connection error |
 | `3` | `check` had no request to judge |
-| `4` | not found: a trace id, a mark name, a finding id to `unack` or `unresolve` |
+| `4` | not found: a trace id, a mark name, a finding id to `ack` or `resolve` that no finding has, a finding id to `unack` or `unresolve` |
 
 A trace id that matches nothing prints `spider-sense: No such trace: <id>` on stderr and exits `4`, whether the answer came over HTTP or from the file; a mark name that matches no mark does the same, naming the mark, and so does `unack` with `spider-sense: No such acknowledgement: <id>`, and `unresolve` with `spider-sense: No such resolution: <id>`.
 

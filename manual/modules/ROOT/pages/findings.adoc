@@ -737,9 +737,18 @@ java -jar spider-sense.jar unack slow-endpoint:786b594455d0
 java -jar spider-sense.jar findings --hide-acked
 ----
 
-The id is the one `findings` printed.
+The id is the one `findings` printed in its `id` column.
 Finding ids are stable across windows, so one acknowledgement keeps holding as the window moves.
 `unack` with no such acknowledgement exits `4`.
+
+`ack` and `resolve` accept only an id a finding has:
+
+* An id that is not `<kind>:<12 hex digits>`, with a kind of <<kinds>> other than `regression`, is a usage error: exit `2`, and `400` over HTTP.
+The message says that the `id` column of `findings` is what they take, and that the ids of `errors`, `queries` and `endpoints` are table ids, not finding ids.
+* A well-formed id that no rule produces over the data the store keeps, which is the retention window, is refused as not found: `No finding <id> in the data kept (the last 24 hours)`, exit `4`, and `404` over HTTP.
+The rules of the id's kind alone run for the ids alone, as for a finding's <<state,state>>, over every service.
+
+Neither records anything, and MCP's `resolve` tool fails with the same message.
 
 An acknowledged finding is ranked after every other finding, in the same order among themselves.
 In the text rendering its severity column reads `acked`, and the heading counts them, as in `(… 12 requests, 2 acked)`.
@@ -752,7 +761,7 @@ Acknowledgements are the reader's rather than the session's, so they are not exp
 
 Over HTTP:
 
-* `POST /api/findings/\{id}/ack` with `{ "note": "…" | null }` answers `201` with `{ "findingId": "…", "at": …, "note": … }`.
+* `POST /api/findings/\{id}/ack` with `{ "note": "…" | null }` answers `201` with `{ "findingId": "…", "at": …, "note": … }`, `400` for an id that is not a finding id, and `404` for one no finding has.
 * `DELETE /api/findings/\{id}/ack` answers `204`, or `404` when there is no such acknowledgement; a resolution is not one.
 * `GET /api/acks` answers `{ "acks": [ … ] }`, newest first; resolutions are not listed.
 
@@ -778,6 +787,7 @@ java -jar spider-sense.jar unresolve n-plus-one:4c5f46be8bc5
 ----
 
 Resolve a finding once `check` over the run after the fix passes, with what the fix was as the note.
+`resolve` takes the ids `ack` takes and refuses the others the same way (<<acknowledgements>>).
 `unresolve` with no such resolution exits `4`.
 
 A resolved finding in a later window is one of two things:
@@ -799,7 +809,7 @@ Resolutions are not exported, as acknowledgements are not.
 
 Over HTTP:
 
-* `POST /api/findings/\{id}/resolve` with `{ "note": "…" | null }` answers `201` with `{ "findingId": "…", "at": …, "note": … }`.
+* `POST /api/findings/\{id}/resolve` with `{ "note": "…" | null }` answers `201` with `{ "findingId": "…", "at": …, "note": … }`, `400` for an id that is not a finding id, and `404` for one no finding has.
 * `DELETE /api/findings/\{id}/resolve` answers `204`, or `404` when there is no such resolution; an acknowledgement is not one.
 
 Every finding carries `"resolution": { "at": …, "note": "…" | null } | null`.

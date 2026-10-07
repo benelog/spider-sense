@@ -71,6 +71,8 @@ public final class AgentApi {
                 (req, e) -> ErrorBody.response(HttpStatus.BAD_REQUEST, e.getMessage(), "Bad request"));
         app.exception(Selectors.UnknownMark.class,
                 (req, e) -> ErrorBody.response(HttpStatus.NOT_FOUND, e.getMessage(), "Not found"));
+        app.exception(Reports.NoSuchFinding.class,
+                (req, e) -> ErrorBody.response(HttpStatus.NOT_FOUND, e.getMessage(), "Not found"));
     }
 
     public WebResponse findings(WebRequest req) {
@@ -99,7 +101,7 @@ public final class AgentApi {
      */
     public WebResponse ack(WebRequest req) {
         String note = note(req);
-        Acks.Ack ack = withStoreRules(() -> reports.ackStore().ack(Params.pathParam(req, "id"), note));
+        Acks.Ack ack = withStoreRules(() -> reports.ack(Params.pathParam(req, "id"), note));
         return Params.answer(req, reports.ack(ack)).status(HttpStatus.CREATED);
     }
 
@@ -118,7 +120,7 @@ public final class AgentApi {
      */
     public WebResponse resolve(WebRequest req) {
         String note = note(req);
-        Acks.Ack resolution = withStoreRules(() -> reports.ackStore().resolve(Params.pathParam(req, "id"), note));
+        Acks.Ack resolution = withStoreRules(() -> reports.resolve(Params.pathParam(req, "id"), note));
         return Params.answer(req, reports.resolve(resolution)).status(HttpStatus.CREATED);
     }
 

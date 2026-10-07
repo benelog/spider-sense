@@ -372,9 +372,45 @@ public final class Reports implements AutoCloseable {
         return new Report(Codecs.mark(mark), Text.mark(mark));
     }
 
-    /** Acknowledges a finding, which the CLI must be able to do with no server running. */
+    /**
+     * Acknowledges a finding, which the CLI must be able to do with no server running.
+     *
+     * @throws IllegalArgumentException when the id is not shaped like a finding id
+     * @throws NoSuchFinding when no rule produces it over the data kept
+     */
     public Acks.Ack ack(@Nullable String findingId, @Nullable String note) {
-        return acks.ack(findingId, note);
+        return acks.ack(known(findingId), note);
+    }
+
+    /**
+     * A finding id the rules produce over everything the store keeps, which is the retention
+     * window (findings.adoc#acknowledgements): an id of another table, a typo or an id made up
+     * would otherwise be recorded and answered as if it had been accepted.
+     */
+    private String known(@Nullable String findingId) {
+        if (findingId == null || !Findings.isFindingId(findingId)) {
+            String shown = findingId == null ? "" : findingId.length() > Acks.MAX_ID
+                    ? findingId.substring(0, Acks.MAX_ID) + "…" : findingId;
+            throw new IllegalArgumentException("Not a finding id: " + shown + ". A finding id is"
+                    + " <kind>:<12 hex digits>, as the id column of findings prints it; the ids of"
+                    + " errors, queries and endpoints are table ids, not finding ids");
+        }
+        if (!findings.exists(findingId, Window.of(0, Window.LATEST))) {
+            throw new NoSuchFinding(findingId, config.retentionHours());
+        }
+        return findingId;
+    }
+
+    /**
+     * A well-formed finding id no rule produces over the data kept. It is a {@code 404} over
+     * HTTP and exit code {@code 4} in the CLI, as a missing trace is (cli.adoc#exit-codes).
+     */
+    public static final class NoSuchFinding extends RuntimeException {
+
+        public NoSuchFinding(String findingId, int retentionHours) {
+            super("No finding " + findingId + " in the data kept (the last "
+                    + Text.plural(retentionHours, "hour") + "); the id column of findings names one");
+        }
     }
 
     public Report ack(Acks.Ack ack) {
@@ -393,9 +429,14 @@ public final class Reports implements AutoCloseable {
         return new Report(Json.obj().put("findingId", findingId), Text.unack(findingId));
     }
 
-    /** Resolves a finding, which the CLI must be able to do with no server running. */
+    /**
+     * Resolves a finding, which the CLI must be able to do with no server running.
+     *
+     * @throws IllegalArgumentException when the id is not shaped like a finding id
+     * @throws NoSuchFinding when no rule produces it over the data kept
+     */
     public Acks.Ack resolve(@Nullable String findingId, @Nullable String note) {
-        return acks.resolve(findingId, note);
+        return acks.resolve(known(findingId), note);
     }
 
     public Report resolve(Acks.Ack resolution) {
