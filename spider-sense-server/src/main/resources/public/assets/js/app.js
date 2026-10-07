@@ -247,10 +247,8 @@ function showRoute(current) {
 // --- dialogs -------------------------------------------------------------
 
 function sendDataDialog() {
-  const otlp = (state.status || {}).otlp || {};
   const base = api.collectorBase();
-  const snippets = ui.snippetText(base);
-  if (otlp.traces) snippets.curl = snippets.curl.replace(base + '/v1/traces', otlp.traces);
+  const snippets = ui.snippetText();
   const body = ui.tabs([
     { id: 'agent', label: '-javaagent', render: () => copyBlock(snippets.agent) },
     { id: 'env', label: 'Environment', render: () => copyBlock(snippets.env) },

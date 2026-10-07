@@ -160,7 +160,7 @@ export function render(root, ctx) {
         'Nothing has arrived yet. Attach Spider Sense to an application, or point any OTLP/HTTP sender at this collector.',
         h('div', { style: { display: 'grid', gap: '10px', justifyItems: 'center', width: '100%' } },
           h('img.empty-hero', { src: 'assets/logo.svg', alt: '', width: '96', height: '96' }),
-          snippetBlocks(api.collectorBase())))));
+          snippetBlocks()))));
       return;
     }
     layout.build();

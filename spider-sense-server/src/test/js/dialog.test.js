@@ -2,7 +2,7 @@
 import './fake-dom.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { formDialog, markDialog, errorText } from '../../main/resources/public/assets/js/ui.js';
+import { formDialog, markDialog, errorText, snippetText } from '../../main/resources/public/assets/js/ui.js';
 import { state } from '../../main/resources/public/assets/js/api.js';
 
 const settle = () => new Promise((r) => setImmediate(r));
@@ -63,4 +63,19 @@ test('the Mark dialog refuses a name outside the mark-name characters before any
   assert.equal(problemOf(dlg).textContent, 'A name is 1 to 64 of the characters A-Z, a-z, 0-9, dot, underscore and dash.');
   assert.equal(markDialog(), dlg, 'one Mark dialog at a time');
   dlg.close();
+});
+
+test('the send-data snippets name the real jar, and lead with the collector line unless this is the default embedded one (ui.adoc#dialogs)', () => {
+  const embedded = snippetText({ mode: 'agent', endpoint: 'http://127.0.0.1:4000', jar: '/opt/spider-sense-0.1.0.jar' });
+  assert.match(embedded.agent, /^java -javaagent:\/opt\/spider-sense-0\.1\.0\.jar -jar your-app\.jar\n/);
+  const standalone = snippetText({
+    mode: 'standalone', endpoint: 'http://127.0.0.1:4000', jar: '/opt/spider-sense-0.1.0.jar',
+    otlp: { traces: 'http://127.0.0.1:4000/v1/traces' },
+  });
+  assert.equal(standalone.agent.split('\n').slice(0, 2).join('\n'), '# send to this Spider Sense\njava -javaagent:/opt/spider-sense-0.1.0.jar \\');
+  assert.match(standalone.agent, /-Dspidersense\.collector=http:\/\/127\.0\.0\.1:4000/);
+  assert.match(standalone.agent, /# or start a Spider Sense of its own, embedded in the app\njava -javaagent:\/opt\/spider-sense-0\.1\.0\.jar -jar your-app\.jar$/);
+  const otherPort = snippetText({ mode: 'agent', endpoint: 'http://127.0.0.1:4001' });
+  assert.match(otherPort.agent, /^# send to this Spider Sense\njava -javaagent:spider-sense\.jar \\\n  -Dspidersense\.collector=http:\/\/127\.0\.0\.1:4001/);
+  assert.match(otherPort.curl, /^curl -X POST http:\/\/127\.0\.0\.1:4001\/v1\/traces/);
 });

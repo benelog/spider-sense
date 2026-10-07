@@ -244,18 +244,31 @@ export function copyBlock(text, opts = {}) {
   return h('div.code-block', { class: opts.class }, pre, btn);
 }
 
-/** The "how to send data" snippets, used by the dialog and by empty states. */
-export function snippetText(base) {
+/**
+ * The "how to send data" snippets, used by the dialog and by empty states (ui.adoc#dialogs):
+ * the jar the server was started from and its endpoint, from /api/status. A bare `-javaagent`
+ * starts a Spider Sense of its own on :4000, so it leads only when that is this one; otherwise
+ * the line that sends here, `-Dspidersense.collector=<endpoint>`, comes first.
+ */
+export function snippetText(status = api.state.status) {
+  const s = status || {};
+  const base = s.endpoint || api.collectorBase();
+  const jar = api.jarOf(s);
+  const own = `java -javaagent:${jar} -jar your-app.jar`;
+  const forward = `java -javaagent:${jar} \\\n  -Dspidersense.collector=${base} \\\n  -jar your-app.jar`;
+  const sendsHere = s.mode === 'standalone' || !api.isDefaultUrl(base);
   return {
-    agent: `java -javaagent:spider-sense.jar -jar your-app.jar\n\n# or point an app at a Spider Sense that is already running\njava -javaagent:spider-sense.jar \\\n  -Dspidersense.collector=${base} \\\n  -jar your-app.jar`,
+    agent: sendsHere
+      ? `# send to this Spider Sense\n${forward}\n\n# or start a Spider Sense of its own, embedded in the app\n${own}`
+      : `${own}\n\n# or point an app at a Spider Sense that is already running\n${forward}`,
     env: `OTEL_EXPORTER_OTLP_ENDPOINT=${base}\nOTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf\nOTEL_SERVICE_NAME=your-service`,
-    curl: `curl -X POST ${base}/v1/traces \\\n  -H 'content-type: application/json' \\\n  -d '{"resourceSpans":[]}'`,
+    curl: `curl -X POST ${(s.otlp || {}).traces || base + '/v1/traces'} \\\n  -H 'content-type: application/json' \\\n  -d '{"resourceSpans":[]}'`,
   };
 }
 
 /** The three snippets stacked, for an empty page. */
-export function snippetBlocks(base) {
-  const s = snippetText(base);
+export function snippetBlocks(status = api.state.status) {
+  const s = snippetText(status);
   return h('div.snippets', { style: { display: 'grid', gap: '10px', width: 'min(640px, 100%)' } },
     copyBlock(s.agent), copyBlock(s.env), copyBlock(s.curl));
 }
@@ -493,7 +506,7 @@ export function emptyState(sentence, extra) {
 
 /** The empty state of a page nothing has been sent to yet: the sentence and the three snippets. */
 export function noDataYet(sentence) {
-  return emptyState(sentence, snippetBlocks(api.collectorBase()));
+  return emptyState(sentence, snippetBlocks());
 }
 
 /** A muted line centred in an empty list. */

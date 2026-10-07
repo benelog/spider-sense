@@ -472,6 +472,9 @@ button.legend-item:hover { color: var(--text); }
 .code-block { position: relative; }
 .code-block .copy-block { position: absolute; top: 6px; right: 6px; opacity: 0; }
 .code-block:hover .copy-block, .code-block:focus-within .copy-block { opacity: 1; }
+/* Where the snippet is the point of the page, its Copy button shows without a hover. */
+.empty-state .code-block .copy-block, dialog .code-block .copy-block { opacity: 1; }
+.empty-state .code-block pre.code, dialog .code-block pre.code { padding-right: 84px; }
 pre.code {
   margin: 0; padding: 10px 12px; background: var(--bg-raised); border: 1px solid var(--line);
   border-radius: var(--r); font-family: var(--font-mono); font-size: 12px; line-height: 1.55;

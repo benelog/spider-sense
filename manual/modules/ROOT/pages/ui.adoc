@@ -205,7 +205,11 @@ A drag that starts in one of its fields and ends outside it, as when selecting t
 
 How to send data::
 Has three tabs: `-javaagent`, environment variables, and `curl`.
-Each tab is a copyable block carrying the actual endpoint from `/api/status`.
+Each tab is a copyable block carrying the actual endpoint from `/api/status`, and its Copy button shows without a hover.
+The `-javaagent` lines name `/api/status.jar`, the jar the server was started from, or `spider-sense.jar` when the server does not know it.
+A bare `-javaagent` gives the application a Spider Sense of its own, embedded on `:4000`, so it leads only where the page comes from such a one: in agent mode on `http://127.0.0.1:4000`.
+In standalone mode, or on any other endpoint, the line with `-Dspidersense.collector=<endpoint>`, which sends here, comes first, and the bare line follows under `# or start a Spider Sense of its own, embedded in the app`.
+The empty states show the same three blocks, with their Copy buttons always shown too.
 
 Clear data::
 Asks for confirmation, saying what xref:api.adoc#data[`DELETE /api/data`] deletes and what it keeps, then sends it.
