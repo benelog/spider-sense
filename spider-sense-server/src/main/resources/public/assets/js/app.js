@@ -273,6 +273,27 @@ function sendDataDialog() {
   });
 }
 
+/** The keys of ui.adoc#keyboard, opened by `?`. */
+const SHORTCUTS = [
+  ['/', 'Focus the search or filter field of the page'],
+  ['Esc', 'Close a drawer, or clear the scatter selection'],
+  ['L', 'Turn Live on or off'],
+  ['[  ]', 'Step the time range shorter or longer'],
+  ['M', 'Mark this moment'],
+  ['?', 'Show these keys'],
+];
+
+function shortcutsDialog() {
+  const dlg = dialog({
+    title: 'Keyboard shortcuts',
+    body: [
+      h('dl.shortcuts', SHORTCUTS.map(([key, what]) => h('div', h('dt', h('kbd', key)), h('dd', what)))),
+      h('p.muted', 'The keys act outside a text field and while no dialog is open.'),
+    ],
+    actions: h('button.btn', { type: 'button', onclick: () => dlg.close() }, 'Close'),
+  });
+}
+
 function clearDataDialog() {
   const dlg = dialog({
     title: 'Clear data',
@@ -381,6 +402,7 @@ function onKey(e) {
   }
   if (e.key === 'l' || e.key === 'L') { e.preventDefault(); router.setQuery({ live: state.live ? '' : '1' }); return; }
   if (e.key === 'm' || e.key === 'M') { e.preventDefault(); openMarkDialog(); return; }
+  if (e.key === '?') { e.preventDefault(); shortcutsDialog(); return; }
   if (e.key === '[' || e.key === ']') {
     e.preventDefault();
     const i = api.rangeIndex(state.range);

@@ -240,7 +240,12 @@ Any other answer, or no answer, shows `Data not cleared:` and the error in the t
 
 | `M`
 | Opens the Mark dialog
+
+| `?`
+| Opens a small dialog that lists these keys
 |===
+
+The controls name their keys in their titles: the Mark button `Mark this moment (M)`, the time range `Time range ([ and ] step it)`, and the Live toggle `Live updates (L)`.
 
 The keys act only outside a text field and while no dialog is open.
 An open dialog keeps the keyboard to itself, and `Esc` closes it.
