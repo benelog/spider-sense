@@ -113,6 +113,30 @@ class SpiderSensePluginUnitTest {
     }
 
     @Test
+    void theStandaloneListensOnTheCollectorsPortWhenTheCollectorIsHereAndTheBlockNamesNoPort() {
+        assertThat(SpiderSensePlugin.standalonePort(block).isPresent()).isFalse();
+
+        block.getCollector().set("http://127.0.0.1:4100");
+        assertThat(SpiderSensePlugin.standalonePort(block).get()).isEqualTo(4100);
+
+        block.getCollector().set("http://localhost:4101/");
+        assertThat(SpiderSensePlugin.standalonePort(block).get()).isEqualTo(4101);
+
+        block.getCollector().set("http://[::1]:4102");
+        assertThat(SpiderSensePlugin.standalonePort(block).get()).isEqualTo(4102);
+
+        block.getCollector().set("http://box:4100");
+        assertThat(SpiderSensePlugin.standalonePort(block).isPresent()).as("another machine").isFalse();
+
+        block.getCollector().set("http://127.0.0.1");
+        assertThat(SpiderSensePlugin.standalonePort(block).isPresent()).as("no port written").isFalse();
+
+        block.getCollector().set("http://127.0.0.1:4100");
+        block.getPort().set(4200);
+        assertThat(SpiderSensePlugin.standalonePort(block).get()).as("the block's port wins").isEqualTo(4200);
+    }
+
+    @Test
     void theExitCodeDecidesTheBuild() {
         assertThat(SpiderSensePlugin.FailOnVerdict.failure(0, true)).isNull();
         assertThat(SpiderSensePlugin.FailOnVerdict.failure(1, false)).isEqualTo("Spider Sense check failed");
@@ -138,6 +162,7 @@ class SpiderSensePluginUnitTest {
     }
 
     private List<String> systemProperties() {
-        return SpiderSensePlugin.systemProperties(project.getObjects(), block, block.getService()).get();
+        return SpiderSensePlugin.systemProperties(project.getObjects(), block, block.getService(), block.getPort())
+                .get();
     }
 }

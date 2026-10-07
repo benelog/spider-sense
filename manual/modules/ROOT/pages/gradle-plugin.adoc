@@ -228,6 +228,9 @@ An `enabled` of `false` is the same as not applying the plugin, except that the 
 
 The `spiderSense` task is a `JavaExec` with the jar as its only class path, `net.benelog.spidersense.launcher.SpiderSenseMain` as its main class, and no dependency on compiling the project.
 The block's `spidersense.*` properties are passed to it as they are to the application, so a standalone started this way listens where the block says.
+When the block sets no `port` and forwards to a `collector` on this machine (`127.0.0.1`, `localhost` or `[::1]`, with a port written in the URL), the task passes the collector's port as `-Dspidersense.port=`.
+`./gradlew spiderSense` then starts the very Spider Sense the block forwards to.
+Only the `spiderSense` task gets that port: the application forwards and listens on nothing of its own.
 Its `service` is passed as well, and a standalone ignores it: the standalone runs inside no application, so its `status` names no embedded service.
 When the block names a `collector`, a `host` or a `port`, it also sets the environment variable `SPIDERSENSE_URL` to the base URL they imply, which is `collector` when set and otherwise `http://<host>:<port>` with the defaults filled in.
 A CLI command therefore asks the Spider Sense the application is sending to rather than the default port.
@@ -366,6 +369,7 @@ spiderSense {
 ./gradlew -q spiderSense --args="findings --since=before"
 ----
 
+`./gradlew spiderSense` starts the standalone on the collector's port, so with a `collector` of `http://127.0.0.1:4100` it listens on `4100` with nothing more in the block (<<tasks,The tasks>>).
 `attachTo.add('test')` adds to the default tasks, so `bootRun` stays attached, and with `collector` set it forwards too.
 That is what you want when the tests and the running application should land in one Spider Sense.
 

@@ -481,6 +481,21 @@ class SpiderSensePluginTest {
     }
 
     @Test
+    void theSpiderSenseTaskListensWhereTheBlockForwardsTo() throws IOException {
+        buildFile("""
+                jar = file('%JAR%')
+                attachTo.add('test')
+                collector = 'http://127.0.0.1:4100'
+                """.replace("%JAR%", stubJar.toAbsolutePath().toString()));
+
+        String output = gradle("spiderSense", "-q").build().getOutput();
+
+        assertThat(output).contains("-Dspidersense.port=4100");
+        assertThat(probe()).as("only the standalone takes the collector's port")
+                .doesNotContain("-Dspidersense.port");
+    }
+
+    @Test
     void theInitTaskNamesTheProjectDirectoryAndTheJar() {
         String output = gradle("spiderSenseInit", "-q").build().getOutput();
 

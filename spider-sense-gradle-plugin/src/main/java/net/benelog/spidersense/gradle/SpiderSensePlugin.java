@@ -19,6 +19,8 @@ import java.io.File;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.io.InputStream;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.io.UncheckedIOException;
 import java.util.List;
 import java.util.Properties;
@@ -123,9 +125,10 @@ public class SpiderSensePlugin implements Plugin<Project> {
                         .map(path -> projectDir.toPath().resolve(path).normalize().toFile()),
                 extension.getJar().map(file -> file.getAsFile()));
 
-        Provider<List<String>> systemProperties = systemProperties(objects, extension, extension.getService());
+        Provider<List<String>> systemProperties = systemProperties(objects, extension, extension.getService(),
+                extension.getPort());
         Provider<List<String>> testSystemProperties =
-                systemProperties(objects, extension, extension.getTestService());
+                systemProperties(objects, extension, extension.getTestService(), extension.getPort());
         Provider<List<String>> checkArguments = checkArguments(objects, providers, extension.getCheck());
 
         attach(project, objects, extension, enabled, namedJar, configuration, systemProperties,
@@ -212,11 +215,14 @@ public class SpiderSensePlugin implements Plugin<Project> {
             Provider<List<String>> checkArguments, File projectDir) {
         FileCollection jar = objects.fileCollection().from(JarSource.always(namedJar, configuration));
         Provider<String> url = baseUrl(extension);
+        // The standalone listens where the block forwards to, when that is here.
+        Provider<List<String>> standaloneProperties = systemProperties(objects, extension, extension.getService(),
+                standalonePort(extension));
 
         project.getTasks().register(NAME, JavaExec.class, task -> {
             task.setGroup(GROUP);
             task.setDescription("Runs Spider Sense standalone, or a CLI command given with --args");
-            configureJarRun(task, jar, systemProperties, configuration.getName(), url);
+            configureJarRun(task, jar, standaloneProperties, configuration.getName(), url);
         });
 
         // init writes the CLAUDE.md block and installs the skills, and both the
@@ -293,19 +299,47 @@ public class SpiderSensePlugin implements Plugin<Project> {
     }
 
     /**
+     * The port the {@code spiderSense} task's standalone listens on: the block's
+     * {@code port}, or, when the block sets none and forwards to a {@code collector}
+     * on this machine, that collector's port, so {@code ./gradlew spiderSense}
+     * starts the Spider Sense the block forwards to.
+     */
+    static Provider<Integer> standalonePort(SpiderSenseExtension extension) {
+        return extension.getPort().orElse(extension.getCollector().map(SpiderSensePlugin::loopbackPort));
+    }
+
+    /** The explicit port of a collector URL on a loopback host, or null for any other URL. */
+    static @Nullable Integer loopbackPort(String collector) {
+        URI uri;
+        try {
+            uri = new URI(collector.trim());
+        } catch (URISyntaxException e) {
+            return null;
+        }
+        String host = uri.getHost();
+        if (host == null || uri.getPort() < 0) {
+            return null;
+        }
+        boolean loopback = host.equalsIgnoreCase("localhost") || host.startsWith("127.")
+                || host.equals("[::1]") || host.equals("::1");
+        return loopback ? uri.getPort() : null;
+    }
+
+    /**
      * One {@code -Dspidersense.<key>=<value>} per property of the block that has
      * a value, in the order the documentation's table lists them. A property
      * left unset contributes nothing, which is how the jar's own default stays
      * the default.
      *
      * @param service the block's {@code service}, or its {@code testService} for a test task
+     * @param port    the block's {@code port}, or {@link #standalonePort} for the {@code spiderSense} task
      */
     static Provider<List<String>> systemProperties(ObjectFactory objects, SpiderSenseExtension extension,
-            Provider<String> service) {
+            Provider<String> service, Provider<Integer> port) {
         ListProperty<String> arguments = objects.listProperty(String.class);
         arguments.addAll(option("config", extension.getConfigFile().map(file -> file.getAsFile().getAbsolutePath())));
         arguments.addAll(option("service", service));
-        arguments.addAll(option("port", extension.getPort()));
+        arguments.addAll(option("port", port));
         arguments.addAll(option("host", extension.getHost()));
         arguments.addAll(option("collector", extension.getCollector()));
         arguments.addAll(option("db", extension.getDb()));
