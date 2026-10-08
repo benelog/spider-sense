@@ -298,6 +298,9 @@ A feed gives the relative time, "12 s ago", a table the absolute one, and a tool
 === Narrow screens
 
 The whole UI works at 360 px wide: a table scrolls horizontally inside its panel, the charts shrink, and the drawer becomes a full-screen sheet.
+The page itself never scrolls sideways.
+Below 720 px the sidebar sits behind a menu button at the top left, and the top bar and the recording's note start to the right of it; the top bar drops the editor select, and its other selects narrow before anything leaves the page.
+Below 420 px the waterfall's name column narrows, so the timeline still fits.
 
 The Queries, Logs, Errors and Compare tables fit the page at 1280 px and wider, so every column is on screen without scrolling.
 Their columns have fixed widths, and the wide column takes the rest: a statement, an error message or an endpoint is cut with an ellipsis, the whole of it in the title, and a log body wraps.
