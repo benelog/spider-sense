@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The agent demo (design.adoc#the-agent-demo): Claude Code or Codex CLI, run for
-# real and headless on the prompt of the README's "Hand it to an agent", in English or
+# real and headless on the prompt of examples/README.md's "Hand it to an agent", in English or
 # Korean, with its event stream kept for a page that replays it.
 #
 #   scripts/agent-demo.sh record <claude|codex> <en|ko>   start the shared demo, let it take traffic
