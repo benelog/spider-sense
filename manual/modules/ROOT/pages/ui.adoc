@@ -356,8 +356,9 @@ A `format=text` answer is replied as the text it was captured as.
 
 The recording freezes `Date.now()` at the end of the window.
 It makes the default top-bar range the length of the recording: the `15m` preset becomes "The recording (5 min)", so every chart covers the recorded minutes and none before them.
+That preset is the only one offered, since every other range would answer the same aggregates.
 It answers `POST` and `DELETE` with 405, and `/api/source` with 404, since the files are not in the recording.
-It replaces `EventSource` with one that never emits.
+It replaces `EventSource` with one that never emits, and hides Live and Clear data, which would do nothing.
 It puts one line above the top bar saying when the recording was made, with a link to the database.
 It is the one page of the UI that makes external requests, since the database is what it shows.
 

@@ -83,10 +83,13 @@ const frozenNow = (manifest.window && manifest.window.to) || Date.now();
 const frozenFrom = (manifest.window && manifest.window.from) || frozenNow - preset.ms;
 Date.now = () => frozenNow;
 
+// Every other range would answer the same aggregates, since resolve() drops from and to: the
+// recording's window is the only one offered.
 const minutes = Math.max(1, Math.round((frozenNow - frozenFrom) / 60000));
 if (preset) {
   preset.ms = frozenNow - frozenFrom;
   preset.label = 'The recording (' + minutes + ' min)';
+  RANGES.splice(0, RANGES.length, preset);
 }
 
 const FALLBACK = ['beforeId', 'before', 'q', 'minMs', 'maxMs', 'traceId', 'severity', 'status', 'endpointId',
@@ -365,8 +368,13 @@ shimFetch(async (u, method) => {
   }
 });
 
-// A recording has no live stream: the events source stays closed and never delivers.
+// A recording has no live stream: the events source stays closed and never delivers, and
+// neither Live nor Clear data is offered.
 globalThis.EventSource = EventSourceStub;
+for (const id of ['live-toggle', 'clear-data-btn']) {
+  const control = document.getElementById(id);
+  if (control) control.hidden = true;
+}
 
 const note = document.createElement('div');
 note.className = 'snapshot-note';
