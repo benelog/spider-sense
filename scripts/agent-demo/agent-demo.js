@@ -16,7 +16,7 @@ const TEXT = {
   en: {
     title: 'Agent demo', play: 'Play', pause: 'Pause', restart: 'Restart', end: 'Skip to the end',
     caption: (s) => `<strong>${esc(agentName(s.agent))} ${esc(s.agent_version || '')}</strong> (${esc(s.model || '')}), `
-      + `run for real in a checkout of this repository on ${esc(day(s.recorded_at))}, after the example apps had taken a few minutes of traffic, and replayed from its event stream: `
+      + `run for real in a checkout of this repository on ${esc(day(s.recorded_at))} UTC, after the example apps had taken a few minutes of traffic, and replayed from its event stream: `
       + `every command, output and answer below is what the agent printed. Waits are shortened; the clock shows the recorded time, `
       + `${esc(duration(s.duration_ms))} in all.`,
     notes: (s) => `The prompt is Hand it to an agent in <a href="${REPO}/blob/main/examples/README.md#hand-it-to-an-agent">examples/README.md</a>, and the skill it names is `
@@ -29,7 +29,7 @@ const TEXT = {
   ko: {
     title: '에이전트 데모', play: '재생', pause: '일시 정지', restart: '처음부터', end: '끝으로',
     caption: (s) => `<strong>${esc(agentName(s.agent))} ${esc(s.agent_version || '')}</strong>(${esc(s.model || '')})를 `
-      + `예제 앱들이 몇 분 동안 트래픽을 받은 뒤 이 저장소에서 실제로 실행해 ${esc(day(s.recorded_at))}에 녹화한 이벤트 스트림을 재생합니다. `
+      + `예제 앱들이 몇 분 동안 트래픽을 받은 뒤 이 저장소에서 실제로 실행해 ${esc(day(s.recorded_at))}(UTC)에 녹화한 이벤트 스트림을 재생합니다. `
       + `아래의 명령, 출력, 답변은 모두 에이전트가 실제로 출력한 그대로입니다. 기다리는 시간은 줄였고, 시계는 녹화된 시각을 보여 줍니다. `
       + `실제로 걸린 시간은 ${esc(duration(s.duration_ms, 'ko'))}입니다.`,
     notes: (s) => `프롬프트는 <a href="${REPO}/blob/main/examples/README.md#hand-it-to-an-agent">examples/README.md</a>의 Hand it to an agent에 있는 것이고, `
@@ -55,7 +55,7 @@ function agentName(agent) {
 }
 
 function day(ms) {
-  return new Date(Number(ms)).toLocaleDateString('sv');   // YYYY-MM-DD, in the viewer's time zone
+  return new Date(Number(ms)).toISOString().slice(0, 10);   // YYYY-MM-DD in UTC, the same for every viewer
 }
 
 function duration(ms, lang = 'en') {
