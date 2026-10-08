@@ -359,7 +359,7 @@ It makes the default top-bar range the length of the recording: the `15m` preset
 That preset is the only one offered, since every other range would answer the same aggregates.
 It answers `POST` and `DELETE` with 405, and `/api/source` with 404, since the files are not in the recording.
 It replaces `EventSource` with one that never emits, and hides Live and Clear data, which would do nothing.
-It puts one line above the top bar saying when the recording was made, with a link to the database.
+It puts one line above the top bar saying when the recording was made and what it holds (the four example applications and the load generator), where to start (Findings, or the agent demos of Claude Code and Codex over the same recording), and a link to the database.
 It is the one page of the UI that makes external requests, since the database is what it shows.
 
 `scripts/demo-site.mjs assemble` copies `public/` into one directory with `data-dolthub` set on `index.html`.

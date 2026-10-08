@@ -46,7 +46,7 @@ Each of the five lives under `examples/` in https://github.com/{project-repo}[th
 [#static-demo]
 == The demo without installing anything
 
-https://spider-sense.benelog.net/demo[spider-sense.benelog.net/demo] is the same UI over a recording of the demo below: the four applications under one Spider Sense for five minutes.
+https://spider-sense.benelog.net/demo[spider-sense.benelog.net/demo] is the same UI over a recording of the demo below: the four applications and the load generator under one Spider Sense for five minutes.
 Every page is answered from a database of the recording, with no server behind it.
 Everything that reads works, from the map to a single trace's profile, and the range, the marks and the compare page cover the recorded window.
 Anything that writes, such as a mark or an acknowledgement, answers that the page is a recording.

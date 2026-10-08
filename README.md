@@ -36,7 +36,7 @@ This page is the short version: where to see it, how to start it, and what it lo
 
 Recordings of the demo, with nothing to install and no server behind them:
 
-- UI demo: the UI over five minutes of four deliberately misbehaving example applications under one Spider Sense
+- UI demo: the UI over five minutes of four deliberately misbehaving example applications and the load generator under one Spider Sense
   - <https://spider-sense.benelog.net/demo>
 - Agent demo: real runs of `/spider-sense` asking for the three biggest problems and the lines that cause them, replayed from the agents' event streams
   - Claude Code

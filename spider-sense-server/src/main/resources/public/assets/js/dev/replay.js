@@ -381,13 +381,21 @@ note.className = 'snapshot-note';
 note.setAttribute('role', 'note');
 const when = new Date(manifest.recordedAt || frozenNow);
 note.append('A recording of the demo, captured ' + when.toISOString().slice(0, 16).replace('T', ' ')
-  + ' UTC: the four example applications under one Spider Sense. Nothing here is live, and nothing can be changed.');
-const link = document.createElement('a');
-link.href = page;
-link.target = '_blank';
-link.rel = 'noopener';
-link.textContent = 'this DoltHub database';
-note.append(' Every page reads ', link, ' as you open it.');
+  + ' UTC: the four example applications and the load generator under one Spider Sense.'
+  + ' Nothing here is live, and nothing can be changed.');
+function anchor(href, text, external) {
+  const a = document.createElement('a');
+  a.href = href;
+  if (external) {
+    a.target = '_blank';
+    a.rel = 'noopener';
+  }
+  a.textContent = text;
+  return a;
+}
+note.append(' Start with ', anchor('#/findings', 'Findings'), ' and open a trace, or watch an agent work on the same recording: ',
+  anchor('../agent-demo/claude-code/', 'Claude Code'), ' · ', anchor('../agent-demo/codex/', 'Codex'), '.');
+note.append(' Every page reads ', anchor(page, 'this DoltHub database', true), ' as you open it.');
 const content = document.getElementById('content');
 if (content) content.insertBefore(note, content.firstChild);
 document.title = 'Spider Sense demo';
