@@ -392,6 +392,11 @@ The answers say what the shared demo would: the capture server's address becomes
 
 `scripts/demo-site.sh recapture` is the second half alone, from the rows already on DoltHub: `pull`, then `load`, `capture` and the push of `answer`.
 It is what to run after a change to the server's queries, so the demo answers as the new server would without a new recording.
+A change to the schema needs `record` instead, since `load` refuses rows of another `schema_version`.
+
+The Docs workflow redeploys the page on every push to `main` that touches the UI, but never the answers.
+So a change to the UI's requests, the API or the queries is followed by `record` (or `recapture`), and the release procedure records the demo again too (`RELEASING.md`).
+`assemble` warns, and in GitHub Actions annotates the run, when the answers on DoltHub were captured before the last commit to `assets/js`, the `api` package or the `query` package.
 
 `scripts/demo-site.mjs assemble`, which `npm run docs` runs, copies the UI into `build/site/demo` and marks `index.html` with `data-dolthub="benelog/spider-sense-demo@main"`.
 That attribute makes `app.js` load `assets/js/dev/replay.js` instead of talking to a server.

@@ -1044,7 +1044,7 @@ async function agentPush(opts) {
 // --- assemble ----------------------------------------------------------------
 
 /** The UI as a static page that reads the DoltHub database: nothing else is copied. */
-function assemble(opts) {
+async function assemble(opts) {
   const out = resolve(root, opts._[0] || 'build/demo-site');
   const ref = opts.ref || DOLTHUB.branch;
   const source = DOLTHUB.owner + '/' + DOLTHUB.database + '@' + ref;
@@ -1058,6 +1058,35 @@ function assemble(opts) {
   writeFileSync(join(out, 'index.html'), index);
   console.log('assembled ' + out + ' over ' + source + ' (open it through any static file server, e.g. python3 -m http.server -d ' + out + ')');
   assembleAgentDemo(join(dirname(out), 'agent-demo'), source);
+  await warnIfStale(ref);
+}
+
+/** What the recorded answers depend on: the UI that asks and the queries that answer. */
+const ANSWERED_BY = ['spider-sense-server/src/main/resources/public/assets/js',
+  'spider-sense-server/src/main/java/net/benelog/spidersense/api', 'spider-sense-server/src/main/java/net/benelog/spidersense/query'];
+
+/**
+ * A warning, never a failure, when the answers on DoltHub were captured before the last
+ * commit to the UI or the queries: the page then shows the new UI over old answers until
+ * the demo is recorded again (design.adoc#the-published-demo). In GitHub Actions it is an
+ * annotation on the run.
+ */
+async function warnIfStale(ref) {
+  try {
+    const log = spawnSync('git', ['log', '-1', '--format=%ct %h %s', '--', ...ANSWERED_BY], { cwd: root, encoding: 'utf8' });
+    const [changedAt, commit, ...subject] = (log.stdout || '').trim().split(' ');
+    if (!changedAt) return;
+    const rows = await doltQuery(ref, "SELECT body FROM answer WHERE `key` = '/manifest'");
+    const manifest = rows.length ? JSON.parse(rows[0].body) : null;
+    const capturedAt = manifest && (manifest.capturedAt || manifest.recordedAt);
+    if (!capturedAt || capturedAt >= Number(changedAt) * 1000) return;
+    const message = 'The demo\'s answers were captured ' + new Date(capturedAt).toISOString().slice(0, 10)
+      + ', before ' + commit + ' (' + subject.join(' ') + ') changed the UI or the queries;'
+      + ' record the demo again: scripts/demo-site.sh record';
+    console.warn((process.env.GITHUB_ACTIONS ? '::warning title=Demo recording is stale::' : 'warning: ') + message);
+  } catch (e) {
+    console.warn('warning: could not tell whether the demo recording is current: ' + e.message);
+  }
 }
 
 /**
@@ -1108,7 +1137,7 @@ try {
   else if (command === 'load') await load(opts);
   else if (command === 'capture') await capture(opts);
   else if (command === 'agent-push') await agentPush(opts);
-  else if (command === 'assemble') assemble(opts);
+  else if (command === 'assemble') await assemble(opts);
   else {
     console.error([
       'usage: demo-site.mjs export --db=<h2 path> --since=<ms> --until=<ms> [--from=<ms> --to=<ms>] [--jar=] [--tables=<dir>]',
