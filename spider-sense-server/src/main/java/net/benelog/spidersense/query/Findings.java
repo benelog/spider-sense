@@ -751,13 +751,11 @@ public final class Findings {
                 numbers.put(FAILED_IN, failedIn);
             }
 
-            String why = Numbers.plural(group.count(), "occurrence") + place + "; " + group.message();
-            if (call != null) {
-                why = Numbers.plural(group.count(), "occurrence") + place
-                        + (group.message() == null || group.message().isBlank() ? "" : "; " + group.message())
-                        + (failedIn == null ? "" : "; " + failedIn + " failed in every sample trace"
-                                + " too, and its own error finding is the cause");
-            }
+            // An error with no message (a client call's status, an exception thrown bare) ends at its place.
+            String why = Numbers.plural(group.count(), "occurrence") + place
+                    + (group.message() == null || group.message().isBlank() ? "" : "; " + group.message())
+                    + (failedIn == null ? "" : "; " + failedIn + " failed in every sample trace"
+                            + " too, and its own error finding is the cause");
             String stacktrace = group.sample() == null ? null : group.sample().stacktrace();
             Finding finding = new Finding(
                     id(ERROR, group.service(), group.errorId()),
@@ -961,7 +959,8 @@ public final class Findings {
                     LOG_ERROR, HIGH, group.service,
                     "ERROR in " + simpleName(group.logger) + ": " + oneLine(group.message, MESSAGE_IN_TITLE),
                     Numbers.plural(group.count, "record") + " in " + seenIn
-                            + ", none of them on a failed trace; " + group.message,
+                            + ", none of them on a failed trace"
+                            + (group.message.isBlank() ? "" : "; " + group.message),
                     Subject.logger(group.logger),
                     numbers, null,
                     frames.ofStacktrace(stacktraceOf(AttrJson.decode(group.attributes))),

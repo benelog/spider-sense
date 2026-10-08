@@ -142,6 +142,16 @@ class FindingsTest {
     }
 
     @Test
+    void anErrorWithNoMessageEndsItsWhyAtWhereItOccurred() {
+        Span.Builder failing = Otlp.failing(entry(1, "/orders/{id}", 10),
+                "java.lang.IllegalStateException", "", STACKTRACE);
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), failing));
+        flush();
+
+        assertThat(of(Findings.ERROR).get(0).why()).isEqualTo("1 occurrence in GET /orders/{id}");
+    }
+
+    @Test
     void anErrorAsFrequentAtTwoEndpointsIsNamedAfterTheFirstByName() {
         decoder.ingest(Otlp.traces(Otlp.service("orders"),
                 Otlp.failing(entry(1, "/orders/{id}/ship", 10), "java.lang.IllegalStateException",
