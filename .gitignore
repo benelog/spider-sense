@@ -3,7 +3,7 @@ build/
 db/
 *.iml
 .idea/
-node_modules/
+node_modules
 .mcp.json
 *.log
 /data/
