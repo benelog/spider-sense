@@ -351,7 +351,7 @@ Some answers are queried from the tables of xref:storage.adoc#schema[Storage] an
 * the acknowledgements, the `ack` rows that are not resolutions.
 
 Everything else is read from the `answer` table by path and query, without `from` and `to`.
-A request whose filters were not recorded falls back to the nearest recorded answer, dropping one filter at a time, and logs the substitution.
+A request whose filters were not recorded falls back to the nearest recorded answer, dropping one filter at a time, and logs the substitution, as a warning when the filter dropped is `service`, since that means a capture is missing.
 A `format=text` answer is replied as the text it was captured as.
 
 The recording freezes `Date.now()` at the end of the window.

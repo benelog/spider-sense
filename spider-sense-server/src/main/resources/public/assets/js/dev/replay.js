@@ -113,7 +113,8 @@ function resolve(u) {
     params.delete(name);
     key = keyOf(u.pathname, params);
     if (keys.has(key)) {
-      console.info('[demo] ' + asked + ' answered by ' + key);
+      // A narrower question answered by a wider answer; for a service, that is a capture missing.
+      (name === 'service' ? console.warn : console.info)('[demo] ' + asked + ' answered by ' + key);
       return { asked, key };
     }
   }
