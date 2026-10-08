@@ -697,7 +697,6 @@ async function capture(opts) {
   if (!status) throw new Error('no Spider Sense at ' + url);
   const servicesRes = await get('/api/services');
   const services = (servicesRes && servicesRes.services || []).map((s) => s.name);
-  await get('/api/overview');
   await get('/api/map');
   for (const name of services) await get('/api/services/' + encodeURIComponent(name));
 
@@ -709,6 +708,7 @@ async function capture(opts) {
   const findings = new Set();
   for (const service of scopes) {
     const s = { service };
+    await get('/api/overview', s);
     const listed = await get('/api/findings', { ...s, limit: 100 });
     if (!service) for (const f of (listed && listed.findings) || []) findings.add(f.id);
     await get('/api/findings', { ...s, limit: 5, hideAcked: 'true' });
