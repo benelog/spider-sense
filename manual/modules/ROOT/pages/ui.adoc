@@ -340,6 +340,7 @@ The mock has no text renderer: a `format=text` request answers a stand-in naming
 
 `assets/js/dev/replay.js` answers the UI from a recording, the DoltHub database of the published demo (xref:examples.adoc#static-demo[The demo without installing anything]).
 It is loaded when `<html data-dolthub="owner/database@ref">` or `?dolthub=…` names the database, and it answers every `GET /api/…` from that database through DoltHub's SQL API, from the browser.
+A read that fails on the network or with a 5xx is tried three times; when the first read, the manifest, still fails, the page says the recording could not be read from DoltHub, and why.
 
 Some answers are queried from the tables of xref:storage.adoc#schema[Storage] and shaped as xref:api.adoc[the HTTP API] says:
 

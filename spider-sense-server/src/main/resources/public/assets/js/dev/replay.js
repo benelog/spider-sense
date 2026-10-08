@@ -24,9 +24,26 @@ function json(text, fallback) {
   try { return text ? JSON.parse(text) : fallback; } catch (e) { return fallback; }
 }
 
+const TRIES = 3;
+
+/** The read, tried again on a network error or a 5xx: DoltHub drops one now and then under load. */
+async function fetchRetry(url, init) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const res = await realFetch(url, init);
+      if (res.status < 500 || res.status === 501 || attempt >= TRIES) return res;
+      console.warn('[demo] DoltHub answered ' + res.status + ', retry ' + attempt);
+    } catch (e) {
+      if (attempt >= TRIES) throw e;
+      console.warn('[demo] DoltHub: ' + e.message + ', retry ' + attempt);
+    }
+    await new Promise((r) => setTimeout(r, 500 * attempt));
+  }
+}
+
 /** One read over the ref; DoltHub answers at most 1,000 rows. */
 async function sql(query) {
-  const res = await realFetch(endpoint + encodeURIComponent(query), { headers: { accept: 'application/json' } });
+  const res = await fetchRetry(endpoint + encodeURIComponent(query), { headers: { accept: 'application/json' } });
   const body = await res.json().catch(() => null);
   if (!res.ok || !body || body.query_execution_status === 'Error') {
     throw new Error('DoltHub: ' + ((body && body.query_execution_message) || res.status + ' ' + res.statusText));
@@ -51,8 +68,13 @@ async function answer(key) {
   return json(await answerText(key), null);
 }
 
-const manifest = await answer('/manifest');
-if (!manifest) throw new Error('no /manifest in the answer table of ' + named);
+let manifest;
+try {
+  manifest = await answer('/manifest');
+} catch (e) {
+  throw new Error('The recording could not be read from DoltHub (' + named + '): ' + e.message);
+}
+if (!manifest) throw new Error('The recording could not be read from DoltHub: no /manifest in the answer table of ' + named);
 const keys = new Set(manifest.keys || []);
 
 // The default range becomes the recording's window, and is the window when the manifest names none.
