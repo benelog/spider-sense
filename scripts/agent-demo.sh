@@ -117,12 +117,24 @@ record() {
                 </dev/null 2>"$OUT/$agent-$lang.err" | stamp >"$file" || true
             ;;
         codex)
+            # A Codex home of the session's own, as Claude gets no user settings: the user's
+            # instructions, memories, hooks, skills and MCP servers stay out, so the English
+            # session answers in English. Only the sign-in and the model are carried over.
+            local codex_home="$PWD/$OUT/codex-home"
+            local model
+            model="$(sed -n 's/^model *= *"\(.*\)"/\1/p' "$HOME/.codex/config.toml" | head -1)"
+            rm -rf "$codex_home"
+            mkdir -p "$codex_home"
+            cp "$HOME/.codex/auth.json" "$codex_home/auth.json"
+            chmod 600 "$codex_home/auth.json"
+            printf 'model = "%s"\nmodel_reasoning_effort = "%s"\n' "$model" "$CODEX_EFFORT" >"$codex_home/config.toml"
             codex --version | grep -o '[0-9][0-9.]*' >"$OUT/$agent-$lang.version"
-            echo "$(sed -n 's/^model *= *"\(.*\)"/\1/p' "$HOME/.codex/config.toml" | head -1) $CODEX_EFFORT" >"$OUT/$agent-$lang.model"
-            codex exec --json --sandbox workspace-write \
+            echo "$model $CODEX_EFFORT" >"$OUT/$agent-$lang.model"
+            CODEX_HOME="$codex_home" codex exec --json --sandbox workspace-write \
                 -c sandbox_workspace_write.network_access=true \
                 -c model_reasoning_effort="\"$CODEX_EFFORT\"" \
                 "$prompt" </dev/null 2>"$OUT/$agent-$lang.err" | stamp >"$file" || true
+            rm -f "$codex_home/auth.json"
             ;;
         *) usage ;;
     esac

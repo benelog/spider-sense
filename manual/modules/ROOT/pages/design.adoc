@@ -415,6 +415,7 @@ Claude Code runs with the project's settings only, and with none of the account'
 A Korean session adds `"language": "korean"`, since the user's own setting is what makes Claude Code answer in Korean.
 Claude Code has no edit tool, and gets one appended line of system prompt saying that the session ends with the turn, since `-p` does not wait for a wait it left in the background.
 Codex runs in its `workspace-write` sandbox with the network open, since the CLI asks the running Spider Sense over HTTP, at `model_reasoning_effort` `CODEX_EFFORT` (`medium`).
+It runs with a `CODEX_HOME` of its own under `build/agent-demo/`, holding the user's sign-in and a `config.toml` of `model` and `model_reasoning_effort` alone, so the user's instructions, memories, hooks, skills and MCP servers stay out as Claude Code's do.
 The script writes down the agent's version and model for the push.
 
 The tree is clean when a session is recorded, so what the agent reads of it is the commit.
