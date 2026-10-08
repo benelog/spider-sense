@@ -642,6 +642,26 @@ async function load(opts) {
 // from the tables (traces, one trace, logs, marks, acks) are not asked.
 
 const QUERY_SORTS = ['total', 'calls', 'avg', 'p95', 'max'];
+/** Where the demo's Spider Sense listened, which is what the page should show, not the capture server's port. */
+const PUBLISHED_HOST = '127.0.0.1:4000';
+
+/**
+ * /api/status as the shared demo's Spider Sense would answer it: the capture server's port,
+ * database file and retention, and the recorder's jar, are not what a visitor runs. With no
+ * jar the UI prints `spider-sense.jar` in the lines it offers to copy.
+ */
+function publishedStatus(status) {
+  return {
+    ...status,
+    jar: null,
+    retention: { hours: 24, spans: 1000000 },
+    storage: status.storage && {
+      ...status.storage,
+      url: 'jdbc:h2:~/db/spider-sense/sense;AUTO_SERVER=TRUE',
+      path: '/home/me/db/spider-sense/sense.mv.db',
+    },
+  };
+}
 const MAX_METRICS_PER_SERVICE = 120;
 const CONCURRENCY = 4;
 
@@ -650,6 +670,7 @@ async function capture(opts) {
   const info = JSON.parse(readFileSync(resolve(root, opts.recording || join(DATA, 'recording.json')), 'utf8'));
   const { from, to } = info.window;
   const home = homedir();
+  const captureHost = new URL(url).host;
   const answers = new Map();
 
   function keyOf(path, params) {
@@ -673,7 +694,7 @@ async function capture(opts) {
       console.warn('skip ' + key + ': ' + res.status);
       return null;
     }
-    text = text.split(home).join('/home/me');
+    text = text.split(home).join('/home/me').split(captureHost).join(PUBLISHED_HOST);
     let body = null;
     try { body = JSON.parse(text); } catch (e) { body = null; }
     answers.set(key, { text, body });
@@ -695,6 +716,8 @@ async function capture(opts) {
 
   const status = await get('/api/status', {}, false);
   if (!status) throw new Error('no Spider Sense at ' + url);
+  const published = publishedStatus(status);
+  answers.set('/api/status', { text: JSON.stringify(published), body: published });
   const servicesRes = await get('/api/services');
   const services = (servicesRes && servicesRes.services || []).map((s) => s.name);
   await get('/api/map');

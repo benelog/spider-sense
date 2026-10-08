@@ -387,6 +387,7 @@ The script then starts a fresh standalone Spider Sense on `build/demo-data/sense
 `load` inserts the CSVs into it with `CSVREAD`, after checking that the recording's `schema_version` is the server's.
 `capture` asks it every question the page does not answer from the tables, and writes the answers into `answer.csv`.
 Those are the lists unfiltered and per service, every endpoint, query, error and metric series they mention, every pair of marks for `compare`, and the text rendering that Copy as Markdown asks for of every finding, query and error in the unfiltered lists.
+The answers say what the shared demo would: the capture server's address becomes `127.0.0.1:4000` in every answer, and `/api/status` has no `jar` (so the UI offers `spider-sense.jar`), the default retention, and the default database file under `~/db/spider-sense/`.
 `push` adds to DoltHub's tables any column the schema gained since they were created, uploads each CSV through DoltHub's import API, which lands it on a branch of its own, and merges that branch into `main`.
 
 `scripts/demo-site.sh recapture` is the second half alone, from the rows already on DoltHub: `pull`, then `load`, `capture` and the push of `answer`.
