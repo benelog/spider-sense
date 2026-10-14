@@ -27,6 +27,8 @@ final class JsonErrorHandler extends ErrorHandler {
             @Nullable String message, @Nullable Throwable cause, Callback callback) throws IOException {
         String body = ErrorBody.json(message, "HTTP " + code).toJson();
         response.getHeaders().put(HttpHeader.CONTENT_TYPE, "application/json; charset=utf-8");
+        // The mark every answer of the app carries (StatusApi), so the CLI reads this one as ours too.
+        response.getHeaders().put(Version.HEADER, Version.CURRENT);
         response.write(true, ByteBuffer.wrap(body.getBytes(StandardCharsets.UTF_8)), callback);
     }
 }

@@ -20,6 +20,13 @@ public final class Version {
 
     public static final String NAME = "Spider Sense";
 
+    /**
+     * The header every answer of this server carries, with {@link #CURRENT} as its value
+     * (api.adoc#conventions). The CLI reads an answer without it as some other server's, since a
+     * foreign server's JSON or text can look like any answer of ours.
+     */
+    public static final String HEADER = "X-Spider-Sense";
+
     /** The release version this server was built as. */
     public static final String CURRENT = resolve(
             Version.class.getPackage() == null ? null : Version.class.getPackage().getImplementationVersion(),

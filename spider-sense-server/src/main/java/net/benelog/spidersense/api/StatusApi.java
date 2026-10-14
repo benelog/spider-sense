@@ -9,6 +9,7 @@ import net.benelog.spidersense.ingest.RequestBody;
 import net.benelog.spidersense.query.Queries;
 import net.benelog.spidersense.query.Window;
 import net.benelog.spidersense.server.Config;
+import net.benelog.spidersense.server.Version;
 import net.benelog.spidersense.store.Importer;
 import net.benelog.spidersense.store.Store;
 import net.benelog.spidersilk.App;
@@ -58,9 +59,12 @@ public final class StatusApi {
         // Every API answer is live data; a browser that cached it would show a frozen dashboard.
         // Spider Silk types JSON as bare application/json, and the API states its charset, as the
         // refusals Jetty answers before routing (JsonErrorHandler) do (api.adoc#conventions).
+        // Every answer, a page and an error included, says what sent it, which is how the CLI tells
+        // a Spider Sense from another server's answer of the same type (cli.adoc#fallback).
         app.responseFilter((req, res) -> {
-            WebResponse typed = "application/json".equals(res.header("Content-Type"))
-                    ? res.contentType("application/json; charset=utf-8") : res;
+            WebResponse typed = ("application/json".equals(res.header("Content-Type"))
+                    ? res.contentType("application/json; charset=utf-8") : res)
+                    .header(Version.HEADER, Version.CURRENT);
             return req.path().startsWith("/api/") ? typed.header("Cache-Control", "no-store") : typed;
         });
 

@@ -26,6 +26,8 @@ So is a JSON body that is not the object an endpoint takes, or that carries a fi
 * Every JSON answer is `application/json; charset=utf-8`.
 An error is `{"error": "<message>"}` with a 4xx or 5xx status.
 That includes a path the HTTP server refuses before any route sees it, such as a segment holding `%5C` or `%2E%2E`, which is a `400`.
+* Every answer carries the header `X-Spider-Sense: <version>`, with the version `/api/status` reports: a JSON or Markdown answer, an error, a page of the UI, a static file and the event stream alike.
+The CLI reads an answer without it as another server's, since an application on the URL can answer JSON of its own to any path (xref:cli.adoc#fallback[The direct-file fallback]).
 * A JSON request body is at most 1 MB (1,048,576 bytes), which is Spider Silk's default, and a larger one is `413` with `{"error": "Request body is larger than the limit of 1048576 bytes"}`.
 The limit applies to `POST /api/marks`, `+POST /api/findings/{id}/ack+`, `+POST /api/findings/{id}/resolve+` and `POST /api/sql`, whose bodies are a name, a note or one statement, far below it.
 `POST /mcp` has the same limit and answers it with a JSON-RPC error (<<mcp,MCP>>).

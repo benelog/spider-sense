@@ -24,10 +24,12 @@ import org.junit.jupiter.api.io.TempDir;
 
 import net.benelog.spidersense.Otlp;
 import net.benelog.spidersense.TestStore;
+import net.benelog.spidersense.api.AgentApi;
 import net.benelog.spidersense.api.Reports;
 import net.benelog.spidersense.ingest.OtlpDecoder;
 import net.benelog.spidersense.server.Config;
 import net.benelog.spidersense.server.SpiderSenseServer;
+import net.benelog.spidersense.server.Version;
 import net.benelog.spidersense.store.Database;
 import net.benelog.spidersense.store.Store;
 import net.benelog.silkjson.Json;
@@ -643,6 +645,79 @@ class CliTest {
     }
 
     /**
+     * A server that answers every path with the type asked for, a 204 to a DELETE and an error in
+     * Spider Sense's own shape is still not one without the {@code X-Spider-Sense} header: its JSON
+     * is never printed as a {@code --json} answer (cli.adoc#fallback).
+     */
+    @Test
+    void anAnswerWithoutTheSpiderSenseHeaderIsAnotherServersWhateverItsShape() throws IOException {
+        com.sun.net.httpserver.HttpServer other = com.sun.net.httpserver.HttpServer.create(
+                new java.net.InetSocketAddress(java.net.InetAddress.getLoopbackAddress(), 0), 0);
+        other.createContext("/", exchange -> {
+            exchange.getRequestBody().readAllBytes();
+            String path = exchange.getRequestURI().getPath();
+            if ("DELETE".equals(exchange.getRequestMethod())) {
+                exchange.sendResponseHeaders(204, -1);
+                exchange.close();
+                return;
+            }
+            boolean error = path.startsWith("/api/traces/");
+            String query = String.valueOf(exchange.getRequestURI().getQuery());
+            byte[] body = (error ? "{\"error\":\"No such trace\"}"
+                    : query.contains("format=json") ? "{\"findings\":[]}" : "# findings\n").getBytes(UTF_8);
+            exchange.getResponseHeaders().add("Content-Type",
+                    error || query.contains("format=json") ? "application/json" : "text/markdown; charset=utf-8");
+            exchange.getResponseHeaders().add(AgentApi.PASS_HEADER, "true");
+            exchange.sendResponseHeaders(error ? 404 : 200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        other.start();
+        try {
+            String base = "http://127.0.0.1:" + other.getAddress().getPort();
+            Map<List<String>, String> lines = new java.util.LinkedHashMap<>();
+            lines.put(List.of("findings", "--json"), "/api/findings");
+            lines.put(List.of("findings"), "/api/findings");
+            lines.put(List.of("check"), "/api/check");
+            lines.put(List.of("unack", "error:3d871f14ee3e"), "/api/findings/error%3A3d871f14ee3e/ack");
+            lines.put(List.of("trace", "f".repeat(32)), "/api/traces/" + "f".repeat(32));
+            lines.forEach((line, path) -> {
+                List<String> args = new ArrayList<>(line);
+                args.add("--url=" + base);
+                Run run = runAt(closedUrl(), args.toArray(new String[0]));
+                assertThat(run.exit()).as(line.toString()).isEqualTo(2);
+                assertThat(run.out()).as(line.toString()).isEmpty();
+                assertThat(run.err()).as(line.toString()).isEqualTo("spider-sense: no Spider Sense at " + base
+                        + " (HTTP " + ("trace".equals(line.get(0)) ? 404 : "unack".equals(line.get(0)) ? 204 : 200)
+                        + " for " + path + "); is that the application's port?\n");
+            });
+        } finally {
+            other.stop(0);
+        }
+    }
+
+    /** api.adoc#conventions: every answer is marked, an error and the single page included. */
+    @Test
+    void everyAnswerOfTheServerCarriesTheSpiderSenseHeader() {
+        serve(false, (server, base) -> {
+            try (java.net.http.HttpClient client = java.net.http.HttpClient.newHttpClient()) {
+                for (String path : List.of("/api/status", "/api/nothing-here", "/", "/traces", "/favicon.svg",
+                        "/api/traces/x%5Cy", "/api/findings?since=nowhere")) {
+                    java.net.http.HttpResponse<String> response = client.send(java.net.http.HttpRequest.newBuilder(
+                            java.net.URI.create(base + path)).build(), java.net.http.HttpResponse.BodyHandlers.ofString());
+                    assertThat(response.headers().firstValue(Version.HEADER)).as(path + " " + response.statusCode())
+                            .hasValue(Version.CURRENT);
+                }
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(e);
+            }
+        });
+    }
+
+    /**
      * A --url with a path is a usage error rather than a prefix whose 404 reads as a missing
      * trace, and a Spider Sense's own 404 for a route it does not have is one of another version,
      * not a missing object (cli.adoc#fallback).
@@ -662,6 +737,7 @@ class CliTest {
         older.createContext("/", exchange -> {
             byte[] body = ("{\"error\":\"Not found: " + exchange.getRequestURI().getPath() + "\"}").getBytes(UTF_8);
             exchange.getResponseHeaders().add("Content-Type", "application/json; charset=utf-8");
+            exchange.getResponseHeaders().add(Version.HEADER, "0.1.0");
             exchange.sendResponseHeaders(404, body.length);
             exchange.getResponseBody().write(body);
             exchange.close();

@@ -19,6 +19,7 @@ import java.util.Map;
 import net.benelog.spidersense.api.AgentApi;
 import net.benelog.spidersense.api.Reports;
 import net.benelog.spidersense.query.Selectors;
+import net.benelog.spidersense.server.Version;
 import net.benelog.silkjson.Json;
 import net.benelog.silkjson.JsonObject;
 import org.jspecify.annotations.Nullable;
@@ -225,15 +226,17 @@ final class Remote {
         }
 
         if (response.statusCode() >= 400) {
-            return refused(options, response.statusCode(), contentType(response), response.body(), path, err);
+            return refused(options, marked(response), response.statusCode(), contentType(response), response.body(),
+                    path, err);
         }
         boolean ours = command(options).method() == Command.Method.DELETE
-                ? response.statusCode() == 204
+                ? marked(response) && response.statusCode() == 204
                 : answered(response, options.flag("json") ? JSON : MARKDOWN)
                         && (!Options.CHECK.equals(options.command())
                                 || response.headers().firstValue(AgentApi.PASS_HEADER).isPresent());
         if (!ours) {
-            // A dev server's index.html, a redirect, a health page: printing it would pass a check.
+            // A dev server's index.html, a redirect, a health page, another server's JSON: printing it
+            // would pass a check.
             throw Unreachable.answered(response.statusCode(), path);
         }
         if (Options.UNACK.equals(options.command()) || Options.UNRESOLVE.equals(options.command())) {
@@ -271,7 +274,8 @@ final class Remote {
                 } catch (IOException e) {
                     throw failure(e, base);
                 }
-                return refused(options, response.statusCode(), contentType(response), error, path, err);
+                return refused(options, marked(response), response.statusCode(), contentType(response), error, path,
+                        err);
             }
             // A health page is JSON too; the export is the one that comes as a spider-sense attachment.
             if (!answered(response, JSON) || !response.headers().firstValue("content-disposition")
@@ -327,17 +331,29 @@ final class Remote {
     }
 
     /**
-     * Whether a success answer is one a Spider Sense sends: a {@code 2xx} of the type asked for.
+     * Whether a success answer is one a Spider Sense sends: a {@code 2xx} of the type asked for,
+     * {@link #marked} as a Spider Sense's.
      *
      * <p>A {@code 3xx} never is, since the client follows no redirect, and neither is a body of
      * another type: the frontend's dev server answers every path with its {@code index.html},
      * and a health page answers {@code {"status":"UP"}}, both with {@code 200}. Printed as the
-     * answer, either would pass a {@code check} for a port that belongs to another server.
+     * answer, either would pass a {@code check} for a port that belongs to another server. An
+     * application that answers JSON to any path is the same type as a {@code --json} read asks for,
+     * which is why the mark is needed as well.
      *
      * @param type the media type the request asked for, such as {@code text/markdown}
      */
     static boolean answered(HttpResponse<?> response, String type) {
-        return answered(response.statusCode(), contentType(response), type);
+        return marked(response) && answered(response.statusCode(), contentType(response), type);
+    }
+
+    /**
+     * Whether an answer carries the {@link Version#HEADER} every answer of a Spider Sense carries,
+     * its errors and its pages included (api.adoc#conventions). Without it, the answer is some other
+     * server's, whatever its status, type and shape.
+     */
+    static boolean marked(HttpResponse<?> response) {
+        return response.headers().firstValue(Version.HEADER).isPresent();
     }
 
     /** The same from the parts of a response. */
@@ -353,9 +369,9 @@ final class Remote {
      *
      * @throws Unreachable when the error did not come from a Spider Sense ({@link #requireSpiderSense})
      */
-    private static int refused(Options options, int status, @Nullable String contentType, @Nullable String body,
-            String path, PrintStream err) {
-        if (!fromSpiderSense(status, contentType, body)) {
+    private static int refused(Options options, boolean marked, int status, @Nullable String contentType,
+            @Nullable String body, String path, PrintStream err) {
+        if (!marked || !fromSpiderSense(status, contentType, body)) {
             throw Unreachable.answered(status, path);
         }
         String message = message(status, contentType, body);
@@ -377,7 +393,7 @@ final class Remote {
     /**
      * Throws {@link Unreachable} when an error answer did not come from a Spider Sense.
      *
-     * <p>A Spider Sense answers every error with the {@code {"error": "..."}} object of
+     * <p>A Spider Sense {@link #marked marks} every error, and answers it with the {@code {"error": "..."}} object of
      * api.adoc#conventions, and nothing beside the {@code error}, or, to a caller that asked for
      * text, with the one line {@code /api/sql} sends as {@code text/markdown} with a {@code 400}.
      * Anything else, such as an HTML error page, a bare {@code 404}, or the
@@ -389,7 +405,7 @@ final class Remote {
      * @param path the path asked, which the reason names
      */
     private static void requireSpiderSense(HttpResponse<String> response, String path) {
-        if (!fromSpiderSense(response.statusCode(), contentType(response), response.body())) {
+        if (!marked(response) || !fromSpiderSense(response.statusCode(), contentType(response), response.body())) {
             throw Unreachable.answered(response.statusCode(), path);
         }
     }
@@ -422,8 +438,9 @@ final class Remote {
      * answer. Any other error status is a running Spider Sense refusing this one
      * message ({@link Refused}).
      *
-     * <p>A success that is not JSON, a redirect among them, is unreachable as well: the thing at
-     * that URL is not a Spider Sense, whatever status it answered with.
+     * <p>An answer that is not {@link #marked}, and a success that is not JSON, a redirect among
+     * them, are unreachable as well: the thing at that URL is not a Spider Sense, whatever status it
+     * answered with.
      *
      * @return the response body, or null for a {@code 202} with none
      */
@@ -438,7 +455,7 @@ final class Remote {
             response = send(client, base, request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
         }
         int status = response.statusCode();
-        if (status == 404 || status == 405) {
+        if (!marked(response) || status == 404 || status == 405) {
             throw Unreachable.answered(status, path);
         }
         if (status >= 400) {

@@ -23,6 +23,7 @@ import net.benelog.spidersense.TestStore;
 import net.benelog.spidersense.ingest.OtlpDecoder;
 import net.benelog.spidersense.server.Config;
 import net.benelog.spidersense.server.SpiderSenseServer;
+import net.benelog.spidersense.server.Version;
 import net.benelog.silkjson.Json;
 import net.benelog.silkjson.JsonObject;
 
@@ -172,6 +173,7 @@ class TailTest {
                 new java.net.InetSocketAddress(java.net.InetAddress.getLoopbackAddress(), 0), 0);
         server.createContext("/api/events", exchange -> {
             exchange.getResponseHeaders().add("Content-Type", "text/event-stream");
+            exchange.getResponseHeaders().add(Version.HEADER, Version.CURRENT);
             exchange.sendResponseHeaders(200, 0);
             exchange.getResponseBody().write(("event: stats\ndata: {\"traces\":3}\n\n").getBytes(UTF_8));
             exchange.getResponseBody().flush();

@@ -19,6 +19,7 @@ import net.benelog.spidersense.Otlp;
 import net.benelog.spidersense.TestStore;
 import net.benelog.spidersense.ingest.OtlpDecoder;
 import net.benelog.spidersense.server.SpiderSenseServer;
+import net.benelog.spidersense.server.Version;
 import net.benelog.spidersense.store.Store;
 import net.benelog.silkjson.Json;
 import net.benelog.silkjson.JsonObject;
@@ -286,6 +287,7 @@ class McpCommandTest {
             asked.incrementAndGet();
             byte[] body = "{\"error\":\"The body is larger than 1 MB\"}".getBytes(UTF_8);
             exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.getResponseHeaders().add(Version.HEADER, Version.CURRENT);
             exchange.sendResponseHeaders(413, body.length);
             exchange.getResponseBody().write(body);
             exchange.close();
