@@ -102,8 +102,9 @@ final class Repeats {
     /**
      * The numbers of one endpoint's repeated group over its affected requests.
      *
-     * <p>The median is the nearest-rank one ({@code ceil(n / 2)}-th smallest), the
-     * definition {@code PERCENTILE_DISC} gives every other percentile.
+     * <p>The median is the lower middle value ({@code ceil(n / 2)}-th smallest), which
+     * is what {@link Queries#percentile} and H2's {@code PERCENTILE_DISC(0.5)} pick too:
+     * {@code (n − 1) / 2} is never more than half past a position.
      */
     static final class RepeatStats<D> {
 

@@ -1532,8 +1532,8 @@ public final class Findings {
      * <p>The target is the dependency target of the service map
      * ({@link Queries#target}), which lives in the span's attributes rather than in
      * a column, so the group is formed here over the window's outbound spans rather
-     * than by a {@code GROUP BY}; the percentiles are the nearest-rank ones
-     * {@code PERCENTILE_DISC} gives the other rules.
+     * than by a {@code GROUP BY}; the percentiles are {@link Queries#percentile}, the
+     * definition {@code PERCENTILE_DISC} gives the other rules.
      */
     private List<Ranked> slowExternal(Window window, SharedScans reads, boolean evidence) {
         Map<ExternalGroup, List<Queries.OutboundCall>> byGroup = new LinkedHashMap<>();

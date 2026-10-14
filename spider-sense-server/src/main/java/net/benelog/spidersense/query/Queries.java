@@ -1,5 +1,6 @@
 package net.benelog.spidersense.query;
 
+import java.math.BigDecimal;
 import java.net.URI;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -42,9 +43,9 @@ import org.jspecify.annotations.Nullable;
  * vocabulary: "entry spans in the window", "grouped by endpoint", "per bucket".
  * Splitting them by URL would scatter that and hide how similar they are.
  *
- * <p>Percentiles are H2's {@code PERCENTILE_DISC}, which is nearest-rank over the
- * actual durations — the same definition the earlier in-memory version used, so
- * the numbers the UI shows did not change when the storage did.
+ * <p>Percentiles are H2's {@code PERCENTILE_DISC}, one of the actual durations, and
+ * the few read row by row are {@link #percentile}, the same definition, so two
+ * answers over the same calls name the same rank (storage.adoc#reads).
  */
 public final class Queries {
 
@@ -1301,13 +1302,25 @@ public final class Queries {
         return calls;
     }
 
-    /** Nearest-rank, the same definition {@code PERCENTILE_DISC} uses. */
+    /** Where {@link #percentile} rounds a position up: past half, and not at it. */
+    private static final BigDecimal HALF = BigDecimal.valueOf(0.5);
+
+    /**
+     * The definition H2's {@code PERCENTILE_DISC} uses, which is not the SQL standard's
+     * nearest rank: the value at position {@code f · (n − 1)} from zero, rounded half
+     * down, so p95 over eleven calls is the tenth and not the eleventh. The position is
+     * computed in decimal, as H2 computes it, so no binary rounding moves it.
+     */
     static double percentile(double[] sorted, double fraction) {
         if (sorted.length == 0) {
             return 0;
         }
-        int rank = (int) Math.ceil(fraction * sorted.length);
-        return sorted[Math.min(sorted.length - 1, Math.max(0, rank - 1))];
+        BigDecimal position = BigDecimal.valueOf(sorted.length - 1L).multiply(BigDecimal.valueOf(fraction));
+        int index = position.intValue();
+        if (position.subtract(BigDecimal.valueOf(index)).compareTo(HALF) > 0) {
+            index++;
+        }
+        return sorted[Math.min(sorted.length - 1, Math.max(0, index))];
     }
 
     // --- where the time went -------------------------------------------------
@@ -1735,7 +1748,7 @@ public final class Queries {
     }
 
     /**
-     * Calls, errors, the mean and the nearest-rank percentiles over a group of calls read
+     * Calls, errors, the mean and the percentiles of {@link #percentile} over a group of calls read
      * row by row: a dependency, a node or an edge of the map, a {@code slow-external}
      * group. One definition, so the map and a finding give one dependency one p95.
      */

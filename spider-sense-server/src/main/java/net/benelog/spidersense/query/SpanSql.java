@@ -15,7 +15,7 @@ final class SpanSql {
     /** The failed spans of a group, as an aggregate. */
     static final String ERRORS = "SUM(CASE WHEN error THEN 1 ELSE 0 END)";
 
-    /** The nearest-rank p95 of a group's durations, in nanoseconds. */
+    /** The p95 of a group's durations, in nanoseconds: one of them, as {@link Queries#percentile} picks it. */
     static final String P95 = "PERCENTILE_DISC(0.95) WITHIN GROUP (ORDER BY duration_ns)";
 
     private SpanSql() {

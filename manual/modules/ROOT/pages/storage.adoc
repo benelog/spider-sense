@@ -309,6 +309,8 @@ Every API answer is one or a few SQL statements over the window:
 * Lists (`trace`, `log`, `tingle`, scatter points): `WHERE start_ms BETWEEN ? AND ?` with the filters as further predicates, then `ORDER BY start_ms DESC LIMIT ?`.
 The trace list breaks a tie inside one millisecond by `trace_id`, and the log list by `id`, so the `before` and `beforeId` cursor of xref:api.adoc#ordering[Ordering and sorting] pages without a gap.
 * Aggregations (services, endpoints, queries, errors): `GROUP BY` over `span` with `COUNT(*)`, `SUM(...)`, `MAX(...)` and `PERCENTILE_DISC(0.5|0.95|0.99) WITHIN GROUP (ORDER BY duration_ns)`, which H2 2.x supports.
+H2's `PERCENTILE_DISC` is one of the durations, the one at position `f · (n − 1)` from zero rounded half down, rather than the SQL standard's nearest rank: the p95 of eleven calls is the tenth.
+The percentiles read row by row in Java (the dependencies, the map's dependency nodes and edges, `slow-external`, the N+1 median) use the same definition, so two answers over the same calls give the same p95.
 The response-time histogram is four more `SUM(CASE WHEN NOT error AND duration_ns <= :bound ...)` columns in the same statements, with the bounds derived from `slow.request.ms`.
 Apdex is arithmetic over them in Java.
 * Time series: `GROUP BY start_ms / :bucket` for counts, errors, histogram buckets and percentiles per bucket.

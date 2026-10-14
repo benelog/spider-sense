@@ -47,7 +47,7 @@ class QueriesTest {
     }
 
     @Test
-    void percentilesAreNearestRankOverTheEntrySpansOfTheWindow() {
+    void percentilesArePercentileDiscOverTheEntrySpansOfTheWindow() {
         for (int i = 1; i <= 10; i++) {
             decoder.ingest(Otlp.traces(Otlp.service("orders"),
                     Otlp.span(traceId(i), spanId(i), "GET /orders", Span.SpanKind.SPAN_KIND_SERVER,
@@ -63,6 +63,24 @@ class QueriesTest {
         assertThat(totals.p99Ms()).isEqualTo(100.0);
         assertThat(totals.maxMs()).isEqualTo(100.0);
         assertThat(totals.errors()).isZero();
+    }
+
+    /** A percentile read row by row names the rank H2's PERCENTILE_DISC names over the same values. */
+    @Test
+    void theJavaPercentileIsTheDefinitionOfPercentileDisc() {
+        for (String fraction : List.of("0.5", "0.95", "0.99")) {
+            for (int n = 1; n <= 120; n++) {
+                double[] values = new double[n];
+                for (int i = 0; i < n; i++) {
+                    values[i] = i + 1;
+                }
+                Long disc = store.sql().queryOne("SELECT PERCENTILE_DISC(" + fraction
+                        + ") WITHIN GROUP (ORDER BY X) FROM SYSTEM_RANGE(1, " + n + ")", List.of(),
+                        rs -> rs.getLong(1));
+                assertThat(Queries.percentile(values, Double.parseDouble(fraction)))
+                        .as("p%s of %d values", fraction, n).isEqualTo(disc.doubleValue());
+            }
+        }
     }
 
     @Test
