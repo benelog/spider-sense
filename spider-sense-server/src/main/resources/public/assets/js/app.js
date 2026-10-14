@@ -107,6 +107,16 @@ function syncStateFromQuery(query) {
   shell.rateReadout.hidden = !state.live;
   document.body.classList.toggle('is-live', state.live);
   startLive();
+  carryQuery();
+}
+
+/**
+ * The sidebar's links, the logo and the tingles entry carry the top bar's query, as every
+ * internal link does (ui.adoc#urls), so a page picked there keeps the service, range, Live and chart.
+ */
+function carryQuery() {
+  const query = api.sharedQuery();
+  for (const a of document.querySelectorAll('a[data-nav]')) a.setAttribute('href', router.href(a.dataset.nav, query));
 }
 
 let knownServices = [];
