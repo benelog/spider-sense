@@ -21,8 +21,8 @@ import org.jspecify.annotations.Nullable;
  * afternoon"), so it decides first. The span cap only stops a load test from
  * turning a day of data into a file nobody wanted: after the time sweep, while
  * there are more than {@code spidersense.retention.spans} spans, the oldest hour
- * of everything goes, one hour at a time, so a cap crossed by a little costs a
- * little.
+ * of everything goes, one hour at a time and never past the span that brings the
+ * count to the cap, so a cap crossed by a little costs a little.
  *
  * <p>The cap is by rows rather than by file size because an H2 file does not
  * shrink when rows go: a size read after a delete would say the same number and
@@ -155,7 +155,8 @@ public final class Sweeper implements AutoCloseable {
     }
 
     /**
-     * The span cap: while there are too many spans, the oldest hour goes.
+     * The span cap: while there are too many spans, the oldest hour goes, or less of
+     * it when fewer spans than that hour holds bring the count to the cap.
      *
      * <p>The loop ends when the count is under the cap, when a pass deleted nothing
      * (an empty table, or every span inside the same hour) or after
@@ -175,7 +176,7 @@ public final class Sweeper implements AutoCloseable {
             if (oldest == null) {
                 break;
             }
-            long cutoff = oldest + HOUR_MS;
+            long cutoff = Math.min(oldest + HOUR_MS, capInstant(spans - retentionSpans));
             int pruned = 0;
             for (Table table : Table.values()) {
                 if (table.cappedBySpans()) {
@@ -200,6 +201,17 @@ public final class Sweeper implements AutoCloseable {
             deleted += sql.update(delete, List.of(cutoff));
         }
         return deleted;
+    }
+
+    /**
+     * The instant just after the start of the {@code excess}-th oldest span: the
+     * spans before it are the fewest the cap needs gone, those that started in the
+     * same millisecond as that one aside.
+     */
+    private long capInstant(long excess) {
+        Long start = sql.queryOne("SELECT start_ms FROM span ORDER BY start_ms OFFSET ? ROWS FETCH FIRST 1 ROW ONLY",
+                List.of(excess - 1), rs -> rs.getLong(1));
+        return start == null ? Long.MAX_VALUE : start + 1;
     }
 
     /** {@code MIN(start_ms)}, or null when there is no span at all. */

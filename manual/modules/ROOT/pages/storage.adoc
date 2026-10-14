@@ -400,6 +400,7 @@ A store that has grown therefore shrinks at the next exit of the application or 
 
 Retention is by time, with one row cap as a guard: `spidersense.retention.spans`, default 1,000,000, and `0` for none.
 After the time sweep, while `SELECT COUNT(*) FROM span` is above the cap, the sweeper takes the oldest hour of data (`MIN(start_ms)` of `span`, plus one hour) and deletes every row of `span`, `trace`, `log`, `metric_point` and `tingle` before that instant.
+When fewer spans than that hour holds are over the cap, the instant is instead one millisecond after the start of the span whose deletion brings the count to the cap, so a load test that crosses the cap inside one hour loses its oldest spans and not the hour.
 A trace that started before that instant goes whole, as it does on the time sweep.
 Marks and catalog rows are included only when they are older than the retention, as before.
 The sweeper proceeds one hour at a time, so a cap crossed by a little costs a little.

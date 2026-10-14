@@ -97,6 +97,28 @@ class SweeperTest {
     }
 
     /**
+     * A load test: more spans than the cap inside one hour. The pass stops at the span
+     * that brings the count to the cap, rather than taking the hour and every span with it.
+     */
+    @Test
+    void theSpanCapInsideOneHourDeletesOnlyTheSpansOverIt() {
+        for (int i = 1; i <= 60; i++) {
+            Span.Builder root = Otlp.span("%032x".formatted(i), "%016x".formatted(i), "GET /orders",
+                    Span.SpanKind.SPAN_KIND_SERVER, hour(4) + i * 1000L, 10,
+                    Otlp.attr("http.request.method", "GET"), Otlp.attr("http.route", "/orders"),
+                    Otlp.attr("http.response.status_code", 200));
+            decoder.ingest(Otlp.traces(Otlp.service("orders"), root));
+        }
+        store.writer().awaitIdle(10_000);
+
+        new Sweeper(store.sql(), 24, 50, () -> NOW).sweep();
+
+        assertThat(total("span")).isEqualTo(50);
+        assertThat(total("trace")).isEqualTo(50);
+        assertThat(count("span", "start_ms", hour(4) + 11_000L)).as("the ten oldest went").isZero();
+    }
+
+    /**
      * A trace that started before the cap's instant goes whole, its spans that
      * started after the instant included, rather than leaving them with no trace row.
      */
