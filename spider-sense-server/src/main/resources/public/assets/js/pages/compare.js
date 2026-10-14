@@ -210,11 +210,14 @@ export function render(root, ctx) {
     const totals = (data && data.totals) || {};
     const before = totals.before || {};
     const after = totals.after || {};
+    // The API's p95 over no request is 0, which is no value: that side reads — and has no verdict.
+    const p95Of = (side) => (side.requests ? side.p95Ms : null);
+    const p95Before = p95Of(before), p95After = p95Of(after);
     tiles.hidden = false;
     fill(tiles,
       compareTile('requests', before.requests, after.requests, count, 'same'),
       compareTile('errors', before.errors, after.errors, count, verdictOf('errors', before.errors, after.errors)),
-      compareTile('p95', before.p95Ms, after.p95Ms, dur, verdictOf('p95', before.p95Ms, after.p95Ms)),
+      compareTile('p95', p95Before, p95After, dur, verdictOf('p95', p95Before, p95After)),
       compareTile('apdex', before.apdex, after.apdex, apdex, verdictOf('apdex', before.apdex, after.apdex)));
 
     const endpoints = paintTable('endpoints', 'Endpoints', endpointColumns, (data && data.endpoints) || [], {

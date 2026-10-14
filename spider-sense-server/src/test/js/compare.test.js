@@ -83,3 +83,14 @@ test('a Live tick leaves the mark selects alone when the marks did not change, s
   assert.deepEqual(selects.map((s) => s.value), ['before', 'after', 'now']);
   instance.destroy();
 });
+
+test('a before window without a request has no p95, and the tile calls nothing worse', async () => {
+  server.marks = twoMarks;
+  // the API's Totals.EMPTY: a p95 of 0 over no request
+  server.totals = { before: { requests: 0, errors: 0, p95Ms: 0, apdex: null }, after: { requests: 201, errors: 0, p95Ms: 285, apdex: 0.97 } };
+  const { root, instance } = await openCompare();
+  const tile = root.querySelectorAll('.cmp-tile').find((t) => t.querySelector('.stat-caption').textContent === 'p95');
+  assert.equal(tile.querySelector('.cmp-before').textContent, '—');
+  assert.ok(tile.classList.contains('is-same'), tile.className);
+  instance.destroy();
+});
