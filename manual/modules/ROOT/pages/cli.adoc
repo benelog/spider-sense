@@ -158,7 +158,7 @@ xref:findings.adoc[Findings] has every kind with its rule and its numbers.
 [source]
 ----
 $ java -jar spider-sense.jar findings --since=before
-# findings  2026-09-17T08:19:28+09:00 → 08:19:34  (6s, all services, 21 requests)
+# findings  2026-09-17T08:19:28.122+09:00 → 08:19:34  (6s, all services, 21 requests)
 
 | # | severity | state | kind | id | service | title |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -289,7 +289,7 @@ logs (2)
 [source]
 ----
 $ java -jar spider-sense.jar traces --since=before --limit=5
-# traces  2026-09-17T08:19:28+09:00 → 08:19:35  (8s, all services, 21 requests)
+# traces  2026-09-17T08:19:28.122+09:00 → 08:19:35  (8s, all services, 21 requests)
 
 5 of 21 traces, newest first
 
@@ -309,7 +309,7 @@ $ java -jar spider-sense.jar traces --since=before --limit=5
 [source]
 ----
 $ java -jar spider-sense.jar endpoints --since=before
-# endpoints  2026-09-17T08:19:28+09:00 → 08:19:34  (7s, all services, 21 requests)
+# endpoints  2026-09-17T08:19:28.122+09:00 → 08:19:34  (7s, all services, 21 requests)
 
 | endpoint | id | service | calls | errors | p50 | p95 | max | total | apdex |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -323,7 +323,7 @@ $ java -jar spider-sense.jar endpoints --since=before
 [source]
 ----
 $ java -jar spider-sense.jar queries --since=before --limit=5
-# queries  2026-09-17T08:19:28+09:00 → 08:19:35  (7s, all services, 21 requests)
+# queries  2026-09-17T08:19:28.122+09:00 → 08:19:35  (7s, all services, 21 requests)
 
 | id | service | calls | slow | p50 | p95 | max | total | callers | unindexed | statement |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -340,7 +340,7 @@ Each group whose sample stack trace has application frames gets a block naming o
 [source]
 ----
 $ java -jar spider-sense.jar errors --since=before
-# errors  2026-09-17T08:19:28+09:00 → 08:19:35  (7s, all services, 21 requests)
+# errors  2026-09-17T08:19:28.122+09:00 → 08:19:35  (7s, all services, 21 requests)
 
 | id | service | type | message | count | first | last | endpoints |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -358,7 +358,7 @@ The count line says how many lines were printed out of how many matched the wind
 [source]
 ----
 $ java -jar spider-sense.jar logs --since=before --limit=3
-# logs  2026-09-17T08:19:28+09:00 → 08:19:35  (8s, all services)
+# logs  2026-09-17T08:19:28.122+09:00 → 08:19:35  (8s, all services)
 
 3 of 5 lines, newest first
 
@@ -403,7 +403,7 @@ xref:marks-and-compare.adoc#compare[Compare] has the verdicts and their threshol
 [source]
 ----
 $ java -jar spider-sense.jar compare --before=before --after=after
-# compare  2026-09-17T08:19:28+09:00 → 08:19:35  vs  2026-09-17T08:19:35+09:00 → 08:19:45  (all services)
+# compare  2026-09-17T08:19:28.122+09:00 → 08:19:35  vs  2026-09-17T08:19:35.837+09:00 → 08:19:45  (all services)
 
 | totals | before | after |
 | --- | --- | --- |
@@ -443,7 +443,7 @@ xref:check.adoc#rules[Check] has every rule, the value it measures and its defau
 [source]
 ----
 $ java -jar spider-sense.jar check --since=before
-# check  fail  2026-09-17T08:19:28+09:00 → 08:19:45  (17s, all services, 33 requests)
+# check  fail  2026-09-17T08:19:28.122+09:00 → 08:19:45  (17s, all services, 33 requests)
 
 | rule | limit | actual | verdict | detail |
 | --- | --- | --- | --- | --- |
@@ -777,6 +777,7 @@ The endpoints with a text rendering are `/api/status`, `/api/findings`, `/api/fi
 The conventions:
 
 * The first line is a heading naming the answer and the window, in ISO-8601 with the local offset: `# findings  2026-09-18T12:37:06+09:00 → 12:41:08  (4m 1s, all services, 2456 requests)`.
+The start carries its milliseconds when it has any, such as `2026-09-17T08:19:28.122+09:00` for a window that begins at a mark, so it can be pasted into `--since`; the end is a time of day to the second.
 The range is rounded to the second and written in its largest units (`6s`, `2m 30s`, `15m`, `2h`), never in milliseconds.
 * Lists are Markdown tables, and ids are complete: a trace id is 32 hex characters, an endpoint, query or error id 12, because they are passed back.
 * A trace and `logs` are lines rather than a table, and `status` and `mark` answer in their own shape.

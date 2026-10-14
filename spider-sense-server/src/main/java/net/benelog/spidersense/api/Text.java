@@ -274,8 +274,14 @@ final class Text {
         return n + " " + (n == 1 ? noun : noun + "s");
     }
 
+    /**
+     * {@code 2026-09-17T10:00:00+09:00}, with the milliseconds when the instant has any
+     * ({@code 2026-09-17T10:00:00.846+09:00}), so the start a heading prints, pasted into
+     * {@code --since}, asks for the same window again (marks-and-compare.adoc#time-selectors).
+     */
     static String instant(long at) {
-        return INSTANT.format(Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault()));
+        return (Math.floorMod(at, 1000L) == 0 ? INSTANT : INSTANT_MILLIS)
+                .format(Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault()));
     }
 
     static String instantMillis(long at) {

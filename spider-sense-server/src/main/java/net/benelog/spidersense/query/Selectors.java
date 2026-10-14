@@ -65,6 +65,8 @@ public final class Selectors {
 
     /** How a refusal names an instant: the form a heading prints, which a selector reads back. */
     private static final DateTimeFormatter LOCAL = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX");
+    private static final DateTimeFormatter LOCAL_MILLIS =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSXXX");
 
     private final Marks marks;
     private final LongSupplier clock;
@@ -243,9 +245,13 @@ public final class Selectors {
         return marks.newest(value, service);
     }
 
-    /** {@code 2026-10-08T05:50:00+09:00}: an instant in this machine's zone, as a heading prints it. */
+    /**
+     * {@code 2026-10-08T05:50:00+09:00}: an instant in this machine's zone, as a heading prints it,
+     * with the milliseconds when it has any.
+     */
     public static String local(long at) {
-        return LOCAL.format(Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault()));
+        return (Math.floorMod(at, 1000L) == 0 ? LOCAL : LOCAL_MILLIS)
+                .format(Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault()));
     }
 
     private static long unitMillis(char unit) {

@@ -312,6 +312,21 @@ class TextTest {
     }
 
     /**
+     * A heading's start keeps its milliseconds, so pasted into {@code --since} it asks for the
+     * same window again rather than one up to a second wider (marks-and-compare.adoc#time-selectors).
+     */
+    @Test
+    void aHeadingsStartReadsBackAsTheSameInstant() {
+        long from = 1_791_990_085_846L;
+        String start = Text.instant(from);
+
+        assertThat(start).contains(":25.846");
+        assertThat(java.time.OffsetDateTime.parse(start).toInstant().toEpochMilli()).isEqualTo(from);
+        assertThat(Text.interval(from, from + 300_000)).startsWith(start + " → ");
+        assertThat(Text.instant(1_791_990_085_000L)).as("a whole second prints as one").doesNotContain(".");
+    }
+
+    /**
      * The sources are text: a control character saved as the byte itself rather than as an escape
      * makes {@code grep} and {@code file} treat the file as binary, and javac accepts it silently.
      */

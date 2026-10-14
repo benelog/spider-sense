@@ -324,7 +324,7 @@ The `numbers` line is `key value` pairs joined by commas, and a value that is em
 [source]
 ----
 $ java -jar spider-sense.jar findings --since=before
-# findings  2026-09-17T08:19:28+09:00 → 08:19:34  (6s, all services, 21 requests)
+# findings  2026-09-17T08:19:28.122+09:00 → 08:19:34  (6s, all services, 21 requests)
 
 | # | severity | state | kind | id | service | title |
 | --- | --- | --- | --- | --- | --- | --- |

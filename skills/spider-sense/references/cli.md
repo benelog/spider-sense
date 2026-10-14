@@ -208,7 +208,7 @@ The newest 50, newest first; a `start` mark with a `pid` note is the one the wri
 
 ```
 $ java -jar spider-sense.jar findings --since=before
-# findings  2026-09-17T08:19:28+09:00 → 08:19:34  (6s, all services, 21 requests)
+# findings  2026-09-17T08:19:28.122+09:00 → 08:19:34  (6s, all services, 21 requests)
 
 | # | severity | state | kind | id | service | title |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -313,7 +313,7 @@ Two spaces of indentation per depth, the service named only where it changes fro
 
 ```
 $ java -jar spider-sense.jar traces --since=before --limit=5
-# traces  2026-09-17T08:19:28+09:00 → 08:19:35  (8s, all services, 21 requests)
+# traces  2026-09-17T08:19:28.122+09:00 → 08:19:35  (8s, all services, 21 requests)
 
 5 of 21 traces, newest first
 
@@ -330,7 +330,7 @@ $ java -jar spider-sense.jar traces --since=before --limit=5
 
 ```
 $ java -jar spider-sense.jar endpoints --since=before
-# endpoints  2026-09-17T08:19:28+09:00 → 08:19:34  (7s, all services, 21 requests)
+# endpoints  2026-09-17T08:19:28.122+09:00 → 08:19:34  (7s, all services, 21 requests)
 
 | endpoint | id | service | calls | errors | p50 | p95 | max | total | apdex |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -347,7 +347,7 @@ $ java -jar spider-sense.jar endpoints --since=before
 
 ```
 $ java -jar spider-sense.jar queries --since=before --limit=5
-# queries  2026-09-17T08:19:28+09:00 → 08:19:35  (7s, all services, 21 requests)
+# queries  2026-09-17T08:19:28.122+09:00 → 08:19:35  (7s, all services, 21 requests)
 
 | id | service | calls | slow | p50 | p95 | max | total | callers | unindexed | statement |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -364,7 +364,7 @@ $ java -jar spider-sense.jar queries --since=before --limit=5
 
 ```
 $ java -jar spider-sense.jar errors --since=before
-# errors  2026-09-17T08:19:28+09:00 → 08:19:35  (7s, all services, 21 requests)
+# errors  2026-09-17T08:19:28.122+09:00 → 08:19:35  (7s, all services, 21 requests)
 
 | id | service | type | message | count | first | last | endpoints |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -380,7 +380,7 @@ Each group whose sample stack trace has application frames gets a block naming o
 
 ```
 $ java -jar spider-sense.jar logs --since=before --limit=3
-# logs  2026-09-17T08:19:28+09:00 → 08:19:35  (8s, all services)
+# logs  2026-09-17T08:19:28.122+09:00 → 08:19:35  (8s, all services)
 
 3 of 5 lines, newest first
 
@@ -395,7 +395,7 @@ The count line says how many were printed of how many matched the window (`3 of 
 
 ```
 $ java -jar spider-sense.jar compare --before=before --after=after
-# compare  2026-09-17T08:19:28+09:00 → 08:19:35  vs  2026-09-17T08:19:35+09:00 → 08:19:45  (all services)
+# compare  2026-09-17T08:19:28.122+09:00 → 08:19:35  vs  2026-09-17T08:19:35.837+09:00 → 08:19:45  (all services)
 
 | totals | before | after |
 | --- | --- | --- |
@@ -442,7 +442,7 @@ Each row's verdict comes first and the worst rows come first, so the top of each
 
 ```
 $ java -jar spider-sense.jar check --since=before
-# check  fail  2026-09-17T08:19:28+09:00 → 08:19:45  (17s, all services, 33 requests)
+# check  fail  2026-09-17T08:19:28.122+09:00 → 08:19:45  (17s, all services, 33 requests)
 
 | rule | limit | actual | verdict | detail |
 | --- | --- | --- | --- | --- |
@@ -460,7 +460,7 @@ Named rules replace them, and every rule named is evaluated:
 
 ```
 $ java -jar spider-sense.jar check --since=after --max-queries-per-request=3 --min-apdex=0.9
-# check  fail  2026-09-17T08:19:35+09:00 → 08:19:45  (10s, all services, 12 requests)
+# check  fail  2026-09-17T08:19:35.837+09:00 → 08:19:45  (10s, all services, 12 requests)
 
 | rule | limit | actual | verdict | detail |
 | --- | --- | --- | --- | --- |

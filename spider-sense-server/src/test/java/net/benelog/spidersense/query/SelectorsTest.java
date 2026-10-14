@@ -158,6 +158,14 @@ class SelectorsTest {
         assertThat(now).isBetween(before, System.currentTimeMillis());
     }
 
+    /** The form a heading and a refusal print reads back as the same instant, milliseconds and all. */
+    @Test
+    void anInstantAsPrintedResolvesToItself() {
+        assertThat(Selectors.local(NOW + 846)).endsWith(".846" + Selectors.local(NOW).substring(19));
+        assertThat(selectors.resolve(Selectors.local(NOW + 846), 0, null)).isEqualTo(NOW + 846);
+        assertThat(selectors.resolve(Selectors.local(NOW), 0, null)).isEqualTo(NOW);
+    }
+
     @Test
     void aSinceAfterTheUntilIsTheCallersMistake() {
         assertThatThrownBy(() -> selectors.window(null, null, "now", "5m", null))
