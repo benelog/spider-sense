@@ -67,6 +67,7 @@ Once a service is known, the page shows its five parts even when the window hold
 
 `#/findings` is the ranked list of what is worth fixing in the window: `GET /api/findings?from&to&service&limit=100`, in the order the API ranks it.
 It shows people what xref:findings.adoc[findings] gives an agent.
+When the answer's `total` is more than the rows, a line under the panel head says the limit cut the list, such as `100 of 154 findings; a service or a shorter range shows the rest.`
 
 The table has the position (`#`), the severity as a dot and a word, the state chip, the kind chip, the service chip, the title, and in a right-aligned column the impact number the kind is ranked by.
 That number is:

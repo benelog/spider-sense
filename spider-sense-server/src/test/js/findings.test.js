@@ -1,4 +1,5 @@
-// pages/findings.js: the impact column and the evidence numbers (pages.adoc#findings).
+// pages/findings.js: the impact column, the evidence numbers and the cut list (pages.adoc#findings).
+import './browser-env.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { impactText, numberText } from '../../main/resources/public/assets/js/pages/findings.js';
@@ -40,4 +41,29 @@ test('an absent value is a muted dash, a string is monospaced, a moment carries 
   assert.deepEqual(numberText('p95Ms', null, 'slow-request'), { text: '-', cls: 'muted' });
   assert.deepEqual(numberText('gc', 'G1 Young Generation', 'gc-pause'), { text: 'G1 Young Generation', cls: 'mono' });
   assert.equal(numberText('lastSeen', 1_700_000_000_000, 'error').title, bothTimes(1_700_000_000_000));
+});
+
+test('a list the limit cut says how many findings there are', async () => {
+  const JS = '../../main/resources/public/assets/js/';
+  const answer = { findings: [], total: 0, requests: 10 };
+  globalThis.fetch = async () => new Response(JSON.stringify(answer), { status: 200 });
+  const api = await import(JS + 'api.js');
+  const page = await import(JS + 'pages/findings.js');
+  api.state.service = '';
+  answer.findings = Array.from({ length: 100 }, (_, i) => ({
+    id: 'f' + i, kind: 'slow-query', severity: 'warn', state: 'new', service: 'orders', title: 'Slow query ' + i, numbers: { totalMs: 100 },
+  }));
+  answer.total = 154;
+  const root = document.createElement('main');
+  document.body.replaceChildren(root);
+  const instance = page.render(root, { params: {}, initialQuery: {}, query: () => ({}), setTitle() {}, navigate() {} });
+  await new Promise((r) => setTimeout(r, 30));
+  const note = root.querySelector('.panel-note');
+  assert.equal(note.hidden, false);
+  assert.equal(note.textContent, '100 of 154 findings; a service or a shorter range shows the rest.');
+  answer.total = 100;
+  instance.refresh();
+  await new Promise((r) => setTimeout(r, 30));
+  assert.equal(note.hidden, true, 'a whole list says nothing');
+  instance.destroy();
 });

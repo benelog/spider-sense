@@ -359,7 +359,17 @@ export function render(root, ctx) {
   const expanded = new Set();
 
   const body = h('div', spinner());
-  root.appendChild(panel({ title: 'Findings' }, body));
+  // The limit cut the list: say so, as the CLI's `20 of 54 findings` does (pages.adoc#findings).
+  const cutNote = h('div.panel-note', { style: { borderTop: 'none', borderBottom: '1px solid var(--line)' } });
+  cutNote.hidden = true;
+  root.appendChild(panel({ title: 'Findings' }, cutNote, body));
+
+  function paintCut(total) {
+    cutNote.hidden = !(total > rows.length);
+    cutNote.textContent = cutNote.hidden ? ''
+      : count(rows.length) + ' of ' + count(total) + ' findings; '
+        + (api.state.service ? 'a shorter range' : 'a service or a shorter range') + ' shows the rest.';
+  }
 
   const columns = [
     { key: 'n', label: '#', sortable: false, width: '36px', render: (f, i) => h('span.muted', String(i + 1)) },
@@ -398,6 +408,7 @@ export function render(root, ctx) {
     paint: (res) => {
       rows = res.findings || [];
       listWindow = res.window || api.windowFor();
+      paintCut(res.total);
       if (!rows.length && !res.requests) {
         node = null;
         fill(body, noDataYet(((api.state.status || {}).counts || {}).spans
