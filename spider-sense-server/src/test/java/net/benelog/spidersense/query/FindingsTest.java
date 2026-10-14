@@ -1418,6 +1418,77 @@ class FindingsTest {
         assertThat(findings.exists("thread-growth:0123456789ab", kept)).as("a made-up id").isFalse();
     }
 
+    /**
+     * A finding judged by a count exists over the data kept by its subject: the error group, the
+     * logger and message, the endpoint and statement or call, the collector. An id whose subject
+     * the store does not hold is still refused.
+     */
+    @Test
+    void aCountedFindingExistsByItsSubjectOverTheDataKept() {
+        Span.Builder failing = Otlp.failing(entry(1, "/orders/{id}", 10),
+                "java.lang.IllegalStateException", "no such order 42", STACKTRACE);
+        Span.Builder root = entry(2, "/orders", 60);
+        List<Span.Builder> spans = new ArrayList<>(List.of(failing, root));
+        for (int i = 0; i < 6; i++) {
+            spans.add(query(root, 100 + i, "select * from order_line where order_id = ?", "order_line",
+                    NOW + i, 2));
+            spans.add(call(root, 200 + i, "/api/books/" + (155 + i), NOW + i, 2));
+        }
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), spans.toArray(Span.Builder[]::new)));
+        decoder.ingest(Otlp.logs(Otlp.service("orders"), "orders.web.OrderController",
+                Otlp.log(NOW, 17, "Payment gateway timeout for order 42", traceId(2), spanId(2))));
+        gc(NOW - 1000, 1, 0.01, 0.01);
+        gc(NOW, 2, 0.62, 0.61);
+        flush();
+        Set<String> counted = Set.of(Findings.ERROR, Findings.LOG_ERROR, Findings.N_PLUS_ONE,
+                Findings.N_PLUS_ONE_HTTP, Findings.GC_PAUSE);
+        Window kept = Window.of(0, Window.LATEST);
+
+        List<Findings.Finding> found = new ArrayList<>();
+        for (Findings.Finding finding : findings.findings(window, null, 20)) {
+            if (counted.contains(finding.kind())) {
+                found.add(finding);
+            }
+        }
+
+        assertThat(found).extracting(Findings.Finding::kind).containsExactlyInAnyOrderElementsOf(counted);
+        for (Findings.Finding finding : found) {
+            assertThat(findings.exists(finding.id(), kept)).as(finding.kind()).isTrue();
+        }
+        for (String kind : counted) {
+            assertThat(findings.exists(kind + ":0123456789ab", kept)).as("a made-up %s id", kind).isFalse();
+        }
+    }
+
+    /**
+     * The subject is what is asked, not the rule: a collector with only short collections and an
+     * {@code ERROR} record on a failed trace are no finding, and their ids are still accepted,
+     * which a run of the rules over the data kept would refuse.
+     */
+    @Test
+    void aCountedKindsIdIsCheckedAgainstItsSubjectWithoutRunningTheRule() {
+        Span.Builder failing = Otlp.failing(entry(1, "/orders/{id}", 10),
+                "java.lang.IllegalStateException", "no such order 42", STACKTRACE);
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), failing));
+        decoder.ingest(Otlp.logs(Otlp.service("orders"), "orders.web.OrderController",
+                Otlp.log(NOW, 17, "no such order 42", traceId(1), spanId(1))));
+        gc(NOW - 1000, 10, 0.02, 0.004);
+        gc(NOW, 20, 0.04, 0.004);
+        flush();
+        Window kept = Window.of(0, Window.LATEST);
+
+        assertThat(findings.findings(kept, null, 20)).extracting(Findings.Finding::kind)
+                .doesNotContain(Findings.GC_PAUSE, Findings.LOG_ERROR);
+        assertThat(findings.exists(Findings.id(Findings.GC_PAUSE, "orders",
+                "gc:G1 Young Generation\0end of minor GC"), kept)).isTrue();
+        assertThat(findings.exists(Findings.id(Findings.LOG_ERROR, "orders",
+                "orders.web.OrderController\0no such order ?"), kept)).isTrue();
+        assertThat(findings.exists(Findings.id(Findings.GC_PAUSE, "orders",
+                "gc:G1 Old Generation\0end of major GC"), kept)).as("a collector not in the store").isFalse();
+        assertThat(findings.exists(Findings.id(Findings.LOG_ERROR, "billing",
+                "orders.web.OrderController\0no such order ?"), kept)).as("another service").isFalse();
+    }
+
     @Test
     void anAcknowledgedFindingIsRankedLastAndCarriesItsAck() {
         threeSlowEndpoints();

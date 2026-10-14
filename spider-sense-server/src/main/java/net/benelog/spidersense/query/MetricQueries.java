@@ -214,6 +214,34 @@ public final class MetricQueries {
         return data;
     }
 
+    /** One series of a metric, named by its service and its attributes, without its points. */
+    public record SeriesKey(String service, Map<String, Object> attributes) {
+
+        public @Nullable String attribute(String key) {
+            Object value = attributes.get(key);
+            return value == null ? null : String.valueOf(value);
+        }
+    }
+
+    /**
+     * Every series of one metric that has a point in the window, without reading the points:
+     * one index probe per series, rather than every point of the window.
+     */
+    public List<SeriesKey> seriesKeys(String name, Window window) {
+        List<SeriesKey> keys = new ArrayList<>();
+        sql.forEach("SELECT s.service, s.attributes FROM metric_series s WHERE s.name = ?"
+                + " AND EXISTS (SELECT 1 FROM metric_point p WHERE p.series_id = s.id"
+                + " AND p.at_ms BETWEEN ? AND ?)", List.of(name, window.from(), window.to()), rs -> {
+                    try {
+                        keys.add(new SeriesKey(rs.getString("service"),
+                                AttrJson.readAttributes(rs.getString("attributes"))));
+                    } catch (JsonException cutAsText) {
+                        // Left out, as series leaves out a series an older Spider Sense cut as text.
+                    }
+                });
+        return keys;
+    }
+
     /** How the catalog describes a metric name; a name with no metadata row is a gauge. */
     private record Described(String type, String unit, String description) {
 

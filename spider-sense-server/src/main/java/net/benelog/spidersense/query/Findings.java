@@ -539,48 +539,84 @@ public final class Findings {
     }
 
     /**
-     * The kinds whose verdict is a statistic of the window (a p95, the worst bucket, the first
-     * against the last point), which a longer window can dilute below the threshold: a finding of
-     * the last five minutes need not be one over the day.
-     */
-    private static final Set<String> WINDOWED = Set.of(SLOW_QUERY, SLOW_ENDPOINT, SLOW_JOB,
-            SLOW_EXTERNAL, POOL_EXHAUSTED, HEAP_PRESSURE, THREAD_GROWTH);
-
-    /**
      * Whether this id names a finding of the window, for any service, as far as a window can
-     * say (findings.adoc#acknowledgements).
+     * say (findings.adoc#acknowledgements): whether the window holds the subject the id is the
+     * hash of, whatever the verdict over all of it.
      *
-     * <p>A count only grows with a longer window, so for {@code error}, {@code log-error},
-     * {@code n-plus-one}, {@code n-plus-one-http} and {@code gc-pause} it is the rules of the
-     * id's kind alone, for the ids alone, as the state of a finding asks them
-     * (findings.adoc#state). A {@link #WINDOWED} kind is judged by a statistic a longer window
-     * dilutes, so its id is one whose subject the window holds, whatever the verdict over all
-     * of it: the endpoint, query group, job, outbound target, pool or service the id is the hash
-     * of.
+     * <p>No rule runs. A kind judged by a statistic of the window (a p95, the worst bucket, the
+     * first against the last point) is diluted by a longer one, so its rule over the data kept
+     * would refuse a finding of the last five minutes. A kind judged by a count only grows with
+     * the window, but its rule over the data kept costs what {@code findings} over all of it
+     * costs, and grows with the store.
      */
     public boolean exists(String id, Window window) {
         if (!isFindingId(id)) {
             return false;
         }
-        String kind = id.substring(0, id.indexOf(':'));
-        if (WINDOWED.contains(kind)) {
-            return subjectIds(kind, window).contains(id);
-        }
-        for (Ranked each : rules(window, null, new Scope(Set.of(kind), false))) {
-            if (each.finding().id().equals(id)) {
-                return true;
-            }
-        }
-        return false;
+        return subjectIds(id.substring(0, id.indexOf(':')), window).contains(id);
     }
 
     /**
-     * The id of every subject of the window a rule of a {@link #WINDOWED} kind could find, with
-     * no threshold: what each rule groups by, hashed as it hashes it.
+     * The id of every subject of the window a rule of this kind could find, with no threshold:
+     * what each rule groups by, hashed as it hashes it.
+     *
+     * <p>An N+1 kind's subject is an endpoint and a statement group or call of a trace that
+     * repeated it {@link Repeats#MIN_REPEATS} times, which the rule's own first aggregate finds:
+     * the endpoints are those of the trace's entry spans, so the parent-chain walk is not read.
      */
     private Set<String> subjectIds(String kind, Window window) {
         Set<String> ids = new HashSet<>();
         switch (kind) {
+            case ERROR -> {
+                Where where = Where.window(window, null).and("error").and("error_id IS NOT NULL");
+                sql.forEach("SELECT DISTINCT service, error_id FROM span WHERE " + where.sql(),
+                        where.params(), rs -> ids.add(id(kind, rs.getString(1), rs.getString(2))));
+            }
+            case LOG_ERROR -> sql.forEach("SELECT service, logger, body FROM log"
+                    + " WHERE at_ms BETWEEN ? AND ? AND severity_number >= " + ERROR_SEVERITY,
+                    List.of(window.from(), window.to()), rs -> ids.add(id(kind, rs.getString("service"),
+                            logger(rs.getString("logger")) + "\0" + Ids.normaliseMessage(rs.getString("body")))));
+            case N_PLUS_ONE -> {
+                Where where = Where.window(window, null).and("query_id IS NOT NULL");
+                sql.forEach("SELECT DISTINCT e.service, COALESCE(e.endpoint, e.name) AS endpoint, c.query_id"
+                        + " FROM (SELECT trace_id, query_id FROM span WHERE " + where.sql()
+                        + " GROUP BY trace_id, query_id HAVING COUNT(*) >= " + Repeats.MIN_REPEATS + ") c"
+                        + " JOIN span e ON e.trace_id = c.trace_id AND e.entry", where.params(), rs -> {
+                            String service = rs.getString("service");
+                            ids.add(id(kind, service, Ids.endpointId(service, rs.getString("endpoint"))
+                                    + "\0" + rs.getString("query_id")));
+                        });
+            }
+            case N_PLUS_ONE_HTTP -> {
+                Map<String, Map<String, Integer>> callsByTrace = new HashMap<>();
+                for (Queries.OutboundCall call : queries.outboundHttp(window, null)) {
+                    callsByTrace.computeIfAbsent(call.traceId(), trace -> new HashMap<>())
+                            .merge(call.call(), 1, Integer::sum);
+                }
+                callsByTrace.values().forEach(counts -> counts.values().removeIf(n -> n < Repeats.MIN_REPEATS));
+                callsByTrace.values().removeIf(Map::isEmpty);
+                if (!callsByTrace.isEmpty()) {
+                    Where where = Where.entries(window, null);
+                    sql.forEach("SELECT trace_id, service, COALESCE(endpoint, name) AS endpoint FROM span"
+                            + " WHERE " + where.sql(), where.params(), rs -> {
+                                Map<String, Integer> calls = callsByTrace.get(rs.getString("trace_id"));
+                                if (calls == null) {
+                                    return;
+                                }
+                                String service = rs.getString("service");
+                                String endpointId = Ids.endpointId(service, rs.getString("endpoint"));
+                                for (String call : calls.keySet()) {
+                                    ids.add(id(kind, service, endpointId + "\0" + call));
+                                }
+                            });
+                }
+            }
+            case GC_PAUSE -> {
+                for (MetricQueries.SeriesKey series : metrics.seriesKeys(MetricSeriesNames.GC_DURATION, window)) {
+                    ids.add(id(kind, series.service(), "gc:" + series.attribute(MetricSeriesNames.GC_NAME)
+                            + "\0" + series.attribute(MetricSeriesNames.GC_ACTION)));
+                }
+            }
             case SLOW_QUERY -> {
                 Where where = Where.window(window, null).and("query_id IS NOT NULL");
                 sql.forEach("SELECT DISTINCT service, query_id FROM span WHERE " + where.sql(),
@@ -614,7 +650,7 @@ public final class Findings {
                 }
             }
             default -> {
-                // Not a windowed kind; exists asks the rules for it.
+                // A regression keeps the id of the finding it is: isFindingId refuses its kind.
             }
         }
         return ids;
@@ -2067,7 +2103,7 @@ public final class Findings {
      * The id findings.adoc#fields promises: stable across windows, because it hashes what the
      * finding is about and nothing about when it was found.
      */
-    private static String id(String kind, String service, String subject) {
+    static String id(String kind, String service, String subject) {
         return kind + ":" + Ids.shortHash(kind + "\0" + service + "\0" + subject);
     }
 
