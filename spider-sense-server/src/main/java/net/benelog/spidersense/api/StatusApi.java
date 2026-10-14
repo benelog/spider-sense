@@ -52,8 +52,13 @@ public final class StatusApi {
         app.post("/api/import", "An exported document, written back", this::importDocument);
 
         // Every API answer is live data; a browser that cached it would show a frozen dashboard.
-        app.responseFilter((req, res) ->
-                req.path().startsWith("/api/") ? res.header("Cache-Control", "no-store") : res);
+        // Spider Silk types JSON as bare application/json, and the API states its charset, as the
+        // refusals Jetty answers before routing (JsonErrorHandler) do (api.adoc#conventions).
+        app.responseFilter((req, res) -> {
+            WebResponse typed = "application/json".equals(res.header("Content-Type"))
+                    ? res.contentType("application/json; charset=utf-8") : res;
+            return req.path().startsWith("/api/") ? typed.header("Cache-Control", "no-store") : typed;
+        });
 
         app.error(HttpStatus.BAD_REQUEST, req ->
                 WebResponse.json(ErrorBody.json(req.errorMessage(), "Bad request")));

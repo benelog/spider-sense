@@ -12,6 +12,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Locale;
 
 import org.junit.jupiter.api.Test;
 
@@ -237,6 +238,23 @@ class SpiderSenseServerTest {
             for (String escape : new String[] {"/assets/..%252F..%252Fsimplelogger.properties",
                     "/assets/%2E%2E/%2E%2E/simplelogger.properties", "/assets/..%5C..%5Csimplelogger.properties"}) {
                 assertThat(get(server, escape).body()).as(escape).doesNotContain("defaultLogLevel");
+            }
+        } finally {
+            server.stop();
+        }
+    }
+
+    /** Every JSON answer states its charset: a handler's, a streamed export, a 404, and Jetty's refusal. */
+    @Test
+    void everyJsonAnswerIsUtf8() throws Exception {
+        SpiderSenseServer server = SpiderSenseServer.start(TestStore.config());
+        try {
+            for (String path : new String[] {"/api/status", "/api/export?since=1h", "/api/services/nope",
+                    "/api/services/%2E%2E", "/api/traces?limit=x"}) {
+                // Jetty writes the parameter with no space after the semicolon, which HTTP allows.
+                assertThat(get(server, path).headers().firstValue("Content-Type")).as(path)
+                        .hasValueSatisfying(type -> assertThat(type.replace(" ", "").toLowerCase(Locale.ROOT))
+                                .isEqualTo("application/json;charset=utf-8"));
             }
         } finally {
             server.stop();
