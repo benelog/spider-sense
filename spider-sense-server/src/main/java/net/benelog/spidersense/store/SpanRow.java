@@ -133,8 +133,8 @@ public record SpanRow(
                 RowJson.string(span, "errorMessage"),
                 RowJson.string(span, "errorId"),
                 RowJson.string(span, "scope"),
-                RowJson.nested(span, "attributes", AttrJson.EMPTY_OBJECT),
-                RowJson.nested(span, "events", AttrJson.EMPTY_ARRAY));
+                RowJson.object(span, "attributes"),
+                RowJson.events(span, "events"));
     }
 
     /** The row of a {@code SELECT *} on {@code span}. */

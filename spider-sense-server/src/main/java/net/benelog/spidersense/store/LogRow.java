@@ -54,7 +54,7 @@ public record LogRow(
                 RowJson.string(log, "logger"),
                 RowJson.string(log, "traceId"),
                 RowJson.string(log, "spanId"),
-                RowJson.nested(log, "attributes", AttrJson.EMPTY_OBJECT));
+                RowJson.object(log, "attributes"));
     }
 
     /** The row of a {@code SELECT *} on {@code log}. */

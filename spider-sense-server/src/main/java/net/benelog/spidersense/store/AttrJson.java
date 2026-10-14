@@ -5,6 +5,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.DoubleUnaryOperator;
 
 import net.benelog.spidersilk.json.Json;
@@ -27,6 +28,9 @@ public final class AttrJson {
 
     /** What a cut string value ends with, so the span drawer shows that it was cut. */
     static final String CUT_MARK = "\u2026";
+
+    private static final System.Logger LOG = System.getLogger(AttrJson.class.getName());
+    private static final AtomicBoolean WARNED = new AtomicBoolean();
 
     private AttrJson() {
     }
@@ -87,7 +91,29 @@ public final class AttrJson {
         return encode(new TreeMap<>(attributes), max);
     }
 
+    /**
+     * The attributes a column holds; text that is not a JSON object reads as none.
+     *
+     * <p>The writer and the importer store only objects, but a row of an older
+     * version or one edited by hand may hold anything, and it must cost its own
+     * attributes rather than every page, or the start, that reads it.
+     */
     public static Map<String, Object> decode(@Nullable String json) {
+        try {
+            return readAttributes(json);
+        } catch (Json.JsonException e) {
+            warnOnce(e);
+            return Map.of();
+        }
+    }
+
+    /**
+     * The attributes a column holds, for a reader that would rather leave the row out
+     * than show it with none.
+     *
+     * @throws Json.JsonException when the text is not a JSON object
+     */
+    public static Map<String, Object> readAttributes(@Nullable String json) {
         if (json == null || json.isEmpty() || EMPTY_OBJECT.equals(json)) {
             return Map.of();
         }
@@ -200,7 +226,22 @@ public final class AttrJson {
         return true;
     }
 
+    /** The events an {@code events} column holds; text that is not the array {@link #encodeEvents} writes reads as none. */
     public static List<SpanRecord.SpanEvent> decodeEvents(@Nullable String json) {
+        try {
+            return readEvents(json);
+        } catch (Json.JsonException e) {
+            warnOnce(e);
+            return List.of();
+        }
+    }
+
+    /**
+     * The events an {@code events} column holds.
+     *
+     * @throws Json.JsonException when the text is not the array {@link #encodeEvents} writes
+     */
+    static List<SpanRecord.SpanEvent> readEvents(@Nullable String json) {
         if (json == null || json.isEmpty() || EMPTY_ARRAY.equals(json)) {
             return List.of();
         }
@@ -213,6 +254,14 @@ public final class AttrJson {
                     attributes == null ? Map.of() : decode(attributes.toJson())));
         }
         return events;
+    }
+
+    /** Says once per process that a stored column did not read as its shape, so a bad row is not silent. */
+    private static void warnOnce(Json.JsonException e) {
+        if (WARNED.compareAndSet(false, true)) {
+            LOG.log(System.Logger.Level.WARNING, "Spider Sense read a stored JSON column of the wrong shape as empty: "
+                    + e.getMessage());
+        }
     }
 
     /** A JSON array of strings, for the {@code trace.services} column. */

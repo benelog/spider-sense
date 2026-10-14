@@ -1015,6 +1015,7 @@ Those describe the process running here, not the one that ran the imported sessi
 
 A document whose `schema` is not this version's is a `400` naming both versions.
 A document that is not JSON, or whose rows are not the shapes `export` writes, is a `400` naming what did not decode, and nothing of it is written.
+A `resource` or an `attributes` that is not a JSON object, or `events` that are not an array of event objects, is such a row.
 So is a document with a value the store refuses, such as a trace id longer than 32 characters or a required column left out, and the `400` carries H2's own message.
 In the CLI each of these is the `400`'s sentence on stderr and exit `2`, the same line from the file as over HTTP, and a `.gz` that is not gzipped is `Undecodable import document: Not in GZIP format` in both.
 A file `export` cannot write or `import` cannot read is exit `2` with the operating system's reason, as in `spider-sense: could not write out: Is a directory`.

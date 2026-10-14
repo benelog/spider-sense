@@ -57,6 +57,19 @@ class ServiceRegistryTest {
         assertThat(registry.embeddedService()).isEqualTo("orders");
     }
 
+    /** A row written by an import of an earlier version: the server still starts, and lists it. */
+    @Test
+    void aStoredResourceThatIsNotAnObjectReadsAsNone() {
+        sql.update(ServiceRow.INSERT, List.of("orders", "java", 1L, 1_000L, 1_000L, "\"not an object\""));
+
+        ServiceRegistry registry = new ServiceRegistry(sql, null);
+
+        assertThat(registry.all()).singleElement().satisfies(service -> {
+            assertThat(service.name()).isEqualTo("orders");
+            assertThat(service.resource()).isEmpty();
+        });
+    }
+
     private void storeService(String name, long pid) {
         sql.update(ServiceRow.INSERT, List.of(name, "java", pid, 1_000L, 1_000L,
                 "{\"process.pid\":" + pid + "}"));

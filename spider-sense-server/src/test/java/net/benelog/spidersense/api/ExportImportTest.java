@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.net.URI;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.List;
 
 import io.opentelemetry.proto.trace.v1.Span;
 
@@ -468,6 +469,45 @@ class ExportImportTest {
             assertThat(Json.parse(response.body()).asObject().getString("error"))
                     .startsWith("Undecodable import document");
         });
+    }
+
+    /**
+     * A resource, attributes or events of another shape than the export writes: every read
+     * of the stored row would fail on it, so the document is refused and nothing is written.
+     */
+    @Test
+    void aDocumentWhoseJsonColumnsAreNotTheExportedShapesIsRefused() {
+        Json.JsonObject span = Json.obj().put("traceId", TRACE).put("spanId", ROOT)
+                .put("service", "spring-orders").put("name", "GET /orders").put("kind", "SERVER")
+                .put("startMs", NOW).put("startNs", NOW * 1_000_000L).put("durationNs", 1_000_000L)
+                .put("status", "UNSET").put("category", "http");
+        Json.JsonObject log = Json.obj().put("atMs", NOW).put("service", "spring-orders")
+                .put("severityNumber", 9).put("body", "hello");
+        Json.JsonObject service = Json.obj().put("name", "spring-orders").put("firstSeen", NOW).put("lastSeen", NOW);
+        List<Json.JsonObject> documents = List.of(
+                section("spans", Json.parse(span.toJson()).asObject().put("attributes", Json.arr().add(1).add(2))),
+                section("spans", Json.parse(span.toJson()).asObject().put("events", Json.obj().put("a", 1))),
+                section("spans", Json.parse(span.toJson()).asObject().put("events", Json.arr().add(5))),
+                section("logs", Json.parse(log.toJson()).asObject().put("attributes", 5)),
+                section("services", Json.parse(service.toJson()).asObject().put("resource", "not an object")));
+        serve(client -> {
+            for (Json.JsonObject document : documents) {
+                HttpResponse<String> response = postJson(client, "/api/import", document.toJson());
+                assertThat(response.statusCode()).as(document.toJson()).isEqualTo(400);
+                assertThat(Json.parse(response.body()).asObject().getString("error"))
+                        .startsWith("Undecodable import document");
+            }
+            assertThat(rows(client, "SELECT COUNT(*) FROM span")).isZero();
+            assertThat(rows(client, "SELECT COUNT(*) FROM log")).isZero();
+            assertThat(rows(client, "SELECT COUNT(*) FROM service")).isZero();
+            assertThat(client.get("/api/services").statusCode()).isEqualTo(200);
+        });
+    }
+
+    private static Json.JsonObject section(String key, Json.JsonObject row) {
+        return Json.obj()
+                .put("spiderSense", Json.obj().put("schema", Schema.VERSION))
+                .put(key, Json.arr().add(row));
     }
 
     /**

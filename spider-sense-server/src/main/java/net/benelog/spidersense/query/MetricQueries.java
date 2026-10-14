@@ -189,7 +189,7 @@ public final class MetricQueries {
             if (builder == null) {
                 Map<String, Object> attributes;
                 try {
-                    attributes = AttrJson.decode(rs.getString("attributes"));
+                    attributes = AttrJson.readAttributes(rs.getString("attributes"));
                 } catch (Json.JsonException cutAsText) {
                     // An older Spider Sense cut a long series at a character rather than as
                     // JSON: that series is left out, rather than every other one of the name.

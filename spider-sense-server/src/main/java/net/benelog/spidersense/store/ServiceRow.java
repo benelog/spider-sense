@@ -40,7 +40,7 @@ public record ServiceRow(String name, @Nullable String language, @Nullable Long 
         long firstSeen = RowJson.longOr(service, "firstSeen", 0);
         return new ServiceRow(name, RowJson.string(service, "language"), RowJson.nullableLong(service, "pid"),
                 firstSeen, RowJson.longOr(service, "lastSeen", firstSeen),
-                RowJson.nested(service, "resource", AttrJson.EMPTY_OBJECT));
+                RowJson.object(service, "resource"));
     }
 
     /** The row of a {@code SELECT *} on {@code service}. */

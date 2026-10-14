@@ -26,7 +26,7 @@ public record SeriesRow(long id, String service, String name, String attributes)
             return null;
         }
         return new SeriesRow(RowJson.longOr(series, "id", 0), service, name,
-                RowJson.nested(series, "attributes", AttrJson.EMPTY_OBJECT));
+                RowJson.object(series, "attributes"));
     }
 
     /** The row of a {@code SELECT id, service, name, attributes} on {@code metric_series}. */

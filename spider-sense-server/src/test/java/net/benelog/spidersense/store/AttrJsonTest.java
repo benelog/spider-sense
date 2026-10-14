@@ -128,4 +128,15 @@ class AttrJsonTest {
         assertThat(AttrJson.toJson(map, rounded).toJson()).isEqualTo("\"{\\\"a\\\":1.25}\"");
         assertThat(AttrJson.toJson(map, AttrJson.Rules.ANSWER).toJson()).isEqualTo("{\"a\":1.25}");
     }
+
+    /** A column of the wrong shape costs its own attributes, not the page or the start that reads it. */
+    @Test
+    void aColumnOfTheWrongShapeReadsAsEmpty() {
+        for (String json : List.of("[1,2]", "5", "\"not an object\"", "not json")) {
+            assertThat(AttrJson.decode(json)).as(json).isEmpty();
+        }
+        for (String json : List.of("{\"a\":1}", "[1]", "[{\"name\":5}]", "[{\"attributes\":3}]")) {
+            assertThat(AttrJson.decodeEvents(json)).as(json).isEmpty();
+        }
+    }
 }

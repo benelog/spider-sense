@@ -37,12 +37,38 @@ final class RowJson {
         return object.optBoolean(key, false);
     }
 
-    /** A nested object or array as the JSON text its column holds. */
+    /** A nested object or array as the JSON text its column holds, whatever its shape. */
     static String nested(Json.JsonObject object, String key, String fallback) {
         if (!object.has(key) || object.get(key).isNull()) {
             return fallback;
         }
         return object.get(key).toJson();
+    }
+
+    /**
+     * An attributes or resource column: the JSON object's text, or {@code {}} when it is missing.
+     *
+     * @throws Json.JsonException when the value is not an object, which every read of the column would fail on
+     */
+    static String object(Json.JsonObject object, String key) {
+        Json.JsonObject value = object.optObject(key);
+        return value == null ? AttrJson.EMPTY_OBJECT : value.toJson();
+    }
+
+    /**
+     * An events column: the JSON array's text, or {@code []} when it is missing.
+     *
+     * @throws Json.JsonException when the value is not an array of the objects
+     *         {@link AttrJson#encodeEvents} writes, which every read of the column would fail on
+     */
+    static String events(Json.JsonObject object, String key) {
+        Json.JsonArray value = object.optArray(key);
+        if (value == null) {
+            return AttrJson.EMPTY_ARRAY;
+        }
+        String json = value.toJson();
+        AttrJson.readEvents(json);
+        return json;
     }
 
     static String or(@Nullable String value, String fallback) {

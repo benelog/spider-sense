@@ -30,6 +30,7 @@ An application that uses H2 itself loads its own copy of the driver in its own c
 There is one row per span, log record, metric point, tingle and mark (a named moment, see xref:marks-and-compare.adoc#marks[Marks]), plus a per-trace summary row that the writer maintains.
 The lists and aggregations the API serves are therefore SQL over indexed columns rather than a scan of blobs.
 Attributes and events are kept as JSON text in the same row.
+A stored attributes or resource text that is not a JSON object, or events text that is not an array of events, which only a row of another version could hold, reads as none, and the server logs that once.
 The columns beside them hold the values the queries need, extracted once at ingest.
 
 [source,sql]
