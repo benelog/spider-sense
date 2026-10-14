@@ -79,7 +79,9 @@ final class Options {
     static final List<String> SETTINGS = List.of("db", "slow.request.ms", "slow.query.ms", "app.packages");
 
     /**
-     * Options every command that reads a window takes: where to read from, and how to print it.
+     * Options every command that reads the store takes: where to read from, and how to print it.
+     * {@code --service} is not one of them: only a command that narrows by service takes it, so
+     * {@code status --service=orders} is refused rather than answered for every service.
      *
      * <p>{@link Command}'s rows are built from it, and nothing in this class's initialisation refers
      * to {@code Command}, so either class may load first.
@@ -357,7 +359,7 @@ final class Options {
     }
 
     private static Set<String> common() {
-        Set<String> common = new LinkedHashSet<>(List.of("url", "json", "service"));
+        Set<String> common = new LinkedHashSet<>(List.of("url", "json"));
         common.addAll(SETTINGS);
         return Collections.unmodifiableSet(common);
     }
@@ -379,16 +381,24 @@ final class Options {
         return Collections.unmodifiableSet(set);
     }
 
+    /** The command's own options and the common ones but {@code --json}, for a command that prints no answer. */
+    static Set<String> withoutJson(String... names) {
+        Set<String> set = new LinkedHashSet<>(with(names));
+        set.remove("json");
+        return Collections.unmodifiableSet(set);
+    }
+
     /** Exactly these options, in this order, for a command that takes none of the common ones. */
     static Set<String> only(String... names) {
         return Collections.unmodifiableSet(new LinkedHashSet<>(List.of(names)));
     }
 
-    /** The options of {@code check}: its rule flags, its window and its endpoint. */
+    /** The options of {@code check}: its rule flags, its window, its service and its endpoint. */
     static String[] checkFlags() {
         List<String> flags = new ArrayList<>(RULES.keySet());
         flags.add("since");
         flags.add("until");
+        flags.add("service");
         flags.add("endpoint");
         return flags.toArray(new String[0]);
     }

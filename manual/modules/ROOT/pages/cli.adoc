@@ -596,8 +596,8 @@ a finding id to ack, resolve, unack or unresolve).
 $ java -jar spider-sense.jar mark --help
 mark <name> [--note=<text>]  records a mark now
 
-Options: --note=<text>
-Common options: --url=<base url> --json --service=<name> --db=<path or jdbc url>
+Options: --note=<text> --service=<name>
+Common options: --url=<base url> --json --db=<path or jdbc url>
                 --slow.request.ms=<ms> --slow.query.ms=<ms>
                 --app.packages=<packages>
 
@@ -636,7 +636,7 @@ see: java -jar spider-sense.jar findings --help
 
 | `--service=<name>`
 | every service
-| narrow to one service
+| narrow to one service; taken by the commands that narrow by service, which are `findings`, `traces`, `endpoints`, `queries`, `errors`, `logs`, `mark`, `compare`, `check`, `export` and `tail`
 
 | `--limit=<n>`
 | per list
@@ -674,6 +674,7 @@ Three commands depart from the table.
 `compare` takes no `--since`, because its windows are the two selectors, and its `--until` closes the second window.
 `init` takes none of these options but `--url`, which it writes into its block rather than asks, and its own are `--dir`, `--jar`, `--gradle`, `--no-skill` and `--mcp`.
 `mcp` takes only `--url` and `--db`.
+`export` takes no `--json`, because it writes a document rather than printing an answer, and `help` takes no option at all.
 
 `--slow.request.ms=`, `--slow.query.ms=` and `--app.packages=` set the thresholds and the application packages in the direct-file path, where no server is there to ask.
 

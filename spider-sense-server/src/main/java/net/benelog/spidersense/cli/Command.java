@@ -51,7 +51,7 @@ record Command(String commandName, Set<String> options, @Nullable String argumen
                 options -> new Remote.UrlBuilder("/api/status"), null,
                 (options, reports, service) -> reports.status(Local.FILE_MODE, null, 0)),
 
-            new Command(Options.FINDINGS, with("since", "until", "limit", "full", "hide-acked", "no-git"), null, Method.GET,
+            new Command(Options.FINDINGS, with("since", "until", "service", "limit", "full", "hide-acked", "no-git"), null, Method.GET,
                 options -> Remote.withWindow(options, new Remote.UrlBuilder("/api/findings"))
                         .add("limit", options.limit(Limits.FINDINGS, Limits.FINDINGS_MAX))
                         .add("hideAcked", options.flag("hide-acked") ? "true" : null),
@@ -92,7 +92,7 @@ record Command(String commandName, Set<String> options, @Nullable String argumen
             new Command(Options.TAIL, Options.only("kind", "until-traces", "timeout", "url", "json", "service"), null, null,
                 null, null, null),
 
-            new Command(Options.TRACES, with("since", "until", "limit", "full", "status", "min-ms", "q"), null, Method.GET,
+            new Command(Options.TRACES, with("since", "until", "service", "limit", "full", "status", "min-ms", "q"), null, Method.GET,
                 options -> Remote.withWindow(options, new Remote.UrlBuilder("/api/traces"))
                         .add("status", options.oneOf("status", STATUSES))
                         .add("minMs", options.optionalLong("min-ms"))
@@ -105,26 +105,26 @@ record Command(String commandName, Set<String> options, @Nullable String argumen
                         options.oneOf("status", STATUSES), options.valueOrNull("q"), null,
                         options.limit(Limits.CLI_TRACES, Limits.TRACES_MAX)), options.flag("full"))),
 
-            new Command(Options.ENDPOINTS, with("since", "until"), null, Method.GET,
+            new Command(Options.ENDPOINTS, with("since", "until", "service"), null, Method.GET,
                 options -> Remote.withWindow(options, new Remote.UrlBuilder("/api/endpoints")),
                 null,
                 (options, reports, service) -> reports.endpoints(Local.window(options, reports, service), service)),
 
-            new Command(Options.QUERIES, with("since", "until", "limit", "full"), null, Method.GET,
+            new Command(Options.QUERIES, with("since", "until", "service", "limit", "full"), null, Method.GET,
                 options -> Remote.withWindow(options, new Remote.UrlBuilder("/api/queries"))
                         .add("limit", options.limit(Limits.QUERIES, Limits.QUERIES_MAX)),
                 null,
                 (options, reports, service) -> reports.queries(Local.window(options, reports, service), service, null,
                         options.limit(Limits.QUERIES, Limits.QUERIES_MAX), options.flag("full"))),
 
-            new Command(Options.ERRORS, with("since", "until", "limit", "full"), null, Method.GET,
+            new Command(Options.ERRORS, with("since", "until", "service", "limit", "full"), null, Method.GET,
                 options -> Remote.withWindow(options, new Remote.UrlBuilder("/api/errors"))
                         .add("limit", options.limit(Limits.ERRORS, Limits.ERRORS_MAX)),
                 null,
                 (options, reports, service) -> reports.errors(Local.window(options, reports, service), service,
                         options.limit(Limits.ERRORS, Limits.ERRORS_MAX), options.flag("full"))),
 
-            new Command(Options.LOGS, with("since", "until", "limit", "severity", "q", "trace"), null, Method.GET,
+            new Command(Options.LOGS, with("since", "until", "service", "limit", "severity", "q", "trace"), null, Method.GET,
                 options -> Remote.withWindow(options, new Remote.UrlBuilder("/api/logs"))
                         .add("severity", options.oneOf("severity", SEVERITIES))
                         .add("q", options.valueOrNull("q"))
@@ -137,7 +137,7 @@ record Command(String commandName, Set<String> options, @Nullable String argumen
                         options.valueOrNull("trace"), null,
                         options.limit(Limits.LOGS, Limits.LOGS_MAX)))),
 
-            new Command(Options.MARK, with("note"), "a mark name", Method.POST,
+            new Command(Options.MARK, with("note", "service"), "a mark name", Method.POST,
                 options -> new Remote.UrlBuilder("/api/marks"),
                 options -> Json.obj()
                         .put("name", options.requiredArgument())
@@ -152,7 +152,7 @@ record Command(String commandName, Set<String> options, @Nullable String argumen
                 null,
                 (options, reports, service) -> reports.marks(options.limit(Limits.MARKS, Limits.MARKS_MAX))),
 
-            new Command(Options.COMPARE, with("before", "after", "until", "full"), null, Method.GET,
+            new Command(Options.COMPARE, with("before", "after", "until", "service", "full"), null, Method.GET,
                 options -> new Remote.UrlBuilder("/api/compare")
                         .add("before", options.valueOrNull("before"))
                         .add("after", options.valueOrNull("after"))
@@ -174,7 +174,9 @@ record Command(String commandName, Set<String> options, @Nullable String argumen
                 (options, reports, service) -> reports.sql(options.requiredArgument(),
                         options.limit(Limits.SQL, Limits.SQL_MAX), options.flag("full"))),
 
-            new Command(Options.EXPORT, with("since", "until", "out"), null, null, null, null, null),
+            // export writes a document rather than printing an answer, so it has no --json.
+            new Command(Options.EXPORT, Options.withoutJson("since", "until", "service", "out"),
+                    null, null, null, null, null),
 
             // import names a file and a store to write it into; a window and a service belong to the
             // export that made it, not to reading it back.
@@ -193,8 +195,9 @@ record Command(String commandName, Set<String> options, @Nullable String argumen
             // (mcp.adoc#stdio).
             new Command(Options.MCP, Options.only("url", "db"), null, null, null, null, null),
 
-            // help takes a command name of its own, which Options#parse reads beside the row.
-            new Command(Options.HELP, with(), null, null, null, null, null),
+            // help takes a command name of its own, which Options#parse reads beside the row, and
+            // asks nobody, so none of the common options mean anything to it.
+            new Command(Options.HELP, Options.only(), null, null, null, null, null),
 
             new Command(Options.VERSION, Options.only(), null, null, null, null, null));
 

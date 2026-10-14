@@ -40,7 +40,7 @@ The launcher treats a first argument that does not start with `-` as a command a
 |---|---|---|
 | `--since=<selector>` | `15m` | start of the window |
 | `--until=<selector>` | `now` | end of the window |
-| `--service=<name>` | every service | narrow to one service |
+| `--service=<name>` | every service | narrow to one service; `findings`, `traces`, `endpoints`, `queries`, `errors`, `logs`, `mark`, `compare`, `check`, `export` and `tail` take it |
 | `--limit=<n>` | per list | how many rows, at least 1: findings 20 (at most 100), traces 20 (at most 1000), queries 100 (at most 1000), errors 100 (at most 1000), logs 200 (at most 5000), marks 50 (at most 500), sql 200 (at most 5000); a larger limit is lowered to the cap, and one below 1 is a usage error |
 | `--url=<base url>` | `http://127.0.0.1:4000`, or `SPIDERSENSE_URL`, or what `spider-sense.properties` in the working directory implies | which Spider Sense to ask |
 | `--db=<path or jdbc url>` | `~/db/spider-sense/sense` | read that database directly, without asking any server; a path is taken with or without its `.mv.db` suffix, so the file `status` prints can be pasted |
@@ -583,8 +583,8 @@ a finding id to ack, resolve, unack or unresolve).
 $ java -jar spider-sense.jar mark --help
 mark <name> [--note=<text>]  records a mark now
 
-Options: --note=<text>
-Common options: --url=<base url> --json --service=<name> --db=<path or jdbc url>
+Options: --note=<text> --service=<name>
+Common options: --url=<base url> --json --db=<path or jdbc url>
                 --slow.request.ms=<ms> --slow.query.ms=<ms>
                 --app.packages=<packages>
 

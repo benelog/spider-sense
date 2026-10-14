@@ -245,6 +245,31 @@ class CliTest {
         assertThat(run.out()).isEqualTo("Spider Sense " + net.benelog.spidersense.server.Version.CURRENT + "\n");
     }
 
+    /**
+     * --service is taken only by a command that narrows by it, so status --service=orders is
+     * refused rather than answered for every service; export prints no answer to take --json,
+     * and help takes nothing (cli.adoc#options).
+     */
+    @Test
+    void anOptionACommandWouldIgnoreIsRefused() {
+        for (List<String> line : List.of(List.of("status"), List.of("marks"), List.of("trace", TRACE),
+                List.of("sql", "SELECT 1"), List.of("ack", "error:3d871f14ee3e"), List.of("unack", "error:3d871f14ee3e"),
+                List.of("resolve", "error:3d871f14ee3e"), List.of("unresolve", "error:3d871f14ee3e"))) {
+            List<String> args = new ArrayList<>(line);
+            args.add("--service=orders");
+            Run run = run(args.toArray(new String[0]));
+            assertThat(run.exit()).as(line.toString()).isEqualTo(2);
+            assertThat(run.err()).as(line.toString())
+                    .startsWith("spider-sense: unknown option for " + line.get(0) + ": --service\n");
+        }
+        for (String command : List.of("findings", "traces", "endpoints", "queries", "errors", "logs", "mark",
+                "compare", "check", "export", "tail")) {
+            assertThat(Objects.requireNonNull(Command.named(command)).options()).as(command).contains("service");
+        }
+        assertThat(run("export", "--json").err()).startsWith("spider-sense: unknown option for export: --json\n");
+        assertThat(run("help", "--db=x").err()).startsWith("spider-sense: unknown option for help: --db\n");
+    }
+
     /** A word whose would-be option name holds whitespace is the command's word, and -- ends the options. */
     @Test
     void aStatementThatBeginsWithACommentIsTheStatement() {
