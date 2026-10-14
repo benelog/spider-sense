@@ -1,5 +1,7 @@
 package net.benelog.spidersense.ingest;
 
+import java.util.Locale;
+
 import net.benelog.spidersilk.HttpStatus;
 import net.benelog.spidersilk.WebResponse;
 import net.benelog.silkjson.Json;
@@ -25,6 +27,15 @@ public final class ErrorBody {
 
     public static JsonObject json(@Nullable String message, String fallback) {
         return Json.object().put("error", message(message, fallback));
+    }
+
+    /**
+     * What a status is called, the fallback of an error that said nothing:
+     * {@code CONTENT_TOO_LARGE} is {@code Content too large}.
+     */
+    public static String reason(HttpStatus status) {
+        String words = status.name().replace('_', ' ').toLowerCase(Locale.ROOT);
+        return Character.toUpperCase(words.charAt(0)) + words.substring(1);
     }
 
     /** The body as a JSON response with its status. */

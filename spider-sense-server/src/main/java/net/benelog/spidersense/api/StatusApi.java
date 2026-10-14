@@ -23,7 +23,7 @@ import net.benelog.silkjson.JsonException;
 /**
  * The status and control endpoints ({@code status}, {@code clear}, {@code export} and
  * {@code import}) and what every {@code /api} route shares: the no-store filter and the error
- * pages.
+ * pages, one for every error status but the server's own 404.
  *
  * <p>Each class of this package registers its own routes as one visible list, which is Spider
  * Silk's rule, and {@code SpiderSenseServer.assemble} lists the classes.
@@ -64,12 +64,16 @@ public final class StatusApi {
             return req.path().startsWith("/api/") ? typed.header("Cache-Control", "no-store") : typed;
         });
 
-        app.statusPage(HttpStatus.BAD_REQUEST, req ->
-                WebResponse.json(ErrorBody.json(req.errorMessage(), "Bad request")));
-        app.statusPage(HttpStatus.METHOD_NOT_ALLOWED, req ->
-                WebResponse.json(ErrorBody.json(req.errorMessage(), "Method not allowed")));
-        app.statusPage(HttpStatus.INTERNAL_SERVER_ERROR, req ->
-                WebResponse.json(ErrorBody.json(req.errorMessage(), "Internal server error")));
+        // Every error is {"error": ...} (api.adoc#conventions), whichever status the framework or a
+        // handler ended on: a 400, a 405, a 500, and the 413 of a body past Spider Silk's limit,
+        // which would otherwise go out as its text/plain line. The 404 is the server's own, since it
+        // also serves the single page (SpiderSenseServer.notFound).
+        for (HttpStatus status : HttpStatus.values()) {
+            if (status.code() >= 400 && status != HttpStatus.NOT_FOUND) {
+                app.statusPage(status, req ->
+                        WebResponse.json(ErrorBody.json(req.errorMessage(), ErrorBody.reason(status))));
+            }
+        }
     }
 
     public WebResponse status(WebRequest req) {

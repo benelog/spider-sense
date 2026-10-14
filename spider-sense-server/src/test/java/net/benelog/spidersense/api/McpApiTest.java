@@ -296,4 +296,23 @@ class McpApiTest {
                     .isEqualTo(-32601);
         });
     }
+
+    /** mcp.adoc#http: a body past 1 MB is a 413 whose body is still a JSON-RPC message. */
+    @Test
+    void aBodyPastTheLimitIs413WithAJsonRpcError() {
+        serve(client -> {
+            HttpResponse<String> refused = post(client, "/mcp",
+                    "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"tools/call\",\"params\":{\"name\":\"sql\","
+                            + "\"arguments\":{\"sql\":\"SELECT 1 " + " ".repeat(1024 * 1024) + "\"}}}");
+            assertThat(refused.statusCode()).isEqualTo(413);
+            assertThat(refused.headers().firstValue("content-type"))
+                    .hasValueSatisfying(type -> assertThat(type).startsWith("application/json"));
+            JsonObject body = Json.parse(refused.body()).asObject();
+            assertThat(body.getString("jsonrpc")).isEqualTo("2.0");
+            assertThat(body.get("id").isNull()).as("the body was never read, so it has no id").isTrue();
+            assertThat(body.getObject("error").getLong("code")).isEqualTo(-32600);
+            assertThat(body.getObject("error").getString("message"))
+                    .isEqualTo("Request body is larger than the limit of 1048576 bytes");
+        });
+    }
 }

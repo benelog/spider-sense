@@ -48,7 +48,16 @@ public final class McpApi {
             // The Streamable HTTP transport: a revision the server does not speak is a 400.
             throw new HttpException(HttpStatus.BAD_REQUEST, "Unsupported MCP-Protocol-Version: " + protocol);
         }
-        String response = server.handle(req.body());
+        String body;
+        try {
+            body = req.body();
+        } catch (HttpException e) {
+            // A body past the limit (mcp.adoc#http): its status, and a JSON-RPC error rather than the
+            // {"error": ...} of the API, since every answer here is a JSON-RPC message.
+            return WebResponse.rawJson(McpServer.invalidRequest(String.valueOf(e.getMessage())))
+                    .status(e.status());
+        }
+        String response = server.handle(body);
         return response == null
                 ? WebResponse.empty(HttpStatus.ACCEPTED)
                 : WebResponse.rawJson(response);

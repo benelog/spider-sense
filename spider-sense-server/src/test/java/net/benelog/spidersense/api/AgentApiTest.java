@@ -6,7 +6,9 @@ import java.net.URI;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import io.opentelemetry.proto.trace.v1.Span;
 
@@ -425,6 +427,33 @@ class AgentApiTest {
                 assertThat(client.post("/api/findings/regression:000000000000/" + action).statusCode())
                         .as("a regression keeps its finding's id").isEqualTo(400);
             }
+            assertThat(json(client.get("/api/acks")).getArray("acks").size()).isZero();
+        });
+    }
+
+    /** api.adoc#conventions: a body past 1 MB is a 413 in the API's error shape, on every endpoint that reads one. */
+    @Test
+    void aBodyPastTheLimitIs413AsTheApisOwnError() {
+        serve((client, assembly) -> {
+            postProtobuf(client, "/v1/traces", sample());
+            String id = json(client.get("/api/findings?since=5m"))
+                    .getArray("findings").get(0).asObject().getString("id");
+            String note = "{\"note\":\"" + "x".repeat(1024 * 1024) + "\"}";
+            String statement = "{\"sql\":\"SELECT 1 " + " ".repeat(1024 * 1024) + "\"}";
+            Map<String, String> bodies = new LinkedHashMap<>();
+            bodies.put("/api/marks", "{\"name\":\"big\",\"note\":\"" + "x".repeat(1024 * 1024) + "\"}");
+            bodies.put("/api/findings/" + id + "/ack", note);
+            bodies.put("/api/findings/" + id + "/resolve", note);
+            bodies.put("/api/sql", statement);
+            bodies.put("/api/sql?format=text", statement);
+            bodies.forEach((path, body) -> {
+                HttpResponse<String> refused = postJson(client, path, body);
+                assertThat(refused.statusCode()).as(path).isEqualTo(413);
+                assertThat(refused.headers().firstValue("content-type")).as(path)
+                        .hasValueSatisfying(type -> assertThat(type).startsWith("application/json"));
+                assertThat(Json.parse(refused.body()).asObject().getString("error")).as(path)
+                        .isEqualTo("Request body is larger than the limit of 1048576 bytes");
+            });
             assertThat(json(client.get("/api/acks")).getArray("acks").size()).isZero();
         });
     }

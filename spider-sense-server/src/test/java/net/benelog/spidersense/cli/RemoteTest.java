@@ -97,6 +97,9 @@ class RemoteTest {
     void anErrorIsTheJsonErrorElseATextBodyElseTheStatusLine() {
         assertThat(Remote.message(400, "application/json", "{\"error\": \"unknown finding: f1\"}"))
                 .isEqualTo("unknown finding: f1");
+        assertThat(Remote.message(413, "application/json", "{\"jsonrpc\":\"2.0\",\"id\":null,"
+                + "\"error\":{\"code\":-32600,\"message\":\"Request body is larger than the limit of 1048576 bytes\"}}"))
+                .as("the JSON-RPC error of /mcp").isEqualTo("Request body is larger than the limit of 1048576 bytes");
         assertThat(Remote.message(400, "text/plain; charset=utf-8", " only SELECT is allowed\n"))
                 .isEqualTo("only SELECT is allowed");
         assertThat(Remote.message(502, "text/html", "  ")).isEqualTo("HTTP 502");

@@ -174,6 +174,14 @@ public final class McpServer {
         }
     }
 
+    /**
+     * The {@code -32600} error with a null id, for a message the transport could not hand over:
+     * the HTTP transport's body past its size limit, which was never read and so has no id.
+     */
+    public static String invalidRequest(String message) {
+        return error(null, INVALID_REQUEST, message);
+    }
+
     /** Whether this server speaks a protocol revision, as the HTTP transport's header names one. */
     public static boolean speaks(String protocolVersion) {
         return PROTOCOLS.contains(protocolVersion);

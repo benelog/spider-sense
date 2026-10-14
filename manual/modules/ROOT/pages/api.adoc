@@ -26,6 +26,10 @@ So is a JSON body that is not the object an endpoint takes, or that carries a fi
 * Every JSON answer is `application/json; charset=utf-8`.
 An error is `{"error": "<message>"}` with a 4xx or 5xx status.
 That includes a path the HTTP server refuses before any route sees it, such as a segment holding `%5C` or `%2E%2E`, which is a `400`.
+* A JSON request body is at most 1 MB (1,048,576 bytes), which is Spider Silk's default, and a larger one is `413` with `{"error": "Request body is larger than the limit of 1048576 bytes"}`.
+The limit applies to `POST /api/marks`, `+POST /api/findings/{id}/ack+`, `+POST /api/findings/{id}/resolve+` and `POST /api/sql`, whose bodies are a name, a note or one statement, far below it.
+`POST /mcp` has the same limit and answers it with a JSON-RPC error (<<mcp,MCP>>).
+The bodies that hold telemetry have limits of their own: 64 MB for <<ingest,OTLP>> and 256 MB for <<data,an import>>.
 * A request whose `Host` is not a name of this machine, or whose `Origin` is not the server's own, is `403`.
 A web page open in the developer's browser can reach `127.0.0.1` too, by a cross-origin request or by pointing a name of its own at it (DNS rebinding), and this API writes and reads without credentials.
 A loopback name (`localhost`, `127.0.0.1`, `[::1]`) or the bind address is accepted as `Host`, and any `Host` once the bind address is a wildcard (`0.0.0.0`, `::`).
@@ -715,6 +719,7 @@ A `limit` below 1 is a `400`.
 `truncated` says whether the cap cut the rows off.
 The statement must be a single `SELECT`, `WITH`, `TABLE`, `VALUES`, `EXPLAIN` or `SHOW`, and it runs as an H2 user that has `SELECT` and nothing else (xref:cli.adoc#sql[the CLI's `sql`], xref:storage.adoc#reader[the read-only user]).
 A refused statement and a statement H2 would not run are both `400`: `{ "error": "…" }`, or the message on one line when the text rendering was asked for.
+A body of more than 1 MB is `413` with `{ "error": "…" }` in either format, because no statement was read (<<conventions,Conventions>>).
 
 [#mcp]
 === MCP
@@ -727,6 +732,7 @@ A notification is answered `202` with no body.
 * There is no session: no `Mcp-Session-Id` header is issued or read.
 `GET /mcp` and `DELETE /mcp` are `405`.
 * A body that is not a JSON object, or is a JSON array, is `200` with a JSON-RPC error `-32600`.
+A body of more than 1 MB is `413` with a JSON-RPC error `-32600` whose `id` is `null`, since the message was never read.
 A method the server does not have is `-32601`.
 A missing required argument or an unknown tool name is `-32602`.
 * A tool call that the CLI would report with exit code `4`, or with a `400`, is a `200` whose result carries `isError: true` and the message as its one text content.

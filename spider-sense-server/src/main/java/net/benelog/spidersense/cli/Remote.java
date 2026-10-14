@@ -539,15 +539,17 @@ final class Remote {
     }
 
     /**
-     * The same from the parts of a response: the {@code error} of a JSON object,
-     * else a {@code text/} body as it came, trimmed, else the status line with
+     * The same from the parts of a response: the {@code error} of a JSON object, or the
+     * {@code message} of a JSON-RPC error, else a {@code text/} body as it came, trimmed, else the status line with
      * the first line of the body, if there is one, after it.
      */
     static String message(int status, @Nullable String contentType, @Nullable String body) {
         if (body != null) {
             try {
                 if (Json.parse(body) instanceof JsonObject object && object.has("error")) {
-                    return object.getString("error");
+                    // The JSON-RPC error /mcp answers a body past its limit with carries its message inside.
+                    return object.get("error") instanceof JsonObject rpc && rpc.has("message")
+                            ? rpc.getString("message") : object.getString("error");
                 }
             } catch (RuntimeException e) {
                 // Not JSON: the status line and the body are all there is to say.

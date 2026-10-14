@@ -216,6 +216,10 @@ public final class AgentApi {
         try {
             body = req.bodyJson(JsonReader.tree(SqlBody::read));
         } catch (HttpException e) {
+            if (e.status() != HttpStatus.BAD_REQUEST) {
+                // A body past the limit is not a refused statement: its 413 answers as every endpoint's does.
+                throw e;
+            }
             return Params.badRequest(req, e.getMessage());
         }
         // Compared as the long it was sent as: a cast first would turn 2^32 + 1 into 1.
