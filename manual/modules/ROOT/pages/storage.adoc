@@ -354,7 +354,8 @@ The pattern is the lower-cased text with its `%`, `_` and `\` escaped, between t
 A scan of the window is acceptable at local-development volumes.
 * JVM and metrics: `metric_point` joined with `metric_series`, resampled in Java where the API asks for it.
 
-Connections come from H2's `JdbcConnectionPool`, at most 8, and the writer holds one of its own.
+Connections come from H2's `JdbcConnectionPool`, at most 8.
+The writer borrows one of them for each flush and returns it after, so a flush can wait for a connection behind API reads; only the flush at exit opens a connection outside the pool.
 The process that opens the file sizes H2's page cache to its own heap: a sixteenth of the maximum heap, never below H2's 16 MiB and never above 256 MiB.
 Every scan of a window reads the window's pages, and a cache smaller than them reads each page from the file again on every scan; findings makes several.
 The cache lives in the heap of the process that owns the engine, which is the monitored application in embedded mode, so it is a share of that heap rather than a fixed size.
