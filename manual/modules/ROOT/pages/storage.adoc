@@ -337,6 +337,8 @@ The query and error lists read it the same way, so a finding's callers and endpo
 * The traces that contain a group (a finding's evidence and sample, the slowest and newest traces of the endpoint, query and error pages): `SELECT * FROM trace t WHERE t.start_ms BETWEEN ? AND ? AND t.trace_id IN (SELECT s.trace_id FROM span s WHERE s.<group> = ? AND s.start_ms BETWEEN ? AND ?)`.
 The matching span starts in the window too, so the subquery is a range of the group's `(…, start_ms)` index.
 It costs the window's share of the group, never its whole history.
+The slowest are ordered by the group's own spans rather than by the trace: `SELECT t.* FROM (SELECT s.trace_id, MAX(s.duration_ns) AS match_ns FROM span s WHERE s.<group> = ? AND s.start_ms BETWEEN ? AND ? GROUP BY s.trace_id) m JOIN trace t ON t.trace_id = m.trace_id WHERE t.start_ms BETWEEN ? AND ? ORDER BY m.match_ns DESC, t.trace_id`, the same range of the same index, then each trace row by its key.
+A `slow-external` group has no column to match, so its traces are those of its slowest calls, in the calls' order, read by the trace's key.
 * The xref:findings.adoc#schema[schema block] of a query group: `SELECT schema_name, table_name, indexes FROM db_table WHERE service = ?`, read once per answer and matched against each statement's tables in Java, case-insensitively.
 * A time selector that names a mark: `SELECT at_ms FROM mark WHERE name = ? [AND service = ?] ORDER BY at_ms DESC LIMIT 1`.
 * The acknowledgements and resolutions of a page of findings: `SELECT * FROM ack WHERE finding_id IN (…)`, one statement for the page.

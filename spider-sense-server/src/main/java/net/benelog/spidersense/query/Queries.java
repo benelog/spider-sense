@@ -957,15 +957,37 @@ public final class Queries {
         }
     }
 
-    /** Which traces come first: the slowest, or the newest; the trace id breaks a tie. */
+    /**
+     * Which traces come first: those whose matching span was the slowest, or the newest;
+     * the trace id breaks a tie.
+     */
     public enum TraceOrder { SLOWEST, NEWEST }
 
-    /** The traces of the window that contain a span the match names, in the order asked for. */
+    /**
+     * The traces of the window that contain a span the match names, in the order asked for.
+     *
+     * <p>{@link TraceOrder#SLOWEST} orders them by the slowest matching span each holds,
+     * not by the trace's duration: a trace is as often slow for its caller's reasons as
+     * for the group's, and the evidence of a slow query is a trace in which that query
+     * was slow (findings.adoc#fields).
+     */
     public List<Stats.TraceSummary> tracesContaining(Window window, SpanMatch match, int limit,
             TraceOrder order) {
         List<Object> params = new ArrayList<>(match.params);
         params.add(window.from());
         params.add(window.to());
+        if (order == TraceOrder.SLOWEST) {
+            params.add(window.from());
+            params.add(window.to());
+            // The matching spans are grouped by trace in one read of the predicate's index,
+            // and their trace rows are then read by the key.
+            return sql.query("SELECT t.* FROM (SELECT s.trace_id, MAX(s.duration_ns) AS match_ns"
+                    + " FROM span s WHERE " + match.predicate + " AND s.start_ms BETWEEN ? AND ?"
+                    + " GROUP BY s.trace_id) m JOIN trace t ON t.trace_id = m.trace_id"
+                    + " WHERE t.start_ms BETWEEN ? AND ?"
+                    + " ORDER BY m.match_ns DESC, t.trace_id LIMIT " + Math.max(1, limit),
+                    params, Rows::trace);
+        }
         Where where = new Where("t.start_ms BETWEEN ? AND ?", window.from(), window.to())
                 // An IN over the matching spans rather than an EXISTS per trace: H2 reads
                 // the spans by the predicate's index once instead of probing every trace.
@@ -974,30 +996,38 @@ public final class Queries {
                 .and("t.trace_id IN (SELECT s.trace_id FROM span s WHERE " + match.predicate
                         + " AND s.start_ms BETWEEN ? AND ?)", params.toArray());
         // The trace id breaks a tie, so the same window names the same evidence (findings.adoc).
-        String orderBy = order == TraceOrder.SLOWEST
-                ? "t.duration_ns DESC, t.trace_id" : "t.start_ms DESC, t.trace_id";
-        return sql.query("SELECT * FROM trace t WHERE " + where.sql() + " ORDER BY " + orderBy
+        return sql.query("SELECT * FROM trace t WHERE " + where.sql() + " ORDER BY t.start_ms DESC, t.trace_id"
                 + " LIMIT " + Math.max(1, limit), where.params(), Rows::trace);
     }
 
     /**
-     * The traces of the window among the given ids, slowest first.
+     * The traces of the window among the given ids, in the order of the ids, the first
+     * {@code limit} of them.
      *
-     * <p>{@link #tracesContaining} with a {@code trace_id IN} predicate answers the
-     * same, but H2 runs its {@code EXISTS} once per trace of the window; the ids
-     * are {@code trace}'s own key, so this reads only their rows.
+     * <p>The caller orders the ids by what makes a trace evidence, such as the duration
+     * of the call it holds, which the trace's own duration is not. The ids are
+     * {@code trace}'s own key, so this reads only their rows.
      */
-    public List<Stats.TraceSummary> slowestOf(Window window, Collection<String> traceIds, int limit) {
+    public List<Stats.TraceSummary> tracesAmong(Window window, Collection<String> traceIds, int limit) {
         if (traceIds.isEmpty()) {
             return List.of();
         }
         List<Object> params = new ArrayList<>(traceIds);
         params.add(window.from());
         params.add(window.to());
-        return sql.query("SELECT * FROM trace t WHERE t.trace_id IN (" + Sql.placeholders(traceIds.size())
-                + ") AND t.start_ms BETWEEN ? AND ? ORDER BY t.duration_ns DESC, t.trace_id LIMIT "
-                + Math.max(1, limit),
-                params, Rows::trace);
+        Map<String, Stats.TraceSummary> byId = new HashMap<>();
+        for (Stats.TraceSummary trace : sql.query("SELECT * FROM trace t WHERE t.trace_id IN ("
+                + Sql.placeholders(traceIds.size()) + ") AND t.start_ms BETWEEN ? AND ?", params, Rows::trace)) {
+            byId.put(trace.traceId(), trace);
+        }
+        List<Stats.TraceSummary> ordered = new ArrayList<>();
+        for (String traceId : traceIds) {
+            Stats.TraceSummary trace = byId.remove(traceId);
+            if (trace != null && ordered.size() < Math.max(1, limit)) {
+                ordered.add(trace);
+            }
+        }
+        return ordered;
     }
 
     // --- scatter -------------------------------------------------------------

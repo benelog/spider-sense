@@ -114,6 +114,8 @@ One of 2,000 characters or more, which the store may have cut, ends in `… (cut
 |===
 
 `traces` are the three slowest traces for the `slow-*` kinds, the three newest for `error` and `log-error` (of the records that have a trace id), the three most recent affected for `n-plus-one` and `n-plus-one-http`, and none for `pool-exhausted` and the three JVM kinds.
+A slow trace is one whose span of the finding was slow: the traces are ordered by the slowest such span each holds, the statement's for `slow-query`, the call's for `slow-external`, the entry span's for `slow-endpoint` and the root span's for `slow-job`, never by the trace's own duration.
+A trace is as often slow for its caller's reasons as for the finding's, and the first trace is the one `hotSpan` reads and `trace <id>` opens.
 A `regression` carries the traces of its original kind, taken after the resolution.
 
 [#hot-span]

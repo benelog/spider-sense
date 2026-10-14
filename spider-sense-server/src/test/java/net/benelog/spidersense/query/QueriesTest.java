@@ -447,8 +447,8 @@ class QueriesTest {
         }
         flush();
 
-        assertThat(queries.slowestOf(window, List.of(traceId(3), traceId(1), traceId(2)), 2))
-                .extracting(Stats.TraceSummary::traceId).containsExactly(traceId(1), traceId(2));
+        assertThat(queries.tracesAmong(window, List.of(traceId(3), traceId(1), traceId(2)), 2))
+                .extracting(Stats.TraceSummary::traceId).containsExactly(traceId(3), traceId(1));
         assertThat(queries.tracesContaining(window, Queries.SpanMatch.named("GET /orders"), 2,
                 Queries.TraceOrder.SLOWEST))
                 .extracting(Stats.TraceSummary::traceId).containsExactly(traceId(1), traceId(2));

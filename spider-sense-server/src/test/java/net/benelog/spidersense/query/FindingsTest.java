@@ -1103,6 +1103,38 @@ class FindingsTest {
         assertThat((Double) hotSpan.get("share")).isCloseTo(0.9, within(1e-9));
     }
 
+    /**
+     * A trace slow for its caller's reasons is not the evidence of a slow query, call or
+     * downstream endpoint: the trace in which the finding's own span was slow comes first.
+     */
+    @Test
+    void theEvidenceOfADownstreamFindingIsTheTraceWhereItsOwnSpanWasSlow() {
+        // Trace 1: the caller works three seconds after a fast call; trace 2: the call is slow.
+        long[][] shapes = {{3200, 100, 90, 80}, {1000, 920, 880, 850}};
+        for (int n = 1; n <= 2; n++) {
+            long[] shape = shapes[n - 1];
+            Span.Builder root = entry(n, "/orders/{id}", shape[0]);
+            Span.Builder outbound = call(root, 100 * n, "/api/books/1", NOW, shape[1]);
+            decoder.ingest(Otlp.traces(Otlp.service("orders"), root, outbound));
+            Span.Builder downstream = Otlp.child(outbound, spanId(100 * n + 1), "GET /api/books/{id}",
+                    Span.SpanKind.SPAN_KIND_SERVER, NOW, shape[2],
+                    Otlp.attr("http.request.method", "GET"),
+                    Otlp.attr("http.route", "/api/books/{id}"),
+                    Otlp.attr("http.response.status_code", 200));
+            decoder.ingest(Otlp.traces(Otlp.service("bookstore"), downstream,
+                    query(downstream, 100 * n + 2, "select * from book where id = ?", "book", NOW, shape[3])));
+        }
+        flush();
+
+        assertThat(of(Findings.SLOW_QUERY).get(0).traces())
+                .containsExactly(traceId(2), traceId(1));
+        assertThat(of(Findings.SLOW_EXTERNAL).get(0).traces())
+                .containsExactly(traceId(2), traceId(1));
+        Findings.Finding callee = of(Findings.SLOW_ENDPOINT).stream()
+                .filter(f -> f.title().startsWith("GET /api/books/{id}")).findFirst().orElseThrow();
+        assertThat(callee.traces()).containsExactly(traceId(2), traceId(1));
+    }
+
     /** The callee's hot span is its own: the caller's code around the call is not the callee's time. */
     @Test
     void theHotSpanOfADownstreamEndpointIsReadFromItsOwnSpans() {

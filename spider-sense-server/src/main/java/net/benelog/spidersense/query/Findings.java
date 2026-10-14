@@ -1628,15 +1628,17 @@ public final class Findings {
     }
 
     /**
-     * The three slowest traces that contain one of the group's calls.
+     * The traces of the group's three slowest calls, the slowest call's first.
      *
-     * <p>The group's target is not a column, so the traces of its slowest calls are
-     * the candidates the store then orders by trace duration; the cap keeps the
-     * {@code IN} list bounded on a group with thousands of calls.
+     * <p>The group's target is not a column, so the calls are ordered here and the
+     * store reads only their traces' rows, keeping the calls' order: a trace's own
+     * duration is the caller's, not the call's. The cap keeps the {@code IN} list
+     * bounded on a group with thousands of calls.
      */
     private List<String> externalTraces(Window window, List<Queries.OutboundCall> calls) {
         List<Queries.OutboundCall> slowest = new ArrayList<>(calls);
-        slowest.sort(Comparator.comparingLong(Queries.OutboundCall::durationNanos).reversed());
+        slowest.sort(Comparator.comparingLong(Queries.OutboundCall::durationNanos).reversed()
+                .thenComparing(Queries.OutboundCall::traceId));
         Set<String> candidates = new LinkedHashSet<>();
         for (Queries.OutboundCall call : slowest) {
             if (candidates.size() >= EVIDENCE_CANDIDATES) {
@@ -1644,7 +1646,7 @@ public final class Findings {
             }
             candidates.add(call.traceId());
         }
-        return traceIds(queries.slowestOf(window, candidates, EVIDENCE_TRACES));
+        return traceIds(queries.tracesAmong(window, candidates, EVIDENCE_TRACES));
     }
 
     // --- pool exhausted ------------------------------------------------------

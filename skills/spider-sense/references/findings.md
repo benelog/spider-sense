@@ -48,6 +48,7 @@ The thresholds are the server's: `slow.request.ms` is 500 by default and `slow.q
 | `schema` | `slow-query` and `n-plus-one` only: the statement's tables with the indexes they carry, the columns it filters on, and the ones no index serves; `null` when there is no catalog to read |
 
 `traces` are the three slowest traces for `slow-*`, the three newest for `error` and `log-error`, the three most recent affected for `n-plus-one` and `n-plus-one-http`, and none for `pool-exhausted` and the three JVM kinds.
+For `slow-*`, slowest means the finding's own span was slowest there (the statement, the call, the endpoint's or the job's span), not the whole trace, so the first trace is one where the finding's problem shows.
 
 In the text output the ranked table comes first and these fields follow as one numbered block per row, in that order and mostly without labels:
 `<n>. <id> — <why>`, then the `numbers` on one line as `name value, name value`, then `hot span: <name> · <selfMs> self · <share>` when the kind has one, then the `hot spans:` lines and the `breakdown:` line when it has those, then the `statement` when there is one, then the schema lines when the finding has that block, then the `code` frames one per line, then `traces: <id> <id>`.

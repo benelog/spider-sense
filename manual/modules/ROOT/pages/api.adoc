@@ -244,6 +244,7 @@ It lists every service ever seen, with zeros when nothing falls in the window.
 `queries` are the query groups this endpoint called and `errors` the error groups that occurred in it, sorted as `/api/queries` and `/api/errors` sort them.
 Both are read from every group of the endpoint's service, never the top of a list, and matched by service as well as by name, so two services that expose the same route never share them.
 
+`traces` are slowest by the endpoint's own span in each, not by the trace's duration, as a finding's evidence is (xref:findings.adoc#fields[Fields]); for a query, its slowest call in each.
 `breakdown` is where the endpoint's time went over the 20 slowest traces, the same four shares a `slow-endpoint` finding carries (xref:findings.adoc#time[Where the time went]).
 It is `{}` when those traces add up to nothing.
 
