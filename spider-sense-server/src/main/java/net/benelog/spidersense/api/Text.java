@@ -171,10 +171,16 @@ final class Text {
                 new Column<>("verdict", Compare.QueryDiff::verdict),
                 new Column<>("id", Compare.QueryDiff::queryId),
                 queryPair("calls", Compare.QuerySide::calls, Text::count),
-                queryPair("calls/req", Compare.QuerySide::callsPerRequest, Text::number),
+                // A window with no request has no calls per request: "—" rather than 0.
+                new Column<>("calls/req", diff -> number(perRequest(diff.before())) + " → "
+                        + number(perRequest(diff.after()))),
                 queryPair("p95", Compare.QuerySide::p95Ms, Text::millis),
                 queryPair("total", Compare.QuerySide::totalMs, Text::millis),
                 new Column<>("statement", diff -> statementLine(diff.statement(), full)));
+    }
+
+    private static @Nullable Double perRequest(Compare.@Nullable QuerySide side) {
+        return side == null ? null : side.callsPerRequest();
     }
 
     private static <V> Column<Compare.QueryDiff> queryPair(String header, Function<Compare.QuerySide, V> field,

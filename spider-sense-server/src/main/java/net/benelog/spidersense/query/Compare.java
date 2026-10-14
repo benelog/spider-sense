@@ -44,7 +44,12 @@ public final class Compare {
             double dbCallsPerRequest, double dbMsPerRequest) {
     }
 
-    public record QuerySide(long calls, double callsPerRequest, double p95Ms, double totalMs) {
+    /**
+     * One window's side of a query row.
+     *
+     * @param callsPerRequest null when the window has no request to divide by
+     */
+    public record QuerySide(long calls, @Nullable Double callsPerRequest, double p95Ms, double totalMs) {
     }
 
     public record EndpointDiff(String endpointId, String service, String name,
@@ -219,10 +224,20 @@ public final class Compare {
         if (after == null) {
             return GONE;
         }
-        if (grew(before.callsPerRequest(), after.callsPerRequest(), ABSOLUTE_CALLS)) {
+        // Per request when both windows have requests; a worker's window has none, and
+        // there the calls themselves are the measure (marks-and-compare.adoc#verdicts).
+        Double perRequestBefore = before.callsPerRequest();
+        Double perRequestAfter = after.callsPerRequest();
+        double from = before.calls();
+        double to = after.calls();
+        if (perRequestBefore != null && perRequestAfter != null) {
+            from = perRequestBefore;
+            to = perRequestAfter;
+        }
+        if (grew(from, to, ABSOLUTE_CALLS)) {
             return WORSE;
         }
-        if (grew(after.callsPerRequest(), before.callsPerRequest(), ABSOLUTE_CALLS)) {
+        if (grew(to, from, ABSOLUTE_CALLS)) {
             return BETTER;
         }
         return SAME;
@@ -277,13 +292,14 @@ public final class Compare {
     /**
      * {@code callsPerRequest} divides by the entry spans of the window, not by the
      * calls of the query: "this statement now runs four times a request" is the
-     * sentence an N+1 fix is judged by.
+     * sentence an N+1 fix is judged by. A window with no request has no such measure,
+     * rather than a zero that would make every change look like none.
      */
     private static @Nullable QuerySide querySide(Stats.@Nullable QueryStats stats, long requests) {
         if (stats == null) {
             return null;
         }
-        return new QuerySide(stats.calls(), requests == 0 ? 0 : (double) stats.calls() / requests,
+        return new QuerySide(stats.calls(), requests == 0 ? null : (double) stats.calls() / requests,
                 stats.p95Ms(), stats.totalMs());
     }
 }

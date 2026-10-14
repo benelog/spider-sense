@@ -170,6 +170,41 @@ class CompareTest {
         assertThat(diff.verdict()).isEqualTo(Compare.WORSE);
     }
 
+    /** A worker's windows have no request to divide by, so its queries are judged by their calls. */
+    @Test
+    void aQueryOfAWindowWithoutRequestsIsJudgedByItsCalls() {
+        Span.Builder[] runs = {job(BEFORE + 1000), job(AFTER + 1000)};
+        int[] repeats = {2, 20};
+        for (int side = 0; side < 2; side++) {
+            Span.Builder[] spans = new Span.Builder[repeats[side] + 1];
+            spans[0] = runs[side];
+            for (int i = 1; i < spans.length; i++) {
+                spans[i] = query(runs[side], (side == 0 ? BEFORE : AFTER) + 1000 + i);
+            }
+            send(spans);
+        }
+        flush();
+
+        Compare.QueryDiff diff = compare.compare(before, after, null).queries().get(0);
+
+        assertThat(diff.before().callsPerRequest()).as("no request to divide by").isNull();
+        assertThat(diff.after().callsPerRequest()).isNull();
+        assertThat(diff.verdict()).isEqualTo(Compare.WORSE);
+        assertThat(Compare.queryVerdict(new Compare.QuerySide(20, null, 2, 40),
+                new Compare.QuerySide(2, null, 2, 4))).isEqualTo(Compare.BETTER);
+        assertThat(Compare.queryVerdict(new Compare.QuerySide(10, null, 2, 20),
+                new Compare.QuerySide(11, null, 2, 22))).isEqualTo(Compare.SAME);
+    }
+
+    /** A job: a root {@code INTERNAL} span, the only kind of trace a worker has. */
+    private Span.Builder job(long at) {
+        int n = ids++;
+        return Otlp.span("%032x".formatted(n), "%016x".formatted(n), "ArchiveJob.archiveSlice",
+                Span.SpanKind.SPAN_KIND_INTERNAL, at, 100,
+                Otlp.attr("code.namespace", "orders.ArchiveJob"),
+                Otlp.attr("code.function", "archiveSlice"));
+    }
+
     @Test
     void aGroupBelowTheTopHundredOfOneSideIsStillJudgedOnBoth() {
         // A hundred heavier statements push the light one to the 101st place before.

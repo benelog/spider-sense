@@ -668,7 +668,7 @@ xref:findings.adoc#resolutions[Resolutions] describes what a resolution means.
 ----
 
 `Side` is `{ "calls", "errors", "p50Ms", "p95Ms", "maxMs", "dbCallsPerRequest", "dbMsPerRequest" }`.
-`QuerySide` is `{ "calls", "callsPerRequest", "p95Ms", "totalMs" }`.
+`QuerySide` is `{ "calls", "callsPerRequest", "p95Ms", "totalMs" }`, with `callsPerRequest` `null` in a window that has no request (xref:marks-and-compare.adoc#verdicts[Verdicts]).
 A query's `statementCut` is the one of <<query-stats,QueryStats>>.
 `before` and `after` are required, and a missing one is `400`.
 
