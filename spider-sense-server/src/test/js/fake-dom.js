@@ -35,6 +35,7 @@ class Node {
     for (const n of nodes) this.appendChild(typeof n === 'string' ? new Text(n) : n);
   }
   prepend(child) { this.insertBefore(child, this.firstChild); }
+  append(...nodes) { for (const n of nodes) this.appendChild(typeof n === 'string' ? new Text(n) : n); }
   get isConnected() { let n = this; while (n.parentNode) n = n.parentNode; return n === document.body || n === document; }
 }
 

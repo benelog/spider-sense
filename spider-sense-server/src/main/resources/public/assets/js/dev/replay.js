@@ -317,7 +317,8 @@ function logWhere(params, paging) {
   const q = (params.get('q') || '').trim().toLowerCase();
   if (q) {
     const like = lit('%' + q + '%');
-    where.push('(LOWER(body) LIKE ' + like + ' OR LOWER(attributes) LIKE ' + like + ')');
+    // The logger too, as the API's: a log-error finding's link names its logger in q.
+    where.push('(LOWER(body) LIKE ' + like + ' OR LOWER(logger) LIKE ' + like + ' OR LOWER(attributes) LIKE ' + like + ')');
   }
   return where.join(' AND ');
 }
