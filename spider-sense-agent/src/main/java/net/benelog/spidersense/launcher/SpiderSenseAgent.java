@@ -84,22 +84,21 @@ public final class SpiderSenseAgent {
         } catch (Throwable t) {
             boolean probed = false;
             try {
-                if (portInUse(t)) {
-                    // Another Spider Sense on the port is no failure: the telemetry goes to it, as
-                    // step 5 says, and its UI is the one to open (modes.adoc#troubleshooting).
-                    anotherSpiderSense = spiderSenseAt(config.baseUrl());
-                    probed = true;
-                }
+                // Another Spider Sense on the port is no failure: the telemetry goes to it, as
+                // step 5 says, and its UI is the one to open (modes.adoc#troubleshooting).
+                anotherSpiderSense = spiderSenseAt(config.baseUrl());
+                probed = true;
             } catch (Throwable probe) {
                 warn("could not tell what holds the port", probe);
             }
             if (!anotherSpiderSense) {
                 warn("the embedded UI did not start; the application is unaffected", t);
             }
-            exportNowhere = probed && !anotherSpiderSense;
+            // Whatever stopped ours, nothing of ours receives at the port: an export to it would
+            // fail on every interval for the life of the process.
+            exportNowhere = probed && !anotherSpiderSense && config.collector() == null;
             if (exportNowhere) {
-                System.err.println(LOG_PREFIX + "port " + config.port() + " is held by something that is not"
-                        + " Spider Sense; telemetry is not exported. Set -Dspidersense.port= to a free port.");
+                System.err.println(LOG_PREFIX + notExported(config.port(), t));
             }
         }
 
@@ -381,6 +380,18 @@ public final class SpiderSenseAgent {
             // Not a URL to take apart: the line without the command.
         }
         return line + "; exports are retried";
+    }
+
+    /**
+     * The line that says why the telemetry is not exported when the embedded server did not start
+     * and no Spider Sense answers at its port: a port held by something else, or any other failure.
+     */
+    static String notExported(int port, Throwable failure) {
+        if (portInUse(failure)) {
+            return "port " + port + " is held by something that is not Spider Sense; telemetry is not exported."
+                    + " Set -Dspidersense.port= to a free port.";
+        }
+        return "telemetry is not exported, since nothing receives it on port " + port + ".";
     }
 
     /** Whether the embedded server failed because its port was taken. */

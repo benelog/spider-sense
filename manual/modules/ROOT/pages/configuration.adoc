@@ -187,8 +187,8 @@ A key in the file `-Dotel.javaagent.configuration-file` names counts as set too,
 | The same reason, for metrics.
 
 | `otel.metrics.exporter`, `otel.logs.exporter`, `otel.traces.exporter`
-| `otlp`, or `none` when the port is held by something that is not a Spider Sense
-| All three signals go to the collector, and none goes to a port held by something else, where every export would fail (xref:modes.adoc[The Three Modes]).
+| `otlp`, or `none` when the embedded UI did not start and no Spider Sense answers at the port
+| All three signals go to the collector, and none goes to a port where nothing of Spider Sense's receives them, where every export would fail (xref:modes.adoc[The Three Modes]).
 
 | `otel.javaagent.exclude-class-loaders`
 | Spider Sense's own server class loader, appended to a list you set

@@ -93,6 +93,7 @@ Unset, the agent's detectors name the service, and the extension's <<service-nam
 A local tool should show a request within a second or two.
 `otel.metrics.exporter=otlp`, `otel.logs.exporter=otlp`, `otel.traces.exporter=otlp`::
 Every signal goes to the collector.
+When step 2 failed and no Spider Sense answers at the port, all three are `none` instead, because every export there would fail.
 `otel.javaagent.exclude-class-loaders=net.benelog.spidersense.launcher.SenseClassLoader`::
 Appended to the user's own list when one is set.
 The agent skips every class the UI server's loader defines, so the UI's own Jetty requests never become spans.

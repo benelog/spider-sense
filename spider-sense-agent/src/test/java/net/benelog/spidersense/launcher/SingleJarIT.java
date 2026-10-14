@@ -380,6 +380,44 @@ class SingleJarIT {
     }
 
     /**
+     * An embedded UI that did not start for a reason other than a held port, here a temporary
+     * directory the nested jar cannot be extracted to: nothing listens at the port, so nothing is
+     * exported there, where it would fail with a stack trace on every interval.
+     */
+    @Test
+    void anEmbeddedUiThatDidNotStartExportsNothingAndSaysSoOnce() throws Exception {
+        Path readOnly = Files.createDirectory(work.resolve("read-only-tmp"));
+        assertThat(readOnly.toFile().setWritable(false, false)).isTrue();
+        org.junit.jupiter.api.Assumptions.assumeFalse(Files.isWritable(readOnly),
+                "a user who may write anywhere, such as root, cannot be refused the directory");
+        Path log = work.resolve("no-ui.log");
+        try {
+            Process app = start(log,
+                    javaBinary.toString(),
+                    "-javaagent:" + senseJar,
+                    "-Djava.io.tmpdir=" + readOnly,
+                    "-Dspidersense.port=" + freePort(),
+                    "-Dspidersense.db=" + throwawayDatabase(),
+                    "-Dotel.service.name=sample",
+                    "-cp", testClasses,
+                    "net.benelog.spidersense.launcher.SampleApp");
+            if (!app.waitFor(60, TimeUnit.SECONDS)) {
+                app.destroyForcibly();
+                throw new AssertionError("the sample did not finish\n--- output ---\n" + read(log));
+            }
+            String output = read(log);
+
+            assertThat(output).as(output).contains("sample: done")
+                    .contains("the embedded UI did not start; the application is unaffected")
+                    .doesNotContain("Failed to export");
+            assertThat(output.split("telemetry is not exported, since nothing receives it on port", -1))
+                    .as("one line saying so\n" + output).hasSize(2);
+        } finally {
+            readOnly.toFile().setWritable(true, false);
+        }
+    }
+
+    /**
      * A port held by another Spider Sense is where the telemetry goes: no failure is reported, and
      * the start-up line says so and names that one's UI (modes.adoc#agent).
      */

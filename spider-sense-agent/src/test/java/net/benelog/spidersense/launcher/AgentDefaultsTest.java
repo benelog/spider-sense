@@ -119,6 +119,17 @@ class AgentDefaultsTest {
         assertThat(SpiderSenseAgent.portInUse(new IllegalStateException("no"))).isFalse();
     }
 
+    /** The one line that says why nothing is exported names a held port, and any other failure. */
+    @Test
+    void anEmbeddedUiThatDidNotStartSaysWhyNothingIsExported() {
+        assertThat(SpiderSenseAgent.notExported(4010,
+                new IllegalStateException("Failed to start Jetty", new java.net.BindException("Address already in use"))))
+                .isEqualTo("port 4010 is held by something that is not Spider Sense; telemetry is not exported."
+                        + " Set -Dspidersense.port= to a free port.");
+        assertThat(SpiderSenseAgent.notExported(4010, new java.nio.file.AccessDeniedException("/tmp/spider-sense-me")))
+                .isEqualTo("telemetry is not exported, since nothing receives it on port 4010.");
+    }
+
     @Test
     void fillsInTheDefaultsForALocalTool() {
         applyWithoutExtension(Config.defaults().withPort(4010));
