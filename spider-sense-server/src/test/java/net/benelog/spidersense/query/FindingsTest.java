@@ -1094,6 +1094,40 @@ class FindingsTest {
         List<Map<String, Object>> hot = (List<Map<String, Object>>) caller.numbers().get("hotSpans");
         assertThat(hot).extracting(row -> row.get("name"))
                 .doesNotContain("SELECT book");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> hotSpan = (Map<String, Object>) caller.numbers().get("hotSpan");
+        assertThat(hotSpan.get("category"))
+                .as("the hot span of the caller is its own wait on the call, not the callee's query")
+                .isEqualTo("http");
+        assertThat((Double) hotSpan.get("selfMs")).isCloseTo(900.0, within(1e-9));
+        assertThat((Double) hotSpan.get("share")).isCloseTo(0.9, within(1e-9));
+    }
+
+    /** The callee's hot span is its own: the caller's code around the call is not the callee's time. */
+    @Test
+    void theHotSpanOfADownstreamEndpointIsReadFromItsOwnSpans() {
+        Span.Builder root = entry(1, "/orders/{id}", 3000);
+        Span.Builder outbound = call(root, 100, "/api/books/1", NOW, 900);
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), root, outbound));
+        Span.Builder downstream = Otlp.child(outbound, spanId(200), "GET /api/books/{id}",
+                Span.SpanKind.SPAN_KIND_SERVER, NOW, 880,
+                Otlp.attr("http.request.method", "GET"),
+                Otlp.attr("http.route", "/api/books/{id}"),
+                Otlp.attr("http.response.status_code", 200));
+        decoder.ingest(Otlp.traces(Otlp.service("bookstore"), downstream,
+                query(downstream, 201, "select * from book where id = ?", "book", NOW, 850)));
+        flush();
+
+        Findings.Finding callee = of(Findings.SLOW_ENDPOINT).stream()
+                .filter(f -> f.title().startsWith("GET /api/books/{id}")).findFirst().orElseThrow();
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> hotSpan = (Map<String, Object>) callee.numbers().get("hotSpan");
+        assertThat(hotSpan.get("name")).isEqualTo("SELECT book");
+        assertThat((Double) hotSpan.get("selfMs")).isCloseTo(850.0, within(1e-9));
+        assertThat((Double) hotSpan.get("share"))
+                .as("a share of the endpoint's own span, not of the caller's trace")
+                .isCloseTo(850.0 / 880.0, within(1e-9));
     }
 
     @Test

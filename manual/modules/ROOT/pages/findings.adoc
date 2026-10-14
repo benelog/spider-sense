@@ -125,7 +125,8 @@ A `regression` carries the traces of its original kind, taken after the resoluti
 ----
 
 `hotSpan` is the span with the largest self time, that is its duration minus the time its direct children cover within it, as the xref:pages.adoc#profile[Profile view] computes it.
-`share` is that self time over the trace's duration.
+Only the spans of the finding's own service count, the rule <<time,`hotSpans` and `breakdown`>> follow: a downstream service's query belongs to that service's endpoint, and the caller's code around the call is not the callee's time.
+`share` is that self time over the duration of the service's top spans in that trace, which is the endpoint's entry span or the job's root span.
 `category` is `db`, `http`, `internal` or another span category.
 It is the first clue when `dbShare` is low.
 In the text rendering it is one line, `hot span: <name> · <selfMs> self · <share>`, such as `hot span: SELECT order_line · 312.4 ms self · 62.0%`.

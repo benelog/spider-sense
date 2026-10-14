@@ -1443,7 +1443,7 @@ public final class Findings {
     /** The time evidence of a sample; an empty sample, when only the ids matter, reads nothing. */
     private TimeEvidence timeEvidence(Window window, String service, List<String> sample) {
         List<String> traces = evidenceOf(sample);
-        return new TimeEvidence(traces, hotSpan(traces), queries.timeSplit(window, service, sample));
+        return new TimeEvidence(traces, hotSpan(traces, service), queries.timeSplit(window, service, sample));
     }
 
     // --- slow job ------------------------------------------------------------
@@ -1980,27 +1980,44 @@ public final class Findings {
      *
      * <p>A span's self time is its duration less the time its direct children
      * cover within it — the Profile view's definition — and the hot span
-     * is the largest of them, with that time's share of the trace. It is the first
-     * clue when {@code dbShare} is low: the trace says "here", not "somewhere".
+     * is the largest of them, with that time's share of the top spans' duration. It is
+     * the first clue when {@code dbShare} is low: the trace says "here", not "somewhere".
+     *
+     * <p>Only the spans of {@code service} count, the rule the time split and
+     * {@code dbShare} use: a downstream service's spans belong to its own endpoint, and
+     * the caller's own code is not the callee's. A span whose parent is not among them
+     * is a top span, the endpoint's entry span or the job's root span.
      *
      * @return null when the finding has no trace
      */
-    private @Nullable Map<String, Object> hotSpan(List<String> traces) {
+    private @Nullable Map<String, Object> hotSpan(List<String> traces, String service) {
         if (traces.isEmpty()) {
             return null;
         }
         Queries.TraceDetail detail = queries.trace(traces.get(0));
-        if (detail == null || detail.spans().isEmpty()) {
+        if (detail == null) {
             return null;
         }
-        Map<String, Long> self = Queries.selfNanos(detail.spans());
+        List<SpanRecord> spans = new ArrayList<>();
+        Set<String> ids = new HashSet<>();
+        for (SpanRecord span : detail.spans()) {
+            if (span.service().equals(service)) {
+                spans.add(span);
+                ids.add(span.spanId());
+            }
+        }
+        Map<String, Long> self = Queries.selfNanos(spans);
         SpanRecord hottest = null;
         long selfNanos = -1;
-        for (SpanRecord span : detail.spans()) {
+        long topNanos = 0;
+        for (SpanRecord span : spans) {
             long nanos = self.getOrDefault(span.spanId(), 0L);
             if (nanos > selfNanos) {
                 selfNanos = nanos;
                 hottest = span;
+            }
+            if (span.parentSpanId() == null || !ids.contains(span.parentSpanId())) {
+                topNanos += span.durationNanos();
             }
         }
         if (hottest == null) {
@@ -2011,8 +2028,7 @@ public final class Findings {
         hot.put("name", hottest.summary());
         hot.put("category", hottest.category());
         hot.put("selfMs", selfMs);
-        hot.put("share", detail.durationMs() <= 0 ? 0.0
-                : Math.min(1, selfMs / detail.durationMs()));
+        hot.put("share", topNanos <= 0 ? 0.0 : Math.min(1, (double) selfNanos / topNanos));
         return hot;
     }
 
