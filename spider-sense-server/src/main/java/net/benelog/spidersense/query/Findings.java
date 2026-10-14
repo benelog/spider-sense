@@ -996,9 +996,9 @@ public final class Findings {
                     byGroup.computeIfAbsent(key, k -> new LogGroup(serviceName, logger, message))
                             .add(rs.getLong("at_ms"), rs.getString("trace_id"),
                                     evidence
-                                            ? endpointOf(reads, rs.getString("span_id"),
-                                                    rs.getString("root_name"))
-                                            : endpointOf(null, null, rs.getString("root_name")),
+                                            ? endpointOf(reads, rs.getString("trace_id"),
+                                                    rs.getString("span_id"), rs.getString("root_name"))
+                                            : endpointOf(null, null, null, rs.getString("root_name")),
                                     evidence ? rs.getString("attributes") : null);
                 });
 
@@ -1036,10 +1036,10 @@ public final class Findings {
     }
 
     /** The endpoint a log record belongs to, as an {@code error} finding's endpoints are found. */
-    private static String endpointOf(@Nullable SharedScans reads, @Nullable String spanId,
-            @Nullable String rootName) {
-        if (reads != null && spanId != null && !spanId.isBlank()) {
-            Queries.Ancestry.Entry entry = reads.ancestry().placeOf(spanId);
+    private static String endpointOf(@Nullable SharedScans reads, @Nullable String traceId,
+            @Nullable String spanId, @Nullable String rootName) {
+        if (reads != null && traceId != null && spanId != null && !spanId.isBlank()) {
+            Queries.Ancestry.Entry entry = reads.ancestry().placeOf(traceId, spanId);
             if (entry != null) {
                 return entry.endpoint();
             }
@@ -1102,7 +1102,7 @@ public final class Findings {
                     if (!pairs.contains(new Candidate(traceId, queryId))) {
                         return;
                     }
-                    Queries.Ancestry.Entry entry = ancestry.entryOf(rs.getString("span_id"));
+                    Queries.Ancestry.Entry entry = ancestry.entryOf(traceId, rs.getString("span_id"));
                     if (entry == null) {
                         return;
                     }
@@ -1217,7 +1217,7 @@ public final class Findings {
         Queries.Ancestry ancestry = reads.ancestry();
         List<Repeats.Occurrence<Queries.OutboundCall>> occurrences = new ArrayList<>();
         for (Queries.OutboundCall span : reads.outboundHttp()) {
-            Queries.Ancestry.Entry entry = ancestry.entryOf(span.spanId());
+            Queries.Ancestry.Entry entry = ancestry.entryOf(span.traceId(), span.spanId());
             if (entry == null) {
                 continue;
             }
@@ -1613,7 +1613,7 @@ public final class Findings {
         Map<String, Long> counts = new LinkedHashMap<>();
         Map<String, String> byService = new LinkedHashMap<>();
         for (Queries.OutboundCall call : calls) {
-            Queries.Ancestry.Entry entry = ancestry.placeOf(call.spanId());
+            Queries.Ancestry.Entry entry = ancestry.placeOf(call.traceId(), call.spanId());
             String endpoint = entry == null ? Queries.Ancestry.NO_ENDPOINT : entry.endpoint();
             counts.merge(endpoint, 1L, Long::sum);
             byService.putIfAbsent(endpoint, entry == null ? service : entry.service());

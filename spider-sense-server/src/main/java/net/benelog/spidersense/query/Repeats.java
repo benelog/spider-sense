@@ -32,7 +32,8 @@ final class Repeats {
      * One span of a group under one entry span: one run of a statement, or one
      * outbound call.
      *
-     * @param entrySpanId the entry span the parent-chain walk attributes it to
+     * @param entrySpanId the entry span the parent-chain walk attributes it to, unique
+     *        within {@code traceId} only
      * @param groupKey    what repeats: the query id, or the call name
      * @param located     whether it carries {@code code.stacktrace}, which the
      *        extension writes on the fifth repeat
@@ -71,7 +72,8 @@ final class Repeats {
     static <D> List<List<RequestRepeat<D>>> foldPerEntry(List<Occurrence<D>> occurrences) {
         Map<String, List<Occurrence<D>>> byEntry = new LinkedHashMap<>();
         for (Occurrence<D> occurrence : occurrences) {
-            byEntry.computeIfAbsent(occurrence.entrySpanId() + "\0" + occurrence.groupKey(),
+            byEntry.computeIfAbsent(occurrence.traceId() + "\0" + occurrence.entrySpanId() + "\0"
+                            + occurrence.groupKey(),
                     key -> new ArrayList<>()).add(occurrence);
         }
         Map<String, List<RequestRepeat<D>>> byEndpointAndGroup = new LinkedHashMap<>();

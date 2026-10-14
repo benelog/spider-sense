@@ -596,7 +596,7 @@ public final class Queries {
         sql.forEach("SELECT query_id, trace_id, span_id, service FROM span WHERE " + where.sql(),
                 where.params(), rs -> {
                     String queryId = rs.getString("query_id");
-                    Ancestry.Entry entry = ancestry.placeOf(rs.getString("span_id"));
+                    Ancestry.Entry entry = ancestry.placeOf(rs.getString("trace_id"), rs.getString("span_id"));
                     String name = entry == null ? Ancestry.NO_ENDPOINT : entry.endpoint();
                     callers.computeIfAbsent(queryId, id -> new LinkedHashMap<>())
                             .merge(name, 1L, Long::sum);
@@ -788,9 +788,9 @@ public final class Queries {
         Where where = Where.window(window, null).andIn("error_id", ids);
         Map<String, Map<String, Long>> counts = new LinkedHashMap<>();
         Map<String, Map<String, String>> endpointIds = new HashMap<>();
-        sql.forEach("SELECT error_id, span_id FROM span WHERE " + where.sql(), where.params(), rs -> {
+        sql.forEach("SELECT error_id, trace_id, span_id FROM span WHERE " + where.sql(), where.params(), rs -> {
             String errorId = rs.getString("error_id");
-            Ancestry.Entry entry = ancestry.placeOf(rs.getString("span_id"));
+            Ancestry.Entry entry = ancestry.placeOf(rs.getString("trace_id"), rs.getString("span_id"));
             String name = entry == null ? Ancestry.NO_ENDPOINT : entry.endpoint();
             counts.computeIfAbsent(errorId, id -> new LinkedHashMap<>()).merge(name, 1L, Long::sum);
             if (entry != null && entry.endpointId() != null) {
@@ -1776,6 +1776,9 @@ public final class Queries {
      * request. A recursive SQL walk would be exact to the row, but this answers
      * every query and every error group of one page from a single scan, which
      * storage.adoc accepts at local-development volumes.
+     *
+     * <p>The maps are keyed by trace id and span id together, as {@link #key} writes
+     * them: a span id is unique within its trace only, and a walk never leaves its trace.
      */
     record Ancestry(Map<String, Entry> entries, Map<String, String> parents, Map<String, Entry> roots) {
 
@@ -1813,22 +1816,23 @@ public final class Queries {
                 where = where.and("trace_id IN (SELECT trace_id FROM span WHERE " + traced.sql() + ")",
                         traced.params().toArray());
             }
-            sql.forEach("SELECT span_id, parent_span_id, entry, endpoint, endpoint_id, service, name"
+            sql.forEach("SELECT trace_id, span_id, parent_span_id, entry, endpoint, endpoint_id, service, name"
                     + " FROM span WHERE " + where.sql(), where.params(), rs -> {
+                        String traceId = rs.getString("trace_id");
                         String spanId = rs.getString("span_id");
                         String parent = rs.getString("parent_span_id");
                         if (parent != null) {
-                            parents.put(spanId, parent);
+                            parents.put(key(traceId, spanId), key(traceId, parent));
                         }
                         if (rs.getBoolean("entry")) {
                             String endpoint = rs.getString("endpoint");
-                            entries.put(spanId, new Entry(spanId,
+                            entries.put(key(traceId, spanId), new Entry(spanId,
                                     endpoint == null ? rs.getString("name") : endpoint,
                                     rs.getString("service"),
                                     endpoint == null ? null : rs.getString("endpoint_id")));
                         } else if (parent == null) {
                             // A root that is no entry span: a job, named by its span name.
-                            roots.put(spanId, new Entry(spanId, rs.getString("name"),
+                            roots.put(key(traceId, spanId), new Entry(spanId, rs.getString("name"),
                                     rs.getString("service"), null));
                         }
                     });
@@ -1842,8 +1846,8 @@ public final class Queries {
          *
          * <p>Only a label: what counts requests, such as an N+1, asks {@link #entryOf}.
          */
-        @Nullable Entry placeOf(@Nullable String spanId) {
-            String current = spanId;
+        @Nullable Entry placeOf(String traceId, @Nullable String spanId) {
+            String current = spanId == null ? null : key(traceId, spanId);
             String last = null;
             for (int hops = 0; current != null && hops <= maxHops(); hops++) {
                 Entry entry = entries.get(current);
@@ -1856,8 +1860,8 @@ public final class Queries {
             return current == null && last != null ? roots.get(last) : null;
         }
 
-        @Nullable Entry entryOf(@Nullable String spanId) {
-            String current = spanId;
+        @Nullable Entry entryOf(String traceId, @Nullable String spanId) {
+            String current = spanId == null ? null : key(traceId, spanId);
             for (int hops = 0; current != null && hops <= maxHops(); hops++) {
                 Entry entry = entries.get(current);
                 if (entry != null) {
@@ -1876,6 +1880,11 @@ public final class Queries {
          */
         private int maxHops() {
             return parents.size();
+        }
+
+        /** A span's key in the maps: its trace id beside its span id, which is unique within the trace only. */
+        private static String key(String traceId, String spanId) {
+            return traceId + "\0" + spanId;
         }
     }
 }

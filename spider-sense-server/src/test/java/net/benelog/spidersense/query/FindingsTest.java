@@ -314,6 +314,35 @@ class FindingsTest {
                 .extracting(Stats.Caller::endpoint).containsExactly("GET /deep");
     }
 
+    /** A span id is unique within its trace only: equal ids in two traces are two spans, not one. */
+    @Test
+    void equalSpanIdsInTwoTracesAttributeEachStatementToItsOwnTrace() {
+        for (int n : new int[] {1, 3}) {
+            Span.Builder slow = Otlp.span(traceId(n), spanId(1), "GET /slow", Span.SpanKind.SPAN_KIND_SERVER,
+                    NOW + n, 60, Otlp.attr("http.request.method", "GET"), Otlp.attr("http.route", "/slow"));
+            List<Span.Builder> spans = new ArrayList<>();
+            spans.add(slow);
+            for (int i = 0; i < 6; i++) {
+                spans.add(query(slow, 10 + i, "select * from item where id = ?", "item", NOW + n + i, 2));
+            }
+            decoder.ingest(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
+        }
+        decoder.ingest(Otlp.traces(Otlp.service("orders"),
+                Otlp.span(traceId(2), spanId(1), "GET /fast", Span.SpanKind.SPAN_KIND_SERVER, NOW + 2, 5,
+                        Otlp.attr("http.request.method", "GET"), Otlp.attr("http.route", "/fast"))));
+        flush();
+
+        List<Findings.Finding> repeated = of(Findings.N_PLUS_ONE);
+
+        assertThat(repeated).extracting(Findings.Finding::title)
+                .containsExactly("GET /slow runs SELECT item 6 times per request");
+        assertThat(repeated.get(0).numbers().get("affected")).isEqualTo(2L);
+        assertThat(repeated.get(0).numbers().get("maxRepeats")).isEqualTo(6L);
+        assertThat(queries.queries(window, null, "total", 10, null).get(0).callers())
+                .extracting(Stats.Caller::endpoint, Stats.Caller::calls)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple("GET /slow", 12L));
+    }
+
     /** Past the first few hundred affected requests, affected and requests still count the same ones. */
     @Test
     void everyAffectedRequestCountsNotOnlyTheFirstFewHundred() {
