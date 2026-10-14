@@ -235,6 +235,13 @@ class ConfigTest {
         assertThat(SpiderSenseMain.startFailure(config, held, "http://127.0.0.1:4730"::equals, "/opt/spider-sense.jar"))
                 .isEqualTo("a Spider Sense is already running at http://127.0.0.1:4730; open it, or ask it from a"
                         + " terminal (java -jar /opt/spider-sense.jar help lists the commands); --port= starts a second one");
+        IllegalStateException privileged = new IllegalStateException("Failed to start Jetty on port 80",
+                new java.io.IOException("Failed to bind", new java.net.BindException("Permission denied")));
+        assertThat(SpiderSenseMain.startFailure(config("--port=80"), privileged, url -> false, "/opt/spider-sense.jar"))
+                .as("nothing holds a port this user may not bind")
+                .isEqualTo("port 80 needs privileges this user does not have; set spidersense.port to a port above"
+                        + " 1023 (--port= on the command line, port in the Gradle block)"
+                        + " (java.net.BindException: Permission denied)");
         assertThat(SpiderSenseMain.startFailure(config, new IllegalStateException("no jar", new java.io.IOException("gone"))))
                 .isEqualTo("the server did not start: java.lang.IllegalStateException: no jar (java.io.IOException: gone)");
     }

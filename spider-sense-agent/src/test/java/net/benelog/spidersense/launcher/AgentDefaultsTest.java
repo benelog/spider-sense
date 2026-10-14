@@ -128,6 +128,11 @@ class AgentDefaultsTest {
                         + " Set -Dspidersense.port= to a free port.");
         assertThat(SpiderSenseAgent.notExported(4010, new java.nio.file.AccessDeniedException("/tmp/spider-sense-me")))
                 .isEqualTo("telemetry is not exported, since nothing receives it on port 4010.");
+        assertThat(SpiderSenseAgent.notExported(80, new IllegalStateException("Failed to start Jetty on port 80",
+                new java.io.IOException("Failed to bind", new java.net.BindException("Permission denied")))))
+                .as("nothing holds a port this user may not bind")
+                .isEqualTo("port 80 needs privileges this user does not have; telemetry is not exported."
+                        + " Set -Dspidersense.port= to a port above 1023.");
     }
 
     @Test

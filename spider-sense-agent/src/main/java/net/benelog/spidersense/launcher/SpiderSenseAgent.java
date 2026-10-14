@@ -384,14 +384,36 @@ public final class SpiderSenseAgent {
 
     /**
      * The line that says why the telemetry is not exported when the embedded server did not start
-     * and no Spider Sense answers at its port: a port held by something else, or any other failure.
+     * and no Spider Sense answers at its port: a port this user may not bind, a port held by
+     * something else, or any other failure.
      */
     static String notExported(int port, Throwable failure) {
+        if (permissionDenied(failure)) {
+            return "port " + port + " needs privileges this user does not have; telemetry is not exported."
+                    + " Set -Dspidersense.port= to a port above 1023.";
+        }
         if (portInUse(failure)) {
             return "port " + port + " is held by something that is not Spider Sense; telemetry is not exported."
                     + " Set -Dspidersense.port= to a free port.";
         }
         return "telemetry is not exported, since nothing receives it on port " + port + ".";
+    }
+
+    /**
+     * Whether the embedded server failed because this user may not bind its port, such as port 80
+     * for a user other than root: the JDK reports {@code EACCES} as a {@link java.net.BindException}
+     * too, so it is told apart by its message.
+     */
+    static boolean permissionDenied(Throwable failure) {
+        for (Throwable t = failure; t != null; t = t.getCause()) {
+            if (t instanceof java.net.BindException && t.getMessage() != null) {
+                String message = t.getMessage().toLowerCase(java.util.Locale.ROOT);
+                if (message.contains("permission denied") || message.contains("eacces")) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /** Whether the embedded server failed because its port was taken. */

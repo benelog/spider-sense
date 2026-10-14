@@ -78,7 +78,8 @@ public final class SpiderSenseMain {
 
     /**
      * What a server that did not start says: a port held by a Spider Sense names that one, a port
-     * held by anything else names the key that moves this one, and any other failure its cause.
+     * held by anything else or one this user may not bind names the key that moves this one, and
+     * any other failure its cause.
      */
     static String startFailure(Config config, Throwable failure) {
         return startFailure(config, failure, SpiderSenseAgent::spiderSenseAt, NestedJar.commandPath());
@@ -91,6 +92,11 @@ public final class SpiderSenseMain {
      */
     static String startFailure(Config config, Throwable failure, Predicate<String> spiderSenseAt, String jar) {
         for (Throwable t = failure; t != null; t = t.getCause()) {
+            if (t instanceof java.net.BindException && SpiderSenseAgent.permissionDenied(t)) {
+                // Nothing holds it: this user may not bind it.
+                return "port " + config.port() + " needs privileges this user does not have; set spidersense.port to"
+                        + " a port above 1023 (--port= on the command line, port in the Gradle block) (" + t + ")";
+            }
             if (t instanceof java.net.BindException) {
                 String url = config.baseUrl();
                 if (spiderSenseAt.test(url)) {
