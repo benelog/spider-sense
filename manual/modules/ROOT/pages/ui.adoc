@@ -58,11 +58,13 @@ The palette uses the same tokens as the Spider Silk badges, extended for a dark 
 | `--bg-raised` | `#2b303b` | `#eef0f4` | Hovers, inputs, the sidebar
 | `--line` | `#343a47` | `#dde1e8` | Borders and grid lines
 | `--text` | `#e6e9ef` | `#1f232c` | Text
-| `--text-muted` | `#8a93a6` | `#5f6878` | Secondary text, the strand grey
+| `--text-muted` | `#949db0` | `#5f6878` | Secondary text, the strand grey
 | `--accent` | `#e2603f` | `#d1532f` | The tingle: primary actions, the active nav item, slow markers
+| `--accent-strong` | `#c4452a` | `#c4452a` | The accent behind white text: the primary button, the tingle badge
 | `--ok` | `#5ec27f` | `#2e9e57` | Healthy
 | `--warn` | `#f0b64b` | `#c98c14` | Slow
 | `--err` | `#e5484d` | `#c9363b` | Errors
+| `--ok-text`, `--warn-text`, `--err-text` | `--ok`, `--warn`, `#f47a7d` | `#1f7a43`, `#8a6100`, `#b8302f` | The three status colours set as text or as an icon rather than as a fill
 | `--silk` | `#8a93a6` | `#8a93a6` | Strands, neutral chart lines
 | `--spider` | `#5a3a22` | `#5a3a22` | Rarely: the logo only
 |===
@@ -316,6 +318,7 @@ A table that scrolls sideways fades at the edge there is more of, and the fade g
 
 Every icon-only control has an `aria-label`.
 Colour is never the only carrier of meaning: an error also gets a bolt, and something slow also gets a ring or a turtle.
+Text reaches WCAG AA's 4.5:1 on every background of both palettes: a status colour set as text takes its `-text` token, and white text sits on `--accent-strong`.
 A clickable table row takes the focus, and Enter or Space on the row does what a click does.
 Enter on a link or a button inside the row belongs to that control: the link opens, and the row does not act.
 A drawer takes the focus when it opens, and closing it gives the focus back to the row that opened it, unless the person has moved the focus elsewhere in the meantime.

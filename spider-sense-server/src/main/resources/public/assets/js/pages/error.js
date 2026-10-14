@@ -86,7 +86,7 @@ export function render(root, ctx) {
       h('div.row', { style: { gap: '8px' } },
         h('span.mono', { style: { fontSize: '14px' } }, h('span.muted', pkg), h('b', name)),
         serviceChip(e.service)),
-      h('div', { style: { color: 'var(--err)' } }, e.message || ''),
+      h('div', { style: { color: 'var(--err-text)' } }, e.message || ''),
       e.sample ? h('div.row', { style: { gap: '12px' } },
         h('span.muted', { style: { fontSize: '11px' } }, 'sample'),
         idButton(e.sample.traceId, 'Copy trace id'),
