@@ -383,6 +383,28 @@ class QueriesTest {
         assertThat(queries.traces(filterWithQuery("nothing-like-this"))).isEmpty();
     }
 
+    /** A bound past 2,147 ms must not overflow a 32-bit multiplication in SQL. */
+    @Test
+    void theDurationFilterTakesBoundsOfSeveralSeconds() {
+        long[] durations = {1_000, 3_500, 12_000};
+        for (int i = 0; i < durations.length; i++) {
+            decoder.ingest(Otlp.traces(Otlp.service("orders"),
+                    Otlp.span(traceId(i + 1), spanId(i + 1), "GET /orders", Span.SpanKind.SPAN_KIND_SERVER,
+                            NOW, durations[i])));
+        }
+        flush();
+
+        assertThat(queries.traces(new Queries.TraceFilter(
+                window, null, null, 3_000L, 10_000L, null, null, null, 50)))
+                .extracting(Stats.TraceSummary::traceId).containsExactly(traceId(2));
+        assertThat(queries.traceTotal(new Queries.TraceFilter(
+                window, null, null, 3_000L, null, null, null, null, 50))).isEqualTo(2);
+        assertThat(queries.traces(new Queries.TraceFilter(
+                window, null, null, null, Long.MAX_VALUE, null, null, null, 50))).hasSize(3);
+        assertThat(queries.traces(new Queries.TraceFilter(
+                window, null, null, Long.MAX_VALUE, null, null, null, null, 50))).isEmpty();
+    }
+
     private Queries.TraceFilter filterWithQuery(String q) {
         return new Queries.TraceFilter(window, null, null, null, null, null, q, null, 50);
     }

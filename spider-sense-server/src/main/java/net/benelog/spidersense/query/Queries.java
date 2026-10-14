@@ -835,10 +835,10 @@ public final class Queries {
                             before, before, filter.beforeId());
         }
         if (filter.minMs() != null) {
-            where = where.and("t.duration_ns >= ? * 1000000", filter.minMs());
+            where = where.and("t.duration_ns >= ?", nanos(filter.minMs()));
         }
         if (filter.maxMs() != null) {
-            where = where.and("t.duration_ns <= ? * 1000000", filter.maxMs());
+            where = where.and("t.duration_ns <= ?", nanos(filter.maxMs()));
         }
         if ("error".equals(filter.status())) {
             where = where.and("t.error");
@@ -860,6 +860,19 @@ public final class Queries {
                     like, like);
         }
         return where;
+    }
+
+    /**
+     * Milliseconds as nanoseconds, saturating at the ends of a long: multiplied here
+     * rather than in SQL, where H2 types {@code ? * 1000000} as a 32-bit integer and
+     * overflows past 2,147 ms.
+     */
+    static long nanos(long ms) {
+        long limit = Long.MAX_VALUE / 1_000_000L;
+        if (ms > limit) {
+            return Long.MAX_VALUE;
+        }
+        return ms < -limit ? Long.MIN_VALUE : ms * 1_000_000L;
     }
 
     /**
