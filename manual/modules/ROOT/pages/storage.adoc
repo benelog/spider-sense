@@ -359,6 +359,7 @@ The process that opens the file sizes H2's page cache to its own heap: a sixteen
 Every scan of a window reads the window's pages, and a cache smaller than them reads each page from the file again on every scan; findings makes several.
 The cache lives in the heap of the process that owns the engine, which is the monitored application in embedded mode, so it is a share of that heap rather than a fixed size.
 A process that joined another one's engine through `AUTO_SERVER` leaves the size alone, and so does a JDBC URL that names `CACHE_SIZE` itself.
+H2 keeps the size in the file, so it is set only once the schema version is accepted, and a CLI that refuses a file of another version leaves the size that version set.
 Reads are plain JDBC through one small helper, `Sql.query(sql, params, rowMapper)`.
 There is no ORM and no spring-jdbc, so the nested server jar carries only H2 beyond what it already has.
 

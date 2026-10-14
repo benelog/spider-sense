@@ -84,8 +84,10 @@ public final class Database implements AutoCloseable {
         this.pool.setMaxConnections(MAX_CONNECTIONS);
         this.sql = new Sql(pool);
         try {
-            sizeCache(pool, url);
+            // After the version check: CACHE_SIZE is stored in the file, and a CLI that
+            // refuses another version's file must leave it as it found it.
             Schema.create(sql, onOtherVersion);
+            sizeCache(pool, url);
         } catch (RuntimeException e) {
             pool.dispose();
             throw e;

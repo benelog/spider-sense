@@ -208,6 +208,33 @@ class DatabaseTest {
         }
     }
 
+    /** {@code SET CACHE_SIZE} is kept in the file, so a refused open must not run it. */
+    @Test
+    void theCliOpenOfAnotherVersionLeavesTheFilesCacheSizeAlone() {
+        String url = "jdbc:h2:" + dir.resolve("other") + ";NON_KEYWORDS=KEY,VALUE";
+        long other = Database.cacheKb(Runtime.getRuntime().maxMemory()) + 1024;
+        String before;
+        try (Database older = Database.open(url, null)) {
+            older.sql().execute("SET CACHE_SIZE " + other);
+            older.sql().update("UPDATE meta SET value = ? WHERE key = 'schema_version'",
+                    List.of(String.valueOf(Schema.VERSION - 1)));
+            before = cacheSize(older);
+        }
+
+        assertThatThrownBy(() -> Database.openExisting(url, dir.resolve("other.mv.db")))
+                .hasMessageContaining("schema version " + (Schema.VERSION - 1));
+
+        try (Connection connection = java.sql.DriverManager.getConnection(url, "sa", "");
+                Statement statement = connection.createStatement();
+                ResultSet rs = statement.executeQuery("SELECT SETTING_VALUE FROM INFORMATION_SCHEMA.SETTINGS"
+                        + " WHERE SETTING_NAME = 'CACHE_SIZE'")) {
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString(1)).isEqualTo(before);
+        } catch (SQLException e) {
+            throw new AssertionError(e);
+        }
+    }
+
     private static String cacheSize(Database database) {
         return database.sql().queryOne("SELECT SETTING_VALUE FROM INFORMATION_SCHEMA.SETTINGS"
                 + " WHERE SETTING_NAME = 'CACHE_SIZE'", List.of(), rs -> rs.getString(1));
