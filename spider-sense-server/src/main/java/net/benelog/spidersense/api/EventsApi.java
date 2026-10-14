@@ -81,13 +81,14 @@ public final class EventsApi {
      * something was ingested since the last one, and a keepalive after fifteen seconds with no
      * frame at all. The rule, apart from the stream and the clock it runs on.
      *
-     * @param lastStats     when the last stats frame after the first went out, 0 before any
+     * @param lastStats     when the last stats frame went out, the opening one included
      * @param lastKeepalive when the stream last said anything that keeps it open
      */
     record Pacer(long lastStats, long lastKeepalive) {
 
+        /** The pacing after the opening stats frame, which went out at {@code now}. */
         static Pacer start(long now) {
-            return new Pacer(0, now);
+            return new Pacer(now, now);
         }
 
         boolean statsDue(long now, long lastIngestAt) {
@@ -96,7 +97,7 @@ public final class EventsApi {
 
         /** The seconds the stats frame due at {@code now} covers, which its rates divide by. */
         double secondsSinceStats(long now) {
-            return lastStats == 0 ? 1 : Math.max(0.001, (now - lastStats) / 1000.0);
+            return Math.max(0.001, (now - lastStats) / 1000.0);
         }
 
         Pacer statsSent(long now) {

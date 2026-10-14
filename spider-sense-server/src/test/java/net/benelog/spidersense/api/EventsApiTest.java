@@ -21,7 +21,9 @@ class EventsApiTest {
     @Test
     void statsAtMostOnceASecondAndOnlyForWhatArrivedSince() {
         EventsApi.Pacer pacer = EventsApi.Pacer.start(T0);
-        assertThat(pacer.statsDue(T0 + 10, T0 + 5)).as("the first ingest is sent at once").isTrue();
+        assertThat(pacer.statsDue(T0 + 250, T0 + 5)).as("within the second of the opening frame").isFalse();
+        assertThat(pacer.statsDue(T0 + 1_000, T0 + 5)).isTrue();
+        assertThat(pacer.secondsSinceStats(T0 + 1_000)).isEqualTo(1.0);
 
         pacer = pacer.statsSent(T0 + 10);
         assertThat(pacer.statsDue(T0 + 500, T0 + 400)).as("within the second").isFalse();
