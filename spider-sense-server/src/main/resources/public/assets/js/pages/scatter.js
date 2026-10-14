@@ -7,7 +7,7 @@ import { h, fill, panel, spinner, errorBox, serviceVar, seedServices, noDataYet,
 import { pageLoader } from '../page.js';
 import { scatterChart, legend, POINT, isError, isSlow } from '../charts.js';
 import { traceTable } from '../widgets.js';
-import { count, dur, clock } from '../format.js';
+import { count, dur, time } from '../format.js';
 
 /** Under Live the scatter merges the last 10 s every 2 s (pages.adoc#scatter), faster than the page refresh. */
 const LIVE_MERGE_PERIOD_MS = 2000;
@@ -27,6 +27,15 @@ export function mergePoints(points, fresh, from, limit = POINT_LIMIT) {
   if (merged.length <= limit) return { points: merged, cut: false };
   merged.sort((a, b) => b[POINT.START] - a[POINT.START]);
   return { points: merged.slice(0, limit), cut: true };
+}
+
+/**
+ * The selection's label under the chart: its time span, each end read as the tooltips read a
+ * time (ui.adoc#numbers-and-times), so an end outside today names its day, then its response-time span.
+ */
+export function selectionLabel(selection, now = Date.now()) {
+  return time(selection.from, now) + ' – ' + time(selection.to, now) + ', ' +
+    dur(selection.minMs) + ' – ' + dur(selection.maxMs);
 }
 
 /**
@@ -183,8 +192,7 @@ export function render(root, ctx) {
     }
     selBox.hidden = false;
     fill(selBox,
-      h('span', clock(selection.from) + ' – ' + clock(selection.to) + ', ' +
-        dur(selection.minMs) + ' – ' + dur(selection.maxMs)),
+      h('span', selectionLabel(selection)),
       h('button.btn.btn-ghost', { type: 'button', onclick: clearSelection }, 'Clear'));
     listTitle.textContent = 'Traces in the selection';
   }

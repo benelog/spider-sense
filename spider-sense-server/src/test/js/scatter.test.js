@@ -1,9 +1,9 @@
-// pages/scatter.js: the linear axis' maximum, the Live merge, and the list under the chart (pages.adoc#scatter).
+// pages/scatter.js: the linear axis' maximum, the Live merge, the selection's label, and the list under the chart (pages.adoc#scatter).
 import './browser-env.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { document } from './fake-dom.js';
-import { scatterYMax, mergePoints } from '../../main/resources/public/assets/js/pages/scatter.js';
+import { scatterYMax, mergePoints, selectionLabel } from '../../main/resources/public/assets/js/pages/scatter.js';
 import { scatterChart } from '../../main/resources/public/assets/js/charts.js';
 import * as fmt from '../../main/resources/public/assets/js/format.js';
 
@@ -79,4 +79,16 @@ test('an empty list with no rectangle drawn says the window holds no trace, not 
   await new Promise((r) => setTimeout(r, 30));
   assert.deepEqual(root.querySelectorAll('tr.empty-row').map((tr) => tr.textContent), ['No trace in this window.']);
   instance.destroy();
+});
+
+test('the selection label reads the clock within today and names the day of an end outside it', () => {
+  const now = new Date(2026, 9, 15, 15, 0, 0).getTime();
+  const sel = (from, to) => ({ from, to, minMs: 10, maxMs: 250 });
+  const span = ', ' + fmt.dur(10) + ' – ' + fmt.dur(250);
+  const today = sel(new Date(2026, 9, 15, 14, 2, 10).getTime(), new Date(2026, 9, 15, 14, 5, 40).getTime());
+  assert.equal(selectionLabel(today, now), '14:02:10 – 14:05:40' + span);
+  const yesterday = sel(new Date(2026, 9, 14, 14, 2, 10).getTime(), new Date(2026, 9, 14, 14, 5, 40).getTime());
+  assert.equal(selectionLabel(yesterday, now), 'Oct 14 14:02:10 – Oct 14 14:05:40' + span);
+  const across = sel(new Date(2026, 9, 14, 23, 58, 0).getTime(), new Date(2026, 9, 15, 0, 2, 0).getTime());
+  assert.equal(selectionLabel(across, now), 'Oct 14 23:58:00 – 00:02:00' + span, 'only the end outside today names its day');
 });
