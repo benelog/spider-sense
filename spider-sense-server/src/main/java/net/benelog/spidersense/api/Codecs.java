@@ -67,8 +67,15 @@ public final class Codecs {
         return value == null ? object.putNull(key) : put(object, key, value.doubleValue());
     }
 
-    /** Three decimals: a millisecond duration is not interesting below a microsecond. */
+    /**
+     * Three decimals: a millisecond duration is not interesting below a microsecond.
+     * Past 1e12 the double holds no third decimal to drop, and {@code value * 1000} would saturate
+     * {@link Math#round(double)} at {@code Long.MAX_VALUE}, so a large finite value is written as it is.
+     */
     static double round(double value) {
+        if (Double.isFinite(value) && Math.abs(value) >= 1e12) {
+            return value;
+        }
         return Math.round(value * 1000.0) / 1000.0;
     }
 
