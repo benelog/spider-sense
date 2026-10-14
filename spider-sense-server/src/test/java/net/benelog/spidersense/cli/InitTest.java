@@ -279,6 +279,18 @@ class InitTest {
                 .containsExactly("java -jar " + JAR + " help  # every command and every option");
     }
 
+    /** A URL typed without a scheme is the one the CLI reads, so the UI sentence is a link (cli.adoc#fallback). */
+    @Test
+    void aUrlWithoutASchemeIsWrittenAsTheCliReadsIt(@TempDir Path project) throws IOException {
+        Run run = init("--dir=" + project, "--jar=" + JAR, "--no-skill", "--url=127.0.0.1:4106/");
+
+        assertThat(run.exit()).as("stderr: %s", run.err()).isZero();
+        assertThat(block(project))
+                .contains("The UI is then at <http://127.0.0.1:4106>.\n")
+                .contains("java -jar " + JAR + " findings --since=start --url=http://127.0.0.1:4106  # ranked")
+                .doesNotContain("<127.0.0.1");
+    }
+
     @Test
     void aFileThatIsNotJsonAtAllIsRefusedTheSameWay(@TempDir Path project) throws IOException {
         Path file = project.resolve(".mcp.json");

@@ -224,7 +224,9 @@ final class Init {
         boolean mcp = options.flag("mcp");
         boolean withSkill = !mcp && !options.flag("no-skill");
         String url = options.valueOrNull("url");
-        Setup setup = new Setup(jar, withSkill, url == null || url.isBlank() ? null : Remote.trimSlash(url),
+        // As the CLI reads it: --url=127.0.0.1:4106 is http://127.0.0.1:4106, which the block's
+        // UI sentence can then write as a link (cli.adoc#fallback).
+        Setup setup = new Setup(jar, withSkill, url == null || url.isBlank() ? null : Remote.base(url.trim()),
                 options.flag("gradle"), Build.of(dir), mcp);
         try {
             Path mcpFile = dir.resolve(MCP_FILE);

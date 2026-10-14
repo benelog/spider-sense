@@ -68,6 +68,7 @@ When no jar path is known, which happens with exploded classes in an IDE and no 
 `--url` is the base URL of the Spider Sense the project's application sends to, such as `http://127.0.0.1:4106`.
 `init` asks nothing there.
 It writes the URL into the block, so the agent asks that Spider Sense rather than the one on the default port.
+The URL is written as the CLI reads it: trailing slashes go, and one typed without a scheme, such as `127.0.0.1:4106`, gets `http://` in front (xref:cli.adoc#fallback[The direct-file fallback]).
 
 `--gradle` says that the project applies the Gradle plugin.
 The block then starts the application with the plugin's `bootRun` and runs the CLI through the plugin's `spiderSense` task.
