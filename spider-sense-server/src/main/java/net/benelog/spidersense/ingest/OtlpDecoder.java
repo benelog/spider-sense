@@ -473,10 +473,13 @@ public final class OtlpDecoder {
 
     // --- shared ---
 
-    /** The service name, cut to the width of every {@code service} column so each one stores the same name. */
+    /**
+     * The service name, cut to the width of every {@code service} column so each one stores the same name.
+     * A blank one is no name, as a missing one is: no path or filter could address it.
+     */
     private static String serviceName(Map<String, Object> resource) {
         Object name = resource.get("service.name");
-        return name == null ? UNKNOWN_SERVICE : fit(String.valueOf(name));
+        return name == null || String.valueOf(name).isBlank() ? UNKNOWN_SERVICE : fit(String.valueOf(name));
     }
 
     /** The width of the {@code service} columns and of a metric's {@code name}. */

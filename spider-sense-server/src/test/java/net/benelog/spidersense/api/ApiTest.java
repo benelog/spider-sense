@@ -252,6 +252,7 @@ class ApiTest {
             assertThat(json(client.get(base + "&q=ship")).getArray("traces")).hasSize(1);
             assertThat(json(client.get(base + "&service=spring-orders")).getArray("traces")).hasSize(2);
             assertThat(json(client.get(base + "&service=nobody")).getArray("traces")).isEmpty();
+            assertThat(json(client.get(base + "&service=")).getArray("traces")).as("no filter").hasSize(2);
             assertThat(json(client.get(base + "&before=" + NOW)).getArray("traces")).isEmpty();
 
             assertThat(client.get(base + "&minMs=abc").statusCode()).isEqualTo(400);

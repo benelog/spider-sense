@@ -130,8 +130,10 @@ public final class Params {
         return EncodedSegments.decode(req.pathParam(name));
     }
 
+    /** The {@code service} filter; an empty one, which is what the UI's selects send for "all", is none. */
     static @Nullable String service(WebRequest req) {
-        return req.queryParamOrNull("service");
+        String service = req.queryParamOrNull("service");
+        return service == null || service.isEmpty() ? null : service;
     }
 
     static @Nullable Long optionalLong(WebRequest req, String name) {

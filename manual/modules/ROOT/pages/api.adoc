@@ -17,6 +17,7 @@ The default `to` is now, and the default `from` is `to - 15 min`.
 A window that starts before the epoch or ends past the year 9999 (`253402300799999`) is a `400`, which is what a time in microseconds or nanoseconds becomes.
 `window.bucketMs` grows with the range, by whole days past a range of 72 days, so a window of any length holds at most 75 buckets.
 * `service` filters are exact matches on `service.name`.
+An empty `service=`, which is what the UI's selects send for every service, is no filter.
 A path parameter is one percent-encoded segment, so a service name or a finding id that holds a `/` travels as `%2F`, and one that holds a `%` as `%25`.
 * Lists are newest first unless stated.
 * Unknown query parameters are ignored.
@@ -834,6 +835,7 @@ A span without a valid trace id and span id is skipped, and the rest of the requ
 A valid trace id is 16 bytes and a valid span id 8, not all of them zero, as OTLP defines them.
 An invalid parent span id is read as none, and so are the invalid ids of a log record, so the span becomes a root and the log line stays uncorrelated.
 A parent span id equal to the span's own id is read as none too.
+A resource with no `service.name`, or an empty or blank one, is the service `unknown_service`, the name OTLP gives an unset one.
 A start or end time of `0` or past 2^63 is no time: a span with a valid end starts at its end, one with a valid start ends at its start, and one with neither is skipped.
 OTLP/JSON ids are accepted as hex, which is what the OTLP specification says, and as base64, which is what protobuf's own JSON mapping produces.
 The two are told apart by length, since only a hex id is exactly 32 or 16 characters of `[0-9a-f]`.

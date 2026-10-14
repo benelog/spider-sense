@@ -132,6 +132,17 @@ class OtlpDecoderTest {
         assertThat(batch.spans().get(0).service()).isEqualTo(OtlpDecoder.UNKNOWN_SERVICE);
     }
 
+    /** {@code OTEL_SERVICE_NAME=}: a service no path or filter could name. */
+    @Test
+    void aBlankServiceNameFallsBackToUnknownService() {
+        Span.Builder root = Otlp.span(TRACE, ROOT, "GET", Span.SpanKind.SPAN_KIND_SERVER, 1, 1);
+
+        assertThat(decoder.ingest(Otlp.traces(Otlp.service(""), root)).spans().get(0).service())
+                .isEqualTo(OtlpDecoder.UNKNOWN_SERVICE);
+        assertThat(decoder.ingest(Otlp.traces(Otlp.service("  "), root)).spans().get(0).service())
+                .isEqualTo(OtlpDecoder.UNKNOWN_SERVICE);
+    }
+
     @Test
     void serverSpansOnOurOwnPortAreDroppedSoTheUiNeverMonitorsItself() {
         Span.Builder ours = Otlp.span(TRACE, ROOT, "GET /api/overview", Span.SpanKind.SPAN_KIND_SERVER,
