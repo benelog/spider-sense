@@ -122,6 +122,22 @@ class TextTest {
                         + " [42102-224], endpoints [name GET /a count 3], notes one two\n");
     }
 
+    /** An error with no message (a client call's status) prints it as the errors table does. */
+    @Test
+    void aBlankMessageInTheNumbersReadsAsADash() {
+        Map<String, Object> numbers = new LinkedHashMap<>();
+        numbers.put("count", 3L);
+        numbers.put("type", "500");
+        numbers.put("message", "");
+        Findings.Finding finding = new Findings.Finding("error:abcdefabcdef", "error", "high", "caller",
+                "500 from GET localhost:8081/api/flaky", "3 occurrences from GET localhost:8081/api/flaky",
+                Findings.Subject.error("abcdefabcdef"),
+                numbers, null, List.of(), List.of());
+
+        assertThat(Text.findings(WINDOW, null, 3, List.of(finding), false, "http://localhost:4000"))
+                .contains("\n   count 3, type 500, message —\n");
+    }
+
     /** A list the limit cut says how many there are, and how to see the rest. */
     @Test
     void aCutListSaysHowManyFindingsThereAre() {

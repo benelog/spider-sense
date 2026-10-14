@@ -646,7 +646,8 @@ final class Text {
                 }
                 yield String.join(" ", parts);
             }
-            case String text -> singleLine(text);
+            // A blank value reads as the tables print it, not as a dangling "message ,".
+            case String text -> text.isBlank() ? "—" : singleLine(text);
             default -> String.valueOf(value);
         };
     }
