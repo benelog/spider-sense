@@ -93,6 +93,9 @@ final class Options {
     private static final Set<String> FLAGS =
             Set.of("json", "full", "hide-acked", "no-git", "no-skill", "mcp", "gradle");
 
+    /** The word after which every word is the command's own, as in POSIX: {@code sql -- "--x"}. */
+    private static final String END_OF_OPTIONS = "--";
+
     /** The options whose empty value means something: an empty {@code --note=} is no note. */
     private static final Set<String> MAY_BE_EMPTY = Set.of("note");
 
@@ -130,7 +133,7 @@ final class Options {
         if (row == null) {
             throw new Usage("unknown command: " + command + didYouMean(command, Command.names(), ""));
         }
-        for (int i = 1; i < args.length; i++) {
+        for (int i = 1; i < args.length && !END_OF_OPTIONS.equals(args[i]); i++) {
             if ("--help".equals(args[i]) || "-h".equals(args[i])) {
                 return new Options(HELP, command, Map.of());
             }
@@ -139,9 +142,14 @@ final class Options {
         String label = row.argument();
         String argument = null;
         Map<String, String> values = new LinkedHashMap<>();
+        boolean optionsEnded = false;
         for (int i = 1; i < args.length; i++) {
             String arg = args[i] == null ? "" : args[i];
-            if (arg.startsWith("--")) {
+            if (!optionsEnded && END_OF_OPTIONS.equals(arg)) {
+                optionsEnded = true;
+                continue;
+            }
+            if (!optionsEnded && isOption(arg)) {
                 int equals = arg.indexOf('=');
                 String key = equals < 0 ? arg.substring(2) : arg.substring(2, equals);
                 if (key.isEmpty() || !allowed.contains(key)) {
@@ -173,6 +181,20 @@ final class Options {
             throw new Usage("compare needs both --before and --after, as marks or time selectors", command);
         }
         return new Options(command, argument, values);
+    }
+
+    /**
+     * Whether a word is an option: {@code --} and a name with no whitespace in it, so
+     * {@code "-- last hour\nSELECT ..."} is a statement that begins with a SQL comment
+     * (cli.adoc#sql).
+     */
+    private static boolean isOption(String arg) {
+        if (!arg.startsWith("--")) {
+            return false;
+        }
+        int equals = arg.indexOf('=');
+        String name = equals < 0 ? arg.substring(2) : arg.substring(2, equals);
+        return name.chars().noneMatch(Character::isWhitespace);
     }
 
     /**

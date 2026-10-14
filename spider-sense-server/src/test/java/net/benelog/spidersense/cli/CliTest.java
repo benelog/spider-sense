@@ -245,6 +245,21 @@ class CliTest {
         assertThat(run.out()).isEqualTo("Spider Sense " + net.benelog.spidersense.server.Version.CURRENT + "\n");
     }
 
+    /** A word whose would-be option name holds whitespace is the command's word, and -- ends the options. */
+    @Test
+    void aStatementThatBeginsWithACommentIsTheStatement() {
+        assertThat(Options.parse(new String[] {"sql", "-- last hour\nSELECT 1", "--limit=5"}).argument())
+                .isEqualTo("-- last hour\nSELECT 1");
+        assertThat(Options.parse(new String[] {"sql", "--", "--limit=5"}).argument()).isEqualTo("--limit=5");
+        assertThat(Options.parse(new String[] {"sql", "--limit=5", "--", "--help"}).command())
+                .as("--help after -- is the statement, not a request for help").isEqualTo("sql");
+        assertThat(Options.parse(new String[] {"mark", "before", "--note=the slow one"}).valueOrNull("note"))
+                .as("whitespace in a value is still an option").isEqualTo("the slow one");
+        Run unexpected = run("findings", "--", "--since=5m");
+        assertThat(unexpected.exit()).isEqualTo(2);
+        assertThat(unexpected.err()).startsWith("spider-sense: unexpected argument: --since=5m\n");
+    }
+
     @Test
     void aNearMissIsWithinTwoEdits() {
         assertThat(Options.distance("sinse", "since")).isEqualTo(1);
@@ -754,6 +769,14 @@ class CliTest {
             Run capped = runAt(base, "sql", "SELECT id FROM span ORDER BY id", "--limit=2",
                     "--url=" + base);
             assertThat(capped.out()).startsWith("# sql  2 rows (truncated at 2)");
+
+            Run commented = runAt(base, "sql", "-- the spans\nSELECT COUNT(*) AS spans FROM span",
+                    "--url=" + base);
+            assertThat(commented.exit()).as("a leading SQL comment is the statement's, not an option")
+                    .isZero();
+            assertThat(commented.out()).startsWith("# sql  1 rows");
+            assertThat(runAt(base, "sql", "--url=" + base, "--", "--x\nSELECT 1").exit())
+                    .as("after --, every word is the statement").isZero();
 
             Run refused = runAt(base, "sql", "DELETE FROM span", "--url=" + base);
             assertThat(refused.exit()).isEqualTo(2);

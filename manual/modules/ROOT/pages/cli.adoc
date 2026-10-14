@@ -1018,6 +1018,8 @@ java -jar spider-sense.jar sql "SELECT endpoint, COUNT(*) FROM span WHERE entry 
 ----
 
 `sql "<statement>" [--limit=200]` runs one read-only statement over the schema, for a question no other command answers.
+A statement that begins with a `--` comment is still the statement, because a word whose option name would hold whitespace or a newline is the command's own word rather than an option.
+A bare `--` ends the options, so every word after it is the statement, whatever it begins with.
 It is the escape hatch.
 Findings, compare and check answer what Spider Sense knows to look for, and everything else it holds is already documented by xref:storage.adoc#schema[the schema].
 Reach for it last: `findings`, `endpoints`, `queries`, `errors`, `compare` and `check` are the same data with the thresholds, the ranking and the rendering already applied, and they stay correct when the schema changes.
