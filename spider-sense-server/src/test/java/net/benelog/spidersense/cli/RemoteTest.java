@@ -1,10 +1,12 @@
 package net.benelog.spidersense.cli;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.net.ConnectException;
 import java.net.http.HttpConnectTimeoutException;
 import java.net.http.HttpTimeoutException;
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
@@ -53,6 +55,16 @@ class RemoteTest {
         assertThat(Remote.base("127.0.0.1:4000/")).isEqualTo("http://127.0.0.1:4000");
         assertThat(Remote.base("localhost:4000")).isEqualTo("http://localhost:4000");
         assertThat(Remote.base("https://box:4000")).isEqualTo("https://box:4000");
+    }
+
+    /** A path would be a prefix of every request, and its 404 a missing trace (cli.adoc#options). */
+    @Test
+    void aBaseUrlWithAPathIsAUsageError() {
+        for (String url : List.of("http://127.0.0.1:4000/api", "127.0.0.1:4000/ui/", "http://box:4000?x=1")) {
+            assertThatThrownBy(() -> Remote.base(url)).as(url).isInstanceOf(Options.Usage.class)
+                    .hasMessage("--url is a base URL, such as http://127.0.0.1:4000, with no path: " + url);
+        }
+        assertThat(Remote.base("http://127.0.0.1:4000/")).isEqualTo("http://127.0.0.1:4000");
     }
 
     @Test

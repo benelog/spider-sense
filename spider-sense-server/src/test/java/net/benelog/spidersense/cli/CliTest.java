@@ -632,6 +632,42 @@ class CliTest {
     }
 
     /**
+     * A --url with a path is a usage error rather than a prefix whose 404 reads as a missing
+     * trace, and a Spider Sense's own 404 for a route it does not have is one of another version,
+     * not a missing object (cli.adoc#fallback).
+     */
+    @Test
+    void aUrlWithAPathIsAUsageErrorAndAMissingRouteIsAnotherVersion() throws IOException {
+        serve(false, (server, base) -> {
+            Run withPath = runAt(closedUrl(), "status", "--url=" + base + "/api");
+            assertThat(withPath.exit()).isEqualTo(2);
+            assertThat(withPath.err()).isEqualTo("spider-sense: --url is a base URL, such as http://127.0.0.1:4000,"
+                    + " with no path: " + base + "/api\nsee: java -jar spider-sense.jar status --help\n");
+            assertThat(withPath.out()).isEmpty();
+        });
+
+        com.sun.net.httpserver.HttpServer older = com.sun.net.httpserver.HttpServer.create(
+                new java.net.InetSocketAddress(java.net.InetAddress.getLoopbackAddress(), 0), 0);
+        older.createContext("/", exchange -> {
+            byte[] body = ("{\"error\":\"Not found: " + exchange.getRequestURI().getPath() + "\"}").getBytes(UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json; charset=utf-8");
+            exchange.sendResponseHeaders(404, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        older.start();
+        try {
+            String base = "http://127.0.0.1:" + older.getAddress().getPort();
+            Run run = runAt(closedUrl(), "check", "--url=" + base);
+            assertThat(run.exit()).as("not the 4 of a missing trace or mark").isEqualTo(2);
+            assertThat(run.err()).isEqualTo("spider-sense: no Spider Sense at " + base
+                    + " (HTTP 404 for /api/check); is it a Spider Sense of another version?\n");
+        } finally {
+            older.stop(0);
+        }
+    }
+
+    /**
      * A Spring application's JSON 404 carries an {@code error} too, but beside a status and a
      * path: it is the application's port, not a missing trace, and a URL typed without its scheme
      * is still that server (cli.adoc#fallback).

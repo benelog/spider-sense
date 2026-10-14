@@ -745,6 +745,8 @@ spider-sense: no Spider Sense at http://127.0.0.1:8082 (HTTP 404 for /api/status
 ----
 
 A `--url` typed without a scheme, such as `127.0.0.1:4001`, is read as `http://127.0.0.1:4001`.
+A `--url` is a base URL, so one with a path, such as `http://127.0.0.1:4000/api` copied from a browser, is a usage error rather than a prefix of every request.
+A Spider Sense's own `404` for a route it does not have, such as an older version without `/api/check`, is not a missing trace or mark either: it is exit `2` with `(HTTP 404 for /api/check); is it a Spider Sense of another version?`.
 A Spider Sense that accepted the connection and has not answered within 2 minutes is busy, not gone.
 The CLI then prints `spider-sense: the Spider Sense at <url> did not answer within 2 minutes` and exits `2` without reading the file, since reading it in process would be slower still.
 

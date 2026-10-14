@@ -42,13 +42,17 @@ final class Remote {
         /** Whether something at the URL did answer, only not as a Spider Sense does. */
         private final boolean answered;
 
+        /** The question the line ends with when something answered. */
+        private final String question;
+
         Unreachable(String reason) {
-            this(reason, false);
+            this(reason, false, "");
         }
 
-        private Unreachable(String reason, boolean answered) {
+        private Unreachable(String reason, boolean answered, String question) {
             super(reason);
             this.answered = answered;
+            this.question = question;
         }
 
         /**
@@ -56,8 +60,17 @@ final class Remote {
          * other server is at the URL, most often the application's own port.
          */
         static Unreachable answered(int status, String path) {
-            int query = path.indexOf('?');
-            return new Unreachable("HTTP " + status + " for " + (query < 0 ? path : path.substring(0, query)), true);
+            return new Unreachable("HTTP " + status + " for " + withoutQuery(path), true,
+                    "is that the application's port?");
+        }
+
+        /**
+         * A Spider Sense's own {@code 404} for a route it does not have: one of another version,
+         * which has no such command to answer, rather than a trace or a mark that is not there.
+         */
+        static Unreachable noRoute(String path) {
+            return new Unreachable("HTTP 404 for " + withoutQuery(path), true,
+                    "is it a Spider Sense of another version?");
         }
 
         boolean answered() {
@@ -69,8 +82,7 @@ final class Remote {
          * question to ask when a server did answer.
          */
         String line(String base) {
-            return "no Spider Sense at " + base + " (" + getMessage() + ")"
-                    + (answered ? "; is that the application's port?" : "");
+            return "no Spider Sense at " + base + " (" + getMessage() + ")" + (answered ? "; " + question : "");
         }
     }
 
@@ -141,10 +153,25 @@ final class Remote {
      * A base URL as the CLI asks it: the trailing slashes gone, and {@code http://} in front of one
      * typed without a scheme, so {@code --url=127.0.0.1:4000} is the server it names rather than a
      * URI the client refuses.
+     *
+     * <p>A path is a usage error rather than a prefix: {@code http://127.0.0.1:4000/api}, copied
+     * from a browser, would ask {@code /api/api/status} and read the server's 404 for that path
+     * as a trace or a mark that is not there.
      */
     static String base(String url) {
         String trimmed = trimSlash(url);
-        return trimmed.contains("://") ? trimmed : "http://" + trimmed;
+        String base = trimmed.contains("://") ? trimmed : "http://" + trimmed;
+        URI uri = URI.create(base);
+        if ((uri.getRawPath() != null && !uri.getRawPath().isEmpty()) || uri.getRawQuery() != null
+                || uri.getRawFragment() != null) {
+            throw new Options.Usage("--url is a base URL, such as http://127.0.0.1:4000, with no path: " + url.trim());
+        }
+        return base;
+    }
+
+    private static String withoutQuery(String path) {
+        int query = path.indexOf('?');
+        return query < 0 ? path : path.substring(0, query);
     }
 
     /** A request to a path of the Spider Sense at {@code base}, which waits {@link #READ} for the answer. */
@@ -330,7 +357,12 @@ final class Remote {
         if (!fromSpiderSense(status, contentType, body)) {
             throw Unreachable.answered(status, path);
         }
-        err.println("spider-sense: " + message(status, contentType, body));
+        String message = message(status, contentType, body);
+        if (status == 404 && message.equals("Not found: " + withoutQuery(path))) {
+            // The server's words for a route it does not have (SpiderSenseServer#notFound).
+            throw Unreachable.noRoute(path);
+        }
+        err.println("spider-sense: " + message);
         if (status == 400) {
             err.println(Cli.pointer(options.command()));
         }
