@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import net.benelog.spidersense.query.Selectors;
 import net.benelog.spidersense.store.AttrJson;
@@ -83,8 +84,14 @@ final class Tail {
                 return unreachable(err, Remote.Unreachable.answered(response.statusCode(), "/api/events"), base);
             }
             try (InputStream body = response.body()) {
-                return follow(body, watch, out);
+                if (follow(body, watch, out)) {
+                    return Cli.OK;
+                }
             }
+            // The application restarted, say, and its embedded Spider Sense went with the stream:
+            // what the command waited for did not arrive, and a script must not read that as 0.
+            err.println("spider-sense: the Spider Sense at " + base + " closed the stream");
+            return Cli.USAGE;
         } catch (IOException e) {
             return unreachable(err, new Remote.Unreachable(Remote.reason(e)), base);
         } catch (Remote.Unreachable e) {
@@ -111,12 +118,17 @@ final class Tail {
      *
      * <p>A blocking read cannot be told to stop, so the deadline is a daemon that
      * closes the socket under it; the read then ends, which is what {@code tail}
-     * wanted. An interrupted or broken stream ends the same way, with exit
-     * {@code 0}: the command was watching, and watching is over.
+     * wanted. An interrupt ends it the same way. A stream the server ended or broke
+     * is not either: the command was watching for something that did not come
+     * (cli.adoc#tail).
+     *
+     * @return whether the watch ended as asked: {@code --until-traces} met, {@code --timeout}
+     *         elapsed, or an interrupt; false when the server closed the stream first
      */
-    private static int follow(InputStream body, Watch watch, PrintStream out) {
+    private static boolean follow(InputStream body, Watch watch, PrintStream out) {
         Thread deadline = null;
         Long timeoutMs = watch.timeoutMs();
+        AtomicBoolean elapsed = new AtomicBoolean();
         if (timeoutMs != null) {
             deadline = new Thread(() -> {
                 try {
@@ -124,6 +136,8 @@ final class Tail {
                 } catch (InterruptedException interrupted) {
                     return;
                 }
+                // Before the close, so the read that the close ends sees why it ended.
+                elapsed.set(true);
                 try {
                     body.close();
                 } catch (IOException ignored) {
@@ -134,14 +148,17 @@ final class Tail {
             deadline.start();
         }
         try {
-            return read(body, watch, out);
+            if (read(body, watch, out)) {
+                return true;
+            }
         } catch (IOException e) {
-            return Cli.OK;
+            // The stream broke, or the deadline closed it: which one is decided below.
         } finally {
             if (deadline != null) {
                 deadline.interrupt();
             }
         }
+        return elapsed.get() || Thread.currentThread().isInterrupted();
     }
 
     /**
@@ -151,12 +168,14 @@ final class Tail {
      * line that ends an event, and a line starting with {@code :} that is a comment
      * — and this reads exactly those, because the keepalive comment must not be
      * mistaken for data.
+     *
+     * @return true when the {@code --until-traces} count arrived, false when the stream ended first
      */
-    static int read(InputStream sse, Watch watch, PrintStream out) throws IOException {
+    static boolean read(InputStream sse, Watch watch, PrintStream out) throws IOException {
         return new Tail(watch, out).parse(sse);
     }
 
-    private int parse(InputStream sse) throws IOException {
+    private boolean parse(InputStream sse) throws IOException {
         BufferedReader reader = new BufferedReader(new InputStreamReader(sse, StandardCharsets.UTF_8));
         String name = null;
         StringBuilder data = new StringBuilder();
@@ -164,7 +183,7 @@ final class Tail {
         while ((line = reader.readLine()) != null) {
             if (line.isEmpty()) {
                 if (name != null && data.length() > 0 && handle(name, data.toString())) {
-                    return Cli.OK;
+                    return true;
                 }
                 name = null;
                 data.setLength(0);
@@ -188,7 +207,7 @@ final class Tail {
                 data.append(value);
             }
         }
-        return Cli.OK;
+        return false;
     }
 
     /** One event; true when it is the one the command was waiting for. */

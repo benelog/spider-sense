@@ -77,7 +77,9 @@ class TailTest {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         int exit;
         try (PrintStream toOut = new PrintStream(out, true, UTF_8)) {
-            exit = Tail.read(new ByteArrayInputStream(STREAM.getBytes(UTF_8)), watch, toOut);
+            // The seam says whether --until-traces was met; as an exit code, 0 for met, 2 for a
+            // stream that ended first.
+            exit = Tail.read(new ByteArrayInputStream(STREAM.getBytes(UTF_8)), watch, toOut) ? 0 : 2;
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -113,7 +115,7 @@ class TailTest {
     void oneLinePerTingleInTheColumnsAgentMdNames() {
         Run run = read(new Tail.Watch(null, null, null, null, false));
 
-        assertThat(run.exit()).isZero();
+        assertThat(run.exit()).as("nothing was waited for, and the stream ended").isEqualTo(2);
         assertThat(run.out()).isEqualTo(
                 clock(FIRST) + "  slow-query    spring-orders   SELECT orders  1,532 ms  "
                         + "2519b548daad800090e8f56de6a5a62a\n"
@@ -159,6 +161,60 @@ class TailTest {
     }
 
     // --- the command -------------------------------------------------------------
+
+    /**
+     * A server that sends the first stats and closes the stream, as an embedded Spider Sense does
+     * when its application restarts, or holds it open saying nothing.
+     */
+    private static com.sun.net.httpserver.HttpServer events(boolean close) throws IOException {
+        com.sun.net.httpserver.HttpServer server = com.sun.net.httpserver.HttpServer.create(
+                new java.net.InetSocketAddress(java.net.InetAddress.getLoopbackAddress(), 0), 0);
+        server.createContext("/api/events", exchange -> {
+            exchange.getResponseHeaders().add("Content-Type", "text/event-stream");
+            exchange.sendResponseHeaders(200, 0);
+            exchange.getResponseBody().write(("event: stats\ndata: {\"traces\":3}\n\n").getBytes(UTF_8));
+            exchange.getResponseBody().flush();
+            if (!close) {
+                try {
+                    Thread.sleep(10_000);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            exchange.close();
+        });
+        server.start();
+        return server;
+    }
+
+    /** A stream the server closed before the traces arrived is not the watch ending as asked (cli.adoc#tail). */
+    @Test
+    void aStreamTheServerClosesFirstIsAnErrorNotTheTracesArriving() throws IOException {
+        com.sun.net.httpserver.HttpServer server = events(true);
+        try {
+            String base = "http://127.0.0.1:" + server.getAddress().getPort();
+            for (List<String> line : List.of(List.of("tail", "--until-traces=5", "--timeout=60s"), List.of("tail"))) {
+                Run run = cli(base, line.toArray(new String[0]));
+                assertThat(run.exit()).as(line.toString()).isEqualTo(2);
+                assertThat(run.err()).as(line.toString())
+                        .isEqualTo("spider-sense: the Spider Sense at " + base + " closed the stream\n");
+            }
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void aTimeoutThatElapsesEndsTheWatchAsAsked() throws IOException {
+        com.sun.net.httpserver.HttpServer server = events(false);
+        try {
+            Run run = cli("http://127.0.0.1:" + server.getAddress().getPort(), "tail", "--timeout=1s");
+            assertThat(run.exit()).isZero();
+            assertThat(run.err()).isEmpty();
+        } finally {
+            server.stop(0);
+        }
+    }
 
     @Test
     void nothingAtTheUrlIsAMessageOnStderrAndTwoWithNoFileFallback() {
