@@ -298,6 +298,7 @@ An endpoint belongs to one service, so a change of the top bar's service clears 
 Enter applies the query, and so does a 400 ms pause in typing.
 The table gives the time, the root name in bold with the service chips, the duration with a bar proportional to the slowest row and coloured by slow or error, the span count, the DB calls, the status code, and the error and slow markers.
 The rows are newest first, with *Load more* under the table, which pages with the last row's `before` and `beforeId`.
+With Live on the newest page lands on top, and the rows *Load more* fetched stay under it until they leave the window; only a change of filter, service or range starts the list over from the newest page.
 When no trace has been stored at all (`/api/status.counts.traces` is `0`) and no filter is set, the page shows the usual sentence and the snippet instead of the table.
 A filter or a window that matches nothing leaves the table, with one row that says so.
 

@@ -1,7 +1,7 @@
-// pages/logs.js: the Live-tail merge after Load more (pages.adoc#logs).
+// page.js: the Live-tail merge after Load more, as the Logs page keys it (pages.adoc#logs).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mergeNewestPage } from '../../main/resources/public/assets/js/pages/logs.js';
+import { mergeNewestPage } from '../../main/resources/public/assets/js/page.js';
 
 const log = (id, at) => ({ id, at });
 

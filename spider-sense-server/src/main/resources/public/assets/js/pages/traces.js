@@ -3,7 +3,7 @@
 import * as api from '../api.js';
 import * as router from '../router.js';
 import { h, fill, icon, panel, debounce, spinner, noDataYet, drawerOpen } from '../ui.js';
-import { pageLoader } from '../page.js';
+import { pageLoader, mergeNewestPage } from '../page.js';
 import { traceTable } from '../widgets.js';
 import { count } from '../format.js';
 
@@ -16,8 +16,12 @@ export function render(root, ctx) {
     status: router.queryParam(initialQuery, 'status', ['all', 'error', 'ok'], 'all'),
     endpointId: initialQuery.endpointId || '',
   };
+  const LIMIT = 50;
   let rows = [];
   let total = 0;
+  // Load more has paged back from the newest page, for the view `loadedFor` names.
+  let pagedBack = false;
+  let loadedFor = '';
   // The service the endpoint filter belongs to: an endpoint is one route of one service.
   let endpointService = api.state.service || '';
 
@@ -102,27 +106,48 @@ export function render(root, ctx) {
     onError: () => { endpointSelect.hidden = true; return false; },
   });
 
-  /** `cursor` is the last row's `{ before: start, beforeId: traceId }` when loading more. */
+  /** The top-bar state and the filter the rows answer: a change of either starts over. */
+  function viewKey() {
+    return JSON.stringify([api.state.service, api.state.range, filter.q, filter.minMs, filter.maxMs, filter.status, filter.endpointId]);
+  }
+
+  /**
+   * `cursor` is the last row's `{ before: start, beforeId: traceId }` when loading more. Without one,
+   * the newest page replaces the rows, except under a Live tick after Load more, which merges it
+   * (pages.adoc#traces-list), as the Logs page does.
+   */
   const list = pageLoader({
-    fetch: (cursor) => api.traces({
-      q: filter.q,
-      minMs: filter.minMs,
-      maxMs: filter.maxMs,
-      status: filter.status === 'all' ? '' : filter.status,
-      endpointId: filter.endpointId,
-      limit: 50,
-      before: cursor && cursor.before,
-      beforeId: cursor && cursor.beforeId,
-    }),
-    paint: (res, cursor) => {
+    fetch: async (cursor) => {
+      const key = viewKey();
+      const tail = !cursor && pagedBack && key === loadedFor && rows.length > 0;
+      const w = api.windowFor();
+      const res = await api.traces({
+        q: filter.q,
+        minMs: filter.minMs,
+        maxMs: filter.maxMs,
+        status: filter.status === 'all' ? '' : filter.status,
+        endpointId: filter.endpointId,
+        limit: LIMIT,
+        before: cursor && cursor.before,
+        beforeId: cursor && cursor.beforeId,
+      }, { window: w });
+      return { res, key, tail, w };
+    },
+    paint: ({ res, key, tail, w }, cursor) => {
       const incoming = res.traces || [];
       total = res.total || incoming.length;
+      const kept = tail ? mergeNewestPage(rows, incoming, w.from, LIMIT, (r) => r.start, (r) => r.traceId) : null;
       if (cursor) {
         const seen = new Set(rows.map((r) => r.traceId));
         rows = rows.concat(incoming.filter((r) => !seen.has(r.traceId)));
+        pagedBack = true;
+      } else if (kept) {
+        rows = kept;
       } else {
         rows = incoming;
+        pagedBack = false;
       }
+      loadedFor = key;
       paint();
     },
     body,

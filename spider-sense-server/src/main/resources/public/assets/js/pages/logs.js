@@ -3,7 +3,7 @@
 import * as api from '../api.js';
 import * as router from '../router.js';
 import { h, fill, icon, panel, table, serviceChip, severityChip, debounce, spinner, noDataYet } from '../ui.js';
-import { pageLoader } from '../page.js';
+import { pageLoader, mergeNewestPage } from '../page.js';
 import { stackTrace } from '../frames.js';
 import { timeMs, bothTimes, count, shortId } from '../format.js';
 import { fitTable } from '../columns.js';
@@ -12,20 +12,6 @@ const SEVERITIES = ['TRACE', 'DEBUG', 'INFO', 'WARN', 'ERROR'];
 const LIMIT = 200;
 /** Live tails while a row is open only if the page is scrolled to within this much of the top. */
 const TAIL_SCROLL_SLACK_PX = 40;
-
-/**
- * The newest page merged into the rows already loaded, newest first by `at` then `id`, less
- * the rows the window has left (before `from`); null when a full page of `limit` rows holds
- * none of the loaded ones, since it may not reach them and a gap would open.
- */
-export function mergeNewestPage(rows, incoming, from, limit) {
-  const known = new Set(rows.map((log) => log.id));
-  const fresh = incoming.filter((log) => !known.has(log.id));
-  if (fresh.length === incoming.length && incoming.length >= limit) return null;
-  return fresh.concat(rows)
-    .filter((log) => log.at >= from)
-    .sort((a, b) => (b.at - a.at) || (b.id - a.id));
-}
 
 /** An open row, here and on the trace page: its attributes, and the stack trace an exception carries. */
 export function detailOf(log) {
