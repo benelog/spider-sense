@@ -184,6 +184,27 @@ class ExportImportTest {
         });
     }
 
+    /** An export cut to one service carries no row of another, the metric catalog included. */
+    @Test
+    void anExportOfOneServiceCarriesOnlyThatServicesRows() {
+        serve(client -> {
+            fill(client);
+            postProtobuf(client, "/v1/metrics", Otlp.gauge(Otlp.service("silk-bookstore"),
+                    "jvm.thread.count", "{thread}", NOW, 12).toByteArray());
+
+            Json.JsonObject document = Json.parse(
+                    client.get("/api/export" + window() + "&service=spring-orders").body()).asObject();
+
+            for (String section : new String[] {"services", "metrics", "metricSeries"}) {
+                for (Json.JsonValue row : document.getArray(section)) {
+                    String key = "services".equals(section) ? "name" : "service";
+                    assertThat(row.asObject().getString(key)).as(section).isEqualTo("spring-orders");
+                }
+            }
+            assertThat(document.getArray("metrics")).hasSize(1);
+        });
+    }
+
     @Test
     void theDocumentImportsBackAndImportingItTwiceChangesNothing() {
         String[] document = new String[1];

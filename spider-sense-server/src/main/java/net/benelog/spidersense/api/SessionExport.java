@@ -95,7 +95,7 @@ final class SessionExport {
         section(out, "services", connection, services(service), rs -> ServiceRow.read(rs).toJson());
         section(out, "spans", connection, spans(window, service), rs -> SpanRow.read(rs).toJson());
         section(out, "logs", connection, logs(window, service), rs -> LogRow.read(rs).toJson());
-        section(out, "metrics", connection, metrics(), rs -> MetricRow.read(rs).toJson());
+        section(out, "metrics", connection, metrics(service), rs -> MetricRow.read(rs).toJson());
         section(out, "metricSeries", connection, series(window, service), rs -> SeriesRow.read(rs).toJson());
         section(out, "metricPoints", connection, points(window, service), rs -> PointRow.read(rs).toJson());
         section(out, "tingles", connection, tingles(window, service), rs -> TingleRow.read(rs).toJson());
@@ -155,10 +155,13 @@ final class SessionExport {
 
     /**
      * The instrument metadata is not windowed: it describes the series the points
-     * belong to, and a description has no instant of its own.
+     * belong to, and a description has no instant of its own. It is narrowed by service as
+     * every other section is.
      */
-    private static Select metrics() {
-        return new Select("SELECT * FROM metric ORDER BY service, name", List.of());
+    private static Select metrics(@Nullable String service) {
+        return service == null
+                ? new Select("SELECT * FROM metric ORDER BY service, name", List.of())
+                : new Select("SELECT * FROM metric WHERE service = ? ORDER BY service, name", List.of(service));
     }
 
     /** Only the series with a point in the window; the others describe nothing here. */
