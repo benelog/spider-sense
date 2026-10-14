@@ -51,6 +51,37 @@ class SchemaBlockTest {
         assertThat(SchemaBlock.of(stored, catalog)).isNull();
     }
 
+    /** A schema the statement names is the table it reads; another schema's table of that name is not. */
+    @Test
+    void aTableOfAnotherSchemaIsNotTheStatementsTable() {
+        Catalog.Table publicItems = new Catalog.Table("PUBLIC", "ITEMS", List.of(
+                new Catalog.Index("PRIMARY_KEY_8", true, List.of("ID")),
+                new Catalog.Index("IDX_ITEMS_NAME", false, List.of("NAME"))));
+        String statement = "select * from archive.items where name = ? and sku = ?";
+
+        assertThat(SchemaBlock.of(statement, Map.of("items", List.of(publicItems)))).isNull();
+        assertThat(SchemaBlock.of("select * from public.items where name = ? and sku = ?",
+                Map.of("items", List.of(publicItems))))
+                .extracting(SchemaBlock::unindexed).isEqualTo(List.of("items.sku"));
+        // A database that reports no schemas (MySQL's are catalogs) cannot say it is another one.
+        Catalog.Table unplaced = new Catalog.Table(null, "items", publicItems.indexes());
+        assertThat(SchemaBlock.of(statement, Map.of("items", List.of(unplaced))))
+                .extracting(SchemaBlock::unindexed).isEqualTo(List.of("items.sku"));
+    }
+
+    /** One name in two schemas of one statement: a column named by the table cannot be told apart. */
+    @Test
+    void oneNameInTwoSchemasOfAStatementHasNoBlock() {
+        Map<String, List<Catalog.Table>> catalog = Map.of("items", List.of(
+                new Catalog.Table("S1", "ITEMS", List.of(new Catalog.Index("PK1", true, List.of("ID")))),
+                new Catalog.Table("S2", "ITEMS", List.of(new Catalog.Index("IDX_SKU", false, List.of("SKU"))))));
+
+        assertThat(SchemaBlock.of("select * from s1.items a, s2.items b where a.id = ? and b.sku = ?", catalog))
+                .isNull();
+        assertThat(SchemaBlock.of("select * from s1.items a where a.id = ?", catalog))
+                .extracting(SchemaBlock::unindexed).isEqualTo(List.of());
+    }
+
     @Test
     void anExpressionIndexLeadsWithTheColumnsItNamesAndNoOthers() {
         assertThat(SchemaBlock.leads("lower((email)::text)", "email")).isTrue();

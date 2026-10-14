@@ -55,7 +55,12 @@ public record SchemaBlock(List<Catalog.Table> tables, List<String> predicates, L
             if (known == null) {
                 return null;
             }
-            byStatementName.put(reference.name(), known);
+            Catalog.Table named = byStatementName.put(reference.name(), known);
+            if (named != null && !named.equals(known)) {
+                // One name in two schemas: a column is attributed by the table's name alone,
+                // so which of the two it belongs to cannot be told.
+                return null;
+            }
             tables.add(known);
         }
 
@@ -75,7 +80,10 @@ public record SchemaBlock(List<Catalog.Table> tables, List<String> predicates, L
      *
      * <p>A name in two schemas is two rows; the statement decides when it says
      * which schema it meant, and otherwise the first row is as good an answer as
-     * the database gave us.
+     * the database gave us. A schema the statement names and no row has is a table
+     * the catalog has no row for, however many of that name other schemas hold; only
+     * a row with no schema, from a database that reports none (MySQL's are catalogs),
+     * may still be the one.
      */
     private static Catalog.@Nullable Table pick(@Nullable List<Catalog.Table> rows,
             @Nullable String schema) {
@@ -83,11 +91,15 @@ public record SchemaBlock(List<Catalog.Table> tables, List<String> predicates, L
             return null;
         }
         if (schema != null) {
+            Catalog.Table unplaced = null;
             for (Catalog.Table row : rows) {
-                if (row.schema() != null && row.schema().equalsIgnoreCase(schema)) {
+                if (row.schema() == null) {
+                    unplaced = unplaced == null ? row : unplaced;
+                } else if (row.schema().equalsIgnoreCase(schema)) {
                     return row;
                 }
             }
+            return unplaced;
         }
         return rows.get(0);
     }
