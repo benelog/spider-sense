@@ -93,12 +93,22 @@ final class Columns {
         return value == null || value.isBlank() ? null : value;
     }
 
-    /** {@code value} cut to {@code max} characters, or null for null. */
+    /** {@code value} cut to {@code max} characters as {@link #prefix} cuts, or null for null. */
     static @Nullable String cut(@Nullable String value, int max) {
-        if (value == null) {
-            return null;
+        return value == null ? null : prefix(value, max);
+    }
+
+    /**
+     * {@code value} cut to at most {@code max} characters, one fewer when the cut would fall
+     * between the two halves of a surrogate pair: half of one has no UTF-8 form, so every
+     * answer would carry it as {@code ?} or U+FFFD, and a re-import would no longer find the row.
+     */
+    static String prefix(String value, int max) {
+        if (value.length() <= max) {
+            return value;
         }
-        return value.length() <= max ? value : value.substring(0, max);
+        int end = max > 0 && Character.isHighSurrogate(value.charAt(max - 1)) ? max - 1 : max;
+        return value.substring(0, end);
     }
 
     /** A nullable integer column: null binds as SQL NULL rather than as zero. */

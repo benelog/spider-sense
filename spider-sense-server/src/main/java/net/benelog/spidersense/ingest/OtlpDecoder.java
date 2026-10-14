@@ -494,8 +494,12 @@ public final class OtlpDecoder {
     /** The width of the {@code service} columns and of a metric's {@code name}. */
     private static final int NAME_MAX = 255;
 
+    /** The name cut to {@link #NAME_MAX}, never between the two halves of a surrogate pair. */
     private static String fit(String name) {
-        return name.length() <= NAME_MAX ? name : name.substring(0, NAME_MAX);
+        if (name.length() <= NAME_MAX) {
+            return name;
+        }
+        return name.substring(0, Character.isHighSurrogate(name.charAt(NAME_MAX - 1)) ? NAME_MAX - 1 : NAME_MAX);
     }
 
     private static long millis(long nanos) {

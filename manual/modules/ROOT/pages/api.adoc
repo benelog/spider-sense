@@ -405,7 +405,7 @@ The points are arrays rather than objects because 5,000 points must stay small o
 ----
 
 `statement` is what the store kept, at most 2,000 characters (xref:storage.adoc#schema[`db_statement`]).
-`statementCut` is `true` when it is 2,000 characters long, since the store may then have cut it; nothing in the row says whether it did, so the UI and the text renderings mark such a statement as cut.
+`statementCut` is `true` when it is 2,000 characters long, or 1,999, which is where a cut inside a surrogate pair ends, since the store may then have cut it; nothing in the row says whether it did, so the UI and the text renderings mark such a statement as cut.
 `schema` is the index catalog of the statement's tables and the columns it filters on that no index serves, as xref:findings.adoc#schema[the schema block] defines it.
 It is `null` when there is no catalog to read.
 

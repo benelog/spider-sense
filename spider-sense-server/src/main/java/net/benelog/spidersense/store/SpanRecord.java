@@ -48,7 +48,8 @@ public record SpanRecord(
      * shows a stored statement or reads it as SQL asks this one question.
      */
     public static boolean statementMayBeCut(@Nullable String statement) {
-        return statement != null && statement.length() >= MAX_STATEMENT;
+        // One fewer when the cut fell inside a surrogate pair, which it then left out whole.
+        return statement != null && statement.length() >= MAX_STATEMENT - 1;
     }
 
     /** One event on a span; the interesting one is {@code exception}. */
@@ -135,7 +136,7 @@ public record SpanRecord(
         if (statement == null) {
             return null;
         }
-        return statement.length() <= MAX_STATEMENT ? statement : statement.substring(0, MAX_STATEMENT);
+        return Columns.prefix(statement, MAX_STATEMENT);
     }
 
     public @Nullable String dbNamespace() {
@@ -249,7 +250,7 @@ public record SpanRecord(
                 }
                 String statement = dbStatement();
                 if (statement != null) {
-                    return statement.length() <= 120 ? statement : statement.substring(0, 120) + "…";
+                    return statement.length() <= 120 ? statement : Columns.prefix(statement, 120) + "…";
                 }
             }
             case "http" -> {

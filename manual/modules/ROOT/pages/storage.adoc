@@ -249,6 +249,7 @@ The `Writer` is a bounded queue of 10,000 batches drained by one daemon thread.
 When the queue is full, the oldest batch is dropped and `/api/status.storage.droppedBatches` increments.
 The thread flushes every 200 ms, or as soon as 500 records are waiting, in one transaction per flush with JDBC batch inserts.
 Every text value is cut to its column before it is bound: a service or metric name at 255 characters as it is decoded, so every table holds the same name, and a trace's `services` by leaving out the names past its width.
+A cut that would fall between the two halves of a surrogate pair, such as an emoji, leaves the pair out whole, since half of one has no UTF-8 form and every answer would end the value in `?`.
 A histogram point whose buckets do not fit their column keeps its count, sum, min and max and is stored without buckets.
 A double attribute that JSON has no number for, `NaN` or an infinity, is stored as the string `"NaN"`, `"Infinity"` or `"-Infinity"`.
 A key/value list, as an attribute or a log body, is stored as a JSON object however deep it nests, inside another list or an array included, and an attribute that is one reads back as that object's JSON text.

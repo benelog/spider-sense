@@ -82,9 +82,7 @@ record TraceSummary(String traceId, long startMs, long endMs, long durationNs, S
         long durationNs = Math.max(0, endNs - startNs);
         double durationMs = durationNs / 1_000_000.0;
         String rootName = root.endpoint() != null ? root.endpoint() : root.name();
-        if (rootName.length() > Columns.TRACE_ROOT_NAME) {
-            rootName = rootName.substring(0, Columns.TRACE_ROOT_NAME);
-        }
+        rootName = Columns.prefix(rootName, Columns.TRACE_ROOT_NAME);
         return new TraceSummary(root.traceId(), startMs, endMs, durationNs, root.spanId(), rootName,
                 root.service(), root.kind(), AttrJson.encodeStrings(List.copyOf(services), Columns.TRACE_SERVICES),
                 spans.size(), errorCount, dbCount, root.httpStatus(),

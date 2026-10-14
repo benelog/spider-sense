@@ -145,6 +145,18 @@ class SpanRecordTest {
         assertThat(byEvent.stacktrace()).isEqualTo("at Orders.ship");
     }
 
+    /** Half of a surrogate pair has no UTF-8 form: every answer would end the statement in {@code ?}. */
+    @Test
+    void aCutNeverEndsInHalfASurrogatePair() {
+        String statement = "x".repeat(SpanRecord.MAX_STATEMENT - 1) + "\uD83D\uDE00 from orders";
+        SpanRecord span = span("SELECT", "CLIENT", Map.of("db.system", "h2", "db.statement", statement));
+
+        assertThat(span.dbStatement()).isEqualTo("x".repeat(SpanRecord.MAX_STATEMENT - 1));
+        assertThat(SpanRecord.statementMayBeCut(span.dbStatement())).isTrue();
+        assertThat(Columns.cut("a".repeat(4) + "\uD83D\uDE00", 5)).isEqualTo("aaaa");
+        assertThat(Columns.cut("a".repeat(3) + "\uD83D\uDE00", 5)).isEqualTo("aaa\uD83D\uDE00");
+    }
+
     @Test
     void aStatementIsCutAtTwoThousandCharacters() {
         SpanRecord span = span("SELECT", "CLIENT",
@@ -158,7 +170,9 @@ class SpanRecordTest {
     @Test
     void aStatementOfTheFullLengthMayHaveBeenCut() {
         assertThat(SpanRecord.statementMayBeCut("x".repeat(SpanRecord.MAX_STATEMENT))).isTrue();
-        assertThat(SpanRecord.statementMayBeCut("x".repeat(SpanRecord.MAX_STATEMENT - 1))).isFalse();
+        assertThat(SpanRecord.statementMayBeCut("x".repeat(SpanRecord.MAX_STATEMENT - 1)))
+                .as("a cut inside a surrogate pair leaves one fewer").isTrue();
+        assertThat(SpanRecord.statementMayBeCut("x".repeat(SpanRecord.MAX_STATEMENT - 2))).isFalse();
         assertThat(SpanRecord.statementMayBeCut(null)).isFalse();
     }
 }

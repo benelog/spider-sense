@@ -331,6 +331,28 @@ class ExportImportTest {
     }
 
     /**
+     * A body cut at its column where an emoji straddles the cut: the stored line is
+     * well-formed, so the export of it imports into the same store as the line it is.
+     */
+    @Test
+    void aLineCutInsideASurrogatePairExportsAsItIsStored() {
+        serve(client -> {
+            Json.JsonObject log = Json.obj().put("atMs", NOW).put("service", "spring-orders")
+                    .put("severityNumber", 9).put("severity", "INFO")
+                    .put("body", "a".repeat(65_534) + "\uD83D\uDE00");
+            HttpResponse<String> first = postJson(client, "/api/import", section("logs", log).toJson());
+            assertThat(first.statusCode()).as(first.body()).isEqualTo(200);
+
+            String exported = client.get("/api/export" + window()).body();
+            Json.JsonObject again = Json.parse(postJson(client, "/api/import", exported).body()).asObject();
+
+            assertThat(again.getLong("logs")).isZero();
+            assertThat(rows(client, "SELECT COUNT(*) FROM log")).isEqualTo(1);
+            assertThat(rows(client, "SELECT LENGTH(body) FROM log")).isEqualTo(65_534);
+        });
+    }
+
+    /**
      * A tingle of a span is keyed by its span and kind, as the writer stores it, so a
      * file holding it twice imports it once, whatever its other columns say, rather than
      * failing on the key.
