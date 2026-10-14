@@ -1713,19 +1713,22 @@ public final class Queries {
     /**
      * The databases, hosts and queues every service calls, and one edge per caller.
      * The outbound spans that turned out to be calls to another traced service are
-     * left out: they are already {@code service → service} edges.
+     * left out: they are already {@code service → service} edges. They are keyed by
+     * trace id and span id together, as {@link Ancestry} keys a span: a span id is
+     * unique within its trace only.
      */
     private Targets targets(Window window) {
         Set<String> crossService = new HashSet<>(sql.query(
-                "SELECT DISTINCT c.parent_span_id FROM span c JOIN span p"
+                "SELECT DISTINCT c.trace_id, c.parent_span_id FROM span c JOIN span p"
                         + " ON p.trace_id = c.trace_id AND p.span_id = c.parent_span_id"
                         + " WHERE c.start_ms BETWEEN ? AND ? AND c.entry AND p.service <> c.service",
-                List.of(window.from(), window.to()), rs -> rs.getString(1)));
+                List.of(window.from(), window.to()),
+                rs -> Ancestry.key(rs.getString(1), rs.getString(2))));
 
         Map<TargetKey, List<SpanRecord>> byTarget = new LinkedHashMap<>();
         Map<CallerKey, List<SpanRecord>> byCaller = new LinkedHashMap<>();
         for (SpanRecord span : dependencySpans(window, null)) {
-            if (crossService.contains(span.spanId())) {
+            if (crossService.contains(Ancestry.key(span.traceId(), span.spanId()))) {
                 continue;
             }
             TargetKey target = new TargetKey(span.category(), target(span));
@@ -1927,7 +1930,7 @@ public final class Queries {
         }
 
         /** A span's key in the maps: its trace id beside its span id, which is unique within the trace only. */
-        private static String key(String traceId, String spanId) {
+        static String key(String traceId, String spanId) {
             return traceId + "\0" + spanId;
         }
     }

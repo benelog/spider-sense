@@ -259,6 +259,39 @@ class QueriesTest {
         assertThat(map.edges()).allSatisfy(edge -> assertThat(ids).contains(edge.from(), edge.to()));
     }
 
+    /** A span id is unique within its trace only: a call to a traced service does not hide another trace's call. */
+    @Test
+    void equalSpanIdsInTwoTracesKeepTheOutboundCallOnTheMap() {
+        Span.Builder root = Otlp.span(traceId(1), spanId(1), "GET /orders", Span.SpanKind.SPAN_KIND_SERVER,
+                NOW, 80, Otlp.attr("http.request.method", "GET"), Otlp.attr("http.route", "/orders"));
+        Span.Builder toBookstore = Otlp.child(root, spanId(2), "GET", Span.SpanKind.SPAN_KIND_CLIENT,
+                NOW + 5, 40, Otlp.attr("http.request.method", "GET"),
+                Otlp.attr("url.full", "http://localhost:8081/books"),
+                Otlp.attr("server.address", "localhost"), Otlp.attr("server.port", 8081));
+        Span.Builder served = Otlp.child(toBookstore, spanId(3), "GET /books", Span.SpanKind.SPAN_KIND_SERVER,
+                NOW + 6, 30, Otlp.attr("http.request.method", "GET"), Otlp.attr("http.route", "/books"));
+        decoder.ingest(Otlp.traces(
+                Otlp.resourceSpans(Otlp.service("spring-orders"), root, toBookstore),
+                Otlp.resourceSpans(Otlp.service("silk-bookstore"), served)));
+        // A second trace with the same span ids: its client span calls a host nobody traces.
+        Span.Builder other = Otlp.span(traceId(2), spanId(1), "GET /orders", Span.SpanKind.SPAN_KIND_SERVER,
+                NOW + 100, 80, Otlp.attr("http.request.method", "GET"), Otlp.attr("http.route", "/orders"));
+        Span.Builder toPayments = Otlp.child(other, spanId(2), "POST", Span.SpanKind.SPAN_KIND_CLIENT,
+                NOW + 105, 40, Otlp.attr("http.request.method", "POST"),
+                Otlp.attr("url.full", "https://payments.example/charge"),
+                Otlp.attr("server.address", "payments.example"), Otlp.attr("server.port", 443));
+        decoder.ingest(Otlp.traces(Otlp.service("spring-orders"), other, toPayments));
+        flush();
+
+        Stats.ServiceMap map = queries.map(window);
+
+        List<String> edges = map.edges().stream().map(edge -> edge.from() + " -> " + edge.to()).toList();
+        assertThat(edges).contains("svc:spring-orders -> svc:silk-bookstore");
+        assertThat(edges).anySatisfy(edge -> assertThat(edge)
+                .startsWith("svc:spring-orders -> http:").contains("payments.example"));
+        assertThat(edges).noneSatisfy(edge -> assertThat(edge).contains("localhost:8081"));
+    }
+
     @Test
     void errorsGroupOnTheNormalisedMessage() {
         for (int i = 1; i <= 2; i++) {
