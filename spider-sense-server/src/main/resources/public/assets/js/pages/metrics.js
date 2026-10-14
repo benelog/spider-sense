@@ -183,7 +183,11 @@ export function render(root, ctx) {
         countChart.node.hidden = true;
         return;
       }
-      if (!selected || !catalog.some((m) => m.name === selected)) selected = catalog[0].name;
+      if (!selected || !catalog.some((m) => m.name === selected)) {
+        selected = catalog[0].name;
+        // a metric the URL names and the catalog lacks gives way in the URL too, so it says what is charted
+        if (ctx.query().metric) router.setQuery({ metric: selected });
+      }
       paintCatalog();
       seriesLoader.load();
     },
