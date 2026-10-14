@@ -71,13 +71,25 @@ class SelectorsTest {
     }
 
     @Test
-    void startPrefersTheMarkOfTheServiceAskedAboutAndFallsBackToAny() {
+    void startIsTheMarkOfTheServiceAskedAboutAndNeverAnothers() {
         TestStore.startMark(store.sql(), "orders", "pid 1", 1_000L);
         TestStore.startMark(store.sql(), "books", "pid 2", 2_000L);
 
         assertThat(selectors.resolve("start", NOW, "orders")).isEqualTo(1_000L);
-        assertThat(selectors.resolve("start", NOW, "nobody")).isEqualTo(2_000L);
         assertThat(selectors.resolve("start", NOW, null)).isEqualTo(2_000L);
+        assertThatThrownBy(() -> selectors.resolve("start", NOW, "python-api"))
+                .as("a service that reports no process id has no start, and books' is not its")
+                .isInstanceOf(Selectors.UnknownMark.class)
+                .hasMessageStartingWith("No start mark of service python-api yet: ")
+                .hasMessageContaining("--since=15m");
+    }
+
+    /** A mark a person records names no service, so a service asked about still finds it. */
+    @Test
+    void aNamedMarkOfNoServiceAnswersForAnyService() {
+        store.marks().create("before", null, null, 1_000L);
+
+        assertThat(selectors.resolve("before", NOW, "orders")).isEqualTo(1_000L);
     }
 
     @Test
@@ -88,7 +100,7 @@ class SelectorsTest {
         assertThatThrownBy(() -> selectors.resolve("start", NOW, "orders"))
                 .as("no start mark says what writes one and what to ask instead")
                 .isInstanceOf(Selectors.UnknownMark.class)
-                .hasMessage(Selectors.NO_START_MARK)
+                .hasMessage(Selectors.noStartMark("orders"))
                 .hasMessageContaining("-javaagent")
                 .hasMessageContaining("--since=15m");
 

@@ -137,7 +137,7 @@ public final class Selectors {
         }
         Marks.Mark mark = marks.newest(value, service);
         if (mark == null) {
-            throw new UnknownMark(Marks.START.equals(value) ? NO_START_MARK
+            throw new UnknownMark(Marks.START.equals(value) ? noStartMark(service)
                     : "No mark named " + value + (service == null ? "" : " for service " + service)
                             + "; `mark " + value + "` records one, `marks` lists them");
         }
@@ -145,15 +145,20 @@ public final class Selectors {
     }
 
     /**
-     * What {@code since=start} answers before any start mark exists: what writes one, and what
-     * to ask instead, since "No mark named start" reads as a typo of a mark nobody chose
-     * (marks-and-compare.adoc#start-marks).
+     * What {@code since=start} answers before any start mark exists, or before the service asked
+     * about has one: what writes one, and what to ask instead, since "No mark named start" reads
+     * as a typo of a mark nobody chose (marks-and-compare.adoc#start-marks).
      */
     static final String NO_START_MARK = "No start mark yet: Spider Sense writes one when a service"
             + " reports a process id it has not seen, which an application under"
             + " -javaagent:spider-sense.jar does as it starts; a service sending from its own SDK"
             + " writes one only when the SDK reports process.pid. Use --since=15m, or name a moment"
             + " with `mark before` and use --since=before";
+
+    static String noStartMark(@Nullable String service) {
+        return service == null ? NO_START_MARK
+                : NO_START_MARK.replaceFirst("^No start mark yet", "No start mark of service " + service + " yet");
+    }
 
     /**
      * An ISO-8601 date-time as an instant: with an offset or {@code Z} as written, and

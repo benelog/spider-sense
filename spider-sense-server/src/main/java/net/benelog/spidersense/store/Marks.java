@@ -156,7 +156,11 @@ public final class Marks {
      *
      * <p>When a service is named its own mark wins, because two applications
      * sharing the database both write a {@code start}; with none of that service
-     * the newest of any service is the honest answer rather than nothing at all.
+     * the newest of any service answers, since a mark a person records names no
+     * service unless asked to. A {@code start} is the exception: every one is a
+     * service's own, and another service's start would answer "since this
+     * service restarted" with a moment that says nothing about it, so a service
+     * with none gets null (marks-and-compare.adoc#time-selectors).
      */
     public @Nullable Mark newest(String name, @Nullable String service) {
         String storedService = Columns.cut(service, Columns.SERVICE);
@@ -164,7 +168,7 @@ public final class Marks {
             Mark ofService = sql.queryOne(
                     "SELECT * FROM mark WHERE name = ? AND service = ? ORDER BY at_ms DESC, id DESC LIMIT 1",
                     List.of(name, storedService), Marks::map);
-            if (ofService != null) {
+            if (ofService != null || START.equals(name)) {
                 return ofService;
             }
         }

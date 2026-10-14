@@ -109,6 +109,7 @@ A service that reports no `process.pid` gets no start mark.
 The Java agent always reports one, so every application under `-javaagent:spider-sense.jar` has a start mark from its first export on.
 A service sending from its own SDK reports one only when the SDK's process resource detector is on, which xref:modes.adoc#other-languages[Python, Node.js and Go] covers.
 Until some service has a start mark, `--since=start` is a not-found that says so and suggests `--since=15m`, or `mark before` and `--since=before`.
+With `--service`, `start` is that service's own start mark and never another service's, so a service with none, such as one that reports no `process.pid`, gets the same not-found, naming the service.
 
 The Mark button on the UI's top bar records a mark the same way.
 The charts draw marks as vertical lines.
