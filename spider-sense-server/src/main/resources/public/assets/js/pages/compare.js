@@ -3,7 +3,7 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, panel, table, chip, serviceChip, markDialog, copyBlock, spinner, emptyState } from '../ui.js';
+import { h, fill, fillOptions, panel, table, chip, serviceChip, markDialog, copyBlock, spinner, emptyState } from '../ui.js';
 import { pageLoader } from '../page.js';
 import { commandLine } from '../copyas.js';
 import { oneLineSql, storedSql } from '../sql.js';
@@ -121,17 +121,18 @@ export function render(root, ctx) {
     const q = ctx.query();
     const known = new Set(options.map((o) => o.value));
     const fillMarkSelect = (node, chosen, extra) => {
-      fill(node, extra, options.map((o) => h('option', { value: o.value }, o.label)));
       // a selector from the hash that no mark carries is still shown, as it was typed
-      if (chosen && !known.has(chosen) && chosen !== 'now') node.appendChild(h('option', { value: chosen }, chosen));
+      const typed = chosen && !known.has(chosen) && chosen !== 'now' ? [[chosen, chosen]] : [];
+      // rebuilt only when the marks changed, so a Live tick leaves an open list alone
+      fillOptions(node, [...extra, ...options.map((o) => [o.value, o.label]), ...typed]);
       node.value = chosen || '';
     };
     const before = q.before || (options[1] ? options[1].value : '');
     const after = q.after || (options[0] ? options[0].value : '');
     const until = q.until || 'now';
-    fillMarkSelect(beforeSelect, before, null);
-    fillMarkSelect(afterSelect, after, null);
-    fillMarkSelect(untilSelect, until, h('option', { value: 'now' }, 'now'));
+    fillMarkSelect(beforeSelect, before, []);
+    fillMarkSelect(afterSelect, after, []);
+    fillMarkSelect(untilSelect, until, [['now', 'now']]);
     const hasBothMarks = !!(before && after);
     compareBtn.disabled = !hasBothMarks;
     // the two newest marks are a choice like any other: it belongs in the URL

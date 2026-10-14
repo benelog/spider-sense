@@ -83,3 +83,20 @@ test('the endpoint the URL names stays chosen when the window has no call of it'
   assert.equal(router.currentRoute().query.endpointId, 'aaaa1111');
   page.destroy();
 });
+
+test('a Live tick leaves the endpoint options alone when the endpoints did not change, so an open list stays open', async () => {
+  api.state.service = 'bookstore';
+  server.endpoints = [{ endpointId: 'aaaa1111', name: 'GET /books' }, { endpointId: 'bbbb2222', name: 'GET /authors' }];
+  const { root, page } = open({ service: 'bookstore' });
+  await settle();
+  const select = root.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Endpoint filter');
+  const first = select.children.slice();
+  page.refresh();
+  await settle();
+  assert.ok(select.children.every((o, i) => o === first[i]), 'the same option nodes');
+  server.endpoints = [{ endpointId: 'bbbb2222', name: 'GET /authors' }];
+  page.refresh();
+  await settle();
+  assert.deepEqual(select.children.map((o) => o.textContent), ['Any endpoint', 'GET /authors']);
+  page.destroy();
+});

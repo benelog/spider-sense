@@ -2,7 +2,7 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, icon, panel, debounce, spinner, noDataYet, drawerOpen } from '../ui.js';
+import { h, fill, fillOptions, icon, panel, debounce, spinner, noDataYet, drawerOpen } from '../ui.js';
 import { pageLoader, mergeNewestPage } from '../page.js';
 import { traceTable } from '../widgets.js';
 import { count } from '../format.js';
@@ -107,9 +107,9 @@ export function render(root, ctx) {
       for (const e of options) endpointNames.set(e.endpointId, e.name);
       const value = filter.endpointId;
       const unseen = value && !options.some((e) => e.endpointId === value) ? value : '';
-      fill(endpointSelect, h('option', { value: '' }, 'Any endpoint'),
-        options.map((e) => h('option', { value: e.endpointId }, e.name)),
-        unseen ? h('option', { value: unseen }, (endpointNames.get(unseen) || unseen) + ' (not seen)') : null);
+      fillOptions(endpointSelect, [['', 'Any endpoint'],
+        ...options.map((e) => [e.endpointId, e.name]),
+        ...(unseen ? [[unseen, (endpointNames.get(unseen) || unseen) + ' (not seen)']] : [])]);
       endpointSelect.value = value;
       endpointSelect.hidden = false;
     },

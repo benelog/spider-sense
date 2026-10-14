@@ -74,6 +74,19 @@ export function fill(node, ...children) {
   return node;
 }
 
+/**
+ * A select's options from `[value, label]` pairs, rebuilt only when they differ from the ones it
+ * has: a browser closes an open list when its options change, so a Live tick that rebuilt them
+ * would shut it under the pointer (ui.adoc#live-refresh).
+ */
+export function fillOptions(select, options) {
+  const have = Array.from(select.children);
+  const same = have.length === options.length
+    && have.every((o, i) => o.getAttribute('value') === options[i][0] && o.textContent === options[i][1]);
+  if (!same) fill(select, options.map(([value, label]) => h('option', { value }, label)));
+  return select;
+}
+
 export function frag(...children) {
   const f = document.createDocumentFragment();
   append(f, children);
