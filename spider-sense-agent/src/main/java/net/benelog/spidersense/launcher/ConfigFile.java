@@ -1,7 +1,7 @@
 package net.benelog.spidersense.launcher;
 
 import java.io.IOException;
-import java.io.Reader;
+import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -58,8 +58,14 @@ final class ConfigFile {
             return null;
         }
         Properties properties = new Properties();
-        try (Reader in = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
-            properties.load(in);
+        try {
+            String text = Files.readString(file, StandardCharsets.UTF_8);
+            // A byte-order mark, which Notepad and Windows PowerShell write, would be part of the
+            // first key, and that key would be neither applied nor warned about.
+            if (text.startsWith("﻿")) {
+                text = text.substring(1);
+            }
+            properties.load(new StringReader(text));
         } catch (IOException | IllegalArgumentException e) {
             SpiderSenseAgent.warn("could not read " + file + "; ignoring it", e);
             return null;

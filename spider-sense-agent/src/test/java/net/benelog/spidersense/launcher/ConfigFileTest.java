@@ -80,6 +80,17 @@ class ConfigFileTest {
         assertThat(properties).containsEntry("spidersense.port", "4321");
     }
 
+    /** Notepad and Windows PowerShell start the file with a byte-order mark; the first key is still a key. */
+    @Test
+    void aByteOrderMarkDoesNotHideTheFirstKey() throws IOException {
+        Path file = Files.writeString(dir.resolve(ConfigFile.DEFAULT_NAME),
+                "﻿spidersense.port=4321\r\nspidersense.service=orders\r\n");
+
+        assertThat(apply()).isEqualTo(file);
+        assertThat(properties).containsEntry("spidersense.port", "4321")
+                .containsEntry("spidersense.service", "orders");
+    }
+
     @Test
     void aSystemPropertyWinsOverTheFile() throws IOException {
         Path file = file("spidersense.port=4321", "spidersense.host=0.0.0.0");

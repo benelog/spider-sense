@@ -120,6 +120,7 @@ Spider Sense reads `spider-sense.properties` from the working directory of the J
 `-Dspidersense.config=<path>`, or the environment variable `SPIDERSENSE_CONFIG`, names another file.
 A named file that does not exist is a warning on stderr, and the application starts without it.
 The launcher names the file it read on stdout.
+The file is read as UTF-8, and a byte-order mark at its start, which Notepad and Windows PowerShell write, is skipped.
 
 The launcher reads the file first, in `premain`, in the standalone `main`, and before it runs a CLI command.
 It applies every `spidersense.*` key of the file as the system property of the same name, unless that property or its environment variable is already set.
