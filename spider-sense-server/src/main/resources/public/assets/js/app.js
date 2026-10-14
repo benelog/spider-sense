@@ -218,13 +218,15 @@ let routeSeq = 0;
 let routeChangePending = false;
 
 function onRoute(current, changedRoute) {
+  routeChangePending = routeChangePending || changedRoute;
+  // A recording has no Live: a `live=1` it is opened with goes from the hash (ui.adoc#recording).
+  if (state.recording && current.query.live) { router.setQuery({ live: '' }); return; }
   syncStateFromQuery(current.query);
   loadMarks();
   const status = freshStatus();
   // Under `all` the window starts at the oldest span, so the page waits for the status that
   // says where that is; any other range paints at once. A route that came while waiting wins.
   const seq = ++routeSeq;
-  routeChangePending = routeChangePending || changedRoute;
   if (state.range !== 'all') { showRoute(current); return; }
   status.then(() => { if (seq === routeSeq) showRoute(current); });
 }
@@ -299,10 +301,12 @@ const SHORTCUTS = [
 ];
 
 function shortcutsDialog() {
+  // A recording has no Live, so it has no key for it either.
+  const keys = SHORTCUTS.filter(([key]) => !(state.recording && key === 'L'));
   const dlg = dialog({
     title: 'Keyboard shortcuts',
     body: [
-      h('dl.shortcuts', SHORTCUTS.map(([key, what]) => h('div', h('dt', h('kbd', key)), h('dd', what)))),
+      h('dl.shortcuts', keys.map(([key, what]) => h('div', h('dt', h('kbd', key)), h('dd', what)))),
       h('p.muted', 'The keys act outside a text field and while no dialog is open.'),
     ],
     actions: h('button.btn', { type: 'button', onclick: () => dlg.close() }, 'Close'),
@@ -415,7 +419,7 @@ function onKey(e) {
     if (input) { e.preventDefault(); input.focus(); input.select(); }
     return;
   }
-  if (e.key === 'l' || e.key === 'L') { e.preventDefault(); router.setQuery({ live: state.live ? '' : '1' }); return; }
+  if ((e.key === 'l' || e.key === 'L') && !state.recording) { e.preventDefault(); router.setQuery({ live: state.live ? '' : '1' }); return; }
   if (e.key === 'm' || e.key === 'M') { e.preventDefault(); openMarkDialog(); return; }
   if (e.key === '?') { e.preventDefault(); shortcutsDialog(); return; }
   if (e.key === '[' || e.key === ']') {

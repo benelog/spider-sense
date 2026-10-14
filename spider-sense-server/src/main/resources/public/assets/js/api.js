@@ -24,6 +24,8 @@ export const state = {
   status: null,
   /** The marks the shell keeps fresh, so every chart can draw them for free. */
   marks: [],
+  /** Set by dev/replay.js: a recording has no Live (ui.adoc#recording). */
+  recording: false,
 };
 
 /** The part of the hash query every internal link carries. */

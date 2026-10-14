@@ -8,7 +8,7 @@
 // traces, one trace, the logs, the marks, the acknowledgements) are queried from the
 // tables here, with the filters the API takes, so every trace of the recording opens
 // and nothing of it is a substitute.
-import { RANGES, DEFAULT_RANGE } from '../api.js';
+import { RANGES, DEFAULT_RANGE, state } from '../api.js';
 import { realFetch, reply, replyText, shimFetch, EventSourceStub } from './shim.js';
 
 const named = document.documentElement.dataset.dolthub
@@ -369,8 +369,9 @@ shimFetch(async (u, method) => {
 });
 
 // A recording has no live stream: the events source stays closed and never delivers, and
-// neither Live nor Clear data is offered.
+// neither Live nor Clear data is offered; the shell ignores `L` and `live=1` too.
 globalThis.EventSource = EventSourceStub;
+state.recording = true;
 for (const id of ['live-toggle', 'clear-data-btn']) {
   const control = document.getElementById(id);
   if (control) control.hidden = true;

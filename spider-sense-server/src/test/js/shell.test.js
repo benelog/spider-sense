@@ -64,3 +64,33 @@ test('the sidebar\'s links carry the service, the range, Live and the chart the 
   router.setQuery({ service: '', range: '', live: '', chart: '' });
   assert.equal(navHref('/traces'), '#/traces', 'a link names only what differs from the defaults');
 });
+
+/** A key pressed on the page, outside any field. */
+function press(key) {
+  const event = { key, target: document.body, preventDefault() {} };
+  for (const fn of listeners.keydown) fn(event);
+}
+
+test('a recording has no Live: L does nothing, live=1 leaves the hash, and the keys dialog leaves L out (ui.adoc#recording)', async () => {
+  api.state.recording = true;
+  try {
+    router.setQuery({ live: '1' });
+    assert.equal(api.state.live, false);
+    assert.doesNotMatch(location.hash, /live=/, 'the hash drops live=1');
+    assert.equal(document.body.classList.contains('is-live'), false);
+    press('L');
+    assert.equal(api.state.live, false);
+    assert.doesNotMatch(location.hash, /live=/);
+    press('?');
+    const dlg = document.querySelector('dialog');
+    const keys = dlg.querySelectorAll('kbd').map((k) => k.textContent);
+    assert.ok(keys.includes('M') && !keys.includes('L'), 'the dialog lists ' + keys.join(' '));
+    dlg.close();
+  } finally {
+    api.state.recording = false;
+  }
+  press('L');
+  assert.equal(api.state.live, true, 'outside a recording L turns Live on');
+  press('L');
+  assert.equal(api.state.live, false);
+});
