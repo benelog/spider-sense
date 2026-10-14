@@ -131,9 +131,14 @@ function rules(status) {
   return { app: frames.appPackages || [], framework: frames.frameworkPrefixes || [] };
 }
 
+/** The `/0x…` a JVM writes after the name of a hidden class, such as a lambda's. */
+const HIDDEN_CLASS_ADDRESS = /\/0x[0-9a-fA-F]+(?=\.)/g;
+
 /**
  * `package.Class.method(File.java:41)` from a stack trace line, without the module or class
- * loader in front of it and the jar a logging framework adds behind it, as CodeFrames does.
+ * loader in front of it and the jar a logging framework adds behind it, as ExceptionChain.frame
+ * does. A hidden class, such as a lambda's, keeps its name and loses its address:
+ * `com.acme.Foo$$Lambda/0x….run(Unknown Source)` is `com.acme.Foo$$Lambda.run(Unknown Source)`.
  */
 export function frameOf(line) {
   const at = /^\s*at\s+(.+)$/.exec(line);
@@ -142,8 +147,10 @@ export function frameOf(line) {
   const marker = value.indexOf('~');
   if (marker > 0) value = value.slice(0, marker).trim();
   const paren = value.indexOf('(');
-  const slash = value.lastIndexOf('/', paren < 0 ? value.length : paren);
-  return slash >= 0 ? value.slice(slash + 1) : value;
+  const name = (paren < 0 ? value : value.slice(0, paren)).replace(HIDDEN_CLASS_ADDRESS, '');
+  const rest = paren < 0 ? '' : value.slice(paren);
+  const slash = name.lastIndexOf('/');
+  return (slash >= 0 ? name.slice(slash + 1) : name) + rest;
 }
 
 /**

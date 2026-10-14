@@ -29,6 +29,21 @@ test('frameOf drops the module or class loader in front and the jar behind', () 
     'org.apache.catalina.core.StandardWrapperValve.invoke(StandardWrapperValve.java:167)');
 });
 
+test('frameOf keeps the name of a hidden class and drops its address', () => {
+  assert.equal(frameOf('\tat com.acme.Foo$$Lambda/0x000073e4a00a2000.run(Unknown Source)'),
+    'com.acme.Foo$$Lambda.run(Unknown Source)');
+  assert.equal(frameOf('\tat com.acme.Foo$$Lambda$14/0x0000000800c02000.apply(Unknown Source)'),
+    'com.acme.Foo$$Lambda$14.apply(Unknown Source)', 'JDK 17');
+  assert.equal(frameOf('\tat java.base/java.lang.invoke.LambdaForm$DMH/0x0000000800c0c400.invokeVirtual(LambdaForm$DMH)'),
+    'java.lang.invoke.LambdaForm$DMH.invokeVirtual(LambdaForm$DMH)', 'a module in front as well');
+  const status = { codeFrames: { appPackages: [], frameworkPrefixes: ['org.springframework.'] } };
+  const stack = [
+    '\tat com.acme.Foo.bar(Foo.java:12)',
+    '\tat org.springframework.aop.framework.CglibAopProxy$$Lambda/0x00007f0a1c0f3b28.proceed(Unknown Source)',
+  ].join('\n');
+  assert.deepEqual(appFrames(stack, status), ['com.acme.Foo.bar(Foo.java:12)'], 'a framework lambda is the framework\'s');
+});
+
 test('frameworkOf folds by the framework prefixes, or by an application allowlist', () => {
   const byPrefix = { app: [], framework: ['org.springframework.', 'java.'] };
   assert.equal(frameworkOf('org.springframework.web.Servlet.service(Servlet.java:1)', byPrefix), 'org.springframework');

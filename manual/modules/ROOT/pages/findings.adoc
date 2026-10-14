@@ -157,6 +157,7 @@ The *Code* list of the xref:pages.adoc#query[query page] reads a query group the
 
 A stack trace is reduced to its application frames by dropping known framework prefixes: `java.`, `javax.`, `jdk.`, `sun.`, `com.sun.`, `jakarta.`, `org.springframework.`, `org.hibernate.`, `org.eclipse.jetty.`, `org.apache.`, `io.opentelemetry.`, `com.zaxxer.`, `org.h2.`, `net.benelog.spidersilk.`, `kotlin.`, `scala.`, `reactor.`, `io.netty.`, `ch.qos.logback.`, `org.slf4j.`, `org.junit.` and `gg.jte.`.
 When that heuristic guesses wrong, `spidersense.app.packages=com.acme,org.acme`, a comma-separated list, replaces it with an allowlist.
+A frame is read without the module or class loader the JVM writes in front of its class, such as `java.base/` or `app//`, and a hidden class, such as a lambda's, without the address behind its name, so `+org.springframework.aop.framework.CglibAopProxy$$Lambda/0x00007f0a1c0f3b28.proceed+` is the framework's frame `+org.springframework.aop.framework.CglibAopProxy$$Lambda.proceed+`.
 At most five frames are kept, innermost first, which means the root cause's first.
 The frames of the last `Caused by:` section come before those of the exception that wraps it, and so on out to the outer exception, each section read top down.
 A `Suppressed:` block is left out, and a frame that repeats is counted once.

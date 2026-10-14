@@ -75,4 +75,20 @@ class ExceptionChainTest {
         assertThat(Ids.errorId("orders", "boom", "Order 42 is shipped", null))
                 .isEqualTo(Ids.errorId("orders", "boom", "Order ? is shipped"));
     }
+
+    /** The module or class loader in front goes, and so does a hidden class's address, but not its name. */
+    @Test
+    void aFrameKeepsTheNameOfAHiddenClassAndDropsItsAddress() {
+        assertThat(ExceptionChain.frame("java.base/java.lang.Thread.run(Thread.java:1583)"))
+                .isEqualTo("java.lang.Thread.run(Thread.java:1583)");
+        assertThat(ExceptionChain.frame("app//orders.OrderService.place(OrderService.java:30)"))
+                .isEqualTo("orders.OrderService.place(OrderService.java:30)");
+        assertThat(ExceptionChain.frame("com.acme.Foo$$Lambda/0x000073e4a00a2000.run(Unknown Source)"))
+                .isEqualTo("com.acme.Foo$$Lambda.run(Unknown Source)");
+        assertThat(ExceptionChain.frame("com.acme.Foo$$Lambda$14/0x0000000800c02000.apply(Unknown Source)"))
+                .as("JDK 17").isEqualTo("com.acme.Foo$$Lambda$14.apply(Unknown Source)");
+        assertThat(ExceptionChain.frame(
+                "java.base/java.lang.invoke.LambdaForm$DMH/0x0000000800c0c400.invokeVirtual(LambdaForm$DMH)"))
+                .isEqualTo("java.lang.invoke.LambdaForm$DMH.invokeVirtual(LambdaForm$DMH)");
+    }
 }

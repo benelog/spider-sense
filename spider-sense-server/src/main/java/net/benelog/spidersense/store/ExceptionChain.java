@@ -51,6 +51,8 @@ public record ExceptionChain(List<Cause> causes) {
     private static final String CAUSED_BY = "Caused by:";
     private static final String SUPPRESSED = "Suppressed:";
     private static final Pattern MORE = Pattern.compile("^\\.\\.\\. (\\d+) (?:more|common frames omitted)");
+    /** The {@code /0x…} a JVM writes after the name of a hidden class, such as a lambda's. */
+    private static final Pattern HIDDEN_CLASS_ADDRESS = Pattern.compile("/0x[0-9a-fA-F]+(?=\\.)");
 
     public ExceptionChain {
         causes = List.copyOf(causes);
@@ -156,7 +158,9 @@ public record ExceptionChain(List<Cause> causes) {
      * <p>A JVM writes the module or class loader in front of the class
      * ({@code java.base/java.util.List.of(...)}, {@code app//com.acme.Orders.load(...)}),
      * and a logging framework adds {@code ~[jar:version]} behind it. Neither is part
-     * of the location a person opens.
+     * of the location a person opens. A hidden class, such as a lambda's, keeps its name and
+     * loses the address behind it: {@code com.acme.Foo$$Lambda/0x00007f0a1c0f3b28.run(Unknown Source)}
+     * is {@code com.acme.Foo$$Lambda.run(Unknown Source)}, which a framework prefix still matches.
      */
     public static String frame(String frame) {
         String value = frame;
@@ -166,11 +170,9 @@ public record ExceptionChain(List<Cause> causes) {
         }
         int parenthesis = value.indexOf('(');
         int limit = parenthesis < 0 ? value.length() : parenthesis;
-        int slash = value.lastIndexOf('/', limit);
-        if (slash >= 0) {
-            value = value.substring(slash + 1);
-        }
-        return value;
+        String name = HIDDEN_CLASS_ADDRESS.matcher(value.substring(0, limit)).replaceAll("");
+        int slash = name.lastIndexOf('/');
+        return (slash >= 0 ? name.substring(slash + 1) : name) + value.substring(limit);
     }
 
     private static int indent(String line) {
