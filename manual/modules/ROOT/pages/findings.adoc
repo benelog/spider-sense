@@ -748,8 +748,12 @@ Finding ids are stable across windows, so one acknowledgement keeps holding as t
 
 * An id that is not `<kind>:<12 hex digits>`, with a kind of <<kinds>> other than `regression`, is a usage error: exit `2`, and `400` over HTTP.
 The message says that the `id` column of `findings` is what they take, and that the ids of `errors`, `queries` and `endpoints` are table ids, not finding ids.
-* A well-formed id that no rule produces over the data the store keeps, which is the retention window, is refused as not found: `No finding <id> in the data kept (the last 24 hours)`, exit `4`, and `404` over HTTP.
+* A well-formed id that names no finding of the data the store keeps, which is the retention window, is refused as not found: `No finding <id> in the data kept (the last 24 hours)`, exit `4`, and `404` over HTTP.
+What names a finding depends on the kind, because the id `findings` printed for a short window has to be taken whatever the rules say over the whole day.
+** A kind judged by a count, which only grows with the window (`error`, `log-error`, `n-plus-one`, `n-plus-one-http`, `gc-pause`), has to be produced by its rules over the data kept.
 The rules of the id's kind alone run for the ids alone, as for a finding's <<state,state>>, over every service.
+** A kind judged by a statistic of the window (`slow-query`, `slow-endpoint`, `slow-job`, `slow-external`, `pool-exhausted`, `heap-pressure`, `thread-growth`) needs only its subject in the store: the query group, endpoint, job, outbound target, pool or service the id is the hash of.
+A p95 over the day is diluted by the day's fast calls, so an endpoint slow for the last five minutes is a finding of those five minutes and not of the day, and its id is still one to acknowledge or resolve.
 
 Neither records anything, and MCP's `resolve` tool fails with the same message.
 

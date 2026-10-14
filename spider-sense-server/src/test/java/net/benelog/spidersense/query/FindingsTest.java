@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.within;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import io.opentelemetry.proto.trace.v1.Span;
 
@@ -1241,6 +1242,57 @@ class FindingsTest {
         decoder.ingest(Otlp.traces(Otlp.service("orders"),
                 entry(1, "/a", 2000), entry(2, "/b", 1500), entry(3, "/c", 900)));
         flush();
+    }
+
+    /**
+     * A finding of a recent window whose verdict a longer window dilutes (a p95, the first point
+     * against the last) is still one an acknowledgement or a resolution can name: the id
+     * findings printed exists over the data kept, though the rules over all of it find nothing.
+     */
+    @Test
+    void aWindowedFindingOfARecentWindowExistsOverTheDataKept() {
+        List<Span.Builder> spans = new ArrayList<>();
+        for (int i = 0; i < 62; i++) {
+            boolean slow = i >= 60;
+            long start = slow ? NOW + i : NOW - 3_600_000 + i;
+            Span.Builder root = Otlp.span(traceId(100 + i), spanId(100 + i), "GET /report",
+                    Span.SpanKind.SPAN_KIND_SERVER, start, slow ? 3_000 : 10,
+                    Otlp.attr("http.request.method", "GET"),
+                    Otlp.attr("http.route", "/report"),
+                    Otlp.attr("http.response.status_code", 200));
+            spans.add(root);
+            spans.add(query(root, 300 + i, "select * from orders where total > ?", "orders", start + 1,
+                    slow ? 1_500 : 1));
+            spans.add(outbound(root, 500 + i, "pricing", 8080, start + 2, slow ? 1_400 : 1));
+            spans.add(Otlp.span(traceId(700 + i), spanId(700 + i), "ReportJob.run",
+                    Span.SpanKind.SPAN_KIND_INTERNAL, start, slow ? 3_000 : 10,
+                    Otlp.attr("code.namespace", "orders.ReportJob"),
+                    Otlp.attr("code.function", "run")));
+        }
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), spans.toArray(Span.Builder[]::new)));
+        threads(NOW - 1_000, 40);
+        threads(NOW, 140);
+        threads(NOW + 3_600_000, 40);
+        flush();
+        Set<String> windowed = Set.of(Findings.SLOW_ENDPOINT, Findings.SLOW_QUERY, Findings.SLOW_EXTERNAL,
+                Findings.SLOW_JOB, Findings.THREAD_GROWTH);
+        Window kept = Window.of(0, Window.LATEST);
+
+        List<Findings.Finding> recent = new ArrayList<>();
+        for (Findings.Finding finding : findings.findings(window, null, 20)) {
+            if (windowed.contains(finding.kind())) {
+                recent.add(finding);
+            }
+        }
+
+        assertThat(recent).extracting(Findings.Finding::kind).containsExactlyInAnyOrderElementsOf(windowed);
+        assertThat(findings.findings(kept, null, 20)).as("diluted over the data kept")
+                .noneMatch(finding -> windowed.contains(finding.kind()));
+        for (Findings.Finding finding : recent) {
+            assertThat(findings.exists(finding.id(), kept)).as(finding.kind()).isTrue();
+        }
+        assertThat(findings.exists("slow-endpoint:0123456789ab", kept)).as("a made-up id").isFalse();
+        assertThat(findings.exists("thread-growth:0123456789ab", kept)).as("a made-up id").isFalse();
     }
 
     @Test

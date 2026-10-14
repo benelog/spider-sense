@@ -539,20 +539,85 @@ public final class Findings {
     }
 
     /**
-     * Whether the rules produce this id over the window, for any service: the rules of the id's
-     * kind alone, for the ids alone, as the state of a finding asks them (findings.adoc#state).
+     * The kinds whose verdict is a statistic of the window (a p95, the worst bucket, the first
+     * against the last point), which a longer window can dilute below the threshold: a finding of
+     * the last five minutes need not be one over the day.
+     */
+    private static final Set<String> WINDOWED = Set.of(SLOW_QUERY, SLOW_ENDPOINT, SLOW_JOB,
+            SLOW_EXTERNAL, POOL_EXHAUSTED, HEAP_PRESSURE, THREAD_GROWTH);
+
+    /**
+     * Whether this id names a finding of the window, for any service, as far as a window can
+     * say (findings.adoc#acknowledgements).
+     *
+     * <p>A count only grows with a longer window, so for {@code error}, {@code log-error},
+     * {@code n-plus-one}, {@code n-plus-one-http} and {@code gc-pause} it is the rules of the
+     * id's kind alone, for the ids alone, as the state of a finding asks them
+     * (findings.adoc#state). A {@link #WINDOWED} kind is judged by a statistic a longer window
+     * dilutes, so its id is one whose subject the window holds, whatever the verdict over all
+     * of it: the endpoint, query group, job, outbound target, pool or service the id is the hash
+     * of.
      */
     public boolean exists(String id, Window window) {
         if (!isFindingId(id)) {
             return false;
         }
         String kind = id.substring(0, id.indexOf(':'));
+        if (WINDOWED.contains(kind)) {
+            return subjectIds(kind, window).contains(id);
+        }
         for (Ranked each : rules(window, null, new Scope(Set.of(kind), false))) {
             if (each.finding().id().equals(id)) {
                 return true;
             }
         }
         return false;
+    }
+
+    /**
+     * The id of every subject of the window a rule of a {@link #WINDOWED} kind could find, with
+     * no threshold: what each rule groups by, hashed as it hashes it.
+     */
+    private Set<String> subjectIds(String kind, Window window) {
+        Set<String> ids = new HashSet<>();
+        switch (kind) {
+            case SLOW_QUERY -> {
+                Where where = Where.window(window, null).and("query_id IS NOT NULL");
+                sql.forEach("SELECT DISTINCT service, query_id FROM span WHERE " + where.sql(),
+                        where.params(), rs -> ids.add(id(kind, rs.getString(1), rs.getString(2))));
+            }
+            case SLOW_ENDPOINT -> {
+                Where where = Where.entries(window, null).and("endpoint_id IS NOT NULL");
+                sql.forEach("SELECT DISTINCT service, endpoint_id FROM span WHERE " + where.sql(),
+                        where.params(), rs -> ids.add(id(kind, rs.getString(1), rs.getString(2))));
+            }
+            case SLOW_JOB -> {
+                Where where = Where.jobs(window, null);
+                sql.forEach("SELECT DISTINCT service, name FROM span WHERE " + where.sql(),
+                        where.params(), rs -> ids.add(id(kind, rs.getString(1), rs.getString(2))));
+            }
+            case SLOW_EXTERNAL -> {
+                for (Queries.OutboundCall call : queries.outboundHttp(window, null)) {
+                    ids.add(id(kind, call.service(), call.target() + "\0" + call.name()));
+                }
+            }
+            case POOL_EXHAUSTED -> {
+                for (String service : servicesInScope(null)) {
+                    for (JvmView.ConnectionPool pool : JvmView.connectionPools(metrics, service, window)) {
+                        ids.add(id(kind, service, pool.name()));
+                    }
+                }
+            }
+            case HEAP_PRESSURE, THREAD_GROWTH -> {
+                for (String service : servicesInScope(null)) {
+                    ids.add(id(kind, service, HEAP_PRESSURE.equals(kind) ? "heap" : "threads"));
+                }
+            }
+            default -> {
+                // Not a windowed kind; exists asks the rules for it.
+            }
+        }
+        return ids;
     }
 
     // --- resolutions and states ------------------------------------------------
