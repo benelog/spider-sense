@@ -2,11 +2,15 @@ package net.benelog.spidersense.api;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
@@ -289,5 +293,26 @@ class TextTest {
         assertThat(Text.scope("orders")).isEqualTo("orders");
         assertThat(Text.interval(WINDOW.from(), WINDOW.to()))
                 .isEqualTo(Text.instant(WINDOW.from()) + " → " + Text.clock(WINDOW.to()));
+    }
+
+    /**
+     * The sources are text: a control character saved as the byte itself rather than as an escape
+     * makes {@code grep} and {@code file} treat the file as binary, and javac accepts it silently.
+     */
+    @Test
+    void theSourcesHoldNoControlCharacter() throws IOException {
+        List<String> found = new ArrayList<>();
+        try (Stream<Path> files = Files.walk(Path.of("src/main"))) {
+            for (Path file : files.filter(f -> f.toString().matches(".*\\.(java|js|css|html)")).toList()) {
+                String text = Files.readString(file);
+                for (int i = 0; i < text.length(); i++) {
+                    char c = text.charAt(i);
+                    if (c < 0x20 && c != '\n' && c != '\r' && c != '\t') {
+                        found.add(file + " at " + i + ": " + (int) c);
+                    }
+                }
+            }
+        }
+        assertThat(found).isEmpty();
     }
 }

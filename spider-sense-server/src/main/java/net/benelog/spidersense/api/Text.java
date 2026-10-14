@@ -1014,7 +1014,7 @@ final class Text {
          * {@code /api/books/87} are the same line of the same tree.
          */
         String key() {
-            return depth + " " + span.category() + " " + Ids.normaliseDigits(summaryLine(span));
+            return depth + "\0" + span.category() + "\0" + Ids.normaliseDigits(summaryLine(span));
         }
     }
 
