@@ -78,6 +78,7 @@ Ids, statements and stack traces are set in a monospace stack.
 
 Services and span categories take their series colours from a fixed list of eight derived from the palette: accent, silk, ok, warn, then four muted hues.
 A service is assigned its colour in first-seen order, so it looks the same in every chart.
+A toggle of the theme recolours everything at once: the canvas charts rebuild in the new palette, and the colours set on the page's elements, a chip's dot, a legend's swatch, a sparkline, a waterfall bar, are the tokens themselves (`var(--series-3)`), which the browser repaints.
 
 [#response-buckets]
 === Response-time buckets and Apdex

@@ -2,7 +2,7 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, icon, panel, chip, serviceChip, serviceColor, renderList, emptyState, snippetBlocks, placeholder, seedServices, spinner } from '../ui.js';
+import { h, fill, icon, panel, chip, serviceChip, serviceVar, renderList, emptyState, snippetBlocks, placeholder, seedServices, spinner } from '../ui.js';
 import { pageLoader, skeleton } from '../page.js';
 import { chartBox, sparkline } from '../charts.js';
 import { histogramBars, bucketFilter, apdexCell, ERROR_RATE_BAD } from '../buckets.js';
@@ -88,7 +88,7 @@ export function render(root, ctx) {
   }
 
   function card(s) {
-    const color = serviceColor(s.name);
+    const color = serviceVar(s.name);
     const node = h('div.service-card', {
       style: { borderLeftColor: color },
       tabindex: 0,

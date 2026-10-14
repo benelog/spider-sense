@@ -5,13 +5,11 @@ import * as router from '../router.js';
 import { h, fill, panel, table, chip, spinner } from '../ui.js';
 import { pageLoader } from '../page.js';
 import { errorTypeColumn, messageColumn, serviceColumn, seenColumn, fitTable } from '../columns.js';
-import { sparkline, themeColors } from '../charts.js';
+import { sparkline } from '../charts.js';
 import { count } from '../format.js';
 
 export function render(root, ctx) {
   let node = null;
-  // Read at each paint, so a theme flip gives the next refresh its colour.
-  let errColor = themeColors().err;
 
   const body = h('div', spinner());
   root.appendChild(panel({ title: 'Errors' }, body));
@@ -32,7 +30,7 @@ export function render(root, ctx) {
     },
     {
       key: 'series', label: 'Occurrences', sortable: false, width: '134px',
-      render: (e) => sparkline(e.series || [], { color: errColor, label: (e.type || 'error') + ' occurrences over the window' }),
+      render: (e) => sparkline(e.series || [], { color: 'var(--err)', label: (e.type || 'error') + ' occurrences over the window' }),
     },
     seenColumn('firstSeen', 'First seen', '84px'),
     seenColumn('lastSeen', 'Last seen', '84px'),
@@ -46,7 +44,6 @@ export function render(root, ctx) {
 
   function paint(res) {
     const rows = res.errors || [];
-    errColor = themeColors().err;
     if (!node) {
       node = table(columns, { ...opts, rows });
       fitTable(node, columns);

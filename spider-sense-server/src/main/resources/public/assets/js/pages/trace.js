@@ -3,7 +3,7 @@
 import * as api from '../api.js';
 import * as router from '../router.js';
 import {
-  h, fill, icon, panel, table, chip, serviceChip, serviceColor, severityChip, idButton, segmented, categoryIcon,
+  h, fill, icon, panel, table, chip, serviceChip, serviceVar, severityChip, idButton, segmented, categoryIcon,
   drawer, drawerBody, closeDrawer, closeDrawerSilently, spinner, copyBlock,
 } from '../ui.js';
 import { pageLoader, skeleton } from '../page.js';
@@ -124,7 +124,7 @@ export function render(root, ctx) {
     const widthPct = Math.max(0.4, Math.min(100 - startPct, (durationMs / total) * 100));
     return h('span.wf-bar', {
       class: error ? 'err' : null,
-      style: { left: startPct + '%', width: widthPct + '%', background: error ? undefined : serviceColor(service) },
+      style: { left: startPct + '%', width: widthPct + '%', background: error ? undefined : serviceVar(service) },
     });
   }
 
@@ -153,7 +153,7 @@ export function render(root, ctx) {
           'aria-label': (open ? 'Fold ' : 'Show the ') + run.count + ' ' + summaryOf(first),
           onclick: (e) => { e.stopPropagation(); toggle(); },
         }, icon('chevron')),
-        h('span.wf-svc', { style: { background: serviceColor(first.service) }, title: first.service }),
+        h('span.wf-svc', { style: { background: serviceVar(first.service) }, title: first.service }),
         icon(categoryIcon(first.category, 'chart')),
         h('span.wf-label', name),
         error ? h('span.marker.err', { title: 'Error' }, icon('bolt')) : null),
@@ -182,7 +182,7 @@ export function render(root, ctx) {
     },
       h('div.wf-name', { style: { paddingLeft: depth * 14 + 'px' } },
         toggle,
-        h('span.wf-svc', { style: { background: serviceColor(span.service) }, title: span.service }),
+        h('span.wf-svc', { style: { background: serviceVar(span.service) }, title: span.service }),
         icon(categoryIcon(span.category, 'chart')),
         h('span.wf-label', { title: span.name }, summaryOf(span)),
         span.error ? h('span.marker.err', { title: 'Error' }, icon('bolt')) : null),

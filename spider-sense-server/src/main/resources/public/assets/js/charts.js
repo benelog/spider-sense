@@ -9,27 +9,43 @@ const uPlot = globalThis.uPlot;
 
 const charts = new Set();
 
+/** The colour names a chart spec uses, their custom properties, and the dark theme's value as a fallback. */
+const TOKENS = {
+  text: ['--text', '#e6e9ef'],
+  muted: ['--text-muted', '#8a93a6'],
+  line: ['--line', '#343a47'],
+  panel: ['--bg-panel', '#1f232c'],
+  raised: ['--bg-raised', '#2b303b'],
+  accent: ['--accent', '#e2603f'],
+  ok: ['--ok', '#5ec27f'],
+  warn: ['--warn', '#f0b64b'],
+  err: ['--err', '#e5484d'],
+  silk: ['--silk', '#8a93a6'],
+  bucket1: ['--bucket-1', '#5ec27f'],
+  bucket2: ['--bucket-2', '#35c0b6'],
+  bucket3: ['--bucket-3', '#f0b64b'],
+  bucket4: ['--bucket-4', '#e2603f'],
+};
+
 /** Colours for the current theme, read fresh from the stylesheet. */
 export function themeColors() {
   const cs = getComputedStyle(document.documentElement);
-  const v = (name, fallback) => (cs.getPropertyValue(name).trim() || fallback);
-  return {
-    text: v('--text', '#e6e9ef'),
-    muted: v('--text-muted', '#8a93a6'),
-    line: v('--line', '#343a47'),
-    panel: v('--bg-panel', '#1f232c'),
-    raised: v('--bg-raised', '#2b303b'),
-    accent: v('--accent', '#e2603f'),
-    ok: v('--ok', '#5ec27f'),
-    warn: v('--warn', '#f0b64b'),
-    err: v('--err', '#e5484d'),
-    silk: v('--silk', '#8a93a6'),
-    bucket1: v('--bucket-1', '#5ec27f'),
-    bucket2: v('--bucket-2', '#35c0b6'),
-    bucket3: v('--bucket-3', '#f0b64b'),
-    bucket4: v('--bucket-4', '#e2603f'),
-    series: readSeriesColors(),
-  };
+  const colors = {};
+  for (const [key, [name, fallback]] of Object.entries(TOKENS)) colors[key] = cs.getPropertyValue(name).trim() || fallback;
+  colors.series = readSeriesColors();
+  return colors;
+}
+
+/**
+ * A spec colour in its CSS form, `var(--accent)` or `var(--series-3)`, for an element rather than
+ * the canvas: the browser recolours it when the theme flips, with no repaint (ui.adoc#palette).
+ */
+export function cssColor(color) {
+  if (!color) return 'var(--silk)';
+  if (TOKENS[color]) return 'var(' + TOKENS[color][0] + ')';
+  const m = /^series(\d)$/.exec(color);
+  if (m) return 'var(--series-' + ((+m[1] - 1) % 8 + 1) + ')';
+  return color;
 }
 
 /** Called by app.js after the theme flips. */
@@ -437,7 +453,6 @@ function escapeHtml(s) {
 export function legend(items, opts = {}) {
   const node = document.createElement('div');
   node.className = 'chart-legend';
-  const colors = themeColors();
   for (const item of items) {
     const btn = document.createElement(opts.onToggle ? 'button' : 'span');
     btn.className = 'legend-item' + (item.off ? ' off' : '');
@@ -447,7 +462,7 @@ export function legend(items, opts = {}) {
       btn.addEventListener('click', () => opts.onToggle(item));
     }
     const swatch = document.createElement('i');
-    swatch.style.background = resolveColor(item.color, colors);
+    swatch.style.background = cssColor(item.color);
     btn.appendChild(swatch);
     btn.appendChild(document.createTextNode(item.label));
     if (item.value != null) {
@@ -527,7 +542,12 @@ export function sparkline(values, opts = {}) {
   const path = svgElement('path', { d: 'M' + pts.join(' L'), class: 'spark-line' });
   svg.appendChild(area);
   svg.appendChild(path);
-  if (opts.color) { path.setAttribute('stroke', opts.color); area.setAttribute('fill', withAlpha(opts.color, 0.14)); }
+  // A style, not an attribute: the stylesheet's .spark-line would win over an attribute, and a
+  // var() in a style follows the theme.
+  if (opts.color) {
+    path.style.stroke = opts.color;
+    area.style.fill = 'color-mix(in srgb, ' + opts.color + ' 14%, transparent)';
+  }
   return svg;
 }
 

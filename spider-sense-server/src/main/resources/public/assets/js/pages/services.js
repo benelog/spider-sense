@@ -2,7 +2,7 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, panel, table, chip, serviceColor, comparator, sortFromQuery, nextSort, spinner, noDataYet, seedServices } from '../ui.js';
+import { h, fill, panel, table, chip, serviceVar, comparator, sortFromQuery, nextSort, spinner, noDataYet, seedServices } from '../ui.js';
 import { pageLoader } from '../page.js';
 import { sparkline } from '../charts.js';
 import { apdexCell, ERROR_RATE_BAD } from '../buckets.js';
@@ -21,7 +21,7 @@ export function render(root, ctx) {
     {
       key: 'name', label: 'Service', cls: 'wide',
       render: (s) => h('div.row', { style: { gap: '8px' } },
-        h('span.dot.service-dot', { style: { background: serviceColor(s.name) } }),
+        h('span.dot.service-dot', { style: { background: serviceVar(s.name) } }),
         h('b', s.name),
         s.embedded ? chip('embedded', { class: 'chip-accent' }) : null),
     },
@@ -34,7 +34,7 @@ export function render(root, ctx) {
     durationColumn('p50Ms', 'p50', '78px', { render: (s) => ifRequests(s, () => dur(s.p50Ms)) }),
     durationColumn('p95Ms', 'p95', '78px', { render: (s) => ifRequests(s, () => dur(s.p95Ms)) }),
     durationColumn('p99Ms', 'p99', '78px', { render: (s) => ifRequests(s, () => dur(s.p99Ms)) }),
-    { key: 'spark', label: 'Requests over time', sortable: false, width: '130px', render: (s) => sparkline(s.sparkline || [], { color: serviceColor(s.name), label: s.name + ' requests per bucket' }) },
+    { key: 'spark', label: 'Requests over time', sortable: false, width: '130px', render: (s) => sparkline(s.sparkline || [], { color: serviceVar(s.name), label: s.name + ' requests per bucket' }) },
     seenColumn(),
   ];
 

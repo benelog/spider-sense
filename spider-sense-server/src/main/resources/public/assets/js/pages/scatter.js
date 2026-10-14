@@ -3,7 +3,7 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, panel, spinner, errorBox, serviceColor, seedServices, noDataYet, segmented } from '../ui.js';
+import { h, fill, panel, spinner, errorBox, serviceVar, seedServices, noDataYet, segmented } from '../ui.js';
 import { pageLoader } from '../page.js';
 import { scatterChart, legend, POINT, isError, isSlow } from '../charts.js';
 import { traceTable } from '../widgets.js';
@@ -151,7 +151,7 @@ export function render(root, ctx) {
     const services = [...new Set(points.map((p) => p[POINT.SERVICE]))].sort();
     seedServices(services);
     fill(legendBox, legend(services.map((s) => ({
-      label: s, color: serviceColor(s), off: hidden.has(s),
+      label: s, color: serviceVar(s), off: hidden.has(s),
       value: count(shown().filter((p) => p[POINT.SERVICE] === s).length),
     })), {
       onToggle: (item) => {

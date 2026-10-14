@@ -140,6 +140,16 @@ export function serviceColor(name) {
   return seriesColors[serviceSlots.get(name)];
 }
 
+/**
+ * A service's colour as the element's CSS form, `var(--series-n)`, so the browser recolours it
+ * when the theme flips (ui.adoc#palette); a canvas cannot read a variable and takes serviceColor().
+ */
+export function serviceVar(name) {
+  if (!name) return 'var(--series-2)';
+  serviceColor(name);
+  return 'var(--series-' + (serviceSlots.get(name) + 1) + ')';
+}
+
 /** Colour by index, for anything that is not a service. */
 export function seriesColor(i) {
   if (!seriesColors.length) readSeriesColors();
@@ -169,7 +179,7 @@ export function chip(text, opts = {}) {
 
 export function serviceChip(name, opts = {}) {
   if (!name) return null;
-  return chip(name, { ...opts, color: serviceColor(name), class: 'chip-service' });
+  return chip(name, { ...opts, color: serviceVar(name), class: 'chip-service' });
 }
 
 export function methodChip(method) {

@@ -5,7 +5,7 @@ import * as api from '../api.js';
 import * as router from '../router.js';
 import {
   h, fill, icon, panel, table, chip, methodChip, statusBar, comparator, sortFromQuery, nextSort, categoryIcon,
-  spinner, serviceColor,
+  spinner, serviceVar,
 } from '../ui.js';
 import { pageLoader, skeleton } from '../page.js';
 import { histogramBars, apdexCell } from '../buckets.js';
@@ -70,7 +70,7 @@ export function render(root, ctx) {
     const attrs = resource || {};
     fill(head,
       h('div.row', { style: { gap: '10px' } },
-        h('span.dot.service-dot.large', { style: { background: serviceColor(name) } }),
+        h('span.dot.service-dot.large', { style: { background: serviceVar(name) } }),
         h('b', { style: { fontSize: '15px' } }, name),
         summary.embedded ? chip('embedded', { class: 'chip-accent' }) : null,
         summary.language ? chip(summary.language) : null,
