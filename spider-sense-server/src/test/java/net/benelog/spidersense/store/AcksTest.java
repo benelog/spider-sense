@@ -52,6 +52,15 @@ class AcksTest {
         assertThat(all.get(1).note()).isNull();
     }
 
+    /** An empty --note= is no note, so nothing renders a dash with nothing after it. */
+    @Test
+    void aBlankNoteIsStoredAsNone() {
+        Acks acks = store.acks();
+        assertThat(acks.ack(SLOW, "").note()).isNull();
+        assertThat(acks.resolve(NPLUS, " ").note()).isNull();
+        assertThat(acks.all(50)).extracting(Acks.Ack::note).containsOnlyNulls();
+    }
+
     @Test
     void acknowledgingAgainReplacesTheRow() {
         Acks acks = store.acks();

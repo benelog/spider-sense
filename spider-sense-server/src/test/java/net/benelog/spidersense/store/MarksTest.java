@@ -89,6 +89,14 @@ class MarksTest {
                 .as("a date alone is no selector form").isEqualTo("2026-10-08");
     }
 
+    /** An empty --note= is no note, so neither the answer nor the list shows an empty one. */
+    @Test
+    void aBlankNoteIsStoredAsNone() {
+        assertThat(store.marks().create("before", null, "", 1_000L).note()).isNull();
+        store.marks().create("after", null, "  ", 2_000L);
+        assertThat(store.marks().list(5)).extracting(Marks.Mark::note).containsOnlyNulls();
+    }
+
     @Test
     void aServiceOrNoteLongerThanItsColumnIsCutAndTheAnswerShowsWhatWasStored() {
         Marks.Mark mark = store.marks().create("before", "s".repeat(300), "n".repeat(2000), 1_000L);

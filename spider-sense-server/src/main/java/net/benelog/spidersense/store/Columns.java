@@ -88,6 +88,11 @@ final class Columns {
     private Columns() {
     }
 
+    /** An optional text a person typed: null when there is nothing in it but whitespace. */
+    static @Nullable String blankToNull(@Nullable String value) {
+        return value == null || value.isBlank() ? null : value;
+    }
+
     /** {@code value} cut to {@code max} characters, or null for null. */
     static @Nullable String cut(@Nullable String value, int max) {
         if (value == null) {

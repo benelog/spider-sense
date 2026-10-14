@@ -399,6 +399,8 @@ class CliTest {
             assertThat(mark.out()).startsWith("mark before at ").contains("the slow version");
 
             assertThat(runAt(base, "marks", "--url=" + base).out()).contains("before");
+            assertThat(runAt(base, "mark", "plain", "--note=", "--url=" + base).out())
+                    .as("an empty note is no note, and no dash before nothing").matches("mark plain at \\S+\n");
             assertThat(runAt(base, "mark", "two words", "--url=" + base).exit()).isEqualTo(2);
 
             Run duration = runAt(base, "mark", "5m", "--url=" + base);

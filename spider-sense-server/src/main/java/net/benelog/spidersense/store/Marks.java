@@ -81,7 +81,8 @@ public final class Marks {
      * Records a mark.
      *
      * <p>The service and the note are cut to their columns, as every text value
-     * is (storage.adoc#writer), and the answer carries them as stored.
+     * is (storage.adoc#writer), and the answer carries them as stored. A blank note is
+     * no note, so nothing renders a dash with nothing after it.
      *
      * <p>A name that a selector would read as something else is refused, because the mark
      * could never be asked for by it: {@code 5m} is a duration, {@code now} the current
@@ -103,7 +104,7 @@ public final class Marks {
             throw new IllegalArgumentException("A mark cannot be named " + name + ": " + reading
                     + "; choose another name");
         }
-        MarkRow row = new MarkRow(at == null ? clock.getAsLong() : at, name, service, note);
+        MarkRow row = new MarkRow(at == null ? clock.getAsLong() : at, name, service, Columns.blankToNull(note));
         long id = sql.withConnection(connection -> {
             try (PreparedStatement statement = connection.prepareStatement(MarkRow.INSERT,
                     Statement.RETURN_GENERATED_KEYS)) {
