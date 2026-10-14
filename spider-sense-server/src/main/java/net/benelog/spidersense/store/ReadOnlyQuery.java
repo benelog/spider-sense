@@ -2,6 +2,7 @@ package net.benelog.spidersense.store;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
@@ -136,10 +137,22 @@ public final class ReadOnlyQuery {
      *
      * <p>The store keeps every instant as epoch milliseconds, so the numbers that
      * matter stay numbers; a {@code TIMESTAMP} a query computes itself becomes an
-     * ISO string rather than an object nobody can read back.
+     * ISO string rather than an object nobody can read back. An {@code ARRAY} and a
+     * row value are lists of their elements, and a {@code JSON} value is its text, so
+     * the same statement answers the same cell rather than H2's object dump, which
+     * carries a counter of its own.
      */
     private static Object value(ResultSet rs, int column) throws SQLException {
         Object value = rs.getObject(column);
+        if (value instanceof byte[] bytes
+                && "JSON".equalsIgnoreCase(rs.getMetaData().getColumnTypeName(column))) {
+            return new String(bytes, StandardCharsets.UTF_8);
+        }
+        return cell(value);
+    }
+
+    /** A value H2 handed over, as {@link #value(ResultSet, int)} answers it. */
+    private static Object cell(Object value) throws SQLException {
         if (value == null || value instanceof Boolean || value instanceof String) {
             return value;
         }
@@ -177,6 +190,29 @@ public final class ReadOnlyQuery {
         }
         if (value instanceof byte[] bytes) {
             return HexFormat.of().formatHex(bytes);
+        }
+        if (value instanceof java.sql.Array array) {
+            try {
+                Object[] elements = (Object[]) array.getArray();
+                List<Object> list = new ArrayList<>(elements.length);
+                for (Object element : elements) {
+                    list.add(cell(element));
+                }
+                return list;
+            } finally {
+                array.free();
+            }
+        }
+        if (value instanceof ResultSet row) {
+            try (row) {
+                List<Object> list = new ArrayList<>();
+                if (row.next()) {
+                    for (int i = 1; i <= row.getMetaData().getColumnCount(); i++) {
+                        list.add(value(row, i));
+                    }
+                }
+                return list;
+            }
         }
         return String.valueOf(value);
     }

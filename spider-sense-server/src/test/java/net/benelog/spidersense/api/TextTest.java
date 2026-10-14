@@ -218,6 +218,15 @@ class TextTest {
         assertThat(rows(text).get(2)).isEqualTo("| " + "x".repeat(199) + "\\|… | line break |");
     }
 
+    /** An ARRAY cell reads as its JSON text, the way the JSON answer writes it. */
+    @Test
+    void aSqlArrayCellIsItsJsonText() {
+        ReadOnlyQuery.Result result = new ReadOnlyQuery.Result(List.of("NAMES"),
+                List.of(List.of(Arrays.asList("GET /a", null, 2L))), false, 1);
+
+        assertThat(rows(Text.sql(result, 200, false)).get(2)).isEqualTo("| [\"GET /a\",null,2] |");
+    }
+
     /**
      * A statement as long as the store keeps may have been cut there: a query row, a compare row
      * and a finding say so, {@code --full} included, and so does the JSON beside them.

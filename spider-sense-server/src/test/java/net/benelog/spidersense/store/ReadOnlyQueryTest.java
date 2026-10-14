@@ -3,6 +3,7 @@ package net.benelog.spidersense.store;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.Arrays;
 import java.util.List;
 
 import org.junit.jupiter.api.AfterEach;
@@ -30,6 +31,20 @@ class ReadOnlyQueryTest {
     void aWholeDecimalPastALongIsADoubleRatherThanAWrappedLong() {
         assertThat(row("SELECT CAST(42 AS DECIMAL(30, 0)), 1e19, 1e20, 12.5")).containsExactly(42L, 1e19, 1e20, 12.5);
         assertThat(row("SELECT 1e400")).containsExactly("1E+400");
+    }
+
+    /**
+     * An ARRAY and a row value are lists of their elements and a JSON value is its text, not H2's
+     * object dump, whose counter made the same statement answer different bytes on every call.
+     */
+    @Test
+    void anArrayARowAndAJsonValueAreTheirElementsAndTheirText() {
+        String statement = "SELECT ARRAY['b', 'a'], (1, 'x'), JSON '{\"a\":1}', ARRAY[ARRAY[1, 2], ARRAY[3]],"
+                + " CAST(NULL AS INTEGER ARRAY), ARRAY[NULL, 2]";
+
+        assertThat(row(statement)).containsExactly(List.of("b", "a"), List.of(1L, "x"), "{\"a\":1}",
+                List.of(List.of(1L, 2L), List.of(3L)), null, Arrays.asList(null, 2L));
+        assertThat(row(statement)).isEqualTo(row(statement));
     }
 
     /** A second statement cannot hide behind a dollar-quoted string, where a quote means nothing. */

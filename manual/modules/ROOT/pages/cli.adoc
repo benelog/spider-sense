@@ -1063,6 +1063,7 @@ Nothing in the body depends on when it was rendered, so `elapsedMs` is in the JS
 A cell is cut at 200 characters with `…` unless `--full` (`full=true`) is given, a `|` in a cell is escaped, and its newlines collapse to spaces.
 Numbers are printed as the store holds them, without a thousands separator, because a value passed back into the next statement has to survive the round trip.
 A SQL `NULL` is `—`.
+An `ARRAY` or a row value is its JSON text (`["GET /a","GET /b"]`), as the JSON answer writes it.
 
 [#read-only]
 === Read-only, in three layers

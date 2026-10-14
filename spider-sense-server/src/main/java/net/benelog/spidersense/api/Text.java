@@ -26,6 +26,7 @@ import net.benelog.spidersense.query.Stats;
 import net.benelog.spidersense.query.Window;
 import net.benelog.spidersense.server.Version;
 import net.benelog.spidersense.store.Acks;
+import net.benelog.spidersense.store.AttrJson;
 import net.benelog.spidersense.store.Database;
 import net.benelog.spidersense.store.Ids;
 import net.benelog.spidersense.store.Importer;
@@ -1399,6 +1400,8 @@ final class Text {
             case Boolean flag -> String.valueOf(flag);
             case Long number -> String.valueOf(number);
             case Double number -> String.valueOf(number);
+            // An ARRAY or a row value, as its JSON text rather than Java's [a, b].
+            case List<?> list -> cutToStatement(AttrJson.toJson(list, AttrJson.Rules.ANSWER).toJson(), full);
             default -> cutToStatement(String.valueOf(value), full);
         };
     }
