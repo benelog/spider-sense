@@ -266,6 +266,15 @@ class CliTest {
             assertThat(run.err()).as(option)
                     .startsWith("spider-sense: --" + option + " needs a value: --" + option + "=<value>\n");
         }
+        for (String option : List.of("since", "url", "db", "service")) {
+            Run run = run("findings", "--" + option + "=");
+            assertThat(run.exit()).as("an empty --%s=", option).isEqualTo(2);
+            assertThat(run.err()).as(option).isEqualTo("spider-sense: --" + option + " needs a value: --"
+                    + option + "=<value>\nsee: java -jar spider-sense.jar findings --help\n");
+        }
+        assertThat(run("export", "--out= ").err()).startsWith("spider-sense: --out needs a value");
+        assertThat(Options.parse(new String[] {"mark", "before", "--note="}).has("note"))
+                .as("an empty note is no note, not a usage error").isTrue();
         assertThat(run("check", "--max-p95-ms").err()).startsWith("spider-sense: --max-p95-ms needs a value");
         assertThat(Options.parse(new String[] {"findings", "--json", "--full", "--hide-acked", "--no-git"})
                 .flag("hide-acked")).isTrue();

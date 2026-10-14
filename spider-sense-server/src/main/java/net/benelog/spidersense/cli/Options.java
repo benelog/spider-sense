@@ -93,6 +93,9 @@ final class Options {
     private static final Set<String> FLAGS =
             Set.of("json", "full", "hide-acked", "no-git", "no-skill", "mcp", "gradle");
 
+    /** The options whose empty value means something: an empty {@code --note=} is no note. */
+    private static final Set<String> MAY_BE_EMPTY = Set.of("note");
+
     /** The rule flags of {@code check}, in the order api.adoc#check names their parameters. */
     private static final Map<String, String> RULES = ruleParameters();
 
@@ -145,8 +148,10 @@ final class Options {
                     throw new Usage("unknown option for " + command + ": --" + key
                             + didYouMean(key, allowed, "--"), command);
                 }
-                if (equals < 0 && !FLAGS.contains(key)) {
-                    // A bare --since would otherwise be the value "true", which is a legal mark name.
+                if (!FLAGS.contains(key) && (equals < 0
+                        || (arg.substring(equals + 1).isBlank() && !MAY_BE_EMPTY.contains(key)))) {
+                    // A bare --since would otherwise be the value "true", which is a legal mark name,
+                    // and --url=$UNSET a URI the HTTP client refuses in its own words.
                     throw new Usage("--" + key + " needs a value: --" + key + "=<value>", command);
                 }
                 values.put(key, equals < 0 ? "true" : arg.substring(equals + 1));
