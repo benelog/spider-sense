@@ -1,4 +1,4 @@
-// pages/scatter.js: the linear axis' maximum and the Live merge (pages.adoc#scatter).
+// pages/scatter.js: the linear axis' maximum, the Live merge, and the list under the chart (pages.adoc#scatter).
 import './browser-env.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -58,4 +58,25 @@ test('a dot\'s tooltip names the day of a request before today', () => {
   const tip = container.querySelector('.chart-tip').innerHTML;
   assert.ok(tip.includes(fmt.day(at) + ' ' + fmt.clock(at)), tip);
   chart.destroy();
+});
+
+test('an empty list with no rectangle drawn says the window holds no trace, not the selection', async () => {
+  const JS = '../../main/resources/public/assets/js/';
+  globalThis.fetch = async (input) => {
+    const path = new URL(input, 'http://localhost:4000').pathname;
+    const body = path === '/api/scatter' ? { points: [] } : path === '/api/traces' ? { traces: [], total: 0 } : {};
+    return new Response(JSON.stringify(body), { status: 200 });
+  };
+  const api = await import(JS + 'api.js');
+  const router = await import(JS + 'router.js');
+  const page = await import(JS + 'pages/scatter.js');
+  api.state.status = { counts: { spans: 10, traces: 5 } };
+  router.register('/scatter');
+  router.replace('/scatter', {});
+  const root = document.createElement('main');
+  document.body.replaceChildren(root);
+  const instance = page.render(root, { params: {}, initialQuery: {}, query: () => router.currentRoute().query || {}, setTitle() {}, navigate() {} });
+  await new Promise((r) => setTimeout(r, 30));
+  assert.deepEqual(root.querySelectorAll('tr.empty-row').map((tr) => tr.textContent), ['No trace in this window.']);
+  instance.destroy();
 });

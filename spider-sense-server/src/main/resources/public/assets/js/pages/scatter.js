@@ -213,7 +213,7 @@ export function render(root, ctx) {
     paint: (res) => {
       const rows = res.traces || [];
       if (!listNode) {
-        listNode = traceTable(rows, { empty: 'No trace in this selection.' });
+        listNode = traceTable(rows, { empty: () => (selection ? 'No trace in this selection.' : 'No trace in this window.') });
         fill(listBody, listNode);
       } else {
         listNode.setRows(rows);
