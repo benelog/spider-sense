@@ -74,6 +74,7 @@ A `--url` named on the command line states that a server is there, so when nothi
 A Spider Sense that is busy past the CLI's 2 minutes answers that call with a failed tool result saying so, and the next call asks it again.
 So does one that answers a call with an error status other than `404` or `405`: it is running and refused that one message.
 A `404` or `405` means what answers at the URL is not a Spider Sense of this version, and the session turns to the file as when nothing answers.
+So does a success that is not a JSON-RPC message in `application/json`, such as a redirect or a web page, which would otherwise reach the host as the answer to its call or leave the call unanswered.
 
 stdio is the transport for a host on the same machine, and the one that still answers after the application has crashed.
 

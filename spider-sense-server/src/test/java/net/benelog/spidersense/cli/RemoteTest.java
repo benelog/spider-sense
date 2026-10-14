@@ -67,7 +67,18 @@ class RemoteTest {
         assertThat(Remote.verdict("true")).isEqualTo(Cli.OK);
         assertThat(Remote.verdict("false")).isEqualTo(Cli.CHECK_FAILED);
         assertThat(Remote.verdict("no-requests")).isEqualTo(Cli.NO_REQUESTS);
-        assertThat(Remote.verdict(null)).as("no header passes").isEqualTo(Cli.OK);
+        assertThat(Remote.verdict(null)).as("no header is no verdict, never a pass").isEqualTo(Cli.USAGE);
+    }
+
+    /** A success is a Spider Sense's only as a 2xx of the type asked for (cli.adoc#fallback). */
+    @Test
+    void anAnswerIsASpiderSensesOnlyAsA2xxOfTheTypeAskedFor() {
+        assertThat(Remote.answered(200, "text/markdown; charset=utf-8", Remote.MARKDOWN)).isTrue();
+        assertThat(Remote.answered(201, "application/json", Remote.JSON)).isTrue();
+        assertThat(Remote.answered(200, "text/html", Remote.MARKDOWN)).as("a dev server's index.html").isFalse();
+        assertThat(Remote.answered(200, "application/json", Remote.MARKDOWN)).as("a health page").isFalse();
+        assertThat(Remote.answered(301, "text/markdown", Remote.MARKDOWN)).as("a redirect").isFalse();
+        assertThat(Remote.answered(200, null, Remote.JSON)).isFalse();
     }
 
     @Test

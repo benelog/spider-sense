@@ -100,6 +100,15 @@ final class Remote {
         }
     }
 
+    /** What a Spider Sense answers {@code format=text} with. */
+    static final String MARKDOWN = "text/markdown";
+
+    /** What it answers {@code format=json}, an export and an MCP message with. */
+    static final String JSON = "application/json";
+
+    /** What {@code /api/events} streams. */
+    static final String EVENT_STREAM = "text/event-stream";
+
     private static final Duration CONNECT = Duration.ofSeconds(2);
     private static final Duration READ = Duration.ofMinutes(2);
 
@@ -190,6 +199,15 @@ final class Remote {
         if (response.statusCode() >= 400) {
             return refused(options, response.statusCode(), contentType(response), response.body(), path, err);
         }
+        boolean ours = command(options).method() == Command.Method.DELETE
+                ? response.statusCode() == 204
+                : answered(response, options.flag("json") ? JSON : MARKDOWN)
+                        && (!Options.CHECK.equals(options.command())
+                                || response.headers().firstValue(AgentApi.PASS_HEADER).isPresent());
+        if (!ours) {
+            // A dev server's index.html, a redirect, a health page: printing it would pass a check.
+            throw Unreachable.answered(response.statusCode(), path);
+        }
         if (Options.UNACK.equals(options.command()) || Options.UNRESOLVE.equals(options.command())) {
             Output.printReport(out, options, Options.UNACK.equals(options.command())
                     ? Reports.unack(options.requiredArgument())
@@ -226,6 +244,11 @@ final class Remote {
                     throw failure(e, base);
                 }
                 return refused(options, response.statusCode(), contentType(response), error, path, err);
+            }
+            // A health page is JSON too; the export is the one that comes as a spider-sense attachment.
+            if (!answered(response, JSON) || !response.headers().firstValue("content-disposition")
+                    .orElse("").contains("filename=\"spider-sense-")) {
+                throw Unreachable.answered(response.statusCode(), path);
             }
             try (InputStream body = response.body(); OutputStream file = Sessions.out(name, out)) {
                 body.transferTo(file);
@@ -268,8 +291,31 @@ final class Remote {
             err.println("spider-sense: " + message(response));
             return Cli.USAGE;
         }
+        if (!answered(response, options.flag("json") ? JSON : MARKDOWN)) {
+            throw Unreachable.answered(response.statusCode(), path);
+        }
         Output.print(out, response.body());
         return Cli.OK;
+    }
+
+    /**
+     * Whether a success answer is one a Spider Sense sends: a {@code 2xx} of the type asked for.
+     *
+     * <p>A {@code 3xx} never is, since the client follows no redirect, and neither is a body of
+     * another type: the frontend's dev server answers every path with its {@code index.html},
+     * and a health page answers {@code {"status":"UP"}}, both with {@code 200}. Printed as the
+     * answer, either would pass a {@code check} for a port that belongs to another server.
+     *
+     * @param type the media type the request asked for, such as {@code text/markdown}
+     */
+    static boolean answered(HttpResponse<?> response, String type) {
+        return answered(response.statusCode(), contentType(response), type);
+    }
+
+    /** The same from the parts of a response. */
+    static boolean answered(int status, @Nullable String contentType, String type) {
+        return status >= 200 && status < 300 && contentType != null
+                && contentType.trim().toLowerCase(java.util.Locale.ROOT).startsWith(type);
     }
 
     /**
@@ -343,7 +389,10 @@ final class Remote {
      * answer. Any other error status is a running Spider Sense refusing this one
      * message ({@link Refused}).
      *
-     * @return the response body, or null when the server answered with none
+     * <p>A success that is not JSON, a redirect among them, is unreachable as well: the thing at
+     * that URL is not a Spider Sense, whatever status it answered with.
+     *
+     * @return the response body, or null for a {@code 202} with none
      */
     static @Nullable String post(String base, String path, @Nullable String body) {
         HttpRequest request = request(base, path)
@@ -363,7 +412,25 @@ final class Remote {
             throw new Refused(base, "HTTP " + status + ", " + message(response));
         }
         String answer = response.body();
-        return answer == null || answer.isBlank() ? null : answer;
+        if (status == 202 && (answer == null || answer.isBlank())) {
+            return null;
+        }
+        if (answer == null || !answered(response, JSON) || !jsonRpc(answer)) {
+            // A page written to the host as the JSON-RPC answer would corrupt its stream, and a
+            // redirect, which has no body, would leave the call unanswered.
+            throw Unreachable.answered(status, path);
+        }
+        return answer;
+    }
+
+    /** Whether a body is a JSON-RPC message, as every answer of {@code POST /mcp} is; a health page is not. */
+    private static boolean jsonRpc(String body) {
+        try {
+            return Json.parse(body) instanceof Json.JsonObject message
+                    && "2.0".equals(message.optString("jsonrpc", ""));
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 
     /**
@@ -412,11 +479,12 @@ final class Remote {
      * The verdict, read from the header {@code /api/check} sets, because the text
      * rendering is for a reader and an exit code must not be parsed out of prose:
      * {@code true} passes, {@code false} fails the check, anything else is a window
-     * with no requests to judge, and no header at all passes.
+     * with no requests to judge, and no header at all is no verdict, which never passes:
+     * {@link #run} reads such an answer as not a Spider Sense's.
      */
     static int verdict(@Nullable String pass) {
         if (pass == null) {
-            return Cli.OK;
+            return Cli.USAGE;
         }
         return switch (pass) {
             case "true" -> Cli.OK;

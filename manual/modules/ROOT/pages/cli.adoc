@@ -733,6 +733,10 @@ After the application has crashed and taken the UI with it, `findings --since=st
 A server that answers with an error in a shape that is not Spider Sense's counts as nothing answering, with the reason `HTTP <status> for <path>`, so it is never the exit `4` of a missing trace or mark.
 Spider Sense's own error is the `{"error": "…"}` object with nothing beside it, or, from `sql`, the one line of a `400`.
 Another application's HTML error page is not, and neither is a Spring application's JSON error, which carries a `status` and a `path` beside its `error`.
+A success that is not Spider Sense's counts the same way, so a port that belongs to another server never prints its page as the answer or passes a `check`.
+Spider Sense answers with a `2xx` of the type asked for: `text/markdown` for the text, `application/json` for `--json`, the attachment `spider-sense-….json` for `export`, a JSON-RPC message for `mcp`, `text/event-stream` for `tail`, and `204` for `unack` and `unresolve`.
+A redirect never is one, because the CLI follows none, and neither is a frontend dev server's `index.html` or, asked for text, a health page's JSON.
+A `check` answer also carries the `X-Spider-Sense-Pass` header, and one without it is not a Spider Sense's either, since a verdict that is not there must never read as a pass.
 That is most often the application's own port named as `--url`, and the line says so:
 
 [source]
@@ -935,7 +939,7 @@ Without either, `tail` runs until it is interrupted.
 `--json` prints the event's JSON object per line instead, with `"event": "tingle"` (or `"stats"`) added.
 
 `tail` needs a running Spider Sense, because there is no file to tail.
-Nothing at `--url` is a message on stderr and exit `2`.
+Nothing at `--url` is a message on stderr and exit `2`, and so is a server there that answers with something other than an event stream.
 
 [#export-import]
 == Export and import

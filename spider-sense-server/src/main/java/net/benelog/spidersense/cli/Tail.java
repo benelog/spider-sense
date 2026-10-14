@@ -77,7 +77,9 @@ final class Tail {
         try (HttpClient client = Remote.client()) {
             HttpResponse<InputStream> response =
                     Remote.send(client, base, request, HttpResponse.BodyHandlers.ofInputStream());
-            if (response.statusCode() >= 400) {
+            if (!Remote.answered(response, Remote.EVENT_STREAM)) {
+                // An error, a redirect, or a page that is not an event stream: no Spider Sense.
+                response.body().close();
                 return unreachable(err, Remote.Unreachable.answered(response.statusCode(), "/api/events"), base);
             }
             try (InputStream body = response.body()) {

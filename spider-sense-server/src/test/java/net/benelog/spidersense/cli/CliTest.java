@@ -572,6 +572,66 @@ class CliTest {
     }
 
     /**
+     * A URL that answers 200 or 301 but not as a Spider Sense does (a frontend dev server's
+     * index.html, a redirect to https, a health page) is the same connection error as a 404 from
+     * one: never printed as the answer, never a passed check, never a tail that waits in silence,
+     * and never a page written to an MCP host as its JSON-RPC answer (cli.adoc#fallback).
+     */
+    @Test
+    void aUrlThatAnswersButNotAsASpiderSenseIsAConnectionErrorAndNeverAPass() throws IOException {
+        record Foreign(int status, String type, String body) {
+        }
+        for (Foreign foreign : List.of(
+                new Foreign(200, "text/html", "<!DOCTYPE html><html><body><div id=app></div></body></html>"),
+                new Foreign(301, "text/html", ""),
+                new Foreign(200, "application/json", "{\"status\":\"UP\"}"))) {
+            com.sun.net.httpserver.HttpServer other = com.sun.net.httpserver.HttpServer.create(
+                    new java.net.InetSocketAddress(java.net.InetAddress.getLoopbackAddress(), 0), 0);
+            other.createContext("/", exchange -> {
+                exchange.getRequestBody().readAllBytes();
+                byte[] body = foreign.body().getBytes(UTF_8);
+                exchange.getResponseHeaders().add("Content-Type", foreign.type());
+                exchange.getResponseHeaders().add("Location", "https://127.0.0.1/");
+                exchange.sendResponseHeaders(foreign.status(), body.length == 0 ? -1 : body.length);
+                exchange.getResponseBody().write(body);
+                exchange.close();
+            });
+            other.start();
+            try {
+                String base = "http://127.0.0.1:" + other.getAddress().getPort();
+                Map<String, String> paths = Map.of("status", "/api/status", "findings", "/api/findings",
+                        "check", "/api/check", "mark", "/api/marks", "export", "/api/export",
+                        "tail", "/api/events");
+                for (List<String> line : List.of(List.of("status"), List.of("findings"),
+                        List.of("check", "--max-errors=0"), List.of("mark", "before"), List.of("export"),
+                        List.of("tail", "--timeout=3s"))) {
+                    List<String> args = new ArrayList<>(line);
+                    args.add("--url=" + base);
+                    Run run = runAt(closedUrl(), args.toArray(new String[0]));
+                    String as = foreign.status() + " " + line;
+                    assertThat(run.exit()).as(as).isEqualTo(2);
+                    assertThat(run.out()).as(as).isEmpty();
+                    assertThat(run.err()).as(as).isEqualTo("spider-sense: no Spider Sense at " + base + " (HTTP "
+                            + foreign.status() + " for " + paths.get(line.get(0)) + "); is that the application's port?\n");
+                }
+
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                try (PrintStream toOut = new PrintStream(out, true, UTF_8);
+                        PrintStream toErr = new PrintStream(new ByteArrayOutputStream(), true, UTF_8)) {
+                    Cli.run(new String[] {"mcp", "--url=" + base}, closedUrl(), new java.io.ByteArrayInputStream(
+                            ("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":"
+                                    + "{\"name\":\"status\",\"arguments\":{}}}\n").getBytes(UTF_8)), toOut, toErr);
+                }
+                Json.JsonObject answer = Json.parse(out.toString(UTF_8)).asObject();
+                assertThat(answer.getLong("id")).as(foreign.status() + " mcp: the call is answered").isEqualTo(1);
+                assertThat(answer.toJson()).as(foreign.status() + " mcp").contains("no Spider Sense at " + base);
+            } finally {
+                other.stop(0);
+            }
+        }
+    }
+
+    /**
      * A Spring application's JSON 404 carries an {@code error} too, but beside a status and a
      * path: it is the application's port, not a missing trace, and a URL typed without its scheme
      * is still that server (cli.adoc#fallback).
