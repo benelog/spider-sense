@@ -34,6 +34,20 @@ class DatabaseTest {
                 .hasMessageContaining("no Spider Sense database at " + file);
     }
 
+    /** The CLI says what H2 refused, not which of its own statements failed. */
+    @Test
+    void theCliOpenNamesH2sReasonForRefusingTheUrl() {
+        Path file = dir.resolve("sense.mv.db");
+        try (Database created = Database.open("jdbc:h2:" + dir.resolve("sense") + ";NON_KEYWORDS=KEY,VALUE", file)) {
+            assertThat(created.sql().count("SELECT COUNT(*) FROM meta", List.of())).isPositive();
+        }
+
+        assertThatThrownBy(() -> Database.openExisting("jdbc:h2:db/sense;NON_KEYWORDS=KEY,VALUE", file))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("implicitly relative")
+                .hasMessageNotContaining("SELECT");
+    }
+
     @Test
     void theCliOpenRefusesAnotherSchemaVersionWhereTheServerOpenUpgrades() {
         String url = TestStore.memoryUrl();

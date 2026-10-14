@@ -234,6 +234,8 @@ public record Config(
      * share one database.
      * A path that ends in the file's own suffix, {@code .mv.db} or the older {@code .h2.db}, loses
      * it, since H2 adds it: the path {@code status} prints can be pasted back as {@code --db}.
+     * A relative path is resolved against the working directory, as {@link #databaseFile} resolves
+     * it, since H2 refuses one that is implicitly relative.
      *
      * <p>{@code NON_KEYWORDS=KEY,VALUE} is appended to every URL: {@code KEY} and
      * {@code VALUE} are reserved words in H2 2.x and storage.adoc#schema uses both as
@@ -242,7 +244,8 @@ public record Config(
     public String jdbcUrl() {
         String url = db.startsWith("jdbc:")
                 ? db
-                : "jdbc:h2:" + expandHome(withoutFileSuffix(db), home) + ";AUTO_SERVER=TRUE";
+                : "jdbc:h2:" + Path.of(expandHome(withoutFileSuffix(db), home)).toAbsolutePath()
+                        + ";AUTO_SERVER=TRUE";
         if (!url.toUpperCase(java.util.Locale.ROOT).contains("NON_KEYWORDS")) {
             url = url + ";NON_KEYWORDS=KEY,VALUE";
         }

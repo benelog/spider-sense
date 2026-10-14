@@ -179,6 +179,16 @@ class ConfigTest {
         }
     }
 
+    /** A path pasted from {@code ls}, which H2 would refuse as implicitly relative. */
+    @Test
+    void aRelativePathIsResolvedAgainstTheWorkingDirectory() {
+        Config config = parse("--db=db/sense.mv.db");
+        Path absolute = Path.of("db/sense").toAbsolutePath();
+
+        assertThat(config.jdbcUrl()).isEqualTo("jdbc:h2:" + absolute + ";AUTO_SERVER=TRUE;NON_KEYWORDS=KEY,VALUE");
+        assertThat(config.databaseFile()).isEqualTo(Path.of(absolute + ".mv.db"));
+    }
+
     @Test
     void aJdbcUrlIsTakenAsWrittenApartFromTheReservedWords() {
         Config config = parse("--db=jdbc:h2:mem:sample;DB_CLOSE_DELAY=-1");

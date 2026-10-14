@@ -134,7 +134,8 @@ public final class Database implements AutoCloseable {
         } catch (IllegalStateException e) {
             throw e;
         } catch (RuntimeException e) {
-            throw new IllegalStateException("could not open " + url + ": " + e.getMessage(), e);
+            // H2's reason, such as a database in use without AUTO_SERVER, rather than the probe statement it failed.
+            throw new IllegalStateException("could not open " + url + ": " + reason(e), e);
         }
     }
 
