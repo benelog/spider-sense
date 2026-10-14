@@ -51,6 +51,12 @@ public final class Writer implements AutoCloseable {
 
     private final BlockingQueue<Batch> queue = new ArrayBlockingQueue<>(QUEUE_CAPACITY);
     private final Map<String, Long> seriesIds = new ConcurrentHashMap<>();
+
+    /**
+     * The {@code service} and process id pairs whose start mark this writer has found
+     * stored: such a process has been marked, and is never marked again.
+     */
+    private final Set<String> markedStarts = ConcurrentHashMap.newKeySet();
     private final AtomicLong droppedBatches = new AtomicLong();
     private final Object flushLock = new Object();
     private final Object wakeUp = new Object();
@@ -512,6 +518,13 @@ public final class Writer implements AutoCloseable {
      * one application, and each export of the other would then count as a restart.
      * A sighting without a {@code process.pid} marks nothing, since there is
      * nothing to compare.
+     *
+     * <p>A process whose mark this writer has found stored is not new either, once
+     * the mark is gone: the retention and {@code DELETE /api/data} spare only each
+     * service's newest start mark, so the older of two processes sharing the name
+     * loses its own, and a mark written again at its next export would move
+     * {@code since=start} to that moment. Only a found mark is remembered, never one
+     * this flush inserts, since the flush may yet roll back.
      */
     private void markRestart(Connection connection, ServiceRow service, long at) throws SQLException {
         Long pid = service.pid();
@@ -519,6 +532,10 @@ public final class Writer implements AutoCloseable {
             return;
         }
         MarkRow mark = new MarkRow(at, Marks.START, service.name(), "pid " + pid);
+        String marked = mark.storedService() + "\0" + mark.note();
+        if (markedStarts.contains(marked)) {
+            return;
+        }
         try (PreparedStatement select = connection.prepareStatement(
                 "SELECT COUNT(*) FROM mark WHERE name = ? AND service = ? AND note = ?")) {
             select.setString(1, mark.name());
@@ -526,6 +543,7 @@ public final class Writer implements AutoCloseable {
             select.setString(3, mark.note());
             try (ResultSet rs = select.executeQuery()) {
                 if (rs.next() && rs.getLong(1) > 0) {
+                    markedStarts.add(marked);
                     return;
                 }
             }

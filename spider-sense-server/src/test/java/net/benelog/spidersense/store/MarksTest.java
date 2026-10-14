@@ -165,6 +165,34 @@ class MarksTest {
     }
 
     /**
+     * The application (pid 100) runs for longer than the retention, and its tests
+     * (pid 200) ran once under the same name. The sweep and a clear keep only the
+     * service's newest start, the tests'; the application's next export is still not
+     * a restart, so since=start does not jump to the moment of that export.
+     */
+    @Test
+    void theOlderOfTwoProcessesIsNotMarkedAgainOnceItsStartMarkIsSwept() {
+        long hour = 3_600_000L;
+        exportAt("orders", 100, NOW);
+        exportAt("orders", 100, NOW + 1_000);
+        exportAt("orders", 200, NOW + hour);
+        assertThat(startMarks()).extracting(Marks.Mark::note).containsExactly("pid 200", "pid 100");
+
+        new Sweeper(store.sql(), 24, 0, () -> NOW + 25 * hour).sweep();
+        assertThat(startMarks()).extracting(Marks.Mark::note).containsExactly("pid 200");
+        exportAt("orders", 100, NOW + 25 * hour);
+
+        assertThat(startMarks()).extracting(Marks.Mark::note).containsExactly("pid 200");
+
+        exportAt("orders", 200, NOW + 26 * hour);
+        store.database().deleteAll();
+        exportAt("orders", 100, NOW + 26 * hour + 1_000);
+        exportAt("orders", 200, NOW + 26 * hour + 2_000);
+
+        assertThat(startMarks()).extracting(Marks.Mark::note).containsExactly("pid 200");
+    }
+
+    /**
      * An exporter batches for seconds, so a run's first request arrives after it
      * began: the start mark takes that request's start, and since=start keeps it.
      */
@@ -181,6 +209,12 @@ class MarksTest {
 
         assertThat(startMarks()).filteredOn(mark -> "pid 4321".equals(mark.note()))
                 .extracting(Marks.Mark::at).containsExactly(NOW + 10_000 - 60_000);
+    }
+
+    /** A span of {@code service} received and written at {@code at}. */
+    private void exportAt(String service, long pid, long at) {
+        received(service, pid, at, at);
+        flush();
     }
 
     /** A span of a run of {@code service} that started at {@code startMs}, received at {@code receivedMs}. */
