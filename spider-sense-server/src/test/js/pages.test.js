@@ -181,6 +181,14 @@ test('the trace page\'s log rows open to their detail, and the panel links to th
   assert.equal(rangeHolding(now - 7 * 3_600_000, now), 'all');
 });
 
+test('the Logs page link leaves a minute of slack, so the window still holds the trace\'s start when the page opens (pages.adoc#trace-logs)', async () => {
+  const { rangeHolding } = await import(JS + 'pages/trace.js');
+  const now = 10_000_000;
+  assert.equal(rangeHolding(now - 5 * 60_000 + 100, now), '15m', 'a 5m window would lose it a tenth of a second later');
+  assert.equal(rangeHolding(now - 4 * 60_000, now), '5m');
+  assert.equal(rangeHolding(now - 15 * 60_000 + 30_000, now), '1h');
+});
+
 test('a list none of whose frames resolve says how to name the source roots (pages.adoc#code-frames)', async () => {
   const frames = await import(JS + 'frames.js');
   const hintOf = (box) => box.querySelectorAll('div').find((d) => d.classList.contains('src-hint'));

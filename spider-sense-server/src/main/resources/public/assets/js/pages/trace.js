@@ -21,9 +21,15 @@ const STATEMENT_KEYS = ['db.statement', 'db.query.text'];
 /** The stack the extension captures on a slow or repeated call (findings.adoc#code). */
 const STACK_KEY = 'code.stacktrace';
 
-/** The narrowest top-bar range that still holds an instant, so the Logs page finds a trace's records. */
+/** How long after the link is made the range it picks still holds the instant. */
+const RANGE_SLACK_MS = 60_000;
+
+/**
+ * The narrowest top-bar range that still holds an instant a minute from now, so the Logs page,
+ * which computes its own window when it opens, finds a trace's records.
+ */
 export function rangeHolding(at, now = Date.now()) {
-  const range = api.RANGES.find((r) => r.ms != null && now - r.ms <= at);
+  const range = api.RANGES.find((r) => r.ms != null && now - r.ms + RANGE_SLACK_MS <= at);
   return range ? range.id : 'all';
 }
 
