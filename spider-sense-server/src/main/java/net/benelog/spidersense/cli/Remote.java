@@ -190,6 +190,10 @@ final class Remote {
         if (response.statusCode() >= 400) {
             requireSpiderSense(response, path);
             err.println("spider-sense: " + message(response));
+            if (response.statusCode() == 400) {
+                // The caller's mistake, as the file path's selector and store refusals are.
+                err.println(Cli.pointer(options.command()));
+            }
             return response.statusCode() == 404 ? Cli.NOT_FOUND : Cli.USAGE;
         }
         if (Options.UNACK.equals(options.command()) || Options.UNRESOLVE.equals(options.command())) {

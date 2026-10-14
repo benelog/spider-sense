@@ -608,6 +608,7 @@ exit codes.
 `version` prints the version of the jar, the line `java -jar spider-sense.jar --version` prints.
 
 A usage error prints two lines on stderr and exits `2`: what is wrong, and which help to read, the command's block when the line named a command and the table otherwise.
+So does a value the line spells correctly and the store refuses, such as `--since=5min`, a mark named `5m`, an inverted window, an `--endpoint=` the window does not have or a statement `sql` does not run, whether a server answered it with a `400` or the CLI read the file.
 A command or an option that is not known but is within two edits of one that is gets a `did you mean …?`:
 
 [source]

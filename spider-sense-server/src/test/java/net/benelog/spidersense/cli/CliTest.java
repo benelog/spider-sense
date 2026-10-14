@@ -270,6 +270,32 @@ class CliTest {
         assertThat(run("help", "--db=x").err()).startsWith("spider-sense: unknown option for help: --db\n");
     }
 
+    /**
+     * A selector, a mark name or an endpoint the store refuses is a usage error like one the
+     * parser refuses: the problem and the help to read, the same over HTTP and from the file
+     * (cli.adoc#help).
+     */
+    @Test
+    void aValueTheStoreRefusesIsAUsageErrorThatPointsAtTheHelp() {
+        List<List<String>> lines = List.of(List.of("findings", "--since=5min"), List.of("mark", "5m"),
+                List.of("compare", "--before=now", "--after=5m"), List.of("check", "--endpoint=nosuch"));
+        serve(true, (server, base) -> {
+            for (List<String> line : lines) {
+                List<String> overHttp = new ArrayList<>(line);
+                overHttp.add("--url=" + base);
+                Run http = runAt(base, overHttp.toArray(new String[0]));
+                assertThat(http.exit()).as(line.toString()).isEqualTo(2);
+                assertThat(http.err()).as(line.toString()).startsWith("spider-sense: ")
+                        .endsWith("\nsee: java -jar spider-sense.jar " + line.get(0) + " --help\n")
+                        .hasLineCount(2);
+            }
+        });
+        Run local = run("findings", "--since=5min", "--db=" + TestStore.writtenUrl());
+        assertThat(local.exit()).isEqualTo(2);
+        assertThat(local.err()).isEqualTo("spider-sense: Not a duration: 5min (a duration is 30s, 5m, 2h or 1d;"
+                + " `marks` lists the mark names)\nsee: java -jar spider-sense.jar findings --help\n");
+    }
+
     /** A word whose would-be option name holds whitespace is the command's word, and -- ends the options. */
     @Test
     void aStatementThatBeginsWithACommentIsTheStatement() {
@@ -806,9 +832,10 @@ class CliTest {
             Run refused = runAt(base, "sql", "DELETE FROM span", "--url=" + base);
             assertThat(refused.exit()).isEqualTo(2);
             assertThat(refused.out()).isEmpty();
-            assertThat(refused.err()).as("the server's own line, not a status code")
+            assertThat(refused.err()).as("the server's own line, not a status code, and the help to read")
                     .isEqualTo("spider-sense: only EXPLAIN, SELECT, SHOW, TABLE, VALUES, WITH"
-                            + " may be run here, and this statement starts with DELETE\n");
+                            + " may be run here, and this statement starts with DELETE\n"
+                            + "see: java -jar spider-sense.jar sql --help\n");
         });
     }
 

@@ -115,9 +115,16 @@ public final class Cli {
             // says the sentence alone, and so does the file path.
             err.println("spider-sense: " + e.getMessage());
             return USAGE;
-        } catch (Selectors.BadSelector | IllegalArgumentException | IllegalStateException e) {
-            // A bad selector, a bad mark name, a missing or foreign database file: the
-            // message says what to do, the class name would not.
+        } catch (Selectors.BadSelector | IllegalArgumentException e) {
+            // A bad selector, a bad mark name, a statement sql refuses: usage errors the store
+            // finds rather than the parser, which the server answers with a 400, so both modes
+            // print the message and the help to read (cli.adoc#help).
+            err.println("spider-sense: " + e.getMessage());
+            err.println(pointer(options.command()));
+            return USAGE;
+        } catch (IllegalStateException e) {
+            // A missing or foreign database file: the message says what to do, the class name
+            // would not, and no help would.
             err.println("spider-sense: " + e.getMessage());
             return USAGE;
         } catch (RuntimeException e) {
