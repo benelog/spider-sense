@@ -148,6 +148,7 @@ When `--no-skill` kept the skills from being installed, the last two lines name 
 A second run replaces everything between the markers, including the jar path when it has changed, and leaves the rest of the file byte for byte as it was.
 Nothing else in the file is parsed or reformatted.
 A file that does not exist is created with the block alone, and one that exists without the markers gets the block appended after one blank line.
+A file with a start marker and no end marker after it, which is a block whose end was edited away, stops `init` before it writes anything, with a message on stderr naming the file and the marker's line and exit code `2`, because a second block appended after it would have the next run replace the text in between.
 
 [#block-file]
 The block goes into the file the project's agent reads.

@@ -324,6 +324,24 @@ class InitTest {
                 .doesNotContain("java -jar " + jar);
     }
 
+    /**
+     * A start marker whose end was edited away stops init before it writes anything: a second
+     * block appended after it would have the next run delete the text between the two.
+     */
+    @Test
+    void aStartMarkerWithoutAnEndIsRefused(@TempDir Path project) throws IOException {
+        String text = "# Notes\n" + Init.START + "\nold stuff\n";
+        Files.writeString(project.resolve("CLAUDE.md"), text, UTF_8);
+
+        Run run = init("--dir=" + project, "--jar=" + JAR, "--no-skill", "--mcp");
+
+        assertThat(run.exit()).isEqualTo(2);
+        assertThat(run.err()).contains("CLAUDE.md has `" + Init.START + "` at line 2 without an end marker");
+        assertThat(run.out()).isEmpty();
+        assertThat(Files.readString(project.resolve("CLAUDE.md"), UTF_8)).isEqualTo(text);
+        assertThat(project.resolve(".mcp.json")).doesNotExist();
+    }
+
     @Test
     void aFileThatIsNotJsonAtAllIsRefusedTheSameWay(@TempDir Path project) throws IOException {
         Path file = project.resolve(".mcp.json");

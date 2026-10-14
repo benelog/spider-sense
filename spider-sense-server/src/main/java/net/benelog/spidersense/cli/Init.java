@@ -253,8 +253,20 @@ final class Init {
                         + "--mcp left it as it was, and wrote nothing else");
                 return Cli.USAGE;
             }
+            List<String> targets = blockFiles(dir);
+            for (String name : targets) {
+                int broken = unclosedStart(dir.resolve(name));
+                if (broken > 0) {
+                    // Appending a second block would leave two starts, and the next run would
+                    // replace the user's text between the stray one and the new block's end.
+                    err.println("spider-sense: " + name + " has `" + START + "` at line " + broken
+                            + " without an end marker; add `" + END + "` where the block ends, or "
+                            + "delete the start marker, and run init again; nothing was written");
+                    return Cli.USAGE;
+                }
+            }
             String block = block(setup);
-            for (String name : blockFiles(dir)) {
+            for (String name : targets) {
                 out.println(writeBlock(dir.resolve(name), block) + " " + name + " block (jar: " + jar + ")");
             }
             if (withSkill) {
@@ -395,6 +407,23 @@ final class Init {
 
     private static void indent(StringBuilder out, int depth) {
         out.append("  ".repeat(depth));
+    }
+
+    /**
+     * The line of a start marker with no end marker after it, or 0 when the file has none or is
+     * not there: a block whose end was edited away, which no run of {@code init} can mend
+     * without guessing where it ended.
+     */
+    private static int unclosedStart(Path file) throws IOException {
+        if (!Files.exists(file)) {
+            return 0;
+        }
+        String existing = Files.readString(file, UTF_8);
+        int start = existing.indexOf(START);
+        if (start < 0 || existing.indexOf(END, start + START.length()) >= 0) {
+            return 0;
+        }
+        return (int) existing.substring(0, start).chars().filter(c -> c == '\n').count() + 1;
     }
 
     /**
