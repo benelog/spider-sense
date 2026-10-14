@@ -295,7 +295,7 @@ public final class OtlpDecoder {
                 var histogram = metric.getHistogram();
                 String temporality = temporality(histogram.getAggregationTemporality());
                 for (HistogramDataPoint point : histogram.getDataPointsList()) {
-                    if (noRecordedValue(point.getFlags())) {
+                    if (noRecordedValue(point.getFlags()) || noTime(point.getTimeUnixNano())) {
                         continue;
                     }
                     batch.add(instrument.sample("histogram", false, temporality, point.getAttributesList(),
@@ -306,7 +306,7 @@ public final class OtlpDecoder {
                 var histogram = metric.getExponentialHistogram();
                 String temporality = temporality(histogram.getAggregationTemporality());
                 for (ExponentialHistogramDataPoint point : histogram.getDataPointsList()) {
-                    if (noRecordedValue(point.getFlags())) {
+                    if (noRecordedValue(point.getFlags()) || noTime(point.getTimeUnixNano())) {
                         continue;
                     }
                     batch.add(instrument.sample("histogram", false, temporality, point.getAttributesList(),
@@ -327,7 +327,8 @@ public final class OtlpDecoder {
      */
     private static boolean noValue(NumberDataPoint point) {
         return noRecordedValue(point.getFlags())
-                || point.getValueCase() == NumberDataPoint.ValueCase.VALUE_NOT_SET;
+                || point.getValueCase() == NumberDataPoint.ValueCase.VALUE_NOT_SET
+                || noTime(point.getTimeUnixNano());
     }
 
     private static boolean noRecordedValue(int flags) {
@@ -444,11 +445,19 @@ public final class OtlpDecoder {
                 at);
     }
 
-    /** When the record says it happened, falling back to when it was observed. */
+    /** When the record says it happened, falling back to when it was observed, and to now when neither is a time. */
     private static long at(io.opentelemetry.proto.logs.v1.LogRecord record, long now) {
-        return record.getTimeUnixNano() != 0
+        return !noTime(record.getTimeUnixNano())
                 ? millis(record.getTimeUnixNano())
-                : record.getObservedTimeUnixNano() != 0 ? millis(record.getObservedTimeUnixNano()) : now;
+                : !noTime(record.getObservedTimeUnixNano()) ? millis(record.getObservedTimeUnixNano()) : now;
+    }
+
+    /**
+     * Whether an OTLP time is none: 0, which is unset, or past 2^63, which a signed long reads as
+     * negative and which would be stored before the epoch, where no window reaches it.
+     */
+    private static boolean noTime(long nanos) {
+        return nanos <= 0;
     }
 
     /**

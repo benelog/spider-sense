@@ -54,6 +54,28 @@ class OtlpDecodeTest {
                 .containsExactly(NOW - 5_000, NOW - 3_000, NOW);
     }
 
+    /** A time past 2^63, which a signed long reads as negative, is no time, as it is for a span. */
+    @Test
+    void aTimePastTwoToTheSixtyThirdIsNoTime() {
+        long past = Long.parseUnsignedLong("9300000000000000000");
+        LogRecord pastObserved = Otlp.log(NOW, 9, "past", null, null).toBuilder().setTimeUnixNano(past)
+                .setObservedTimeUnixNano((NOW - 3_000) * 1_000_000L).build();
+        LogRecord pastBoth = pastObserved.toBuilder().setObservedTimeUnixNano(past).build();
+
+        Batch logs = OtlpDecoder.decode(Otlp.logs(Otlp.service("orders"), "app", pastObserved, pastBoth), NOW);
+
+        assertThat(logs.logs()).extracting(net.benelog.spidersense.store.LogRecord::at)
+                .containsExactly(NOW - 3_000, NOW);
+
+        var gauge = Otlp.gauge(Otlp.service("orders"), "jvm.threads", "{thread}", NOW, 12);
+        var pastGauge = gauge.toBuilder();
+        pastGauge.getResourceMetricsBuilder(0).getScopeMetricsBuilder(0).getMetricsBuilder(0)
+                .getGaugeBuilder().getDataPointsBuilder(0).setTimeUnixNano(past);
+
+        assertThat(OtlpDecoder.decode(pastGauge.build(), NOW).metrics()).as("skipped as a point with no value is")
+                .isEmpty();
+    }
+
     @Test
     void aMetricsExportIsDecodedWithItsSighting() {
         Batch batch = OtlpDecoder.decode(Otlp.gauge(Otlp.service("orders"), "jvm.threads", "{thread}", NOW, 12), NOW);
