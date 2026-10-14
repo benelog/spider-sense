@@ -1,7 +1,7 @@
 // charts.js: the legend a chart's spec implies, and the series alignment of the JVM and Metrics pages.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { legendItems, alignedTimes, alignTo, stackColumns, tipLeft, valueText, tickText, durationRange, countScales } from '../../main/resources/public/assets/js/charts.js';
+import { legendItems, alignedTimes, alignTo, stackColumns, tipLeft, valueText, tickText, durationRange, countScales, COUNT_INCRS } from '../../main/resources/public/assets/js/charts.js';
 import { throughputSpec } from '../../main/resources/public/assets/js/throughput.js';
 
 test('the legend lists the series under their legend label, leaving out the hidden ones', () => {
@@ -97,4 +97,15 @@ test('the ticks of an axis labelled ms stay in milliseconds', () => {
   assert.equal(tickText('ms', 50), '50.0');
   assert.equal(tickText('ms', 5000), '5,000');
   assert.equal(tickText('ms', 12000), '12,000');
+});
+
+test('a count axis in the billions still finds a whole-number step that keeps its ticks 30 px apart', () => {
+  // uPlot's own search: the first step whose ticks are at least `space` px apart, or none, and with none it draws no tick and no grid
+  const step = (range, plotPx, space = 30) => COUNT_INCRS.find((incr) => incr * plotPx / range >= space);
+  const memory = 1.6e8;
+  assert.ok(countScales([{ values: [memory, memory + 1] }]).has('y'), 'bytes are whole numbers, so a count axis');
+  assert.equal(step(memory * 1.15, 160), 5e7);
+  assert.ok(step(4e12 * 1.15, 1000) != null, 'a few terabytes still have a step');
+  assert.equal(step(1.15, 160), 1, 'a series at 0 or 1 still steps by one');
+  assert.ok(COUNT_INCRS.every(Number.isInteger));
 });

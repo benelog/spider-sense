@@ -68,8 +68,14 @@ function timeAxis(colors, opts = {}) {
   };
 }
 
-/** Scales that count things; their axes and their range stay on whole numbers. */
-const COUNT_INCRS = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000, 1000000];
+/**
+ * Scales that count things; their axes and their range stay on whole numbers.
+ * The steps run 1, 2, 5 times every power of ten up to 10^15, so a count of bytes in the
+ * billions still finds a step that keeps its ticks apart: uPlot draws no tick and no grid at
+ * all when none of the steps does.
+ */
+export const COUNT_INCRS = [];
+for (let pow = 1; pow <= 1e15; pow *= 10) COUNT_INCRS.push(pow, 2 * pow, 5 * pow);
 
 function isCountScale(scale) {
   return scale !== 'ms' && scale !== 'pct' && scale !== 'load';
