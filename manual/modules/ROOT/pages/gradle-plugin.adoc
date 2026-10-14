@@ -149,7 +149,7 @@ xref:configuration.adoc#properties[Configuration] lists the jar's defaults.
 | `open`
 | `Boolean`
 | unset (`false`)
-| `-Dspidersense.open=`: open the browser at startup
+| `-Dspidersense.open=`: open the UI in the browser at startup, the collector's when `collector` is set
 
 | `appPackages`
 | `List<String>`

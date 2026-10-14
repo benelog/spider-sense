@@ -36,6 +36,19 @@ class StartLineTest {
                         + " UI: http://127.0.0.1:4000  service: orders  CLI: java -jar " + JAR + " findings --since=start");
     }
 
+    /** {@code spidersense.open} opens the UI the telemetry goes to, the collector's when forwarding. */
+    @Test
+    void theBrowserOpensTheUiTheTelemetryGoesTo() {
+        Config open = Config.parse(new String[] {"--port=4105", "--open=true"}, key -> null, key -> null).config();
+        Config forwarding = Config.parse(new String[] {"--collector=http://127.0.0.1:4000/", "--open=true"},
+                key -> null, key -> null).config();
+
+        assertThat(SpiderSenseAgent.browserUrl(open, true)).isEqualTo("http://127.0.0.1:4105");
+        assertThat(SpiderSenseAgent.browserUrl(open, false)).as("nothing serves at the port").isNull();
+        assertThat(SpiderSenseAgent.browserUrl(forwarding, false)).isEqualTo("http://127.0.0.1:4000");
+        assertThat(SpiderSenseAgent.browserUrl(Config.defaults(), true)).as("not asked to").isNull();
+    }
+
     @Test
     void aCollectorNothingAnswersAtSaysHowToStartIt() throws Exception {
         assertThat(SpiderSenseAgent.nothingAnswers("http://127.0.0.1:4199", JAR))

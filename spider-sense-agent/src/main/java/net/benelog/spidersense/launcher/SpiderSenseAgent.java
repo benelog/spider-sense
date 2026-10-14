@@ -134,7 +134,10 @@ public final class SpiderSenseAgent {
                         service != null ? service : effectiveServiceName(config, settings),
                         NestedJar.commandPath());
                 System.out.println(LOG_PREFIX + (serving ? line : heldBy(config.port(), line)));
-                maybeOpenBrowser(config);
+            }
+            String browse = browserUrl(config, serving || anotherSpiderSense);
+            if (browse != null) {
+                openBrowser(browse);
             }
         } catch (Throwable t) {
             warn("could not say where the UI is", t);
@@ -311,11 +314,24 @@ public final class SpiderSenseAgent {
         }
     }
 
-    private static void maybeOpenBrowser(Config config) {
+    /**
+     * The UI {@code spidersense.open} opens, or {@code null} for none: the one at the port when a
+     * Spider Sense serves there, ours or another's, and the collector's when forwarding to one
+     * (modes.adoc#forwarding).
+     *
+     * @param atThePort whether a Spider Sense serves at {@code config}'s port
+     */
+    static @Nullable String browserUrl(Config config, boolean atThePort) {
         if (!config.open()) {
-            return;
+            return null;
         }
-        String url = config.baseUrl();
+        if (atThePort) {
+            return config.baseUrl();
+        }
+        return config.collector() != null ? config.otlpEndpoint() : null;
+    }
+
+    private static void openBrowser(String url) {
         Thread t = new Thread(() -> {
             try {
                 Thread.sleep(1500);

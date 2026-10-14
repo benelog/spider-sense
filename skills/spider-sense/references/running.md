@@ -55,7 +55,7 @@ A `spidersense.*` property that is not a key is a warning on stderr at start-up,
 | `spidersense.ingest.max-spans-per-second` | unset | above this many spans in one second the receiver drops the spans of traces it has not seen yet, and counts them on `/api/status` |
 | `spidersense.slow.request.ms` | `500` | the slow-request threshold, and the Apdex scale |
 | `spidersense.slow.query.ms` | `100` | the slow-query threshold |
-| `spidersense.open` | `false` | open a browser at startup |
+| `spidersense.open` | `false` | open a browser at startup on the UI, the collector's when forwarding |
 | `spidersense.app.packages` | unset | comma-separated package prefixes that count as application code in a finding's `code` frames |
 | `spidersense.ignore.endpoints` | `/actuator/**,/health,/healthz,/livez,/readyz` | comma-separated glob patterns; a matching entry span is stored and in its trace but is not a request; an empty value ignores nothing |
 | `spidersense.source.dirs` | `src/main/java` and `src/main/kotlin` of the working directory and of each immediate subdirectory | comma-separated source roots a code frame resolves under, for source lines, editor links and the suspect-change line; an empty value turns all three off |

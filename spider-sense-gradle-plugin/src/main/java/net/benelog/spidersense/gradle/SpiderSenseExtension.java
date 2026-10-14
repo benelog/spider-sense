@@ -90,7 +90,7 @@ public abstract class SpiderSenseExtension {
     /** {@code -Dspidersense.slow.query.ms}: the threshold a query is slow past. */
     public abstract Property<Long> getSlowQueryMs();
 
-    /** {@code -Dspidersense.open}: open the browser on the UI at startup. */
+    /** {@code -Dspidersense.open}: open the browser on the UI at startup, the collector's when forwarding. */
     public abstract Property<Boolean> getOpen();
 
     /** {@code -Dspidersense.app.packages}, joined with commas: the application's own packages. */

@@ -64,7 +64,7 @@ The application starts all the same, and the misspelt key has no effect.
 
 | `spidersense.open`
 | `false`
-| Agent mode: open the browser at startup (`java.awt.Desktop`), best effort.
+| Agent mode: open the UI in the browser at startup (`java.awt.Desktop`), best effort; when forwarding, the collector's UI.
 
 | `spidersense.app.packages`
 | unset
