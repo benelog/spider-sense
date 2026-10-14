@@ -427,6 +427,20 @@ class QueriesTest {
         return new Queries.TraceFilter(window, null, null, null, null, null, q, null, 50);
     }
 
+    /** A request on a bucket bound is in the lower bucket, so two neighbouring bars never list it both. */
+    @Test
+    void theMinimumDurationIsOpenAndTheMaximumClosed() {
+        decoder.ingest(Otlp.traces(Otlp.service("orders"),
+                Otlp.span(traceId(1), spanId(1), "GET /a", Span.SpanKind.SPAN_KIND_SERVER, NOW, 125),
+                Otlp.span(traceId(2), spanId(2), "GET /b", Span.SpanKind.SPAN_KIND_SERVER, NOW, 126)));
+        flush();
+
+        assertThat(queries.traces(new Queries.TraceFilter(window, null, null, 125L, null, null, null, null, 50)))
+                .extracting(Stats.TraceSummary::traceId).containsExactly(traceId(2));
+        assertThat(queries.traces(new Queries.TraceFilter(window, null, null, null, 125L, null, null, null, 50)))
+                .extracting(Stats.TraceSummary::traceId).containsExactly(traceId(1));
+    }
+
     @Test
     void tracesThatStartInTheSameMillisecondPageByTheirTraceId() {
         for (int i = 1; i <= 5; i++) {

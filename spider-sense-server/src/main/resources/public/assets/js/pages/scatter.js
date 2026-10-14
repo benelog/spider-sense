@@ -204,7 +204,8 @@ export function render(root, ctx) {
       let opts;
       if (selection) {
         // The API takes whole milliseconds: the bounds widen to them, so no point drawn inside is left out.
-        extra.minMs = Math.floor(selection.minMs);
+        // minMs is open, so it is the whole millisecond below the rectangle's floor; one from 0 needs none.
+        if (selection.minMs > 0) extra.minMs = Math.ceil(selection.minMs) - 1;
         extra.maxMs = Math.ceil(selection.maxMs);
         opts = { window: { from: selection.from, to: selection.to } };
       }

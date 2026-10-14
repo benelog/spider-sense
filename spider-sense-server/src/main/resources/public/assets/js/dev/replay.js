@@ -155,7 +155,7 @@ function traceWhere(params, paging) {
       : 't.start_ms < ' + before);
   }
   const minMs = num(params.get('minMs'));
-  if (minMs !== null) where.push('t.duration_ns >= ' + minMs + ' * 1000000');
+  if (minMs !== null) where.push('t.duration_ns > ' + minMs + ' * 1000000');
   const maxMs = num(params.get('maxMs'));
   if (maxMs !== null) where.push('t.duration_ns <= ' + maxMs + ' * 1000000');
   if (params.get('status') === 'error') where.push('t.error');

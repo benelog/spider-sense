@@ -1553,7 +1553,7 @@ const ROUTES = [
     const w = windowOf(q);
     let list = inWindow(w, q.service);
     if (q.endpointId) list = list.filter((t) => t.endpointId === q.endpointId);
-    if (q.minMs) list = list.filter((t) => t.durationMs >= +q.minMs);
+    if (q.minMs) list = list.filter((t) => t.durationMs > +q.minMs);
     if (q.maxMs) list = list.filter((t) => t.durationMs <= +q.maxMs);
     if (q.status === 'error') list = list.filter((t) => t.error);
     if (q.status === 'ok') list = list.filter((t) => !t.error);

@@ -253,6 +253,9 @@ It is `{}` when those traces add up to nothing.
 
 *`GET /api/traces?from&to&service&endpointId&minMs&maxMs&status=error|ok|all&q&limit=50&before=<epoch ms>&beforeId=<traceId>`*
 
+`minMs` and `maxMs`::
+Whole milliseconds; a trace is listed when its duration is above `minMs` and at most `maxMs`.
+The lower bound is open and the upper closed, as the Response summary's buckets are, so the lists behind two neighbouring bars never share a request on their common bound.
 `q`::
 A case-insensitive substring match over the root span name, every span name, and every string attribute value of the trace.
 `before` and `beforeId`::

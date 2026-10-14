@@ -835,8 +835,9 @@ public final class Queries {
                     : where.and("(t.start_ms < ? OR (t.start_ms = ? AND t.trace_id < ?))",
                             before, before, filter.beforeId());
         }
+        // minMs is open and maxMs closed, as the Response summary's buckets are (api.adoc#traces).
         if (filter.minMs() != null) {
-            where = where.and("t.duration_ns >= ?", nanos(filter.minMs()));
+            where = where.and("t.duration_ns > ?", nanos(filter.minMs()));
         }
         if (filter.maxMs() != null) {
             where = where.and("t.duration_ns <= ?", nanos(filter.maxMs()));

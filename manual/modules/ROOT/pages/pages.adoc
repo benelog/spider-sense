@@ -46,7 +46,7 @@ Load splits the same bars into the four response-time buckets, stacked bottom-up
 In both, p95 is a line on a second y-axis in the accent colour.
 Beside the chart, one third of the width, the *Response summary* draws five vertical bars, one per response-time bucket and one for errors, in the bucket colours, with the count above each bar and the label beneath.
 The tallest bar sets the scale, and a tooltip gives each bar's share.
-Each bar is a link to the Traces page filtered to it: `status=ok` with `minMs` and `maxMs` set to the bucket's bounds for a response-time bucket, and `status=error` for the error bar.
+Each bar is a link to the Traces page filtered to it: `status=ok` with `minMs` and `maxMs` set to the bucket's bounds for a response-time bucket, `minMs` open as the bucket's lower bound is, and `status=error` for the error bar.
 The bars are labelled from the bucket bounds, `≤125 ms`, `≤500 ms`, `≤2 s`, `>2 s`, and `error`, and they keep those colours wherever a histogram or a load chart appears (xref:ui.adoc#response-buckets[Response-time buckets]).
 Below 900 px the chart and the summary stack.
 
