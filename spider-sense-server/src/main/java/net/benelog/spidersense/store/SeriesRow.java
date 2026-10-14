@@ -2,6 +2,8 @@ package net.benelog.spidersense.store;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.Map;
+import java.util.TreeMap;
 
 import net.benelog.spidersilk.json.Json;
 import org.jspecify.annotations.Nullable;
@@ -47,8 +49,24 @@ public record SeriesRow(long id, String service, String name, String attributes)
                 .put("attributes", RowJson.parsed(attributes, AttrJson.EMPTY_OBJECT));
     }
 
-    /** The attributes in the sorted form the series key is hashed over, cut to the column as the writer cuts. */
+    /**
+     * The attributes in the sorted form the series key is hashed over: the document's
+     * own values with the keys sorted, so the text is the one the writer stored and the
+     * import finds that series. Decoded into the store's values and encoded again, a
+     * {@code 2.0} would come back as {@code 2} and a nested object as its text, and the
+     * import would create a second series. Only text too long for the column, which no
+     * export writes, is cut as the writer cuts.
+     */
     String sortedAttributes() {
-        return AttrJson.encodeSorted(AttrJson.decode(attributes), Columns.SERIES_ATTRIBUTES);
+        Map<String, Json.JsonValue> members = new TreeMap<>();
+        for (Map.Entry<String, Json.JsonValue> member : Json.parse(attributes).asObject()) {
+            members.put(member.getKey(), member.getValue());
+        }
+        Json.JsonObject sorted = Json.obj();
+        members.forEach(sorted::put);
+        String json = sorted.toJson();
+        return json.length() <= Columns.SERIES_ATTRIBUTES
+                ? json
+                : AttrJson.encodeSorted(AttrJson.decode(attributes), Columns.SERIES_ATTRIBUTES);
     }
 }

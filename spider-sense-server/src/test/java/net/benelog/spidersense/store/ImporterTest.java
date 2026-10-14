@@ -160,6 +160,35 @@ class ImporterTest {
     }
 
     /**
+     * A session imported into the store it came from: a series whose attributes hold a
+     * whole-valued double or a nested object is the series already stored, not a second one.
+     */
+    @Test
+    void anImportedSeriesIsTheStoredOneWhateverItsAttributesHold() {
+        Map<String, Object> attributes = new java.util.LinkedHashMap<>();
+        attributes.put("pool", "G1 Eden");
+        attributes.put("ratio", 2.0);
+        attributes.put("nested", Map.of("a", 1L));
+        Batch batch = new Batch();
+        batch.add(new Batch.MetricSample("orders", "jvm.memory.used", "gauge", "By", "", false, "UNSPECIFIED",
+                attributes, MetricPoint.number(AT, 1024)));
+        writer.submit(batch);
+        writer.flushNow();
+        SeriesRow stored = database.sql().queryOne("SELECT id, service, name, attributes FROM metric_series",
+                List.of(), SeriesRow::read);
+        assertThat(stored).isNotNull();
+
+        Json.JsonObject document = document("orders")
+                .put("metricSeries", Json.arr().add(Json.parse(stored.toJson().toJson())))
+                .put("metricPoints", Json.arr().add(Json.obj().put("seriesId", stored.id())
+                        .put("atMs", AT + 1_000).put("value", 2048.0)));
+        importer.importDocument(document);
+
+        assertThat(count("SELECT COUNT(*) FROM metric_series")).isEqualTo(1);
+        assertThat(count("SELECT COUNT(*) FROM metric_point WHERE series_id = " + stored.id())).isEqualTo(2);
+    }
+
+    /**
      * Buckets past their column are left out, as the writer leaves them out
      * (storage.adoc#writer): text cut partway through would not parse on the next read.
      */

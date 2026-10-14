@@ -256,6 +256,7 @@ A key/value list, as an attribute or a log body, is stored as a JSON object howe
 An object too long for its column is cut as that text, like any other long string value.
 An array is stored as a JSON array, and an array longer than every string value of a row too long for its column becomes its JSON text, which is then cut in the same way and reads back as that text.
 A metric series' attributes are cut in the same way before they are hashed, so the stored text reads back, and its `attr_hash` is of that text, which is what an import looks the series up by.
+The import hashes a document's attributes with their keys sorted and their values as the document writes them, not read into the store's values and written again, so a whole-valued double such as `2.0` or a nested object finds the series it came from.
 When a flush still fails, each of its batches is written again in a transaction of its own, so a row the database refuses costs only the export that carried it.
 A failed flush is rolled back whole before that, whatever failed, a stack overflow on an attribute nested thousands of levels deep included, so no batch is stored twice.
 A span is merged on its `(trace_id, span_id)`, the unique key of `span` (`MERGE INTO span … KEY (trace_id, span_id)`), so an export the exporter sends again, because the answer to the first was lost to a timeout or a reset connection, stores each of its spans once.
