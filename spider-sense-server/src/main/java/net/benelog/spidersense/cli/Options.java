@@ -156,7 +156,9 @@ final class Options {
                 throw new Usage("unexpected argument: " + arg, command);
             }
         }
-        if (label != null && argument == null) {
+        // An empty word is a missing one: trace "$ID" with ID unset must not ask /api/traces/,
+        // which is the list, nor name a finding the server cannot route.
+        if (label != null && (argument == null || argument.isBlank())) {
             throw new Usage(command + " needs " + label, command);
         }
         if (HELP.equals(command) && argument != null && Command.named(argument) == null) {

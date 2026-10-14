@@ -193,6 +193,14 @@ class CliTest {
         assertThat(run("trace").err()).startsWith("spider-sense: trace needs a trace id");
         assertThat(run("trace").exit()).isEqualTo(2);
         assertThat(run("mark").err()).startsWith("spider-sense: mark needs a mark name");
+        for (String command : List.of("trace", "ack", "unack", "resolve", "unresolve", "mark", "sql", "import")) {
+            Run blank = run(command, " ", "--url=" + closedUrl());
+            assertThat(blank.exit()).as("an empty %s argument is a missing one", command).isEqualTo(2);
+            assertThat(blank.err()).as(command).startsWith("spider-sense: " + command + " needs ")
+                    .endsWith("\nsee: java -jar spider-sense.jar " + command + " --help\n");
+        }
+        assertThat(run("trace", "", "--url=" + closedUrl()).err())
+                .isEqualTo("spider-sense: trace needs a trace id\nsee: java -jar spider-sense.jar trace --help\n");
         assertThat(run("compare", "--before=5m").err())
                 .startsWith("spider-sense: compare needs both --before and --after");
         assertThat(run("--json").exit()).isEqualTo(2);
