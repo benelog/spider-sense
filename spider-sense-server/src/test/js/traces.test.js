@@ -1,4 +1,5 @@
-// pages/traces.js against answers the test controls: Load more under a Live tick (pages.adoc#traces-list).
+// pages/traces.js against answers the test controls: Load more under a Live tick, and the
+// endpoint filter while the window has no call of its endpoint (pages.adoc#traces-list).
 import './browser-env.js';
 import { test, before } from 'node:test';
 import assert from 'node:assert/strict';
@@ -63,5 +64,22 @@ test('a Live tick after Load more puts the newest traces on top and keeps the ro
   await settle();
   assert.equal(countLabel(root), '102 of 402');
   assert.equal(startsOf(root).length, 102);
+  page.destroy();
+});
+
+test('the endpoint the URL names stays chosen when the window has no call of it', async () => {
+  api.state.service = 'bookstore';
+  server.endpoints = [{ endpointId: 'aaaa1111', name: 'GET /books' }, { endpointId: 'bbbb2222', name: 'GET /authors' }];
+  const { root, page } = open({ service: 'bookstore', endpointId: 'aaaa1111' });
+  await settle();
+  const select = root.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Endpoint filter');
+  assert.equal(select.value, 'aaaa1111');
+  server.endpoints = [{ endpointId: 'bbbb2222', name: 'GET /authors' }];
+  page.refresh();
+  await settle();
+  assert.equal(select.value, 'aaaa1111', 'the select says what the hash and the request filter by');
+  const option = select.children.find((o) => o.getAttribute('value') === 'aaaa1111');
+  assert.equal(option && option.textContent, 'GET /books (not seen)');
+  assert.equal(router.currentRoute().query.endpointId, 'aaaa1111');
   page.destroy();
 });

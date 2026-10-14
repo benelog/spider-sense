@@ -91,16 +91,26 @@ export function render(root, ctx) {
     foot.hidden = rows.length >= total || rows.length === 0;
   }
 
-  /** The endpoint filter offers the top bar's service's endpoints, and is hidden without one. */
+  /** The names of the endpoints the select has offered, for one the window no longer holds. */
+  const endpointNames = new Map();
+
+  /**
+   * The endpoint filter offers the top bar's service's endpoints, and is hidden without one. The
+   * endpoint the filter names stays an option when the window has no call of it, as `<name> (not
+   * seen)`, so the select never reads "Any endpoint" while the hash and the list filter by it.
+   */
   const endpoints = pageLoader({
     fetch: async () => (api.state.service ? api.endpoints({}) : null),
     paint: (res) => {
       if (!res) { endpointSelect.hidden = true; return; }
       const options = res.endpoints || [];
-      const value = endpointSelect.value || filter.endpointId;
+      for (const e of options) endpointNames.set(e.endpointId, e.name);
+      const value = filter.endpointId;
+      const unseen = value && !options.some((e) => e.endpointId === value) ? value : '';
       fill(endpointSelect, h('option', { value: '' }, 'Any endpoint'),
-        options.map((e) => h('option', { value: e.endpointId }, e.name)));
-      endpointSelect.value = options.some((e) => e.endpointId === value) ? value : '';
+        options.map((e) => h('option', { value: e.endpointId }, e.name)),
+        unseen ? h('option', { value: unseen }, (endpointNames.get(unseen) || unseen) + ' (not seen)') : null);
+      endpointSelect.value = value;
       endpointSelect.hidden = false;
     },
     onError: () => { endpointSelect.hidden = true; return false; },
