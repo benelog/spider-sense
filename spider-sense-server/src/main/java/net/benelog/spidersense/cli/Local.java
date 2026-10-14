@@ -12,6 +12,7 @@ import net.benelog.spidersense.api.Reports;
 import net.benelog.spidersense.query.Selectors;
 import net.benelog.spidersense.query.Window;
 import net.benelog.spidersense.server.Config;
+import net.benelog.spidersilk.json.Json;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -139,10 +140,30 @@ final class Local {
         try (OutputStream file = Sessions.out(name, out)) {
             reports.export(window, service, file);
         } catch (IOException e) {
-            throw new UncheckedIOException("could not write " + (name == null ? "the export" : name), e);
+            throw new UncheckedIOException(
+                    "could not write " + (name == null ? "the export" : name) + ": " + Sessions.why(e), e);
         }
         Output.wroteExport(err, name);
         return Cli.OK;
+    }
+
+    /**
+     * {@code import} from the file: the document read and written as {@code POST /api/import}
+     * reads and writes it, a document that does not decode refused in the same words.
+     */
+    static Reports.Report imported(Reports reports, String name) {
+        Json.JsonObject document;
+        try {
+            document = Json.parse(Sessions.read(name)).asObject();
+        } catch (Json.JsonException e) {
+            throw new Sessions.Undecodable(String.valueOf(e.getMessage()));
+        }
+        try {
+            return reports.imported(reports.importDocument(document));
+        } catch (Json.JsonException e) {
+            // A row of the wrong shape fails only once the import reads it.
+            throw new Sessions.Undecodable(String.valueOf(e.getMessage()));
+        }
     }
 
     /** The window every windowed command reads, resolved against the store's clock. */

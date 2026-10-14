@@ -231,7 +231,7 @@ final class Remote {
                 body.transferTo(file);
             } catch (IOException e) {
                 throw new UncheckedIOException(
-                        "could not write " + (name == null ? "the export" : name), e);
+                        "could not write " + (name == null ? "the export" : name) + ": " + Sessions.why(e), e);
             }
         } finally {
             client.close();

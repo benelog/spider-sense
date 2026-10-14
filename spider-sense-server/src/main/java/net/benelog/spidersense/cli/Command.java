@@ -181,8 +181,7 @@ record Command(String commandName, Set<String> options, @Nullable String argumen
             // import names a file and a store to write it into; a window and a service belong to the
             // export that made it, not to reading it back.
             new Command(Options.IMPORT, Options.only("url", "db", "json"), "a file to read", null, null, null,
-                (options, reports, service) -> reports.imported(reports.importDocument(
-                        Json.parse(Sessions.read(options.requiredArgument())).asObject()))),
+                (options, reports, service) -> Local.imported(reports, options.requiredArgument())),
 
             // init reads nothing, so none of the common options mean anything to it: --db and the
             // thresholds are all about a window it never opens. Its --url asks nothing either; it is

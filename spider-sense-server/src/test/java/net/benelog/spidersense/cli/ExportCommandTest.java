@@ -162,6 +162,40 @@ class ExportCommandTest {
         assertThat(missing.err()).contains("no such file");
     }
 
+    /**
+     * A document import refuses, and a file export cannot write, are the same one sentence over
+     * HTTP and from the file, never a Java class name and never without the reason.
+     */
+    @Test
+    void aRefusedImportOrExportIsTheSameSentenceInBothModes(@TempDir Path dir) throws IOException {
+        Path oldSchema = Files.writeString(dir.resolve("old.json"), "{\"spiderSense\":{\"schema\":3}}");
+        Path notJson = Files.writeString(dir.resolve("notjson.txt"), "this is not JSON");
+        Path notGzip = Files.writeString(dir.resolve("fake.json.gz"), "{}");
+        String db = "--db=" + TestStore.writtenUrl();
+        serve((server, base) -> {
+            for (Path file : List.of(oldSchema, notJson, notGzip)) {
+                Run http = runAt(base, "import", file.toString(), "--url=" + base);
+                Run local = run("import", file.toString(), db);
+                assertThat(http.exit()).as(file.toString()).isEqualTo(2);
+                assertThat(local.exit()).as(file.toString()).isEqualTo(2);
+                assertThat(local.err()).as(file.toString()).isEqualTo(http.err())
+                        .doesNotContain("Exception").doesNotContain("net.benelog");
+            }
+            assertThat(run("import", oldSchema.toString(), db).err()).isEqualTo("spider-sense: the document"
+                    + " is schema version 3 and this Spider Sense reads schema version "
+                    + net.benelog.spidersense.store.Schema.VERSION + "\n");
+            assertThat(run("import", notGzip.toString(), db).err())
+                    .isEqualTo("spider-sense: Undecodable import document: Not in GZIP format\n");
+
+            Run http = runAt(base, "export", "--out=" + dir, "--url=" + base);
+            Run local = run("export", "--out=" + dir, db);
+            assertThat(http.exit()).isEqualTo(2);
+            assertThat(local.exit()).isEqualTo(2);
+            assertThat(http.err()).isEqualTo("spider-sense: could not write " + dir + ": Is a directory\n");
+            assertThat(local.err()).isEqualTo(http.err());
+        });
+    }
+
     private static String read(Path file) {
         try {
             return Files.readString(file);

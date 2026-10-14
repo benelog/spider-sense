@@ -3,6 +3,7 @@ package net.benelog.spidersense.cli;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.PrintStream;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
@@ -14,6 +15,7 @@ import net.benelog.spidersense.query.Selectors;
 import net.benelog.spidersense.server.Config;
 import net.benelog.spidersense.server.Version;
 import net.benelog.spidersense.source.SourceRoots;
+import net.benelog.spidersense.store.Importer;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -108,6 +110,11 @@ public final class Cli {
         } catch (Reports.NoSuchTrace | Reports.NoSuchFinding | Selectors.UnknownMark e) {
             err.println("spider-sense: " + e.getMessage());
             return NOT_FOUND;
+        } catch (Importer.WrongSchema | Importer.BadDocument | Sessions.Undecodable | UncheckedIOException e) {
+            // A document import refuses, a file that cannot be read or written: the server's 400
+            // says the sentence alone, and so does the file path.
+            err.println("spider-sense: " + e.getMessage());
+            return USAGE;
         } catch (Selectors.BadSelector | IllegalArgumentException | IllegalStateException e) {
             // A bad selector, a bad mark name, a missing or foreign database file: the
             // message says what to do, the class name would not.

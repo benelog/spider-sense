@@ -1,11 +1,14 @@
 package net.benelog.spidersense.cli;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PrintStream;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AccessDeniedException;
+import java.nio.file.FileSystemException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Locale;
@@ -24,6 +27,18 @@ import org.jspecify.annotations.Nullable;
  * everything it needs to.
  */
 final class Sessions {
+
+    /**
+     * A file that is not a document {@code export} writes: not gzipped as its name says, or not
+     * JSON of the shape it writes. Its message is the one the server's {@code 400} carries, so
+     * both modes print the same line (cli.adoc#export-import).
+     */
+    static final class Undecodable extends RuntimeException {
+
+        Undecodable(String why) {
+            super("Undecodable import document: " + why);
+        }
+    }
 
     private Sessions() {
     }
@@ -72,23 +87,46 @@ final class Sessions {
      * connection to compress it again.
      */
     static byte[] bytes(String name) {
+        Path path = existing(name);
         try {
-            return Files.readAllBytes(existing(name));
+            return Files.readAllBytes(path);
         } catch (IOException e) {
-            throw new UncheckedIOException("could not read " + name, e);
+            throw new UncheckedIOException("could not read " + path + ": " + why(e), e);
         }
     }
 
-    /** The document {@code import} was given, gunzipped when the name says so. */
+    /**
+     * The document {@code import} was given, gunzipped when the name says so.
+     *
+     * <p>The file is read whole first, as the server reads a posted body whole, so a file that
+     * cannot be read and one that is not gzipped are told apart.
+     *
+     * @throws Undecodable when a {@code .gz} is not gzipped
+     */
     static String read(String name) {
-        Path path = existing(name);
-        try (InputStream in = gzipped(name)
-                ? new GZIPInputStream(Files.newInputStream(path))
-                : Files.newInputStream(path)) {
+        byte[] bytes = bytes(name);
+        if (!gzipped(name)) {
+            return new String(bytes, StandardCharsets.UTF_8);
+        }
+        try (InputStream in = new GZIPInputStream(new ByteArrayInputStream(bytes))) {
             return new String(in.readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException e) {
-            throw new UncheckedIOException("could not read " + path, e);
+            throw new Undecodable(why(e));
         }
+    }
+
+    /**
+     * What went wrong with a file, in words: the operating system's reason ("Is a directory"),
+     * rather than the exception's class name or the path again.
+     */
+    static String why(IOException e) {
+        if (e instanceof FileSystemException failed && failed.getReason() != null) {
+            return failed.getReason();
+        }
+        if (e instanceof AccessDeniedException) {
+            return "Permission denied";
+        }
+        return e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
     }
 
     /** The file, or the message that says which one is missing. */

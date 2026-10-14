@@ -1,5 +1,6 @@
 package net.benelog.spidersense.api;
 
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.function.IntSupplier;
 
@@ -131,6 +132,11 @@ public final class StatusApi {
             document = Json.parse(body(req)).asObject();
         } catch (RequestBody.TooLarge e) {
             return ErrorBody.response(HttpStatus.CONTENT_TOO_LARGE, e.getMessage(), "Content too large");
+        } catch (UncheckedIOException e) {
+            // A body that does not gunzip: the reason ("Not in GZIP format"), not the class name.
+            Throwable cause = e.getCause();
+            return Params.badRequest(req, "Undecodable import document: "
+                    + (cause == null ? e.getMessage() : cause.getMessage()));
         } catch (RuntimeException e) {
             return Params.badRequest(req, "Undecodable import document: " + e.getMessage());
         }
