@@ -1786,12 +1786,6 @@ public final class Queries {
         static final String NO_ENDPOINT = "(no endpoint)";
 
         /**
-         * How far up a parent chain the walk goes before it gives up: a guard against a
-         * cycle of parent ids, far deeper than any real chain of spans to an entry span.
-         */
-        private static final int MAX_PARENT_HOPS = 64;
-
-        /**
          * The entry span itself, so a finding can count the requests it affected.
          *
          * @param endpointId the stored {@code endpoint_id}, null when the entry span has
@@ -1851,7 +1845,7 @@ public final class Queries {
         @Nullable Entry placeOf(@Nullable String spanId) {
             String current = spanId;
             String last = null;
-            for (int depth = 0; current != null && depth < MAX_PARENT_HOPS; depth++) {
+            for (int hops = 0; current != null && hops <= maxHops(); hops++) {
                 Entry entry = entries.get(current);
                 if (entry != null) {
                     return entry;
@@ -1864,7 +1858,7 @@ public final class Queries {
 
         @Nullable Entry entryOf(@Nullable String spanId) {
             String current = spanId;
-            for (int depth = 0; current != null && depth < MAX_PARENT_HOPS; depth++) {
+            for (int hops = 0; current != null && hops <= maxHops(); hops++) {
                 Entry entry = entries.get(current);
                 if (entry != null) {
                     return entry;
@@ -1872,6 +1866,16 @@ public final class Queries {
                 current = parents.get(current);
             }
             return null;
+        }
+
+        /**
+         * How far up a parent chain the walk goes before it gives up: a chain without
+         * a cycle has no more links than there are parent ids, so a walk that takes
+         * more is going round a cycle, and a chain of any real depth still reaches
+         * its entry span.
+         */
+        private int maxHops() {
+            return parents.size();
         }
     }
 }

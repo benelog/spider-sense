@@ -286,6 +286,34 @@ class FindingsTest {
         assertThat(finding.traces()).containsExactly(traceId(1));
     }
 
+    /** A chain of any depth reaches its entry span: a deep pipeline of spans hides no N+1 and no error. */
+    @Test
+    void aStatementSeventySpansBelowItsEntrySpanStillBelongsToIt() {
+        Span.Builder root = entry(1, "/deep", 600);
+        List<Span.Builder> spans = new ArrayList<>();
+        spans.add(root);
+        Span.Builder parent = root;
+        for (int depth = 0; depth < 70; depth++) {
+            parent = Otlp.child(parent, spanId(1_000 + depth), "Step.run", Span.SpanKind.SPAN_KIND_INTERNAL,
+                    NOW + 1, 500);
+            spans.add(parent);
+        }
+        for (int i = 0; i < 6; i++) {
+            spans.add(query(parent, 100 + i, "select * from item where id = ?", "item", NOW + 2 + i, 2));
+        }
+        spans.add(Otlp.failing(Otlp.child(parent, spanId(200), "Step.fail", Span.SpanKind.SPAN_KIND_INTERNAL,
+                NOW + 10, 1), "java.lang.IllegalStateException", "too deep", STACKTRACE));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
+        flush();
+
+        assertThat(of(Findings.N_PLUS_ONE)).extracting(Findings.Finding::title)
+                .containsExactly("GET /deep runs SELECT item 6 times per request");
+        assertThat(of(Findings.ERROR)).extracting(Findings.Finding::title)
+                .containsExactly("IllegalStateException in GET /deep");
+        assertThat(queries.queries(window, null, "total", 10, null).get(0).callers())
+                .extracting(Stats.Caller::endpoint).containsExactly("GET /deep");
+    }
+
     /** Past the first few hundred affected requests, affected and requests still count the same ones. */
     @Test
     void everyAffectedRequestCountsNotOnlyTheFirstFewHundred() {
