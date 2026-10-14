@@ -8,7 +8,11 @@ import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.DoubleUnaryOperator;
 
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonValue;
+import net.benelog.silkjson.JsonObject;
+import net.benelog.silkjson.JsonArray;
+import net.benelog.silkjson.JsonException;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -36,17 +40,17 @@ public final class AttrJson {
     }
 
     /** An optional whole-number member: absent and JSON null both read as null. */
-    public static @Nullable Long optionalLong(Json.JsonObject object, String key) {
+    public static @Nullable Long optionalLong(JsonObject object, String key) {
         return object.has(key) && !object.get(key).isNull() ? object.getLong(key) : null;
     }
 
     /**
      * An optional string member: absent, JSON null and a missing key all read as null.
      *
-     * <p>{@link Json.JsonObject#optString} takes a fallback that may not itself be
+     * <p>{@link JsonObject#optString} takes a fallback that may not itself be
      * null, so this is how a reader asks for "the value, or nothing".
      */
-    public static @Nullable String optionalString(Json.JsonObject object, String key) {
+    public static @Nullable String optionalString(JsonObject object, String key) {
         return object.has(key) && !object.get(key).isNull() ? object.get(key).asString() : null;
     }
 
@@ -54,7 +58,7 @@ public final class AttrJson {
         if (attributes.isEmpty()) {
             return EMPTY_OBJECT;
         }
-        Json.JsonObject object = Json.obj();
+        JsonObject object = Json.object();
         attributes.forEach((key, value) -> object.put(key, toJson(value)));
         return object.toJson();
     }
@@ -101,7 +105,7 @@ public final class AttrJson {
     public static Map<String, Object> decode(@Nullable String json) {
         try {
             return readAttributes(json);
-        } catch (Json.JsonException e) {
+        } catch (JsonException e) {
             warnOnce(e);
             return Map.of();
         }
@@ -111,7 +115,7 @@ public final class AttrJson {
      * The attributes a column holds, for a reader that would rather leave the row out
      * than show it with none.
      *
-     * @throws Json.JsonException when the text is not a JSON object
+     * @throws JsonException when the text is not a JSON object
      */
     public static Map<String, Object> readAttributes(@Nullable String json) {
         if (json == null || json.isEmpty() || EMPTY_OBJECT.equals(json)) {
@@ -131,9 +135,9 @@ public final class AttrJson {
         if (events.isEmpty()) {
             return EMPTY_ARRAY;
         }
-        Json.JsonArray array = Json.arr();
+        JsonArray array = Json.array();
         for (SpanRecord.SpanEvent event : events) {
-            array.add(Json.obj()
+            array.add(Json.object()
                     .put("name", event.name())
                     .put("timeNs", event.timeNanos())
                     .put("attributes", Json.parse(encode(event.attributes()))));
@@ -216,7 +220,7 @@ public final class AttrJson {
         }
         // The excess counts encoded characters, and an escaped one (a tab, a newline in a
         // stack trace) is two of them: cut in proportion, and the caller's loop tops it up.
-        int encoded = Json.obj().put("v", value).toJson().length() - "{\"v\":\"\"}".length();
+        int encoded = Json.object().put("v", value).toJson().length() - "{\"v\":\"\"}".length();
         long raw = ((long) excess * value.length() + encoded - 1) / Math.max(1, encoded);
         int keep = (int) Math.max(0, value.length() - raw - CUT_MARK.length());
         if (keep > 0 && Character.isHighSurrogate(value.charAt(keep - 1))) {
@@ -230,7 +234,7 @@ public final class AttrJson {
     public static List<SpanRecord.SpanEvent> decodeEvents(@Nullable String json) {
         try {
             return readEvents(json);
-        } catch (Json.JsonException e) {
+        } catch (JsonException e) {
             warnOnce(e);
             return List.of();
         }
@@ -239,25 +243,25 @@ public final class AttrJson {
     /**
      * The events an {@code events} column holds.
      *
-     * @throws Json.JsonException when the text is not the array {@link #encodeEvents} writes
+     * @throws JsonException when the text is not the array {@link #encodeEvents} writes
      */
     static List<SpanRecord.SpanEvent> readEvents(@Nullable String json) {
         if (json == null || json.isEmpty() || EMPTY_ARRAY.equals(json)) {
             return List.of();
         }
         List<SpanRecord.SpanEvent> events = new ArrayList<>();
-        for (Json.JsonValue value : Json.parse(json).asArray()) {
-            Json.JsonObject event = value.asObject();
-            Json.JsonObject attributes = event.optObject("attributes");
-            events.add(new SpanRecord.SpanEvent(event.optString("name", ""),
-                    event.optLong("timeNs", 0),
+        for (JsonValue value : Json.parse(json).asArray()) {
+            JsonObject event = value.asObject();
+            JsonObject attributes = event.getObjectOrNull("attributes");
+            events.add(new SpanRecord.SpanEvent(event.getString("name", ""),
+                    event.getLong("timeNs", 0),
                     attributes == null ? Map.of() : decode(attributes.toJson())));
         }
         return events;
     }
 
     /** Says once per process that a stored column did not read as its shape, so a bad row is not silent. */
-    private static void warnOnce(Json.JsonException e) {
+    private static void warnOnce(JsonException e) {
         if (WARNED.compareAndSet(false, true)) {
             LOG.log(System.Logger.Level.WARNING, "Spider Sense read a stored JSON column of the wrong shape as empty: "
                     + e.getMessage());
@@ -266,7 +270,7 @@ public final class AttrJson {
 
     /** A JSON array of strings, for the {@code trace.services} column. */
     public static String encodeStrings(List<String> values) {
-        return Json.arr().addAll(values).toJson();
+        return Json.array().addAll(values).toJson();
     }
 
     /** As {@link #encodeStrings(List)}, leaving out the values past {@code max} characters of JSON. */
@@ -285,7 +289,7 @@ public final class AttrJson {
             return List.of();
         }
         List<String> values = new ArrayList<>();
-        for (Json.JsonValue value : Json.parse(json).asArray()) {
+        for (JsonValue value : Json.parse(json).asArray()) {
             values.add(value.asString());
         }
         return values;
@@ -324,7 +328,7 @@ public final class AttrJson {
      * elements, never Java's {@code [a, b]}, and a map is an object, however deep
      * either nests.
      */
-    public static Json.JsonValue toJson(@Nullable Object value) {
+    public static JsonValue toJson(@Nullable Object value) {
         return toJson(value, Rules.STORE);
     }
 
@@ -334,8 +338,8 @@ public final class AttrJson {
      * through here, and differ only by {@code rules}. Whole numbers are JSON integers, a list is an
      * array however deep it nests, and anything else is its text.
      */
-    public static Json.JsonValue toJson(@Nullable Object value, Rules rules) {
-        Json.JsonObject holder = Json.obj();
+    public static JsonValue toJson(@Nullable Object value, Rules rules) {
+        JsonObject holder = Json.object();
         switch (value) {
             case null -> holder.putNull("v");
             case String text -> holder.put("v", text);
@@ -347,7 +351,7 @@ public final class AttrJson {
             case Float number -> putDouble(holder, number.doubleValue(), rules);
             case Boolean flag -> holder.put("v", flag.booleanValue());
             case List<?> list -> {
-                Json.JsonArray array = Json.arr();
+                JsonArray array = Json.array();
                 for (Object element : list) {
                     array.add(toJson(element, rules));
                 }
@@ -356,7 +360,7 @@ public final class AttrJson {
             // The text the store would write for it, which is what the attribute reads back as.
             case Map<?, ?> map when rules.mapsAsText() -> holder.put("v", toJson(map, Rules.STORE).toJson());
             case Map<?, ?> map -> {
-                Json.JsonObject object = Json.obj();
+                JsonObject object = Json.object();
                 map.forEach((key, each) -> object.put(String.valueOf(key), toJson(each, rules)));
                 holder.put("v", object);
             }
@@ -365,7 +369,7 @@ public final class AttrJson {
         return holder.get("v");
     }
 
-    private static void putDouble(Json.JsonObject holder, double number, Rules rules) {
+    private static void putDouble(JsonObject holder, double number, Rules rules) {
         if (Double.isFinite(number)) {
             holder.put("v", rules.finite().applyAsDouble(number));
         } else if (rules.nonFinite() == NonFinite.NULL) {
@@ -375,7 +379,7 @@ public final class AttrJson {
         }
     }
 
-    private static @Nullable Object fromJson(Json.JsonValue value) {
+    private static @Nullable Object fromJson(JsonValue value) {
         if (value.isNull()) {
             return null;
         }
@@ -388,13 +392,13 @@ public final class AttrJson {
         if (value.isNumber()) {
             try {
                 return value.asLong();
-            } catch (Json.JsonException notWhole) {
+            } catch (JsonException notWhole) {
                 return value.asDouble();
             }
         }
-        if (value instanceof Json.JsonArray array) {
+        if (value instanceof JsonArray array) {
             List<Object> values = new ArrayList<>(array.size());
-            for (Json.JsonValue element : array) {
+            for (JsonValue element : array) {
                 Object converted = fromJson(element);
                 if (converted != null) {
                     values.add(converted);

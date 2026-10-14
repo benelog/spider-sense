@@ -13,7 +13,8 @@ import net.benelog.spidersense.mcp.McpServer;
 import net.benelog.spidersense.mcp.McpTools;
 import net.benelog.spidersense.server.Config;
 import net.benelog.spidersense.server.Version;
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonObject;
 import org.jspecify.annotations.Nullable;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
@@ -149,7 +150,7 @@ final class Mcp {
     /** The method of a message, or null when it does not have one this can read. */
     private static @Nullable String method(String line) {
         try {
-            if (Json.parse(line) instanceof Json.JsonObject object
+            if (Json.parse(line) instanceof JsonObject object
                     && object.has("method") && object.get("method").isString()) {
                 return object.getString("method");
             }

@@ -14,7 +14,9 @@ import org.junit.jupiter.api.io.TempDir;
 
 import net.benelog.spidersense.TestStore;
 import net.benelog.spidersense.server.SpiderSenseServer;
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonValue;
+import net.benelog.silkjson.JsonObject;
 import net.benelog.spidersilk.test.TestClient;
 import net.benelog.spidersilk.test.WebTest;
 
@@ -52,11 +54,11 @@ class SourceApiTest {
         serve(client -> {
             HttpResponse<String> response = source(client, "orders.OrderService.load(OrderService.java:4)");
             assertThat(response.statusCode()).isEqualTo(200);
-            Json.JsonObject body = Json.parse(response.body()).asObject();
+            JsonObject body = Json.parse(response.body()).asObject();
             assertThat(body.getString("file")).isEqualTo(expected);
             assertThat(body.getLong("line")).isEqualTo(4);
             assertThat(body.getLong("start")).isEqualTo(2);
-            assertThat(body.getArray("lines").values()).extracting(Json.JsonValue::asString)
+            assertThat(body.getArray("lines").values()).extracting(JsonValue::asString)
                     .containsExactly("b", "c", "d", "e", "f");
         });
     }

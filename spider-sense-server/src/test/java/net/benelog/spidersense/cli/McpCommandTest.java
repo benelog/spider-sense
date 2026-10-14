@@ -20,7 +20,8 @@ import net.benelog.spidersense.TestStore;
 import net.benelog.spidersense.ingest.OtlpDecoder;
 import net.benelog.spidersense.server.SpiderSenseServer;
 import net.benelog.spidersense.store.Store;
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonObject;
 
 /**
  * {@code java -jar spider-sense.jar mcp}: the stdio transport of
@@ -84,18 +85,18 @@ class McpCommandTest {
                 .hasSize(3);
         assertThat(run.out()).endsWith("\n");
 
-        Json.JsonObject initialized = Json.parse(lines.get(0)).asObject();
+        JsonObject initialized = Json.parse(lines.get(0)).asObject();
         assertThat(initialized.getLong("id")).isEqualTo(1);
         assertThat(initialized.getObject("result").getString("protocolVersion"))
                 .isEqualTo("2025-06-18");
 
-        Json.JsonObject tools = Json.parse(lines.get(1)).asObject();
+        JsonObject tools = Json.parse(lines.get(1)).asObject();
         assertThat(tools.getLong("id")).isEqualTo(2);
         assertThat(tools.getObject("result").getArray("tools").size()).isEqualTo(8);
 
-        Json.JsonObject answered = Json.parse(lines.get(2)).asObject();
+        JsonObject answered = Json.parse(lines.get(2)).asObject();
         assertThat(answered.getLong("id")).isEqualTo(3);
-        Json.JsonObject result = answered.getObject("result");
+        JsonObject result = answered.getObject("result");
         assertThat(result.getBoolean("isError")).isFalse();
         assertThat(result.getArray("content").get(0).asObject().getString("text"))
                 .startsWith("# findings  ");
@@ -152,7 +153,7 @@ class McpCommandTest {
 
         List<String> lines = run.out().lines().toList();
         assertThat(lines).hasSize(1);
-        Json.JsonObject response = Json.parse(lines.get(0)).asObject();
+        JsonObject response = Json.parse(lines.get(0)).asObject();
         assertThat(response.has("error")).as("not a protocol error").isFalse();
         assertThat(response.getObject("result").getBoolean("isError")).isTrue();
         assertThat(text(lines.get(0))).contains("the database has no read-only user yet");
@@ -209,7 +210,7 @@ class McpCommandTest {
         assertThat(lines).hasSize(2);
         assertThat(Json.parse(lines.get(0)).asObject().getObject("result").getArray("tools").size())
                 .as("tools/list is answered in process either way").isEqualTo(8);
-        Json.JsonObject failed = Json.parse(lines.get(1)).asObject().getObject("result");
+        JsonObject failed = Json.parse(lines.get(1)).asObject().getObject("result");
         assertThat(failed.getBoolean("isError")).isTrue();
         assertThat(failed.getArray("content").get(0).asObject().getString("text"))
                 .startsWith("no Spider Sense at " + closed + " (");

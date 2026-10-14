@@ -11,7 +11,8 @@ import net.benelog.spidersilk.App;
 import net.benelog.spidersilk.SseStream;
 import net.benelog.spidersilk.WebRequest;
 import net.benelog.spidersilk.WebResponse;
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonObject;
 
 /**
  * {@code GET /api/events}: the live stream the UI keeps open.
@@ -55,7 +56,7 @@ public final class EventsApi {
         LongSupplier clock = store.clock();
         Pacer pacer = Pacer.start(clock.getAsLong());
         Counts previous = counts();
-        stream.send("stats", stats(previous, previous, 1, clock.getAsLong()).toJson());
+        stream.event("stats").send(stats(previous, previous, 1, clock.getAsLong()).toJson());
 
         while (stream.isOpen()) {
             EventBus.Event event = subscription.poll(POLL_MS);
@@ -65,7 +66,7 @@ public final class EventsApi {
             long now = clock.getAsLong();
             if (pacer.statsDue(now, store.events().lastIngestAt())) {
                 Counts current = counts();
-                stream.send("stats", stats(current, previous, pacer.secondsSinceStats(now), now).toJson());
+                stream.event("stats").send(stats(current, previous, pacer.secondsSinceStats(now), now).toJson());
                 previous = current;
                 pacer = pacer.statsSent(now);
             }
@@ -115,8 +116,8 @@ public final class EventsApi {
 
     private void send(SseStream stream, EventBus.Event event) {
         switch (event.payload()) {
-            case Tingle tingle -> stream.send("tingle", Codecs.tingle(tingle).toJson());
-            case ServiceInfo service -> stream.send("service", Json.obj()
+            case Tingle tingle -> stream.event("tingle").send(Codecs.tingle(tingle).toJson());
+            case ServiceInfo service -> stream.event("service").send(Json.object()
                     .put("name", service.name())
                     .put("firstSeen", service.firstSeen())
                     .toJson());
@@ -138,14 +139,14 @@ public final class EventsApi {
      * A {@code stats} frame: the counts, and what arrived per second since {@code previous}, never
      * below zero, since a clear in between makes the counts fall.
      */
-    static Json.JsonObject stats(Counts current, Counts previous, double seconds, long at) {
-        return Json.obj()
+    static JsonObject stats(Counts current, Counts previous, double seconds, long at) {
+        return Json.object()
                 .put("at", at)
                 .put("spans", current.spans())
                 .put("traces", current.traces())
                 .put("logs", current.logs())
                 .put("droppedSpans", current.droppedSpans())
-                .put("perSecond", Json.obj()
+                .put("perSecond", Json.object()
                         .put("spans", Codecs.round(Math.max(0, current.spans() - previous.spans()) / seconds))
                         .put("logs", Codecs.round(Math.max(0, current.logs() - previous.logs()) / seconds)));
     }

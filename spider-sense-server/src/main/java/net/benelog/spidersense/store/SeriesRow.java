@@ -5,7 +5,9 @@ import java.sql.SQLException;
 import java.util.Map;
 import java.util.TreeMap;
 
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonObject;
+import net.benelog.silkjson.JsonValue;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -21,7 +23,7 @@ import org.jspecify.annotations.Nullable;
 public record SeriesRow(long id, String service, String name, String attributes) {
 
     /** The row a document holds, or null when it names no service or no name. */
-    static @Nullable SeriesRow fromJson(Json.JsonObject series) {
+    static @Nullable SeriesRow fromJson(JsonObject series) {
         String service = RowJson.string(series, "service");
         String name = RowJson.string(series, "name");
         if (service == null || name == null) {
@@ -41,8 +43,8 @@ public record SeriesRow(long id, String service, String name, String attributes)
     }
 
     /** The row as the export document holds it, with {@code attributes} as the object it is. */
-    public Json.JsonObject toJson() {
-        return Json.obj()
+    public JsonObject toJson() {
+        return Json.object()
                 .put("id", id)
                 .put("service", service)
                 .put("name", name)
@@ -58,11 +60,11 @@ public record SeriesRow(long id, String service, String name, String attributes)
      * export writes, is cut as the writer cuts.
      */
     String sortedAttributes() {
-        Map<String, Json.JsonValue> members = new TreeMap<>();
-        for (Map.Entry<String, Json.JsonValue> member : Json.parse(attributes).asObject()) {
+        Map<String, JsonValue> members = new TreeMap<>();
+        for (Map.Entry<String, JsonValue> member : Json.parse(attributes).asObject()) {
             members.put(member.getKey(), member.getValue());
         }
-        Json.JsonObject sorted = Json.obj();
+        JsonObject sorted = Json.object();
         members.forEach(sorted::put);
         String json = sorted.toJson();
         return json.length() <= Columns.SERIES_ATTRIBUTES

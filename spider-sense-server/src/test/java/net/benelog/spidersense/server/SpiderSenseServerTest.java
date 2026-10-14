@@ -17,7 +17,8 @@ import java.util.Locale;
 import org.junit.jupiter.api.Test;
 
 import net.benelog.spidersense.TestStore;
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonObject;
 
 /** The entry point: it binds a port, answers, and lets go of everything on stop. */
 class SpiderSenseServerTest {
@@ -34,7 +35,7 @@ class SpiderSenseServerTest {
                     HttpResponse.BodyHandlers.ofString());
 
             assertThat(status.statusCode()).isEqualTo(200);
-            Json.JsonObject body = Json.parse(status.body()).asObject();
+            JsonObject body = Json.parse(status.body()).asObject();
             assertThat(body.getString("name")).isEqualTo("Spider Sense");
             assertThat(body.getString("mode")).isEqualTo("standalone");
             assertThat(body.getString("endpoint")).isEqualTo("http://127.0.0.1:" + server.port());

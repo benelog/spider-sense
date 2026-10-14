@@ -12,7 +12,7 @@ import net.benelog.spidersilk.HttpException;
 import net.benelog.spidersilk.HttpStatus;
 import net.benelog.spidersilk.WebRequest;
 import net.benelog.spidersilk.WebResponse;
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
 
 /**
  * The JSON API, which is what the load generator and spring-orders call.
@@ -85,7 +85,7 @@ public class ApiController {
     public WebResponse slow(WebRequest req) {
         long millis = req.queryParam("ms", Long::parseLong, DEFAULT_SLOW_MS);
         books.slow(millis);
-        return WebResponse.json(Json.obj().put("sleptMs", millis));
+        return WebResponse.json(Json.object().put("sleptMs", millis));
     }
 
     /** Fails about three times in ten, with an exception rather than a status. */
@@ -93,7 +93,7 @@ public class ApiController {
         if (ThreadLocalRandom.current().nextDouble() < FAILURE_RATE) {
             throw new IllegalStateException("Inventory service unavailable");
         }
-        return WebResponse.json(Json.obj().put("inventory", "ok").put("warehouses", 3));
+        return WebResponse.json(Json.object().put("inventory", "ok").put("warehouses", 3));
     }
 
     /**
@@ -115,6 +115,6 @@ public class ApiController {
     }
 
     public WebResponse health(WebRequest req) {
-        return WebResponse.json(Json.obj().put("status", "ok"));
+        return WebResponse.json(Json.object().put("status", "ok"));
     }
 }

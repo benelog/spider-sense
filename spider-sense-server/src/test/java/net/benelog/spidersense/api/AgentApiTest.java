@@ -16,7 +16,10 @@ import net.benelog.spidersense.Otlp;
 import net.benelog.spidersense.TestStore;
 import net.benelog.spidersense.server.Config;
 import net.benelog.spidersense.server.SpiderSenseServer;
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonValue;
+import net.benelog.silkjson.JsonObject;
+import net.benelog.silkjson.JsonArray;
 import net.benelog.spidersilk.test.TestClient;
 import net.benelog.spidersilk.test.WebTest;
 
@@ -68,7 +71,7 @@ class AgentApiTest {
                 .GET());
     }
 
-    private static Json.JsonObject json(HttpResponse<String> response) {
+    private static JsonObject json(HttpResponse<String> response) {
         assertThat(response.statusCode()).isEqualTo(200);
         return Json.parse(response.body()).asObject();
     }
@@ -114,13 +117,13 @@ class AgentApiTest {
         serve((client, assembly) -> {
             postProtobuf(client, "/v1/traces", sample());
 
-            Json.JsonObject body = json(client.get("/api/findings?since=5m"));
+            JsonObject body = json(client.get("/api/findings?since=5m"));
 
             assertThat(body.getLong("requests")).isEqualTo(1);
             assertThat(body.getObject("window").has("bucketMs")).isTrue();
-            Json.JsonArray findings = body.getArray("findings");
+            JsonArray findings = body.getArray("findings");
             assertThat(findings.size()).isGreaterThanOrEqualTo(4);
-            Json.JsonObject first = findings.get(0).asObject();
+            JsonObject first = findings.get(0).asObject();
             assertThat(first.getString("kind")).isEqualTo("error");
             assertThat(first.getString("severity")).isEqualTo("high");
             assertThat(first.getString("id")).startsWith("error:");
@@ -130,7 +133,7 @@ class AgentApiTest {
             assertThat(first.getArray("traces").get(0).asString()).isEqualTo(TRACE);
 
             List<String> kinds = new ArrayList<>();
-            for (Json.JsonValue value : findings) {
+            for (JsonValue value : findings) {
                 kinds.add(value.asObject().getString("kind"));
             }
             assertThat(kinds).contains("n-plus-one", "slow-query", "slow-endpoint");
@@ -147,10 +150,10 @@ class AgentApiTest {
             postProtobuf(client, "/v1/traces",
                     Otlp.traces(Otlp.service("orders"), tick).toByteArray());
 
-            Json.JsonObject body = json(client.get("/api/findings?since=5m"));
+            JsonObject body = json(client.get("/api/findings?since=5m"));
 
             assertThat(body.getLong("requests")).isZero();
-            Json.JsonObject finding = body.getArray("findings").get(0).asObject();
+            JsonObject finding = body.getArray("findings").get(0).asObject();
             assertThat(finding.getString("kind")).isEqualTo("slow-job");
             assertThat(finding.getString("title")).isEqualTo("ReportJob.run is slow");
             assertThat(finding.getObject("subject").getString("job")).isEqualTo("ReportJob.run");
@@ -187,11 +190,11 @@ class AgentApiTest {
                     .contains("   hot spans: SELECT book · 300.0 ms · 33.3% · ×1\n")
                     .contains("breakdown: db 34.7% · http 0.0% · internal 0.1% · self 65.2%");
 
-            Json.JsonObject body = json(client.get("/api/findings?since=5m"));
-            Json.JsonObject logError = null;
-            Json.JsonObject slowEndpoint = null;
-            for (Json.JsonValue value : body.getArray("findings")) {
-                Json.JsonObject finding = value.asObject();
+            JsonObject body = json(client.get("/api/findings?since=5m"));
+            JsonObject logError = null;
+            JsonObject slowEndpoint = null;
+            for (JsonValue value : body.getArray("findings")) {
+                JsonObject finding = value.asObject();
                 if ("log-error".equals(finding.getString("kind"))) {
                     logError = finding;
                 } else if ("slow-endpoint".equals(finding.getString("kind"))) {
@@ -203,7 +206,7 @@ class AgentApiTest {
                     .isEqualTo("orders.web.OrderController");
             assertThat(logError.getObject("numbers").getLong("count")).isEqualTo(1);
             assertThat(slowEndpoint).isNotNull();
-            Json.JsonObject hot = slowEndpoint.getObject("numbers").getObject("hotSpan");
+            JsonObject hot = slowEndpoint.getObject("numbers").getObject("hotSpan");
             assertThat(hot.getString("category")).isEqualTo("http");
             assertThat(hot.getDouble("selfMs")).isEqualTo(587.0);
         });
@@ -249,11 +252,11 @@ class AgentApiTest {
             assertThat(queries).contains("| callers | unindexed | statement |");
             assertThat(queries).contains("| order_line.order_id | select * from order_line");
 
-            Json.JsonObject slowQuery = null;
-            Json.JsonObject slowEndpoint = null;
-            for (Json.JsonValue value : json(client.get("/api/findings?since=5m"))
+            JsonObject slowQuery = null;
+            JsonObject slowEndpoint = null;
+            for (JsonValue value : json(client.get("/api/findings?since=5m"))
                     .getArray("findings")) {
-                Json.JsonObject finding = value.asObject();
+                JsonObject finding = value.asObject();
                 if ("slow-query".equals(finding.getString("kind"))) {
                     slowQuery = finding;
                 } else if ("slow-endpoint".equals(finding.getString("kind"))) {
@@ -261,10 +264,10 @@ class AgentApiTest {
                 }
             }
             assertThat(slowQuery).isNotNull();
-            Json.JsonObject schema = slowQuery.getObject("schema");
+            JsonObject schema = slowQuery.getObject("schema");
             assertThat(schema.getArray("predicates").get(0).asString()).isEqualTo("book.title");
             assertThat(schema.getArray("unindexed").get(0).asString()).isEqualTo("book.title");
-            Json.JsonObject table = schema.getArray("tables").get(0).asObject();
+            JsonObject table = schema.getArray("tables").get(0).asObject();
             assertThat(table.getString("table")).isEqualTo("BOOK");
             assertThat(table.getString("schema")).isEqualTo("PUBLIC");
             assertThat(table.getArray("indexes")).isEmpty();
@@ -272,7 +275,7 @@ class AgentApiTest {
             assertThat(slowEndpoint.get("schema").isNull())
                     .as("only a statement has a schema block").isTrue();
 
-            Json.JsonObject group = json(client.get("/api/queries?since=5m"))
+            JsonObject group = json(client.get("/api/queries?since=5m"))
                     .getArray("queries").get(0).asObject();
             assertThat(group.getObject("schema").getArray("unindexed")).isNotEmpty();
         });
@@ -287,9 +290,9 @@ class AgentApiTest {
         serve((client, assembly) -> {
             postProtobuf(client, "/v1/traces", sample());
 
-            Json.JsonObject before = json(client.get("/api/findings?since=5m"));
+            JsonObject before = json(client.get("/api/findings?since=5m"));
             assertThat(before.getLong("acked")).isZero();
-            Json.JsonArray all = before.getArray("findings");
+            JsonArray all = before.getArray("findings");
             assertThat(before.getLong("total")).isEqualTo(all.size());
             assertThat(json(client.get("/api/findings?since=5m&limit=1")).getLong("total"))
                     .as("counted before the limit").isEqualTo(all.size());
@@ -300,14 +303,14 @@ class AgentApiTest {
             HttpResponse<String> created = postJson(client,
                     "/api/findings/" + first + "/ack", "{\"note\":\"known, and accepted\"}");
             assertThat(created.statusCode()).isEqualTo(201);
-            Json.JsonObject ack = Json.parse(created.body()).asObject();
+            JsonObject ack = Json.parse(created.body()).asObject();
             assertThat(ack.getString("findingId")).isEqualTo(first);
             assertThat(ack.getString("note")).isEqualTo("known, and accepted");
             assertThat(ack.getLong("at")).isPositive();
 
-            Json.JsonObject after = json(client.get("/api/findings?since=5m"));
+            JsonObject after = json(client.get("/api/findings?since=5m"));
             assertThat(after.getLong("acked")).isEqualTo(1);
-            Json.JsonArray ranked = after.getArray("findings");
+            JsonArray ranked = after.getArray("findings");
             assertThat(ranked.get(ranked.size() - 1).asObject().getString("id")).isEqualTo(first);
             assertThat(ranked.get(ranked.size() - 1).asObject().getObject("ack").getString("note"))
                     .isEqualTo("known, and accepted");
@@ -319,14 +322,14 @@ class AgentApiTest {
             assertThat(text).contains(", 1 request, 1 acked)");
             assertThat(text).contains("| acked | ");
 
-            Json.JsonArray acks = json(client.get("/api/acks")).getArray("acks");
+            JsonArray acks = json(client.get("/api/acks")).getArray("acks");
             assertThat(acks.size()).isEqualTo(1);
             assertThat(acks.get(0).asObject().getString("findingId")).isEqualTo(first);
 
-            Json.JsonObject hidden = json(client.get("/api/findings?since=5m&hideAcked=true"));
+            JsonObject hidden = json(client.get("/api/findings?since=5m&hideAcked=true"));
             assertThat(hidden.getLong("acked")).isEqualTo(1);
             assertThat(hidden.getArray("findings").size()).isEqualTo(all.size() - 1);
-            for (Json.JsonValue value : hidden.getArray("findings")) {
+            for (JsonValue value : hidden.getArray("findings")) {
                 assertThat(value.asObject().getString("id")).isNotEqualTo(first);
             }
 
@@ -347,9 +350,9 @@ class AgentApiTest {
     void aFindingIsResolvedSetAsideAndWithdrawnAgain() {
         serve((client, assembly) -> {
             postProtobuf(client, "/v1/traces", sample());
-            Json.JsonObject before = json(client.get("/api/findings?since=5m"));
+            JsonObject before = json(client.get("/api/findings?since=5m"));
             assertThat(before.getLong("resolved")).isZero();
-            Json.JsonObject top = before.getArray("findings").get(0).asObject();
+            JsonObject top = before.getArray("findings").get(0).asObject();
             String first = top.getString("id");
             assertThat(top.getString("state")).isEqualTo("new");
             assertThat(top.get("resolution").isNull()).isTrue();
@@ -359,11 +362,11 @@ class AgentApiTest {
             assertThat(created.statusCode()).isEqualTo(201);
             assertThat(Json.parse(created.body()).asObject().getString("findingId")).isEqualTo(first);
 
-            Json.JsonObject after = json(client.get("/api/findings?since=5m"));
+            JsonObject after = json(client.get("/api/findings?since=5m"));
             assertThat(after.getLong("resolved")).isEqualTo(1);
             assertThat(after.getLong("acked")).isZero();
-            Json.JsonArray ranked = after.getArray("findings");
-            Json.JsonObject last = ranked.get(ranked.size() - 1).asObject();
+            JsonArray ranked = after.getArray("findings");
+            JsonObject last = ranked.get(ranked.size() - 1).asObject();
             assertThat(last.getString("id")).isEqualTo(first);
             assertThat(last.getObject("resolution").getString("note")).isEqualTo("fixed");
 
@@ -534,7 +537,7 @@ class AgentApiTest {
             HttpResponse<String> created = postJson(client, "/api/marks",
                     "{\"name\":\"before\",\"note\":\"the slow version\"}");
             assertThat(created.statusCode()).isEqualTo(201);
-            Json.JsonObject mark = Json.parse(created.body()).asObject();
+            JsonObject mark = Json.parse(created.body()).asObject();
             assertThat(mark.getString("name")).isEqualTo("before");
             assertThat(mark.getString("note")).isEqualTo("the slow version");
             assertThat(mark.get("service").isNull()).isTrue();
@@ -552,7 +555,7 @@ class AgentApiTest {
                         .as(malformed).isNotBlank();
             }
 
-            Json.JsonObject marks = json(client.get("/api/marks"));
+            JsonObject marks = json(client.get("/api/marks"));
             assertThat(marks.getArray("marks")).hasSize(1);
 
             assertThat(client.get("/api/marks?format=text").body()).contains("| at | name | service | note |");
@@ -580,11 +583,11 @@ class AgentApiTest {
             postJson(client, "/api/marks", "{\"name\":\"start-of-run\",\"at\":" + (NOW - 1000) + "}");
             postProtobuf(client, "/v1/traces", sample());
 
-            Json.JsonObject body = json(client.get(
+            JsonObject body = json(client.get(
                     "/api/compare?before=" + (NOW - 60_000) + "&after=start-of-run"));
             assertThat(body.getObject("totals").getObject("after").getLong("requests")).isEqualTo(1);
             assertThat(body.getObject("totals").getObject("before").getLong("requests")).isZero();
-            Json.JsonObject endpoint = body.getArray("endpoints").get(0).asObject();
+            JsonObject endpoint = body.getArray("endpoints").get(0).asObject();
             assertThat(endpoint.getString("verdict")).isEqualTo("new");
             assertThat(endpoint.get("before").isNull()).isTrue();
             assertThat(endpoint.getObject("after").getLong("calls")).isEqualTo(1);
@@ -601,23 +604,23 @@ class AgentApiTest {
     @Test
     void checkIsAVerdictAndItsRulesAreQueryParameters() {
         serve((client, assembly) -> {
-            Json.JsonObject empty = json(client.get("/api/check?since=5m"));
+            JsonObject empty = json(client.get("/api/check?since=5m"));
             assertThat(empty.get("pass").isNull()).isTrue();
             assertThat(empty.getString("reason")).isEqualTo("no requests in the window");
 
             postProtobuf(client, "/v1/traces", sample());
 
-            Json.JsonObject failed = json(client.get("/api/check?since=5m"));
+            JsonObject failed = json(client.get("/api/check?since=5m"));
             assertThat(failed.getBoolean("pass")).isFalse();
             assertThat(failed.getLong("requests")).isEqualTo(1);
-            Json.JsonObject first = failed.getArray("checks").get(0).asObject();
+            JsonObject first = failed.getArray("checks").get(0).asObject();
             assertThat(first.getString("rule")).isEqualTo("maxP95Ms");
             assertThat(first.getDouble("limit")).isEqualTo(500.0);
             assertThat(first.getDouble("actual")).isEqualTo(900.0);
             assertThat(first.getBoolean("pass")).isFalse();
             assertThat(first.getString("detail")).contains("GET /orders/{id} p95 900.0 ms");
 
-            Json.JsonObject relaxed = json(client.get("/api/check?since=5m&maxP95Ms=2000"));
+            JsonObject relaxed = json(client.get("/api/check?since=5m&maxP95Ms=2000"));
             assertThat(relaxed.getArray("checks")).hasSize(1);
             assertThat(relaxed.getBoolean("pass")).isTrue();
 
@@ -639,13 +642,13 @@ class AgentApiTest {
             postProtobuf(client, "/v1/traces", sample());
             String group = "{\"sql\":\"SELECT service, COUNT(*) AS spans FROM span GROUP BY service\"}";
 
-            Json.JsonObject body = json(postJson(client, "/api/sql", group));
+            JsonObject body = json(postJson(client, "/api/sql", group));
             assertThat(body.getArray("columns").get(0).asString()).isEqualTo("SERVICE");
             assertThat(body.getArray("columns").get(1).asString()).isEqualTo("SPANS");
             assertThat(body.getLong("rowCount")).isEqualTo(1);
             assertThat(body.getBoolean("truncated")).isFalse();
             assertThat(body.has("elapsedMs")).isTrue();
-            Json.JsonArray row = body.getArray("rows").get(0).asArray();
+            JsonArray row = body.getArray("rows").get(0).asArray();
             assertThat(row.get(0).asString()).isEqualTo("orders");
             assertThat(row.get(1).asLong()).isEqualTo(9);
 
@@ -657,16 +660,16 @@ class AgentApiTest {
                     .as("the same bytes twice").isEqualTo(text);
 
             String capping = "{\"sql\":\"SELECT id FROM span ORDER BY id\",\"limit\":2}";
-            Json.JsonObject capped = json(postJson(client, "/api/sql", capping));
+            JsonObject capped = json(postJson(client, "/api/sql", capping));
             assertThat(capped.getLong("rowCount")).isEqualTo(2);
             assertThat(capped.getBoolean("truncated")).isTrue();
             assertThat(postJson(client, "/api/sql?format=text", capping).body())
                     .startsWith("# sql  2 rows (truncated at 2)");
 
-            Json.JsonObject typed = json(postJson(client, "/api/sql",
+            JsonObject typed = json(postJson(client, "/api/sql",
                     "{\"sql\":\"SELECT query_id, entry, duration_ns / 1000000.0 AS ms FROM span"
                             + " WHERE entry\"}"));
-            Json.JsonArray entry = typed.getArray("rows").get(0).asArray();
+            JsonArray entry = typed.getArray("rows").get(0).asArray();
             assertThat(entry.get(0).isNull()).as("a NULL cell is null").isTrue();
             assertThat(entry.get(1).asBoolean()).isTrue();
             assertThat(entry.get(2).asDouble()).isEqualTo(900.0);
@@ -718,7 +721,7 @@ class AgentApiTest {
                     .hasValue("text/markdown; charset=utf-8");
 
             // 2^32 + 1 is capped, not cut to 1 by an int cast.
-            Json.JsonObject huge = json(postJson(client, "/api/sql",
+            JsonObject huge = json(postJson(client, "/api/sql",
                     "{\"sql\":\"SELECT span_id FROM span\",\"limit\":4294967297}"));
             assertThat(huge.getLong("rowCount")).isEqualTo(9);
             assertThat(huge.getBoolean("truncated")).isFalse();
@@ -735,7 +738,7 @@ class AgentApiTest {
                     .as("the span table is still there").isEqualTo(9);
 
             // A ';' in a literal is not a second statement, and a comment is not a keyword.
-            Json.JsonObject fine = json(postJson(client, "/api/sql",
+            JsonObject fine = json(postJson(client, "/api/sql",
                     "{\"sql\":\"-- what is in here\\n  SELECT ';' AS semicolon FROM span WHERE entry\"}"));
             assertThat(fine.getLong("rowCount")).isEqualTo(1);
         });
@@ -778,11 +781,11 @@ class AgentApiTest {
         serve((client, assembly) -> {
             postProtobuf(client, "/v1/traces", sample());
 
-            Json.JsonArray all = json(client.get("/api/findings?" + window())).getArray("findings");
+            JsonArray all = json(client.get("/api/findings?" + window())).getArray("findings");
             assertThat(all.size()).isGreaterThanOrEqualTo(3);
             String id = all.get(1).asObject().getString("id");
 
-            Json.JsonObject one = json(client.get("/api/findings/" + id + "?" + window()));
+            JsonObject one = json(client.get("/api/findings/" + id + "?" + window()));
             assertThat(one.getLong("rank")).isEqualTo(2);
             assertThat(one.getLong("requests")).isEqualTo(1);
             assertThat(one.getObject("finding").getString("id")).isEqualTo(id);
@@ -843,22 +846,22 @@ class AgentApiTest {
             postProtobuf(client, "/v1/traces", sample());
 
             // Two minutes at five seconds a bucket: 25 buckets, one point each.
-            Json.JsonObject group = json(client.get("/api/errors?" + window())).getArray("errors")
+            JsonObject group = json(client.get("/api/errors?" + window())).getArray("errors")
                     .get(0).asObject();
-            Json.JsonArray series = group.getArray("series");
+            JsonArray series = group.getArray("series");
             assertThat(series.size()).isEqualTo(25);
             assertThat(sum(series)).isEqualTo(group.getLong("count"));
 
             // An hour at a minute a bucket: 61 buckets, merged three at a time.
             String hour = "from=" + (NOW - 3_000_000) + "&to=" + (NOW + 600_000);
-            Json.JsonArray merged = json(client.get("/api/errors?" + hour)).getArray("errors")
+            JsonArray merged = json(client.get("/api/errors?" + hour)).getArray("errors")
                     .get(0).asObject().getArray("series");
             assertThat(merged.size()).isLessThanOrEqualTo(30).isGreaterThan(1);
             assertThat(sum(merged)).isEqualTo(1);
         });
     }
 
-    private static long sum(Json.JsonArray values) {
+    private static long sum(JsonArray values) {
         long total = 0;
         for (int i = 0; i < values.size(); i++) {
             total += values.get(i).asLong();
@@ -869,8 +872,8 @@ class AgentApiTest {
     @Test
     void statusCarriesTheCodeFrameRulesAndTheJarPath() {
         serve((client, assembly) -> {
-            Json.JsonObject status = json(client.get("/api/status"));
-            Json.JsonObject frames = status.getObject("codeFrames");
+            JsonObject status = json(client.get("/api/status"));
+            JsonObject frames = status.getObject("codeFrames");
             assertThat(frames.getArray("appPackages").size()).isZero();
             assertThat(frames.getArray("frameworkPrefixes").get(0).asString()).isEqualTo("java.");
             assertThat(status.has("jar")).isTrue();

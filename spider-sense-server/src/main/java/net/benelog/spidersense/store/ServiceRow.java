@@ -4,7 +4,8 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonObject;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -32,7 +33,7 @@ public record ServiceRow(String name, @Nullable String language, @Nullable Long 
     }
 
     /** The row a document holds, or null when it names no service; its last sighting is its first when it gives none. */
-    static @Nullable ServiceRow fromJson(Json.JsonObject service) {
+    static @Nullable ServiceRow fromJson(JsonObject service) {
         String name = RowJson.string(service, "name");
         if (name == null) {
             return null;
@@ -55,8 +56,8 @@ public record ServiceRow(String name, @Nullable String language, @Nullable Long 
     }
 
     /** The row as the export document holds it, with {@code resource} as the object it is. */
-    public Json.JsonObject toJson() {
-        return Json.obj()
+    public JsonObject toJson() {
+        return Json.object()
                 .put("name", name)
                 .put("language", language)
                 .put("pid", RowJson.number(pid))

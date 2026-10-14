@@ -11,7 +11,11 @@ import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.Message;
 import com.google.protobuf.util.JsonFormat;
 
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonValue;
+import net.benelog.silkjson.JsonObject;
+import net.benelog.silkjson.JsonArray;
+import net.benelog.silkjson.JsonException;
 
 /**
  * OTLP/JSON, which is protobuf's JSON mapping with one deliberate difference:
@@ -52,7 +56,7 @@ public final class OtlpJson {
         String json = withoutLoneSurrogates(body);
         try {
             JsonFormat.parser().ignoringUnknownFields().merge(hexIdsToBase64(json), builder);
-        } catch (Json.JsonException e) {
+        } catch (JsonException e) {
             // Not JSON Spider Silk's parser walks, such as a uint64 written as a number past
             // 2^63, which OTLP allows. JsonFormat may still read it, so the ids are rewritten in
             // the text instead; handed over as they are, hex ids would decode as base64 into
@@ -159,12 +163,12 @@ public final class OtlpJson {
         return rewrite(Json.parse(json)).toJson();
     }
 
-    private static Json.JsonValue rewrite(Json.JsonValue value) {
-        if (value instanceof Json.JsonObject object) {
-            Json.JsonObject rewritten = Json.obj();
+    private static JsonValue rewrite(JsonValue value) {
+        if (value instanceof JsonObject object) {
+            JsonObject rewritten = Json.object();
             for (var member : object) {
                 String key = member.getKey();
-                Json.JsonValue child = member.getValue();
+                JsonValue child = member.getValue();
                 if (child.isString() && isIdField(key)) {
                     rewritten.put(key, convertIfHex(key, child.asString()));
                 } else {
@@ -173,9 +177,9 @@ public final class OtlpJson {
             }
             return rewritten;
         }
-        if (value instanceof Json.JsonArray array) {
-            Json.JsonArray rewritten = Json.arr();
-            for (Json.JsonValue element : array) {
+        if (value instanceof JsonArray array) {
+            JsonArray rewritten = Json.array();
+            for (JsonValue element : array) {
                 rewritten.add(rewrite(element));
             }
             return rewritten;

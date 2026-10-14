@@ -4,7 +4,8 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonObject;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -16,7 +17,7 @@ public record MarkRow(long atMs, @Nullable String name, @Nullable String service
 
     static final String INSERT = "INSERT INTO mark (at_ms, name, service, note) VALUES (?, ?, ?, ?)";
 
-    static MarkRow fromJson(Json.JsonObject mark) {
+    static MarkRow fromJson(JsonObject mark) {
         return new MarkRow(RowJson.longOr(mark, "atMs", 0), RowJson.string(mark, "name"),
                 RowJson.string(mark, "service"), RowJson.string(mark, "note"));
     }
@@ -28,8 +29,8 @@ public record MarkRow(long atMs, @Nullable String name, @Nullable String service
     }
 
     /** The row as the export document holds it. */
-    public Json.JsonObject toJson() {
-        return Json.obj()
+    public JsonObject toJson() {
+        return Json.object()
                 .put("atMs", atMs)
                 .put("name", name)
                 .put("service", service)

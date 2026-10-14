@@ -9,7 +9,8 @@ import net.benelog.spidersense.store.ServiceRegistry;
 import net.benelog.spidersilk.App;
 import net.benelog.spidersilk.WebRequest;
 import net.benelog.spidersilk.WebResponse;
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonArray;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -39,7 +40,7 @@ public final class MetricsApi {
     }
 
     public WebResponse catalog(WebRequest req) {
-        return WebResponse.json(Json.obj()
+        return WebResponse.json(Json.object()
                 .put("metrics", Codecs.metricCatalog(metrics.catalog(Params.service(req)))));
     }
 
@@ -50,11 +51,11 @@ public final class MetricsApi {
         List<MetricQueries.SeriesData> series = metrics.series(name, Params.service(req),
                 Params.attributeFilters(req), window);
 
-        Json.JsonArray rendered = Json.arr();
+        JsonArray rendered = Json.array();
         series.forEach(data -> rendered.add(Codecs.series(data, rate)));
         String type = series.isEmpty() ? "gauge" : series.get(0).type();
         String unit = series.isEmpty() ? "" : series.get(0).unit();
-        return WebResponse.json(Json.obj()
+        return WebResponse.json(Json.object()
                 .put("name", name)
                 .put("type", type)
                 .put("unit", unit)

@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.Test;
 
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.JsonObject;
 
 /** The pacing of {@code /api/events} and the arithmetic of its stats frame, with no stream. */
 class EventsApiTest {
@@ -48,14 +48,14 @@ class EventsApiTest {
         EventsApi.Counts before = new EventsApi.Counts(100, 10, 50, 0);
         EventsApi.Counts after = new EventsApi.Counts(300, 20, 60, 2);
 
-        Json.JsonObject stats = EventsApi.stats(after, before, 2.0, T0);
+        JsonObject stats = EventsApi.stats(after, before, 2.0, T0);
         assertThat(stats.getLong("at")).isEqualTo(T0);
         assertThat(stats.getLong("spans")).isEqualTo(300);
         assertThat(stats.getLong("droppedSpans")).isEqualTo(2);
         assertThat(stats.getObject("perSecond").getDouble("spans")).isEqualTo(100.0);
         assertThat(stats.getObject("perSecond").getDouble("logs")).isEqualTo(5.0);
 
-        Json.JsonObject cleared = EventsApi.stats(new EventsApi.Counts(0, 0, 0, 0), after, 1.0, T0);
+        JsonObject cleared = EventsApi.stats(new EventsApi.Counts(0, 0, 0, 0), after, 1.0, T0);
         assertThat(cleared.getObject("perSecond").getDouble("spans")).as("a clear in between").isZero();
     }
 }

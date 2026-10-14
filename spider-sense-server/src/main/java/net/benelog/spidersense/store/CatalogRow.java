@@ -4,7 +4,8 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonObject;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -32,7 +33,7 @@ public record CatalogRow(String service, String schemaName, String tableName, @N
     }
 
     /** The row a document holds, or null when it names no service or no table. */
-    static @Nullable CatalogRow fromJson(Json.JsonObject table) {
+    static @Nullable CatalogRow fromJson(JsonObject table) {
         String service = RowJson.string(table, "service");
         String name = RowJson.string(table, "tableName");
         if (service == null || name == null) {
@@ -62,8 +63,8 @@ public record CatalogRow(String service, String schemaName, String tableName, @N
      * or as its text when that does not parse, since the export repairs nothing
      * (the reader drops such a row, storage.adoc).
      */
-    public Json.JsonObject toJson() {
-        Json.JsonObject row = Json.obj()
+    public JsonObject toJson() {
+        JsonObject row = Json.object()
                 .put("service", service)
                 .put("schemaName", schemaName)
                 .put("tableName", tableName)

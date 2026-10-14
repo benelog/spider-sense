@@ -4,7 +4,8 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonObject;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -29,7 +30,7 @@ public record MetricRow(String service, String name, String type, @Nullable Stri
     }
 
     /** The row a document holds, or null when it names no service or no name. */
-    static @Nullable MetricRow fromJson(Json.JsonObject metric) {
+    static @Nullable MetricRow fromJson(JsonObject metric) {
         String service = RowJson.string(metric, "service");
         String name = RowJson.string(metric, "name");
         if (service == null || name == null) {
@@ -53,8 +54,8 @@ public record MetricRow(String service, String name, String type, @Nullable Stri
     }
 
     /** The row as the export document holds it. */
-    public Json.JsonObject toJson() {
-        return Json.obj()
+    public JsonObject toJson() {
+        return Json.object()
                 .put("service", service)
                 .put("name", name)
                 .put("type", type)

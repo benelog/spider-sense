@@ -22,7 +22,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import net.benelog.spidersense.query.Selectors;
 import net.benelog.spidersense.store.AttrJson;
 import net.benelog.spidersense.store.Tingle;
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonValue;
+import net.benelog.silkjson.JsonObject;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -212,7 +214,7 @@ final class Tail {
 
     /** One event; true when it is the one the command was waiting for. */
     private boolean handle(String name, String data) {
-        Json.JsonObject event;
+        JsonObject event;
         try {
             event = Json.parse(data).asObject();
         } catch (RuntimeException notJson) {
@@ -230,7 +232,7 @@ final class Tail {
         if (watch.json()) {
             print(json(name, event));
         }
-        long traces = event.optLong("traces", 0);
+        long traces = event.getLong("traces", 0);
         if (baseline < 0) {
             baseline = traces;
             return false;
@@ -238,7 +240,7 @@ final class Tail {
         return watch.untilTraces() != null && traces - baseline >= watch.untilTraces();
     }
 
-    private boolean matches(Json.JsonObject tingle) {
+    private boolean matches(JsonObject tingle) {
         if (watch.kind() != null && !watch.kind().equals(AttrJson.optionalString(tingle, "kind"))) {
             return false;
         }
@@ -250,10 +252,10 @@ final class Tail {
      * {@code 12:37:28.565  slow-query    spring-orders   SELECT orders  1,532 ms  <trace id>}:
      * the tingle's own fields, in the order cli.adoc#tail names them, two spaces apart.
      */
-    private static String line(Json.JsonObject tingle) {
-        StringBuilder text = new StringBuilder(clock(tingle.optLong("at", 0))).append("  ")
-                .append(pad(tingle.optString("kind", "—"), KIND_WIDTH))
-                .append(pad(tingle.optString("service", "—"), SERVICE_WIDTH));
+    private static String line(JsonObject tingle) {
+        StringBuilder text = new StringBuilder(clock(tingle.getLong("at", 0))).append("  ")
+                .append(pad(tingle.getString("kind", "—"), KIND_WIDTH))
+                .append(pad(tingle.getString("service", "—"), SERVICE_WIDTH));
         List<String> rest = new ArrayList<>(3);
         for (String key : List.of("title", "detail", "traceId")) {
             String value = AttrJson.optionalString(tingle, key);
@@ -265,9 +267,9 @@ final class Tail {
     }
 
     /** The event as it arrived, with the name it arrived under: one object per line. */
-    private static String json(String name, Json.JsonObject event) {
-        Json.JsonObject object = Json.obj().put("event", name);
-        for (Map.Entry<String, Json.JsonValue> member : event) {
+    private static String json(String name, JsonObject event) {
+        JsonObject object = Json.object().put("event", name);
+        for (Map.Entry<String, JsonValue> member : event) {
             object.put(member.getKey(), member.getValue());
         }
         return object.toJson();

@@ -23,7 +23,8 @@ import net.benelog.spidersense.TestStore;
 import net.benelog.spidersense.ingest.OtlpDecoder;
 import net.benelog.spidersense.server.Config;
 import net.benelog.spidersense.server.SpiderSenseServer;
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonObject;
 
 /**
  * {@code tail}: the SSE stream read as lines, and what ends it.
@@ -151,10 +152,10 @@ class TailTest {
 
         List<String> lines = run.out().lines().toList();
         assertThat(lines).hasSize(5);
-        Json.JsonObject stats = Json.parse(lines.get(0)).asObject();
+        JsonObject stats = Json.parse(lines.get(0)).asObject();
         assertThat(stats.getString("event")).isEqualTo("stats");
         assertThat(stats.getLong("traces")).isEqualTo(5);
-        Json.JsonObject tingle = Json.parse(lines.get(1)).asObject();
+        JsonObject tingle = Json.parse(lines.get(1)).asObject();
         assertThat(tingle.getString("event")).isEqualTo("tingle");
         assertThat(tingle.getString("kind")).isEqualTo("slow-query");
         assertThat(tingle.getString("title")).isEqualTo("SELECT orders");

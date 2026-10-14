@@ -19,7 +19,7 @@ import net.benelog.spidersense.store.Database;
 import net.benelog.spidersense.store.Marks;
 import net.benelog.spidersense.store.ServiceRegistry;
 import net.benelog.spidersense.store.Tingles;
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.JsonObject;
 
 /**
  * What {@link Reports} decides itself rather than asks the queries: a finding's
@@ -44,7 +44,7 @@ class ReportsRulesTest {
         Reports.Report report = Reports.finding(WINDOW, null, ranked, "b", false, () -> 42);
 
         assertThat(report).isNotNull();
-        Json.JsonObject json = report.json().asObject();
+        JsonObject json = report.json().asObject();
         assertThat(json.getLong("rank")).isEqualTo(2);
         assertThat(json.getLong("requests")).isEqualTo(42);
         assertThat(json.getObject("finding").getString("id")).isEqualTo("b");

@@ -7,7 +7,10 @@ import java.util.Locale;
 import java.util.Map;
 
 import net.benelog.spidersense.store.Sql;
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonValue;
+import net.benelog.silkjson.JsonObject;
+import net.benelog.silkjson.JsonArray;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -83,17 +86,17 @@ public final class Catalog {
         }
         try {
             List<Index> indexes = new ArrayList<>();
-            for (Json.JsonValue value : Json.parse(json).asArray()) {
-                Json.JsonObject index = value.asObject();
+            for (JsonValue value : Json.parse(json).asArray()) {
+                JsonObject index = value.asObject();
                 List<String> columns = new ArrayList<>();
-                Json.JsonArray stored = index.optArray("columns");
+                JsonArray stored = index.getArrayOrNull("columns");
                 if (stored != null) {
-                    for (Json.JsonValue column : stored) {
+                    for (JsonValue column : stored) {
                         columns.add(column.asString());
                     }
                 }
-                indexes.add(new Index(index.optString("name", ""),
-                        index.optBoolean("unique", false), List.copyOf(columns)));
+                indexes.add(new Index(index.getString("name", ""),
+                        index.getBoolean("unique", false), List.copyOf(columns)));
             }
             return List.copyOf(indexes);
         } catch (RuntimeException notJson) {

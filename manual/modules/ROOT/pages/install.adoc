@@ -1,7 +1,7 @@
 = Installation
 :navtitle: Installation
 
-Spider Sense requires Java 21 or later.
+Spider Sense requires Java 25 or later.
 It is one jar, and that jar carries the OpenTelemetry Java agent, the collector, the UI and the command line.
 Nothing else has to be installed: no Docker, no account, and no server to run.
 
@@ -104,9 +104,9 @@ The Gradle plugin and the Maven parameters exist to hand it over.
 [#java-versions]
 == Java versions
 
-The jar itself needs Java 21 or later, which is Spider Silk's floor.
-The monitored application can run on any JVM the OpenTelemetry Java agent supports, but the embedded UI needs 21 or later, so agent mode requires 21 or later.
-An application on an older JVM can still be measured: run Spider Sense standalone on Java 21 or later and point the application at it, as xref:modes.adoc#forwarding[forwarding] describes.
+The jar itself needs Java 25 or later, which is Spider Silk's floor.
+The monitored application can run on any JVM the OpenTelemetry Java agent supports, but the embedded UI needs 25 or later, so agent mode requires 25 or later.
+An application on an older JVM can still be measured: run Spider Sense standalone on Java 25 or later and point the application at it, as xref:modes.adoc#forwarding[forwarding] describes.
 
 [#next]
 == What to read next

@@ -4,7 +4,8 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonObject;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -101,7 +102,7 @@ public record SpanRow(
      * because {@code entry} and {@code slow} were decided when the row was first
      * written, under that session's thresholds (storage.adoc).
      */
-    static SpanRow fromJson(Json.JsonObject span) {
+    static SpanRow fromJson(JsonObject span) {
         return new SpanRow(
                 RowJson.string(span, "traceId"),
                 RowJson.string(span, "spanId"),
@@ -175,8 +176,8 @@ public record SpanRow(
     }
 
     /** The row as the export document holds it, with {@code attributes} and {@code events} as the JSON they are. */
-    public Json.JsonObject toJson() {
-        return Json.obj()
+    public JsonObject toJson() {
+        return Json.object()
                 .put("traceId", traceId)
                 .put("spanId", spanId)
                 .put("parentSpanId", parentSpanId)

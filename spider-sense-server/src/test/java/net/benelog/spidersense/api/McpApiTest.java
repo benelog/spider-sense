@@ -19,7 +19,9 @@ import net.benelog.spidersense.mcp.McpServer;
 import net.benelog.spidersense.server.Config;
 import net.benelog.spidersense.server.SpiderSenseServer;
 import net.benelog.spidersense.server.Version;
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonObject;
+import net.benelog.silkjson.JsonArray;
 import net.benelog.spidersilk.test.TestClient;
 import net.benelog.spidersilk.test.WebTest;
 
@@ -60,19 +62,19 @@ class McpApiTest {
     }
 
     /** One JSON-RPC message, and the {@code result} object it answered with. */
-    private static Json.JsonObject call(TestClient client, String name, String arguments) {
+    private static JsonObject call(TestClient client, String name, String arguments) {
         HttpResponse<String> response = post(client, "/mcp",
                 "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\""
                         + name + "\",\"arguments\":" + arguments + "}}");
         assertThat(response.statusCode()).isEqualTo(200);
         assertThat(response.headers().firstValue("content-type"))
                 .hasValueSatisfying(type -> assertThat(type).startsWith("application/json"));
-        Json.JsonObject body = Json.parse(response.body()).asObject();
+        JsonObject body = Json.parse(response.body()).asObject();
         assertThat(body.has("error")).as("%s", response.body()).isFalse();
         return body.getObject("result");
     }
 
-    private static String text(Json.JsonObject result) {
+    private static String text(JsonObject result) {
         return result.getArray("content").get(0).asObject().getString("text");
     }
 
@@ -106,7 +108,7 @@ class McpApiTest {
     @Test
     void initializeAndToolsListAnswerOverHttpJustAsTheyDoOverStdio() {
         serve(client -> {
-            Json.JsonObject initialized = Json.parse(post(client, "/mcp",
+            JsonObject initialized = Json.parse(post(client, "/mcp",
                     "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":"
                             + "{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{}}}").body())
                     .asObject().getObject("result");
@@ -114,7 +116,7 @@ class McpApiTest {
             assertThat(initialized.getObject("serverInfo").getString("version"))
                     .isEqualTo(Version.CURRENT);
 
-            Json.JsonArray tools = Json.parse(post(client, "/mcp",
+            JsonArray tools = Json.parse(post(client, "/mcp",
                     "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}").body())
                     .asObject().getObject("result").getArray("tools");
             assertThat(tools.size()).isEqualTo(8);
@@ -184,14 +186,14 @@ class McpApiTest {
         serve(client -> {
             ingest(client);
 
-            Json.JsonObject result = call(client, "check", "{\"since\":\"5m\"}");
+            JsonObject result = call(client, "check", "{\"since\":\"5m\"}");
 
             assertThat(text(result)).startsWith("# check  fail");
             assertThat(result.getObject("structuredContent").getBoolean("pass")).isFalse();
             assertThat(result.getObject("structuredContent").getLong("requests")).isEqualTo(1);
             assertThat(result.getBoolean("isError")).isFalse();
 
-            Json.JsonObject relaxed = call(client, "check",
+            JsonObject relaxed = call(client, "check",
                     "{\"since\":\"5m\",\"maxP95Ms\":100000}");
             assertThat(relaxed.getObject("structuredContent").getBoolean("pass")).isTrue();
         });
@@ -202,29 +204,29 @@ class McpApiTest {
         serve(client -> {
             ingest(client);
 
-            Json.JsonObject missing = call(client, "trace",
+            JsonObject missing = call(client, "trace",
                     "{\"traceId\":\"" + "f".repeat(32) + "\"}");
             assertThat(missing.getBoolean("isError")).isTrue();
             assertThat(text(missing)).isEqualTo("No such trace: " + "f".repeat(32));
 
-            Json.JsonObject noMark = call(client, "findings", "{\"since\":\"nowhere\"}");
+            JsonObject noMark = call(client, "findings", "{\"since\":\"nowhere\"}");
             assertThat(noMark.getBoolean("isError")).isTrue();
             assertThat(text(noMark)).contains("No mark named nowhere");
 
-            Json.JsonObject badSelector = call(client, "findings", "{\"since\":\"5 minutes\"}");
+            JsonObject badSelector = call(client, "findings", "{\"since\":\"5 minutes\"}");
             assertThat(badSelector.getBoolean("isError")).isTrue();
             assertThat(text(badSelector)).contains("Not a time selector");
 
-            Json.JsonObject refused = call(client, "sql", "{\"sql\":\"DELETE FROM span\"}");
+            JsonObject refused = call(client, "sql", "{\"sql\":\"DELETE FROM span\"}");
             assertThat(refused.getBoolean("isError")).isTrue();
             assertThat(text(refused)).contains("DELETE").doesNotContain("\n");
 
-            Json.JsonObject badName = call(client, "mark", "{\"name\":\"two words\"}");
+            JsonObject badName = call(client, "mark", "{\"name\":\"two words\"}");
             assertThat(badName.getBoolean("isError")).isTrue();
 
             // Below 1 is refused, as POST /api/sql refuses it with a 400.
             for (String limit : new String[] {"0", "-7"}) {
-                Json.JsonObject belowOne = call(client, "sql", "{\"sql\":\"SELECT 1\",\"limit\":" + limit + "}");
+                JsonObject belowOne = call(client, "sql", "{\"sql\":\"SELECT 1\",\"limit\":" + limit + "}");
                 assertThat(belowOne.getBoolean("isError")).as(limit).isTrue();
                 assertThat(text(belowOne)).isEqualTo("limit must be at least 1");
             }

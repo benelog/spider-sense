@@ -3,7 +3,10 @@ package net.benelog.spidersense.store;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonArray;
+import net.benelog.silkjson.JsonValue;
+import net.benelog.silkjson.JsonObject;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -20,25 +23,25 @@ final class RowJson {
     private RowJson() {
     }
 
-    static @Nullable String string(Json.JsonObject object, String key) {
+    static @Nullable String string(JsonObject object, String key) {
         return AttrJson.optionalString(object, key);
     }
 
     /** A nullable integer column: JSON null stays null rather than becoming zero. */
-    static @Nullable Long nullableLong(Json.JsonObject object, String key) {
+    static @Nullable Long nullableLong(JsonObject object, String key) {
         return AttrJson.optionalLong(object, key);
     }
 
-    static long longOr(Json.JsonObject object, String key, long fallback) {
-        return object.optLong(key, fallback);
+    static long longOr(JsonObject object, String key, long fallback) {
+        return object.getLong(key, fallback);
     }
 
-    static boolean bool(Json.JsonObject object, String key) {
-        return object.optBoolean(key, false);
+    static boolean bool(JsonObject object, String key) {
+        return object.getBoolean(key, false);
     }
 
     /** A nested object or array as the JSON text its column holds, whatever its shape. */
-    static String nested(Json.JsonObject object, String key, String fallback) {
+    static String nested(JsonObject object, String key, String fallback) {
         if (!object.has(key) || object.get(key).isNull()) {
             return fallback;
         }
@@ -48,21 +51,21 @@ final class RowJson {
     /**
      * An attributes or resource column: the JSON object's text, or {@code {}} when it is missing.
      *
-     * @throws Json.JsonException when the value is not an object, which every read of the column would fail on
+     * @throws net.benelog.silkjson.JsonException when the value is not an object, which every read of the column would fail on
      */
-    static String object(Json.JsonObject object, String key) {
-        Json.JsonObject value = object.optObject(key);
+    static String object(JsonObject object, String key) {
+        JsonObject value = object.getObjectOrNull(key);
         return value == null ? AttrJson.EMPTY_OBJECT : value.toJson();
     }
 
     /**
      * An events column: the JSON array's text, or {@code []} when it is missing.
      *
-     * @throws Json.JsonException when the value is not an array of the objects
+     * @throws net.benelog.silkjson.JsonException when the value is not an array of the objects
      *         {@link AttrJson#encodeEvents} writes, which every read of the column would fail on
      */
-    static String events(Json.JsonObject object, String key) {
-        Json.JsonArray value = object.optArray(key);
+    static String events(JsonObject object, String key) {
+        JsonArray value = object.getArrayOrNull(key);
         if (value == null) {
             return AttrJson.EMPTY_ARRAY;
         }
@@ -76,17 +79,17 @@ final class RowJson {
     }
 
     /** A nullable number as the JSON value it is: a number, or null. */
-    static Json.JsonValue number(@Nullable Long value) {
+    static JsonValue number(@Nullable Long value) {
         return AttrJson.toJson(value, AttrJson.Rules.ANSWER);
     }
 
     /** A double as JSON; a NaN or an infinity has no JSON syntax, so it is null. */
-    static Json.JsonValue number(double value) {
+    static JsonValue number(double value) {
         return AttrJson.toJson(value, AttrJson.Rules.ANSWER);
     }
 
     /** A JSON column as the value its text is, {@code empty} standing in for no text. */
-    static Json.JsonValue parsed(@Nullable String json, String empty) {
+    static JsonValue parsed(@Nullable String json, String empty) {
         return Json.parse(json == null || json.isEmpty() ? empty : json);
     }
 

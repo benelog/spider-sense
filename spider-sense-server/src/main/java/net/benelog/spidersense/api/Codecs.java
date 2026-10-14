@@ -26,7 +26,10 @@ import net.benelog.spidersense.store.ReadOnlyQuery;
 import net.benelog.spidersense.store.SpanRecord;
 import net.benelog.spidersense.store.Tingle;
 import net.benelog.spidersense.store.Tingles;
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonValue;
+import net.benelog.silkjson.JsonObject;
+import net.benelog.silkjson.JsonArray;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -51,19 +54,19 @@ public final class Codecs {
     // --- primitives ---------------------------------------------------------
 
     /** A double, or {@code null} when it is not a number (an absent value). */
-    static Json.JsonObject put(Json.JsonObject object, String key, double value) {
+    static JsonObject put(JsonObject object, String key, double value) {
         if (!Double.isFinite(value)) {
             return object.putNull(key);
         }
         return object.put(key, round(value));
     }
 
-    static Json.JsonObject put(Json.JsonObject object, String key, @Nullable Long value) {
+    static JsonObject put(JsonObject object, String key, @Nullable Long value) {
         return value == null ? object.putNull(key) : object.put(key, value.longValue());
     }
 
     /** A score that is absent rather than zero — an Apdex over no request at all. */
-    static Json.JsonObject put(Json.JsonObject object, String key, @Nullable Double value) {
+    static JsonObject put(JsonObject object, String key, @Nullable Double value) {
         return value == null ? object.putNull(key) : put(object, key, value.doubleValue());
     }
 
@@ -79,8 +82,8 @@ public final class Codecs {
         return Math.round(value * 1000.0) / 1000.0;
     }
 
-    static Json.JsonArray longs(long[] values) {
-        Json.JsonArray array = Json.arr();
+    static JsonArray longs(long[] values) {
+        JsonArray array = Json.array();
         for (long value : values) {
             array.add(value);
         }
@@ -88,19 +91,19 @@ public final class Codecs {
     }
 
     /** The response-time histogram of a series: one array of counts per bucket. */
-    static Json.JsonArray histogram(long[][] buckets) {
-        Json.JsonArray array = Json.arr();
+    static JsonArray histogram(long[][] buckets) {
+        JsonArray array = Json.array();
         for (long[] bucket : buckets) {
             array.add(longs(bucket));
         }
         return array;
     }
 
-    static Json.JsonArray doubles(double[] values) {
-        Json.JsonArray array = Json.arr();
+    static JsonArray doubles(double[] values) {
+        JsonArray array = Json.array();
         for (double value : values) {
             if (!Double.isFinite(value)) {
-                array.add((Json.JsonValue) null);
+                array.add((JsonValue) null);
             } else {
                 array.add(round(value));
             }
@@ -109,13 +112,13 @@ public final class Codecs {
     }
 
     /** The same, with {@code null} wherever the bucket held no requests. */
-    static Json.JsonArray doubles(double[] values, long[] counts) {
-        Json.JsonArray array = Json.arr();
+    static JsonArray doubles(double[] values, long[] counts) {
+        JsonArray array = Json.array();
         for (int i = 0; i < values.length; i++) {
             if (i < counts.length && counts[i] == 0) {
-                array.add((Json.JsonValue) null);
+                array.add((JsonValue) null);
             } else if (!Double.isFinite(values[i])) {
-                array.add((Json.JsonValue) null);
+                array.add((JsonValue) null);
             } else {
                 array.add(round(values[i]));
             }
@@ -124,8 +127,8 @@ public final class Codecs {
     }
 
     /** An attribute map: string, number, boolean, or an array of those. */
-    static Json.JsonObject attributes(Map<String, Object> attributes) {
-        Json.JsonObject object = Json.obj();
+    static JsonObject attributes(Map<String, Object> attributes) {
+        JsonObject object = Json.object();
         attributes.forEach((key, value) -> object.put(key, value(value)));
         return object;
     }
@@ -148,38 +151,38 @@ public final class Codecs {
     private static final AttrJson.Rules NUMBER =
             new AttrJson.Rules(AttrJson.NonFinite.NULL, Codecs::round, false);
 
-    private static Json.JsonValue value(@Nullable Object value) {
+    private static JsonValue value(@Nullable Object value) {
         return AttrJson.toJson(value, ATTRIBUTE);
     }
 
-    static Json.JsonObject window(Window window) {
-        return Json.obj()
+    static JsonObject window(Window window) {
+        return Json.object()
                 .put("from", window.from())
                 .put("to", window.to())
                 .put("bucketMs", window.bucketMs());
     }
 
     /** The window's bounds alone, without the bucket width {@link #window} adds. */
-    static Json.JsonObject bounds(long from, long to) {
-        return Json.obj().put("from", from).put("to", to);
+    static JsonObject bounds(long from, long to) {
+        return Json.object().put("from", from).put("to", to);
     }
 
     /** Each element of a list, as the JSON its codec writes, in the list's order. */
-    static <T> Json.JsonArray each(List<T> values, Function<T, ? extends Json.JsonValue> codec) {
-        Json.JsonArray array = Json.arr();
+    static <T> JsonArray each(List<T> values, Function<T, ? extends JsonValue> codec) {
+        JsonArray array = Json.array();
         values.forEach(value -> array.add(codec.apply(value)));
         return array;
     }
 
-    static Json.JsonArray strings(List<String> values) {
-        return Json.arr().addAll(values);
+    static JsonArray strings(List<String> values) {
+        return Json.array().addAll(values);
     }
 
     // --- the contract's objects ---------------------------------------------
 
     /** {@code GET /api/status} (api.adoc#status). */
-    static Json.JsonObject status(StatusSnapshot status) {
-        Json.JsonObject otlp = Json.obj();
+    static JsonObject status(StatusSnapshot status) {
+        JsonObject otlp = Json.object();
         String endpoint = status.endpoint();
         if (endpoint != null) {
             otlp.put("traces", endpoint + "/v1/traces")
@@ -188,7 +191,7 @@ public final class Codecs {
         }
         // ingest.maxSpansPerSecond is always present, null for no cap, so the UI can tell "no
         // cap" from "old server".
-        Json.JsonObject ingest = Json.obj();
+        JsonObject ingest = Json.object();
         Long cap = status.maxSpansPerSecond();
         if (cap == null) {
             ingest.putNull("maxSpansPerSecond");
@@ -196,7 +199,7 @@ public final class Codecs {
             ingest.put("maxSpansPerSecond", cap.longValue());
         }
         Database.Storage storage = status.storage();
-        return Json.obj()
+        return Json.object()
                 .put("name", Version.NAME)
                 .put("version", Version.CURRENT)
                 .put("mode", status.mode())
@@ -205,21 +208,21 @@ public final class Codecs {
                 .put("endpoint", endpoint)
                 .put("otlp", otlp)
                 .put("embeddedService", status.embeddedService())
-                .put("thresholds", Json.obj()
+                .put("thresholds", Json.object()
                         .put("slowRequestMs", status.slowRequestMs())
                         .put("slowQueryMs", status.slowQueryMs())
                         .put("responseBucketsMs", longs(status.responseBuckets().bounds())))
-                .put("ignore", Json.obj()
+                .put("ignore", Json.object()
                         .put("endpoints", strings(status.ignoredEndpoints())))
-                .put("codeFrames", Json.obj()
+                .put("codeFrames", Json.object()
                         .put("appPackages", strings(status.appPackages()))
                         .put("frameworkPrefixes", strings(status.frameworkPrefixes())))
                 .put("jar", status.jar())
-                .put("retention", Json.obj()
+                .put("retention", Json.object()
                         .put("hours", status.retentionHours())
                         .put("spans", status.retentionSpans()))
                 .put("ingest", ingest)
-                .put("storage", Json.obj()
+                .put("storage", Json.object()
                         .put("url", storage.url())
                         .put("path", storage.path())
                         .put("sizeBytes", storage.sizeBytes())
@@ -228,27 +231,27 @@ public final class Codecs {
                         .put("droppedBatches", status.droppedBatches())
                         .put("droppedSpans", status.droppedSpans())
                         .put("queued", status.queued()))
-                .put("counts", Json.obj()
+                .put("counts", Json.object()
                         .put("spans", status.spans())
                         .put("traces", status.traces())
                         .put("logs", status.logs())
                         .put("metricSeries", status.metricSeries())
                         .put("services", status.services()))
                 .put("services", strings(status.serviceNames()))
-                .put("oldest", Json.obj()
+                .put("oldest", Json.object()
                         .put("span", status.oldestSpan())
                         .put("log", status.oldestLog()));
     }
 
-    static Json.JsonObject totals(Stats.Totals totals) {
-        return putTotals(Json.obj(), totals);
+    static JsonObject totals(Stats.Totals totals) {
+        return putTotals(Json.object(), totals);
     }
 
     /**
      * The numbers of api.adoc#service-summary, in their order: what the overview's totals, a
      * service summary and a service node of the map all carry.
      */
-    private static Json.JsonObject putTotals(Json.JsonObject object, Stats.Totals totals) {
+    private static JsonObject putTotals(JsonObject object, Stats.Totals totals) {
         object.put("requests", totals.requests())
                 .put("errors", totals.errors())
                 .put("errorRate", round(totals.errorRate()))
@@ -261,8 +264,8 @@ public final class Codecs {
         return object.put("histogram", longs(totals.histogram()));
     }
 
-    static Json.JsonObject serviceSummary(Stats.ServiceSummary service) {
-        return putTotals(Json.obj()
+    static JsonObject serviceSummary(Stats.ServiceSummary service) {
+        return putTotals(Json.object()
                         .put("name", service.name())
                         .put("language", service.language())
                         .put("embedded", service.embedded())
@@ -273,12 +276,12 @@ public final class Codecs {
                 .put("hasJvm", service.hasJvm());
     }
 
-    static Json.JsonArray serviceSummaries(List<Stats.ServiceSummary> services) {
+    static JsonArray serviceSummaries(List<Stats.ServiceSummary> services) {
         return each(services, Codecs::serviceSummary);
     }
 
-    static Json.JsonObject tingle(Tingle tingle) {
-        Json.JsonObject object = Json.obj()
+    static JsonObject tingle(Tingle tingle) {
+        JsonObject object = Json.object()
                 .put("kind", tingle.kind())
                 .put("at", tingle.at())
                 .put("service", tingle.service())
@@ -289,13 +292,13 @@ public final class Codecs {
         return put(object, "durationMs", tingle.durationMs());
     }
 
-    static Json.JsonArray tingles(List<Tingle> tingles) {
+    static JsonArray tingles(List<Tingle> tingles) {
         return each(tingles, Codecs::tingle);
     }
 
     /** The overview's aligned arrays; percentiles are null in an empty bucket. */
-    static Json.JsonObject overviewSeries(Stats.Buckets buckets) {
-        return Json.obj()
+    static JsonObject overviewSeries(Stats.Buckets buckets) {
+        return Json.object()
                 .put("t", longs(buckets.t()))
                 .put("requests", longs(buckets.requests()))
                 .put("errors", longs(buckets.errors()))
@@ -303,8 +306,8 @@ public final class Codecs {
                 .put("histogram", histogram(buckets.histogram()));
     }
 
-    static Json.JsonObject serviceSeries(Stats.Buckets buckets) {
-        return Json.obj()
+    static JsonObject serviceSeries(Stats.Buckets buckets) {
+        return Json.object()
                 .put("t", longs(buckets.t()))
                 .put("requests", longs(buckets.requests()))
                 .put("errors", longs(buckets.errors()))
@@ -314,10 +317,10 @@ public final class Codecs {
                 .put("histogram", histogram(buckets.histogram()));
     }
 
-    static Json.JsonObject endpoint(Stats.EndpointStats endpoint) {
-        Json.JsonObject statusCodes = Json.obj();
+    static JsonObject endpoint(Stats.EndpointStats endpoint) {
+        JsonObject statusCodes = Json.object();
         endpoint.statusCodes().forEach((code, count) -> statusCodes.put(code, count.longValue()));
-        Json.JsonObject object = Json.obj()
+        JsonObject object = Json.object()
                 .put("endpointId", endpoint.endpointId())
                 .put("service", endpoint.service())
                 .put("method", endpoint.method())
@@ -340,18 +343,18 @@ public final class Codecs {
                 .put("statusCodes", statusCodes);
     }
 
-    static Json.JsonArray endpoints(List<Stats.EndpointStats> endpoints) {
+    static JsonArray endpoints(List<Stats.EndpointStats> endpoints) {
         return each(endpoints, Codecs::endpoint);
     }
 
-    static Json.JsonObject query(Stats.QueryStats query) {
-        Json.JsonArray callers = Json.arr();
-        query.callers().forEach(caller -> callers.add(Json.obj()
+    static JsonObject query(Stats.QueryStats query) {
+        JsonArray callers = Json.array();
+        query.callers().forEach(caller -> callers.add(Json.object()
                 .put("endpoint", caller.endpoint())
                 .put("endpointId", caller.endpointId())
                 .put("service", caller.service())
                 .put("calls", caller.calls())));
-        Json.JsonObject object = Json.obj()
+        JsonObject object = Json.object()
                 .put("queryId", query.queryId())
                 .put("service", query.service())
                 .put("system", query.system())
@@ -380,38 +383,38 @@ public final class Codecs {
      * <p>Null rather than an empty object, because "no index serves nothing" and
      * "nobody could tell" are different answers and the UI shows them differently.
      */
-    static Json.@Nullable JsonObject schema(@Nullable SchemaBlock block) {
+    static @Nullable JsonObject schema(@Nullable SchemaBlock block) {
         if (block == null) {
             return null;
         }
-        Json.JsonArray tables = Json.arr();
+        JsonArray tables = Json.array();
         for (Catalog.Table table : block.tables()) {
-            Json.JsonArray indexes = Json.arr();
+            JsonArray indexes = Json.array();
             for (Catalog.Index index : table.indexes()) {
-                indexes.add(Json.obj()
+                indexes.add(Json.object()
                         .put("name", index.name())
                         .put("unique", index.unique())
                         .put("columns", strings(index.columns())));
             }
-            tables.add(Json.obj()
+            tables.add(Json.object()
                     .put("table", table.name())
                     .put("schema", table.schema())
                     .put("indexes", indexes));
         }
-        return Json.obj()
+        return Json.object()
                 .put("tables", tables)
                 .put("predicates", strings(block.predicates()))
                 .put("unindexed", strings(block.unindexed()));
     }
 
-    static Json.JsonArray queries(List<Stats.QueryStats> queries) {
+    static JsonArray queries(List<Stats.QueryStats> queries) {
         return each(queries, Codecs::query);
     }
 
     /** The exception chain of an error's sample, innermost first (api.adoc#cause). */
-    static Json.JsonArray chain(ExceptionChain chain) {
-        Json.JsonArray array = Json.arr();
-        chain.causes().forEach(cause -> array.add(Json.obj()
+    static JsonArray chain(ExceptionChain chain) {
+        JsonArray array = Json.array();
+        chain.causes().forEach(cause -> array.add(Json.object()
                 .put("type", cause.type())
                 .put("message", cause.message())
                 .put("frames", strings(cause.frames()))
@@ -419,22 +422,22 @@ public final class Codecs {
         return array;
     }
 
-    static Json.JsonObject errorGroup(Stats.ErrorGroup group) {
-        Json.JsonArray endpoints = Json.arr();
-        group.endpoints().forEach(endpoint -> endpoints.add(Json.obj()
+    static JsonObject errorGroup(Stats.ErrorGroup group) {
+        JsonArray endpoints = Json.array();
+        group.endpoints().forEach(endpoint -> endpoints.add(Json.object()
                 .put("name", endpoint.name())
                 .put("endpointId", endpoint.endpointId())
                 .put("count", endpoint.count())));
-        Json.JsonObject sample = null;
+        JsonObject sample = null;
         if (group.sample() != null) {
-            sample = Json.obj()
+            sample = Json.object()
                     .put("traceId", group.sample().traceId())
                     .put("spanId", group.sample().spanId())
                     .put("at", group.sample().at())
                     .put("message", group.sample().message())
                     .put("stacktrace", group.sample().stacktrace());
         }
-        return Json.obj()
+        return Json.object()
                 .put("errorId", group.errorId())
                 .put("service", group.service())
                 .put("type", group.type())
@@ -446,13 +449,13 @@ public final class Codecs {
                 .put("sample", sample);
     }
 
-    static Json.JsonArray errorGroups(List<Stats.ErrorGroup> groups) {
+    static JsonArray errorGroups(List<Stats.ErrorGroup> groups) {
         return each(groups, Codecs::errorGroup);
     }
 
     /** The same, each group with its {@code series} for the errors page's sparkline (api.adoc#error-group). */
-    static Json.JsonArray errorGroups(List<Stats.ErrorGroup> groups, Map<String, long[]> series) {
-        Json.JsonArray array = Json.arr();
+    static JsonArray errorGroups(List<Stats.ErrorGroup> groups, Map<String, long[]> series) {
+        JsonArray array = Json.array();
         groups.forEach(group -> {
             long[] counts = series.get(group.errorId());
             array.add(errorGroup(group).put("series", longs(counts == null ? new long[0] : counts)));
@@ -460,8 +463,8 @@ public final class Codecs {
         return array;
     }
 
-    static Json.JsonObject traceSummary(Stats.TraceSummary trace) {
-        Json.JsonObject object = Json.obj()
+    static JsonObject traceSummary(Stats.TraceSummary trace) {
+        JsonObject object = Json.object()
                 .put("traceId", trace.traceId())
                 .put("start", trace.start());
         put(object, "durationMs", trace.durationMs());
@@ -476,19 +479,19 @@ public final class Codecs {
         return object.put("slow", trace.slow()).put("error", trace.error());
     }
 
-    static Json.JsonArray traceSummaries(List<Stats.TraceSummary> traces) {
+    static JsonArray traceSummaries(List<Stats.TraceSummary> traces) {
         return each(traces, Codecs::traceSummary);
     }
 
-    static Json.JsonObject span(SpanRecord span, Tingles tingles) {
-        Json.JsonArray events = Json.arr();
+    static JsonObject span(SpanRecord span, Tingles tingles) {
+        JsonArray events = Json.array();
         for (SpanRecord.SpanEvent event : span.events()) {
-            events.add(Json.obj()
+            events.add(Json.object()
                     .put("name", event.name())
                     .put("time", event.timeNanos() / 1_000_000L)
                     .put("attributes", attributes(event.attributes())));
         }
-        Json.JsonObject object = Json.obj()
+        JsonObject object = Json.object()
                 .put("spanId", span.spanId())
                 .put("parentSpanId", span.parentSpanId())
                 .put("service", span.service())
@@ -510,10 +513,10 @@ public final class Codecs {
                 .put("error", span.isError());
     }
 
-    static Json.JsonObject trace(Queries.TraceDetail trace, Tingles tingles) {
-        Json.JsonArray spans = Json.arr();
+    static JsonObject trace(Queries.TraceDetail trace, Tingles tingles) {
+        JsonArray spans = Json.array();
         trace.spans().forEach(span -> spans.add(span(span, tingles)));
-        Json.JsonObject object = Json.obj()
+        JsonObject object = Json.object()
                 .put("traceId", trace.traceId())
                 .put("start", trace.start())
                 .put("end", trace.end());
@@ -533,12 +536,12 @@ public final class Codecs {
      * {@code count} is present only where a line stands for a collapsed group on
      * either side, and {@code null} on the side that has no such line.
      */
-    static Json.JsonObject traceDiff(Queries.TraceDetail a, Queries.TraceDetail b,
+    static JsonObject traceDiff(Queries.TraceDetail a, Queries.TraceDetail b,
             List<Text.DiffLine> lines) {
-        Json.JsonArray array = Json.arr();
+        JsonArray array = Json.array();
         for (Text.DiffLine line : lines) {
             Text.TraceLine shown = line.either();
-            Json.JsonObject object = Json.obj()
+            JsonObject object = Json.object()
                     .put("op", String.valueOf(line.op()))
                     .put("depth", (long) shown.depth())
                     .put("summary", shown.span().summary())
@@ -546,7 +549,7 @@ public final class Codecs {
             put(object, "aMs", line.a() == null ? null : (Double) line.a().durationMs());
             put(object, "bMs", line.b() == null ? null : (Double) line.b().durationMs());
             if (line.counted()) {
-                Json.JsonObject count = Json.obj();
+                JsonObject count = Json.object();
                 put(count, "a", line.a() == null ? null : (Long) (long) line.a().count());
                 put(count, "b", line.b() == null ? null : (Long) (long) line.b().count());
                 object.put("count", count);
@@ -555,21 +558,21 @@ public final class Codecs {
             }
             array.add(object);
         }
-        Json.JsonObject durations = Json.obj();
+        JsonObject durations = Json.object();
         put(durations, "a", (Double) a.durationMs());
         put(durations, "b", (Double) b.durationMs());
-        return Json.obj()
+        return Json.object()
                 .put("a", a.traceId())
                 .put("b", b.traceId())
                 .put("durationMs", durations)
-                .put("spans", Json.obj()
+                .put("spans", Json.object()
                         .put("a", (long) a.spans().size())
                         .put("b", (long) b.spans().size()))
                 .put("lines", array);
     }
 
-    static Json.JsonObject log(LogRecord log) {
-        return Json.obj()
+    static JsonObject log(LogRecord log) {
+        return Json.object()
                 .put("id", log.id())
                 .put("at", log.at())
                 .put("service", log.service())
@@ -582,14 +585,14 @@ public final class Codecs {
                 .put("attributes", attributes(log.attributes()));
     }
 
-    static Json.JsonArray logs(List<LogRecord> logs) {
+    static JsonArray logs(List<LogRecord> logs) {
         return each(logs, Codecs::log);
     }
 
-    static Json.JsonArray dependencies(List<Stats.Dependency> dependencies) {
-        Json.JsonArray array = Json.arr();
+    static JsonArray dependencies(List<Stats.Dependency> dependencies) {
+        JsonArray array = Json.array();
         for (Stats.Dependency dependency : dependencies) {
-            Json.JsonObject object = Json.obj()
+            JsonObject object = Json.object()
                     .put("kind", dependency.kind())
                     .put("target", dependency.target())
                     .put("calls", dependency.calls())
@@ -606,10 +609,10 @@ public final class Codecs {
      * other node carries the numbers of the calls made to it, so the two halves of
      * {@link Stats.Node} are never written together.
      */
-    static Json.JsonObject map(Window window, Stats.ServiceMap map) {
-        Json.JsonArray nodes = Json.arr();
+    static JsonObject map(Window window, Stats.ServiceMap map) {
+        JsonArray nodes = Json.array();
         for (Stats.Node node : map.nodes()) {
-            Json.JsonObject object = Json.obj()
+            JsonObject object = Json.object()
                     .put("id", node.id())
                     .put("kind", node.kind())
                     .put("name", node.name());
@@ -623,9 +626,9 @@ public final class Codecs {
             }
             nodes.add(object);
         }
-        Json.JsonArray edges = Json.arr();
+        JsonArray edges = Json.array();
         for (Stats.Edge edge : map.edges()) {
-            Json.JsonObject object = Json.obj()
+            JsonObject object = Json.object()
                     .put("from", edge.from())
                     .put("to", edge.to())
                     .put("calls", edge.calls())
@@ -634,17 +637,17 @@ public final class Codecs {
             put(object, "p95Ms", edge.p95Ms());
             edges.add(object);
         }
-        return Json.obj()
+        return Json.object()
                 .put("window", window(window))
                 .put("nodes", nodes)
                 .put("edges", edges);
     }
 
     /** Arrays, not objects: five thousand points have to stay small on the wire. */
-    static Json.JsonArray scatter(List<Stats.ScatterPoint> points) {
-        Json.JsonArray array = Json.arr();
+    static JsonArray scatter(List<Stats.ScatterPoint> points) {
+        JsonArray array = Json.array();
         for (Stats.ScatterPoint point : points) {
-            array.add(Json.arr()
+            array.add(Json.array()
                     .add(point.start())
                     .add(round(point.durationMs()))
                     .add(point.service())
@@ -655,10 +658,10 @@ public final class Codecs {
         return array;
     }
 
-    static Json.JsonArray metricCatalog(List<MetricQueries.MetricMeta> catalog) {
-        Json.JsonArray array = Json.arr();
+    static JsonArray metricCatalog(List<MetricQueries.MetricMeta> catalog) {
+        JsonArray array = Json.array();
         for (MetricQueries.MetricMeta metric : catalog) {
-            array.add(Json.obj()
+            array.add(Json.object()
                     .put("name", metric.name())
                     .put("type", metric.type())
                     .put("unit", metric.unit())
@@ -673,7 +676,7 @@ public final class Codecs {
      * One metric series. A histogram carries its count, estimated p95 and maximum
      * beside the mean, because a mean alone hides exactly what a histogram is for.
      */
-    static Json.JsonObject series(MetricQueries.SeriesData data, boolean rate) {
+    static JsonObject series(MetricQueries.SeriesData data, boolean rate) {
         List<MetricPoint> points = data.points();
         long[] t = new long[points.size()];
         double[] values = new double[points.size()];
@@ -684,13 +687,13 @@ public final class Codecs {
         if (rate && data.monotonic()) {
             values = MetricQueries.rate(points, "DELTA".equals(data.temporality()));
         }
-        Json.JsonObject object = Json.obj()
+        JsonObject object = Json.object()
                 .put("service", data.service())
                 .put("attributes", attributes(data.attributes()))
                 .put("t", longs(t))
                 .put("v", doubles(values));
         if ("histogram".equals(data.type())) {
-            Json.JsonArray counts = Json.arr();
+            JsonArray counts = Json.array();
             double[] p95 = new double[points.size()];
             double[] max = new double[points.size()];
             for (int i = 0; i < points.size(); i++) {
@@ -703,27 +706,27 @@ public final class Codecs {
         return object;
     }
 
-    static Json.JsonObject jvm(JvmView jvm) {
-        Json.JsonArray pools = Json.arr();
+    static JsonObject jvm(JvmView jvm) {
+        JsonArray pools = Json.array();
         for (JvmView.Pool pool : jvm.pools()) {
-            pools.add(Json.obj()
+            pools.add(Json.object()
                     .put("name", pool.name())
                     .put("type", pool.type())
                     .put("t", longs(pool.t()))
                     .put("used", doubles(pool.used())));
         }
-        Json.JsonArray gc = Json.arr();
+        JsonArray gc = Json.array();
         for (JvmView.Gc collector : jvm.gc()) {
-            gc.add(Json.obj()
+            gc.add(Json.object()
                     .put("name", collector.name())
                     .put("action", collector.action())
                     .put("t", longs(collector.t()))
                     .put("count", longs(collector.count()))
                     .put("durationMs", doubles(collector.durationMs())));
         }
-        Json.JsonArray connectionPools = Json.arr();
+        JsonArray connectionPools = Json.array();
         for (JvmView.ConnectionPool pool : jvm.connectionPools()) {
-            connectionPools.add(Json.obj()
+            connectionPools.add(Json.object()
                     .put("name", pool.name())
                     .put("t", longs(pool.t()))
                     .put("used", doubles(pool.used()))
@@ -731,34 +734,34 @@ public final class Codecs {
                     .put("max", doubles(pool.max()))
                     .put("pending", doubles(pool.pending())));
         }
-        Json.JsonObject runtime = Json.obj().put("jvm", jvm.runtime().jvm());
+        JsonObject runtime = Json.object().put("jvm", jvm.runtime().jvm());
         put(runtime, "pid", jvm.runtime().pid());
         runtime.put("host", jvm.runtime().host());
         put(runtime, "cpuCount", jvm.runtime().cpuCount());
 
-        return Json.obj()
+        return Json.object()
                 .put("service", jvm.service())
                 .put("runtime", runtime)
-                .put("heap", Json.obj()
+                .put("heap", Json.object()
                         .put("t", longs(jvm.heap().t()))
                         .put("used", doubles(jvm.heap().used()))
                         .put("committed", doubles(jvm.heap().committed()))
                         .put("limit", doubles(jvm.heap().limit())))
-                .put("nonHeap", Json.obj()
+                .put("nonHeap", Json.object()
                         .put("t", longs(jvm.nonHeap().t()))
                         .put("used", doubles(jvm.nonHeap().used()))
                         .put("committed", doubles(jvm.nonHeap().committed())))
                 .put("pools", pools)
                 .put("gc", gc)
-                .put("threads", Json.obj()
+                .put("threads", Json.object()
                         .put("t", longs(jvm.threads().t()))
                         .put("count", doubles(jvm.threads().count()))
                         .put("daemon", doubles(jvm.threads().daemon())))
-                .put("cpu", Json.obj()
+                .put("cpu", Json.object()
                         .put("t", longs(jvm.cpu().t()))
                         .put("utilization", doubles(jvm.cpu().utilization()))
                         .put("systemLoad1m", doubles(jvm.cpu().systemLoad1m())))
-                .put("classes", Json.obj()
+                .put("classes", Json.object()
                         .put("t", longs(jvm.classes().t()))
                         .put("loaded", doubles(jvm.classes().loaded())))
                 .put("connectionPools", connectionPools);
@@ -766,8 +769,8 @@ public final class Codecs {
 
     // --- the agent interface --------------------------------------------------
 
-    static Json.JsonObject mark(Marks.Mark mark) {
-        return Json.obj()
+    static JsonObject mark(Marks.Mark mark) {
+        return Json.object()
                 .put("id", mark.id())
                 .put("at", mark.at())
                 .put("name", mark.name())
@@ -775,14 +778,14 @@ public final class Codecs {
                 .put("note", mark.note());
     }
 
-    static Json.JsonArray marks(List<Marks.Mark> marks) {
+    static JsonArray marks(List<Marks.Mark> marks) {
         return each(marks, Codecs::mark);
     }
 
-    static Json.JsonObject finding(Findings.Finding finding) {
-        Json.JsonObject numbers = Json.obj();
+    static JsonObject finding(Findings.Finding finding) {
+        JsonObject numbers = Json.object();
         finding.numbers().forEach((key, value) -> numbers.put(key, AttrJson.toJson(value, NUMBER)));
-        return Json.obj()
+        return Json.object()
                 .put("id", finding.id())
                 .put("kind", finding.kind())
                 .put("severity", finding.severity())
@@ -790,7 +793,7 @@ public final class Codecs {
                 .put("service", finding.service())
                 .put("title", finding.title())
                 .put("why", finding.why())
-                .put("subject", Json.obj()
+                .put("subject", Json.object()
                         .put("endpointId", finding.subject().endpointId())
                         .put("queryId", finding.subject().queryId())
                         .put("errorId", finding.subject().errorId())
@@ -806,32 +809,32 @@ public final class Codecs {
                 .put("traces", strings(finding.traces()))
                 .put("schema", schema(finding.schema()))
                 .put("ack", finding.ack() == null ? null
-                        : Json.obj().put("at", finding.ack().at()).put("note", finding.ack().note()))
+                        : Json.object().put("at", finding.ack().at()).put("note", finding.ack().note()))
                 .put("resolution", finding.resolution() == null ? null
-                        : Json.obj().put("at", finding.resolution().at())
+                        : Json.object().put("at", finding.resolution().at())
                                 .put("note", finding.resolution().note()));
     }
 
-    static Json.JsonArray findings(List<Findings.Finding> findings) {
+    static JsonArray findings(List<Findings.Finding> findings) {
         return each(findings, Codecs::finding);
     }
 
-    static Json.JsonObject ack(Acks.Ack ack) {
-        return Json.obj()
+    static JsonObject ack(Acks.Ack ack) {
+        return Json.object()
                 .put("findingId", ack.findingId())
                 .put("at", ack.at())
                 .put("note", ack.note());
     }
 
-    static Json.JsonArray acks(List<Acks.Ack> acks) {
+    static JsonArray acks(List<Acks.Ack> acks) {
         return each(acks, Codecs::ack);
     }
 
 
-    static Json.JsonObject comparison(Compare.Comparison comparison) {
-        Json.JsonArray endpoints = Json.arr();
+    static JsonObject comparison(Compare.Comparison comparison) {
+        JsonArray endpoints = Json.array();
         for (Compare.EndpointDiff diff : comparison.endpoints()) {
-            endpoints.add(Json.obj()
+            endpoints.add(Json.object()
                     .put("endpointId", diff.endpointId())
                     .put("service", diff.service())
                     .put("name", diff.name())
@@ -839,9 +842,9 @@ public final class Codecs {
                     .put("after", endpointSide(diff.after()))
                     .put("verdict", diff.verdict()));
         }
-        Json.JsonArray queries = Json.arr();
+        JsonArray queries = Json.array();
         for (Compare.QueryDiff diff : comparison.queries()) {
-            queries.add(Json.obj()
+            queries.add(Json.object()
                     .put("queryId", diff.queryId())
                     .put("service", diff.service())
                     .put("statement", diff.statement())
@@ -850,9 +853,9 @@ public final class Codecs {
                     .put("after", querySide(diff.after()))
                     .put("verdict", diff.verdict()));
         }
-        Json.JsonArray errors = Json.arr();
+        JsonArray errors = Json.array();
         for (Compare.ErrorDiff diff : comparison.errors()) {
-            errors.add(Json.obj()
+            errors.add(Json.object()
                     .put("errorId", diff.errorId())
                     .put("service", diff.service())
                     .put("type", diff.type())
@@ -861,10 +864,10 @@ public final class Codecs {
                     .put("after", diff.after())
                     .put("verdict", diff.verdict()));
         }
-        return Json.obj()
+        return Json.object()
                 .put("before", bounds(comparison.before().from(), comparison.before().to()))
                 .put("after", bounds(comparison.after().from(), comparison.after().to()))
-                .put("totals", Json.obj()
+                .put("totals", Json.object()
                         .put("before", totals(comparison.beforeTotals()))
                         .put("after", totals(comparison.afterTotals())))
                 .put("endpoints", endpoints)
@@ -872,11 +875,11 @@ public final class Codecs {
                 .put("errors", errors);
     }
 
-    private static Json.@Nullable JsonValue endpointSide(Compare.@Nullable Side side) {
+    private static @Nullable JsonValue endpointSide(Compare.@Nullable Side side) {
         if (side == null) {
             return null;
         }
-        Json.JsonObject object = Json.obj()
+        JsonObject object = Json.object()
                 .put("calls", side.calls())
                 .put("errors", side.errors());
         put(object, "p50Ms", side.p50Ms());
@@ -887,26 +890,26 @@ public final class Codecs {
         return object;
     }
 
-    private static Json.@Nullable JsonValue querySide(Compare.@Nullable QuerySide side) {
+    private static @Nullable JsonValue querySide(Compare.@Nullable QuerySide side) {
         if (side == null) {
             return null;
         }
-        Json.JsonObject object = Json.obj().put("calls", side.calls());
+        JsonObject object = Json.object().put("calls", side.calls());
         put(object, "callsPerRequest", side.callsPerRequest());
         put(object, "p95Ms", side.p95Ms());
         put(object, "totalMs", side.totalMs());
         return object;
     }
 
-    static Json.JsonObject checkResult(Check.CheckResult result) {
-        Json.JsonArray checks = Json.arr();
+    static JsonObject checkResult(Check.CheckResult result) {
+        JsonArray checks = Json.array();
         for (Check.RuleCheck check : result.checks()) {
-            Json.JsonObject object = Json.obj().put("rule", check.rule());
+            JsonObject object = Json.object().put("rule", check.rule());
             put(object, "limit", check.limit());
             put(object, "actual", check.actual());
             checks.add(object.put("pass", check.pass()).put("detail", check.detail()));
         }
-        Json.JsonObject object = Json.obj();
+        JsonObject object = Json.object();
         Boolean pass = result.verdict().pass();
         if (pass == null) {
             object.putNull("pass");
@@ -927,17 +930,17 @@ public final class Codecs {
      * answer that had 40,000 and says "there are 200" would be wrong, so the cap
      * is always visible beside the count.
      */
-    static Json.JsonObject sqlResult(ReadOnlyQuery.Result result) {
-        Json.JsonArray rows = Json.arr();
+    static JsonObject sqlResult(ReadOnlyQuery.Result result) {
+        JsonArray rows = Json.array();
         for (List<Object> row : result.rows()) {
-            Json.JsonArray cells = Json.arr();
+            JsonArray cells = Json.array();
             for (Object cell : row) {
                 cell(cells, cell);
             }
             rows.add(cells);
         }
-        return Json.obj()
-                .put("columns", Json.arr().addAll(result.columns()))
+        return Json.object()
+                .put("columns", Json.array().addAll(result.columns()))
                 .put("rows", rows)
                 .put("rowCount", result.rows().size())
                 .put("truncated", result.truncated())
@@ -945,7 +948,7 @@ public final class Codecs {
     }
 
     /** A cell stays the type the store holds it as, unrounded; anything else is its text. */
-    private static void cell(Json.JsonArray cells, @Nullable Object value) {
+    private static void cell(JsonArray cells, @Nullable Object value) {
         cells.add(AttrJson.toJson(value, AttrJson.Rules.ANSWER));
     }
 }

@@ -6,7 +6,8 @@ import java.sql.SQLException;
 import java.util.Arrays;
 import java.util.List;
 
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonObject;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -44,7 +45,7 @@ public record LogRow(
                 log.logger(), log.traceId(), log.spanId(), AttrJson.encode(log.attributes(), Columns.JSON_TEXT));
     }
 
-    static LogRow fromJson(Json.JsonObject log) {
+    static LogRow fromJson(JsonObject log) {
         return new LogRow(
                 RowJson.longOr(log, "atMs", 0),
                 RowJson.string(log, "service"),
@@ -72,8 +73,8 @@ public record LogRow(
     }
 
     /** The row as the export document holds it. */
-    public Json.JsonObject toJson() {
-        return Json.obj()
+    public JsonObject toJson() {
+        return Json.object()
                 .put("atMs", atMs)
                 .put("service", service)
                 .put("severityNumber", severityNumber)

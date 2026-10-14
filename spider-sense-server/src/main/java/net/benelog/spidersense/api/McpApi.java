@@ -51,7 +51,7 @@ public final class McpApi {
         String response = server.handle(req.body());
         return response == null
                 ? WebResponse.empty(HttpStatus.ACCEPTED)
-                : WebResponse.json(response);
+                : WebResponse.rawJson(response);
     }
 
     private static WebResponse postOnly(WebRequest req) {

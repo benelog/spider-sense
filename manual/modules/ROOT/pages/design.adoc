@@ -42,7 +42,7 @@ spider-sense.jar
 ├── META-INF/MANIFEST.MF          Premain-Class/Agent-Class: net.benelog.spidersense.launcher.SpiderSenseAgent
 │                                 Main-Class: net.benelog.spidersense.launcher.SpiderSenseMain
 │                                 Can-Redefine-Classes/Can-Retransform-Classes: true (copied from the OTel agent)
-├── net/benelog/spidersense/launcher/**   a handful of classes, no dependencies (Java 21)
+├── net/benelog/spidersense/launcher/**   a handful of classes, no dependencies (Java 25)
 ├── io/opentelemetry/javaagent/**         the OpenTelemetry Java agent, verbatim (bootstrap classes)
 ├── inst/**                               the OpenTelemetry Java agent, verbatim (.classdata, loaded by the agent's own class loader)
 ├── spider-sense/server.jar               the collector + UI as a nested fat jar (Spider Silk, Jetty, protobuf, our code)

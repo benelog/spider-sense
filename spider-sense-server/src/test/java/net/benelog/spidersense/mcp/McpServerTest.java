@@ -10,7 +10,10 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 import net.benelog.spidersense.query.Check;
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonValue;
+import net.benelog.silkjson.JsonObject;
+import net.benelog.silkjson.JsonArray;
 
 /**
  * The protocol on its own: what {@code initialize} negotiates, what
@@ -32,7 +35,7 @@ class McpServerTest {
         return McpServer.ToolResult.of("# " + name);
     }, "9.9.9");
 
-    private static Json.JsonObject answer(String response) {
+    private static JsonObject answer(String response) {
         assertThat(response).isNotNull();
         return Json.parse(response).asObject();
     }
@@ -44,12 +47,12 @@ class McpServerTest {
 
     @Test
     void initializeEchoesAKnownProtocolAndFallsBackToTheNewestOtherwise() {
-        Json.JsonObject known = answer(server.handle(request(1, "initialize",
+        JsonObject known = answer(server.handle(request(1, "initialize",
                 "{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{},"
                         + "\"clientInfo\":{\"name\":\"t\",\"version\":\"0\"}}")));
         assertThat(known.getString("jsonrpc")).isEqualTo("2.0");
         assertThat(known.getLong("id")).isEqualTo(1);
-        Json.JsonObject result = known.getObject("result");
+        JsonObject result = known.getObject("result");
         assertThat(result.getString("protocolVersion")).isEqualTo("2024-11-05");
         assertThat(result.getObject("capabilities").has("tools")).isTrue();
         assertThat(result.getObject("serverInfo").getString("name")).isEqualTo("spider-sense");
@@ -60,12 +63,12 @@ class McpServerTest {
                 .as("every step it names has a tool").contains("call status to confirm")
                 .doesNotContain("\n");
 
-        Json.JsonObject unknown = answer(server.handle(request(2, "initialize",
+        JsonObject unknown = answer(server.handle(request(2, "initialize",
                 "{\"protocolVersion\":\"1999-01-01\"}")));
         assertThat(unknown.getObject("result").getString("protocolVersion"))
                 .isEqualTo(McpServer.LATEST_PROTOCOL);
 
-        Json.JsonObject silent = answer(server.handle(request(3, "initialize", null)));
+        JsonObject silent = answer(server.handle(request(3, "initialize", null)));
         assertThat(silent.getObject("result").getString("protocolVersion"))
                 .isEqualTo(McpServer.LATEST_PROTOCOL);
     }
@@ -85,18 +88,18 @@ class McpServerTest {
 
     @Test
     void toolsListIsTheEightToolsOfMcpAdocWithTheirSchemas() {
-        Json.JsonArray tools = answer(server.handle(request(4, "tools/list", null)))
+        JsonArray tools = answer(server.handle(request(4, "tools/list", null)))
                 .getObject("result").getArray("tools");
 
-        Map<String, Json.JsonObject> byName = new LinkedHashMap<>();
-        for (Json.JsonValue tool : tools) {
+        Map<String, JsonObject> byName = new LinkedHashMap<>();
+        for (JsonValue tool : tools) {
             byName.put(tool.asObject().getString("name"), tool.asObject());
         }
         assertThat(byName.keySet())
                 .containsExactly("findings", "trace", "mark", "resolve", "compare", "check", "sql",
                         "status");
 
-        for (Json.JsonObject tool : byName.values()) {
+        for (JsonObject tool : byName.values()) {
             assertThat(tool.getString("description")).isNotBlank();
             assertThat(tool.getObject("inputSchema").getString("type")).isEqualTo("object");
         }
@@ -111,7 +114,7 @@ class McpServerTest {
         assertThat(required(byName.get("status"))).isEmpty();
         assertThat(properties(byName.get("status")).size()).as("status takes no argument").isZero();
 
-        Json.JsonObject limit = properties(byName.get("findings")).getObject("limit");
+        JsonObject limit = properties(byName.get("findings")).getObject("limit");
         assertThat(limit.getString("type")).isEqualTo("integer");
         assertThat(limit.getDouble("minimum")).isEqualTo(1.0);
         assertThat(limit.getDouble("maximum")).isEqualTo(100.0);
@@ -125,7 +128,7 @@ class McpServerTest {
                 .isEqualTo("number");
         assertThat(properties(byName.get("findings")).getObject("full").getString("type"))
                 .isEqualTo("boolean");
-        Json.JsonObject hideAcked = properties(byName.get("findings")).getObject("hideAcked");
+        JsonObject hideAcked = properties(byName.get("findings")).getObject("hideAcked");
         assertThat(hideAcked).as("the findings tool of mcp.adoc#tools takes hideAcked").isNotNull();
         assertThat(hideAcked.getString("type")).isEqualTo("boolean");
         assertThat(hideAcked.getString("description")).contains("acknowledged");
@@ -134,10 +137,10 @@ class McpServerTest {
     /** A rule MCP did not publish would be dropped from every call without an error. */
     @Test
     void everyCheckRuleIsANumberArgumentOfTheCheckToolAndReachesTheCall() {
-        Json.JsonArray tools = answer(server.handle(request(4, "tools/list", null)))
+        JsonArray tools = answer(server.handle(request(4, "tools/list", null)))
                 .getObject("result").getArray("tools");
-        Json.JsonObject check = null;
-        for (Json.JsonValue tool : tools) {
+        JsonObject check = null;
+        for (JsonValue tool : tools) {
             if (tool.asObject().getString("name").equals("check")) {
                 check = tool.asObject();
             }
@@ -145,7 +148,7 @@ class McpServerTest {
         assertThat(check).isNotNull();
         StringBuilder arguments = new StringBuilder();
         for (String rule : Check.RULES) {
-            Json.JsonObject argument = properties(check).getObject(rule);
+            JsonObject argument = properties(check).getObject(rule);
             assertThat(argument).as(rule).isNotNull();
             assertThat(argument.getString("type")).as(rule).isEqualTo("number");
             assertThat(argument.getString("description")).as(rule).isEqualTo(Check.describe(rule));
@@ -157,15 +160,15 @@ class McpServerTest {
         assertThat(lastArguments.keySet()).containsExactlyElementsOf(Check.RULES);
     }
 
-    private static Json.JsonObject properties(Json.JsonObject tool) {
+    private static JsonObject properties(JsonObject tool) {
         return tool.getObject("inputSchema").getObject("properties");
     }
 
-    private static List<String> required(Json.JsonObject tool) {
-        Json.JsonObject schema = tool.getObject("inputSchema");
+    private static List<String> required(JsonObject tool) {
+        JsonObject schema = tool.getObject("inputSchema");
         List<String> names = new ArrayList<>();
         if (schema.has("required")) {
-            for (Json.JsonValue value : schema.getArray("required")) {
+            for (JsonValue value : schema.getArray("required")) {
                 names.add(value.asString());
             }
         }
@@ -174,7 +177,7 @@ class McpServerTest {
 
     @Test
     void aToolCallCarriesItsArgumentsTypedAndItsAnswerAsOneTextContent() {
-        Json.JsonObject result = answer(server.handle(request(5, "tools/call",
+        JsonObject result = answer(server.handle(request(5, "tools/call",
                 "{\"name\":\"findings\",\"arguments\":{\"since\":\"before\",\"limit\":5,"
                         + "\"full\":true}}"))).getObject("result");
 
@@ -193,7 +196,7 @@ class McpServerTest {
         McpServer failing = new McpServer(McpTools.TOOLS,
                 (name, arguments) -> McpServer.ToolResult.failed("No such trace: ff"), "0");
 
-        Json.JsonObject answered = answer(failing.handle(request(6, "tools/call",
+        JsonObject answered = answer(failing.handle(request(6, "tools/call",
                 "{\"name\":\"trace\",\"arguments\":{\"traceId\":\"ff\"}}")));
 
         assertThat(answered.has("error")).isFalse();
@@ -210,7 +213,7 @@ class McpServerTest {
         McpServer checking = new McpServer(McpTools.TOOLS,
                 (name, arguments) -> new McpServer.ToolResult("# check  fail", false, structured), "0");
 
-        Json.JsonObject result = answer(checking.handle(request(8, "tools/call",
+        JsonObject result = answer(checking.handle(request(8, "tools/call",
                 "{\"name\":\"check\",\"arguments\":{}}"))).getObject("result");
 
         assertThat(result.getObject("structuredContent").getBoolean("pass")).isFalse();

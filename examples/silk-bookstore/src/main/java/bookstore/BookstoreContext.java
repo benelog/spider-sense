@@ -25,7 +25,7 @@ import net.benelog.spidersilk.JteTemplates;
 import net.benelog.spidersilk.TemplateRenderer;
 import net.benelog.spidersilk.WebRequest;
 import net.benelog.spidersilk.WebResponse;
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
 
 /**
  * The object graph, assembled by calling constructors, and the App its
@@ -102,9 +102,9 @@ public class BookstoreContext {
 
         // A 404 thrown as HttpException is a status, not a failure: it comes
         // here for its body without passing through any exception handler.
-        app.error(HttpStatus.NOT_FOUND, req -> problem(req, HttpStatus.NOT_FOUND,
+        app.statusPage(HttpStatus.NOT_FOUND, req -> problem(req, HttpStatus.NOT_FOUND,
                 Objects.requireNonNullElse(req.errorMessage(), "Not found")));
-        app.error(HttpStatus.INTERNAL_SERVER_ERROR, req -> problem(req,
+        app.statusPage(HttpStatus.INTERNAL_SERVER_ERROR, req -> problem(req,
                 HttpStatus.INTERNAL_SERVER_ERROR,
                 Objects.requireNonNullElse(req.errorMessage(), "Internal server error")));
 
@@ -159,7 +159,7 @@ public class BookstoreContext {
     /** A JSON problem for the API, plain text for a page. */
     private static WebResponse problem(WebRequest req, HttpStatus status, String message) {
         if (req.path().startsWith("/api/")) {
-            return WebResponse.json(Json.obj().put("error", message)).status(status);
+            return WebResponse.json(Json.object().put("error", message)).status(status);
         }
         return WebResponse.text(message).status(status);
     }

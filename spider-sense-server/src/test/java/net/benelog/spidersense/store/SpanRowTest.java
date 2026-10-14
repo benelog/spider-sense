@@ -7,7 +7,9 @@ import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonObject;
+import net.benelog.silkjson.JsonArray;
 
 /**
  * Which row a received span becomes, decided without a database
@@ -81,18 +83,18 @@ class SpanRowTest {
                 Map.of("http.request.method", "GET", "http.route", "/orders", "http.response.status_code", 500L),
                 List.of()), tingles);
 
-        Json.JsonObject json = row.toJson();
+        JsonObject json = row.toJson();
 
         assertThat(SpanRow.fromJson(json)).isEqualTo(row);
         assertThat(SpanRow.fromJson(Json.parse(json.toJson()).asObject())).isEqualTo(row);
-        assertThat(json.get("attributes")).isInstanceOf(Json.JsonObject.class);
-        assertThat(json.get("events")).isInstanceOf(Json.JsonArray.class);
+        assertThat(json.get("attributes")).isInstanceOf(JsonObject.class);
+        assertThat(json.get("events")).isInstanceOf(JsonArray.class);
         assertThat(json.getLong("httpStatus")).isEqualTo(500);
     }
 
     @Test
     void aMissingNumberIsItsFallbackAndAMissingTextStaysNull() {
-        SpanRow row = SpanRow.fromJson(Json.obj().put("traceId", "t"));
+        SpanRow row = SpanRow.fromJson(Json.object().put("traceId", "t"));
 
         assertThat(row.traceId()).isEqualTo("t");
         assertThat(row.spanId()).isNull();

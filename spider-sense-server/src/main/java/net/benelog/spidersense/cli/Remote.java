@@ -19,7 +19,8 @@ import java.util.Map;
 import net.benelog.spidersense.api.AgentApi;
 import net.benelog.spidersense.api.Reports;
 import net.benelog.spidersense.query.Selectors;
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonObject;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -399,7 +400,7 @@ final class Remote {
             return false;
         }
         try {
-            if (Json.parse(body) instanceof Json.JsonObject object) {
+            if (Json.parse(body) instanceof JsonObject object) {
                 return object.size() == 1 && object.has("error");
             }
         } catch (RuntimeException e) {
@@ -458,8 +459,8 @@ final class Remote {
     /** Whether a body is a JSON-RPC message, as every answer of {@code POST /mcp} is; a health page is not. */
     private static boolean jsonRpc(String body) {
         try {
-            return Json.parse(body) instanceof Json.JsonObject message
-                    && "2.0".equals(message.optString("jsonrpc", ""));
+            return Json.parse(body) instanceof JsonObject message
+                    && "2.0".equals(message.getString("jsonrpc", ""));
         } catch (RuntimeException e) {
             return false;
         }
@@ -545,7 +546,7 @@ final class Remote {
     static String message(int status, @Nullable String contentType, @Nullable String body) {
         if (body != null) {
             try {
-                if (Json.parse(body) instanceof Json.JsonObject object && object.has("error")) {
+                if (Json.parse(body) instanceof JsonObject object && object.has("error")) {
                     return object.getString("error");
                 }
             } catch (RuntimeException e) {

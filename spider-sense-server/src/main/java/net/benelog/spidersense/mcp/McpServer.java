@@ -4,7 +4,11 @@ import java.util.List;
 import java.util.Map;
 
 import net.benelog.spidersense.store.AttrJson;
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonValue;
+import net.benelog.silkjson.JsonObject;
+import net.benelog.silkjson.JsonArray;
+import net.benelog.silkjson.JsonException;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -123,17 +127,17 @@ public final class McpServer {
      * without building a JSON-RPC envelope of its own.
      */
     public @Nullable String handle(String message, ToolRunner calls) {
-        Json.JsonValue parsed;
+        JsonValue parsed;
         try {
             parsed = Json.parse(message);
         } catch (RuntimeException e) {
             return error(null, PARSE_ERROR, "Not JSON: " + e.getMessage());
         }
-        if (!(parsed instanceof Json.JsonObject request)) {
+        if (!(parsed instanceof JsonObject request)) {
             // A JSON array is the batch of older revisions, which this server does not
             // speak; anything else is not a request at all.
             return error(null, INVALID_REQUEST,
-                    parsed instanceof Json.JsonArray
+                    parsed instanceof JsonArray
                             ? "This server does not accept batched messages"
                             : "A request must be a JSON object");
         }
@@ -145,23 +149,23 @@ public final class McpServer {
             // sent — not even when the method is one this server does not have.
             return null;
         }
-        Json.JsonValue id = request.get("id");
+        JsonValue id = request.get("id");
         if (method == null) {
             return error(id, INVALID_REQUEST, "A request must carry a method");
         }
-        Json.JsonObject params = request.has("params") && request.get("params") instanceof Json.JsonObject given
-                ? given : Json.obj();
+        JsonObject params = request.has("params") && request.get("params") instanceof JsonObject given
+                ? given : Json.object();
         try {
             return switch (method) {
                 case "initialize" -> result(id, initialize(params));
-                case "ping" -> result(id, Json.obj());
-                case "tools/list" -> result(id, Json.obj().put("tools", list()));
+                case "ping" -> result(id, Json.object());
+                case "tools/list" -> result(id, Json.object().put("tools", list()));
                 case "tools/call" -> result(id, call(params, calls));
                 default -> error(id, METHOD_NOT_FOUND, "No such method: " + method);
             };
         } catch (BadArgument e) {
             return error(id, INVALID_PARAMS, e.getMessage());
-        } catch (Json.JsonException e) {
+        } catch (JsonException e) {
             // A parameter of the wrong JSON type, such as a protocolVersion that is a number.
             return error(id, INVALID_PARAMS, e.getMessage());
         } catch (RuntimeException e) {
@@ -181,31 +185,31 @@ public final class McpServer {
      * The client's revision when it is one this server knows, and the newest one
      * otherwise, which is what the protocol asks a server to do rather than fail.
      */
-    private Json.JsonObject initialize(Json.JsonObject params) {
+    private JsonObject initialize(JsonObject params) {
         String asked = AttrJson.optionalString(params, "protocolVersion");
         String spoken = asked != null && PROTOCOLS.contains(asked) ? asked : LATEST_PROTOCOL;
-        return Json.obj()
+        return Json.object()
                 .put("protocolVersion", spoken)
-                .put("capabilities", Json.obj().put("tools", Json.obj()))
-                .put("serverInfo", Json.obj().put("name", NAME).put("version", version))
+                .put("capabilities", Json.object().put("tools", Json.object()))
+                .put("serverInfo", Json.object().put("name", NAME).put("version", version))
                 .put("instructions", INSTRUCTIONS);
     }
 
-    private Json.JsonObject call(Json.JsonObject params, ToolRunner calls) {
+    private JsonObject call(JsonObject params, ToolRunner calls) {
         String name = params.has("name") && params.get("name").isString()
                 ? params.getString("name") : null;
         Tool tool = byName(name);
         if (tool == null) {
             throw unknownTool(name);
         }
-        Json.JsonValue given = params.has("arguments") ? params.get("arguments") : null;
-        if (given != null && !given.isNull() && !(given instanceof Json.JsonObject)) {
+        JsonValue given = params.has("arguments") ? params.get("arguments") : null;
+        if (given != null && !given.isNull() && !(given instanceof JsonObject)) {
             throw new BadArgument("arguments must be an object");
         }
-        Map<String, Object> arguments = tool.read(given instanceof Json.JsonObject object ? object : Json.obj());
+        Map<String, Object> arguments = tool.read(given instanceof JsonObject object ? object : Json.object());
         ToolResult answer = calls.call(tool.name(), arguments);
-        Json.JsonObject result = Json.obj()
-                .put("content", Json.arr().add(Json.obj()
+        JsonObject result = Json.object()
+                .put("content", Json.array().add(Json.object()
                         .put("type", "text")
                         .put("text", answer.text() == null ? "" : answer.text())))
                 .put("isError", answer.isError());
@@ -222,8 +226,8 @@ public final class McpServer {
                         + String.join(", ", tools.stream().map(Tool::name).toList()));
     }
 
-    private Json.JsonArray list() {
-        Json.JsonArray list = Json.arr();
+    private JsonArray list() {
+        JsonArray list = Json.array();
         for (Tool tool : tools) {
             list.add(tool.schema());
         }
@@ -239,26 +243,26 @@ public final class McpServer {
         return null;
     }
 
-    private static Json.JsonValue structured(Map<String, Object> values) {
+    private static JsonValue structured(Map<String, Object> values) {
         return AttrJson.toJson(values, AttrJson.Rules.ANSWER);
     }
 
     // --- the envelope ---------------------------------------------------------
 
-    private static String result(Json.@Nullable JsonValue id, Json.JsonObject payload) {
+    private static String result(@Nullable JsonValue id, JsonObject payload) {
         return envelope(id).put("result", payload).toJson();
     }
 
-    private static String error(Json.@Nullable JsonValue id, int code,
+    private static String error(@Nullable JsonValue id, int code,
             @Nullable String message) {
-        return envelope(id).put("error", Json.obj()
+        return envelope(id).put("error", Json.object()
                 .put("code", code)
                 .put("message", message == null ? "" : message)).toJson();
     }
 
     /** The id is echoed as it came — a number stays a number, a string a string. */
-    private static Json.JsonObject envelope(Json.@Nullable JsonValue id) {
-        Json.JsonObject object = Json.obj().put("jsonrpc", "2.0");
+    private static JsonObject envelope(@Nullable JsonValue id) {
+        JsonObject object = Json.object().put("jsonrpc", "2.0");
         if (id == null || id.isNull()) {
             object.putNull("id");
         } else {

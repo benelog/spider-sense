@@ -129,10 +129,10 @@ public final class OtlpReceiver {
             return WebResponse.bytes(PROTOBUF, response.toByteArray());
         }
         try {
-            return WebResponse.json(JsonFormat.printer().omittingInsignificantWhitespace().print(response));
+            return WebResponse.rawJson(JsonFormat.printer().omittingInsignificantWhitespace().print(response));
         } catch (InvalidProtocolBufferException e) {
             // An empty message always prints; this cannot happen.
-            return WebResponse.json("{}");
+            return WebResponse.rawJson("{}");
         }
     }
 

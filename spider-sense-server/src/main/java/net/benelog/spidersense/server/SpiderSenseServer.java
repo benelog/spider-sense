@@ -137,7 +137,7 @@ public final class SpiderSenseServer implements AutoCloseable {
         new McpApi(new McpServer(McpTools.TOOLS, new McpTools(reports, status::report), Version.CURRENT))
                 .register(app);
         new EventsApi(store, queries).register(app);
-        app.error(HttpStatus.NOT_FOUND, SpiderSenseServer::notFound);
+        app.statusPage(HttpStatus.NOT_FOUND, SpiderSenseServer::notFound);
         app.server((a, port) -> server(a, port, config));
         return new Assembly(app, store, config, boundPort);
     }

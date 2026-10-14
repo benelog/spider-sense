@@ -4,7 +4,8 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonObject;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -44,16 +45,16 @@ public record PointRow(long seriesId, long atMs, double value, @Nullable Long co
         return json.append("]}").toString();
     }
 
-    static PointRow fromJson(Json.JsonObject point) {
-        Json.JsonObject buckets = point.optObject("buckets");
+    static PointRow fromJson(JsonObject point) {
+        JsonObject buckets = point.getObjectOrNull("buckets");
         return new PointRow(
                 RowJson.longOr(point, "seriesId", -1),
                 RowJson.longOr(point, "atMs", 0),
-                point.optDouble("value", 0),
+                point.getDouble("value", 0),
                 RowJson.longOr(point, "count", 0),
-                point.optDouble("sum", 0),
-                point.optDouble("min", Double.NaN),
-                point.optDouble("max", Double.NaN),
+                point.getDouble("sum", 0),
+                point.getDouble("min", Double.NaN),
+                point.getDouble("max", Double.NaN),
                 buckets == null ? null : buckets.toJson());
     }
 
@@ -71,8 +72,8 @@ public record PointRow(long seriesId, long atMs, double value, @Nullable Long co
     }
 
     /** The row as the export document holds it, with {@code buckets} as the object it is. */
-    public Json.JsonObject toJson() {
-        return Json.obj()
+    public JsonObject toJson() {
+        return Json.object()
                 .put("seriesId", seriesId)
                 .put("atMs", atMs)
                 .put("value", RowJson.number(value))

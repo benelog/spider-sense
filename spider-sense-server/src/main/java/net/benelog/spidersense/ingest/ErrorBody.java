@@ -2,7 +2,8 @@ package net.benelog.spidersense.ingest;
 
 import net.benelog.spidersilk.HttpStatus;
 import net.benelog.spidersilk.WebResponse;
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonObject;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -22,8 +23,8 @@ public final class ErrorBody {
         return message == null || message.isBlank() ? fallback : message;
     }
 
-    public static Json.JsonObject json(@Nullable String message, String fallback) {
-        return Json.obj().put("error", message(message, fallback));
+    public static JsonObject json(@Nullable String message, String fallback) {
+        return Json.object().put("error", message(message, fallback));
     }
 
     /** The body as a JSON response with its status. */

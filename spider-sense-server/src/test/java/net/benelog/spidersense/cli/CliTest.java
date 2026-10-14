@@ -29,7 +29,8 @@ import net.benelog.spidersense.server.Config;
 import net.benelog.spidersense.server.SpiderSenseServer;
 import net.benelog.spidersense.store.Database;
 import net.benelog.spidersense.store.Store;
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonObject;
 
 /**
  * The command line of cli.adoc: what each command asks for, what it prints, and
@@ -622,7 +623,7 @@ class CliTest {
                             ("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":"
                                     + "{\"name\":\"status\",\"arguments\":{}}}\n").getBytes(UTF_8)), toOut, toErr);
                 }
-                Json.JsonObject answer = Json.parse(out.toString(UTF_8)).asObject();
+                JsonObject answer = Json.parse(out.toString(UTF_8)).asObject();
                 assertThat(answer.getLong("id")).as(foreign.status() + " mcp: the call is answered").isEqualTo(1);
                 assertThat(answer.toJson()).as(foreign.status() + " mcp").contains("no Spider Sense at " + base);
             } finally {

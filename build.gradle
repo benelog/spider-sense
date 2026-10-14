@@ -10,7 +10,7 @@ plugins {
 }
 
 ext {
-    spiderSilkVersion = '1.1.0'
+    spiderSilkVersion = '1.2.0-SNAPSHOT'   // published to mavenLocal from ../spider-silk (publishToMavenLocal -Pversion=1.2.0-SNAPSHOT)
     otelAgentVersion = '2.31.1'          // io.opentelemetry.javaagent:opentelemetry-javaagent
     otelSdkVersion = '1.65.0'            // io.opentelemetry:opentelemetry-sdk, the version that agent bundles
     otelProtoVersion = '1.11.0-alpha'    // io.opentelemetry.proto:opentelemetry-proto
@@ -33,14 +33,15 @@ ext {
 subprojects {
     repositories {
         mavenCentral()
+        mavenLocal()    // the Spider Silk snapshot, which Maven Central does not have
     }
 
     plugins.withId('java') {
         apply plugin: 'net.ltgt.errorprone'
 
         java {
-            sourceCompatibility = JavaVersion.VERSION_21
-            targetCompatibility = JavaVersion.VERSION_21
+            sourceCompatibility = JavaVersion.VERSION_25
+            targetCompatibility = JavaVersion.VERSION_25
         }
 
         // Error Prone runs inside javac on every module, and NullAway with it:
@@ -57,7 +58,7 @@ subprojects {
         }
 
         tasks.withType(JavaCompile).configureEach {
-            options.release = 21
+            options.release = 25
             options.encoding = 'UTF-8'
             // Sources the build generates (jte's precompiled templates carry no
             // @Generated) are not this project's to fix.

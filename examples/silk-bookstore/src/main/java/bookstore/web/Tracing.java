@@ -32,7 +32,7 @@ public final class Tracing {
 
     /** Called from the request logger: puts the exception behind a 500 on the span. */
     public static void record(RequestCompletion completion) {
-        Exception exception = completion.exception();
+        Throwable exception = completion.thrown();
         if (exception == null || completion.statusCode() < 500) {
             return;
         }

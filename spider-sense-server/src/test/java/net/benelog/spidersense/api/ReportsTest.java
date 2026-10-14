@@ -16,7 +16,8 @@ import net.benelog.spidersense.server.Config;
 import net.benelog.spidersense.store.Marks;
 import net.benelog.spidersense.store.ReadOnlyQuery;
 import net.benelog.spidersense.store.Store;
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonObject;
 
 /**
  * The seam the CLI uses: the same answers, from the database alone, with nothing
@@ -57,7 +58,7 @@ class ReportsTest {
             store.writer().awaitIdle(5_000);
 
             try (Reports reports = Reports.readOnly(config)) {
-                Json.JsonObject status = reports.status("file", null, 0).json().asObject();
+                JsonObject status = reports.status("file", null, 0).json().asObject();
                 assertThat(status.getString("mode")).isEqualTo("file");
                 assertThat(status.get("endpoint").isNull()).isTrue();
                 assertThat(status.getObject("counts").getLong("spans")).isEqualTo(1);
@@ -66,7 +67,7 @@ class ReportsTest {
                         .contains("| ignore | /actuator/**, /health, /healthz, /livez, /readyz |");
 
                 Window window = Window.of(NOW - 60_000, NOW + 60_000);
-                Json.JsonObject findings = reports.findings(window, null, 20, false).json().asObject();
+                JsonObject findings = reports.findings(window, null, 20, false).json().asObject();
                 assertThat(findings.getArray("findings")).hasSize(1);
                 assertThat(findings.getArray("findings").get(0).asObject().getString("kind"))
                         .isEqualTo("slow-endpoint");
@@ -110,7 +111,7 @@ class ReportsTest {
             store.writer().awaitIdle(5_000);
 
             try (Reports reports = Reports.readOnly(config)) {
-                Json.JsonObject body = reports.compare(before, after, NOW, null, false).json().asObject();
+                JsonObject body = reports.compare(before, after, NOW, null, false).json().asObject();
                 assertThat(body.getObject("totals").getObject("after").getLong("requests")).isEqualTo(1);
                 assertThat(body.getObject("totals").getObject("before").getLong("requests")).isZero();
                 assertThat(body.getArray("endpoints")).hasSize(1);
@@ -164,7 +165,7 @@ class ReportsTest {
                         + " VALUES (?, ?, ?, TRUE)", java.util.List.of(id, NOW - 30_000, "precomputed"));
 
                 Reports.Report report = reports.findings(window, null, 20, false);
-                Json.JsonObject regression = report.json().asObject().getArray("findings").get(0).asObject();
+                JsonObject regression = report.json().asObject().getArray("findings").get(0).asObject();
                 assertThat(regression.getString("kind")).isEqualTo("regression");
                 assertThat(regression.getString("state")).isEqualTo("regressed");
                 assertThat(regression.getObject("resolution").getString("note")).isEqualTo("precomputed");
@@ -273,7 +274,7 @@ class ReportsTest {
             Reports reports = new Reports(config, store, config::port);
 
             Reports.Report status = reports.status("standalone", "http://127.0.0.1:4000", NOW);
-            Json.JsonObject json = status.json().asObject();
+            JsonObject json = status.json().asObject();
 
             assertThat(json.getObject("retention").getLong("hours")).isEqualTo(24);
             assertThat(json.getObject("retention").getLong("spans")).isEqualTo(250_000);

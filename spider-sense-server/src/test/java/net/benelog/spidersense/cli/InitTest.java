@@ -12,7 +12,9 @@ import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonValue;
+import net.benelog.silkjson.JsonObject;
 
 /**
  * {@code init --mcp}: the project's {@code .mcp.json}, for a host that has no
@@ -43,11 +45,11 @@ class InitTest {
         return new Run(exit, out.toString(UTF_8), err.toString(UTF_8));
     }
 
-    private static Json.JsonObject read(Path file) throws IOException {
+    private static JsonObject read(Path file) throws IOException {
         return Json.parse(Files.readString(file, UTF_8)).asObject();
     }
 
-    private static Json.JsonObject spiderSense(Json.JsonObject root) {
+    private static JsonObject spiderSense(JsonObject root) {
         return root.getObject("mcpServers").getObject("spider-sense");
     }
 
@@ -59,9 +61,9 @@ class InitTest {
         assertThat(run.out().lines()).hasSize(3);
         assertThat(run.out()).endsWith("wrote .mcp.json (spider-sense over stdio)\n");
 
-        Json.JsonObject entry = spiderSense(read(project.resolve(".mcp.json")));
+        JsonObject entry = spiderSense(read(project.resolve(".mcp.json")));
         assertThat(entry.getString("command")).isEqualTo("java");
-        assertThat(entry.getArray("args").values().stream().map(Json.JsonValue::asString))
+        assertThat(entry.getArray("args").values().stream().map(JsonValue::asString))
                 .containsExactly("-jar", JAR, "mcp");
 
         assertThat(Files.readString(project.resolve(".mcp.json"), UTF_8))
@@ -75,7 +77,7 @@ class InitTest {
 
         assertThat(run.exit()).as("stderr: %s", run.err()).isZero();
         assertThat(spiderSense(read(project.resolve(".mcp.json"))).getArray("args").values().stream()
-                .map(Json.JsonValue::asString))
+                .map(JsonValue::asString))
                 .containsExactly("-jar", JAR, "mcp", "--url=http://127.0.0.1:4106");
         assertThat(block(project)).contains("The UI is then at <http://127.0.0.1:4106>.\n");
     }
@@ -171,7 +173,7 @@ class InitTest {
         assertThat(run.exit()).isZero();
         assertThat(run.out()).endsWith("updated .mcp.json (spider-sense over stdio)\n");
 
-        Json.JsonObject root = read(file);
+        JsonObject root = read(file);
         assertThat(root.getObject("somethingElse").getBoolean("keep"))
                 .as("a key beside mcpServers").isTrue();
         assertThat(root.getObject("mcpServers").keys())

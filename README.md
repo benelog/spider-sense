@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Java-21-e2603f?style=flat-square&labelColor=2b303b" alt="Java 21">
+  <img src="https://img.shields.io/badge/Java-25-e2603f?style=flat-square&labelColor=2b303b" alt="Java 25">
   <img src="https://img.shields.io/badge/OpenTelemetry-OTLP%2FHTTP-8a93a6?style=flat-square&labelColor=2b303b" alt="OpenTelemetry">
   <img src="https://img.shields.io/badge/UI-spot%20problems%20at%20a%20glance-8a93a6?style=flat-square&labelColor=2b303b" alt="UI: spot problems at a glance">
   <img src="https://img.shields.io/badge/one%20jar-yes-e2603f?style=flat-square&labelColor=2b303b" alt="One jar">
@@ -62,7 +62,7 @@ Follow https://spider-sense.benelog.net/agent-quickstart.html to set up Spider S
 Run the application under Spider Sense, exercise it, and tell me the three biggest problems and the lines that cause them.
 ```
 
-By hand, it requires Java 21 or later, and the jar is built from a checkout of this repository, because 0.1.0 is not on Maven Central yet.
+By hand, it requires Java 25 or later, and the jar is built from a checkout of this repository, because 0.1.0 is not on Maven Central yet.
 
 ```bash
 ./gradlew :spider-sense-agent:senseJar

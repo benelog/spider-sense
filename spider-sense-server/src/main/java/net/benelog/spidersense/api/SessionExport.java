@@ -27,7 +27,8 @@ import net.benelog.spidersense.store.ServiceRow;
 import net.benelog.spidersense.store.SpanRow;
 import net.benelog.spidersense.store.Sql;
 import net.benelog.spidersense.store.TingleRow;
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonObject;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -84,7 +85,7 @@ final class SessionExport {
             long exportedAt, Writer out)
             throws SQLException, IOException {
         out.write("{\"spiderSense\":");
-        out.write(Json.obj()
+        out.write(Json.object()
                 .put("version", Version.CURRENT)
                 .put("schema", Schema.VERSION)
                 .put("exportedAt", exportedAt)
@@ -107,7 +108,7 @@ final class SessionExport {
     /** One row of a result set, as the object the document holds. */
     @FunctionalInterface
     private interface Row {
-        Json.JsonObject of(ResultSet rs) throws SQLException;
+        JsonObject of(ResultSet rs) throws SQLException;
     }
 
     /** A statement and the values it binds, kept together so a section is one expression. */

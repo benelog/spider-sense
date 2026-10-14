@@ -10,7 +10,8 @@ import java.util.Set;
 import net.benelog.spidersense.store.AttrJson;
 import net.benelog.spidersense.store.MetricPoint;
 import net.benelog.spidersense.store.Sql;
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonException;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -190,7 +191,7 @@ public final class MetricQueries {
                 Map<String, Object> attributes;
                 try {
                     attributes = AttrJson.readAttributes(rs.getString("attributes"));
-                } catch (Json.JsonException cutAsText) {
+                } catch (JsonException cutAsText) {
                     // An older Spider Sense cut a long series at a character rather than as
                     // JSON: that series is left out, rather than every other one of the name.
                     unreadable.add(id);
@@ -279,9 +280,9 @@ public final class MetricQueries {
         long[] counts = null;
         double[] bounds = null;
         if (buckets != null) {
-            var object = net.benelog.spidersilk.json.Json.parse(buckets).asObject();
-            var boundsArray = object.optArray("bounds");
-            var countsArray = object.optArray("counts");
+            var object = net.benelog.silkjson.Json.parse(buckets).asObject();
+            var boundsArray = object.getArrayOrNull("bounds");
+            var countsArray = object.getArrayOrNull("counts");
             if (boundsArray != null && countsArray != null) {
                 bounds = new double[boundsArray.size()];
                 for (int i = 0; i < bounds.length; i++) {

@@ -25,7 +25,8 @@ import net.benelog.spidersense.TestStore;
 import net.benelog.spidersense.ingest.OtlpDecoder;
 import net.benelog.spidersense.server.Config;
 import net.benelog.spidersense.server.SpiderSenseServer;
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonObject;
 
 /**
  * {@code export} and {@code import} from the terminal
@@ -112,7 +113,7 @@ class ExportCommandTest {
             assertThat(export.err()).isEqualTo("wrote " + file + "\n");
         });
 
-        Json.JsonObject document = Json.parse(read(file)).asObject();
+        JsonObject document = Json.parse(read(file)).asObject();
         assertThat(document.getArray("spans")).hasSize(8);
         assertThat(document.getObject("spiderSense").has("schema")).isTrue();
 

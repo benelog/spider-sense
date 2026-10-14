@@ -32,7 +32,7 @@ import net.benelog.spidersense.TestStore;
 import net.benelog.spidersense.ingest.OtlpDecoder;
 import net.benelog.spidersense.server.Config;
 import net.benelog.spidersense.server.SpiderSenseServer;
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
 
 /**
  * The CLI's one promise, tested as a promise: a command prints the same bytes on stdout and on

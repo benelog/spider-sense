@@ -17,7 +17,10 @@ import net.benelog.spidersense.server.Config;
 import net.benelog.spidersense.server.SpiderSenseServer;
 import net.benelog.spidersense.server.Version;
 import net.benelog.spidersense.store.Schema;
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonValue;
+import net.benelog.silkjson.JsonObject;
+import net.benelog.silkjson.JsonArray;
 import net.benelog.spidersilk.test.TestClient;
 import net.benelog.spidersilk.test.WebTest;
 
@@ -75,7 +78,7 @@ class ExportImportTest {
     /** One number out of the store, for the tables the API has no list for. */
     private static long rows(TestClient client, String statement) {
         HttpResponse<String> response = postJson(client, "/api/sql",
-                Json.obj().put("sql", statement).put("limit", 1).toJson());
+                Json.object().put("sql", statement).put("limit", 1).toJson());
         assertThat(response.statusCode()).isEqualTo(200);
         return Json.parse(response.body()).asObject().getArray("rows").get(0).asArray()
                 .get(0).asLong();
@@ -128,7 +131,7 @@ class ExportImportTest {
                                 "[{\"name\":\"PRIMARY_KEY_8\",\"unique\":true,\"columns\":[\"ID\"]}]")))
                 .toByteArray());
         assertThat(postJson(client, "/api/marks",
-                Json.obj().put("name", "before").put("at", NOW + 20).toJson()).statusCode())
+                Json.object().put("name", "before").put("at", NOW + 20).toJson()).statusCode())
                 .isEqualTo(201);
     }
 
@@ -143,8 +146,8 @@ class ExportImportTest {
                     .hasValue("attachment; filename=\"spider-sense-" + (NOW - 60_000) + "-"
                             + (NOW + 60_000) + ".json\"");
 
-            Json.JsonObject document = Json.parse(response.body()).asObject();
-            Json.JsonObject header = document.getObject("spiderSense");
+            JsonObject document = Json.parse(response.body()).asObject();
+            JsonObject header = document.getObject("spiderSense");
             assertThat(header.getLong("schema")).isEqualTo(Schema.VERSION);
             assertThat(header.getString("version")).isEqualTo(Version.CURRENT);
             assertThat(header.getObject("window").getLong("from")).isEqualTo(NOW - 60_000);
@@ -160,7 +163,7 @@ class ExportImportTest {
             assertThat(document.getArray("marks")).hasSize(1);
             assertThat(document.getArray("dbTables")).hasSize(1);
 
-            Json.JsonObject table = document.getArray("dbTables").get(0).asObject();
+            JsonObject table = document.getArray("dbTables").get(0).asObject();
             assertThat(table.getString("service")).isEqualTo("spring-orders");
             assertThat(table.getString("schemaName")).isEqualTo("PUBLIC");
             assertThat(table.getString("tableName")).isEqualTo("ORDERS");
@@ -169,7 +172,7 @@ class ExportImportTest {
             assertThat(table.getArray("indexes").get(0).asObject().getString("name"))
                     .isEqualTo("PRIMARY_KEY_8");
 
-            Json.JsonObject span = document.getArray("spans").get(1).asObject();
+            JsonObject span = document.getArray("spans").get(1).asObject();
             assertThat(span.getString("spanId")).isEqualTo(CHILD);
             assertThat(span.getBoolean("slow")).isTrue();
             assertThat(span.getBoolean("entry")).isFalse();
@@ -193,11 +196,11 @@ class ExportImportTest {
             postProtobuf(client, "/v1/metrics", Otlp.gauge(Otlp.service("silk-bookstore"),
                     "jvm.thread.count", "{thread}", NOW, 12).toByteArray());
 
-            Json.JsonObject document = Json.parse(
+            JsonObject document = Json.parse(
                     client.get("/api/export" + window() + "&service=spring-orders").body()).asObject();
 
             for (String section : new String[] {"services", "metrics", "metricSeries"}) {
-                for (Json.JsonValue row : document.getArray(section)) {
+                for (JsonValue row : document.getArray(section)) {
                     String key = "services".equals(section) ? "name" : "service";
                     assertThat(row.asObject().getString(key)).as(section).isEqualTo("spring-orders");
                 }
@@ -219,7 +222,7 @@ class ExportImportTest {
         serve(client -> {
             HttpResponse<String> first = postJson(client, "/api/import", document[0]);
             assertThat(first.statusCode()).isEqualTo(200);
-            Json.JsonObject counts = Json.parse(first.body()).asObject();
+            JsonObject counts = Json.parse(first.body()).asObject();
             assertThat(counts.getLong("spans")).isEqualTo(3);
             assertThat(counts.getLong("logs")).isEqualTo(2);
             assertThat(counts.getLong("metricPoints")).isEqualTo(2);
@@ -231,7 +234,7 @@ class ExportImportTest {
 
             assertThat(client.get("/api/traces/" + TRACE).body()).isEqualTo(trace[0]);
 
-            Json.JsonObject status = Json.parse(client.get("/api/status").body()).asObject();
+            JsonObject status = Json.parse(client.get("/api/status").body()).asObject();
             assertThat(status.getObject("counts").getLong("spans")).isEqualTo(3);
             assertThat(status.getObject("counts").getLong("traces")).isEqualTo(2);
             assertThat(status.getObject("counts").getLong("logs")).isEqualTo(2);
@@ -242,7 +245,7 @@ class ExportImportTest {
 
             HttpResponse<String> again = postJson(client, "/api/import", document[0]);
             assertThat(again.statusCode()).isEqualTo(200);
-            Json.JsonObject second = Json.parse(again.body()).asObject();
+            JsonObject second = Json.parse(again.body()).asObject();
             assertThat(second.getLong("skippedTraces")).isEqualTo(2);
             assertThat(second.getLong("spans")).isZero();
             assertThat(second.getLong("logs")).as("the line outside a span is already stored too").isZero();
@@ -253,7 +256,7 @@ class ExportImportTest {
             assertThat(rows(client, "SELECT COUNT(*) FROM db_table"))
                     .as("merged on its key, not added again").isEqualTo(1);
 
-            Json.JsonObject after = Json.parse(client.get("/api/status").body()).asObject();
+            JsonObject after = Json.parse(client.get("/api/status").body()).asObject();
             assertThat(after.getObject("counts").getLong("spans")).isEqualTo(3);
             assertThat(after.getObject("counts").getLong("logs")).isEqualTo(2);
             assertThat(after.getObject("counts").getLong("metricSeries")).isEqualTo(1);
@@ -300,8 +303,8 @@ class ExportImportTest {
         String[] document = new String[1];
         serve(client -> {
             fill(client);
-            Json.JsonObject exported = Json.parse(client.get("/api/export" + window()).body()).asObject();
-            Json.JsonArray logs = exported.getArray("logs");
+            JsonObject exported = Json.parse(client.get("/api/export" + window()).body()).asObject();
+            JsonArray logs = exported.getArray("logs");
             for (int i = 0; i < logs.size(); i++) {
                 if (logs.get(i).asObject().get("traceId").isNull()) {
                     // The same line logged twice in one millisecond.
@@ -309,7 +312,7 @@ class ExportImportTest {
                     break;
                 }
             }
-            exported.getArray("tingles").add(Json.obj()
+            exported.getArray("tingles").add(Json.object()
                     .put("atMs", NOW + 7).put("kind", "error").put("service", "spring-orders")
                     .put("title", "Shipping failed").put("detail", "outside any request")
                     .putNull("traceId").putNull("spanId").put("durationMs", 0));
@@ -317,12 +320,12 @@ class ExportImportTest {
         });
 
         serve(client -> {
-            Json.JsonObject first = Json.parse(postJson(client, "/api/import", document[0]).body()).asObject();
+            JsonObject first = Json.parse(postJson(client, "/api/import", document[0]).body()).asObject();
             assertThat(first.getLong("logs")).isEqualTo(3);
             long tingles = rows(client, "SELECT COUNT(*) FROM tingle");
             assertThat(tingles).isEqualTo(first.getLong("tingles"));
 
-            Json.JsonObject second = Json.parse(postJson(client, "/api/import", document[0]).body()).asObject();
+            JsonObject second = Json.parse(postJson(client, "/api/import", document[0]).body()).asObject();
             assertThat(second.getLong("logs")).isZero();
             assertThat(second.getLong("tingles")).isZero();
             assertThat(rows(client, "SELECT COUNT(*) FROM log")).isEqualTo(3);
@@ -337,14 +340,14 @@ class ExportImportTest {
     @Test
     void aLineCutInsideASurrogatePairExportsAsItIsStored() {
         serve(client -> {
-            Json.JsonObject log = Json.obj().put("atMs", NOW).put("service", "spring-orders")
+            JsonObject log = Json.object().put("atMs", NOW).put("service", "spring-orders")
                     .put("severityNumber", 9).put("severity", "INFO")
                     .put("body", "a".repeat(65_534) + "\uD83D\uDE00");
             HttpResponse<String> first = postJson(client, "/api/import", section("logs", log).toJson());
             assertThat(first.statusCode()).as(first.body()).isEqualTo(200);
 
             String exported = client.get("/api/export" + window()).body();
-            Json.JsonObject again = Json.parse(postJson(client, "/api/import", exported).body()).asObject();
+            JsonObject again = Json.parse(postJson(client, "/api/import", exported).body()).asObject();
 
             assertThat(again.getLong("logs")).isZero();
             assertThat(rows(client, "SELECT COUNT(*) FROM log")).isEqualTo(1);
@@ -364,11 +367,11 @@ class ExportImportTest {
         serve(client -> {
             fill(client);
             stored[0] = rows(client, "SELECT COUNT(*) FROM tingle");
-            Json.JsonObject exported = Json.parse(client.get("/api/export" + window()).body()).asObject();
-            Json.JsonArray tingles = exported.getArray("tingles");
+            JsonObject exported = Json.parse(client.get("/api/export" + window()).body()).asObject();
+            JsonArray tingles = exported.getArray("tingles");
             for (int i = 0; i < tingles.size(); i++) {
                 if (!tingles.get(i).asObject().get("spanId").isNull()) {
-                    Json.JsonObject copy = Json.parse(tingles.get(i).toJson()).asObject();
+                    JsonObject copy = Json.parse(tingles.get(i).toJson()).asObject();
                     tingles.add(copy.put("detail", "raised again"));
                     break;
                 }
@@ -402,9 +405,9 @@ class ExportImportTest {
         serve(client -> {
             assertThat(postJson(client, "/api/import", document[0]).statusCode()).isEqualTo(200);
 
-            Json.JsonObject schema = slowQuerySchema(client);
+            JsonObject schema = slowQuerySchema(client);
             assertThat(schema.toJson()).isEqualTo(original[0]);
-            Json.JsonObject table = schema.getArray("tables").get(0).asObject();
+            JsonObject table = schema.getArray("tables").get(0).asObject();
             assertThat(table.getString("table")).isEqualTo("ORDERS");
             assertThat(table.getArray("indexes")).hasSize(1);
             assertThat(schema.getArray("unindexed").get(0).asString()).isEqualTo("orders.name");
@@ -413,10 +416,10 @@ class ExportImportTest {
         });
     }
 
-    private static Json.JsonObject slowQuerySchema(TestClient client) {
-        for (Json.JsonValue value : Json.parse(client.get("/api/findings" + window()).body())
+    private static JsonObject slowQuerySchema(TestClient client) {
+        for (JsonValue value : Json.parse(client.get("/api/findings" + window()).body())
                 .asObject().getArray("findings")) {
-            Json.JsonObject finding = value.asObject();
+            JsonObject finding = value.asObject();
             if ("slow-query".equals(finding.getString("kind"))) {
                 return finding.getObject("schema");
             }
@@ -436,13 +439,13 @@ class ExportImportTest {
                     Otlp.span(TRACE, ROOT, "GET /orders", Span.SpanKind.SPAN_KIND_SERVER, NOW, 5)).toByteArray());
             long starts = rows(client, "SELECT COUNT(*) FROM mark WHERE name = 'start'");
 
-            String document = Json.obj()
-                    .put("spiderSense", Json.obj().put("schema", Schema.VERSION))
-                    .put("services", Json.arr().add(Json.obj().put("name", "spring-orders").put("pid", 200)
+            String document = Json.object()
+                    .put("spiderSense", Json.object().put("schema", Schema.VERSION))
+                    .put("services", Json.array().add(Json.object().put("name", "spring-orders").put("pid", 200)
                             .put("firstSeen", NOW - 60_000).put("lastSeen", NOW - 30_000)))
-                    .put("marks", Json.arr()
-                            .add(Json.obj().put("atMs", NOW + 50).put("name", "start").put("service", "spring-orders"))
-                            .add(Json.obj().put("atMs", NOW + 60).put("name", "before")))
+                    .put("marks", Json.array()
+                            .add(Json.object().put("atMs", NOW + 50).put("name", "start").put("service", "spring-orders"))
+                            .add(Json.object().put("atMs", NOW + 60).put("name", "before")))
                     .toJson();
             assertThat(postJson(client, "/api/import", document).statusCode()).isEqualTo(200);
             // Before any flush of the running service could put its own pid back.
@@ -464,9 +467,9 @@ class ExportImportTest {
     @Test
     void aDocumentOfAnotherSchemaVersionIsRefused() {
         serve(client -> {
-            String document = Json.obj()
-                    .put("spiderSense", Json.obj().put("schema", 1))
-                    .put("spans", Json.arr())
+            String document = Json.object()
+                    .put("spiderSense", Json.object().put("schema", 1))
+                    .put("spans", Json.array())
                     .toJson();
             HttpResponse<String> response = postJson(client, "/api/import", document);
             assertThat(response.statusCode()).isEqualTo(400);
@@ -482,9 +485,9 @@ class ExportImportTest {
     @Test
     void aDocumentWhoseRowsAreNotTheExportedShapesIsRefused() {
         serve(client -> {
-            String document = Json.obj()
-                    .put("spiderSense", Json.obj().put("schema", Schema.VERSION))
-                    .put("spans", Json.arr().add("not a span"))
+            String document = Json.object()
+                    .put("spiderSense", Json.object().put("schema", Schema.VERSION))
+                    .put("spans", Json.array().add("not a span"))
                     .toJson();
             HttpResponse<String> response = postJson(client, "/api/import", document);
             assertThat(response.statusCode()).isEqualTo(400);
@@ -499,21 +502,21 @@ class ExportImportTest {
      */
     @Test
     void aDocumentWhoseJsonColumnsAreNotTheExportedShapesIsRefused() {
-        Json.JsonObject span = Json.obj().put("traceId", TRACE).put("spanId", ROOT)
+        JsonObject span = Json.object().put("traceId", TRACE).put("spanId", ROOT)
                 .put("service", "spring-orders").put("name", "GET /orders").put("kind", "SERVER")
                 .put("startMs", NOW).put("startNs", NOW * 1_000_000L).put("durationNs", 1_000_000L)
                 .put("status", "UNSET").put("category", "http");
-        Json.JsonObject log = Json.obj().put("atMs", NOW).put("service", "spring-orders")
+        JsonObject log = Json.object().put("atMs", NOW).put("service", "spring-orders")
                 .put("severityNumber", 9).put("body", "hello");
-        Json.JsonObject service = Json.obj().put("name", "spring-orders").put("firstSeen", NOW).put("lastSeen", NOW);
-        List<Json.JsonObject> documents = List.of(
-                section("spans", Json.parse(span.toJson()).asObject().put("attributes", Json.arr().add(1).add(2))),
-                section("spans", Json.parse(span.toJson()).asObject().put("events", Json.obj().put("a", 1))),
-                section("spans", Json.parse(span.toJson()).asObject().put("events", Json.arr().add(5))),
+        JsonObject service = Json.object().put("name", "spring-orders").put("firstSeen", NOW).put("lastSeen", NOW);
+        List<JsonObject> documents = List.of(
+                section("spans", Json.parse(span.toJson()).asObject().put("attributes", Json.array().add(1).add(2))),
+                section("spans", Json.parse(span.toJson()).asObject().put("events", Json.object().put("a", 1))),
+                section("spans", Json.parse(span.toJson()).asObject().put("events", Json.array().add(5))),
                 section("logs", Json.parse(log.toJson()).asObject().put("attributes", 5)),
                 section("services", Json.parse(service.toJson()).asObject().put("resource", "not an object")));
         serve(client -> {
-            for (Json.JsonObject document : documents) {
+            for (JsonObject document : documents) {
                 HttpResponse<String> response = postJson(client, "/api/import", document.toJson());
                 assertThat(response.statusCode()).as(document.toJson()).isEqualTo(400);
                 assertThat(Json.parse(response.body()).asObject().getString("error"))
@@ -531,8 +534,8 @@ class ExportImportTest {
     void aDocumentWithAMarkNameASelectorReadsAsSomethingElseIsRefused() {
         serve(client -> {
             for (String name : List.of("5m", "has space", "now")) {
-                Json.JsonObject document = section("marks", Json.obj().put("atMs", NOW).put("name", name))
-                        .put("spans", Json.arr());
+                JsonObject document = section("marks", Json.object().put("atMs", NOW).put("name", name))
+                        .put("spans", Json.array());
                 HttpResponse<String> response = postJson(client, "/api/import", document.toJson());
                 assertThat(response.statusCode()).as(name).isEqualTo(400);
                 assertThat(Json.parse(response.body()).asObject().getString("error"))
@@ -543,10 +546,10 @@ class ExportImportTest {
         });
     }
 
-    private static Json.JsonObject section(String key, Json.JsonObject row) {
-        return Json.obj()
-                .put("spiderSense", Json.obj().put("schema", Schema.VERSION))
-                .put(key, Json.arr().add(row));
+    private static JsonObject section(String key, JsonObject row) {
+        return Json.object()
+                .put("spiderSense", Json.object().put("schema", Schema.VERSION))
+                .put(key, Json.array().add(row));
     }
 
     /**
@@ -557,15 +560,15 @@ class ExportImportTest {
     @Test
     void aDocumentWhoseValuesDoNotFitTheirColumnsIsRefused() {
         serve(client -> {
-            Json.JsonObject span = Json.obj().put("traceId", TRACE + "0").put("spanId", ROOT)
+            JsonObject span = Json.object().put("traceId", TRACE + "0").put("spanId", ROOT)
                     .put("service", "spring-orders").put("name", "GET /orders").put("kind", "INTERNAL_SPAN")
                     .put("startMs", NOW).put("startNs", NOW * 1_000_000L).put("durationNs", 1_000_000L)
                     .put("status", "UNSET").put("category", "http");
-            String document = Json.obj()
-                    .put("spiderSense", Json.obj().put("schema", Schema.VERSION))
-                    .put("services", Json.arr().add(Json.obj().put("name", "spring-orders")
+            String document = Json.object()
+                    .put("spiderSense", Json.object().put("schema", Schema.VERSION))
+                    .put("services", Json.array().add(Json.object().put("name", "spring-orders")
                             .put("firstSeen", NOW).put("lastSeen", NOW)))
-                    .put("spans", Json.arr().add(span))
+                    .put("spans", Json.array().add(span))
                     .toJson();
 
             HttpResponse<String> response = postJson(client, "/api/import", document);

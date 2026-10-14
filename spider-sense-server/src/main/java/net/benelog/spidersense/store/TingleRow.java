@@ -6,7 +6,8 @@ import java.sql.SQLException;
 import java.util.Arrays;
 import java.util.List;
 
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonObject;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -51,7 +52,7 @@ public record TingleRow(
                 tingle.traceId(), tingle.spanId(), tingle.durationMs());
     }
 
-    static TingleRow fromJson(Json.JsonObject tingle) {
+    static TingleRow fromJson(JsonObject tingle) {
         return new TingleRow(
                 RowJson.longOr(tingle, "atMs", 0),
                 RowJson.string(tingle, "kind"),
@@ -60,7 +61,7 @@ public record TingleRow(
                 RowJson.or(RowJson.string(tingle, "detail"), ""),
                 RowJson.string(tingle, "traceId"),
                 RowJson.string(tingle, "spanId"),
-                tingle.optDouble("durationMs", 0));
+                tingle.getDouble("durationMs", 0));
     }
 
     /** The row of a {@code SELECT *} on {@code tingle}. */
@@ -77,8 +78,8 @@ public record TingleRow(
     }
 
     /** The row as the export document holds it. */
-    public Json.JsonObject toJson() {
-        return Json.obj()
+    public JsonObject toJson() {
+        return Json.object()
                 .put("atMs", atMs)
                 .put("kind", kind)
                 .put("service", service)

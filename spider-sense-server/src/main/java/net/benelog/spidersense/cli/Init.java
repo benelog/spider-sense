@@ -14,7 +14,10 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.regex.Pattern;
 
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonValue;
+import net.benelog.silkjson.JsonObject;
+import net.benelog.silkjson.JsonArray;
 import org.jspecify.annotations.Nullable;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
@@ -247,7 +250,7 @@ final class Init {
             Path mcpFile = dir.resolve(MCP_FILE);
             // Read before anything is written, so a file that is not ours to rewrite stops init
             // before the block names a server it could not configure.
-            Json.JsonObject mcpConfig = mcp ? mcpConfig(mcpFile) : null;
+            JsonObject mcpConfig = mcp ? mcpConfig(mcpFile) : null;
             if (mcp && mcpConfig == null) {
                 err.println("spider-sense: " + mcpFile + " is not a JSON object; "
                         + "--mcp left it as it was, and wrote nothing else");
@@ -309,12 +312,12 @@ final class Init {
      * to guess at, and overwriting a host's configuration would be worse than
      * refusing.
      */
-    private static Json.@Nullable JsonObject mcpConfig(Path file) throws IOException {
+    private static @Nullable JsonObject mcpConfig(Path file) throws IOException {
         if (!Files.exists(file)) {
-            return Json.obj();
+            return Json.object();
         }
         try {
-            return Json.parse(Files.readString(file, UTF_8)) instanceof Json.JsonObject object ? object : null;
+            return Json.parse(Files.readString(file, UTF_8)) instanceof JsonObject object ? object : null;
         } catch (RuntimeException e) {
             // Not JSON at all, which is answered as any other file that is not an object.
             return null;
@@ -334,16 +337,16 @@ final class Init {
      * {@code --mcp} the host asks through the server and nothing else, so a URL the block alone
      * named would leave every tool call asking port 4000.
      */
-    private static void writeMcpServer(Path file, Json.JsonObject root, String jar, @Nullable String url,
+    private static void writeMcpServer(Path file, JsonObject root, String jar, @Nullable String url,
             PrintStream out) throws IOException {
         boolean existed = Files.exists(file);
-        Json.JsonObject servers = root.has("mcpServers")
-                && root.get("mcpServers") instanceof Json.JsonObject existing ? existing : Json.obj();
-        Json.JsonArray args = Json.arr().add("-jar").add(jar).add(Options.MCP);
+        JsonObject servers = root.has("mcpServers")
+                && root.get("mcpServers") instanceof JsonObject existing ? existing : Json.object();
+        JsonArray args = Json.array().add("-jar").add(jar).add(Options.MCP);
         if (url != null) {
             args.add("--url=" + url);
         }
-        servers.put(net.benelog.spidersense.mcp.McpServer.NAME, Json.obj()
+        servers.put(net.benelog.spidersense.mcp.McpServer.NAME, Json.object()
                 .put("command", "java")
                 .put("args", args));
         root.put("mcpServers", servers);
@@ -359,14 +362,14 @@ final class Init {
      * decides where the newlines go, because {@code .mcp.json} is a file people
      * open and edit.
      */
-    private static String pretty(Json.JsonValue value) {
+    private static String pretty(JsonValue value) {
         StringBuilder out = new StringBuilder();
         writePretty(out, value, 0);
         return out.toString();
     }
 
-    private static void writePretty(StringBuilder out, Json.JsonValue value, int depth) {
-        if (value instanceof Json.JsonObject object) {
+    private static void writePretty(StringBuilder out, JsonValue value, int depth) {
+        if (value instanceof JsonObject object) {
             if (object.size() == 0) {
                 out.append("{}");
                 return;
@@ -382,7 +385,7 @@ final class Init {
             }
             indent(out, depth);
             out.append('}');
-        } else if (value instanceof Json.JsonArray array) {
+        } else if (value instanceof JsonArray array) {
             if (array.size() == 0) {
                 out.append("[]");
                 return;
@@ -402,7 +405,7 @@ final class Init {
 
     /** A key is a JSON string, so one is made and asked to write itself. */
     private static void writeKey(StringBuilder out, String key) {
-        Json.arr().add(key).get(0).write(out);
+        Json.array().add(key).get(0).write(out);
     }
 
     private static void indent(StringBuilder out, int depth) {

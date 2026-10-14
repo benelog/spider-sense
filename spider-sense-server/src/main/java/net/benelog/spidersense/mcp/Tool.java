@@ -4,7 +4,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonValue;
+import net.benelog.silkjson.JsonObject;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -25,23 +27,23 @@ public record Tool(String name, String description, List<Arg> args, List<String>
         McpServer.ToolResult answer(McpTools tools, Map<String, Object> arguments);
     }
 
-    Json.JsonObject schema() {
-        Json.JsonObject properties = Json.obj();
+    JsonObject schema() {
+        JsonObject properties = Json.object();
         for (Arg arg : args) {
             properties.put(arg.name(), arg.schema());
         }
-        Json.JsonObject input = Json.obj().put("type", "object").put("properties", properties);
+        JsonObject input = Json.object().put("type", "object").put("properties", properties);
         if (!required.isEmpty()) {
-            input.put("required", Json.arr().addAll(required));
+            input.put("required", Json.array().addAll(required));
         }
-        return Json.obj()
+        return Json.object()
                 .put("name", name)
                 .put("description", description)
                 .put("inputSchema", input);
     }
 
     /** The arguments this call gave, typed, with every required one present. */
-    Map<String, Object> read(Json.JsonObject given) {
+    Map<String, Object> read(JsonObject given) {
         Map<String, Object> values = new LinkedHashMap<>();
         for (Arg arg : args) {
             if (!given.has(arg.name()) || given.get(arg.name()).isNull()) {
@@ -81,8 +83,8 @@ public record Tool(String name, String description, List<Arg> args, List<String>
             return new Arg(name, "boolean", description, null, null, null);
         }
 
-        Json.JsonObject schema() {
-            Json.JsonObject schema = Json.obj().put("type", type).put("description", description);
+        JsonObject schema() {
+            JsonObject schema = Json.object().put("type", type).put("description", description);
             if (minimum != null) {
                 schema.put("minimum", (double) minimum);
             }
@@ -96,7 +98,7 @@ public record Tool(String name, String description, List<Arg> args, List<String>
         }
 
         /** The value as the tool wants it, or a {@code -32602} naming the type. */
-        Object read(Json.JsonValue value) {
+        Object read(JsonValue value) {
             return switch (type) {
                 case "string" -> {
                     if (!value.isString()) {

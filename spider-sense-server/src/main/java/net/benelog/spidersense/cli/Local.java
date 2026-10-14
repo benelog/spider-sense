@@ -12,7 +12,9 @@ import net.benelog.spidersense.api.Reports;
 import net.benelog.spidersense.query.Selectors;
 import net.benelog.spidersense.query.Window;
 import net.benelog.spidersense.server.Config;
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonException;
+import net.benelog.silkjson.JsonObject;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -152,15 +154,15 @@ final class Local {
      * reads and writes it, a document that does not decode refused in the same words.
      */
     static Reports.Report imported(Reports reports, String name) {
-        Json.JsonObject document;
+        JsonObject document;
         try {
             document = Json.parse(Sessions.read(name)).asObject();
-        } catch (Json.JsonException e) {
+        } catch (JsonException e) {
             throw new Sessions.Undecodable(String.valueOf(e.getMessage()));
         }
         try {
             return reports.imported(reports.importDocument(document));
-        } catch (Json.JsonException e) {
+        } catch (JsonException e) {
             // A row of the wrong shape fails only once the import reads it.
             throw new Sessions.Undecodable(String.valueOf(e.getMessage()));
         }

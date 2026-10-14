@@ -8,7 +8,8 @@ import org.junit.jupiter.api.Test;
 
 import net.benelog.spidersense.query.ResponseBuckets;
 import net.benelog.spidersense.store.Database;
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.JsonValue;
+import net.benelog.silkjson.JsonObject;
 
 /** Both renderings of one status read the same snapshot, so they cannot disagree. */
 class StatusSnapshotTest {
@@ -21,16 +22,16 @@ class StatusSnapshotTest {
 
     @Test
     void theJsonAndTheTextReportTheSameCounts() {
-        Json.JsonObject json = Codecs.status(STATUS);
+        JsonObject json = Codecs.status(STATUS);
         String text = Text.status(STATUS);
 
-        Json.JsonObject counts = json.getObject("counts");
+        JsonObject counts = json.getObject("counts");
         assertThat(counts.getLong("spans")).isEqualTo(12);
         assertThat(text).contains("| spans | 12 |").contains("| traces | 3 |").contains("| logs | 40 |")
                 .contains("| metric series | 5 |").contains("| services | 2 (spring-orders, silk-bookstore) |")
                 .contains("| dropped spans | 7 |");
         assertThat(json.getObject("storage").getLong("droppedSpans")).isEqualTo(7);
-        assertThat(json.getArray("services")).extracting(Json.JsonValue::asString)
+        assertThat(json.getArray("services")).extracting(JsonValue::asString)
                 .containsExactly("spring-orders", "silk-bookstore");
     }
 

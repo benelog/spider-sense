@@ -15,7 +15,10 @@ import net.benelog.spidersilk.App;
 import net.benelog.spidersilk.HttpStatus;
 import net.benelog.spidersilk.WebRequest;
 import net.benelog.spidersilk.WebResponse;
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonObject;
+import net.benelog.silkjson.JsonArray;
+import net.benelog.silkjson.JsonException;
 
 /**
  * The status and control endpoints ({@code status}, {@code clear}, {@code export} and
@@ -61,11 +64,11 @@ public final class StatusApi {
             return req.path().startsWith("/api/") ? typed.header("Cache-Control", "no-store") : typed;
         });
 
-        app.error(HttpStatus.BAD_REQUEST, req ->
+        app.statusPage(HttpStatus.BAD_REQUEST, req ->
                 WebResponse.json(ErrorBody.json(req.errorMessage(), "Bad request")));
-        app.error(HttpStatus.METHOD_NOT_ALLOWED, req ->
+        app.statusPage(HttpStatus.METHOD_NOT_ALLOWED, req ->
                 WebResponse.json(ErrorBody.json(req.errorMessage(), "Method not allowed")));
-        app.error(HttpStatus.INTERNAL_SERVER_ERROR, req ->
+        app.statusPage(HttpStatus.INTERNAL_SERVER_ERROR, req ->
                 WebResponse.json(ErrorBody.json(req.errorMessage(), "Internal server error")));
     }
 
@@ -101,12 +104,12 @@ public final class StatusApi {
                     .stream("application/json", out -> reports.export(window, service, out))
                     .attachment(Reports.exportFilename(window));
         }
-        Json.JsonArray traces = Json.arr();
+        JsonArray traces = Json.array();
         Queries.TraceDetail trace = queries.trace(traceId);
         if (trace != null) {
             traces.add(Codecs.trace(trace, store.tingles()));
         }
-        return WebResponse.json(Json.obj().put("traces", traces))
+        return WebResponse.json(Json.object().put("traces", traces))
                 .attachment("spider-sense-traces.json");
     }
 
@@ -127,7 +130,7 @@ public final class StatusApi {
      * its column, is a {@code 400} too: the file is at fault, not the server.
      */
     public WebResponse importDocument(WebRequest req) {
-        Json.JsonObject document;
+        JsonObject document;
         try {
             document = Json.parse(body(req)).asObject();
         } catch (RequestBody.TooLarge e) {
@@ -144,7 +147,7 @@ public final class StatusApi {
             return Params.answer(req, reports.imported(reports.importDocument(document)));
         } catch (Importer.WrongSchema | Importer.BadDocument e) {
             return Params.badRequest(req, e.getMessage());
-        } catch (Json.JsonException e) {
+        } catch (JsonException e) {
             // A row of the wrong shape (a span that is not an object, a number that
             // is a string) fails only once the import reads it, and the transaction
             // has rolled back by the time it reaches here.

@@ -23,7 +23,8 @@ import net.benelog.spidersense.ingest.OtlpDecoder;
 import net.benelog.spidersense.server.Config;
 import net.benelog.spidersense.server.SpiderSenseServer;
 import net.benelog.spidersense.store.Store;
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonObject;
 
 /**
  * {@code trace <a> --diff=<b>} over both ways of answering.
@@ -145,7 +146,7 @@ class TraceDiffCliTest {
             Run run = runAt(closedUrl(), "trace", SLOW, "--diff=" + FIXED, "--json", db);
 
             assertThat(run.exit()).isZero();
-            Json.JsonObject json = Json.parse(run.out()).asObject();
+            JsonObject json = Json.parse(run.out()).asObject();
             assertThat(json.getString("a")).isEqualTo(SLOW);
             assertThat(json.getString("b")).isEqualTo(FIXED);
             assertThat(json.getObject("spans").getLong("a")).isEqualTo(7);

@@ -7,7 +7,9 @@ import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonObject;
+import net.benelog.silkjson.JsonArray;
 
 /**
  * The row records' JSON form (cli.adoc#export-import): what the export writes of
@@ -17,7 +19,7 @@ import net.benelog.spidersilk.json.Json;
 class RowRecordsTest {
 
     /** The row through its JSON and through the text of it, as a file carries it. */
-    private static Json.JsonObject roundTrip(Json.JsonObject json) {
+    private static JsonObject roundTrip(JsonObject json) {
         return Json.parse(json.toJson()).asObject();
     }
 
@@ -31,12 +33,12 @@ class RowRecordsTest {
 
     @Test
     void aLogLineIsTheSameLineByItsCutBodyAndLogger() {
-        LogRow row = LogRow.fromJson(Json.obj().put("service", "orders").put("atMs", 5)
+        LogRow row = LogRow.fromJson(Json.object().put("service", "orders").put("atMs", 5)
                 .put("body", "x".repeat(Columns.LOG_BODY + 10)).put("severityNumber", 9));
 
         assertThat(row.sameLine()).containsExactly("orders", 5L, 9L, "x".repeat(Columns.LOG_BODY), null, null,
                 null);
-        assertThat(LogRow.fromJson(Json.obj()).body()).as("a missing body is empty, as the column needs").isEmpty();
+        assertThat(LogRow.fromJson(Json.object()).body()).as("a missing body is empty, as the column needs").isEmpty();
     }
 
     @Test
@@ -61,12 +63,12 @@ class RowRecordsTest {
         CatalogRow row = CatalogRow.of(new Batch.Catalog("orders", "PUBLIC", "ORDERS", "H2",
                 "[{\"name\":\"PK\",\"unique\":true,\"columns\":[\"ID\"]}]", 1_000));
         assertThat(CatalogRow.fromJson(roundTrip(row.toJson()))).isEqualTo(row);
-        assertThat(row.toJson().get("indexes")).isInstanceOf(Json.JsonArray.class);
+        assertThat(row.toJson().get("indexes")).isInstanceOf(JsonArray.class);
 
         CatalogRow broken = new CatalogRow("orders", "", "ORDERS", null, "[not json", 1_000);
         assertThat(broken.toJson().getString("indexes")).isEqualTo("[not json");
         assertThat(CatalogRow.fromJson(roundTrip(broken.toJson()))).isEqualTo(broken);
-        assertThat(CatalogRow.fromJson(Json.obj().put("service", "orders"))).as("no table").isNull();
+        assertThat(CatalogRow.fromJson(Json.object().put("service", "orders"))).as("no table").isNull();
     }
 
     @Test
@@ -84,7 +86,7 @@ class RowRecordsTest {
     void aGaugePointWithoutMinOrMaxExportsThemAsNullAndReadsThemBackAsNaN() {
         PointRow row = new PointRow(7, 1_000, 42.0, 0L, 0, Double.NaN, Double.NaN, null);
 
-        Json.JsonObject json = row.toJson();
+        JsonObject json = row.toJson();
 
         assertThat(json.get("min").isNull()).isTrue();
         assertThat(json.get("buckets").isNull()).isTrue();
@@ -97,7 +99,7 @@ class RowRecordsTest {
         MetricRow metric = new MetricRow("orders", "http.server.request.duration", "histogram", "s",
                 "Duration", false, "CUMULATIVE");
         assertThat(MetricRow.fromJson(roundTrip(metric.toJson()))).isEqualTo(metric);
-        assertThat(MetricRow.fromJson(Json.obj().put("service", "orders").put("name", "m")).type())
+        assertThat(MetricRow.fromJson(Json.object().put("service", "orders").put("name", "m")).type())
                 .as("a missing type is a gauge").isEqualTo("gauge");
 
         SeriesRow series = new SeriesRow(7, "orders", "jvm.memory.used", "{\"pool\":\"heap\",\"area\":\"x\"}");
@@ -113,7 +115,7 @@ class RowRecordsTest {
         assertThat(service.pid()).isEqualTo(4242L);
         assertThat(ServiceRow.fromJson(roundTrip(service.toJson()))).isEqualTo(service);
 
-        ServiceRow partial = ServiceRow.fromJson(Json.obj().put("name", "orders").put("firstSeen", 5));
+        ServiceRow partial = ServiceRow.fromJson(Json.object().put("name", "orders").put("firstSeen", 5));
         assertThat(partial).isEqualTo(new ServiceRow("orders", null, null, 5, 5, AttrJson.EMPTY_OBJECT));
     }
 

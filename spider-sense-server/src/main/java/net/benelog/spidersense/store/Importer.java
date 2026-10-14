@@ -11,7 +11,10 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonValue;
+import net.benelog.silkjson.JsonObject;
+import net.benelog.silkjson.JsonArray;
 import org.h2.jdbc.JdbcException;
 import org.jspecify.annotations.Nullable;
 
@@ -88,9 +91,9 @@ public final class Importer {
      *
      * @throws WrongSchema naming both versions, which is what the {@code 400} says
      */
-    public static void checkSchema(Json.JsonObject document) {
-        Json.JsonObject header = document == null ? null : document.optObject("spiderSense");
-        long schema = header == null ? -1 : header.optLong("schema", -1);
+    public static void checkSchema(JsonObject document) {
+        JsonObject header = document == null ? null : document.getObjectOrNull("spiderSense");
+        long schema = header == null ? -1 : header.getLong("schema", -1);
         if (schema != Schema.VERSION) {
             throw new WrongSchema("the document is schema version "
                     + (schema < 0 ? "unknown" : String.valueOf(schema))
@@ -102,7 +105,7 @@ public final class Importer {
      * Writes the whole document in one transaction: either the session arrives or
      * nothing of it does, because half an imported trace is worse than none.
      */
-    public Result importDocument(Json.JsonObject document) {
+    public Result importDocument(JsonObject document) {
         checkSchema(document);
         try (Connection connection = sql.connection()) {
             return Sql.inTransaction(connection, c -> write(c, document));
@@ -142,8 +145,8 @@ public final class Importer {
      * service would wait out H2's lock timeout and be lost. So the rows only this
      * import touches come first, and the shared ones last, just before the commit.
      */
-    private Result write(Connection connection, Json.JsonObject document) throws SQLException {
-        Json.JsonArray spans = array(document, "spans");
+    private Result write(Connection connection, JsonObject document) throws SQLException {
+        JsonArray spans = array(document, "spans");
         Set<String> present = alreadyStored(connection, traceIds(spans));
 
         Imported imported = insertSpans(connection, spans, present);
@@ -170,9 +173,9 @@ public final class Importer {
     private record Imported(long count, Set<String> traces, long from, long to) {
     }
 
-    private static Set<String> traceIds(Json.JsonArray spans) {
+    private static Set<String> traceIds(JsonArray spans) {
         Set<String> ids = new LinkedHashSet<>();
-        for (Json.JsonValue value : spans) {
+        for (JsonValue value : spans) {
             String id = RowJson.string(value.asObject(), "traceId");
             if (id != null) {
                 ids.add(id);
@@ -200,14 +203,14 @@ public final class Importer {
         return present;
     }
 
-    private Imported insertSpans(Connection connection, Json.JsonArray spans, Set<String> skip)
+    private Imported insertSpans(Connection connection, JsonArray spans, Set<String> skip)
             throws SQLException {
         Set<String> touched = new LinkedHashSet<>();
         long count = 0;
         long from = Long.MAX_VALUE;
         long to = Long.MIN_VALUE;
         try (PreparedStatement statement = connection.prepareStatement(SpanRow.MERGE)) {
-            for (Json.JsonValue value : spans) {
+            for (JsonValue value : spans) {
                 SpanRow span = SpanRow.fromJson(value.asObject());
                 String traceId = span.traceId();
                 if (traceId == null || skip.contains(traceId)) {
@@ -237,13 +240,13 @@ public final class Importer {
      * two identical lines in the file are two lines, and a second import of it
      * finds both and writes neither.
      */
-    private static long insertLogs(Connection connection, Json.JsonArray logs, Set<String> skip)
+    private static long insertLogs(Connection connection, JsonArray logs, Set<String> skip)
             throws SQLException {
         long count = 0;
         try (PreparedStatement statement = connection.prepareStatement(LogRow.INSERT);
                 PreparedStatement same = connection.prepareStatement(LogRow.SAME_LINE)) {
             StoredDuplicates stored = new StoredDuplicates(same);
-            for (Json.JsonValue value : logs) {
+            for (JsonValue value : logs) {
                 LogRow log = LogRow.fromJson(value.asObject());
                 String traceId = log.traceId();
                 if ((traceId != null && skip.contains(traceId)) || stored.takeOne(log.sameLine())) {
@@ -268,13 +271,13 @@ public final class Importer {
      * file's own copies of it go in once. A tingle without a span has no key, and is
      * recognised by its own columns, as a log line is.
      */
-    private static long insertTingles(Connection connection, Json.JsonArray tingles, Set<String> skip)
+    private static long insertTingles(Connection connection, JsonArray tingles, Set<String> skip)
             throws SQLException {
         int pending = 0;
         try (PreparedStatement statement = connection.prepareStatement(TingleRow.INSERT);
                 PreparedStatement same = connection.prepareStatement(TingleRow.SAME_TINGLE)) {
             StoredDuplicates stored = new StoredDuplicates(same);
-            for (Json.JsonValue value : tingles) {
+            for (JsonValue value : tingles) {
                 TingleRow tingle = TingleRow.fromJson(value.asObject());
                 String traceId = tingle.traceId();
                 if ((traceId != null && skip.contains(traceId))
@@ -348,9 +351,9 @@ public final class Importer {
      * <p>A name {@code POST /api/marks} refuses, one a selector reads as something
      * else, refuses the document: stored, the mark would be listed and never usable.
      */
-    private static long insertMarks(Connection connection, Json.JsonArray marks) throws SQLException {
+    private static long insertMarks(Connection connection, JsonArray marks) throws SQLException {
         long count = 0;
-        for (Json.JsonValue value : marks) {
+        for (JsonValue value : marks) {
             MarkRow mark = MarkRow.fromJson(value.asObject());
             String name = mark.name();
             if (name == null || Marks.START.equals(name)) {
@@ -390,11 +393,11 @@ public final class Importer {
      * looked up again after a restart does (storage.adoc), so a second import of the
      * same file leaves the one row it wrote.
      */
-    private static long mergeCatalog(Connection connection, Json.JsonArray tables)
+    private static long mergeCatalog(Connection connection, JsonArray tables)
             throws SQLException {
         long count = 0;
         try (PreparedStatement statement = connection.prepareStatement(CatalogRow.MERGE)) {
-            for (Json.JsonValue value : tables) {
+            for (JsonValue value : tables) {
                 CatalogRow table = CatalogRow.fromJson(value.asObject());
                 if (table == null) {
                     continue;
@@ -417,9 +420,9 @@ public final class Importer {
      * so importing an older session into a live database widens the row rather
      * than rewriting it. No {@code start} mark: an import is not a restart.
      */
-    private static void mergeServices(Connection connection, Json.JsonArray services)
+    private static void mergeServices(Connection connection, JsonArray services)
             throws SQLException {
-        for (Json.JsonValue value : services) {
+        for (JsonValue value : services) {
             ServiceRow service = ServiceRow.fromJson(value.asObject());
             if (service == null) {
                 continue;
@@ -467,9 +470,9 @@ public final class Importer {
     // --- metrics -------------------------------------------------------------------
 
     /** Metadata is a description of an instrument, so the stored one wins if there is one. */
-    private static void insertMissingMetricMetadata(Connection connection, Json.JsonArray metrics)
+    private static void insertMissingMetricMetadata(Connection connection, JsonArray metrics)
             throws SQLException {
-        for (Json.JsonValue value : metrics) {
+        for (JsonValue value : metrics) {
             MetricRow metric = MetricRow.fromJson(value.asObject());
             if (metric == null) {
                 continue;
@@ -495,10 +498,10 @@ public final class Importer {
      * The file's series ids are its own; here they are whatever
      * {@code (service, name, attributes)} already is, or a new row.
      */
-    private static Map<Long, Long> mapSeries(Connection connection, Json.JsonArray series)
+    private static Map<Long, Long> mapSeries(Connection connection, JsonArray series)
             throws SQLException {
         Map<Long, Long> ids = new HashMap<>();
-        for (Json.JsonValue value : series) {
+        for (JsonValue value : series) {
             SeriesRow row = SeriesRow.fromJson(value.asObject());
             if (row == null) {
                 continue;
@@ -509,11 +512,11 @@ public final class Importer {
         return ids;
     }
 
-    private static long mergePoints(Connection connection, Json.JsonArray points,
+    private static long mergePoints(Connection connection, JsonArray points,
             Map<Long, Long> series) throws SQLException {
         long count = 0;
         try (PreparedStatement statement = connection.prepareStatement(PointRow.MERGE)) {
-            for (Json.JsonValue value : points) {
+            for (JsonValue value : points) {
                 PointRow point = PointRow.fromJson(value.asObject());
                 Long seriesId = series.get(point.seriesId());
                 if (seriesId == null) {
@@ -532,23 +535,23 @@ public final class Importer {
 
     // --- reading the document -------------------------------------------------------
 
-    private static Json.JsonArray array(Json.JsonObject document, String key) {
-        Json.JsonArray array = document.optArray(key);
-        return array == null ? Json.arr() : array;
+    private static JsonArray array(JsonObject document, String key) {
+        JsonArray array = document.getArrayOrNull(key);
+        return array == null ? Json.array() : array;
     }
 
-    private static long windowFrom(Json.JsonObject document) {
-        Json.JsonObject window = window(document);
-        return window == null ? 0 : window.optLong("from", 0);
+    private static long windowFrom(JsonObject document) {
+        JsonObject window = window(document);
+        return window == null ? 0 : window.getLong("from", 0);
     }
 
-    private static long windowTo(Json.JsonObject document) {
-        Json.JsonObject window = window(document);
-        return window == null ? 0 : window.optLong("to", 0);
+    private static long windowTo(JsonObject document) {
+        JsonObject window = window(document);
+        return window == null ? 0 : window.getLong("to", 0);
     }
 
-    private static Json.@Nullable JsonObject window(Json.JsonObject document) {
-        Json.JsonObject header = document.optObject("spiderSense");
-        return header == null ? null : header.optObject("window");
+    private static @Nullable JsonObject window(JsonObject document) {
+        JsonObject header = document.getObjectOrNull("spiderSense");
+        return header == null ? null : header.getObjectOrNull("window");
     }
 }

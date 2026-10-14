@@ -12,7 +12,8 @@ import net.benelog.spidersilk.HttpException;
 import net.benelog.spidersilk.HttpStatus;
 import net.benelog.spidersilk.WebRequest;
 import net.benelog.spidersilk.WebResponse;
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonObject;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -68,7 +69,7 @@ public final class TrafficApi {
         // The service narrows the totals, the series and the tingles; the services stay
         // whole, so the cards still offer every other one (api.adoc#overview).
         String service = Params.service(req);
-        return WebResponse.json(Json.obj()
+        return WebResponse.json(Json.object()
                 .put("window", Codecs.window(window))
                 .put("totals", Codecs.totals(queries.totals(window, service)))
                 .put("services", Codecs.serviceSummaries(queries.services(window)))
@@ -85,9 +86,9 @@ public final class TrafficApi {
         Window window = params.window(req);
         Stats.ServiceSummary summary = Params.found(queries.service(name, window),
                 "No such service: " + name);
-        Json.JsonObject resource = Json.obj();
+        JsonObject resource = Json.object();
         queries.resource(name).forEach(resource::put);
-        return WebResponse.json(Json.obj()
+        return WebResponse.json(Json.object()
                 .put("service", Codecs.serviceSummary(summary))
                 .put("resource", resource)
                 .put("window", Codecs.window(window))
@@ -119,10 +120,10 @@ public final class TrafficApi {
         }
         // The same breakdown a slow-endpoint finding carries, over the same traces
         // (findings.adoc#time), so the page and the finding agree.
-        Json.JsonObject breakdown = Json.obj();
+        JsonObject breakdown = Json.object();
         queries.timeSplit(window, endpoint.service(), sample).breakdown()
                 .forEach(breakdown::put);
-        return WebResponse.json(Json.obj()
+        return WebResponse.json(Json.object()
                 .put("endpoint", Codecs.endpoint(endpoint))
                 .put("series", Codecs.serviceSeries(queries.buckets(window, null, endpointId)))
                 .put("queries", Codecs.queries(calledFrom(window, endpoint)))
@@ -212,7 +213,7 @@ public final class TrafficApi {
         if (truncated) {
             points = points.subList(0, limit);
         }
-        return WebResponse.json(Json.obj()
+        return WebResponse.json(Json.object()
                 .put("window", Codecs.window(window))
                 .put("truncated", truncated)
                 .put("points", Codecs.scatter(points)));
@@ -239,11 +240,11 @@ public final class TrafficApi {
         Stats.QueryStats query = Params.found(reports.queryStats(window, queryId),
                 "No such query in this window: " + queryId);
         Stats.Buckets buckets = queries.queryBuckets(window, queryId);
-        return WebResponse.json(Json.obj()
+        return WebResponse.json(Json.object()
                 .put("query", Codecs.query(query))
                 // Where the statement is issued, as a slow-query finding on it would say (pages.adoc#query).
                 .put("code", Codecs.strings(reports.queryCode(window, queryId)))
-                .put("series", Json.obj()
+                .put("series", Json.object()
                         .put("t", Codecs.longs(buckets.t()))
                         .put("calls", Codecs.longs(buckets.requests()))
                         .put("p95Ms", Codecs.doubles(buckets.p95Ms(), buckets.requests())))
@@ -272,11 +273,11 @@ public final class TrafficApi {
         List<String> code = sample == null ? List.of()
                 : reports.codeFrames().ofStacktrace(sample.stacktrace());
         ExceptionChain chain = ExceptionChain.parse(sample == null ? null : sample.stacktrace());
-        return WebResponse.json(Json.obj()
+        return WebResponse.json(Json.object()
                 .put("error", Codecs.errorGroup(group))
                 .put("code", Codecs.strings(code))
                 .put("chain", Codecs.chain(chain))
-                .put("series", Json.obj()
+                .put("series", Json.object()
                         .put("t", Codecs.longs(buckets.t()))
                         .put("count", Codecs.longs(buckets.requests())))
                 .put("traces", Codecs.traceSummaries(queries.tracesContaining(window,

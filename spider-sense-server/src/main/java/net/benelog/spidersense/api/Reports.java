@@ -32,7 +32,9 @@ import net.benelog.spidersense.store.ServiceRegistry;
 import net.benelog.spidersense.store.Sql;
 import net.benelog.spidersense.store.Store;
 import net.benelog.spidersense.store.Tingles;
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonValue;
+import net.benelog.silkjson.JsonObject;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -52,7 +54,7 @@ import org.jspecify.annotations.Nullable;
 public final class Reports implements AutoCloseable {
 
     /** One answer, in both renderings. */
-    public record Report(Json.JsonValue json, String text) {
+    public record Report(JsonValue json, String text) {
     }
 
     /**
@@ -256,7 +258,7 @@ public final class Reports implements AutoCloseable {
      * or, when the service filter names no service at all, with that said in its place, since
      * data did arrive, under other names (cli.adoc#tables).
      */
-    private Report listed(Json.JsonValue json, @Nullable String service,
+    private Report listed(JsonValue json, @Nullable String service,
             Function<@Nullable String, String> text) {
         String unknown = unknownService(service);
         return unknown == null ? new Report(json, text.apply(otlpEndpoint()))
@@ -329,7 +331,7 @@ public final class Reports implements AutoCloseable {
         Findings.Answer answer = findings.answer(window, service, ask.limit(), ask.hideAcked());
         List<Findings.Finding> found = answer.findings();
         long requests = requests(window, service);
-        Json.JsonObject json = Json.obj()
+        JsonObject json = Json.object()
                 .put("window", Codecs.window(window))
                 .put("requests", requests)
                 .put("acked", answer.acked())
@@ -366,7 +368,7 @@ public final class Reports implements AutoCloseable {
             if (finding.id().equals(id)) {
                 long count = requests.getAsLong();
                 int rank = i + 1;
-                Json.JsonObject json = Json.obj()
+                JsonObject json = Json.object()
                         .put("window", Codecs.window(window))
                         .put("requests", count)
                         .put("rank", rank)
@@ -379,7 +381,7 @@ public final class Reports implements AutoCloseable {
 
     public Report marks(int limit) {
         List<Marks.Mark> list = marks.list(limit);
-        return new Report(Json.obj().put("marks", Codecs.marks(list)), Text.marks(list));
+        return new Report(Json.object().put("marks", Codecs.marks(list)), Text.marks(list));
     }
 
     /** Records a mark, which the CLI must be able to do with no server running. */
@@ -446,7 +448,7 @@ public final class Reports implements AutoCloseable {
      * than write one of its own, or the two paths would drift.
      */
     public static Report unack(String findingId) {
-        return new Report(Json.obj().put("findingId", findingId), Text.unack(findingId));
+        return new Report(Json.object().put("findingId", findingId), Text.unack(findingId));
     }
 
     /**
@@ -465,12 +467,12 @@ public final class Reports implements AutoCloseable {
 
     /** What a withdrawn resolution reads as; static for the reason {@link #unack} is. */
     public static Report unresolve(String findingId) {
-        return new Report(Json.obj().put("findingId", findingId), Text.unresolve(findingId));
+        return new Report(Json.object().put("findingId", findingId), Text.unresolve(findingId));
     }
 
     public Report acks(int limit) {
         List<Acks.Ack> list = acks.all(limit);
-        return new Report(Json.obj().put("acks", Codecs.acks(list)), Text.acks(list));
+        return new Report(Json.object().put("acks", Codecs.acks(list)), Text.acks(list));
     }
 
     /**
@@ -583,7 +585,7 @@ public final class Reports implements AutoCloseable {
     public Report traces(Queries.TraceFilter filter, boolean full) {
         List<Stats.TraceSummary> traces = queries.traces(filter);
         long total = queries.traceTotal(filter);
-        Json.JsonObject json = Json.obj()
+        JsonObject json = Json.object()
                 .put("traces", Codecs.traceSummaries(traces))
                 .put("total", total)
                 .put("window", Codecs.window(filter.window()));
@@ -632,7 +634,7 @@ public final class Reports implements AutoCloseable {
     public Report endpoints(Window window, @Nullable String service) {
         List<Stats.EndpointStats> endpoints = queries.endpoints(window, service, null);
         long requests = requests(window, service);
-        return listed(Json.obj().put("endpoints", Codecs.endpoints(endpoints)), service,
+        return listed(Json.object().put("endpoints", Codecs.endpoints(endpoints)), service,
                 sendTo -> Text.endpoints(window, service, endpoints, requests, sendTo));
     }
 
@@ -640,7 +642,7 @@ public final class Reports implements AutoCloseable {
             boolean full) {
         List<Stats.QueryStats> list = queries.queries(window, service, sort, limit, null);
         long requests = requests(window, service);
-        return listed(Json.obj().put("queries", Codecs.queries(list)), service,
+        return listed(Json.object().put("queries", Codecs.queries(list)), service,
                 sendTo -> Text.queries(window, service, list, requests, full, sendTo));
     }
 
@@ -655,7 +657,7 @@ public final class Reports implements AutoCloseable {
         List<String> ids = new ArrayList<>(list.size());
         list.forEach(group -> ids.add(group.errorId()));
         Map<String, long[]> series = queries.errorSeries(window, ids);
-        return listed(Json.obj().put("errors", Codecs.errorGroups(list, series)), service,
+        return listed(Json.object().put("errors", Codecs.errorGroups(list, series)), service,
                 sendTo -> Text.errors(window, service, list, requests, full, frames, sendTo));
     }
 
@@ -709,7 +711,7 @@ public final class Reports implements AutoCloseable {
     public Report logs(Queries.LogFilter filter) {
         List<net.benelog.spidersense.store.LogRecord> logs = queries.logs(filter);
         long total = queries.logTotal(filter);
-        Json.JsonObject json = Json.obj()
+        JsonObject json = Json.object()
                 .put("logs", Codecs.logs(logs))
                 .put("total", total);
         // Only an empty answer says the count, and only a window with no request says to send some.
@@ -759,7 +761,7 @@ public final class Reports implements AutoCloseable {
      *
      * @throws Importer.WrongSchema when the document is of another schema version
      */
-    public Importer.Result importDocument(Json.JsonObject document) {
+    public Importer.Result importDocument(JsonObject document) {
         return importer().importDocument(document);
     }
 
@@ -773,7 +775,7 @@ public final class Reports implements AutoCloseable {
     }
 
     public Report imported(Importer.Result result) {
-        Json.JsonObject json = Json.obj()
+        JsonObject json = Json.object()
                 .put("spans", result.spans())
                 .put("logs", result.logs())
                 .put("metricPoints", result.metricPoints())
@@ -788,7 +790,7 @@ public final class Reports implements AutoCloseable {
     public Report services(Window window) {
         List<Stats.ServiceSummary> summaries = queries.services(window);
         long requests = requests(window, null);
-        return new Report(Json.obj().put("services", Codecs.serviceSummaries(summaries)),
+        return new Report(Json.object().put("services", Codecs.serviceSummaries(summaries)),
                 Text.services(window, summaries, requests, otlpEndpoint()));
     }
 

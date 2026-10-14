@@ -15,7 +15,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonObject;
+import net.benelog.silkjson.JsonArray;
 
 /**
  * The importer of cli.adoc#export-import, against a live writer sharing its
@@ -62,13 +64,13 @@ class ImporterTest {
     }
 
     /** A document of yesterday's session of {@code service}: one span, and the service row. */
-    private static Json.JsonObject document(String service) {
+    private static JsonObject document(String service) {
         long yesterday = AT - 86_400_000L;
-        return Json.obj()
-                .put("spiderSense", Json.obj().put("schema", Schema.VERSION))
-                .put("services", Json.arr().add(Json.obj().put("name", service)
+        return Json.object()
+                .put("spiderSense", Json.object().put("schema", Schema.VERSION))
+                .put("services", Json.array().add(Json.object().put("name", service)
                         .put("firstSeen", yesterday).put("lastSeen", yesterday + 60_000)))
-                .put("spans", Json.arr().add(Json.obj()
+                .put("spans", Json.array().add(Json.object()
                         .put("traceId", TRACE).put("spanId", "%016x".formatted(1)).put("service", service)
                         .put("name", "GET /orders").put("kind", "SERVER").put("startMs", yesterday)
                         .put("startNs", yesterday * 1_000_000L).put("durationNs", 5_000_000L)
@@ -130,12 +132,12 @@ class ImporterTest {
         writer.submit(batch);
         writer.flushNow();
         database.sql().update("DELETE FROM metric_point", List.of());
-        Json.JsonObject document = document("orders")
-                .put("metrics", Json.arr().add(Json.obj().put("service", "orders").put("name", "jvm.memory.used")
+        JsonObject document = document("orders")
+                .put("metrics", Json.array().add(Json.object().put("service", "orders").put("name", "jvm.memory.used")
                         .put("type", "gauge")))
-                .put("metricSeries", Json.arr().add(Json.obj().put("id", 7).put("service", "orders")
-                        .put("name", "jvm.memory.used").put("attributes", Json.obj())))
-                .put("metricPoints", Json.arr().add(Json.obj().put("seriesId", 7).put("atMs", AT - 86_400_000L)
+                .put("metricSeries", Json.array().add(Json.object().put("id", 7).put("service", "orders")
+                        .put("name", "jvm.memory.used").put("attributes", Json.object())))
+                .put("metricPoints", Json.array().add(Json.object().put("seriesId", 7).put("atMs", AT - 86_400_000L)
                         .put("value", 2.0)));
 
         try (Connection other = database.sql().connection()) {
@@ -178,9 +180,9 @@ class ImporterTest {
                 List.of(), SeriesRow::read);
         assertThat(stored).isNotNull();
 
-        Json.JsonObject document = document("orders")
-                .put("metricSeries", Json.arr().add(Json.parse(stored.toJson().toJson())))
-                .put("metricPoints", Json.arr().add(Json.obj().put("seriesId", stored.id())
+        JsonObject document = document("orders")
+                .put("metricSeries", Json.array().add(Json.parse(stored.toJson().toJson())))
+                .put("metricPoints", Json.array().add(Json.object().put("seriesId", stored.id())
                         .put("atMs", AT + 1_000).put("value", 2048.0)));
         importer.importDocument(document);
 
@@ -194,20 +196,20 @@ class ImporterTest {
      */
     @Test
     void anImportedPointWhoseBucketsDoNotFitIsStoredWithoutThem() {
-        Json.JsonArray bounds = Json.arr();
-        Json.JsonArray counts = Json.arr();
+        JsonArray bounds = Json.array();
+        JsonArray counts = Json.array();
         for (int i = 0; i < 2_000; i++) {
             bounds.add(i * 1.5);
             counts.add(i);
         }
-        Json.JsonObject document = document("orders")
-                .put("metrics", Json.arr().add(Json.obj().put("service", "orders")
+        JsonObject document = document("orders")
+                .put("metrics", Json.array().add(Json.object().put("service", "orders")
                         .put("name", "http.server.request.duration").put("type", "histogram")))
-                .put("metricSeries", Json.arr().add(Json.obj().put("id", 7).put("service", "orders")
-                        .put("name", "http.server.request.duration").put("attributes", Json.obj())))
-                .put("metricPoints", Json.arr().add(Json.obj().put("seriesId", 7).put("atMs", AT)
+                .put("metricSeries", Json.array().add(Json.object().put("id", 7).put("service", "orders")
+                        .put("name", "http.server.request.duration").put("attributes", Json.object())))
+                .put("metricPoints", Json.array().add(Json.object().put("seriesId", 7).put("atMs", AT)
                         .put("count", 3).put("sum", 0.3)
-                        .put("buckets", Json.obj().put("bounds", bounds).put("counts", counts))));
+                        .put("buckets", Json.object().put("bounds", bounds).put("counts", counts))));
 
         assertThat(importer.importDocument(document).metricPoints()).isEqualTo(1);
 

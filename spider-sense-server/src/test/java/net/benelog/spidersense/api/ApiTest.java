@@ -19,7 +19,10 @@ import net.benelog.spidersense.server.Config;
 import net.benelog.spidersense.server.SpiderSenseServer;
 import net.benelog.spidersense.server.Version;
 import net.benelog.spidersense.store.Ids;
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
+import net.benelog.silkjson.JsonValue;
+import net.benelog.silkjson.JsonObject;
+import net.benelog.silkjson.JsonArray;
 import net.benelog.spidersilk.test.TestClient;
 import net.benelog.spidersilk.test.WebTest;
 
@@ -69,31 +72,31 @@ class ApiTest {
                 .POST(HttpRequest.BodyPublishers.ofByteArray(Otlp.gzip(body))));
     }
 
-    private static Json.JsonObject json(HttpResponse<String> response) {
+    private static JsonObject json(HttpResponse<String> response) {
         assertThat(response.statusCode()).isEqualTo(200);
         return Json.parse(response.body()).asObject();
     }
 
     /** A JSON array of counts, as a list one assertion can compare. */
-    private static List<Long> counts(Json.JsonArray array) {
+    private static List<Long> counts(JsonArray array) {
         List<Long> values = new ArrayList<>();
-        for (Json.JsonValue value : array) {
+        for (JsonValue value : array) {
             values.add(value.asLong());
         }
         return values;
     }
 
-    private static List<String> strings(Json.JsonArray array) {
+    private static List<String> strings(JsonArray array) {
         List<String> values = new ArrayList<>();
-        for (Json.JsonValue value : array) {
+        for (JsonValue value : array) {
             values.add(value.asString());
         }
         return values;
     }
 
     /** The node of a service map with this id, or null. */
-    private static Json.JsonObject node(Json.JsonObject map, String id) {
-        for (Json.JsonValue value : map.getArray("nodes")) {
+    private static JsonObject node(JsonObject map, String id) {
+        for (JsonValue value : map.getArray("nodes")) {
             if (value.asObject().getString("id").equals(id)) {
                 return value.asObject();
             }
@@ -202,12 +205,12 @@ class ApiTest {
         serve((client, assembly) -> {
             postProtobuf(client, "/v1/traces", sampleTraces());
 
-            Json.JsonObject traces = json(client.get("/api/traces" + windowQuery()));
+            JsonObject traces = json(client.get("/api/traces" + windowQuery()));
             assertThat(traces.getLong("total")).isEqualTo(2);
             assertThat(traces.getObject("window").has("bucketMs")).isTrue();
 
-            Json.JsonObject summary = null;
-            for (Json.JsonValue value : traces.getArray("traces")) {
+            JsonObject summary = null;
+            for (JsonValue value : traces.getArray("traces")) {
                 if (value.asObject().getString("traceId").equals(TRACE)) {
                     summary = value.asObject();
                 }
@@ -222,16 +225,16 @@ class ApiTest {
             assertThat(summary.getLong("httpStatus")).isEqualTo(200);
             assertThat(summary.getBoolean("error")).isFalse();
 
-            Json.JsonObject detail = json(client.get("/api/traces/" + TRACE));
+            JsonObject detail = json(client.get("/api/traces/" + TRACE));
             assertThat(detail.getString("traceId")).isEqualTo(TRACE);
             assertThat(detail.getArray("spans")).hasSize(2);
-            Json.JsonObject root = detail.getArray("spans").get(0).asObject();
+            JsonObject root = detail.getArray("spans").get(0).asObject();
             assertThat(root.getString("spanId")).isEqualTo(ROOT);
             assertThat(root.get("parentSpanId").isNull()).isTrue();
             assertThat(root.getString("category")).isEqualTo("http");
             assertThat(root.getString("summary")).isEqualTo("GET /orders/{id} → 200");
             assertThat(root.getObject("attributes").getString("http.route")).isEqualTo("/orders/{id}");
-            Json.JsonObject child = detail.getArray("spans").get(1).asObject();
+            JsonObject child = detail.getArray("spans").get(1).asObject();
             assertThat(child.getString("parentSpanId")).isEqualTo(ROOT);
             assertThat(child.getString("category")).isEqualTo("db");
             assertThat(child.getBoolean("slow")).isTrue();
@@ -266,8 +269,8 @@ class ApiTest {
         serve((client, assembly) -> {
             postProtobuf(client, "/v1/traces", sampleTraces());
 
-            Json.JsonObject services = json(client.get("/api/services" + windowQuery()));
-            Json.JsonObject service = services.getArray("services").get(0).asObject();
+            JsonObject services = json(client.get("/api/services" + windowQuery()));
+            JsonObject service = services.getArray("services").get(0).asObject();
             assertThat(service.getString("name")).isEqualTo("spring-orders");
             assertThat(service.getString("language")).isEqualTo("java");
             assertThat(service.getBoolean("embedded")).isFalse();
@@ -278,13 +281,13 @@ class ApiTest {
             assertThat(service.getDouble("apdex")).isEqualTo(0.5);
             assertThat(counts(service.getArray("histogram"))).containsExactly(0L, 1L, 0L, 0L, 1L);
 
-            Json.JsonObject detail = json(client.get("/api/services/spring-orders" + windowQuery()));
+            JsonObject detail = json(client.get("/api/services/spring-orders" + windowQuery()));
             assertThat(detail.getObject("resource").getString("service.name")).isEqualTo("spring-orders");
             assertThat(detail.getObject("series").getArray("p95Ms").size())
                     .isEqualTo(detail.getObject("series").getArray("t").size());
             assertThat(detail.getArray("endpoints")).hasSize(2);
-            Json.JsonObject ok = null;
-            for (Json.JsonValue value : detail.getArray("endpoints")) {
+            JsonObject ok = null;
+            for (JsonValue value : detail.getArray("endpoints")) {
                 if (value.asObject().getString("name").equals("GET /orders/{id}")) {
                     ok = value.asObject();
                 }
@@ -294,23 +297,23 @@ class ApiTest {
             assertThat(counts(ok.getArray("histogram"))).containsExactly(0L, 1L, 0L, 0L, 0L);
             assertThat(detail.getArray("queries")).hasSize(1);
             assertThat(detail.getArray("errors")).hasSize(1);
-            Json.JsonObject dependency = detail.getArray("dependencies").get(0).asObject();
+            JsonObject dependency = detail.getArray("dependencies").get(0).asObject();
             assertThat(dependency.getString("kind")).isEqualTo("db");
             assertThat(dependency.getString("target")).isEqualTo("h2:orders");
 
-            Json.JsonObject endpoints = json(client.get("/api/endpoints" + windowQuery()));
-            Json.JsonObject endpoint = endpoints.getArray("endpoints").get(0).asObject();
+            JsonObject endpoints = json(client.get("/api/endpoints" + windowQuery()));
+            JsonObject endpoint = endpoints.getArray("endpoints").get(0).asObject();
             assertThat(endpoint.getString("name")).isIn("GET /orders/{id}", "POST /orders/{id}/ship");
             assertThat(endpoint.getString("method")).isIn("GET", "POST");
             assertThat(endpoint.getObject("statusCodes").size()).isEqualTo(1);
-            Json.JsonObject endpointDetail =
+            JsonObject endpointDetail =
                     json(client.get("/api/endpoints/" + endpoint.getString("endpointId") + windowQuery()));
             assertThat(endpointDetail.getObject("endpoint").getString("endpointId"))
                     .isEqualTo(endpoint.getString("endpointId"));
             assertThat(endpointDetail.has("recent")).isTrue();
 
-            Json.JsonObject queries = json(client.get("/api/queries" + windowQuery()));
-            Json.JsonObject query = queries.getArray("queries").get(0).asObject();
+            JsonObject queries = json(client.get("/api/queries" + windowQuery()));
+            JsonObject query = queries.getArray("queries").get(0).asObject();
             assertThat(query.getString("statement")).isEqualTo("select * from orders where name like ?");
             assertThat(query.getString("system")).isEqualTo("h2");
             assertThat(query.getString("namespace")).isEqualTo("orders");
@@ -325,20 +328,20 @@ class ApiTest {
             assertThat(json(client.get("/api/queries/" + query.getString("queryId") + windowQuery()))
                     .getObject("series").has("calls")).isTrue();
 
-            Json.JsonObject errors = json(client.get("/api/errors" + windowQuery()));
-            Json.JsonObject error = errors.getArray("errors").get(0).asObject();
+            JsonObject errors = json(client.get("/api/errors" + windowQuery()));
+            JsonObject error = errors.getArray("errors").get(0).asObject();
             assertThat(error.getString("type")).isEqualTo("java.lang.IllegalStateException");
             assertThat(error.getString("message")).isEqualTo("Order ? is already shipped");
             assertThat(error.getLong("count")).isEqualTo(1);
             assertThat(error.getObject("sample").getString("stacktrace")).isEqualTo("at Orders.ship(..)");
-            Json.JsonObject errorDetail =
+            JsonObject errorDetail =
                     json(client.get("/api/errors/" + error.getString("errorId") + windowQuery()));
             assertThat(errorDetail.getObject("series").has("count")).isTrue();
-            Json.JsonObject place = errorDetail.getObject("error").getArray("endpoints").get(0).asObject();
+            JsonObject place = errorDetail.getObject("error").getArray("endpoints").get(0).asObject();
             assertThat(place.getString("name")).isEqualTo("POST /orders/{id}/ship");
             assertThat(place.getString("endpointId"))
                     .isEqualTo(Ids.endpointId("spring-orders", "POST /orders/{id}/ship"));
-            Json.JsonObject cause = errorDetail.getArray("chain").get(0).asObject();
+            JsonObject cause = errorDetail.getArray("chain").get(0).asObject();
             assertThat(cause.getString("type")).isEmpty();
             assertThat(cause.getArray("frames").get(0).asString()).isEqualTo("Orders.ship(..)");
         });
@@ -391,15 +394,15 @@ class ApiTest {
             }
 
             String endpointId = net.benelog.spidersense.store.Ids.endpointId("svc-a", "GET /same/{id}");
-            Json.JsonObject detail = json(client.get("/api/endpoints/" + endpointId + windowQuery()));
+            JsonObject detail = json(client.get("/api/endpoints/" + endpointId + windowQuery()));
 
             List<String> statements = new ArrayList<>();
-            for (Json.JsonValue query : detail.getArray("queries")) {
+            for (JsonValue query : detail.getArray("queries")) {
                 statements.add(query.asObject().getString("statement"));
             }
             assertThat(statements).containsExactly("select svc_a from t");
             List<String> types = new ArrayList<>();
-            for (Json.JsonValue error : detail.getArray("errors")) {
+            for (JsonValue error : detail.getArray("errors")) {
                 types.add(error.asObject().getString("type"));
             }
             assertThat(types).containsExactly("java.lang.AError");
@@ -411,7 +414,7 @@ class ApiTest {
         serve((client, assembly) -> {
             postProtobuf(client, "/v1/traces", sampleTraces());
 
-            Json.JsonObject overview = json(client.get("/api/overview" + windowQuery()));
+            JsonObject overview = json(client.get("/api/overview" + windowQuery()));
             assertThat(overview.getObject("totals").getLong("requests")).isEqualTo(2);
             assertThat(overview.getObject("totals").getLong("errors")).isEqualTo(1);
             assertThat(overview.getObject("totals").getDouble("errorRate")).isEqualTo(0.5);
@@ -421,41 +424,41 @@ class ApiTest {
                     .containsExactly(0L, 1L, 0L, 0L, 1L);
             assertThat(overview.getArray("services")).hasSize(1);
             assertThat(overview.getArray("tingles")).isNotEmpty();
-            Json.JsonObject tingle = overview.getArray("tingles").get(0).asObject();
+            JsonObject tingle = overview.getArray("tingles").get(0).asObject();
             assertThat(tingle.getString("kind")).isIn("slow-request", "slow-query", "error");
-            Json.JsonObject series = overview.getObject("series");
+            JsonObject series = overview.getObject("series");
             assertThat(series.getArray("requests").size()).isEqualTo(series.getArray("t").size());
             assertThat(series.getArray("p95Ms").size()).isEqualTo(series.getArray("t").size());
-            Json.JsonArray seriesHistogram = series.getArray("histogram");
+            JsonArray seriesHistogram = series.getArray("histogram");
             assertThat(seriesHistogram).hasSize(4);
-            for (Json.JsonValue bucket : seriesHistogram) {
+            for (JsonValue bucket : seriesHistogram) {
                 assertThat(bucket.asArray().size()).isEqualTo(series.getArray("t").size());
             }
 
             // A service narrows the totals, the series and the tingles; the services stay whole.
-            Json.JsonObject one = json(client.get("/api/overview" + windowQuery() + "&service=spring-orders"));
+            JsonObject one = json(client.get("/api/overview" + windowQuery() + "&service=spring-orders"));
             assertThat(one.getObject("totals").getLong("requests")).isEqualTo(2);
             assertThat(one.getArray("tingles")).hasSameSizeAs(overview.getArray("tingles"));
-            Json.JsonObject other = json(client.get("/api/overview" + windowQuery() + "&service=nope"));
+            JsonObject other = json(client.get("/api/overview" + windowQuery() + "&service=nope"));
             assertThat(other.getObject("totals").getLong("requests")).isZero();
             assertThat(other.getArray("tingles")).isEmpty();
             assertThat(counts(other.getObject("series").getArray("requests"))).containsOnly(0L);
             assertThat(other.getArray("services")).hasSize(1);
 
-            Json.JsonObject scatter = json(client.get("/api/scatter" + windowQuery()));
+            JsonObject scatter = json(client.get("/api/scatter" + windowQuery()));
             assertThat(scatter.getBoolean("truncated")).isFalse();
-            Json.JsonArray points = scatter.getArray("points");
+            JsonArray points = scatter.getArray("points");
             assertThat(points).hasSize(2);
-            Json.JsonArray point = points.get(0).asArray();
+            JsonArray point = points.get(0).asArray();
             assertThat(point.size()).isEqualTo(6);
             assertThat(point.get(2).asString()).isEqualTo("spring-orders");
             assertThat(point.get(3).asString()).isIn("GET /orders/{id}", "POST /orders/{id}/ship");
 
             // Exactly as many points as the limit is a full list, not a cut one.
-            Json.JsonObject full = json(client.get("/api/scatter" + windowQuery() + "&limit=2"));
+            JsonObject full = json(client.get("/api/scatter" + windowQuery() + "&limit=2"));
             assertThat(full.getBoolean("truncated")).isFalse();
             assertThat(full.getArray("points")).hasSize(2);
-            Json.JsonObject cut = json(client.get("/api/scatter" + windowQuery() + "&limit=1"));
+            JsonObject cut = json(client.get("/api/scatter" + windowQuery() + "&limit=1"));
             assertThat(cut.getBoolean("truncated")).isTrue();
             assertThat(cut.getArray("points")).hasSize(1);
         });
@@ -473,7 +476,7 @@ class ApiTest {
                 assertThat(Json.parse(response.body()).asObject().getString("error")).as(window)
                         .isNotBlank();
             }
-            Json.JsonObject everything = json(client.get("/api/overview?from=0&to=253402300799999"));
+            JsonObject everything = json(client.get("/api/overview?from=0&to=253402300799999"));
             assertThat(everything.getObject("series").getArray("t").size())
                     .isBetween(1, 75);
             assertThat(client.get("/api/services/spring-orders?from=0&to=253402300799999").statusCode())
@@ -514,25 +517,25 @@ class ApiTest {
                     Otlp.resourceSpans(Otlp.service("spring-orders"), root, outbound, query),
                     Otlp.resourceSpans(Otlp.service("silk-bookstore"), served)).toByteArray());
 
-            Json.JsonObject map = json(client.get("/api/map" + windowQuery()));
+            JsonObject map = json(client.get("/api/map" + windowQuery()));
             assertThat(map.getObject("window").has("bucketMs")).isTrue();
             assertThat(map.getArray("nodes")).hasSize(4);
             assertThat(node(map, "user").getString("name")).isEqualTo("Clients");
-            Json.JsonObject orders = node(map, "svc:spring-orders");
+            JsonObject orders = node(map, "svc:spring-orders");
             assertThat(orders.getString("kind")).isEqualTo("service");
             assertThat(orders.getLong("requests")).isEqualTo(1);
             assertThat(orders.getDouble("apdex")).isEqualTo(1.0);
             assertThat(counts(orders.getArray("histogram"))).containsExactly(1L, 0L, 0L, 0L, 0L);
             assertThat(orders.getBoolean("hasJvm")).isFalse();
             assertThat(node(map, "svc:silk-bookstore")).isNotNull();
-            Json.JsonObject database = node(map, "db:h2:orders");
+            JsonObject database = node(map, "db:h2:orders");
             assertThat(database.getString("name")).isEqualTo("h2:orders");
             assertThat(database.getLong("calls")).isEqualTo(1);
             assertThat(database.getDouble("avgMs")).isEqualTo(10.0);
             assertThat(node(map, "http:localhost:8081")).isNull();
 
             List<String> edges = new ArrayList<>();
-            for (Json.JsonValue value : map.getArray("edges")) {
+            for (JsonValue value : map.getArray("edges")) {
                 edges.add(value.asObject().getString("from") + " -> "
                         + value.asObject().getString("to"));
             }
@@ -558,10 +561,10 @@ class ApiTest {
                     "db.client.connections.max", "{connection}", NOW, 10, false,
                     Otlp.attr("pool.name", "HikariPool-1")).toByteArray());
 
-            Json.JsonObject jvm = json(client.get(
+            JsonObject jvm = json(client.get(
                     "/api/jvm?service=spring-orders" + windowQuery().replace('?', '&')));
             assertThat(jvm.getArray("connectionPools")).hasSize(1);
-            Json.JsonObject pool = jvm.getArray("connectionPools").get(0).asObject();
+            JsonObject pool = jvm.getArray("connectionPools").get(0).asObject();
             assertThat(pool.getString("name")).isEqualTo("HikariPool-1");
             assertThat(pool.getArray("t")).hasSize(1);
             assertThat(pool.getArray("used").get(0).asDouble()).isEqualTo(3.0);
@@ -590,37 +593,37 @@ class ApiTest {
                     Otlp.attr("jvm.gc.name", "G1 Young Generation"),
                     Otlp.attr("jvm.gc.action", "end of minor GC")).toByteArray());
 
-            Json.JsonObject catalog = json(client.get("/api/metrics"));
+            JsonObject catalog = json(client.get("/api/metrics"));
             assertThat(catalog.getArray("metrics").size()).isEqualTo(3);
-            Json.JsonObject memory = catalog.getArray("metrics").get(2).asObject();
+            JsonObject memory = catalog.getArray("metrics").get(2).asObject();
             assertThat(memory.getString("name")).isEqualTo("jvm.memory.used");
             assertThat(memory.getString("type")).isEqualTo("gauge");
             assertThat(memory.getString("unit")).isEqualTo("By");
             assertThat(memory.getLong("series")).isEqualTo(2);
             assertThat(memory.getArray("services").get(0).asString()).isEqualTo("spring-orders");
 
-            Json.JsonObject series = json(client.get(
+            JsonObject series = json(client.get(
                     "/api/metrics/series?name=jvm.memory.used" + windowQuery().replace('?', '&')));
             assertThat(series.getString("name")).isEqualTo("jvm.memory.used");
             assertThat(series.getArray("series")).hasSize(2);
-            Json.JsonObject first = series.getArray("series").get(0).asObject();
+            JsonObject first = series.getArray("series").get(0).asObject();
             assertThat(first.getString("service")).isEqualTo("spring-orders");
             assertThat(first.getArray("t")).hasSize(1);
             assertThat(first.getArray("v").get(0).asDouble()).isIn(1024.0, 2048.0);
 
-            Json.JsonObject filtered = json(client.get("/api/metrics/series?name=jvm.memory.used"
+            JsonObject filtered = json(client.get("/api/metrics/series?name=jvm.memory.used"
                     + "&attr.jvm.memory.pool.name=G1+Eden+Space" + windowQuery().replace('?', '&')));
             assertThat(filtered.getArray("series")).hasSize(1);
 
-            Json.JsonObject histogram = json(client.get(
+            JsonObject histogram = json(client.get(
                     "/api/metrics/series?name=jvm.gc.duration" + windowQuery().replace('?', '&')));
-            Json.JsonObject gc = histogram.getArray("series").get(0).asObject();
+            JsonObject gc = histogram.getArray("series").get(0).asObject();
             assertThat(gc.has("count")).isTrue();
             assertThat(gc.has("p95")).isTrue();
             assertThat(gc.has("max")).isTrue();
             assertThat(gc.getArray("v").get(0).asDouble()).isEqualTo(0.05);
 
-            Json.JsonObject jvm = json(client.get(
+            JsonObject jvm = json(client.get(
                     "/api/jvm?service=spring-orders" + windowQuery().replace('?', '&')));
             assertThat(jvm.getString("service")).isEqualTo("spring-orders");
             assertThat(jvm.getObject("runtime").getLong("cpuCount")).isEqualTo(8);
@@ -652,7 +655,7 @@ class ApiTest {
 
             String queryId = json(client.get("/api/queries" + windowQuery()))
                     .getArray("queries").get(0).asObject().getString("queryId");
-            Json.JsonObject detail = json(client.get("/api/queries/" + queryId + windowQuery()));
+            JsonObject detail = json(client.get("/api/queries/" + queryId + windowQuery()));
 
             // The frames a slow-query finding on it carries (api.adoc#query).
             assertThat(strings(detail.getArray("code"))).containsExactly(
@@ -677,8 +680,8 @@ class ApiTest {
             postProtobuf(client, "/v1/traces",
                     Otlp.traces(Otlp.service("spring-orders"), failing, healthy).toByteArray());
 
-            Json.JsonObject detail = json(client.get("/api/traces/" + FAILING_TRACE));
-            Json.JsonObject span = detail.getArray("spans").get(0).asObject();
+            JsonObject detail = json(client.get("/api/traces/" + FAILING_TRACE));
+            JsonObject span = detail.getArray("spans").get(0).asObject();
             assertThat(span.getObject("attributes").getString("code.stacktrace"))
                     .startsWith("java.lang.StackOverflowError").endsWith("…");
             assertThat(client.get("/api/traces/" + TRACE).statusCode()).isEqualTo(200);
@@ -695,9 +698,9 @@ class ApiTest {
                     "jvm.gc.duration", "s", NOW, 3, 0.062, 0.03,
                     Otlp.attr("jvm.gc.name", "G1 Young Generation")).toByteArray());
 
-            Json.JsonObject jvm = json(client.get(
+            JsonObject jvm = json(client.get(
                     "/api/jvm?service=spring-orders" + windowQuery().replace('?', '&')));
-            Json.JsonArray durations = jvm.getArray("gc").get(0).asObject().getArray("durationMs");
+            JsonArray durations = jvm.getArray("gc").get(0).asObject().getArray("durationMs");
             double total = 0;
             for (int i = 0; i < durations.size(); i++) {
                 total += durations.get(i).asDouble();
@@ -715,9 +718,9 @@ class ApiTest {
                     Otlp.log(NOW + 5, 9, "Started OrdersApplication in 2.1 seconds", TRACE, ROOT),
                     Otlp.log(NOW + 6, 17, "Shipping failed", null, null)).toByteArray());
 
-            Json.JsonObject logs = json(client.get("/api/logs" + windowQuery()));
+            JsonObject logs = json(client.get("/api/logs" + windowQuery()));
             assertThat(logs.getLong("total")).isEqualTo(2);
-            Json.JsonObject newest = logs.getArray("logs").get(0).asObject();
+            JsonObject newest = logs.getArray("logs").get(0).asObject();
             assertThat(newest.getString("severity")).isEqualTo("ERROR");
             assertThat(newest.getLong("severityNumber")).isEqualTo(17);
             assertThat(newest.getString("body")).isEqualTo("Shipping failed");
@@ -733,14 +736,14 @@ class ApiTest {
                     .getArray("logs")).hasSize(1);
 
             // The cursor of the next page is the last row's time and id.
-            Json.JsonObject page = json(client.get("/api/logs" + windowQuery() + "&limit=1"));
-            Json.JsonObject last = page.getArray("logs").get(0).asObject();
-            Json.JsonArray next = json(client.get("/api/logs" + windowQuery() + "&limit=1&before="
+            JsonObject page = json(client.get("/api/logs" + windowQuery() + "&limit=1"));
+            JsonObject last = page.getArray("logs").get(0).asObject();
+            JsonArray next = json(client.get("/api/logs" + windowQuery() + "&limit=1&before="
                     + last.getLong("at") + "&beforeId=" + last.getLong("id"))).getArray("logs");
             assertThat(next.get(0).asObject().getString("body"))
                     .isEqualTo("Started OrdersApplication in 2.1 seconds");
 
-            Json.JsonObject trace = json(client.get("/api/traces/" + TRACE));
+            JsonObject trace = json(client.get("/api/traces/" + TRACE));
             assertThat(trace.getArray("logs")).hasSize(1);
             assertThat(trace.getArray("logs").get(0).asObject().getString("traceId")).isEqualTo(TRACE);
         });
@@ -751,7 +754,7 @@ class ApiTest {
         serve((client, assembly) -> {
             postProtobuf(client, "/v1/traces", sampleTraces());
 
-            Json.JsonObject status = json(client.get("/api/status"));
+            JsonObject status = json(client.get("/api/status"));
             assertThat(status.getString("name")).isEqualTo("Spider Sense");
             assertThat(status.getString("version")).isEqualTo(Version.CURRENT);
             assertThat(status.getString("mode")).isEqualTo("standalone");
@@ -767,14 +770,14 @@ class ApiTest {
             assertThat(status.getObject("retention").getLong("spans")).isEqualTo(1_000_000);
             assertThat(status.getObject("ingest").get("maxSpansPerSecond").isNull())
                     .as("unset by default").isTrue();
-            Json.JsonObject storage = status.getObject("storage");
+            JsonObject storage = status.getObject("storage");
             assertThat(storage.getString("url")).startsWith("jdbc:h2:mem:");
             assertThat(storage.get("path").isNull()).isTrue();
             assertThat(storage.getLong("sizeBytes")).isZero();
             assertThat(storage.getBoolean("fallback")).isFalse();
             assertThat(storage.getLong("droppedBatches")).isZero();
             assertThat(storage.getLong("droppedSpans")).isZero();
-            Json.JsonObject counts = status.getObject("counts");
+            JsonObject counts = status.getObject("counts");
             assertThat(counts.getLong("spans")).isEqualTo(3);
             assertThat(counts.getLong("traces")).isEqualTo(2);
             assertThat(counts.getLong("services")).isEqualTo(1);
@@ -798,7 +801,7 @@ class ApiTest {
             assertThat(export.statusCode()).isEqualTo(200);
             assertThat(export.headers().firstValue("content-disposition"))
                     .hasValueSatisfying(value -> assertThat(value).startsWith("attachment"));
-            Json.JsonObject exported = Json.parse(export.body()).asObject();
+            JsonObject exported = Json.parse(export.body()).asObject();
             assertThat(exported.getArray("traces")).hasSize(1);
             assertThat(exported.getArray("traces").get(0).asObject().getString("traceId"))
                     .isEqualTo(TRACE);
@@ -808,7 +811,7 @@ class ApiTest {
 
             assertThat(client.delete("/api/data").statusCode()).isEqualTo(204);
 
-            Json.JsonObject status = json(client.get("/api/status"));
+            JsonObject status = json(client.get("/api/status"));
             assertThat(status.getObject("counts").getLong("spans")).isZero();
             assertThat(status.getObject("counts").getLong("traces")).isZero();
             assertThat(status.getObject("counts").getLong("services")).isEqualTo(1);
@@ -828,7 +831,7 @@ class ApiTest {
 
             postProtobuf(client, "/v1/traces", ours);
 
-            Json.JsonObject traces = json(client.get("/api/traces" + windowQuery()));
+            JsonObject traces = json(client.get("/api/traces" + windowQuery()));
             assertThat(traces.getArray("traces")).hasSize(1);
             assertThat(traces.getArray("traces").get(0).asObject().getString("traceId"))
                     .isEqualTo(FAILING_TRACE);

@@ -8,7 +8,7 @@ import java.util.function.Function;
 import net.benelog.spidersense.api.Limits;
 import net.benelog.spidersense.api.Reports;
 import net.benelog.spidersense.query.Queries;
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -139,7 +139,7 @@ record Command(String commandName, Set<String> options, @Nullable String argumen
 
             new Command(Options.MARK, with("note", "service"), "a mark name", Method.POST,
                 options -> new Remote.UrlBuilder("/api/marks"),
-                options -> Json.obj()
+                options -> Json.object()
                         .put("name", options.requiredArgument())
                         .put("note", options.valueOrNull("note"))
                         .put("service", options.valueOrNull("service"))
@@ -167,7 +167,7 @@ record Command(String commandName, Set<String> options, @Nullable String argumen
 
             new Command(Options.SQL, with("limit", "full"), "a statement", Method.POST,
                 options -> new Remote.UrlBuilder("/api/sql"),
-                options -> Json.obj()
+                options -> Json.object()
                         .put("sql", options.requiredArgument())
                         .put("limit", options.limit(Limits.SQL, Limits.SQL_MAX))
                         .toJson(),
@@ -255,6 +255,6 @@ record Command(String commandName, Set<String> options, @Nullable String argumen
 
     /** The body of {@code ack} and {@code resolve}: the note, when one was given. */
     private static String noteBody(Options options) {
-        return Json.obj().put("note", options.valueOrNull("note")).toJson();
+        return Json.object().put("note", options.valueOrNull("note")).toJson();
     }
 }

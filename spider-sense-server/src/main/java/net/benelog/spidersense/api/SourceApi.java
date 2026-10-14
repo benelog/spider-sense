@@ -6,7 +6,7 @@ import net.benelog.spidersilk.HttpException;
 import net.benelog.spidersilk.HttpStatus;
 import net.benelog.spidersilk.WebRequest;
 import net.benelog.spidersilk.WebResponse;
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.Json;
 
 /**
  * {@code GET /api/source?frame=…}: the lines around a code frame's line, read from
@@ -35,7 +35,7 @@ public final class SourceApi {
             throw new HttpException(HttpStatus.BAD_REQUEST, "source needs a frame");
         }
         SourceRoots.Snippet snippet = Params.found(roots.read(frame), "No source for frame: " + frame);
-        return WebResponse.json(Json.obj()
+        return WebResponse.json(Json.object()
                 .put("frame", frame.trim())
                 .put("file", snippet.file().toString())
                 .put("line", snippet.line())

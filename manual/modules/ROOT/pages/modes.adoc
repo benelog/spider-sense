@@ -288,8 +288,8 @@ xref:cli.adoc[The CLI] documents every command, and xref:agent-loop.adoc[The Loo
 
 == Java versions
 
-The jar itself needs Java 21 or later.
-The monitored application can run on any JVM the OpenTelemetry Java agent supports, but the embedded UI needs 21 or later, so agent mode requires 21 or later.
+The jar itself needs Java 25 or later.
+The monitored application can run on any JVM the OpenTelemetry Java agent supports, but the embedded UI needs 25 or later, so agent mode requires 25 or later.
 For an application on an older JVM, run Spider Sense standalone and forward to it.
 
 == Starting a JVM that is not `java -jar`

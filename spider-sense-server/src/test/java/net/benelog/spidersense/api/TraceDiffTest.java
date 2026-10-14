@@ -13,7 +13,8 @@ import net.benelog.spidersense.query.Queries;
 import net.benelog.spidersense.store.LogRecord;
 import net.benelog.spidersense.store.SpanRecord;
 import net.benelog.spidersense.store.Tingles;
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.JsonObject;
+import net.benelog.silkjson.JsonArray;
 
 /**
  * Two traces aligned: the text of cli.adoc#trace-diff, byte for byte, and the
@@ -185,7 +186,7 @@ class TraceDiffTest {
         Queries.TraceDetail a = before();
         Queries.TraceDetail b = after();
 
-        Json.JsonObject json = Codecs.traceDiff(a, b, align(a, b, false));
+        JsonObject json = Codecs.traceDiff(a, b, align(a, b, false));
 
         assertThat(json.getString("a")).isEqualTo(A);
         assertThat(json.getString("b")).isEqualTo(B);
@@ -194,10 +195,10 @@ class TraceDiffTest {
         assertThat(json.getObject("spans").getLong("a")).isEqualTo(46);
         assertThat(json.getObject("spans").getLong("b")).isEqualTo(5);
 
-        Json.JsonArray lines = json.getArray("lines");
+        JsonArray lines = json.getArray("lines");
         assertThat(lines.size()).isEqualTo(7);
 
-        Json.JsonObject root = lines.get(0).asObject();
+        JsonObject root = lines.get(0).asObject();
         assertThat(root.getString("op")).isEqualTo("=");
         assertThat(root.getLong("depth")).isZero();
         assertThat(root.getString("category")).isEqualTo("http");
@@ -206,7 +207,7 @@ class TraceDiffTest {
         assertThat(root.getDouble("bMs")).isEqualTo(40.0);
         assertThat(root.get("count").isNull()).isTrue();
 
-        Json.JsonObject gone = lines.get(2).asObject();
+        JsonObject gone = lines.get(2).asObject();
         assertThat(gone.getString("op")).isEqualTo("-");
         assertThat(gone.getString("summary")).isEqualTo("SELECT product");
         assertThat(gone.getString("category")).isEqualTo("db");
@@ -215,7 +216,7 @@ class TraceDiffTest {
         assertThat(gone.getObject("count").getLong("a")).isEqualTo(42);
         assertThat(gone.getObject("count").get("b").isNull()).isTrue();
 
-        Json.JsonObject added = lines.get(3).asObject();
+        JsonObject added = lines.get(3).asObject();
         assertThat(added.getString("op")).isEqualTo("+");
         assertThat(added.getObject("count").get("a").isNull()).isTrue();
         assertThat(added.getObject("count").getLong("b")).isEqualTo(1);

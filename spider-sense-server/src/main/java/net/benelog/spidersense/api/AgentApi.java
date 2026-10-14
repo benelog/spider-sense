@@ -18,7 +18,9 @@ import net.benelog.spidersilk.HttpException;
 import net.benelog.spidersilk.HttpStatus;
 import net.benelog.spidersilk.WebRequest;
 import net.benelog.spidersilk.WebResponse;
-import net.benelog.spidersilk.json.Json;
+import net.benelog.silkjson.JsonReader;
+import net.benelog.silkjson.JsonValue;
+import net.benelog.silkjson.JsonObject;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -144,7 +146,7 @@ public final class AgentApi {
         if (body == null || body.isBlank()) {
             return null;
         }
-        return req.bodyJson(json -> new Note(AttrJson.optionalString(json.asObject(), "note")))
+        return req.bodyJson(JsonReader.tree(json -> new Note(AttrJson.optionalString(json.asObject(), "note"))))
                 .text();
     }
 
@@ -161,7 +163,7 @@ public final class AgentApi {
     }
 
     public WebResponse mark(WebRequest req) {
-        MarkBody body = req.bodyJson(MarkBody::read);
+        MarkBody body = req.bodyJson(JsonReader.tree(MarkBody::read));
         Marks.Mark mark = withStoreRules(
                 () -> reports.markStore().create(body.name(), body.service(), body.note(), body.at()));
         return Params.answer(req, reports.mark(mark)).status(HttpStatus.CREATED);
@@ -175,8 +177,8 @@ public final class AgentApi {
     private record MarkBody(@Nullable String name, @Nullable String note, @Nullable String service,
             @Nullable Long at) {
 
-        static MarkBody read(Json.JsonValue json) {
-            Json.JsonObject body = json.asObject();
+        static MarkBody read(JsonValue json) {
+            JsonObject body = json.asObject();
             return new MarkBody(AttrJson.optionalString(body, "name"),
                     AttrJson.optionalString(body, "note"),
                     AttrJson.optionalString(body, "service"),
@@ -212,7 +214,7 @@ public final class AgentApi {
     public WebResponse sql(WebRequest req) {
         SqlBody body;
         try {
-            body = req.bodyJson(SqlBody::read);
+            body = req.bodyJson(JsonReader.tree(SqlBody::read));
         } catch (HttpException e) {
             return Params.badRequest(req, e.getMessage());
         }
@@ -231,8 +233,8 @@ public final class AgentApi {
     /** The body of {@code POST /api/sql}, its limit defaulted but not yet capped. */
     private record SqlBody(@Nullable String statement, long limit) {
 
-        static SqlBody read(Json.JsonValue json) {
-            Json.JsonObject body = json.asObject();
+        static SqlBody read(JsonValue json) {
+            JsonObject body = json.asObject();
             Long limit = AttrJson.optionalLong(body, "limit");
             return new SqlBody(AttrJson.optionalString(body, "sql"),
                     limit == null ? ReadOnlyQuery.LIMIT : limit);
