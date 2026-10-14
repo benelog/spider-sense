@@ -194,7 +194,7 @@ public final class Marks {
      * with none gets null (marks-and-compare.adoc#time-selectors).
      */
     public @Nullable Mark newest(String name, @Nullable String service) {
-        String storedService = Columns.cut(service, Columns.SERVICE);
+        String storedService = Columns.cut(Utf16.wellFormedOrNull(service), Columns.SERVICE);
         if (storedService != null) {
             Mark ofService = sql.queryOne(
                     "SELECT * FROM mark WHERE name = ? AND service = ? ORDER BY at_ms DESC, id DESC LIMIT 1",

@@ -843,6 +843,9 @@ OTLP/JSON ids are accepted as hex, which is what the OTLP specification says, an
 The two are told apart by length, since only a hex id is exactly 32 or 16 characters of `[0-9a-f]`.
 The same holds for the proto field names (`trace_id`, `span_id`, `parent_span_id`), which protobuf's JSON parser accepts beside the lowerCamelCase names the specification prescribes.
 An OTLP/JSON string escaping half of a surrogate pair on its own (`\ud800`) is stored with U+FFFD in its place, since UTF-8, and so every answer, has no form for it.
+The same holds for every other string that enters the store or the database from a request body or an imported document: the service and note of a mark, the note of an acknowledgement or a resolution, and the statement of `POST /api/sql`, whose string cells carry U+FFFD for a lone surrogate the statement makes itself (`CHAR(55296)`).
+The JSON and the text renderings of one value then read the same character.
+A mark name holding one is refused as any name outside `[A-Za-z0-9._-]` is.
 
 [#apdex]
 === Apdex and the histogram

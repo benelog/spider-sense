@@ -61,6 +61,17 @@ class AcksTest {
         assertThat(acks.all(50)).extracting(Acks.Ack::note).containsOnlyNulls();
     }
 
+    /** A lone surrogate has no UTF-8 form, so the JSON and the text answers would read it apart. */
+    @Test
+    void aLoneSurrogateInANoteIsStoredAsTheReplacementCharacter() {
+        Acks acks = store.acks();
+
+        assertThat(acks.ack(SLOW, "a\ud800b").note()).isEqualTo("a�b");
+        assertThat(acks.resolve(NPLUS, "c\udc00").note()).isEqualTo("c�");
+        assertThat(acks.byId(Set.of(SLOW, NPLUS)).values()).extracting(Acks.Ack::note)
+                .containsExactlyInAnyOrder("a�b", "c�");
+    }
+
     @Test
     void acknowledgingAgainReplacesTheRow() {
         Acks acks = store.acks();

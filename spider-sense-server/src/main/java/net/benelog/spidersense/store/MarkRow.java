@@ -37,17 +37,20 @@ public record MarkRow(long atMs, @Nullable String name, @Nullable String service
                 .put("note", note);
     }
 
-    /** The service as {@link #bind} stores it, cut to the width every service name has. */
+    /**
+     * The service as {@link #bind} stores it: well-formed ({@link Utf16}) and cut to the width
+     * every service name has.
+     */
     @Nullable String storedService() {
-        return Columns.cut(service, Columns.SERVICE);
+        return Columns.cut(Utf16.wellFormedOrNull(service), Columns.SERVICE);
     }
 
-    /** The note as {@link #bind} stores it. */
+    /** The note as {@link #bind} stores it: well-formed and cut to its column. */
     @Nullable String storedNote() {
-        return Columns.cut(note, Columns.MARK_NOTE);
+        return Columns.cut(Utf16.wellFormedOrNull(note), Columns.MARK_NOTE);
     }
 
-    /** Binds the row to {@link #INSERT}, the service and the note cut to their columns. */
+    /** Binds the row to {@link #INSERT}, the service and the note made well-formed and cut to their columns. */
     void bind(PreparedStatement statement) throws SQLException {
         statement.setLong(1, atMs);
         statement.setString(2, name);

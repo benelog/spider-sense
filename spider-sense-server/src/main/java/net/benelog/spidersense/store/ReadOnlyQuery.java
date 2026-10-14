@@ -86,8 +86,9 @@ public final class ReadOnlyQuery {
      */
     public Result run(@Nullable String statement, int limit) {
         guard(statement);
-        // guard refuses a statement that is null or blank, so this one is neither.
-        String sql = Objects.requireNonNull(statement, "guard let a null statement through");
+        // guard refuses a statement that is null or blank, so this one is neither. A lone
+        // surrogate in it is U+FFFD, so a literal answers the cell both renderings agree on.
+        String sql = Utf16.wellFormed(Objects.requireNonNull(statement, "guard let a null statement through"));
         int cap = Math.clamp(limit, 1, LIMIT_MAX);
         long started = System.nanoTime();
         try (Connection connection = database.reader()) {
@@ -153,8 +154,12 @@ public final class ReadOnlyQuery {
 
     /** A value H2 handed over, as {@link #value(ResultSet, int)} answers it. */
     private static Object cell(Object value) throws SQLException {
-        if (value == null || value instanceof Boolean || value instanceof String) {
+        if (value == null || value instanceof Boolean) {
             return value;
+        }
+        if (value instanceof String text) {
+            // A string the query made itself, CHAR(55296), can hold a lone surrogate too.
+            return Utf16.wellFormed(text);
         }
         if (value instanceof BigDecimal decimal) {
             if (decimal.scale() <= 0) {

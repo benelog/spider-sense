@@ -546,6 +546,28 @@ class ExportImportTest {
         });
     }
 
+    /**
+     * A document's JSON may escape half of a surrogate pair on its own: a mark's note keeps U+FFFD
+     * in its place, as a typed one does, and a mark name holding one is refused as any other is.
+     */
+    @Test
+    void aLoneSurrogateInAnImportedMarkIsTheReplacementCharacterOrARefusedName() {
+        serve(client -> {
+            String note = "{\"spiderSense\":{\"schema\":" + Schema.VERSION + "},\"marks\":[{\"atMs\":" + NOW
+                    + ",\"name\":\"before\",\"service\":\"orders\\udc00\",\"note\":\"a\\ud800b\"}]}";
+            assertThat(postJson(client, "/api/import", note).statusCode()).isEqualTo(200);
+            JsonObject mark = Json.parse(client.get("/api/marks").body()).asObject().getArray("marks")
+                    .get(0).asObject();
+            assertThat(mark.getString("note")).isEqualTo("a�b");
+            assertThat(mark.getString("service")).isEqualTo("orders�");
+
+            String name = "{\"spiderSense\":{\"schema\":" + Schema.VERSION + "},\"marks\":[{\"atMs\":" + NOW
+                    + ",\"name\":\"after\\ud800\"}]}";
+            assertThat(postJson(client, "/api/import", name).statusCode()).isEqualTo(400);
+            assertThat(rows(client, "SELECT COUNT(*) FROM mark")).isEqualTo(1);
+        });
+    }
+
     private static JsonObject section(String key, JsonObject row) {
         return Json.object()
                 .put("spiderSense", Json.object().put("schema", Schema.VERSION))

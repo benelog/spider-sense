@@ -113,6 +113,19 @@ class MarksTest {
         assertThat(store.marks().list(5)).extracting(Marks.Mark::note).containsOnlyNulls();
     }
 
+    /** A lone surrogate has no UTF-8 form, so the JSON and the text answers would read it apart. */
+    @Test
+    void aLoneSurrogateInTheServiceOrNoteIsStoredAsTheReplacementCharacter() {
+        Marks.Mark mark = store.marks().create("before", "orders\udc00", "a\ud800b", 1_000L);
+
+        assertThat(mark.service()).isEqualTo("orders�");
+        assertThat(mark.note()).isEqualTo("a�b");
+        assertThat(store.marks().list(1).get(0).note()).isEqualTo("a�b");
+        assertThat(store.marks().newest("before", "orders\udc00")).as("found by the service as typed")
+                .isNotNull()
+                .extracting(Marks.Mark::id).isEqualTo(mark.id());
+    }
+
     @Test
     void aServiceOrNoteLongerThanItsColumnIsCutAndTheAnswerShowsWhatWasStored() {
         Marks.Mark mark = store.marks().create("before", "s".repeat(300), "n".repeat(2000), 1_000L);

@@ -93,8 +93,8 @@ public final class Acks {
     private Ack decide(@Nullable String findingId, @Nullable String note, boolean resolved) {
         String id = checked(findingId);
         long at = clock.getAsLong();
-        // A blank note is no note, as a mark's is.
-        String cutNote = Columns.cut(Columns.blankToNull(note), Columns.ACK_NOTE);
+        // A blank note is no note, as a mark's is, and a lone surrogate is U+FFFD, as in a mark's.
+        String cutNote = Columns.cut(Utf16.wellFormedOrNull(Columns.blankToNull(note)), Columns.ACK_NOTE);
         sql.update("MERGE INTO ack (finding_id, at_ms, note, resolved) KEY(finding_id) VALUES (?, ?, ?, ?)",
                 Arrays.asList(id, at, cutNote, resolved));
         return new Ack(id, at, cutNote, resolved);

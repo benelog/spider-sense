@@ -47,6 +47,16 @@ class ReadOnlyQueryTest {
         assertThat(row(statement)).isEqualTo(row(statement));
     }
 
+    /**
+     * A lone surrogate, typed into a literal or made by the query, is U+FFFD in the cell, which the
+     * JSON and the text renderings then both show.
+     */
+    @Test
+    void aLoneSurrogateInTheStatementOrACellIsTheReplacementCharacter() {
+        assertThat(row("SELECT 'a\ud800b', CHAR(55296), ARRAY[CHAR(56320)], 'x😀'"))
+                .containsExactly("a�b", "�", List.of("�"), "x😀");
+    }
+
     /** A second statement cannot hide behind a dollar-quoted string, where a quote means nothing. */
     @Test
     void aDollarQuotedStringHidesNoSecondStatement() {

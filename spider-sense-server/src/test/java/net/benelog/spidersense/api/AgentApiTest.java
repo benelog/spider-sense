@@ -562,6 +562,26 @@ class AgentApiTest {
         });
     }
 
+    /**
+     * A JSON body may escape half of a surrogate pair on its own: what is stored and run carries
+     * U+FFFD in its place, so the JSON and the text answers read the same character.
+     */
+    @Test
+    void aLoneSurrogateInANoteOrAStatementIsTheReplacementCharacterInBothRenderings() {
+        serve((client, assembly) -> {
+            assertThat(postJson(client, "/api/marks", "{\"name\":\"before\",\"note\":\"a\\ud800b\"}")
+                    .statusCode()).isEqualTo(201);
+            assertThat(json(client.get("/api/marks")).getArray("marks").get(0).asObject().getString("note"))
+                    .isEqualTo("a�b");
+            assertThat(client.get("/api/marks?format=text").body()).contains("a�b");
+
+            String statement = "{\"sql\":\"SELECT 'c\\udc00d' AS cell\"}";
+            assertThat(json(postJson(client, "/api/sql", statement)).getArray("rows").get(0).asArray()
+                    .get(0).asString()).isEqualTo("c�d");
+            assertThat(postJson(client, "/api/sql?format=text", statement).body()).contains("c�d");
+        });
+    }
+
     @Test
     void aSelectorThatNamesNoMarkIs404AndOneThatIsNotASelectorIs400() {
         serve((client, assembly) -> {

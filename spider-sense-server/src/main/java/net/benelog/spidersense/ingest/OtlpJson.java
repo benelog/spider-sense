@@ -77,6 +77,9 @@ public final class OtlpJson {
      * every string of the document (a name, a key, a body, an attribute), what is stored is what
      * every answer carries. A raw surrogate cannot occur: the body was decoded from UTF-8, which
      * turned any malformed bytes into the replacement character already.
+     *
+     * <p>The rule is {@link net.benelog.spidersense.store.Utf16}'s, applied to the escapes of the
+     * text because protobuf's parser, not Spider Silk's, reads them into strings.
      */
     static String withoutLoneSurrogates(String json) {
         if (json.indexOf("\\u") < 0) {
