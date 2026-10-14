@@ -182,7 +182,8 @@ Every access to the storage is wrapped in `try`, so a browser that refuses stora
 Live::
 The page re-fetches every 5 seconds, and the `to` of the window moves with the clock.
 The server's `stats` event (xref:api.adoc#events[Events]) drives a "spans/s" readout beside the toggle.
-Every `tingle` event increments the badge on the sidebar's `tingles` entry and is prepended to the Overview feed without a refetch.
+Every `tingle` event increments the badge on the sidebar's `tingles` entry.
+It is prepended to the Overview feed without a refetch, unless the top bar names another service.
 
 [#marks-on-charts]
 == Marks on charts

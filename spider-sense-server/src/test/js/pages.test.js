@@ -396,6 +396,19 @@ test('a tingle without a trace is not a link', async () => {
   });
 });
 
+test('the Overview feed takes only the tingles of the service the top bar names (pages.adoc#overview)', async () => {
+  const services = (await api.services()).services.map((s) => s.name);
+  const [chosen, other] = services;
+  const { root, instance } = await visit('overview', {}, chosen);
+  const before = root.querySelectorAll('.tingle').length;
+  instance.onTingle({ kind: 'error', service: other, title: 'elsewhere', detail: '', at: Date.now(), traceId: null });
+  assert.equal(root.querySelectorAll('.tingle').length, before, 'another service\'s tingle stays out');
+  instance.onTingle({ kind: 'error', service: chosen, title: 'here', detail: '', at: Date.now(), traceId: null });
+  assert.equal(root.querySelectorAll('.tingle').length, Math.min(before + 1, 50), 'the chosen service\'s tingle comes in');
+  instance.destroy();
+  api.state.service = '';
+});
+
 test('the Overview shows the empty state only before anything has arrived', async () => {
   await withAnswer('/api/findings', () => ({ findings: [] }), () => withAnswer('/api/overview', (body) => ({
     ...body, totals: { requests: 0, histogram: [0, 0, 0, 0, 0] }, services: [], tingles: [],

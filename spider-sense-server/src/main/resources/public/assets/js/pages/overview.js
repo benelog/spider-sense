@@ -192,6 +192,8 @@ export function render(root, ctx) {
     refresh: load,
     onTingle: (t) => {
       if (!layout.built) return;
+      // The feed is the top bar's service's, as the rest of the page is (pages.adoc#overview).
+      if (api.state.service && t.service !== api.state.service) return;
       tingles = [{ ...t, fresh: true }, ...tingles].slice(0, 50);
       paintTingles();
     },
