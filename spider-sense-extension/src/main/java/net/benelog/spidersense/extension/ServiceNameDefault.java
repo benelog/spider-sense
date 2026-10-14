@@ -94,10 +94,15 @@ public final class ServiceNameDefault implements ConditionalResourceProvider {
         if (first.toLowerCase(Locale.ROOT).endsWith(".jar")) {
             return jarName(first);
         }
-        // A jar whose path holds a space runs up to a ".jar" that is a file, not to the first space.
+        // A jar whose path holds a space runs up to a ".jar" that is a file, not to the first space:
+        // one followed by the arguments, or the whole command when there are none.
         String lower = trimmed.toLowerCase(Locale.ROOT);
-        for (int at = lower.indexOf(".jar "); at >= 0; at = lower.indexOf(".jar ", at + 1)) {
-            String candidate = trimmed.substring(0, at + ".jar".length());
+        for (int at = lower.indexOf(".jar"); at >= 0; at = lower.indexOf(".jar", at + 1)) {
+            int end = at + ".jar".length();
+            if (end < trimmed.length() && !Character.isWhitespace(trimmed.charAt(end))) {
+                continue;
+            }
+            String candidate = trimmed.substring(0, end);
             if (isFile.test(candidate)) {
                 return jarName(candidate);
             }

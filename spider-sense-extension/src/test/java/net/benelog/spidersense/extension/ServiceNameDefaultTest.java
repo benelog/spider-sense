@@ -31,6 +31,10 @@ class ServiceNameDefaultTest {
         String name = ServiceNameDefault.derive("/my apps/orders-2.jar --verbose", null,
                 path -> path.equals("/my apps/orders-2.jar"), (entry, file) -> false);
         assertThat(name).isEqualTo("orders");
+
+        String alone = ServiceNameDefault.derive("/my apps/orders-2.jar", null,
+                path -> path.equals("/my apps/orders-2.jar"), (entry, file) -> false);
+        assertThat(alone).as("with no argument after the jar").isEqualTo("orders");
     }
 
     @Test
