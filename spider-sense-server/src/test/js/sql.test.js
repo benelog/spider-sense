@@ -36,6 +36,11 @@ test('formatSql leaves string literals as they are', () => {
   assert.equal(formatSql("select 'from where' from t"), "SELECT 'from where'\nFROM t");
 });
 
+test('a backtick-quoted name passes through whole, as MySQL writes it', () => {
+  assert.equal(formatSql('select `id` from `orders` where `id` = ?'), 'SELECT `id`\nFROM `orders`\nWHERE `id` = ?');
+  assert.equal(oneLineSql('select o.`order id` from `orders` o'), 'SELECT o.`order id` FROM `orders` o');
+});
+
 test('oneLineSql collapses whitespace, uppercases keywords and cuts at max', () => {
   assert.equal(oneLineSql('select   a\n  from t\twhere x = ?'), 'SELECT a FROM t WHERE x = ?');
   assert.equal(oneLineSql('insert into book (id) values (?)'), 'INSERT INTO book(id) VALUES (?)');

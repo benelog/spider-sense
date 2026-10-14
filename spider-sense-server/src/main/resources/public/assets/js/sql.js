@@ -24,9 +24,10 @@ const SPACE_BEFORE_PAREN = new Set(['in', 'values', 'and', 'or', 'not', 'on', 'b
 
 const trimEnd = (s) => s.replace(/\s+$/, '');
 
+/** A quoted name, `"…"` or MySQL's `` `…` ``, is one token like a string, so it passes through whole. */
 function tokenize(sql) {
   const tokens = [];
-  const re = /('(?:''|[^'])*')|("(?:""|[^"])*")|(--[^\n]*)|(\/\*[\s\S]*?\*\/)|([A-Za-z_][A-Za-z_0-9$#]*)|(\d+(?:\.\d+)?)|(\s+)|(.)/g;
+  const re = /('(?:''|[^'])*')|("(?:""|[^"])*"|`(?:``|[^`])*`)|(--[^\n]*)|(\/\*[\s\S]*?\*\/)|([A-Za-z_][A-Za-z_0-9$#]*)|(\d+(?:\.\d+)?)|(\s+)|(.)/g;
   let m;
   while ((m = re.exec(sql)) !== null) {
     if (m[1] || m[2]) tokens.push({ type: 'string', text: m[0] });
