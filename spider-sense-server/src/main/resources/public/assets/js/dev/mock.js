@@ -230,7 +230,7 @@ function dbSpan(q, parent, start, service, slowBoost) {
     start,
     durationMs: ms,
     category: 'db',
-    summary: q.operation + ' ' + q.table + ' (' + q.system + ')',
+    summary: q.operation + ' ' + q.table,      // SpanRecord.summary(), api.adoc#span
     slow,
     scope: 'io.opentelemetry.jdbc',
     attributes: {
@@ -635,7 +635,7 @@ function queryStats(w, service) {
     const total = durations.reduce((a, b) => a + b, 0);
     return {
       queryId: q.queryId, service: q.service, system: q.system, namespace: q.namespace,
-      operation: q.operation, table: q.table, statement: q.statement,
+      operation: q.operation, table: q.table, statement: q.statement, statementCut: cutStatement(q.statement),
       calls: durations.length, errors: 0,
       avgMs: Math.round((total / Math.max(1, durations.length)) * 100) / 100,
       p50Ms: percentile(sorted, 50), p95Ms: percentile(sorted, 95),
@@ -650,6 +650,11 @@ function queryStats(w, service) {
       lastSeen,
     };
   });
+}
+
+/** Whether the store may have cut a statement: it keeps 2,000 characters (api.adoc#query-stats). */
+function cutStatement(statement) {
+  return statement != null && statement.length >= 2000;
 }
 
 function errorGroups(w, service) {
@@ -908,6 +913,7 @@ function statusBody() {
     codeFrames: { appPackages: [], frameworkPrefixes: FRAMEWORK },
     jar: '/home/me/tools/spider-sense-' + VERSION + '.jar',
     thresholds: { slowRequestMs: SLOW_REQUEST_MS, slowQueryMs: SLOW_QUERY_MS, responseBucketsMs: RESPONSE_BUCKETS },
+    ignore: { endpoints: ['/actuator/**', '/health', '/healthz', '/livez', '/readyz'] },
     retention: { hours: 24, spans: 1_000_000 },
     ingest: { maxSpansPerSecond: null },
     storage: {
@@ -1329,7 +1335,10 @@ function findingsFor(w, service, limit, hideAcked) {
   }
   const ranked = regressions.concat(open, accepted);
   // `schema` is on every finding, null on the kinds that never carry one (api.adoc#findings).
-  return { requests, acked, resolved: 0, findings: ranked.slice(0, limit).map(({ impact, ...rest }) => ({ schema: null, ...rest })) };
+  return {
+    requests, acked, resolved: 0, total: ranked.length,
+    findings: ranked.slice(0, limit).map(({ impact, ...rest }) => ({ schema: null, ...rest, statementCut: cutStatement(rest.statement) })),
+  };
 }
 
 /** The Totals of api.adoc#compare, over one window. */
@@ -1436,6 +1445,7 @@ function compareOf(before, after, until, service) {
     if (i === 2) b = null;
     return {
       queryId: id, service: def ? def.service : '', statement: def ? def.statement : id,
+      statementCut: cutStatement(def ? def.statement : id),
       before: b, after: a, verdict: queryVerdict(b, a),
       _total: (a ? a.totalMs : 0) + (b ? b.totalMs : 0),
     };
@@ -1523,9 +1533,8 @@ const ROUTES = [
     const id = m[1];
     const w = windowOf(q);
     const ep = ENDPOINTS.find((e) => e.endpointId === id);
-    if (!ep) return { status: 404, body: { error: 'no such endpoint' } };
-    const stats = endpointStats(w, ep.service).find((e) => e.endpointId === id)
-      || { endpointId: id, service: ep.service, method: ep.method, route: ep.route, name: ep.name, kind: 'SERVER', calls: 0, errors: 0, errorRate: 0, rps: 0, avgMs: 0, p50Ms: 0, p95Ms: 0, p99Ms: 0, maxMs: 0, totalMs: 0, apdex: null, histogram: [0, 0, 0, 0, 0], statusCodes: {} };
+    const stats = ep && endpointStats(w, ep.service).find((e) => e.endpointId === id);
+    if (!stats) return { status: 404, body: { error: 'No such endpoint in this window: ' + id } };
     const list = inWindow(w, ep.service).filter((t) => t.endpointId === id);
     const entries = list.map((t) => ({ span: t.spans[0], trace: t }));
     return {
@@ -1601,9 +1610,8 @@ const ROUTES = [
   [/^\/api\/queries\/([^/]+)$/, (m, q) => {
     const w = windowOf(q);
     const def = QUERIES.find((x) => x.queryId === m[1]);
-    if (!def) return { status: 404, body: { error: 'no such query' } };
-    const stats = queryStats(w, def.service).find((x) => x.queryId === m[1])
-      || { queryId: m[1], service: def.service, system: def.system, namespace: def.namespace, operation: def.operation, table: def.table, statement: def.statement, calls: 0, errors: 0, avgMs: 0, p50Ms: 0, p95Ms: 0, maxMs: 0, totalMs: 0, slowCalls: 0, callers: [], lastSeen: 0 };
+    const stats = def && queryStats(w, def.service).find((x) => x.queryId === m[1]);
+    if (!stats) return { status: 404, body: { error: 'No such query in this window: ' + m[1] } };
     const t = bucketsOf(w);
     const index = new Map(t.map((x, i) => [x, i]));
     const calls = t.map(() => 0);
@@ -1676,8 +1684,8 @@ const ROUTES = [
   [/^\/api\/findings$/, (m, q) => {
     const w = windowOf(q);
     const limit = Math.min(100, +(q.limit || 20));
-    const { requests, acked, resolved, findings } = findingsFor(w, q.service, limit, q.hideAcked === 'true');
-    return { window: w, requests, acked, resolved, findings };
+    const { requests, acked, resolved, total, findings } = findingsFor(w, q.service, limit, q.hideAcked === 'true');
+    return { window: w, requests, acked, resolved, total, findings };
   }],
 
   [/^\/api\/findings\/([^/]+)$/, (m, q) => {
