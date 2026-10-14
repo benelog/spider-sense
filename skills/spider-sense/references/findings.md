@@ -1,7 +1,7 @@
 # Findings, and the fix each one wants
 
 ```
-java -jar spider-sense.jar findings [--since=] [--until=] [--service=] [--limit=20] [--json] [--full]
+java -jar spider-sense.jar findings [--since=] [--until=] [--service=] [--limit=20] [--hide-acked] [--json] [--full]
 ```
 
 A finding is one thing worth fixing, found by rules over the window.
@@ -54,7 +54,7 @@ In the text output the ranked table comes first and these fields follow as one n
 `<n>. <id> — <why>`, then the `numbers` on one line as `name value, name value`, then `hot span: <name> · <selfMs> self · <share>` when the kind has one, then the `hot spans:` lines and the `breakdown:` line when it has those, then the `statement` when there is one, then the schema lines when the finding has that block, then the `code` frames one per line, then `traces: <id> <id>`.
 
 **About `code`.** The OpenTelemetry Java agent does not record where a span was started from, so `code` comes from the `exception.stacktrace` of an error, the `code.function` / `code.namespace` attributes that a few instrumentations set, and the `code.stacktrace` that Spider Sense's own agent extension captures.
-The extension captures that stack on every database span slower than `slow.query.ms`, on the fifth repeat of a statement within one trace, on every non-database `CLIENT` span slower than `slow.request.ms`, and on the fifth repeat of an HTTP call within one trace, which is what gives `slow-query`, `n-plus-one`, `slow-external` and `n-plus-one-http` findings a line.
+The extension captures that stack on every database span that ran at least `slow.query.ms`, on the fifth repeat of a statement within one trace, on every non-database `CLIENT` span that ran at least `slow.request.ms`, and on the fifth repeat of an HTTP call within one trace, which is what gives `slow-query`, `n-plus-one`, `slow-external` and `n-plus-one-http` findings a line.
 It is therefore reliable for `error`, `slow-query`, `n-plus-one`, `n-plus-one-http` and `slow-external` findings, often present for `log-error`, and often empty for the others; when it is empty, open a trace from `traces` and read the tree, which names the endpoint and the statement even when it cannot name the line.
 A stack trace is reduced to its application frames by dropping known framework prefixes (`java.`, `jakarta.`, `org.springframework.`, `org.hibernate.`, `org.apache.`, `com.zaxxer.`, `org.h2.`, `io.opentelemetry.` and others).
 When that heuristic guesses wrong, `-Dspidersense.app.packages=com.acme,org.acme` replaces it with an allowlist.
@@ -304,7 +304,7 @@ The group is `(service, span name)` and `subject.job` is that name, so `runs` ar
 
 `dbShare` forks the same way it does for `slow-endpoint`.
 
-- **High `dbShare`**: the job's queries are the problem, and a job is where an N+1 hides best, because nobody is waiting for it. Look for an `n-plus-one` or `slow-query` finding over the same window, and fix it there.
+- **High `dbShare`**: the job's queries are the problem, and a job is where an N+1 hides best, because nobody is waiting for it. The `n-plus-one` rule counts repeats under an entry span only, and a job is never one, so it reports no N+1 inside a job and `check --max-n-plus-one=0` passes over it: read the N+1 from this finding instead, from `dbCallsPerRun` and the `×n` of a statement in `hot spans` (`SELECT order_line · … · ×8` in one run is one statement per row). A `slow-query` finding over the same window still names a statement that is slow on its own; fix it there.
 - **Low `dbShare`**: the time is the job's own code. Open the slowest trace from `traces`: a long stretch with no child spans is the loop to look at, and a `CLIENT` span that dominates is a call that should be batched or moved out of the tick.
 
 The usual fix is one query for the whole batch instead of one query per row.

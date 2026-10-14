@@ -528,6 +528,8 @@ It is in no request count, in no Apdex and in no `check` verdict, and this findi
 
 `dbShare` forks the same way it does for `slow-endpoint`.
 A high `dbShare` means the job's queries are the problem, and a job is where an N+1 hides best, because nobody is waiting for it.
+The <<n-plus-one,`n-plus-one`>> rule counts repeats under an entry span, and a job is none, so it does not report an N+1 inside a job, and neither does `check`.
+`dbCallsPerRun` and the `count` of a statement in `hotSpans` (`×8` in the text) are where it shows: a statement that runs once per row of the batch.
 A low `dbShare` means the time is the job's own code, and <<time,`breakdown`>> and `hotSpans` say where it went before a trace has to be opened.
 
 What to do:
