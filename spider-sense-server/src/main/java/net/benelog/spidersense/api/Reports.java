@@ -411,16 +411,25 @@ public final class Reports implements AutoCloseable {
      */
     private String known(@Nullable String findingId) {
         if (findingId == null || !Findings.isFindingId(findingId)) {
-            String shown = findingId == null ? "" : findingId.length() > Acks.MAX_ID
-                    ? findingId.substring(0, Acks.MAX_ID) + "…" : findingId;
-            throw new IllegalArgumentException("Not a finding id: " + shown + ". A finding id is"
-                    + " <kind>:<12 hex digits>, as the id column of findings prints it; the ids of"
-                    + " errors, queries and endpoints are table ids, not finding ids");
+            throw new IllegalArgumentException(notAFindingId(findingId));
         }
         if (!findings.exists(findingId, Window.of(0, Window.LATEST))) {
             throw new NoSuchFinding(findingId, config.retentionHours());
         }
         return findingId;
+    }
+
+    /**
+     * What a word that is not a finding id is told, the same sentence whoever finds it: the
+     * server's {@code 400}, the file path, and the CLI's parser before either is asked, which is
+     * what keeps {@code ack ..} from reaching a server as a path (cli.adoc#exit-codes).
+     */
+    public static String notAFindingId(@Nullable String word) {
+        String shown = word == null ? "" : word.length() > Acks.MAX_ID
+                ? word.substring(0, Acks.MAX_ID) + "…" : word;
+        return "Not a finding id: " + shown + ". A finding id is"
+                + " <kind>:<12 hex digits>, as the id column of findings prints it; the ids of"
+                + " errors, queries and endpoints are table ids, not finding ids";
     }
 
     /**

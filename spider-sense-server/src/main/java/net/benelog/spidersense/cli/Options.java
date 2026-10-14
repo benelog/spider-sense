@@ -10,7 +10,9 @@ import java.util.Objects;
 import java.util.Set;
 
 import net.benelog.spidersense.api.Limits;
+import net.benelog.spidersense.api.Reports;
 import net.benelog.spidersense.query.Check;
+import net.benelog.spidersense.query.Findings;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -98,6 +100,9 @@ final class Options {
     /** The word after which every word is the command's own, as in POSIX: {@code sql -- "--x"}. */
     private static final String END_OF_OPTIONS = "--";
 
+    /** The commands whose own word is a finding id. */
+    private static final Set<String> FINDING_ID_COMMANDS = Set.of(ACK, UNACK, RESOLVE, UNRESOLVE);
+
     /** The options whose empty value means something: an empty {@code --note=} is no note. */
     private static final Set<String> MAY_BE_EMPTY = Set.of("note");
 
@@ -175,6 +180,12 @@ final class Options {
         // which is the list, nor name a finding the server cannot route.
         if (label != null && (argument == null || argument.isBlank())) {
             throw new Usage(command + " needs " + label, command);
+        }
+        // A finding id travels as a path segment, so a word that is none, such as "..", would be
+        // refused by the server's path check in other words than the file path's: it is refused
+        // here, before either mode runs, in the words both would use (cli.adoc#exit-codes).
+        if (FINDING_ID_COMMANDS.contains(command) && !Findings.isFindingId(argument)) {
+            throw new Usage(Reports.notAFindingId(argument), command);
         }
         if (HELP.equals(command) && argument != null && Command.named(argument) == null) {
             throw new Usage("unknown command: " + argument + didYouMean(argument, Command.names(), ""));

@@ -47,7 +47,7 @@ class CommandTest {
     /** What says rather than asks travels in a body; a question has none (api.adoc). */
     @Test
     void theBodyOfEachPostIsWhatTheCallerSays() {
-        assertThat(body("ack", "f1", "--note=known")).isEqualTo("{\"note\":\"known\"}");
+        assertThat(body("ack", "error:3d871f14ee3e", "--note=known")).isEqualTo("{\"note\":\"known\"}");
         assertThat(body("mark", "before-fix", "--service=orders"))
                 .contains("\"name\":\"before-fix\"").contains("\"service\":\"orders\"");
         assertThat(body("sql", "select 1", "--limit=5")).isEqualTo("{\"sql\":\"select 1\",\"limit\":5}");

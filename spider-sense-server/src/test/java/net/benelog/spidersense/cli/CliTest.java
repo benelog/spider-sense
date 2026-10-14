@@ -24,6 +24,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import net.benelog.spidersense.Otlp;
 import net.benelog.spidersense.TestStore;
+import net.benelog.spidersense.api.Reports;
 import net.benelog.spidersense.ingest.OtlpDecoder;
 import net.benelog.spidersense.server.Config;
 import net.benelog.spidersense.server.SpiderSenseServer;
@@ -496,6 +497,15 @@ class CliTest {
             Run twice = runAt(base, "unack", id, "--url=" + base);
             assertThat(twice.exit()).isEqualTo(4);
             assertThat(twice.err()).contains("No such acknowledgement: " + id);
+
+            // cli.adoc#exit-codes: a word that is no finding id is the parser's usage error, never
+            // the server's refusal of a path holding it.
+            for (String command : List.of("ack", "unack", "resolve", "unresolve")) {
+                Run dots = runAt(base, command, "..", "--url=" + base);
+                assertThat(dots.exit()).as(command).isEqualTo(2);
+                assertThat(dots.err()).as(command).isEqualTo("spider-sense: " + Reports.notAFindingId("..") + "\n"
+                        + "see: java -jar spider-sense.jar " + command + " --help\n");
+            }
         });
     }
 
