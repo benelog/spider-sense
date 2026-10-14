@@ -188,13 +188,7 @@ final class Remote {
         }
 
         if (response.statusCode() >= 400) {
-            requireSpiderSense(response, path);
-            err.println("spider-sense: " + message(response));
-            if (response.statusCode() == 400) {
-                // The caller's mistake, as the file path's selector and store refusals are.
-                err.println(Cli.pointer(options.command()));
-            }
-            return response.statusCode() == 404 ? Cli.NOT_FOUND : Cli.USAGE;
+            return refused(options, response.statusCode(), contentType(response), response.body(), path, err);
         }
         if (Options.UNACK.equals(options.command()) || Options.UNRESOLVE.equals(options.command())) {
             Output.printReport(out, options, Options.UNACK.equals(options.command())
@@ -223,13 +217,15 @@ final class Remote {
         try {
             HttpResponse<InputStream> response =
                     send(client, base, request, HttpResponse.BodyHandlers.ofInputStream());
-            if (response.statusCode() == 404 || response.statusCode() == 405) {
-                // Every Spider Sense has GET /api/export: whatever answered this is something else.
-                throw Unreachable.answered(response.statusCode(), path);
-            }
             if (response.statusCode() >= 400) {
-                err.println("spider-sense: HTTP " + response.statusCode());
-                return Cli.USAGE;
+                // An error is a few bytes of JSON, read whole, as every other command's is.
+                String error;
+                try (InputStream body = response.body()) {
+                    error = new String(body.readAllBytes(), StandardCharsets.UTF_8);
+                } catch (IOException e) {
+                    throw failure(e, base);
+                }
+                return refused(options, response.statusCode(), contentType(response), error, path, err);
             }
             try (InputStream body = response.body(); OutputStream file = Sessions.out(name, out)) {
                 body.transferTo(file);
@@ -277,6 +273,29 @@ final class Remote {
     }
 
     /**
+     * An error answer, said as the file path says it: the server's reason, the help to read after
+     * a {@code 400}, which is the caller's mistake as the file path's selector and store refusals
+     * are, and exit {@code 4} for a {@code 404}, which is something named that is not there.
+     *
+     * @throws Unreachable when the error did not come from a Spider Sense ({@link #requireSpiderSense})
+     */
+    private static int refused(Options options, int status, @Nullable String contentType, @Nullable String body,
+            String path, PrintStream err) {
+        if (!fromSpiderSense(status, contentType, body)) {
+            throw Unreachable.answered(status, path);
+        }
+        err.println("spider-sense: " + message(status, contentType, body));
+        if (status == 400) {
+            err.println(Cli.pointer(options.command()));
+        }
+        return status == 404 ? Cli.NOT_FOUND : Cli.USAGE;
+    }
+
+    private static @Nullable String contentType(HttpResponse<?> response) {
+        return response.headers().firstValue("content-type").orElse(null);
+    }
+
+    /**
      * Throws {@link Unreachable} when an error answer did not come from a Spider Sense.
      *
      * <p>A Spider Sense answers every error with the {@code {"error": "..."}} object of
@@ -291,8 +310,7 @@ final class Remote {
      * @param path the path asked, which the reason names
      */
     private static void requireSpiderSense(HttpResponse<String> response, String path) {
-        if (!fromSpiderSense(response.statusCode(), response.headers().firstValue("content-type").orElse(null),
-                response.body())) {
+        if (!fromSpiderSense(response.statusCode(), contentType(response), response.body())) {
             throw Unreachable.answered(response.statusCode(), path);
         }
     }
@@ -416,8 +434,7 @@ final class Remote {
      * thing whether a server answered or the file did.
      */
     private static String message(HttpResponse<String> response) {
-        return message(response.statusCode(), response.headers().firstValue("content-type").orElse(null),
-                response.body());
+        return message(response.statusCode(), contentType(response), response.body());
     }
 
     /**

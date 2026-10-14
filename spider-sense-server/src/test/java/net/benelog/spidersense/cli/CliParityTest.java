@@ -183,6 +183,8 @@ class CliParityTest {
                 of("sql", "DELETE FROM span"),
                 new Case("export", List.of(List.of("export", SINCE, UNTIL)), "",
                         text -> text.replaceAll("\"exportedAt\":\\d+", "\"exportedAt\":0")),
+                of("export", "--since=nowhere"),
+                of("export", "--since=5min"),
                 of("import", exported.toString()),
                 of("import", exported.toString(), "--json"),
                 new Case("mcp", List.of(List.of("mcp")), mcp, UnaryOperator.identity()));
