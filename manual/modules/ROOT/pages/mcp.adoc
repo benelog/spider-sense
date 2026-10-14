@@ -157,6 +157,7 @@ java -jar spider-sense.jar init --mcp
 ----
 
 It sets `mcpServers.spider-sense` to `{ "command": "java", "args": ["-jar", "<jar path>", "mcp"] }`, with the same absolute jar path the `CLAUDE.md` block names (xref:agent-skill.adoc#init[init]).
+With `--url=<base url>`, the arguments end in `"--url=<base url>"` too, so every tool call asks the Spider Sense the project's application sends to rather than the one on port 4000.
 An existing file is parsed as JSON and every other entry is kept, though the file is rewritten in Spider Sense's own JSON formatting.
 A file that is not a JSON object is left alone, with a message on stderr and exit code `2`, and `init` then writes nothing at all.
 

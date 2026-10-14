@@ -68,6 +68,18 @@ class InitTest {
                 .as("a file people open and edit").contains("\n  \"mcpServers\": {");
     }
 
+    /** With {@code --mcp} the host asks through the server alone, so a named URL goes into its arguments. */
+    @Test
+    void mcpPassesTheUrlToTheServer(@TempDir Path project) throws IOException {
+        Run run = init("--dir=" + project, "--jar=" + JAR, "--mcp", "--url=http://127.0.0.1:4106/");
+
+        assertThat(run.exit()).as("stderr: %s", run.err()).isZero();
+        assertThat(spiderSense(read(project.resolve(".mcp.json"))).getArray("args").values().stream()
+                .map(Json.JsonValue::asString))
+                .containsExactly("-jar", JAR, "mcp", "--url=http://127.0.0.1:4106");
+        assertThat(block(project)).contains("The UI is then at <http://127.0.0.1:4106>.\n");
+    }
+
     /**
      * The MCP server instead of the CLI, never beside it: the block names the tools, not the
      * CLI's lines, and no skill teaching the CLI is installed (agent-skill.adoc#init-output).

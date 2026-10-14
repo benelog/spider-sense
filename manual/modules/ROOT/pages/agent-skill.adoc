@@ -197,6 +197,7 @@ The skill lines become the single line `skipped skills (--no-skill)` when the sk
 
 `--mcp` hands the host the MCP server instead of the CLI, because the manual warns against enabling both in one host (xref:agent-loop.adoc#choosing-an-interface[Choosing an interface]).
 It writes the stdio MCP server into the project's `.mcp.json` and adds a last line, `wrote .mcp.json (spider-sense over stdio)` or `updated .mcp.json (…)` (xref:mcp.adoc#configuring[Configuring a host]).
+A `--url` goes into the server's arguments as well as into the block, because with `--mcp` the agent asks through the server and through nothing else.
 It installs no skill, and the skill lines become `skipped skills (--mcp)`, because both skills teach the loop through the CLI and the server's `instructions` carry it instead.
 The block keeps its first paragraph, with the jar and the ways to start the application under it, and in place of the CLI's lines and the skill lines it reads:
 

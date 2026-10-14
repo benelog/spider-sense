@@ -252,7 +252,7 @@ final class Init {
             // Without --mcp nothing is written and nothing is said: a host with a shell
             // is meant to use the CLI.
             if (mcpConfig != null) {
-                writeMcpServer(mcpFile, mcpConfig, jar, out);
+                writeMcpServer(mcpFile, mcpConfig, jar, setup.url(), out);
             }
             return Cli.OK;
         } catch (IOException e) {
@@ -302,15 +302,23 @@ final class Init {
      * project's and Spider Sense is one server in it. It is rewritten in this
      * server's own JSON rather than in whatever formatting it had, which is the one
      * thing that is not preserved and the one thing a JSON parser does not carry.
+     *
+     * <p>A {@code --url} goes into the server's arguments as well as into the block: with
+     * {@code --mcp} the host asks through the server and nothing else, so a URL the block alone
+     * named would leave every tool call asking port 4000.
      */
-    private static void writeMcpServer(Path file, Json.JsonObject root, String jar, PrintStream out)
-            throws IOException {
+    private static void writeMcpServer(Path file, Json.JsonObject root, String jar, @Nullable String url,
+            PrintStream out) throws IOException {
         boolean existed = Files.exists(file);
         Json.JsonObject servers = root.has("mcpServers")
                 && root.get("mcpServers") instanceof Json.JsonObject existing ? existing : Json.obj();
+        Json.JsonArray args = Json.arr().add("-jar").add(jar).add(Options.MCP);
+        if (url != null) {
+            args.add("--url=" + url);
+        }
         servers.put(net.benelog.spidersense.mcp.McpServer.NAME, Json.obj()
                 .put("command", "java")
-                .put("args", Json.arr().add("-jar").add(jar).add(Options.MCP)));
+                .put("args", args));
         root.put("mcpServers", servers);
         Files.writeString(file, pretty(root) + "\n", UTF_8);
         out.println((existed ? "updated" : "wrote") + " .mcp.json (spider-sense over stdio)");
