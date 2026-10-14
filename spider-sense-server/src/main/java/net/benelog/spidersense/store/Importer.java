@@ -65,6 +65,10 @@ public final class Importer {
         BadDocument(String message, Throwable cause) {
             super(message, cause);
         }
+
+        BadDocument(String message) {
+            super(message);
+        }
     }
 
     private final Sql sql;
@@ -340,6 +344,9 @@ public final class Importer {
     /**
      * A mark is its name and its instant: the same pair twice is the same moment,
      * however often the file is imported.
+     *
+     * <p>A name {@code POST /api/marks} refuses, one a selector reads as something
+     * else, refuses the document: stored, the mark would be listed and never usable.
      */
     private static long insertMarks(Connection connection, Json.JsonArray marks) throws SQLException {
         long count = 0;
@@ -350,6 +357,11 @@ public final class Importer {
                 // A start mark claims a run of an application that is not running here,
                 // and would become the newest start of its service.
                 continue;
+            }
+            try {
+                Marks.checkName(name);
+            } catch (IllegalArgumentException refused) {
+                throw new BadDocument("a mark of the document is refused: " + refused.getMessage());
             }
             try (PreparedStatement select = connection.prepareStatement(
                     "SELECT COUNT(*) FROM mark WHERE name = ? AND at_ms = ?")) {

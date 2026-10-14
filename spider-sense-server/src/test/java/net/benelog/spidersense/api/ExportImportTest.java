@@ -504,6 +504,23 @@ class ExportImportTest {
         });
     }
 
+    /** A mark name {@code POST /api/marks} refuses: stored, the mark could be listed but never selected. */
+    @Test
+    void aDocumentWithAMarkNameASelectorReadsAsSomethingElseIsRefused() {
+        serve(client -> {
+            for (String name : List.of("5m", "has space", "now")) {
+                Json.JsonObject document = section("marks", Json.obj().put("atMs", NOW).put("name", name))
+                        .put("spans", Json.arr());
+                HttpResponse<String> response = postJson(client, "/api/import", document.toJson());
+                assertThat(response.statusCode()).as(name).isEqualTo(400);
+                assertThat(Json.parse(response.body()).asObject().getString("error"))
+                        .startsWith("a mark of the document is refused: ")
+                        .contains(name);
+            }
+            assertThat(rows(client, "SELECT COUNT(*) FROM mark")).isZero();
+        });
+    }
+
     private static Json.JsonObject section(String key, Json.JsonObject row) {
         return Json.obj()
                 .put("spiderSense", Json.obj().put("schema", Schema.VERSION))

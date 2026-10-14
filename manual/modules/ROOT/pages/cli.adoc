@@ -1011,6 +1011,7 @@ Two identical rows in the file stay two rows.
 * A service row is inserted when the store has none of that name, and otherwise only widens its first and last sighting, keeping the stored process id, language and resource.
 Those describe the process running here, not the one that ran the imported session.
 * A mark is skipped when one with the same name and instant exists, and a `start` mark is never imported: it would claim a run of an application that is not running here and become the newest start of its service.
+A mark whose name `POST /api/marks` refuses, such as `5m` or `now`, refuses the document with a `400` naming it, since the mark could be listed but never selected.
 * A catalog row is merged on its key `(service, schema_name, table_name)` as the writer merges it (xref:storage.adoc#writer[How it is written]), so the table the file describes replaces the row the store had for it.
 
 A document whose `schema` is not this version's is a `400` naming both versions.

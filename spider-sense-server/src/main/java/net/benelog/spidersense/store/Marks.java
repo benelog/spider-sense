@@ -103,17 +103,9 @@ public final class Marks {
      * @throws IllegalArgumentException when the name is not {@link #NAME}, or a selector
      *         reads it as something other than this mark, or the instant is out of range
      */
-    public Mark create(@Nullable String name, @Nullable String service, @Nullable String note,
+    public Mark create(@Nullable String requestedName, @Nullable String service, @Nullable String note,
             @Nullable Long at) {
-        if (name == null || !NAME.matcher(name).matches()) {
-            throw new IllegalArgumentException(
-                    "A mark name is 1 to " + MAX_NAME + " characters of [A-Za-z0-9._-]: " + name);
-        }
-        String reading = selectorReading(name);
-        if (reading != null) {
-            throw new IllegalArgumentException("A mark cannot be named " + name + ": " + reading
-                    + "; choose another name");
-        }
+        String name = checkName(requestedName);
         if (at != null && at < 0) {
             throw new IllegalArgumentException("at is " + at + ", which is before the epoch");
         }
@@ -133,6 +125,27 @@ public final class Marks {
             }
         }, "insert mark");
         return new Mark(id, row.atMs(), name, row.storedService(), row.storedNote());
+    }
+
+    /**
+     * Refuses a name no selector could ask for the mark by, as {@link #create} does,
+     * which the importer applies to a document's marks too.
+     *
+     * @return the name, which is then not null
+     * @throws IllegalArgumentException when the name is not {@link #NAME}, or a selector
+     *         reads it as something other than this mark
+     */
+    static String checkName(@Nullable String name) {
+        if (name == null || !NAME.matcher(name).matches()) {
+            throw new IllegalArgumentException(
+                    "A mark name is 1 to " + MAX_NAME + " characters of [A-Za-z0-9._-]: " + name);
+        }
+        String reading = selectorReading(name);
+        if (reading != null) {
+            throw new IllegalArgumentException("A mark cannot be named " + name + ": " + reading
+                    + "; choose another name");
+        }
+        return name;
     }
 
     /**
