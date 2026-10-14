@@ -63,6 +63,22 @@ class MarksTest {
         assertThat(now.at()).as("a mark without an instant is taken now").isEqualTo(NOW);
     }
 
+    /** An instant no window can reach: the mark could never be used, or the next sweep would delete it. */
+    @Test
+    void anInstantBeforeTheEpochOrPastTheYear9999IsRejected() {
+        assertThatThrownBy(() -> store.marks().create("neg", null, null, -5L))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("before the epoch");
+        assertThatThrownBy(() -> store.marks().create("far", null, null, 253_402_300_800_000L))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("past the year 9999");
+        assertThat(store.marks().list(50)).isEmpty();
+
+        assertThat(store.marks().create("last", null, null, 253_402_300_799_999L).at())
+                .isEqualTo(253_402_300_799_999L);
+        assertThat(store.marks().create("epoch", null, null, 0L).at()).isZero();
+    }
+
     @Test
     void aNameASelectorReadsAsSomethingElseIsRejectedWithTheReason() {
         assertThatThrownBy(() -> store.marks().create("5m", null, null, null))

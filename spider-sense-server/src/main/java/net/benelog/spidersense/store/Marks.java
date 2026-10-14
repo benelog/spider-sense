@@ -45,6 +45,12 @@ public final class Marks {
      */
     public static final Pattern NUMBER_LIKE = Pattern.compile("\\d+(\\.\\d+)?[A-Za-z]*");
 
+    /**
+     * The last instant a mark may name, the end of the year 9999, which is the last a
+     * window may reach ({@code Window.LATEST}): a mark past it no selector could use.
+     */
+    private static final long LATEST = 253_402_300_799_999L;
+
     /** The name the writer uses for an automatic mark. */
     public static final String START = "start";
 
@@ -89,9 +95,13 @@ public final class Marks {
      * moment, and {@code start} the mark the writer keeps, which a mark of a person's
      * would move (marks-and-compare.adoc#marks).
      *
+     * <p>An instant before the epoch or past the year 9999 is refused as a window's is
+     * (api.adoc#conventions), since no selector could use the mark: it is a time in
+     * microseconds or nanoseconds, or a negative one the next sweep would delete.
+     *
      * @param at the instant, or null for now
      * @throws IllegalArgumentException when the name is not {@link #NAME}, or a selector
-     *         reads it as something other than this mark
+     *         reads it as something other than this mark, or the instant is out of range
      */
     public Mark create(@Nullable String name, @Nullable String service, @Nullable String note,
             @Nullable Long at) {
@@ -103,6 +113,13 @@ public final class Marks {
         if (reading != null) {
             throw new IllegalArgumentException("A mark cannot be named " + name + ": " + reading
                     + "; choose another name");
+        }
+        if (at != null && at < 0) {
+            throw new IllegalArgumentException("at is " + at + ", which is before the epoch");
+        }
+        if (at != null && at > LATEST) {
+            throw new IllegalArgumentException("at is " + at + ", which is past the year 9999:"
+                    + " times are epoch milliseconds, not microseconds or nanoseconds");
         }
         MarkRow row = new MarkRow(at == null ? clock.getAsLong() : at, name, service, Columns.blankToNull(note));
         long id = sql.withConnection(connection -> {
