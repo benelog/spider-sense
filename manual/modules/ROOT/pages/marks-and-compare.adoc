@@ -17,7 +17,7 @@ A selector takes one of six forms.
 
 | Duration
 | `30s`, `5m`, `2h`, `1d`
-| That long before `until` for `since`, or before now for `until`.
+| That long before `until` for `since`, or before now for `until`; in `compare`, before `until` for `after` and before `after` for `before` (<<compare>>).
 
 | Date-time
 | `2026-10-08T05:50:00+09:00`, `2026-10-08T05:50:00`
@@ -128,6 +128,8 @@ Over HTTP it is `GET /api/compare?before=<selector>&after=<selector>&until=<sele
 
 It takes no `--since`, because its windows are the two selectors.
 *Before* is the window `[before, after)` and *after* is the window `[after, until)`, with `until` defaulting to now.
+The selectors resolve from the end: `until` first, then `after`, whose duration counts back from `until`, then `before`, whose duration counts back from `after`.
+So `--before=10m --after=5m` is the ten minutes before the last five, not ten minutes ago against five minutes ago, and its before window is twice as long as its after window.
 A span that starts exactly at `after` belongs to the after window, and one that starts exactly at `until` belongs to neither.
 A `before` that does not resolve to a moment earlier than `after`, or an `after` that does not resolve to one earlier than `until`, would be an empty window, so it is answered with `400` over HTTP and is a usage error in the CLI, as an inverted `since` is.
 The refusal names both selectors, the local times they resolved to, the service of a `start` mark, and what to do:
