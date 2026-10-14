@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.regex.Pattern;
 
 import net.benelog.spidersilk.json.Json;
 import org.jspecify.annotations.Nullable;
@@ -53,6 +54,15 @@ final class Init {
 
     /** The placeholder the jar path replaces; the block is written once, here. */
     private static final String JAR_PLACEHOLDER = "${jar}";
+
+    /** The jar path as one word of a shell command, quoted when it would split (agent-skill.adoc#block). */
+    private static final String JAR_WORD = "${jar-word}";
+
+    /** The jar path inside the double-quoted {@code JAVA_TOOL_OPTIONS}, whose own quotes the JVM reads. */
+    private static final String JAR_OPTION = "${jar-option}";
+
+    /** What a shell leaves alone in a word: anything else in the jar path has it quoted. */
+    private static final Pattern SHELL_SAFE = Pattern.compile("[A-Za-z0-9_./:@%+=,-]+");
 
     /** One CLI line of the block: the command, and the comment beside it when it has one. */
     private record Line(String command, @Nullable String comment) {
@@ -149,22 +159,22 @@ final class Init {
         StringBuilder body = new StringBuilder("## Spider Sense\n\n")
                 .append("Spider Sense is a local-development observability tool for this project, "
                         + "and the jar is at `${jar}`.\n")
-                .append("Start the application under it with `java -javaagent:${jar} -jar <app jar>`.\n");
+                .append("Start the application under it with `java -javaagent:${jar-word} -jar <app jar>`.\n");
         if (plugin) {
             body.append("This project applies the `net.benelog.spidersense` Gradle plugin, so "
                     + "`./gradlew bootRun` (or `run`) starts it under Spider Sense: the plugin puts the "
                     + "agent on the application's JVM and not on the Gradle daemon.\n");
         } else if (gradle) {
             body.append("Under Gradle, apply the `net.benelog.spidersense` plugin and run "
-                    + "`./gradlew bootRun -PspiderSense.jar=${jar}` (or `run`): it puts the agent on the "
+                    + "`./gradlew bootRun -PspiderSense.jar=${jar-word}` (or `run`): it puts the agent on the "
                     + "application's JVM and not on the Gradle daemon.\n");
         }
         if (!plugin && setup.build() != Build.GRADLE) {
-            body.append("Under Maven, run `mvn spring-boot:run -Dspring-boot.run.agents=${jar}`: the "
+            body.append("Under Maven, run `mvn spring-boot:run -Dspring-boot.run.agents=${jar-word}`: the "
                     + "Spring Boot plugin puts the agent on the JVM it forks for the application.\n");
         }
         body.append("When the start command is not yours to change, "
-                + "`JAVA_TOOL_OPTIONS=\"-javaagent:${jar}\" <command>` attaches it")
+                + "`JAVA_TOOL_OPTIONS=\"-javaagent:${jar-option}\" <command>` attaches it")
                 .append(gradle
                         ? "; a `./gradlew` command then needs `--no-daemon`, or the daemon hosts a "
                                 + "Spider Sense of its own on port 4000.\n"
@@ -181,7 +191,12 @@ final class Init {
                     .append('\n')
                     .append(setup.skillInstalled() ? SKILL_HERE : SKILL_ELSEWHERE);
         }
-        return (START + "\n" + body + END).replace(JAR_PLACEHOLDER, setup.jar());
+        String jar = setup.jar();
+        boolean safe = SHELL_SAFE.matcher(jar).matches();
+        return (START + "\n" + body + END)
+                .replace(JAR_WORD, safe ? jar : '"' + jar + '"')
+                .replace(JAR_OPTION, safe ? jar : "'" + jar + "'")
+                .replace(JAR_PLACEHOLDER, jar);
     }
 
     /**
@@ -197,7 +212,7 @@ final class Init {
             if (setup.gradlePlugin()) {
                 lines.append("./gradlew -q spiderSense --args=\"").append(command).append('"');
             } else {
-                lines.append("java -jar ${jar} ").append(command);
+                lines.append("java -jar ${jar-word} ").append(command);
                 if (url != null && !"help".equals(command)) {
                     lines.append(" --url=").append(url);
                 }

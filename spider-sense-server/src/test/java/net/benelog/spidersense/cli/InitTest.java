@@ -303,6 +303,27 @@ class InitTest {
                 .doesNotContain("<127.0.0.1");
     }
 
+    /**
+     * A jar path with a space is quoted in every command the agent copies into a shell, and in
+     * single quotes inside {@code JAVA_TOOL_OPTIONS}, whose quotes the JVM reads (agent-skill.adoc#block).
+     */
+    @Test
+    void aJarPathWithASpaceIsQuotedInEveryCommand(@TempDir Path project) throws IOException {
+        String jar = "/opt/my tools/spider-sense.jar";
+        Run run = init("--dir=" + project, "--jar=" + jar, "--no-skill");
+
+        assertThat(run.exit()).as("stderr: %s", run.err()).isZero();
+        assertThat(block(project))
+                .contains("and the jar is at `" + jar + "`.")
+                .contains("`java -javaagent:\"" + jar + "\" -jar <app jar>`")
+                .contains("`./gradlew bootRun -PspiderSense.jar=\"" + jar + "\"`")
+                .contains("`mvn spring-boot:run -Dspring-boot.run.agents=\"" + jar + "\"`")
+                .contains("`JAVA_TOOL_OPTIONS=\"-javaagent:'" + jar + "'\" <command>`")
+                .contains("java -jar \"" + jar + "\" findings --since=start  # ranked")
+                .doesNotContain("-javaagent:" + jar)
+                .doesNotContain("java -jar " + jar);
+    }
+
     @Test
     void aFileThatIsNotJsonAtAllIsRefusedTheSameWay(@TempDir Path project) throws IOException {
         Path file = project.resolve(".mcp.json");
