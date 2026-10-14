@@ -24,6 +24,18 @@ class ServiceNameDefaultTest {
         assertThat(derive("app.jar", null)).isEqualTo("app");
         assertThat(derive("log4j-api-2.20.0.RELEASE.jar", null)).isEqualTo("log4j-api");
         assertThat(derive("1.0.jar", null)).as("nothing but a version keeps it").isEqualTo("1.0");
+        assertThat(derive("orders-0.1.0-all.jar", null)).as("a classifier").isEqualTo("orders");
+        assertThat(derive("orders-0.1.0-plain.jar", null)).isEqualTo("orders");
+        assertThat(derive("app-1.0.0-rc.1.jar", null)).isEqualTo("app");
+        assertThat(derive("app-1.0-jar-with-dependencies.jar", null)).isEqualTo("app");
+    }
+
+    @Test
+    void aNumberInTheMiddleOfTheNameIsPartOfIt() {
+        assertThat(derive("java-17-app.jar", null)).isEqualTo("java-17-app");
+        assertThat(derive("team-42-orders.jar", null)).isEqualTo("team-42-orders");
+        assertThat(derive("s3-1-sync.jar", null)).isEqualTo("s3-1-sync");
+        assertThat(derive("http-2-server-0.1.0.jar", null)).isEqualTo("http-2-server");
     }
 
     @Test

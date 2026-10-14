@@ -220,6 +220,8 @@ The first of these that names the service wins:
 
 The last one is Spider Sense's own, and it applies only when the service would otherwise be `unknown_service:java`.
 `java -jar build/libs/orders-0.1.0.jar` is `orders`: the jar's name without `.jar` and without a trailing version, so a release does not start a new service.
+The version is the numbers with what may follow them: a qualifier such as `-SNAPSHOT`, `.RELEASE` or `-rc.1`, and a classifier such as `-all` or `-plain`.
+A number between two words is part of the name, so `java-17-app.jar` is `java-17-app`.
 A main class is named after the class path entry that holds it.
 A jar there is named the same way, which covers the start script of `installDist`, and a classes directory under `build/` or `target/` is named after its project, so `orders/build/classes/java/main` is `orders`.
 Failing both, the main class's simple name is the service.

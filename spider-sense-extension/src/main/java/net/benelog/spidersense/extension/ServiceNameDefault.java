@@ -36,8 +36,15 @@ public final class ServiceNameDefault implements ConditionalResourceProvider {
     static final AttributeKey<String> SERVICE_NAME = AttributeKey.stringKey("service.name");
     static final int ORDER = 900;
 
-    /** A trailing version: {@code -0.1.0}, {@code -1.0-SNAPSHOT}, {@code -2.3.1.RELEASE}. */
-    private static final Pattern VERSION = Pattern.compile("-\\d+(\\.\\d+)*([.-][0-9A-Za-z]+)*$");
+    /**
+     * A trailing version: {@code -0.1.0}, {@code -1.0-SNAPSHOT}, {@code -2.3.1.RELEASE},
+     * {@code -0.1.0-all}. What follows the numbers is a version or a classifier word, or something
+     * that starts with a digit, never any word: {@code java-17-app} keeps its name.
+     */
+    private static final Pattern VERSION = Pattern.compile("-\\d+(\\.\\d+)*([.-](\\d[0-9a-z]*"
+            + "|snapshot|release|final|ga|sp\\d*|rc\\d*|cr\\d*|m\\d+|milestone\\d*|alpha\\d*|beta\\d*"
+            + "|preview|ea|dev|all|plain|shaded|fat|uber|exec|boot|standalone|jar-with-dependencies))*$",
+            Pattern.CASE_INSENSITIVE);
 
     @Override
     public int order() {
