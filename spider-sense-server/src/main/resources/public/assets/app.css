@@ -13,6 +13,9 @@
   --accent-soft: rgba(226, 96, 63, 0.14);
   /* The accent behind white text, a button or a badge: dark enough for 4.5:1 in both palettes. */
   --accent-strong: #c4452a;
+  /* The accent and the INFO blue set as text or as an icon: 4.5:1 on every background and tint they sit on (ui.adoc#palette). */
+  --accent-text: #ea8e76;
+  --info-text: #72b6ea;
   --ok: #5ec27f;
   --warn: #f0b64b;
   --err: #e5484d;
@@ -68,6 +71,8 @@
     --ok-text: #1f7a43;
     --warn-text: #8a6100;
     --err-text: #b8302f;
+    --accent-text: #ab3c25;
+    --info-text: #246297;
     --series-1: #d1532f;
     --series-2: #6f7889;
     --series-3: #2e9e57;
@@ -100,6 +105,8 @@
   --ok-text: #1f7a43;
   --warn-text: #8a6100;
   --err-text: #b8302f;
+  --accent-text: #ab3c25;
+  --info-text: #246297;
   --series-1: #d1532f;
   --series-2: #6f7889;
   --series-3: #2e9e57;
@@ -134,7 +141,7 @@ h1, h2, h3, p, dl, dd, figure { margin: 0; }
 ul { margin: 0; padding: 0; list-style: none; }
 
 a { color: inherit; text-decoration: none; }
-a:hover { color: var(--accent); }
+a:hover { color: var(--accent-text); }
 
 button, input, select, textarea { font: inherit; color: inherit; }
 
@@ -153,7 +160,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .bad { color: var(--err-text); }
 .warned { color: var(--warn-text); }
 .good { color: var(--ok-text); }
-.accent { color: var(--accent); }
+.accent { color: var(--accent-text); }
 
 .icon { width: 16px; height: 16px; flex: none; }
 
@@ -196,7 +203,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 #nav a:hover { background: color-mix(in srgb, var(--text) 7%, transparent); color: var(--text); }
 #nav a[aria-current="page"] {
-  background: var(--accent-soft); color: var(--accent);
+  background: var(--accent-soft); color: var(--accent-text);
   border-left-color: var(--accent);
 }
 
@@ -220,7 +227,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   color: var(--text-muted); font-size: 12px; cursor: pointer; text-decoration: underline;
   text-underline-offset: 3px; text-decoration-color: var(--line);
 }
-.link-btn:hover { color: var(--accent); }
+.link-btn:hover { color: var(--accent-text); }
 .link-btn.danger:hover { color: var(--err-text); }
 /* The foot's two actions: words in the wide sidebar, icons with a title in the collapsed one. */
 .foot-action .icon { display: none; }
@@ -262,9 +269,9 @@ input::placeholder { color: var(--text-muted); opacity: 0.8; }
 .btn-primary { background: var(--accent-strong); border-color: var(--accent-strong); color: #fff; }
 .btn-primary:hover { filter: brightness(1.06); }
 .btn-ghost { background: none; }
-.btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent-text); background: var(--accent-soft); }
 .btn-live .icon { color: var(--text-muted); }
-.btn-live[aria-pressed="true"] .icon { color: var(--accent); animation: live-blink 2s ease-in-out infinite; }
+.btn-live[aria-pressed="true"] .icon { color: var(--accent-text); animation: live-blink 2s ease-in-out infinite; }
 @keyframes live-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 @media (prefers-reduced-motion: reduce) { .btn-live[aria-pressed="true"] .icon { animation: none; } }
 /* Live, and a load still out: a small ring after the label, while the page keeps what it shows. */
@@ -344,7 +351,7 @@ a.stat-link:focus-visible, a.hist-link:focus-visible { outline: 2px solid var(--
 }
 .table th.right .th-btn { justify-content: flex-end; }
 .th-btn:hover { color: var(--text); }
-.sort-mark { font-size: 8px; color: var(--accent); width: 8px; }
+.sort-mark { font-size: 8px; color: var(--accent-text); width: 8px; }
 .table td { padding: 6px 10px; border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent); vertical-align: middle; }
 .table tbody tr:last-child td { border-bottom: 0; }
 .table tbody tr.clickable { cursor: pointer; }
@@ -370,7 +377,7 @@ a.stat-link:focus-visible, a.hist-link:focus-visible { outline: 2px solid var(--
 .service-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 .service-dot.large { width: 10px; height: 10px; }
 .chip-service { color: var(--text); }
-.chip-accent { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.chip-accent { border-color: var(--accent); color: var(--accent-text); background: var(--accent-soft); }
 .chip-warn { border-color: color-mix(in srgb, var(--warn) 55%, var(--line)); color: var(--warn-text); background: color-mix(in srgb, var(--warn) 12%, transparent); }
 
 .method {
@@ -378,7 +385,7 @@ a.stat-link:focus-visible, a.hist-link:focus-visible { outline: 2px solid var(--
   padding: 1px 5px; border-radius: 3px; border: 1px solid var(--line);
   background: var(--bg-raised); color: var(--text-muted);
 }
-.method[data-method="GET"] { color: var(--series-5); border-color: color-mix(in srgb, var(--series-5) 45%, var(--line)); }
+.method[data-method="GET"] { color: var(--info-text); border-color: color-mix(in srgb, var(--series-5) 45%, var(--line)); }
 .method[data-method="POST"] { color: var(--ok-text); border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); }
 .method[data-method="PUT"], .method[data-method="PATCH"] { color: var(--warn-text); border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); }
 .method[data-method="DELETE"] { color: var(--err-text); border-color: color-mix(in srgb, var(--err) 45%, var(--line)); }
@@ -391,7 +398,7 @@ a.stat-link:focus-visible, a.hist-link:focus-visible { outline: 2px solid var(--
 .sev { font-size: 10.5px; font-weight: 600; padding: 1px 5px; border-radius: 3px; background: var(--bg-raised); color: var(--text-muted); font-family: var(--font-mono); }
 .sev[data-sev="ERROR"], .sev[data-sev="FATAL"] { color: var(--err-text); background: color-mix(in srgb, var(--err) 14%, transparent); }
 .sev[data-sev="WARN"] { color: var(--warn-text); background: color-mix(in srgb, var(--warn) 14%, transparent); }
-.sev[data-sev="INFO"] { color: var(--series-5); background: color-mix(in srgb, var(--series-5) 14%, transparent); }
+.sev[data-sev="INFO"] { color: var(--info-text); background: color-mix(in srgb, var(--series-5) 14%, transparent); }
 
 .marker { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; }
 .marker.slow { color: var(--warn-text); }
@@ -521,7 +528,7 @@ pre.stack {
   display: inline-flex; align-items: center; gap: 6px;
 }
 .tab:hover { color: var(--text); }
-.tab[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
+.tab[aria-selected="true"] { color: var(--accent-text); border-bottom-color: var(--accent); }
 .tab-count { font-size: 10.5px; background: var(--bg-raised); border-radius: 8px; padding: 0 5px; }
 
 /* ---------- drawer ---------- */
@@ -608,7 +615,7 @@ details.collapsible > summary:hover { color: var(--text); }
 .tingle .t-icon { grid-row: span 2; align-self: center; color: var(--text-muted); }
 .tingle[data-kind="error"] .t-icon { color: var(--err-text); }
 .tingle[data-kind="slow-request"] .t-icon { color: var(--warn-text); }
-.tingle[data-kind="slow-query"] .t-icon { color: var(--accent); }
+.tingle[data-kind="slow-query"] .t-icon { color: var(--accent-text); }
 .tingle .t-title { font-size: 12px; display: flex; align-items: center; gap: 8px; min-width: 0; }
 .tingle .t-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tingle .t-detail { grid-column: 2; font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -624,7 +631,7 @@ details.collapsible > summary:hover { color: var(--text); }
 .scatter-bar .chart-legend { padding: 0; }
 .scatter-counts { display: flex; gap: 12px; font-size: 11px; color: var(--text-muted); margin-left: auto; }
 .scatter-counts b { color: var(--text); font-weight: 500; }
-.scatter-sel { display: inline-flex; align-items: center; gap: 8px; font-size: 11px; color: var(--accent); }
+.scatter-sel { display: inline-flex; align-items: center; gap: 8px; font-size: 11px; color: var(--accent-text); }
 .clip-note { font-size: 11px; color: var(--warn-text); }
 
 /* ---------- response summary ---------- */
@@ -703,7 +710,7 @@ a.hist-link:hover .hist-label { color: var(--text); }
 .profile-row.warn td { background: color-mix(in srgb, var(--warn) 9%, transparent); }
 .profile-row.err td { background: color-mix(in srgb, var(--err) 10%, transparent); }
 .profile-row.hot td { background: color-mix(in srgb, var(--accent) 10%, transparent); }
-.profile-row.hot .self-value { font-weight: 600; color: var(--accent); }
+.profile-row.hot .self-value { font-weight: 600; color: var(--accent-text); }
 .depth-pad { display: inline-block; }
 
 .trace-head { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; padding: 12px 14px; min-width: 0; }
@@ -739,7 +746,7 @@ a.hist-link:hover .hist-label { color: var(--text); }
 .chip-kind { font-family: var(--font-mono); font-size: 10.5px; }
 /* The state of a finding: new is the accent, since it is what the last change introduced. */
 .chip-state { font-size: 10.5px; }
-.chip-state.state-new { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.chip-state.state-new { border-color: var(--accent); color: var(--accent-text); background: var(--accent-soft); }
 .chip-state.state-ongoing { color: var(--text-muted); }
 .chip-state.state-regressed { border-color: color-mix(in srgb, var(--err) 55%, var(--line)); color: var(--err-text); background: color-mix(in srgb, var(--err) 12%, transparent); }
 
@@ -776,7 +783,7 @@ a.hist-link:hover .hist-label { color: var(--text); }
 .f-code .f-frame { color: var(--text); white-space: pre-wrap; word-break: break-word; }
 .src-frame { display: grid; gap: 2px; }
 .src-link { color: var(--text); text-decoration: underline; text-decoration-color: var(--text-muted); text-underline-offset: 2px; }
-.src-link:hover { color: var(--accent); text-decoration-color: var(--accent); }
+.src-link:hover { color: var(--accent-text); text-decoration-color: var(--accent); }
 .src-lines { margin: 0 0 6px; padding: 4px 0; font-size: 11px; line-height: 1.5; background: var(--bg-raised); border-radius: 4px; overflow-x: auto; }
 .src-line { display: block; padding: 0 8px 0 0; color: var(--text-muted); white-space: pre; }
 .src-hit { color: var(--text); background: var(--accent-soft); }

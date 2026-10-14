@@ -61,10 +61,12 @@ The palette uses the same tokens as the Spider Silk badges, extended for a dark 
 | `--text-muted` | `#949db0` | `#5f6878` | Secondary text, the strand grey
 | `--accent` | `#e2603f` | `#d1532f` | The tingle: primary actions, the active nav item, slow markers
 | `--accent-strong` | `#c4452a` | `#c4452a` | The accent behind white text: the primary button, the tingle badge
+| `--accent-text` | `#ea8e76` | `#ab3c25` | The accent set as text or as an icon: a link's hover, the active page and tab, a pressed toggle, the slow-call count
 | `--ok` | `#5ec27f` | `#2e9e57` | Healthy
 | `--warn` | `#f0b64b` | `#c98c14` | Slow
 | `--err` | `#e5484d` | `#c9363b` | Errors
 | `--ok-text`, `--warn-text`, `--err-text` | `--ok`, `--warn`, `#f47a7d` | `#1f7a43`, `#8a6100`, `#b8302f` | The three status colours set as text or as an icon rather than as a fill
+| `--info-text` | `#72b6ea` | `#246297` | The INFO severity and the GET method label, whose tint and border stay `--series-5`
 | `--silk` | `#8a93a6` | `#8a93a6` | Strands, neutral chart lines
 | `--spider` | `#5a3a22` | `#5a3a22` | Rarely: the logo only
 |===
@@ -320,7 +322,21 @@ A table that scrolls sideways fades at the edge there is more of, and the fade g
 
 Every icon-only control has an `aria-label`.
 Colour is never the only carrier of meaning: an error also gets a bolt, and something slow also gets a ring or a turtle.
-Text reaches WCAG AA's 4.5:1 on every background of both palettes: a status colour set as text takes its `-text` token, and white text sits on `--accent-strong`.
+Text reaches WCAG AA's 4.5:1 on every background of both palettes: a status colour set as text takes its `-text` token, the accent set as text takes `--accent-text`, the INFO severity and the GET method label take `--info-text`, and white text sits on `--accent-strong`.
+The two tokens of the accent and the INFO blue are set apart from the colours they stand for because those miss 4.5:1 as text: `--accent` reaches 3.76:1 on the dark `--bg-raised` and 3.69:1 on the light one, the light `--accent-strong` 4.35:1 there and 3.76:1 on `--accent-soft`, and the light `--series-5` 3.72:1 on `--bg-raised`.
+The fills, the borders and the chart series keep the colours themselves.
+Their ratios are these, on the three backgrounds and on the tint each sits on, `--accent-soft` for a pressed toggle, a chip or the active page, and `--series-5` at 14% for the INFO severity:
+
+[cols="3,2,2,2,2",options="header"]
+|===
+| Text | On `--bg` | On `--bg-panel` | On `--bg-raised` | On its tint, at least
+
+| `--accent-text`, dark | 7.15:1 | 6.46:1 | 5.43:1 | 4.63:1
+| `--accent-text`, light | 5.75:1 | 6.17:1 | 5.41:1 | 4.67:1
+| `--info-text`, dark | 7.95:1 | 7.19:1 | 6.04:1 | 4.76:1
+| `--info-text`, light | 5.99:1 | 6.42:1 | 5.63:1 | 4.79:1
+|===
+
 A clickable table row takes the focus, and Enter or Space on the row does what a click does.
 Enter on a link or a button inside the row belongs to that control: the link opens, and the row does not act.
 A drawer takes the focus when it opens, and closing it gives the focus back to the row that opened it, unless the person has moved the focus elsewhere in the meantime.
