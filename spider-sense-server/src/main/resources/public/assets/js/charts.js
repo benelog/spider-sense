@@ -71,6 +71,23 @@ function withAlpha(hex, alpha) {
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
 }
 
+/**
+ * The labels of a time axis' ticks, `splits` in seconds: the clock, and under the first tick of
+ * each day that day, so an axis that runs before today or across midnight names its days
+ * (ui.adoc#numbers-and-times).
+ */
+export function timeTicks(splits, short, now = Date.now()) {
+  let previous = fmt.day(now);
+  return splits.map((s) => {
+    const ms = s * 1000;
+    const clock = short ? fmt.clockShort(ms) : fmt.clock(ms);
+    const day = fmt.day(ms);
+    if (day === previous) return clock;
+    previous = day;
+    return clock + '\n' + day;
+  });
+}
+
 /** Nice tick values for the time axis of a window. */
 function timeAxis(colors, opts = {}) {
   return {
@@ -80,7 +97,7 @@ function timeAxis(colors, opts = {}) {
     ticks: { stroke: withAlpha(colors.line, 0.75), width: 1, size: 4 },
     font: uiFont(),
     space: 70,
-    values: (u, splits) => splits.map((s) => (opts.short ? fmt.clockShort(s * 1000) : fmt.clock(s * 1000))),
+    values: (u, splits) => timeTicks(splits, opts.short),
   };
 }
 
@@ -409,7 +426,7 @@ export function timeSeries(container, spec) {
               return `<span class="k"><i style="background:${color}"></i>${escapeHtml(s.label)}</span><span class="v">${escapeHtml(u.series[column[i]].value(u, v))}</span>`;
             }).filter(Boolean);
             if (!rows.length) { tip.classList.remove('show'); return; }
-            tip.innerHTML = `<div class="t">${fmt.clock(u.data[0][idx] * 1000)}</div>${rows.join('')}`;
+            tip.innerHTML = `<div class="t">${fmt.time(u.data[0][idx] * 1000)}</div>${rows.join('')}`;
             tip.classList.add('show');
             const w2 = tip.offsetWidth;
             tip.style.left = tipLeft(left, w2, u.width);
@@ -787,7 +804,7 @@ export function scatterChart(container, opts) {
           const x1 = plot.posToVal((cell.c + 1) * bins.cellW, 'x') * 1000;
           const yTop = plot.posToVal(cell.r * bins.cellH, 'y');
           const yBottom = plot.posToVal((cell.r + 1) * bins.cellH, 'y');
-          tip.innerHTML = `<div class="t">${fmt.clock(x0)} – ${fmt.clock(x1)}</div>` +
+          tip.innerHTML = `<div class="t">${fmt.time(x0)} – ${fmt.time(x1)}</div>` +
             `<span class="k">Response time</span><span class="v">${durationRange(yBottom, yTop)}</span>` +
             `<span class="k">Requests</span><span class="v">${fmt.count(cell.count)}</span>` +
             (cell.errors ? `<span class="k">Errors</span><span class="v">${fmt.count(cell.errors)}</span>` : '');
@@ -804,7 +821,7 @@ export function scatterChart(container, opts) {
           over.style.cursor = 'pointer';
           tip.innerHTML = `<div class="t">${escapeHtml(p[POINT.ENDPOINT])}</div>` +
             `<span class="k"><i style="background:${serviceColor(p[POINT.SERVICE])}"></i>${escapeHtml(p[POINT.SERVICE])}</span><span class="v">${fmt.dur(p[POINT.MS])}</span>` +
-            `<span class="k">Time</span><span class="v">${fmt.clock(p[POINT.START])}</span>`;
+            `<span class="k">Time</span><span class="v">${fmt.time(p[POINT.START])}</span>`;
           tip.classList.add('show');
           const rect = over.getBoundingClientRect();
           const left = plot.valToPos(p[POINT.START] / 1000, 'x');

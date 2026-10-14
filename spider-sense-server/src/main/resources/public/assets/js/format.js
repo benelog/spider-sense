@@ -97,6 +97,12 @@ export function timeMs(ts, now = Date.now()) {
   return time(ts, now) + '.' + pad(d.getMilliseconds(), 3);
 }
 
+/** The day alone, `MMM d`, which a chart's time axis puts under the first tick of each day. */
+export function day(ts) {
+  const d = new Date(ts);
+  return MONTHS[d.getMonth()] + ' ' + d.getDate();
+}
+
 /** Clock only, for chart axes. */
 export function clock(ts) {
   const d = new Date(ts);

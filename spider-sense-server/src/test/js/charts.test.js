@@ -1,7 +1,12 @@
 // charts.js: the legend a chart's spec implies, and the series alignment of the JVM and Metrics pages.
+process.env.TZ = 'UTC';
+
+import './browser-env.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { legendItems, alignedTimes, alignTo, stackColumns, tipLeft, valueText, tickText, durationRange, countScales, COUNT_INCRS } from '../../main/resources/public/assets/js/charts.js';
+import { document } from './fake-dom.js';
+import { legendItems, alignedTimes, alignTo, stackColumns, tipLeft, valueText, tickText, durationRange, countScales, COUNT_INCRS, timeTicks, timeSeries } from '../../main/resources/public/assets/js/charts.js';
+import * as fmt from '../../main/resources/public/assets/js/format.js';
 import { throughputSpec } from '../../main/resources/public/assets/js/throughput.js';
 
 test('the legend lists the series under their legend label, leaving out the hidden ones', () => {
@@ -108,4 +113,23 @@ test('a count axis in the billions still finds a whole-number step that keeps it
   assert.ok(step(4e12 * 1.15, 1000) != null, 'a few terabytes still have a step');
   assert.equal(step(1.15, 160), 1, 'a series at 0 or 1 still steps by one');
   assert.ok(COUNT_INCRS.every(Number.isInteger));
+});
+
+test('a time axis names the day under its first tick before today and under the first tick of each day after', () => {
+  const now = Date.UTC(2026, 9, 15, 12, 0, 0) / 1000;
+  const hours = (...hs) => hs.map((h) => now + h * 3600);
+  assert.deepEqual(timeTicks(hours(-2, -1, 0), false, now * 1000), ['10:00:00', '11:00:00', '12:00:00'], 'today: the clock alone');
+  assert.deepEqual(timeTicks(hours(-24, -12, 0), true, now * 1000), ['12:00\nOct 14', '00:00\nOct 15', '12:00'],
+    'yesterday named under its first tick, today under its first');
+});
+
+test('a time-series tooltip names the day of a point before today', () => {
+  const at = Date.now() - 2 * 86400000;
+  const container = document.createElement('div');
+  const chart = timeSeries(container, { t: [at, at + 60000], series: [{ label: 'Requests', values: [3, 4] }] });
+  chart.plot.cursor = { idx: 0, left: 10, top: 10 };
+  for (const hook of chart.plot.opts.hooks.setCursor) hook(chart.plot);
+  const tip = container.querySelector('.chart-tip').innerHTML;
+  assert.ok(tip.includes(`<div class="t">${fmt.day(at)} ${fmt.clock(at)}</div>`), tip);
+  chart.destroy();
 });
