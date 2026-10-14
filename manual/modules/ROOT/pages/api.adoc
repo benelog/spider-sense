@@ -581,6 +581,7 @@ A selector is a duration (`30s`, `5m`, `2h`, `1d`), an ISO-8601 date-time (`2026
 `since` defaults to `15m`, and `until` to `now`.
 The `+` of an offset is `%2B` in a query string, and a space in its place, which is what an unencoded `+` arrives as, is read as one.
 An unknown mark name is `404`, and a `since` after `until` is `400`.
+So is a `from` after `to`, and the message names the parameters that were sent, such as `from is 1970-01-01T09:00:00.005+09:00, which is after to 1970-01-01T09:00:00.003+09:00`.
 
 [#text-rendering]
 === Text rendering

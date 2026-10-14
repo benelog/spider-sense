@@ -177,6 +177,19 @@ class SelectorsTest {
                 .isInstanceOf(Selectors.BadSelector.class);
     }
 
+    /** An inverted from and to is refused in their names, with instants that differ. */
+    @Test
+    void anInvertedFromAndToIsRefusedInTheirNames() {
+        assertThatThrownBy(() -> selectors.window(5L, 3L, null, null, null))
+                .isInstanceOf(Selectors.BadSelector.class)
+                .hasMessage("from is " + Selectors.local(5) + ", which is after to " + Selectors.local(3))
+                .hasMessageContaining(".005").hasMessageContaining(".003");
+        assertThatThrownBy(() -> selectors.window(NOW, null, null, "5m", null))
+                .isInstanceOf(Selectors.BadSelector.class)
+                .hasMessage("from is " + Selectors.local(NOW) + ", which is after until "
+                        + Selectors.local(NOW - 300_000));
+    }
+
     @Test
     void compareResolvesTheEndFirstThenCountsAfterAndBeforeBackFromIt() {
         assertThat(selectors.compareBounds("10m", "5m", null, null))

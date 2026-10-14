@@ -208,7 +208,9 @@ public final class Selectors {
         long start = from != null ? from
                 : resolve(since == null ? DEFAULT_SINCE : since, end, now, service);
         if (start > end) {
-            throw new BadSelector("since resolves to " + local(start) + ", which is after until " + local(end));
+            // Named as the caller sent them: from and to are instants already, since and until resolve.
+            throw new BadSelector((from != null ? "from is " : "since resolves to ") + local(start)
+                    + ", which is after " + (to != null ? "to " : "until ") + local(end));
         }
         return Window.of(start, end);
     }
