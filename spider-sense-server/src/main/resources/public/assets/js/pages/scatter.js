@@ -12,6 +12,22 @@ import { count, dur, clock } from '../format.js';
 /** Under Live the scatter merges the last 10 s every 2 s (pages.adoc#scatter), faster than the page refresh. */
 const LIVE_MERGE_PERIOD_MS = 2000;
 const LIVE_MERGE_WINDOW_MS = 10000;
+/** The points a full load asks for, and the most a Live session keeps. */
+const POINT_LIMIT = 5000;
+
+/**
+ * Fresh points merged into the ones on screen: deduplicated by trace id, the ones before
+ * `from` dropped, and held to `limit`, the oldest going first, so a long Live session costs
+ * what a full load costs. `cut` says whether the limit dropped any.
+ */
+export function mergePoints(points, fresh, from, limit = POINT_LIMIT) {
+  const seen = new Set(points.map((p) => p[POINT.TRACE]));
+  const merged = points.concat(fresh.filter((p) => !seen.has(p[POINT.TRACE])))
+    .filter((p) => p[POINT.START] >= from);
+  if (merged.length <= limit) return { points: merged, cut: false };
+  merged.sort((a, b) => b[POINT.START] - a[POINT.START]);
+  return { points: merged.slice(0, limit), cut: true };
+}
 
 /**
  * The linear axis' maximum: half again the p99 of the durations shown, so a few outliers do
@@ -231,7 +247,7 @@ export function render(root, ctx) {
 
   /** The whole window's points, for the service and range the top bar shows. */
   const loader = pageLoader({
-    fetch: async () => ({ requested: scope(), res: await api.scatter({ limit: 5000 }) }),
+    fetch: async () => ({ requested: scope(), res: await api.scatter({ limit: POINT_LIMIT }) }),
     paint: ({ requested, res }) => {
       // Only a full load can be cut; the 10 s a Live merge asks for leaves the cut set as it was.
       truncated = !!res.truncated;
@@ -265,12 +281,12 @@ export function render(root, ctx) {
     const requested = scope();
     try {
       const now = Date.now();
-      const res = await api.scatter({ limit: 5000 }, { window: { from: now - LIVE_MERGE_WINDOW_MS, to: now } });
+      const res = await api.scatter({ limit: POINT_LIMIT }, { window: { from: now - LIVE_MERGE_WINDOW_MS, to: now } });
       if (loader.isDestroyed() || requested !== loadedFor) return;
-      const seen = new Set(points.map((p) => p[POINT.TRACE]));
-      const fresh = (res.points || []).filter((p) => !seen.has(p[POINT.TRACE]));
       const w = api.windowFor();
-      points = points.concat(fresh).filter((p) => p[POINT.START] >= w.from);
+      const merged = mergePoints(points, res.points || [], w.from);
+      points = merged.points;
+      if (merged.cut) truncated = true;
       paintBar();
       // The axis follows the merged points, as the ▲ note paintBar just wrote does.
       if (chart) chart.setPoints(shown(), w, yMaxOf());

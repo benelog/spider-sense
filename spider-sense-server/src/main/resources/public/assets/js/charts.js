@@ -575,7 +575,9 @@ export function scatterChart(container, opts) {
     const yOf = (plot, p, canvas = false) => plot.valToPos(Math.max(p[POINT.MS], floor || 0.0001), 'y', canvas);
     // The linear axis stops at yMax so a few outliers do not flatten the rest; the log
     // scale has room for them, so it runs to the slowest point.
-    const top = view.logScale ? Math.max(10, ...ys) * 1.05 : (view.yMax || Math.max(10, ...ys) * 1.05);
+    // A loop, not a spread: a long Live session holds more points than a call takes arguments.
+    const slowest = ys.reduce((m, y) => Math.max(m, y), 10);
+    const top = view.logScale ? slowest * 1.05 : (view.yMax || slowest * 1.05);
     const data = [xs.length ? xs : [view.window.from / 1000, view.window.to / 1000], xs.length ? ys : [null, null]];
 
     // The heatmap's cells, in CSS pixels, recomputed on every draw so the hover can
