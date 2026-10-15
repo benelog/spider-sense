@@ -64,7 +64,7 @@ An option that takes a value is a usage error without one, so a bare `--since` i
 | Form | Example | Meaning |
 |---|---|---|
 | duration | `30s`, `5m`, `2h`, `1d` | that long before `until` (for `since`) or before now (for `until`) |
-| date-time | `2026-10-08T05:50:00+09:00`, `2026-10-08T05:50:00` | the instant, in ISO-8601; without an offset, in this machine's time zone, so the time a heading prints can be pasted back |
+| date-time | `2026-10-08T05:50:00+09:00`, `2026-10-08T05:50:00` | the instant, in ISO-8601; without an offset, in the time zone Spider Sense started in (the machine's unless `-Duser.timezone` names another), so the time a heading prints can be pasted back |
 | epoch milliseconds | `1758000000000` | the instant, 13 or more digits |
 | mark name | `before`, `after-fix` | the newest mark with that name |
 | `start` | `start` | the newest automatic start mark, of `--service` when one is given |

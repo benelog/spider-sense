@@ -5,11 +5,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TimeZone;
 import java.util.stream.Stream;
 
 import org.jspecify.annotations.Nullable;
@@ -324,6 +327,29 @@ class TextTest {
         assertThat(java.time.OffsetDateTime.parse(start).toInstant().toEpochMilli()).isEqualTo(from);
         assertThat(Text.interval(from, from + 300_000)).startsWith(start + " → ");
         assertThat(Text.instant(1_791_990_085_000L)).as("a whole second prints as one").doesNotContain(".");
+    }
+
+    /**
+     * A heading, a mark and a log line print in the zone Spider Sense found, whatever default an
+     * application under the agent sets later (marks-and-compare.adoc#time-zone).
+     */
+    @Test
+    void anApplicationThatChangesTheDefaultZoneLaterMovesNoPrintedTime() {
+        long at = 1_791_990_085_846L;
+        ZoneId started = ZoneId.systemDefault();
+        String instant = Text.instant(at);
+        ZoneId other = ZoneId.of(started.getRules().getOffset(Instant.ofEpochMilli(at)).getTotalSeconds()
+                == 20_700 ? "UTC" : "Asia/Kathmandu");
+        TimeZone before = TimeZone.getDefault();
+        TimeZone.setDefault(TimeZone.getTimeZone(other));
+        try {
+            assertThat(Text.instant(at)).isEqualTo(instant);
+            assertThat(Text.instantMillis(at)).isEqualTo(instant);
+            assertThat(Text.clockMillis(at)).isEqualTo(instant.substring(11, 23));
+            assertThat(Text.clock(at)).isEqualTo(instant.substring(11, 19));
+        } finally {
+            TimeZone.setDefault(before);
+        }
     }
 
     /**

@@ -21,7 +21,7 @@ A selector takes one of six forms.
 
 | Date-time
 | `2026-10-08T05:50:00+09:00`, `2026-10-08T05:50:00`
-| The instant, in ISO-8601, with an offset or `Z`, or without one in the time zone of the machine that resolves it.
+| The instant, in ISO-8601, with an offset or `Z`, or without one in <<time-zone,the time zone>> of the Spider Sense that resolves it.
 
 | Epoch milliseconds
 | `1758000000000`
@@ -48,6 +48,14 @@ A `since` that resolves to a moment after `until` is answered with `400` over HT
 So is a value that begins with a number but is no duration, such as `5min`, `1w`, `30sec` or `300`: it is a mistyped duration, never a mark name, and the answer says `Not a duration: 5min` with the forms a duration takes.
 A mark name that matches no mark is answered with a `404` that names it over HTTP and exits `4` in the CLI.
 The `from` and `to` parameters of the UI endpoints still work everywhere, and they win when both pairs are given.
+
+[#time-zone]
+=== Time zone
+
+The times a text rendering prints, and a date-time a selector reads without an offset, are in one time zone: the JVM's default as it was when Spider Sense started in it, which is the machine's unless `-Duser.timezone` names another.
+Spider Sense fixes the zone as it starts, which under `-javaagent` is before the application's `main` runs, so an application that changes its own default later, with `TimeZone.setDefault`, moves neither the times an answer prints nor the instant `--since=2026-10-08T05:50:00` means.
+The CLI that reads the file itself (xref:cli.adoc#fallback[The direct-file fallback]) uses its own JVM's zone, so an application started with `-Duser.timezone=UTC` on a machine at `+09:00` answers in UTC over HTTP and in `+09:00` from the file.
+A date-time with an offset or `Z` is the same instant everywhere.
 
 [#marks]
 == Marks

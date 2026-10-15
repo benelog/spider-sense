@@ -11,7 +11,6 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
@@ -288,7 +287,7 @@ final class Tail {
     }
 
     private static String clock(long at) {
-        return CLOCK.format(Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault()));
+        return CLOCK.format(Instant.ofEpochMilli(at).atZone(Selectors.zone()));
     }
 
     private static String oneLine(String value) {

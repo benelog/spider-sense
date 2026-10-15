@@ -1,7 +1,6 @@
 package net.benelog.spidersense.api;
 
 import java.time.Instant;
-import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -21,6 +20,7 @@ import net.benelog.spidersense.query.Findings;
 import net.benelog.spidersense.query.Numbers;
 import net.benelog.spidersense.query.Queries;
 import net.benelog.spidersense.query.SchemaBlock;
+import net.benelog.spidersense.query.Selectors;
 import net.benelog.spidersense.query.SpanTree;
 import net.benelog.spidersense.query.Stats;
 import net.benelog.spidersense.query.Window;
@@ -281,19 +281,19 @@ final class Text {
      */
     static String instant(long at) {
         return (Math.floorMod(at, 1000L) == 0 ? INSTANT : INSTANT_MILLIS)
-                .format(Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault()));
+                .format(Instant.ofEpochMilli(at).atZone(Selectors.zone()));
     }
 
     static String instantMillis(long at) {
-        return INSTANT_MILLIS.format(Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault()));
+        return INSTANT_MILLIS.format(Instant.ofEpochMilli(at).atZone(Selectors.zone()));
     }
 
     static String clock(long at) {
-        return CLOCK.format(Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault()));
+        return CLOCK.format(Instant.ofEpochMilli(at).atZone(Selectors.zone()));
     }
 
     static String clockMillis(long at) {
-        return CLOCK_MILLIS.format(Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault()));
+        return CLOCK_MILLIS.format(Instant.ofEpochMilli(at).atZone(Selectors.zone()));
     }
 
     /**

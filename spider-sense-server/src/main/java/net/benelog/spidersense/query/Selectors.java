@@ -161,8 +161,37 @@ public final class Selectors {
     }
 
     /**
+     * The time zone every text rendering prints its instants in and every date-time without an
+     * offset is read in: the JVM's default as it was when Spider Sense started in it
+     * ({@link #fixZone()}), which is the machine's unless {@code -Duser.timezone} names another.
+     * An application under the agent that changes its own default later, with
+     * {@code TimeZone.setDefault}, changes neither (marks-and-compare.adoc#time-zone).
+     */
+    public static ZoneId zone() {
+        return FixedZone.ZONE;
+    }
+
+    /**
+     * Fixes {@link #zone()} at the JVM's default now, unless something asked for it before: the
+     * server does it as it assembles, which under {@code -javaagent} is before the application's
+     * {@code main} runs.
+     */
+    public static void fixZone() {
+        zone();
+    }
+
+    /** Initialised, and so the zone fixed, the first time {@link #zone()} is asked for. */
+    private static final class FixedZone {
+
+        static final ZoneId ZONE = ZoneId.systemDefault();
+
+        private FixedZone() {
+        }
+    }
+
+    /**
      * An ISO-8601 date-time as an instant: with an offset or {@code Z} as written, and
-     * without one in this process's time zone, which is the zone the text renderings print
+     * without one in {@link #zone()}, which is the zone the text renderings print
      * their times in (marks-and-compare.adoc#time-selectors).
      *
      * <p>A space is read as the plus of an offset, because an unencoded {@code +09:00} in a
@@ -174,7 +203,7 @@ public final class Selectors {
             return OffsetDateTime.parse(value).toInstant().toEpochMilli();
         } catch (DateTimeParseException withOffset) {
             try {
-                return LocalDateTime.parse(value).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
+                return LocalDateTime.parse(value).atZone(zone()).toInstant().toEpochMilli();
             } catch (DateTimeParseException local) {
                 throw new BadSelector("Not a date-time: " + written + " (a date-time is 2026-10-08T05:50:00,"
                         + " with an offset such as +09:00 or Z, or without one in this machine's time zone)");
@@ -255,12 +284,12 @@ public final class Selectors {
     }
 
     /**
-     * {@code 2026-10-08T05:50:00+09:00}: an instant in this machine's zone, as a heading prints it,
+     * {@code 2026-10-08T05:50:00+09:00}: an instant in {@link #zone()}, as a heading prints it,
      * with the milliseconds when it has any.
      */
     public static String local(long at) {
         return (Math.floorMod(at, 1000L) == 0 ? LOCAL : LOCAL_MILLIS)
-                .format(Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault()));
+                .format(Instant.ofEpochMilli(at).atZone(zone()));
     }
 
     private static long unitMillis(char unit) {

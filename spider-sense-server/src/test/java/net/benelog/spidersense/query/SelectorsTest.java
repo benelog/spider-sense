@@ -3,8 +3,10 @@ package net.benelog.spidersense.query;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.TimeZone;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -60,6 +62,28 @@ class SelectorsTest {
         assertThatThrownBy(() -> selectors.resolve("2026-10-08T0550", NOW, null))
                 .as("a date-time is never read as a mark name")
                 .isInstanceOf(Selectors.BadSelector.class);
+    }
+
+    /**
+     * The zone is the JVM's default as Spider Sense found it: an application that changes its own
+     * later moves neither what a date-time means nor how an instant is printed
+     * (marks-and-compare.adoc#time-zone).
+     */
+    @Test
+    void anApplicationThatChangesTheDefaultZoneLaterMovesNoSelector() {
+        ZoneId started = ZoneId.systemDefault();
+        String printed = Selectors.local(NOW);
+        ZoneId other = ZoneId.of(started.getRules().getOffset(Instant.ofEpochMilli(NOW)).getTotalSeconds()
+                == 20_700 ? "UTC" : "Asia/Kathmandu");
+        TimeZone before = TimeZone.getDefault();
+        TimeZone.setDefault(TimeZone.getTimeZone(other));
+        try {
+            assertThat(selectors.resolve("2026-10-08T05:50:00", NOW, null))
+                    .isEqualTo(LocalDateTime.of(2026, 10, 8, 5, 50).atZone(started).toInstant().toEpochMilli());
+            assertThat(Selectors.local(NOW)).isEqualTo(printed);
+        } finally {
+            TimeZone.setDefault(before);
+        }
     }
 
     @Test

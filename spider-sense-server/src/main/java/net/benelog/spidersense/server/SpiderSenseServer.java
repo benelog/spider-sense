@@ -27,6 +27,7 @@ import net.benelog.spidersense.mcp.McpServer;
 import net.benelog.spidersense.mcp.McpTools;
 import net.benelog.spidersense.query.MetricQueries;
 import net.benelog.spidersense.query.Queries;
+import net.benelog.spidersense.query.Selectors;
 import net.benelog.spidersense.source.SourceRoots;
 import net.benelog.spidersense.store.Store;
 import net.benelog.spidersilk.App;
@@ -114,6 +115,9 @@ public final class SpiderSenseServer implements AutoCloseable {
      * that pins it can put its telemetry at fixed instants and still ask for {@code since=5m}.
      */
     public static Assembly assemble(Config config, LongSupplier clock) {
+        // Before anything prints or reads a time and, under -javaagent, before the application's
+        // main can change the JVM's default zone (marks-and-compare.adoc#time-zone).
+        Selectors.fixZone();
         Store store = new Store(config.storeSettings(clock));
         AtomicInteger boundPort = new AtomicInteger(config.port());
 

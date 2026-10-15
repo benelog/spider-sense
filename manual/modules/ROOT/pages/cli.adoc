@@ -791,7 +791,7 @@ The endpoints with a text rendering are `/api/status`, `/api/findings`, `/api/fi
 
 The conventions:
 
-* The first line is a heading naming the answer and the window, in ISO-8601 with the local offset: `# findings  2026-09-18T12:37:06+09:00 → 12:41:08  (4m 1s, all services, 2456 requests)`.
+* The first line is a heading naming the answer and the window, in ISO-8601 with the offset of xref:marks-and-compare.adoc#time-zone[the answering Spider Sense's time zone]: `# findings  2026-09-18T12:37:06+09:00 → 12:41:08  (4m 1s, all services, 2456 requests)`.
 The start carries its milliseconds when it has any, such as `2026-09-17T08:19:28.122+09:00` for a window that begins at a mark, so it can be pasted into `--since`; the end is a time of day to the second.
 The range is rounded to the second and written in its largest units (`6s`, `2m 30s`, `15m`, `2h`), never in milliseconds.
 * Lists are Markdown tables, and ids are complete: a trace id is 32 hex characters, an endpoint, query or error id 12, because they are passed back.
