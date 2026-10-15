@@ -467,6 +467,7 @@ The line gives the count, then the packages in order of first appearance, three 
 A package is the framework prefix the frame matched, without its dot, or, under `appPackages`, the frame's first two segments.
 A single framework frame between two application frames is not folded, since its fold line would be no shorter.
 A click on a fold line, or Enter, expands that run in place.
+The focus the line had moves to the run's first frame, so a keyboard user carries on from there rather than from the top of the page.
 A Live refresh repaints the trace only when the trace or the mode changed, so an expanded run stays open.
 Under *All* nothing is folded.
 

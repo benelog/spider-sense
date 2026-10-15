@@ -1,5 +1,5 @@
 // frames.js: the two renderings of a stack trace share one line classifier (pages.adoc#stack-traces).
-import './fake-dom.js';
+import { document } from './fake-dom.js';
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { state } from '../../main/resources/public/assets/js/api.js';
@@ -59,6 +59,21 @@ test('foldedStack folds a run of framework frames and classifies the rest the sa
   assert.equal(pre.children[2].textContent, '\t⋯ 3 frames from org.springframework, org.apache\n');
   assert.deepEqual(classes(foldedStack(TRACE, 'all')),
     ['st-head', 'st-own', 'st-frame', 'st-frame', 'st-frame', 'st-cause', 'st-own', 'st-frame']);
+});
+
+test('Enter on a fold line opens the run in place and leaves the focus on its first frame', () => {
+  state.status = { codeFrames: { appPackages: [], frameworkPrefixes: ['org.springframework.', 'org.apache.'] } };
+  const pre = foldedStack(TRACE, 'app');
+  document.body.replaceChildren(pre);
+  const fold = pre.children[2];
+  fold.focus();
+  assert.ok(fold.dispatch('keydown', { key: 'Enter' }).defaultPrevented);
+  assert.deepEqual(classes(pre), ['st-head', 'st-own', 'st-run', 'st-cause', 'st-own', 'st-frame']);
+  const run = pre.children[2];
+  assert.equal(run.hidden, false);
+  assert.equal(document.activeElement, run.children[0], 'the focus stays where the fold line was, not on <body>');
+  assert.ok(document.activeElement.isConnected);
+  assert.equal(run.children[0].getAttribute('tabindex'), '-1', 'focusable, yet no extra stop for Tab');
 });
 
 test('without the rules nothing is folded or highlighted', () => {

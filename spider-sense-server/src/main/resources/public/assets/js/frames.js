@@ -252,7 +252,18 @@ export function foldedStack(text, mode = 'app', status = state.status) {
       fold.setAttribute('tabindex', '0');
       fold.setAttribute('aria-expanded', 'false');
       fold.title = 'Show these ' + run.length + ' frames';
-      const open = () => { fold.remove(); hidden.hidden = false; };
+      // The fold line goes, so the focus it had moves to the first frame that takes its place,
+      // and a keyboard user carries on from there rather than from the top of the page.
+      const open = () => {
+        const focused = document.activeElement === fold;
+        fold.remove();
+        hidden.hidden = false;
+        if (focused) {
+          const first = hidden.firstChild;
+          first.setAttribute('tabindex', '-1');
+          first.focus();
+        }
+      };
       fold.addEventListener('click', open);
       fold.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); }
