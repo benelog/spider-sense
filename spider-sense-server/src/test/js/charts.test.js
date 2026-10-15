@@ -115,6 +115,30 @@ test('a count axis in the billions still finds a whole-number step that keeps it
   assert.ok(COUNT_INCRS.every(Number.isInteger));
 });
 
+test('a value axis widens to its widest tick, so a count in the billions keeps its digits and clears the axis label', () => {
+  const container = document.createElement('div');
+  const chart = timeSeries(container, {
+    t: [Date.now() - 60000, Date.now()],
+    series: [{ label: 'committed', values: [1.2e9, 1.5e9] }],
+    axes: [{ scale: 'y', label: 'By' }, { scale: 'y', side: 1, label: 'By' }],
+  });
+  // uPlot's side of it: the axis font at the pixel ratio, the gap before the values, and a canvas that measures 6 px a character
+  const u = {
+    axes: [{}, { font: ['11px sans-serif', 11, 11], gap: 5, ticks: { show: false, size: 10 }, _size: 52 }],
+    ctx: { measureText: (text) => ({ width: 6 * text.length }) },
+  };
+  u.axes[2] = u.axes[1];
+  for (const i of [1, 2]) {
+    const axis = chart.plot.opts.axes[i];
+    const sizeOf = (ticks) => (typeof axis.size === 'function' ? axis.size(u, ticks, i, 1) : axis.size);
+    const ticks = axis.values(u, [0, 5e8, 1e9, 1.5e9]);
+    assert.deepEqual(ticks, ['0', '500,000,000', '1,000,000,000', '1,500,000,000']);
+    assert.ok(sizeOf(ticks) >= 6 * 13 + 5, `the widest tick and its gap fit in ${sizeOf(ticks)} px`);
+    assert.equal(sizeOf(['0', '50', '100']), 52, 'short ticks keep the 52 px');
+  }
+  chart.destroy();
+});
+
 test('a time axis names the day under its first tick before today and under the first tick of each day after', () => {
   const now = Date.UTC(2026, 9, 15, 12, 0, 0) / 1000;
   const hours = (...hs) => hs.map((h) => now + h * 3600);

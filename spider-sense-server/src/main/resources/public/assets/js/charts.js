@@ -151,6 +151,26 @@ export function durationRange(from, to) {
   return fmt.dur(Math.max(0, from)) + ' – ' + fmt.dur(Math.max(0, to));
 }
 
+/**
+ * A value axis' `size`: as wide as its widest tick in the axis font, and `min` at the least, so a
+ * count in the billions keeps its leading digits and its values stay clear of the axis label,
+ * which uPlot draws outside this width.
+ */
+function fitTicks(min) {
+  return (u, values, axisIdx, cycleNum) => {
+    const axis = u.axes[axisIdx];
+    // A value axis' ticks do not depend on the plot's width, so the first pass settles it.
+    if (cycleNum > 1 && axis._size != null) return axis._size;
+    let widest = 0;
+    if (values && values.length) {
+      u.ctx.font = axis.font[0];
+      for (const v of values) if (v != null) widest = Math.max(widest, u.ctx.measureText(String(v)).width);
+    }
+    const ticks = axis.ticks && axis.ticks.show ? axis.ticks.size : 0;
+    return Math.max(min, Math.ceil(widest / (devicePixelRatio || 1) + ticks + axis.gap + 2));
+  };
+}
+
 function valueAxis(colors, axisOpts = {}) {
   return {
     scale: axisOpts.scale || 'y',
@@ -159,7 +179,7 @@ function valueAxis(colors, axisOpts = {}) {
     grid: axisOpts.grid === false ? { show: false } : { stroke: withAlpha(colors.line, 0.75), width: 1 },
     ticks: { show: false },
     font: uiFont(),
-    size: axisOpts.size || 52,
+    size: fitTicks(axisOpts.size || 52),
     label: axisOpts.label,
     labelSize: axisOpts.label ? 18 : 0,
     labelFont: uiFont(),

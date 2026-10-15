@@ -307,6 +307,7 @@ Counts carry thousands separators, rates two decimals, and percentages one.
 A value of no particular unit, a gauge, a histogram's mean or a sum's rate, is whole from 100 and keeps three significant digits below it, in a tooltip and on an axis alike.
 A count axis only ever shows whole numbers, with uPlot `incrs` of 1, 2, 5, 10 and so on, so a series that stays at 0 or 1 does not print the same tick three times.
 An axis is a count axis when it is no duration, percentage or load and every value on it is a whole number; a metric of fractions keeps its own scale.
+A value axis is as wide as its widest tick, and 52 px at the least, so a count in the billions keeps its leading digits and stays clear of the axis label.
 Times read as `HH:mm:ss` within today, and `MMM d HH:mm:ss` otherwise.
 A chart's time axis reads the clock, with the day, `MMM d`, under its first tick when that tick is not today and under the first tick of each later day, and a chart's tooltip and the Scatter's selection follow the rule above.
 A feed gives the relative time, "12 s ago", a table the absolute one, and a tooltip both.
