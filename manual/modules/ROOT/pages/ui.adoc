@@ -267,6 +267,8 @@ Every internal link carries these four, so a choice made on one page holds on th
 The sidebar's entries, the logo and the tingles entry are rewritten on every change of the hash, so they carry them too.
 A path parameter is percent-encoded in the hash and decoded once, so a service named `50% off` is `+#/services/50%25%20off+`, and an encoded `/` stays part of its name.
 A URL can therefore be shared as it is, and opens on the same view.
+A hash the page did not set itself, from a link, *Back* or *Forward*, or an edited URL, opens its view the same way, on the page already open too, so the page never keeps a filter, a sort or a metric the URL no longer names.
+A change made on the page, in the top bar or in the page's own controls, keeps the page and refreshes what it shows.
 
 [#behaviour]
 == Behaviour and quality

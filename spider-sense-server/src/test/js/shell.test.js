@@ -65,6 +65,45 @@ test('the sidebar\'s links carry the service, the range, Live and the chart the 
   assert.equal(navHref('/traces'), '#/traces', 'a link names only what differs from the defaults');
 });
 
+/** Waits until `done()` holds, as the mock answers on its own time; fails after two seconds. */
+async function until(done, what) {
+  for (let waited = 0; !done(); waited += 10) {
+    if (waited > 2000) assert.fail('timed out waiting for ' + what);
+    await settle(10);
+  }
+}
+
+/** A hash the page did not set: a link followed, Back or Forward, an edited URL. */
+function follow(hash) {
+  location.hash = hash;
+  for (const fn of listeners.hashchange) fn({});
+}
+
+const main = () => document.getElementById('main');
+const selectOf = (label) => main().querySelectorAll('select').find((s) => s.getAttribute('aria-label') === label);
+const pickedMetric = () => {
+  const item = main().querySelectorAll('.catalog-item').find((i) => i.getAttribute('aria-selected') === 'true');
+  return item && item.querySelector('.catalog-name').textContent;
+};
+
+test('a hash the page did not set opens the view it names, on the same route too (ui.adoc#urls)', async () => {
+  follow('#/traces?status=error');
+  await until(() => selectOf('Status filter') && main().querySelector('tbody'), 'the traces filtered to errors');
+  assert.equal(selectOf('Status filter').value, 'error');
+  follow('#/traces');                // the sidebar's Traces entry, or Back
+  await until(() => selectOf('Status filter').value === 'all', 'the traces unfiltered');
+  const page = main().children[0];
+  router.setQuery({ range: '1h' });  // a change the top bar makes only refreshes the page
+  assert.equal(main().children[0], page);
+  router.setQuery({ range: '' });
+
+  follow('#/metrics?metric=jvm.memory.used');
+  await until(() => pickedMetric() === 'jvm.memory.used', 'the metric the URL names');
+  follow('#/metrics?metric=jvm.memory.committed');
+  await until(() => pickedMetric() === 'jvm.memory.committed', 'the metric the new URL names');
+  follow('#/');
+});
+
 /** A key pressed on the page, outside any field. */
 function press(key) {
   const event = { key, target: document.body, preventDefault() {} };

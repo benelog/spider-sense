@@ -113,7 +113,13 @@ export function setQuery(patch, { defaults = {} } = {}) {
 
 let lastKey = null;
 
-function handle() {
+/**
+ * Runs the handler for the hash as it is now, telling it whether the view is a new one: another
+ * route, or a hash the page did not set itself (`fromHash`: a link, Back or Forward, an edited
+ * URL), which names a view of its own on the same route too, since a page keeps the filters it
+ * read when it rendered (ui.adoc#urls). A query changed through setQuery is the same view.
+ */
+function handle(fromHash = false) {
   const { path, query } = parse(location.hash);
   const found = match(routes, path);
   if (!found) {
@@ -121,7 +127,7 @@ function handle() {
     return;
   }
   const key = found.route.pattern + '|' + JSON.stringify(found.params);
-  const changedRoute = key !== lastKey;
+  const changedRoute = fromHash || key !== lastKey;
   lastKey = key;
   current = { path, params: found.params, query, route: found.route };
   if (onChange) onChange(current, changedRoute);
@@ -129,7 +135,7 @@ function handle() {
 
 export function start(handler) {
   onChange = handler;
-  addEventListener('hashchange', handle);
+  addEventListener('hashchange', () => handle(true));
   if (!location.hash) history.replaceState(null, '', '#/');
   handle();
 }
