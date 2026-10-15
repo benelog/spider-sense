@@ -431,6 +431,15 @@ class AgentApiTest {
         });
     }
 
+    /** The refusal cuts a long word, and never between the two halves of a surrogate pair. */
+    @Test
+    void aLongWordIsCutBesideASurrogatePairNeverInsideIt() {
+        String kept = "a".repeat(63);
+
+        assertThat(Reports.notAFindingId(kept + "😀z"))
+                .startsWith("Not a finding id: " + kept + "…. A finding id is");
+    }
+
     /** api.adoc#conventions: a body past 1 MB is a 413 in the API's error shape, on every endpoint that reads one. */
     @Test
     void aBodyPastTheLimitIs413AsTheApisOwnError() {

@@ -12,6 +12,9 @@ import org.jspecify.annotations.Nullable;
  * JSON ones: one note, two readings. The OTLP/JSON receiver replaces it in the document's text
  * before protobuf reads it; what a person or an agent types, a mark's note, an acknowledgement's
  * note, a {@code sql} statement, is replaced here, before it is stored or run.
+ *
+ * <p>A cut can make the same half, so {@link #prefix} is the one way text is cut, whether
+ * the store cuts it to a column or a rendering cuts it for display.
  */
 public final class Utf16 {
 
@@ -39,6 +42,20 @@ public final class Utf16 {
     /** {@link #wellFormed(String)}, or null for null. */
     public static @Nullable String wellFormedOrNull(@Nullable String text) {
         return text == null ? null : wellFormed(text);
+    }
+
+    /**
+     * {@code value} cut to at most {@code max} characters, one fewer when the cut would fall
+     * between the two halves of a surrogate pair: half of one has no UTF-8 form, so every
+     * answer would carry it as {@code ?} or U+FFFD, and a re-import would no longer find the row.
+     * Every cut makes it this way, the store's to a column and a rendering's for display alike.
+     */
+    public static String prefix(String value, int max) {
+        if (value.length() <= max) {
+            return value;
+        }
+        int end = max > 0 && Character.isHighSurrogate(value.charAt(max - 1)) ? max - 1 : max;
+        return value.substring(0, end);
     }
 
     /** The index of the first unpaired surrogate at or after {@code from}, or -1 when there is none. */

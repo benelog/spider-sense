@@ -1199,6 +1199,20 @@ class FindingsTest {
         assertThat(endpoints.get(0).get("count")).isEqualTo(2L);
     }
 
+    /** A title cut inside a surrogate pair leaves the pair out whole, so its JSON carries no half of one. */
+    @Test
+    void aTitleIsCutBesideASurrogatePairNeverInsideIt() {
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), entry(1, "/orders/{id}", 10)));
+        decoder.ingest(Otlp.logs(Otlp.service("orders"), "orders.web.OrderController",
+                Otlp.log(NOW, 17, "a".repeat(79) + "😀 tail", traceId(1), spanId(1))));
+        flush();
+
+        assertThat(of(Findings.LOG_ERROR)).singleElement().extracting(Findings.Finding::title)
+                .isEqualTo("ERROR in OrderController: " + "a".repeat(79) + "…");
+        assertThat(Findings.queryName(null, null, "b".repeat(59) + "😀 from t"))
+                .isEqualTo("b".repeat(59) + "…");
+    }
+
     @Test
     void anErrorLogOnAFailedTraceIsNotCountedTwice() {
         Span.Builder failing = Otlp.failing(entry(1, "/orders/{id}", 10),

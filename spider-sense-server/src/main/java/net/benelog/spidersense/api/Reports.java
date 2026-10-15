@@ -32,6 +32,7 @@ import net.benelog.spidersense.store.ServiceRegistry;
 import net.benelog.spidersense.store.Sql;
 import net.benelog.spidersense.store.Store;
 import net.benelog.spidersense.store.Tingles;
+import net.benelog.spidersense.store.Utf16;
 import net.benelog.silkjson.Json;
 import net.benelog.silkjson.JsonValue;
 import net.benelog.silkjson.JsonObject;
@@ -426,7 +427,7 @@ public final class Reports implements AutoCloseable {
      */
     public static String notAFindingId(@Nullable String word) {
         String shown = word == null ? "" : word.length() > Acks.MAX_ID
-                ? word.substring(0, Acks.MAX_ID) + "…" : word;
+                ? Utf16.prefix(word, Acks.MAX_ID) + "…" : word;
         return "Not a finding id: " + shown + ". A finding id is"
                 + " <kind>:<12 hex digits>, as the id column of findings prints it; the ids of"
                 + " errors, queries and endpoints are table ids, not finding ids";

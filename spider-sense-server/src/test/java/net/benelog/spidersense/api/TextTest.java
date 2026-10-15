@@ -241,6 +241,22 @@ class TextTest {
         assertThat(rows(text).get(2)).isEqualTo("| " + "x".repeat(199) + "\\|… | line break |");
     }
 
+    /**
+     * A cell or a statement cut at 200 characters leaves out a surrogate pair the cut would split,
+     * so it never ends in half of one, which UTF-8 carries as {@code ?} (storage.adoc#writer).
+     */
+    @Test
+    void aCutForDisplayLeavesOutASurrogatePairWhole() {
+        String kept = "a".repeat(199);
+        String value = kept + "😀z";
+        ReadOnlyQuery.Result result = new ReadOnlyQuery.Result(List.of("C"), List.of(List.of(value)), false, 1);
+
+        assertThat(rows(Text.sql(result, 200, false)).get(2)).isEqualTo("| " + kept + "… |");
+        assertThat(Text.statementLine(value, false)).isEqualTo(kept + "…");
+        assertThat(Text.statementLine(value + "b".repeat(SpanRecord.MAX_STATEMENT), false))
+                .isEqualTo(kept + "… (cut at 2,000 characters)");
+    }
+
     /** An ARRAY cell reads as its JSON text, the way the JSON answer writes it. */
     @Test
     void aSqlArrayCellIsItsJsonText() {

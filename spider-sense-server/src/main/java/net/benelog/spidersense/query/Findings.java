@@ -23,6 +23,7 @@ import net.benelog.spidersense.store.ServiceRegistry;
 import net.benelog.spidersense.store.SpanRecord;
 import net.benelog.spidersense.store.Sql;
 import net.benelog.spidersense.store.Tingles;
+import net.benelog.spidersense.store.Utf16;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -2096,7 +2097,7 @@ public final class Findings {
     /** One line, cut at {@code max} characters with an ellipsis. */
     private static String oneLine(@Nullable String text, int max) {
         String single = text == null ? "" : text.replaceAll("\\s+", " ").trim();
-        return single.length() <= max ? single : single.substring(0, max) + "…";
+        return single.length() <= max ? single : Utf16.prefix(single, max) + "…";
     }
 
     /**

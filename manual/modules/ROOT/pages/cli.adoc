@@ -802,6 +802,7 @@ The range is rounded to the second and written in its largest units (`6s`, `2m 3
 A finding's `why` line and its `numbers` line collapse the same way, with no escape since they are not table rows, so an error message never spills onto a line of its own.
 So does every other line that is not a table row, again with no escape: a finding's statement, a trace's statement and exception, a log line and the note after a mark or an acknowledgement, so a statement reads as SQL that can be pasted into `EXPLAIN`.
 * A statement is cut at 200 characters with `…`, and `--full` keeps it whole.
+This cut, and those of a `sql` cell and a finding's title, stop before a surrogate pair they would split, such as an emoji, as the store's cuts do (xref:storage.adoc#writer[The writer]), since half of one has no UTF-8 form.
 A statement of 1,999 characters or more may have been cut by the store, which keeps at most 2,000 of them, one fewer when the cut falls inside a surrogate pair, and records nothing when it cuts (xref:api.adoc#query-stats[`statementCut`]).
 Such a statement ends in `… (cut at 2,000 characters)`, after its 200th character or, with `--full`, after all the store kept, so it never reads as a whole statement to paste into `EXPLAIN`.
 * Nothing in the body depends on when it was rendered, only on the window.

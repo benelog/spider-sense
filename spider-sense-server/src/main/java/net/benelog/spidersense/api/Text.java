@@ -35,6 +35,7 @@ import net.benelog.spidersense.store.Marks;
 import net.benelog.spidersense.store.ReadOnlyQuery;
 import net.benelog.spidersense.store.SpanRecord;
 import net.benelog.spidersense.store.Tingles;
+import net.benelog.spidersense.store.Utf16;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -1435,7 +1436,7 @@ final class Text {
             return cutToStatement(statement, full);
         }
         String single = singleLine(Objects.requireNonNull(statement, "a cut statement is one"));
-        return (full || single.length() <= STATEMENT ? single : single.substring(0, STATEMENT))
+        return (full || single.length() <= STATEMENT ? single : Utf16.prefix(single, STATEMENT))
                 + "…" + STORE_CUT;
     }
 
@@ -1449,7 +1450,7 @@ final class Text {
             return "—";
         }
         String single = singleLine(value);
-        return full || single.length() <= STATEMENT ? single : single.substring(0, STATEMENT) + "…";
+        return full || single.length() <= STATEMENT ? single : Utf16.prefix(single, STATEMENT) + "…";
     }
 
     /**
