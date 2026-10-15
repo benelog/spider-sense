@@ -288,7 +288,8 @@ The table asks `/api/traces` with `from`, `to`, `minMs` and `maxMs` from the rec
 The chart panel's header then reads the selection's time span and response-time span, beside a *Clear* button.
 Each end of the time span reads as a tooltip's time does (xref:ui.adoc#numbers-and-times[Numbers and times]), so an end outside today names its day.
 `Esc` clears the selection.
-With Live on, points stream in from the right every 2 seconds, from a refetch of the last 10 seconds merged in and deduplicated by trace id, and the x-axis slides.
+With Live on, points stream in from the right every 2 seconds, from a refetch of the last 10 seconds merged in, and the x-axis slides.
+The merge adds the points the chart does not show yet, matched on start, duration, service, endpoint and trace id, so each request of a trace that crosses services keeps its own point.
 The merged points are held to the 5,000 a full load asks for, the oldest going first, so a long Live session costs what a full load costs; when that cuts any, the "truncated" notice comes on.
 The y-axis maximum and the `▲ n above` note follow the merged points, and the "truncated" notice stays until a full load of the window is not cut.
 A change of service or range reloads the whole window and the trace list, Live or not, and nothing else does: the legend, Success and Failed, Log scale and the mode change the chart in place, and only Success and Failed ask the trace list again.

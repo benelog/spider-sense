@@ -34,6 +34,18 @@ test('a Live merge adds the new traces once and drops the ones before the window
   assert.equal(cut, false);
 });
 
+test('a Live merge keeps each request of a trace that crosses services, and each once', () => {
+  // The callee ends first, so it is merged first; the caller comes with the same trace id a merge later.
+  const callee = [1010, 20, 'silk-bookstore', 'GET /api/books/{id}', 't1', 0];
+  const caller = [1000, 140, 'spring-orders', 'GET /orders/{id}', 't1', 2];
+  const first = mergePoints([], [callee], 0);
+  const second = mergePoints(first.points, [caller, callee], 0);
+  assert.deepEqual(second.points.map((p) => p[2]).sort(), ['silk-bookstore', 'spring-orders']);
+  // The trace's slow-query flag can come on between two fetches; the point is still the same one.
+  const third = mergePoints(second.points, [caller, [1010, 20, 'silk-bookstore', 'GET /api/books/{id}', 't1', 4]], 0);
+  assert.equal(third.points.length, 2);
+});
+
 test('a Live merge keeps the newest points up to the limit and says it cut', () => {
   const on = [point(300, 'c'), point(100, 'a'), point(200, 'b')];
   const { points, cut } = mergePoints(on, [point(400, 'd')], 0, 3);

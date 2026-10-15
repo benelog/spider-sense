@@ -16,13 +16,20 @@ const LIVE_MERGE_WINDOW_MS = 10000;
 const POINT_LIMIT = 5000;
 
 /**
- * Fresh points merged into the ones on screen: deduplicated by trace id, the ones before
- * `from` dropped, and held to `limit`, the oldest going first, so a long Live session costs
+ * A point's identity: its start, duration, service, endpoint and trace. Not the trace alone,
+ * since a trace that crosses services has a point per entry span, and not the flags, whose
+ * slow-query bit can come on between two fetches of the same span.
+ */
+const pointKey = (p) => JSON.stringify([p[POINT.START], p[POINT.MS], p[POINT.SERVICE], p[POINT.ENDPOINT], p[POINT.TRACE]]);
+
+/**
+ * Fresh points merged into the ones on screen: each point once, the ones before `from`
+ * dropped, and held to `limit`, the oldest going first, so a long Live session costs
  * what a full load costs. `cut` says whether the limit dropped any.
  */
 export function mergePoints(points, fresh, from, limit = POINT_LIMIT) {
-  const seen = new Set(points.map((p) => p[POINT.TRACE]));
-  const merged = points.concat(fresh.filter((p) => !seen.has(p[POINT.TRACE])))
+  const seen = new Set(points.map(pointKey));
+  const merged = points.concat(fresh.filter((p) => !seen.has(pointKey(p))))
     .filter((p) => p[POINT.START] >= from);
   if (merged.length <= limit) return { points: merged, cut: false };
   merged.sort((a, b) => b[POINT.START] - a[POINT.START]);
