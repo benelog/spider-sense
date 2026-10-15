@@ -346,7 +346,9 @@ image::span-drawer.jpg[The span drawer with the SQL statement and every attribut
 
 The drawer opens on the right, 420 px wide, with the span's name, service and kind, its timing (start offset, duration, share of the trace, self time), and its status.
 A database span's statement comes next, under its key, `db.statement` or `db.query.text`, with a *Copy* button.
-It is pretty-printed: SQL keywords uppercased, and a line break before each major clause.
+It is pretty-printed: SQL keywords uppercased, and a line break before each major clause and after a `--` comment.
+Apart from those line breaks, the printer puts a space only where the statement had one, so an operator such as `>=` or `::`, a placeholder such as `$1` or `:id`, and a name in any script stay whole.
+*Copy* therefore copies a statement the database parses.
 It is the attribute as the agent sent it, so it is whole where the `db_statement` column keeps only 2,000 characters.
 Then come the other attributes as a table of keys and values, in key order, with long values in a `<pre>`.
 A `code.stacktrace` the extension captured (xref:findings.adoc#code[Code locations]) comes after them, under its key.
@@ -391,6 +393,8 @@ image::queries.jpg[Queries grouped by statement with calls, average, p95, max an
 Above the table are a sort selector (total, avg, p95, max, calls) and a text filter on the statement.
 The table gives the statement in monospace on one line, with the full text in its tooltip, which ends in `… (cut at 2,000 characters)` when the store may have cut the statement (xref:api.adoc#query-stats[`statementCut`]), then one *Op · Table* cell with the operation, then the table and the system dimmed (all three in its title), the unindexed columns, calls, avg, p95, max, total, the slow calls (in `--accent` when there are any), and when it was last seen.
 The statement cell is the wide one: it takes the width the other columns leave and cuts its text with an ellipsis, so the table fits the page (xref:ui.adoc#narrow-screens[Narrow screens]).
+Its line keeps the statement's own spacing, as the <<span-drawer,pretty-printed>> text does.
+A `--` comment on it reads as `+/* … */+`, so the rest of the statement does not read as part of the comment.
 
 *Unindexed* is the xref:findings.adoc#schema[schema block]'s `unindexed`, the columns the statement filters on that no index leads with.
 They are joined by `, ` in `--accent` and cut to the column width, with the full list in the title.
