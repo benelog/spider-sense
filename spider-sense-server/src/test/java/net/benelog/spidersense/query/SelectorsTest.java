@@ -202,6 +202,19 @@ class SelectorsTest {
                         + Selectors.local(NOW - 300_000));
     }
 
+    /** An end nobody sent is now, and the refusal says so rather than naming a parameter. */
+    @Test
+    void aStartAfterNowWithNoEndSentIsRefusedAsAfterNow() {
+        assertThatThrownBy(() -> selectors.window(NOW + 1000, null, null, null, null))
+                .isInstanceOf(Selectors.BadSelector.class)
+                .hasMessage("from is " + Selectors.local(NOW + 1000) + ", which is after now ("
+                        + Selectors.local(NOW) + ")");
+        assertThatThrownBy(() -> selectors.window(null, null, String.valueOf(NOW + 1000), null, null))
+                .isInstanceOf(Selectors.BadSelector.class)
+                .hasMessage("since resolves to " + Selectors.local(NOW + 1000) + ", which is after now ("
+                        + Selectors.local(NOW) + ")");
+    }
+
     @Test
     void compareResolvesTheEndFirstThenCountsAfterAndBeforeBackFromIt() {
         assertThat(selectors.compareBounds("10m", "5m", null, null))
