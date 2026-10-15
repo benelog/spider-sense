@@ -159,8 +159,12 @@ export function render(root, ctx) {
   loader.load();
 
   return {
-    // Live tail: new lines arrive at the top; the scroll position is left alone.
-    refresh: () => { if (!expanded.size || window.scrollY < TAIL_SCROLL_SLACK_PX) loader.load(); },
+    // Live tail: new lines arrive at the top; the scroll position is left alone. An open row
+    // scrolled away from the top holds the tail, but not a change of service or range, which
+    // starts the list over (pages.adoc#logs).
+    refresh: () => {
+      if (viewKey() !== loadedFor || !expanded.size || window.scrollY < TAIL_SCROLL_SLACK_PX) loader.load();
+    },
     destroy: () => { loader.destroy(); applyFilter.cancel(); },
   };
 }
