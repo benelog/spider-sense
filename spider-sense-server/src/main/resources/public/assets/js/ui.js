@@ -301,19 +301,22 @@ export function snippetBlocks(status = api.state.status) {
 /**
  * Render items into container, reusing existing nodes by key so scroll position,
  * text selection and focus survive a Live refresh. A child without a key is the
- * placeholder an empty list left behind, and goes.
+ * placeholder an empty list left behind, and goes. Two items of one key are told apart
+ * by their order, `#2` after the second's key, so each keeps a node of its own.
  */
 export function renderList(container, items, { key, create, update, enter } = {}) {
   const existing = new Map();
   for (const child of Array.from(container.children)) {
     const k = child.dataset.key;
-    if (k !== undefined) existing.set(k, child);
+    if (k !== undefined && !existing.has(k)) existing.set(k, child);
     else child.remove();
   }
   let prev = null;
   const seen = new Set();
   items.forEach((item, index) => {
-    const k = String(key ? key(item, index) : index);
+    const base = String(key ? key(item, index) : index);
+    let k = base;
+    for (let n = 2; seen.has(k); n++) k = base + '#' + n;
     seen.add(k);
     let node = existing.get(k);
     const isNew = !node;

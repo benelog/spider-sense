@@ -2,7 +2,7 @@
 import './fake-dom.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { h, table, sortFromQuery, nextSort, categoryIcon } from '../../main/resources/public/assets/js/ui.js';
+import { h, table, renderList, sortFromQuery, nextSort, categoryIcon } from '../../main/resources/public/assets/js/ui.js';
 
 const columns = [
   { key: 'name', label: 'Name', render: (r) => r.name },
@@ -19,6 +19,17 @@ test('setRows renders the rows and reuses a row by its key', () => {
   assert.deepEqual(rows.map((r) => r.textContent), ['C1', 'A22']);
   assert.equal(rows[1], first, 'the row keyed a is the same node');
   assert.equal(rows[0].all('td')[1].className, 'right');
+});
+
+test('two items of one key keep a node each, in their order, and none stays after they go', () => {
+  const box = h('div');
+  const list = (...items) => {
+    renderList(box, items, { key: (t) => t.k, create: (t) => h('div', t.title) });
+    return box.children.map((c) => c.textContent);
+  };
+  assert.deepEqual(list({ k: 'x', title: 'first' }, { k: 'x', title: 'second' }, { k: 'y', title: 'third' }), ['first', 'second', 'third']);
+  assert.deepEqual(list({ k: 'z', title: 'new' }, { k: 'x', title: 'first' }, { k: 'x', title: 'second' }), ['new', 'first', 'second']);
+  assert.deepEqual(list({ k: 'z', title: 'new' }), ['new']);
 });
 
 test('a refresh keeps the cells that did not change, with the focus in them, and moves the focus into a cell it replaces (ui.adoc#live-refresh)', () => {

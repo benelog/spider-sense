@@ -120,7 +120,9 @@ export function render(root, ctx) {
 
   function paintTingles() {
     renderList(tingleBody, tingles.slice(0, 50), {
-      key: (t) => (t.traceId || '') + ':' + t.at + ':' + t.kind,
+      // A span raises one tingle of a kind at most (api.adoc#tingles), and one trace can raise two
+      // errors in one millisecond: a request and the method that threw inside it.
+      key: (t) => (t.traceId || '') + ':' + (t.spanId || '') + ':' + t.at + ':' + t.kind,
       create: (t) => tingleRow(t),
       update: (node, t) => {
         const when = node.querySelector('.t-when');

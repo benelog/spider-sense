@@ -417,6 +417,35 @@ test('the Overview feed takes only the tingles of the service the top bar names 
   api.state.service = '';
 });
 
+test('two error tingles of one trace and one millisecond are two entries, in order, until newer ones push them out (pages.adoc#overview)', async () => {
+  const at = Date.now() - 1000;
+  const trace = '7'.repeat(32);
+  await withAnswer('/api/overview', (body) => ({
+    ...body,
+    tingles: [
+      { kind: 'error', service: 'shop', title: 'Stock.take', detail: '', at, traceId: trace, spanId: 'a'.repeat(16) },
+      { kind: 'error', service: 'shop', title: 'POST /orders', detail: '', at, traceId: trace, spanId: 'b'.repeat(16) },
+      { kind: 'slow-request', service: 'shop', title: 'older', detail: '', at: at - 5000, traceId: '8'.repeat(32), spanId: 'c'.repeat(16) },
+    ],
+  }), async () => {
+    api.state.live = true;
+    const { root, instance } = await visit('overview');
+    try {
+      const titles = () => root.querySelectorAll('.tingle').map((t) => t.querySelector('.t-title').textContent.replace(/^shop/, ''));
+      assert.deepEqual(titles(), ['Stock.take', 'POST /orders', 'older']);
+      const tingle = (i) => ({ kind: 'slow-query', service: 'shop', title: 'q' + i, detail: '', at: Date.now(), traceId: String(i).padStart(32, '9'), spanId: 'd'.repeat(16) });
+      instance.onTingle(tingle(0));
+      assert.deepEqual(titles(), ['q0', 'Stock.take', 'POST /orders', 'older']);
+      for (let i = 1; i < 50; i++) instance.onTingle(tingle(i));
+      assert.equal(titles().length, 50);
+      assert.deepEqual(titles().filter((t) => !t.startsWith('q')), [], 'the pair has left with the older one');
+    } finally {
+      api.state.live = false;
+      instance.destroy();
+    }
+  });
+});
+
 test('the Overview shows the empty state only before anything has arrived', async () => {
   await withAnswer('/api/findings', () => ({ findings: [] }), () => withAnswer('/api/overview', (body) => ({
     ...body, totals: { requests: 0, histogram: [0, 0, 0, 0, 0] }, services: [], tingles: [],
