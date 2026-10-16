@@ -88,22 +88,41 @@ Drop the `maven-dependency-plugin` execution and set `spider-sense.jar` to the f
 == Tests under Surefire
 
 Surefire forks its own JVM and takes its options from `argLine`.
-The plugin below goes into the `sense` profile's `<plugins>`, beside the other two, because the profile is where `spider-sense.jar` is defined and the jar copied.
+The agent goes into the build's own `argLine` through a property, `spider-sense.argLine`, which is empty in the main `<properties>` and which the `sense` profile fills.
 `mvn test -Psense` then runs the tests under Spider Sense, and `mvn test` runs them plain.
+A Surefire `<argLine>` in the profile instead would replace the build's own rather than add to it, because Maven takes a plain-text element of a plugin's configuration from the profile and drops the build's, so the tests would lose their other JVM options (`--add-opens`, a heap size, Mockito's agent) under `-Psense` only.
 Forward to a standalone Spider Sense rather than embedding one.
 A test JVM is short-lived and may be forked more than once, and several embedded servers would fight over one port.
 
 [source,xml]
 ----
-<!-- in the sense profile, under <build><plugins> -->
-<plugin>
-  <groupId>org.apache.maven.plugins</groupId>
-  <artifactId>maven-surefire-plugin</artifactId>
-  <configuration>
-    <argLine>-javaagent:${spider-sense.jar} -Dspidersense.collector=http://127.0.0.1:4000 -Dspidersense.service=${project.artifactId}-test</argLine>
-  </configuration>
-</plugin>
+<properties>
+  <!-- empty unless the sense profile sets it -->
+  <spider-sense.argLine></spider-sense.argLine>
+</properties>
+
+<build>
+  <plugins>
+    <plugin>
+      <groupId>org.apache.maven.plugins</groupId>
+      <artifactId>maven-surefire-plugin</artifactId>
+      <configuration>
+        <!-- the project's own options, if any, then the agent's -->
+        <argLine>-Xmx1g ${spider-sense.argLine}</argLine>
+      </configuration>
+    </plugin>
+  </plugins>
+</build>
+
+<!-- in the sense profile, beside spider-sense.version and spider-sense.jar -->
+<properties>
+  <spider-sense.argLine>-javaagent:${spider-sense.jar} -Dspidersense.collector=http://127.0.0.1:4000 -Dspidersense.service=${project.artifactId}-test</spider-sense.argLine>
+</properties>
 ----
+
+`-Xmx1g` stands for whatever the project already passes; a project that passes nothing writes `<argLine>${spider-sense.argLine}</argLine>`.
+A project whose `argLine` property is set by JaCoCo's `prepare-agent` writes `<argLine>@{argLine} ${spider-sense.argLine}</argLine>`, so that both agents load.
+The `sense` profile is where `spider-sense.jar` is defined and the jar copied, so `-Psense` alone puts the tests under Spider Sense.
 
 Start the standalone once before `mvn test -Psense` runs, as xref:modes.adoc#forwarding[forwarding] describes.
 
