@@ -344,6 +344,28 @@ class QueriesTest {
                 .containsExactly("h2", "postgresql:payments");
     }
 
+    /** A traced load generator's requests are root CLIENT spans to a host nobody traces. */
+    @Test
+    void aServiceWhoseRequestsAreRootCallsIsOnTheMapWithWhatItCalls() {
+        for (int n = 1; n <= 3; n++) {
+            decoder.ingest(Otlp.traces(Otlp.service("load-gen"), Otlp.span(traceId(n), spanId(n), "GET",
+                    Span.SpanKind.SPAN_KIND_CLIENT, NOW + n, 30, Otlp.attr("http.request.method", "GET"),
+                    Otlp.attr("url.full", "http://untraced.example:9000/x"),
+                    Otlp.attr("server.address", "untraced.example"), Otlp.attr("server.port", 9000))));
+        }
+        flush();
+
+        Stats.ServiceMap map = queries.map(window);
+
+        assertThat(map.nodes()).extracting(Stats.Node::id)
+                .contains("svc:load-gen", "http:untraced.example:9000");
+        assertThat(map.edges()).extracting(edge -> edge.from() + " -> " + edge.to() + " " + edge.calls())
+                .containsExactly("svc:load-gen -> http:untraced.example:9000 3");
+        assertThat(queries.dependencies("load-gen", window))
+                .extracting(dependency -> dependency.target() + " " + dependency.calls())
+                .containsExactly("untraced.example:9000 3");
+    }
+
     @Test
     void errorsGroupOnTheNormalisedMessage() {
         for (int i = 1; i <= 2; i++) {

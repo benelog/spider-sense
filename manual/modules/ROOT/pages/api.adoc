@@ -367,6 +367,7 @@ Its numbers are the `ServiceSummary` numbers.
 * Every other node is an outbound target, grouped as `+GET /api/services/{name}.dependencies+` groups them.
 `kind` is `db`, `http`, `messaging` or `rpc`, and `name` is the dependency's `target`.
 An edge runs from each service that calls it.
+A root `CLIENT` or `PRODUCER` span, such as a traced load generator's request, is a call too, so a service whose requests go to a host nobody traces is on the map with that host, and has it among its `dependencies`.
 An outbound span whose child is an entry span of another service counts as that `service → service` edge, not as an external target.
 A call to `localhost:8081` therefore shows as a call to `silk-bookstore` when the bookstore is traced too.
 * A node with no edge is not listed, so a service whose only traffic is calls to itself does not appear.
