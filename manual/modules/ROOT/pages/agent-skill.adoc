@@ -215,6 +215,11 @@ Ask it through the tools of the `spider-sense` MCP server in `.mcp.json`: `statu
 An existing `.mcp.json` that is not a JSON object stops `init` before it writes anything, with a message on stderr and exit code `2`.
 Without `--mcp` nothing is written and nothing is printed about MCP, because a host with a shell is meant to use the CLI, and `init` should not hand it a second tool for the same answers.
 
+`init` reads every file it changes, and checks that it can write every file it writes, before it writes any, so a file it cannot read or write stops it the same way, with the file named.
+A read-only `CLAUDE.md`, `AGENTS.md` or `.mcp.json`, or a `.claude` it cannot create the skills in, prints `spider-sense: /home/me/project/.mcp.json is not writable; nothing was written`.
+A file that is not UTF-8, such as a `CLAUDE.md` saved as UTF-16, prints `spider-sense: could not read /home/me/project/CLAUDE.md: not UTF-8; nothing was written`.
+It writes the skills and `.mcp.json` before the block that names them, so a write that fails all the same never leaves a block naming what is not there; it prints the lines of what was written, then `spider-sense: could not write <file>: <reason>` with the operating system's reason, and exits `2`.
+
 The command then exits `0`.
 
 [#gradle-task]

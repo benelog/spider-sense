@@ -4,6 +4,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintStream;
 import java.io.UncheckedIOException;
+import java.nio.charset.CharacterCodingException;
+import java.nio.file.FileSystemException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -286,48 +288,167 @@ final class Init {
         // UI sentence can then write as a link (cli.adoc#fallback).
         Setup setup = new Setup(jar, withSkill, url == null || url.isBlank() ? null : Remote.base(url.trim()),
                 options.flag("gradle"), Build.of(dir), mcp);
-        try {
-            Path mcpFile = dir.resolve(MCP_FILE);
-            // Read before anything is written, so a file that is not ours to rewrite stops init
-            // before the block names a server it could not configure.
-            JsonObject mcpConfig = mcp ? mcpConfig(mcpFile) : null;
-            if (mcp && mcpConfig == null) {
-                err.println("spider-sense: " + mcpFile + " is not a JSON object; "
-                        + "--mcp left it as it was, and wrote nothing else");
+        Path mcpFile = dir.resolve(MCP_FILE);
+        Path skills = dir.resolve(Paths.get(SKILL_TARGET));
+        // Everything is read, and every file to write checked, before anything is written: a file
+        // init then failed to write would leave a block that names a server or skills not there.
+        JsonObject mcpConfig = mcp ? mcpConfig(mcpFile) : null;
+        if (mcp && mcpConfig == null) {
+            err.println("spider-sense: " + mcpFile + " is not a JSON object; "
+                    + "--mcp left it as it was, and wrote nothing else");
+            return Cli.USAGE;
+        }
+        List<Target> targets = new ArrayList<>();
+        for (String name : blockFiles(dir)) {
+            Path file = dir.resolve(name);
+            String text = Files.exists(file) ? read(file) : null;
+            int broken = unclosedStart(text);
+            if (broken > 0) {
+                // Appending a second block would leave two starts, and the next run would
+                // replace the user's text between the stray one and the new block's end.
+                err.println("spider-sense: " + name + " has `" + START + "` at line " + broken
+                        + " without an end marker; add `" + END + "` where the block ends, or "
+                        + "delete the start marker, and run init again; nothing was written");
                 return Cli.USAGE;
             }
-            List<String> targets = blockFiles(dir);
-            for (String name : targets) {
-                int broken = unclosedStart(dir.resolve(name));
-                if (broken > 0) {
-                    // Appending a second block would leave two starts, and the next run would
-                    // replace the user's text between the stray one and the new block's end.
-                    err.println("spider-sense: " + name + " has `" + START + "` at line " + broken
-                            + " without an end marker; add `" + END + "` where the block ends, or "
-                            + "delete the start marker, and run init again; nothing was written");
-                    return Cli.USAGE;
-                }
-            }
-            String block = block(setup);
-            for (String name : targets) {
-                out.println(writeBlock(dir.resolve(name), block) + " " + name + " block (jar: " + jar + ")");
-            }
+            targets.add(new Target(name, file, text));
+        }
+        List<SkillFile> skillFiles = withSkill ? skillFiles(skills) : List.of();
+        List<Path> inPlace = new ArrayList<>(targets.stream().map(Target::file).toList());
+        if (mcpConfig != null) {
+            inPlace.add(mcpFile);
+        }
+        String unwritable = unwritable(inPlace, skillFiles.stream().map(SkillFile::file).toList());
+        if (unwritable != null) {
+            err.println("spider-sense: " + unwritable + "; nothing was written");
+            return Cli.USAGE;
+        }
+        Lines lines = new Lines();
+        try {
+            // The skills and the server go in before the block that names them.
             if (withSkill) {
-                Path target = dir.resolve(Paths.get(SKILL_TARGET));
-                installSkills(target).forEach((skill, files) ->
-                        out.println("installed skill to " + target.resolve(skill) + " (" + files + " files)"));
+                installSkills(skillFiles).forEach((skill, files) -> lines.skills.add(
+                        "installed skill to " + skills.resolve(skill) + " (" + files + " files)"));
             } else {
-                out.println(mcp ? "skipped skills (--mcp)" : "skipped skills (--no-skill)");
+                lines.skills.add(mcp ? "skipped skills (--mcp)" : "skipped skills (--no-skill)");
             }
             // Without --mcp nothing is written and nothing is said: a host with a shell
             // is meant to use the CLI.
             if (mcpConfig != null) {
-                writeMcpServer(mcpFile, mcpConfig, jar, setup.url(), out);
+                lines.mcp.add(writeMcpServer(mcpFile, mcpConfig, jar, setup.url()));
             }
-            return Cli.OK;
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
+            String block = block(setup);
+            for (Target target : targets) {
+                lines.blocks.add(writeBlock(target, block) + " " + target.name() + " block (jar: " + jar + ")");
+            }
+        } finally {
+            lines.print(out);
         }
+        return Cli.OK;
+    }
+
+    /** A file the block goes into, by the name init prints, with its text as it was read, or null for none. */
+    private record Target(String name, Path file, @Nullable String text) {
+    }
+
+    /** One packaged file of a skill, and where under the project's skills it goes. */
+    private record SkillFile(String skill, String resource, Path file) {
+    }
+
+    /**
+     * What init printed, kept to the order agent-skill.adoc#init-output gives, the block first,
+     * whatever order the files were written in; when a write fails, the lines of what was written.
+     */
+    private static final class Lines {
+
+        private final List<String> blocks = new ArrayList<>();
+        private final List<String> skills = new ArrayList<>();
+        private final List<String> mcp = new ArrayList<>();
+
+        void print(PrintStream out) {
+            blocks.forEach(out::println);
+            skills.forEach(out::println);
+            mcp.forEach(out::println);
+        }
+    }
+
+    /**
+     * What stands in the way of the first file init could not write, or null when it can write them
+     * all, checked before it writes any.
+     *
+     * <p>A block file and {@code .mcp.json} are rewritten in place, so one that is there must be
+     * writable itself. A file that is not there, and a skill's file, which {@link Files#copy} replaces
+     * by deleting it first, need the directory it goes in writable, or else the nearest one above it
+     * that is there, since init creates the rest.
+     *
+     * @param inPlace the files rewritten in place
+     * @param created the files created or replaced
+     */
+    private static @Nullable String unwritable(List<Path> inPlace, List<Path> created) {
+        for (Path file : inPlace) {
+            if (Files.exists(file)) {
+                if (!Files.isWritable(file)) {
+                    return file + " is not writable";
+                }
+            } else {
+                String why = unwritableDirectory(file);
+                if (why != null) {
+                    return why;
+                }
+            }
+        }
+        for (Path file : created) {
+            if (Files.isDirectory(file)) {
+                return file + " is a directory";
+            }
+            String why = unwritableDirectory(file);
+            if (why != null) {
+                return why;
+            }
+        }
+        return null;
+    }
+
+    /** What keeps {@code file} from being created in its directory, or in the nearest one above it that is there. */
+    private static @Nullable String unwritableDirectory(Path file) {
+        Path dir = file.getParent();
+        while (dir != null && !Files.exists(dir)) {
+            dir = dir.getParent();
+        }
+        if (dir == null || (Files.isDirectory(dir) && Files.isWritable(dir))) {
+            return null;
+        }
+        return dir + (Files.isDirectory(dir) ? " is not writable" : " is not a directory");
+    }
+
+    /**
+     * The file's text, read as UTF-8; one that cannot be read stops init before it writes anything,
+     * named with the reason, such as a {@code CLAUDE.md} that Notepad saved as UTF-16.
+     */
+    private static String read(Path file) {
+        try {
+            return Files.readString(file, UTF_8);
+        } catch (CharacterCodingException e) {
+            throw new UncheckedIOException("could not read " + file + ": not UTF-8; nothing was written", e);
+        } catch (IOException e) {
+            throw new UncheckedIOException("could not read " + file + ": " + Sessions.why(e)
+                    + "; nothing was written", e);
+        }
+    }
+
+    private static void write(Path file, String text) {
+        try {
+            Files.writeString(file, text, UTF_8);
+        } catch (IOException e) {
+            throw cannotWrite(file, e);
+        }
+    }
+
+    /** A write that failed, named with the file the operating system refused and its reason (cli.adoc#export-import). */
+    private static UncheckedIOException cannotWrite(Path file, IOException e) {
+        String refused = e instanceof FileSystemException failed && failed.getFile() != null
+                ? failed.getFile() : file.toString();
+        return new UncheckedIOException("could not write " + refused + ": " + Sessions.why(e), e);
     }
 
     /**
@@ -352,12 +473,13 @@ final class Init {
      * to guess at, and overwriting a host's configuration would be worse than
      * refusing.
      */
-    private static @Nullable JsonObject mcpConfig(Path file) throws IOException {
+    private static @Nullable JsonObject mcpConfig(Path file) {
         if (!Files.exists(file)) {
             return Json.object();
         }
+        String text = read(file);
         try {
-            return Json.parse(Files.readString(file, UTF_8)) instanceof JsonObject object ? object : null;
+            return Json.parse(text) instanceof JsonObject object ? object : null;
         } catch (RuntimeException e) {
             // Not JSON at all, which is answered as any other file that is not an object.
             return null;
@@ -377,8 +499,7 @@ final class Init {
      * {@code --mcp} the host asks through the server and nothing else, so a URL the block alone
      * named would leave every tool call asking port 4000.
      */
-    private static void writeMcpServer(Path file, JsonObject root, String jar, @Nullable String url,
-            PrintStream out) throws IOException {
+    private static String writeMcpServer(Path file, JsonObject root, String jar, @Nullable String url) {
         boolean existed = Files.exists(file);
         JsonObject servers = root.has("mcpServers")
                 && root.get("mcpServers") instanceof JsonObject existing ? existing : Json.object();
@@ -390,8 +511,8 @@ final class Init {
                 .put("command", "java")
                 .put("args", args));
         root.put("mcpServers", servers);
-        Files.writeString(file, pretty(root) + "\n", UTF_8);
-        out.println((existed ? "updated" : "wrote") + " .mcp.json (spider-sense over stdio)");
+        write(file, pretty(root) + "\n");
+        return (existed ? "updated" : "wrote") + " .mcp.json (spider-sense over stdio)";
     }
 
     /**
@@ -453,15 +574,14 @@ final class Init {
     }
 
     /**
-     * The line of a start marker with no end marker after it, or 0 when the file has none or is
-     * not there: a block whose end was edited away, which no run of {@code init} can mend
-     * without guessing where it ended.
+     * The line of a start marker with no end marker after it, or 0 when the file's text has none
+     * or there is no file: a block whose end was edited away, which no run of {@code init} can
+     * mend without guessing where it ended.
      */
-    private static int unclosedStart(Path file) throws IOException {
-        if (!Files.exists(file)) {
+    private static int unclosedStart(@Nullable String existing) {
+        if (existing == null) {
             return 0;
         }
-        String existing = Files.readString(file, UTF_8);
         int start = existing.indexOf(START);
         if (start < 0 || existing.indexOf(END, start + START.length()) >= 0) {
             return 0;
@@ -473,39 +593,35 @@ final class Init {
      * Writes the block into {@code CLAUDE.md} or {@code AGENTS.md} and says which of the two
      * things it did: {@code wrote} or {@code updated}.
      *
-     * <p>Only the span between the markers is ever rewritten. The file is not parsed,
-     * not reformatted and not re-encoded beyond UTF-8 in and UTF-8 out, because it is
-     * the project's file and Spider Sense is a guest in it.
+     * <p>Only the span between the markers is ever rewritten, in the text read before anything was
+     * written. The file is not parsed, not reformatted and not re-encoded beyond UTF-8 in and UTF-8
+     * out, because it is the project's file and Spider Sense is a guest in it.
      */
-    private static String writeBlock(Path file, String block) throws IOException {
-        if (!Files.exists(file)) {
-            Files.writeString(file, block + "\n", UTF_8);
+    private static String writeBlock(Target target, String block) {
+        String existing = target.text();
+        if (existing == null) {
+            write(target.file(), block + "\n");
             return "wrote";
         }
-        String existing = Files.readString(file, UTF_8);
         int start = existing.indexOf(START);
         int end = existing.indexOf(END, start + START.length());
         if (start >= 0 && end > start) {
-            Files.writeString(file,
-                    existing.substring(0, start) + block + existing.substring(end + END.length()), UTF_8);
+            write(target.file(), existing.substring(0, start) + block + existing.substring(end + END.length()));
             return "updated";
         }
         String separator = existing.isEmpty() ? "" : existing.endsWith("\n") ? "\n" : "\n\n";
-        Files.writeString(file, existing + separator + block + "\n", UTF_8);
+        write(target.file(), existing + separator + block + "\n");
         return "wrote";
     }
 
     /**
-     * Copies every packaged skill into the project, one directory each, overwriting the
-     * files it owns and leaving anything else in those directories alone.
+     * Every packaged skill file, with the place under {@code target} it is installed to.
      *
      * <p>A skill is a top-level directory of the index, so a new one in the repository's
-     * {@code skills/} is installed by this without a line of code changing here.
-     *
-     * @return how many files were written, per skill, in the skills' name order
+     * {@code skills/} is installed without a line of code changing here.
      */
-    private static Map<String, Integer> installSkills(Path target) throws IOException {
-        Map<String, Integer> written = new TreeMap<>();
+    private static List<SkillFile> skillFiles(Path target) {
+        List<SkillFile> files = new ArrayList<>();
         for (String name : index()) {
             int slash = name.indexOf('/');
             if (slash <= 0) {
@@ -513,23 +629,39 @@ final class Init {
                 continue;
             }
             Path file = target.resolve(name).normalize();
-            if (!file.startsWith(target)) {
-                continue;
+            if (file.startsWith(target)) {
+                files.add(new SkillFile(name.substring(0, slash), SKILL_PREFIX + name, file));
             }
-            try (InputStream in = Init.class.getClassLoader().getResourceAsStream(SKILL_PREFIX + name)) {
+        }
+        return files;
+    }
+
+    /**
+     * Copies the packaged skills into the project, one directory each, overwriting the
+     * files it owns and leaving anything else in those directories alone.
+     *
+     * @return how many files were written, per skill, in the skills' name order
+     */
+    private static Map<String, Integer> installSkills(List<SkillFile> files) {
+        Map<String, Integer> written = new TreeMap<>();
+        for (SkillFile skillFile : files) {
+            Path file = skillFile.file();
+            try (InputStream in = Init.class.getClassLoader().getResourceAsStream(skillFile.resource())) {
                 if (in == null) {
                     continue;
                 }
                 Files.createDirectories(file.getParent());
                 Files.copy(in, file, StandardCopyOption.REPLACE_EXISTING);
-                written.merge(name.substring(0, slash), 1, Integer::sum);
+                written.merge(skillFile.skill(), 1, Integer::sum);
+            } catch (IOException e) {
+                throw cannotWrite(file, e);
             }
         }
         return written;
     }
 
     /** The packaged paths relative to {@code skills/}, as the build's {@code skillIndex} task listed them. */
-    private static List<String> index() throws IOException {
+    private static List<String> index() {
         try (InputStream in = Init.class.getClassLoader().getResourceAsStream(SKILL_INDEX)) {
             if (in == null) {
                 throw new IllegalStateException("this build carries no skill: " + SKILL_INDEX
@@ -543,6 +675,8 @@ final class Init {
                 }
             }
             return names;
+        } catch (IOException e) {
+            throw new UncheckedIOException("could not read the skills this jar carries: " + Sessions.why(e), e);
         }
     }
 

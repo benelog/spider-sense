@@ -403,6 +403,76 @@ class InitTest {
         assertThat(project.resolve(".mcp.json")).doesNotExist();
     }
 
+    /**
+     * A file init could not write stops it before it writes anything, so no block names a server
+     * or skills it could not set up, and the file is named with what is wrong (agent-skill.adoc#init-output).
+     */
+    @Test
+    void aFileItCannotWriteStopsItBeforeItWritesAnything(@TempDir Path project) throws IOException {
+        Path mcpFile = project.resolve(".mcp.json");
+        Files.writeString(mcpFile, "{\"mcpServers\": {\"other\": {\"command\": \"x\"}}}\n", UTF_8);
+        readOnly(mcpFile);
+
+        Run run = init("--dir=" + project, "--jar=" + JAR, "--mcp");
+
+        assertThat(run.exit()).isEqualTo(2);
+        assertThat(run.err()).isEqualTo("spider-sense: " + mcpFile + " is not writable; nothing was written\n");
+        assertThat(run.out()).isEmpty();
+        assertThat(project.resolve("CLAUDE.md")).doesNotExist();
+        assertThat(Files.readString(mcpFile, UTF_8)).isEqualTo("{\"mcpServers\": {\"other\": {\"command\": \"x\"}}}\n");
+    }
+
+    @Test
+    void aReadOnlyAgentsFileBesideClaudesStopsItBeforeEither(@TempDir Path project) throws IOException {
+        Path claude = project.resolve("CLAUDE.md");
+        Path agents = project.resolve("AGENTS.md");
+        Files.writeString(claude, "# Claude\n", UTF_8);
+        Files.writeString(agents, "# Agents\n", UTF_8);
+        readOnly(agents);
+
+        Run run = init("--dir=" + project, "--jar=" + JAR, "--no-skill");
+
+        assertThat(run.exit()).isEqualTo(2);
+        assertThat(run.err()).isEqualTo("spider-sense: " + agents + " is not writable; nothing was written\n");
+        assertThat(Files.readString(claude, UTF_8)).isEqualTo("# Claude\n");
+    }
+
+    @Test
+    void aDirectoryTheSkillsCannotBeCreatedInStopsItBeforeTheBlock(@TempDir Path project) throws IOException {
+        Path claudeDir = Files.createDirectory(project.resolve(".claude"));
+        readOnly(claudeDir);
+
+        Run run = init("--dir=" + project, "--jar=" + JAR);
+
+        assertThat(run.exit()).isEqualTo(2);
+        assertThat(run.err()).isEqualTo("spider-sense: " + claudeDir + " is not writable; nothing was written\n");
+        assertThat(project.resolve("CLAUDE.md")).doesNotExist();
+    }
+
+    /** A block file Windows Notepad saved as UTF-16 is named, rather than reported as a decoder's exception. */
+    @Test
+    void aBlockFileThatIsNotUtf8IsNamed(@TempDir Path project) throws IOException {
+        Path claude = project.resolve("CLAUDE.md");
+        Files.writeString(claude, "# Notes\n", java.nio.charset.StandardCharsets.UTF_16);
+
+        Run run = init("--dir=" + project, "--jar=" + JAR, "--no-skill");
+
+        assertThat(run.exit()).isEqualTo(2);
+        assertThat(run.err()).isEqualTo("spider-sense: could not read " + claude + ": not UTF-8; nothing was written\n");
+        assertThat(Files.readAllBytes(claude)).isEqualTo("# Notes\n".getBytes(java.nio.charset.StandardCharsets.UTF_16));
+    }
+
+    /**
+     * Takes away write permission, or skips the test where that does not stop this user writing, as
+     * for root.
+     */
+    private static void readOnly(Path path) throws IOException {
+        assumeTrue(path.getFileSystem().supportedFileAttributeViews().contains("posix"), "POSIX permissions");
+        Files.setPosixFilePermissions(path, java.nio.file.attribute.PosixFilePermissions.fromString(
+                Files.isDirectory(path) ? "r-xr-xr-x" : "r--r--r--"));
+        assumeTrue(!Files.isWritable(path), "this user cannot write a read-only file");
+    }
+
     @Test
     void aFileThatIsNotJsonAtAllIsRefusedTheSameWay(@TempDir Path project) throws IOException {
         Path file = project.resolve(".mcp.json");
