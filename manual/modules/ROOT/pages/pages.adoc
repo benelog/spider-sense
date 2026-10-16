@@ -41,7 +41,7 @@ Because the panel asks with `hideAcked=true`, acknowledged findings, and resolve
 With no finding in the window the panel says `Nothing worth fixing in this window.`
 
 . *Throughput and latency*: a uPlot chart, 220 px high, with a *Requests* | *Load* toggle in the panel head, remembered in the hash query as `chart=requests` or `chart=load` and carried by every internal link.
-Requests draws the requests per time bucket as bars in the silk grey, with the errors stacked on top in `--err`.
+Requests draws the requests per time bucket as bars in the silk grey, with the errors among them stacked on top in `--err`, so a bar is as tall as its requests.
 Load splits the same bars into the four response-time buckets, stacked bottom-up in the bucket colours, with the errors on top in `--err`.
 In both, p95 is a line on a second y-axis in the accent colour.
 Beside the chart, one third of the width, the *Response summary* draws five vertical bars, one per response-time bucket and one for errors, in the bucket colours, with the count above each bar and the label beneath.

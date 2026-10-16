@@ -376,10 +376,12 @@ export function stackColumns(specSeries) {
  * A time series.
  * spec = {
  *   height, t: [msEpoch], short,
- *   series: [{ label, values, color, type: 'bar'|'line'|'area', scale: 'y'|'ms'|'pct', width, fill, dash }],
+ *   series: [{ label, values, color, type: 'bar'|'line'|'area', scale: 'y'|'ms'|'pct', width, fill, dash, stack, tipValues }],
  *   axes: [{ scale, side, label, values }],
  *   legend: true
  * }
+ * The tooltip gives a series' `values`, or its `tipValues` when what it draws is not what it counts,
+ * as the requests without an error that a bar of requests stacks its errors on.
  */
 export function timeSeries(container, spec) {
   const chart = new Chart(container, (width, height, colors) => {
@@ -448,7 +450,7 @@ export function timeSeries(container, spec) {
             const { idx, left, top } = u.cursor;
             if (idx == null || left < 0) { tip.classList.remove('show'); return; }
             const rows = spec.series.map((s, i) => {
-              const v = (s.values || [])[idx];      // the raw value, not the stacked one
+              const v = (s.tipValues || s.values || [])[idx];      // the raw value, not the stacked one
               if (v == null) return null;
               const color = resolveColor(s.color, colors);
               return `<span class="k"><i style="background:${color}"></i>${escapeHtml(s.label)}</span><span class="v">${escapeHtml(u.series[column[i]].value(u, v))}</span>`;

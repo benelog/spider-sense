@@ -31,9 +31,10 @@ export function chartModeSwitch(fallback, onChange) {
 }
 
 /**
- * The throughput chart.
- * mode 'requests': requests in silk with errors stacked on top.
- * mode 'load': the four response-time buckets stacked bottom-up, errors on top.
+ * The throughput chart: a bar per bucket as tall as its requests, the errors among them on top.
+ * mode 'requests': the requests without an error in silk, the errors stacked on them.
+ * mode 'load': the requests without an error in the four response-time buckets stacked
+ * bottom-up (api.adoc#buckets), the errors on top.
  * `p95` adds the p95 line on the right axis.
  */
 export function throughputSpec(series, mode, opts = {}) {
@@ -41,13 +42,19 @@ export function throughputSpec(series, mode, opts = {}) {
   const colors = bucketColors();
   const labels = bucketLabels();
   const hist = series.histogram || [];
+  const requests = series.requests || [];
+  const errors = series.errors || [];
   const bars = mode === 'load'
     ? [0, 1, 2, 3].map((i) => ({
       label: labels[i], values: hist[i] || t.map(() => 0), color: colors[i], type: 'bar', scale: 'y', stack: 'load',
-    })).concat([{ label: 'Errors', values: series.errors || [], color: 'err', type: 'bar', scale: 'y', stack: 'load' }])
+    })).concat([{ label: 'Errors', values: errors, color: 'err', type: 'bar', scale: 'y', stack: 'load' }])
     : [
-      { label: 'Requests', legendLabel: 'Requests per bucket', values: series.requests || [], color: 'silk', type: 'bar', scale: 'y' },
-      { label: 'Errors', values: series.errors || [], color: 'err', type: 'bar', scale: 'y' },
+      {
+        label: 'Requests', legendLabel: 'Requests per bucket', color: 'silk', type: 'bar', scale: 'y', stack: 'requests',
+        values: requests.map((r, i) => (r == null ? null : Math.max(0, r - (errors[i] || 0)))),
+        tipValues: requests,
+      },
+      { label: 'Errors', values: errors, color: 'err', type: 'bar', scale: 'y', stack: 'requests' },
     ];
   const spec = {
     height: opts.height || 220,

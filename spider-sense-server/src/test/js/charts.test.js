@@ -33,6 +33,25 @@ test('the throughput legend follows its mode', () => {
     ['≤125 ms', '≤500 ms', '≤2 s', '>2 s', 'Errors']);
 });
 
+test('both throughput modes draw a bar as tall as its requests with the errors on top, and the tooltip gives the counts (pages.adoc#overview)', () => {
+  const series = { t: [Date.now() - 60000, Date.now()], requests: [10, 4], errors: [1, 0], histogram: [[6, 2], [2, 1], [1, 1], [0, 0]] };
+  for (const [mode, under] of [['requests', 'Requests'], ['load', '>2 s']]) {
+    const spec = throughputSpec(series, mode);
+    const { columns, column } = stackColumns(spec.series);
+    const top = (label) => columns[column[spec.series.findIndex((s) => s.label === label)] - 1];
+    assert.deepEqual(top('Errors'), [10, 4], mode + ': the errors end where the requests do');
+    assert.deepEqual(top(under), [9, 4], mode + ': the segment under them ends where they begin');
+  }
+  const container = document.createElement('div');
+  const chart = timeSeries(container, throughputSpec(series, 'requests'));
+  chart.plot.cursor = { idx: 0, left: 10, top: 10 };
+  for (const hook of chart.plot.opts.hooks.setCursor) hook(chart.plot);
+  const tip = container.querySelector('.chart-tip').innerHTML;
+  assert.match(tip, /Requests<\/span><span class="v">10</, 'the requests, errors included: ' + tip);
+  assert.match(tip, /Errors<\/span><span class="v">1</);
+  chart.destroy();
+});
+
 test('what replaced a chart box\'s chart stays when the theme flips, until the next show', () => {
   const box = chartBox({ title: 'Metric' });
   const spec = { t: [Date.now() - 60000, Date.now()], series: [{ label: 'v', values: [1, 2] }] };
