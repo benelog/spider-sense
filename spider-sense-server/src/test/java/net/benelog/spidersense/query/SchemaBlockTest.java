@@ -93,6 +93,33 @@ class SchemaBlockTest {
                 .extracting(SchemaBlock::unindexed).isEqualTo(List.of());
     }
 
+    /**
+     * An unqualified name is never H2's own INFORMATION_SCHEMA.USERS, which sorts first; in two
+     * schemas of the application's, which one the database resolved it to cannot be told.
+     */
+    @Test
+    void anUnqualifiedNameInTwoSchemasHasNoBlockAndTheCatalogsOwnIsNotOne() {
+        Catalog.Table system = new Catalog.Table("INFORMATION_SCHEMA", "USERS", List.of());
+        Catalog.Table users = new Catalog.Table("PUBLIC", "USERS", List.of(
+                new Catalog.Index("PRIMARY_KEY_4", true, List.of("ID")),
+                new Catalog.Index("IDX_USERS_EMAIL", false, List.of("EMAIL"))));
+        String statement = "select id, name from users where email = ?";
+
+        assertThat(SchemaBlock.of(statement, Map.of("users", List.of(system, users))))
+                .extracting(SchemaBlock::tables, SchemaBlock::unindexed)
+                .containsExactly(List.of(users), List.of());
+
+        Map<String, List<Catalog.Table>> orders = Map.of("orders", List.of(
+                new Catalog.Table("audit", "orders", List.of(
+                        new Catalog.Index("idx_audit_orders_customer", false, List.of("customer_id")))),
+                new Catalog.Table("public", "orders", List.of(
+                        new Catalog.Index("orders_pkey", true, List.of("id"))))));
+        assertThat(SchemaBlock.of("select o.id, o.total from orders o where o.customer_id = ?", orders))
+                .isNull();
+        assertThat(SchemaBlock.of("select o.id from public.orders o where o.customer_id = ?", orders))
+                .extracting(SchemaBlock::unindexed).isEqualTo(List.of("orders.customer_id"));
+    }
+
     @Test
     void anExpressionIndexLeadsWithTheColumnsItNamesAndNoOthers() {
         assertThat(SchemaBlock.leads("lower((email)::text)", "email")).isTrue();

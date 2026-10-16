@@ -169,6 +169,41 @@ class IndexCatalogTest {
         assertThat(exporter.getFinishedLogRecordItems()).isEmpty();
     }
 
+    /** H2 has an INFORMATION_SCHEMA.USERS of its own, which a {@code users} the application wrote never means. */
+    @Test
+    void anUnqualifiedNameIsTheCurrentSchemasTable() throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("create table users (id bigint primary key, email varchar)");
+            statement.execute("create index idx_users_email on users (email)");
+            statement.execute("create schema audit");
+            statement.execute("create table audit.items (id bigint, name varchar)");
+        }
+
+        slow("select * from users where email = ?");
+        slow("select * from items where name = ?");
+
+        assertThat(exporter.getFinishedLogRecordItems())
+                .extracting(record -> record.getAttributes().get(SCHEMA) + "." + record.getAttributes().get(TABLE))
+                .containsExactly("PUBLIC.USERS", "PUBLIC.ITEMS");
+    }
+
+    /** A table of a later schema on the search path is still found, and the catalog's own are not. */
+    @Test
+    void anUnqualifiedNameTheCurrentSchemaLacksIsLookedUpInTheOthers() throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("create schema audit");
+            statement.execute("create table audit.entries (id bigint, at timestamp)");
+        }
+
+        slowOnAnyStatement("select * from entries where at > ?");
+        slowOnAnyStatement("select * from sessions where id = ?");
+
+        assertThat(exporter.getFinishedLogRecordItems())
+                .extracting(record -> record.getAttributes().get(SCHEMA) + "." + record.getAttributes().get(TABLE))
+                .as("INFORMATION_SCHEMA.SESSIONS is H2's, not the application's")
+                .containsExactly("AUDIT.ENTRIES");
+    }
+
     @Test
     void aQuotedNameIsNotFoldedAndSoDoesNotMatchAnUpperCaseTable() throws SQLException {
         slowOnAnyStatement("select * from \"items\" where name = ?");

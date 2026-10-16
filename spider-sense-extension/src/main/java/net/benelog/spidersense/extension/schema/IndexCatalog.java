@@ -166,6 +166,7 @@ public final class IndexCatalog {
         DatabaseMetaData meta = connection.getMetaData();
         String url = meta.getURL();
         String catalog = catalogOf(connection);
+        String current = schemaOf(connection);
         for (TableRef table : tables) {
             if (attemptedTables.size() >= MAX_TABLES) {
                 return;
@@ -173,7 +174,7 @@ public final class IndexCatalog {
             if (!attemptedTables.add(url + "\0" + table.name())) {
                 continue;
             }
-            lookUp(meta, catalog, table);
+            lookUp(meta, catalog, current, table);
         }
     }
 
@@ -182,21 +183,46 @@ public final class IndexCatalog {
      *
      * <p>{@code getTables} first, so a name the scanner misread costs one catalog query and emits
      * nothing: the alternative is a catalog row for a table that does not exist, which the server
-     * would carry forever. A name found in several schemas is emitted once per schema, because the
-     * statement does not say which one it meant and both answers are facts.
+     * would carry forever.
+     *
+     * <p>A name the statement does not qualify is the connection's current schema's table when that
+     * schema has one, because that is the table the database resolved it to: H2 also answers
+     * {@code INFORMATION_SCHEMA.USERS} for a {@code users}, and PostgreSQL an {@code audit.orders}
+     * beside {@code public.orders}. Only when the current schema has no such table (a later schema
+     * of PostgreSQL's {@code search_path}, or a driver that reports no current schema) is every
+     * schema asked, less the database's own catalog schemas, and a name found in several of them
+     * is emitted once per schema, because the statement does not say which one it meant and both
+     * answers are facts; the server then gives no block (findings.adoc#schema).
      */
-    private static void lookUp(DatabaseMetaData meta, @Nullable String catalog, TableRef table)
-            throws SQLException {
-        String schema = null;
+    private static void lookUp(DatabaseMetaData meta, @Nullable String catalog,
+            @Nullable String current, TableRef table) throws SQLException {
         String name = table.name();
         int dot = name.lastIndexOf('.');
         if (dot > 0 && dot < name.length() - 1) {
-            schema = fold(meta, name.substring(0, dot), table.quoted());
-            name = name.substring(dot + 1);
+            String schema = fold(meta, name.substring(0, dot), table.quoted());
+            emitAll(meta, catalog, tablesOf(meta, catalog, schema,
+                    fold(meta, name.substring(dot + 1), table.quoted())));
+            return;
         }
         name = fold(meta, name, table.quoted());
+        List<CatalogTable> found = current == null ? List.of() : tablesOf(meta, catalog, current, name);
+        if (found.isEmpty()) {
+            found = new ArrayList<>();
+            for (CatalogTable row : tablesOf(meta, catalog, null, name)) {
+                if (!isSystemSchema(row.schema())) {
+                    found.add(row);
+                }
+            }
+        }
+        emitAll(meta, catalog, found);
+    }
+
+    /** The tables of that name, in that schema or, given none, in every schema. */
+    private static List<CatalogTable> tablesOf(DatabaseMetaData meta, @Nullable String catalog,
+            @Nullable String schema, String name) throws SQLException {
         List<CatalogTable> found = new ArrayList<>();
-        try (ResultSet rows = meta.getTables(catalog, schema, pattern(meta, name), null)) {
+        try (ResultSet rows = meta.getTables(catalog,
+                schema == null ? null : pattern(meta, schema), pattern(meta, name), null)) {
             while (rows.next()) {
                 if (!hasOwnIndexes(rows.getString("TABLE_TYPE"))) {
                     continue;
@@ -204,9 +230,24 @@ public final class IndexCatalog {
                 found.add(new CatalogTable(rows.getString("TABLE_SCHEM"), rows.getString("TABLE_NAME")));
             }
         }
+        return found;
+    }
+
+    private static void emitAll(DatabaseMetaData meta, @Nullable String catalog,
+            List<CatalogTable> found) throws SQLException {
         for (CatalogTable row : found) {
             emit(meta, catalog, row.schema(), row.name());
         }
+    }
+
+    /**
+     * Whether the schema is the database's description of itself ({@code INFORMATION_SCHEMA} on
+     * H2, {@code information_schema} and {@code pg_catalog} on PostgreSQL), whose tables a
+     * statement that does not name the schema never means.
+     */
+    static boolean isSystemSchema(@Nullable String schema) {
+        return schema != null && (schema.equalsIgnoreCase("INFORMATION_SCHEMA")
+                || schema.equalsIgnoreCase("pg_catalog"));
     }
 
     /**
@@ -265,6 +306,19 @@ public final class IndexCatalog {
             out.append(c);
         }
         return out.toString();
+    }
+
+    /**
+     * The schema an unqualified name resolves in, or null when the driver does not say: MySQL has
+     * no schemas, and a driver older than JDBC 4.1 has no such method at all.
+     */
+    private static @Nullable String schemaOf(Connection connection) {
+        try {
+            String schema = connection.getSchema();
+            return schema == null || schema.isEmpty() ? null : schema;
+        } catch (SQLException | AbstractMethodError | UnsupportedOperationException unavailable) {
+            return null;
+        }
     }
 
     private static @Nullable String catalogOf(Connection connection) {
