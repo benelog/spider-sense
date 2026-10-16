@@ -1,6 +1,7 @@
 package net.benelog.spidersense.launcher;
 
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -43,20 +44,26 @@ interface Settings {
      * named, and the agent says so itself when it starts.
      *
      * @param workingDir what a relative path in {@value #AGENT_CONFIGURATION_FILE} is taken from
+     * @param userHome what a leading {@code ~} in that path stands for, as the agent reads it
      */
-    static Settings withAgentConfigurationFile(Settings settings, Path workingDir) {
+    static Settings withAgentConfigurationFile(Settings settings, Path workingDir, @Nullable String userHome) {
         Properties file = new Properties();
         try {
             String named = settings.get(AGENT_CONFIGURATION_FILE);
             if (named == null) {
                 return settings;
             }
-            Path path = workingDir.resolve(named.trim());
+            // The agent replaces a leading ~ with user.home and takes the rest as it is.
+            if (named.startsWith("~") && userHome != null) {
+                named = userHome + named.substring(1);
+            }
+            Path path = workingDir.resolve(named);
             if (!Files.isRegularFile(path)) {
                 return settings;
             }
-            // The agent reads the file as UTF-8 properties.
-            try (Reader in = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
+            // The agent reads the file as UTF-8 properties, a malformed byte becoming U+FFFD rather
+            // than failing the read, which a Reader from Files.newBufferedReader would do.
+            try (Reader in = new InputStreamReader(Files.newInputStream(path), StandardCharsets.UTF_8)) {
                 file.load(in);
             }
         } catch (IOException | RuntimeException e) {

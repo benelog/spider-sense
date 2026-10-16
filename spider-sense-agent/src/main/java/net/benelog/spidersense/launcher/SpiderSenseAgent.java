@@ -57,7 +57,7 @@ public final class SpiderSenseAgent {
         try {
             // What the agent will read below the properties and variables: a default must not be
             // written over it, since a property we set would outrank the user's file.
-            settings = Settings.withAgentConfigurationFile(settings, Paths.get(""));
+            settings = Settings.withAgentConfigurationFile(settings, Paths.get(""), System.getProperty("user.home"));
         } catch (Throwable t) {
             warn("could not read " + Settings.AGENT_CONFIGURATION_FILE + "; its keys may be overridden", t);
         }

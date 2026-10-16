@@ -68,7 +68,7 @@ class AgentDefaultsTest {
                 otel.metrics.exporter=
                 """);
         properties.put("otel.javaagent.configuration-file", "otel.properties");
-        Settings withFile = Settings.withAgentConfigurationFile(settings, dir);
+        Settings withFile = Settings.withAgentConfigurationFile(settings, dir, null);
         Config config = Config.defaults().withService("fromprop");
 
         assertThat(SpiderSenseAgent.effectiveServiceName(config, withFile)).isEqualTo("fromfile");
@@ -82,13 +82,32 @@ class AgentDefaultsTest {
                 .containsEntry("otel.logs.exporter", "otlp");
     }
 
+    /**
+     * The agent replaces a leading {@code ~} with {@code user.home} and reads the file with a
+     * replacing UTF-8 reader, so a {@code ~} path and a Latin-1 byte in a comment are read here as
+     * well: otherwise the defaults would be written over the keys the agent reads from the file.
+     */
+    @Test
+    void readsTheAgentsConfigurationFileFromHomeAndPastAMalformedByte() throws IOException {
+        Path home = java.nio.file.Files.createDirectories(dir.resolve("home"));
+        java.nio.file.Files.write(home.resolve("otel.properties"),
+                "# caf\u00e9\notel.service.name=from-file\n".getBytes(java.nio.charset.StandardCharsets.ISO_8859_1));
+        properties.put("otel.javaagent.configuration-file", "~/otel.properties");
+        Settings withFile = Settings.withAgentConfigurationFile(settings, dir, home.toString());
+        Config config = Config.defaults().withService("from-sense");
+
+        assertThat(SpiderSenseAgent.effectiveServiceName(config, withFile)).isEqualTo("from-file");
+        SpiderSenseAgent.applyOtelDefaults(config, withFile, this::extensionJar);
+        assertThat(properties).doesNotContainKey("otel.service.name");
+    }
+
     /** A file that is named but is not there is as if none were named; the agent says so itself. */
     @Test
     void aMissingAgentConfigurationFileChangesNothing() {
         properties.put("otel.javaagent.configuration-file", "nowhere.properties");
 
-        assertThat(Settings.withAgentConfigurationFile(settings, dir)).isSameAs(settings);
-        assertThat(Settings.withAgentConfigurationFile(Settings.of(key -> null, key -> null, (k, v) -> { }), dir))
+        assertThat(Settings.withAgentConfigurationFile(settings, dir, null)).isSameAs(settings);
+        assertThat(Settings.withAgentConfigurationFile(Settings.of(key -> null, key -> null, (k, v) -> { }), dir, null))
                 .as("nothing named").isNotNull();
     }
 
