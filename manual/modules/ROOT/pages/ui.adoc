@@ -105,6 +105,7 @@ The labels are built from the bounds, so the ones above are those of the default
 
 Apdex is shown with one decimal less than the API carries, as in `0.93`.
 It is coloured `--err` below 0.7, `--warn` below 0.85, and plain otherwise.
+The colour follows the value as shown, so an API value of `0.849`, shown as `0.85`, is plain, as `0.85` is.
 The tile's caption says `apdex`, and its title says the T it was computed with.
 
 [#tone]

@@ -27,12 +27,14 @@ test('malformed bounds fall back to the default', () => {
   assert.deepEqual(bucketBounds(), [125, 500, 2000]);
 });
 
-test('apdexClass warns under 0.85 and is bad under 0.7', () => {
+test('apdexClass warns under 0.85 and is bad under 0.70, as the Apdex is printed, so one printed value takes one colour', () => {
   assert.equal(apdexClass(null), '');
   assert.equal(apdexClass(0.85), '');
-  assert.equal(apdexClass(0.849), 'is-warn');
+  assert.equal(apdexClass(0.849), '', 'printed 0.85');
+  assert.equal(apdexClass(0.844), 'is-warn', 'printed 0.84');
   assert.equal(apdexClass(0.7), 'is-warn');
-  assert.equal(apdexClass(0.699), 'is-bad');
+  assert.equal(apdexClass(0.699), 'is-warn', 'printed 0.70');
+  assert.equal(apdexClass(0.694), 'is-bad', 'printed 0.69');
 });
 
 test('histogramTitle names each bucket with its count and share', () => {

@@ -50,11 +50,15 @@ export function slowRequestMs(status = api.state.status) {
   return ((status || {}).thresholds || {}).slowRequestMs || DEFAULT_SLOW_REQUEST_MS;
 }
 
-/** '' up to 0.85, 'is-warn' under it, 'is-bad' under 0.7. */
+/**
+ * '' from 0.85, 'is-warn' under it, 'is-bad' under 0.70, graded as `fmt.apdex` prints the value,
+ * so 0.849, which reads 0.85, is plain as 0.85 is.
+ */
 export function apdexClass(value) {
-  if (value == null) return '';
-  if (value < 0.7) return 'is-bad';
-  if (value < 0.85) return 'is-warn';
+  if (value == null || Number.isNaN(value)) return '';
+  const shown = Number(fmt.apdex(value));
+  if (shown < 0.7) return 'is-bad';
+  if (shown < 0.85) return 'is-warn';
   return '';
 }
 
