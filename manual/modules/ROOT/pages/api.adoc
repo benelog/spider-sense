@@ -217,13 +217,14 @@ The errors of a time bucket are already in `series.errors`.
 *`GET /api/services?from&to`* answers `{ "services": [ <ServiceSummary> ] }`.
 It lists every service ever seen, with zero counts and rates when nothing falls in the window, and `null` for its percentiles, its `maxMs` and its `apdex`.
 
-*`+GET /api/services/{name}?from&to+`*
+*`+GET /api/services/{name}?from&to+`* answers the service, its resource attributes and its traffic in the window.
+Every resource value is a string: a string attribute as itself, any other as its JSON text, so `process.pid` reads `"42"` and an array such as `process.command_args` reads `["/usr/bin/java","-Dnames=a, b"]`, its elements apart however many commas they hold.
 
 [source,json]
 ----
 {
   "service": <ServiceSummary>,
-  "resource": { "service.name": "…", "telemetry.sdk.name": "opentelemetry", "process.runtime.version": "21.0.4", ... },   // string values only, sorted by key
+  "resource": { "service.name": "…", "telemetry.sdk.name": "opentelemetry", "process.runtime.version": "21.0.4", ... },   // every value a string, sorted by key
   "window": { "from": ..., "to": ..., "bucketMs": ... },
   "series": { "t": [...], "requests": [...], "errors": [...], "p50Ms": [...], "p95Ms": [...], "p99Ms": [...], "histogram": [[...], [...], [...], [...]] },
   "endpoints": [ <EndpointStats> ],   // sorted by total time desc

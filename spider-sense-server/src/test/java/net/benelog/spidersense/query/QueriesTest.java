@@ -6,6 +6,9 @@ import static org.assertj.core.api.Assertions.within;
 import java.util.ArrayList;
 import java.util.List;
 
+import io.opentelemetry.proto.common.v1.AnyValue;
+import io.opentelemetry.proto.common.v1.ArrayValue;
+import io.opentelemetry.proto.common.v1.KeyValue;
 import io.opentelemetry.proto.trace.v1.Span;
 
 import org.junit.jupiter.api.AfterEach;
@@ -193,6 +196,24 @@ class QueriesTest {
                 new Queries.TraceFilter(window, null, null, null, null, null, null, null, 50)))
                 .extracting(Stats.TraceSummary::traceId)
                 .containsExactlyInAnyOrder(traceId(1), traceId(2));
+    }
+
+    /** An array among the resource attributes reads as JSON, so elements that hold a comma stay apart. */
+    @Test
+    void aResourceArrayIsAnsweredAsJson() {
+        KeyValue args = KeyValue.newBuilder().setKey("process.command_args")
+                .setValue(AnyValue.newBuilder().setArrayValue(ArrayValue.newBuilder()
+                        .addValues(AnyValue.newBuilder().setStringValue("/usr/bin/java"))
+                        .addValues(AnyValue.newBuilder().setStringValue("-Dnames=a, b"))))
+                .build();
+        decoder.ingest(Otlp.traces(Otlp.resource(Otlp.attr("service.name", "orders"), Otlp.attr("process.pid", 42),
+                args), Otlp.span(traceId(1), spanId(1), "GET /orders", Span.SpanKind.SPAN_KIND_SERVER, NOW, 5)));
+        flush();
+
+        assertThat(queries.resource("orders"))
+                .containsEntry("process.command_args", "[\"/usr/bin/java\",\"-Dnames=a, b\"]")
+                .containsEntry("process.pid", "42")
+                .containsEntry("service.name", "orders");
     }
 
     @Test

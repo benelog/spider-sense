@@ -252,14 +252,19 @@ public final class Queries {
         return sparklines;
     }
 
-    /** The resource attributes of a service, string values only, sorted by key. */
+    /**
+     * The resource attributes of a service as strings, sorted by key: a string as itself, any
+     * other value as its JSON text, so an array such as {@code process.command_args} keeps its
+     * elements apart, as a log body that holds one does (api.adoc#services).
+     */
     public Map<String, String> resource(String name) {
         ServiceInfo service = services.get(name);
         if (service == null) {
             return Map.of();
         }
         Map<String, String> resource = new TreeMap<>();
-        service.resource().forEach((key, value) -> resource.put(key, String.valueOf(value)));
+        service.resource().forEach((key, value) -> resource.put(key,
+                value instanceof String text ? text : AttrJson.toJson(value).toJson()));
         return resource;
     }
 
