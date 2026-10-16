@@ -3,6 +3,7 @@ package net.benelog.spidersense.store;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
+import java.util.Set;
 
 import io.opentelemetry.proto.trace.v1.Span;
 
@@ -148,6 +149,53 @@ class SweeperTest {
         assertThat(spansOf("ab")).isEmpty();
         assertThat(spansWithNoTraceRow()).isZero();
         assertThat(total("trace")).isZero();
+    }
+
+    /**
+     * A span of a trace that started before the cutoff arrives while the sweep runs: the
+     * flush that stores it recomputes the trace's row, and the sweep's span and trace
+     * deletes must not straddle its commit, which would leave the new span with no row.
+     * The flush holds the writer's lock, as a flush does; the sweep waits for it, whether
+     * on that lock or, without it, on the trace row the flush has locked.
+     */
+    @Test
+    void theSweepLeavesNoSpanWithoutItsRowWhenAFlushOfItsTraceCommitsMeanwhile() throws Exception {
+        String trace = "cd".repeat(16);
+        Span.Builder old = Otlp.span(trace, "%016x".formatted(1), "consume", Span.SpanKind.SPAN_KIND_CONSUMER,
+                NOW - 25 * HOUR, 10);
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), old));
+        store.writer().awaitIdle(10_000);
+        Batch late;
+        try (Store scratch = new Store(Store.Settings.defaults(TestStore.memoryUrl()))) {
+            late = new OtlpDecoder(scratch, () -> 4000).ingest(Otlp.traces(Otlp.service("orders"),
+                    Otlp.child(old, "%016x".formatted(2), "late child", Span.SpanKind.SPAN_KIND_INTERNAL,
+                            NOW - 1_000, 5)));
+        }
+
+        var sweep = new java.util.concurrent.CompletableFuture<Integer>();
+        Thread sweeping = new Thread(() -> sweep.complete(store.sweeper().sweep()), "sweeping");
+        store.writer().withoutFlushing(() -> {
+            try (java.sql.Connection flush = store.sql().connection()) {
+                flush.setAutoCommit(false);
+                Set<String> touched = store.writer().insertSpans(flush, List.of(late));
+                new TraceSummaries(500).merge(flush, touched);
+                sweeping.start();
+                long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+                while (sweeping.getState() != Thread.State.BLOCKED && !sweep.isDone()
+                        && store.sql().count("SELECT COUNT(*) FROM INFORMATION_SCHEMA.SESSIONS"
+                                + " WHERE BLOCKER_ID IS NOT NULL", List.of()) == 0) {
+                    assertThat(System.nanoTime()).as("the sweep reached a lock").isLessThan(deadline);
+                    Thread.sleep(5);
+                }
+                flush.commit();
+            } catch (java.sql.SQLException | InterruptedException e) {
+                throw new IllegalStateException(e);
+            }
+            return 0;
+        });
+        sweep.get(10, java.util.concurrent.TimeUnit.SECONDS);
+
+        assertThat(spansWithNoTraceRow()).isZero();
     }
 
     /** Trace {@code ab…}: a root at {@code rootAt} that lasts until after {@code childAt}, and a child at it. */

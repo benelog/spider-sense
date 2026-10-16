@@ -83,7 +83,8 @@ public final class Store implements AutoCloseable {
         this.acks = new Acks(sql, clock);
         this.ingestCap = settings.ingestCap();
         this.writer = new Writer(sql, events, tingles, clock).start(database);
-        this.sweeper = new Sweeper(sql, settings.retentionHours(), settings.retentionSpans(), clock).start();
+        this.sweeper = new Sweeper(sql, settings.retentionHours(), settings.retentionSpans(), clock,
+                writer::withoutFlushing).start();
     }
 
     public Sql sql() {

@@ -16,6 +16,7 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.IntSupplier;
 import java.util.function.LongSupplier;
 
 import org.jspecify.annotations.Nullable;
@@ -886,6 +887,16 @@ public final class Writer implements AutoCloseable {
         long id = MetricSeriesRows.lookupOrCreate(connection, sample.service(), sample.name(), series.attributesJson());
         seriesIds.put(series.cacheKey(), id);
         return id;
+    }
+
+    /**
+     * Runs {@code work} while no flush of this writer can run: the retention sweep's passes,
+     * which delete a trace's spans and its row in two statements, run inside it.
+     */
+    public int withoutFlushing(IntSupplier work) {
+        synchronized (flushLock) {
+            return work.getAsInt();
+        }
     }
 
     /**

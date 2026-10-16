@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.function.IntSupplier;
 import java.util.function.LongSupplier;
 
 import org.jspecify.annotations.Nullable;
@@ -96,10 +97,25 @@ public final class Sweeper implements AutoCloseable {
         return deleted;
     }
 
+    /**
+     * What runs one pass of deletes while the writer of this process commits no flush, so a
+     * flush that recomputes the row of a trace the pass deletes cannot commit between the
+     * pass's span and trace deletes ({@link Writer#withoutFlushing}).
+     */
+    @FunctionalInterface
+    public interface FlushGuard {
+
+        /** A guard that guards nothing: no writer of this process shares the store. */
+        FlushGuard NONE = IntSupplier::getAsInt;
+
+        int run(IntSupplier pass);
+    }
+
     private final Sql sql;
     private final int retentionHours;
     private final long retentionSpans;
     private final LongSupplier clock;
+    private final FlushGuard guard;
     private final ScheduledExecutorService scheduler;
 
     /** The cap at its documented default. */
@@ -117,10 +133,20 @@ public final class Sweeper implements AutoCloseable {
      * @param clock          what the retention cutoff counts back from, in epoch milliseconds
      */
     public Sweeper(Sql sql, int retentionHours, long retentionSpans, LongSupplier clock) {
+        this(sql, retentionHours, retentionSpans, clock, FlushGuard.NONE);
+    }
+
+    /**
+     * @param retentionSpans the most {@code span} rows kept; {@code 0} or less is no cap
+     * @param clock          what the retention cutoff counts back from, in epoch milliseconds
+     * @param guard          what keeps the writer of this process from committing during a pass
+     */
+    public Sweeper(Sql sql, int retentionHours, long retentionSpans, LongSupplier clock, FlushGuard guard) {
         this.sql = sql;
         this.retentionHours = retentionHours;
         this.retentionSpans = retentionSpans;
         this.clock = clock;
+        this.guard = guard;
         this.scheduler = Executors.newSingleThreadScheduledExecutor(runnable -> {
             Thread thread = new Thread(runnable, "spider-sense-sweeper");
             thread.setDaemon(true);
@@ -143,12 +169,7 @@ public final class Sweeper implements AutoCloseable {
      */
     public int sweep() {
         long cutoff = clock.getAsLong() - retentionHours * HOUR_MS;
-        int deleted = 0;
-        for (Table table : Table.values()) {
-            if (table.sweptByAge()) {
-                deleted += deleteOlder(table, cutoff);
-            }
-        }
+        int deleted = deletePass(false, cutoff);
         deleted += deleteOrphanSeries(sql);
         deleted += sweepToCap();
         return deleted;
@@ -177,12 +198,7 @@ public final class Sweeper implements AutoCloseable {
                 break;
             }
             long cutoff = Math.min(oldest + HOUR_MS, capInstant(spans - retentionSpans));
-            int pruned = 0;
-            for (Table table : Table.values()) {
-                if (table.cappedBySpans()) {
-                    pruned += deleteOlder(table, cutoff);
-                }
-            }
+            int pruned = deletePass(true, cutoff);
             if (pruned == 0) {
                 break;
             }
@@ -195,12 +211,30 @@ public final class Sweeper implements AutoCloseable {
         return deleted;
     }
 
-    private int deleteOlder(Table table, long cutoff) {
-        int deleted = 0;
-        for (String delete : table.deletesOlder()) {
-            deleted += sql.update(delete, List.of(cutoff));
-        }
-        return deleted;
+    /**
+     * One pass, the age pass or one hour of the span cap's, as one transaction while the writer
+     * of this process commits nothing (storage.adoc#retention). A flush committed between the
+     * span deletes and the {@code trace} delete would otherwise keep a new span of a trace that
+     * started before the cutoff and lose the trace's row, which the delete takes by its start.
+     *
+     * @param capped whether it is a pass of the span cap, which prunes the tables it caps,
+     *               rather than the age pass, which sweeps those swept by age
+     */
+    private int deletePass(boolean capped, long cutoff) {
+        return guard.run(() -> sql.transaction(connection -> {
+            int deleted = 0;
+            for (Table table : Table.values()) {
+                if (capped ? table.cappedBySpans() : table.sweptByAge()) {
+                    for (String delete : table.deletesOlder()) {
+                        try (PreparedStatement statement = connection.prepareStatement(delete)) {
+                            Sql.bind(statement, List.of(cutoff));
+                            deleted += statement.executeUpdate();
+                        }
+                    }
+                }
+            }
+            return deleted;
+        }, capped ? "the span cap" : "the retention sweep"));
     }
 
     /**
