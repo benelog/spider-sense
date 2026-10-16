@@ -136,6 +136,12 @@ public final class Params {
         return service == null || service.isEmpty() ? null : service;
     }
 
+    /** The {@code endpoint} a check narrows to; an empty one is none, as an empty {@code service} is. */
+    static @Nullable String endpoint(WebRequest req) {
+        String endpoint = req.queryParamOrNull("endpoint");
+        return endpoint == null || endpoint.isBlank() ? null : endpoint;
+    }
+
     static @Nullable Long optionalLong(WebRequest req, String name) {
         return req.queryParamOrNull(name) == null ? null : req.queryParam(name, Long::parseLong);
     }

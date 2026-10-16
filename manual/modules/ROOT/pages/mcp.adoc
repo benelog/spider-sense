@@ -87,6 +87,7 @@ stdio is the transport for a host on the same machine, and the one that still an
 
 Every argument is the CLI option of the same meaning, and a selector is a string as in xref:marks-and-compare.adoc#time-selectors[Time selectors].
 An empty `service` is no filter, as `service=` is over HTTP (xref:api.adoc#conventions[API conventions]), since a model fills an optional argument with an empty string as often as it leaves it out; `mark` records no service for it.
+For the same reason an empty or blank `since`, `until`, `endpoint` or `diff` is an argument left out: `since` is then `15m`, `until` is `now`, `check` judges every endpoint and `trace` answers the one trace.
 
 [cols="1,3,3",options="header"]
 |===

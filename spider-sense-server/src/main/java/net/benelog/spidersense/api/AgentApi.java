@@ -285,7 +285,7 @@ public final class AgentApi {
             }
         }
         Reports.CheckReport checked = reports.check(window, Params.service(req),
-                req.queryParamOrNull("endpoint"), rules);
+                Params.endpoint(req), rules);
         return Params.answer(req, checked.report()).header(PASS_HEADER, checked.verdict().header());
     }
 }

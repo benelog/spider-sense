@@ -196,6 +196,32 @@ class McpApiTest {
     }
 
     /**
+     * An empty since, until, endpoint or diff is left out too, for the same reason: its default
+     * applies rather than a refusal of an empty selector, endpoint or trace id.
+     */
+    @Test
+    void anEmptyOptionalArgumentIsLeftOut() {
+        serve(client -> {
+            ingest(client);
+            text(call(client, "mark", "{\"name\":\"before\"}"));
+            clock.addAndGet(1_000);
+
+            assertThat(call(client, "findings", "{\"since\":\"\",\"until\":\"\"}").getBoolean("isError")).isFalse();
+            assertThat(text(call(client, "findings", "{\"since\":\"\",\"until\":\"\"}")))
+                    .isEqualTo(text(call(client, "findings", "{}")));
+            JsonObject checked = call(client, "check", "{\"since\":\"5m\",\"endpoint\":\"\"}");
+            assertThat(checked.getBoolean("isError")).isFalse();
+            assertThat(text(checked))
+                    .isEqualTo(text(call(client, "check", "{\"since\":\"5m\"}")))
+                    .isEqualTo(client.get("/api/check?since=5m&endpoint=&format=text").body());
+            assertThat(text(call(client, "trace", "{\"traceId\":\"" + TRACE + "\",\"diff\":\"\"}")))
+                    .isEqualTo(text(call(client, "trace", "{\"traceId\":\"" + TRACE + "\"}")));
+            assertThat(text(call(client, "compare", "{\"before\":\"10m\",\"after\":\"before\",\"until\":\"\"}")))
+                    .isEqualTo(text(call(client, "compare", "{\"before\":\"10m\",\"after\":\"before\"}")));
+        });
+    }
+
+    /**
      * The step the instructions name first has a tool: status is /api/status's own text, the
      * server's mode and address included. The database's size is left out of the comparison,
      * because a flush between the two calls may grow it.

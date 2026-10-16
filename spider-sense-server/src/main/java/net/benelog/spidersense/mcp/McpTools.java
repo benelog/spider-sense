@@ -198,7 +198,7 @@ public final class McpTools implements McpServer.ToolRunner {
             // gets the tool's own failure rather than a protocol error.
             return McpServer.ToolResult.failed("trace needs a traceId");
         }
-        String diff = string(arguments, "diff");
+        String diff = optional(arguments, "diff");
         if (diff != null) {
             return text(reports.traceDiff(traceId, diff, flag(arguments, "full")));
         }
@@ -217,7 +217,7 @@ public final class McpTools implements McpServer.ToolRunner {
     /** The two windows, resolved the way {@code /api/compare} and the CLI resolve them. */
     private McpServer.ToolResult compare(Map<String, Object> arguments) {
         return text(reports.compare(string(arguments, "before"), string(arguments, "after"),
-                string(arguments, "until"), service(arguments), false));
+                optional(arguments, "until"), service(arguments), false));
     }
 
     /**
@@ -238,7 +238,7 @@ public final class McpTools implements McpServer.ToolRunner {
             }
         }
         Reports.CheckReport checked = reports.check(window(arguments, service), service,
-                string(arguments, "endpoint"), rules);
+                optional(arguments, "endpoint"), rules);
         Map<String, Object> structured = new LinkedHashMap<>();
         structured.put("pass", checked.verdict().pass());
         structured.put("requests", checked.requests());
@@ -246,9 +246,9 @@ public final class McpTools implements McpServer.ToolRunner {
     }
 
     private Window window(Map<String, Object> arguments, @Nullable String service) {
-        String since = string(arguments, "since");
+        String since = optional(arguments, "since");
         return reports.selectors().window(null, null, since == null ? Selectors.DEFAULT_SINCE : since,
-                string(arguments, "until"), service);
+                optional(arguments, "until"), service);
     }
 
     private static McpServer.ToolResult text(Reports.Report report) {
@@ -268,6 +268,16 @@ public final class McpTools implements McpServer.ToolRunner {
     private static @Nullable String service(Map<String, Object> arguments) {
         String service = string(arguments, "service");
         return service == null || service.isEmpty() ? null : service;
+    }
+
+    /**
+     * An optional string argument, {@code since}, {@code until}, {@code endpoint} or {@code diff}:
+     * a blank one is left out, for the reason {@link #service} gives, so its default applies
+     * rather than a refusal of an empty selector, endpoint or trace id (mcp.adoc#tools).
+     */
+    private static @Nullable String optional(Map<String, Object> arguments, String key) {
+        String value = string(arguments, key);
+        return value == null || value.isBlank() ? null : value;
     }
 
     private static boolean flag(Map<String, Object> arguments, String key) {
