@@ -374,7 +374,7 @@ Its numbers are the `ServiceSummary` numbers.
 * A `service → service` edge is counted from the entry spans of the callee whose parent span, in the same trace, belongs to another service.
 `calls`, `errors`, `avgMs` and `p95Ms` are those entry spans'.
 * A `user → service` edge is counted from `SERVER` and `CONSUMER` entry spans whose parent is absent or not stored: the request came from something that is not traced.
-* Every other node is an outbound target, grouped as `+GET /api/services/{name}.dependencies+` groups them.
+* Every other node is an outbound target, grouped as the `dependencies` of <<services,`+GET /api/services/{name}+`>> group them.
 `kind` is `db`, `http`, `messaging` or `rpc`, and `name` is the dependency's `target`.
 An edge runs from each service that calls it.
 A root `CLIENT` or `PRODUCER` span, such as a traced load generator's request, is a call too, so a service whose requests go to a host nobody traces is on the map with that host, and has it among its `dependencies`.
