@@ -38,11 +38,13 @@ public final class ServiceNameDefault implements ConditionalResourceProvider {
 
     /**
      * A trailing version: {@code -0.1.0}, {@code -1.0-SNAPSHOT}, {@code -2.3.1.RELEASE},
-     * {@code -0.1.0-all}. What follows the numbers is a version or a classifier word, or something
+     * {@code -0.1.0-all}, {@code -1.0.0-3-g1a2b3c4.dirty}, {@code -1.0-runner}. What follows the
+     * numbers is a version or a classifier word, a commit as git describe writes it, or something
      * that starts with a digit, never any word: {@code java-17-app} keeps its name.
      */
     private static final Pattern VERSION = Pattern.compile("-\\d+(\\.\\d+)*([.-](\\d[0-9a-z]*"
             + "|snapshot|release|final|ga|sp\\d*|rc\\d*|cr\\d*|m\\d+|milestone\\d*|alpha\\d*|beta\\d*"
+            + "|g[0-9a-f]{7,40}|dirty|runner"
             + "|preview|ea|dev|all|plain|shaded|fat|uber|exec|boot|standalone|jar-with-dependencies))*$",
             Pattern.CASE_INSENSITIVE);
 

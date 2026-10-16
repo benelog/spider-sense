@@ -30,6 +30,16 @@ class ServiceNameDefaultTest {
         assertThat(derive("app-1.0-jar-with-dependencies.jar", null)).isEqualTo("app");
     }
 
+    /** A version from git describe changes on every commit; the name must not. */
+    @Test
+    void aGitDescribeVersionAndABuildQualifierAreTheVersion() {
+        assertThat(derive("orders-1.0.0-3-g1a2b3c4.jar", null)).isEqualTo("orders");
+        assertThat(derive("orders-1.0.0-3-g1a2b3c4.dirty.jar", null)).isEqualTo("orders");
+        assertThat(derive("orders-1.0.0-3-g1a2b3c4-dirty.jar", null)).isEqualTo("orders");
+        assertThat(derive("app-1.0.0-SNAPSHOT-runner.jar", null)).as("Quarkus's uber-jar").isEqualTo("app");
+        assertThat(derive("java-17-app.jar", null)).isEqualTo("java-17-app");
+    }
+
     @Test
     void aNumberInTheMiddleOfTheNameIsPartOfIt() {
         assertThat(derive("java-17-app.jar", null)).isEqualTo("java-17-app");
