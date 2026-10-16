@@ -602,6 +602,7 @@ A gauge, such as `heap`, `threads` or a pool's `used`, has a point at every inst
 Two processes running together therefore add up rather than take turns, and a restarted process follows the one it replaced rather than being added to it.
 A process whose first point comes within one export interval of the earliest point of all was already running then, so it counts from there with its first value.
 `systemLoad1m` is the machine's load, which every process reads alike, so it is the highest of the processes rather than their sum.
+The sums are what the page draws; the `heap-pressure`, `thread-growth` and `pool-exhausted` rules read each process's heap, threads and pools on their own (xref:findings.adoc#kinds[Kinds]).
 
 `connectionPools` feeds the JVM page's connection pool charts.
 It holds one entry per JDBC pool the agent instruments (HikariCP, Tomcat JDBC, c3p0, and so on), and is empty when the service reports none.

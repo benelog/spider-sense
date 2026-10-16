@@ -1712,17 +1712,38 @@ public final class Findings {
 
     // --- pool exhausted ------------------------------------------------------
 
+    /**
+     * Each process's pools judged on their own, since a pool is one JVM's: two processes that
+     * both name theirs {@code HikariPool-1} are one finding, the worse of the two pools.
+     */
     private List<Ranked> poolExhausted(Window window, @Nullable String service) {
         List<Ranked> found = new ArrayList<>();
         for (String name : servicesInScope(service)) {
-            for (JvmView.ConnectionPool pool : JvmView.connectionPools(metrics, name, window)) {
-                Ranked exhausted = exhaustionOf(name, pool);
-                if (exhausted != null) {
-                    found.add(exhausted);
+            Map<String, Ranked> worst = new LinkedHashMap<>();
+            for (List<JvmView.ConnectionPool> pools : JvmView.connectionPoolsByProcess(metrics, name, window)) {
+                for (JvmView.ConnectionPool pool : pools) {
+                    Ranked exhausted = exhaustionOf(name, pool);
+                    if (exhausted != null) {
+                        worst.merge(pool.name(), exhausted, Findings::worse);
+                    }
                 }
             }
+            found.addAll(worst.values());
         }
         return found;
+    }
+
+    /** The one of two findings with the higher impact, the first on a tie. */
+    private static Ranked worse(Ranked a, Ranked b) {
+        return b.impact() > a.impact() ? b : a;
+    }
+
+    /** The worse of a finding so far, if any, and the next one, if any. */
+    private static @Nullable Ranked worseOf(@Nullable Ranked sofar, @Nullable Ranked next) {
+        if (sofar == null) {
+            return next;
+        }
+        return next == null ? sofar : worse(sofar, next);
     }
 
     /**
@@ -1823,8 +1844,18 @@ public final class Findings {
                     metrics.series(MetricSeriesNames.GC_DURATION, name, Map.of(), window))) {
                 addIfFound(found, gcPause(name, collector, tingles.slowRequestMs()));
             }
-            addIfFound(found, heapPressure(name, JvmView.heap(metrics, name, window)));
-            addIfFound(found, threadGrowth(name, JvmView.threads(metrics, name, window)));
+            // A heap and a thread count are one JVM's, so each process is judged on its own, as
+            // gc-pause differences each process's collections, and the worst process is the finding.
+            Ranked heap = null;
+            for (JvmView.Memory memory : JvmView.heapByProcess(metrics, name, window)) {
+                heap = worseOf(heap, heapPressure(name, memory));
+            }
+            addIfFound(found, heap);
+            Ranked threads = null;
+            for (JvmView.Threads counts : JvmView.threadsByProcess(metrics, name, window)) {
+                threads = worseOf(threads, threadGrowth(name, counts));
+            }
+            addIfFound(found, threads);
         }
         return found;
     }
@@ -1937,7 +1968,7 @@ public final class Findings {
         return new Ranked(finding, worstMs);
     }
 
-    /** The heap against its limit, summed over the pools exactly as the JVM page sums them. */
+    /** One process's heap against its limit, summed over the pools exactly as the JVM page sums them. */
     static @Nullable Ranked heapPressure(String service, JvmView.Memory heap) {
         double ratioMax = 0;
         double usedMax = 0;
@@ -1977,7 +2008,7 @@ public final class Findings {
         return new Ranked(finding, ratioMax);
     }
 
-    /** Threads at the end of the window against threads at its start. */
+    /** One process's threads at the end of the window against its threads at the start. */
     static @Nullable Ranked threadGrowth(String service, JvmView.Threads threads) {
         double first = Double.NaN;
         double last = Double.NaN;

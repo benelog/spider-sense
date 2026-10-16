@@ -1130,6 +1130,55 @@ class FindingsTest {
         assertThat(finding.why()).isEqualTo("up to 10.0 of 10.0 connections in use and up to 3.0 requests waiting");
     }
 
+    /**
+     * Two processes of one service that both name their pool HikariPool-1, as every Spring Boot
+     * process does: the application's is full the whole window, the tests' nearly idle.
+     */
+    @Test
+    void aFullPoolBesideAnIdleOneOfTheSameNameIsExhausted() {
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), entry(1, "/orders", 10)));
+        for (long at = NOW - 50_000; at <= NOW; at += 10_000) {
+            processPool(100, at, 10, 10);
+            processPool(200, at, 1, 10);
+        }
+        flush();
+
+        List<Findings.Finding> exhausted = of(Findings.POOL_EXHAUSTED);
+
+        assertThat(exhausted).hasSize(1);
+        assertThat(exhausted.get(0).why())
+                .isEqualTo("up to 10.0 of 10.0 connections in use and up to 0.0 requests waiting");
+    }
+
+    /** A test JVM whose pool starts mid-window beside the application's full one adds no connection to it. */
+    @Test
+    void aSecondProcessStartingMidWindowAddsNoConnectionToAFullPool() {
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), entry(1, "/orders", 10)));
+        for (long at = NOW - 50_000; at <= NOW; at += 10_000) {
+            processPool(100, at, 10, 10);
+            if (at >= NOW - 20_000) {
+                processPool(200, at, 1, 10);
+            }
+        }
+        flush();
+
+        List<Findings.Finding> exhausted = of(Findings.POOL_EXHAUSTED);
+
+        assertThat(exhausted).hasSize(1);
+        assertThat((Double) exhausted.get(0).numbers().get("usedMax")).isEqualTo(10.0);
+        assertThat(exhausted.get(0).numbers().get("max")).isEqualTo(10.0);
+    }
+
+    /** One process's HikariPool-1 at one instant: its connections in use and its maximum. */
+    private void processPool(long pid, long at, double used, double max) {
+        io.opentelemetry.proto.resource.v1.Resource process = Otlp.resource(
+                Otlp.attr("service.name", "orders"), Otlp.attr("process.pid", pid));
+        decoder.ingest(Otlp.sum(process, "db.client.connections.usage", "{connection}", at, used, false,
+                Otlp.attr("pool.name", "HikariPool-1"), Otlp.attr("state", "used")));
+        decoder.ingest(Otlp.sum(process, "db.client.connections.max", "{connection}", at, max, false,
+                Otlp.attr("pool.name", "HikariPool-1")));
+    }
+
     private void pool(String metric, double value, io.opentelemetry.proto.common.v1.KeyValue... extra) {
         pool(NOW, metric, value, extra);
     }
@@ -1656,6 +1705,35 @@ class FindingsTest {
         assertThat(of(Findings.HEAP_PRESSURE)).isEmpty();
     }
 
+    /** The application's heap at 95% beside its tests' at 10% of theirs is the application's pressure. */
+    @Test
+    void aFullHeapBesideAnEmptyOneOfTheSameServiceIsPressure() {
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), entry(1, "/orders", 10)));
+        for (long at = NOW - 20_000; at <= NOW; at += 10_000) {
+            processGauge(100, at, "jvm.memory.used", 950_000_000, "By");
+            processGauge(100, at, "jvm.memory.limit", 1_000_000_000, "By");
+            processGauge(200, at, "jvm.memory.used", 100_000_000, "By");
+            processGauge(200, at, "jvm.memory.limit", 1_000_000_000, "By");
+        }
+        flush();
+
+        List<Findings.Finding> pressure = of(Findings.HEAP_PRESSURE);
+
+        assertThat(pressure).hasSize(1);
+        assertThat((Double) pressure.get(0).numbers().get("usedMax")).isEqualTo(950_000_000.0);
+        assertThat((Double) pressure.get(0).numbers().get("limit")).isEqualTo(1_000_000_000.0);
+    }
+
+    /** One gauge point of one process of orders, the heap's when it is a memory metric. */
+    private void processGauge(long pid, long at, String metric, double value, String unit) {
+        io.opentelemetry.proto.resource.v1.Resource process = Otlp.resource(
+                Otlp.attr("service.name", "orders"), Otlp.attr("process.pid", pid));
+        decoder.ingest(metric.startsWith("jvm.memory.")
+                ? Otlp.gauge(process, metric, unit, at, value, Otlp.attr("jvm.memory.type", "heap"),
+                        Otlp.attr("jvm.memory.pool.name", "G1 Old Gen"))
+                : Otlp.gauge(process, metric, unit, at, value));
+    }
+
     private void heap(long at, double used, double limit) {
         decoder.ingest(Otlp.gauge(Otlp.service("orders"), "jvm.memory.used", "By", at, used,
                 Otlp.attr("jvm.memory.type", "heap"),
@@ -1691,6 +1769,21 @@ class FindingsTest {
         decoder.ingest(Otlp.traces(Otlp.service("orders"), entry(1, "/orders", 10)));
         threads(NOW - 1000, 40);
         threads(NOW, 50);
+        flush();
+
+        assertThat(of(Findings.THREAD_GROWTH)).isEmpty();
+    }
+
+    /** A test JVM that starts with 50 threads beside the application's 40 grew no thread of either. */
+    @Test
+    void aSecondProcessStartingMidWindowIsNoThreadGrowth() {
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), entry(1, "/orders", 10)));
+        for (long at = NOW - 50_000; at <= NOW; at += 10_000) {
+            processGauge(100, at, "jvm.thread.count", 40, "{thread}");
+            if (at >= NOW - 20_000) {
+                processGauge(200, at, "jvm.thread.count", 50, "{thread}");
+            }
+        }
         flush();
 
         assertThat(of(Findings.THREAD_GROWTH)).isEmpty();

@@ -658,6 +658,8 @@ What to do, after reading the top frame:
 
 A JDBC pool with a point in the window where pending requests are above zero, or used equals max.
 It is always `high`, and it is ranked by pending first and used second.
+A pool is one process's: when several processes of the service export a pool of one name, as every Spring Boot process names its first pool `HikariPool-1`, each process's pool is judged on its own, and the worst of them is the finding.
+An application's full pool beside its tests' idle one is therefore exhausted, and a second process adds no connection to the first one's `usedMax`.
 
 `subject.pool` is the pool.
 
@@ -712,6 +714,7 @@ A `heap-pressure` finding beside this one says the heap is the cause rather than
 
 Heap `jvm.memory.used`, summed over the heap pools, at 90% or more of the heap `jvm.memory.limit` at any point in the window.
 It is always `high`, and the impact it is ranked by is the highest ratio.
+A heap is one process's: when several processes export the service, each one's used heap is held against its own limit, and the process with the highest ratio is the finding, so an application's full heap beside its tests' empty one is pressure.
 
 `subject.jvm` is `heap`, and the title is `heap at <ratio>% of its limit`.
 
@@ -736,6 +739,7 @@ A sawtooth that returns to the same floor is allocation, and a floor that climbs
 
 `jvm.thread.count` at the last point of the window at least 50 above the first point, or at least twice it when the first point is 20 or more.
 It is always `medium`, and the impact it is ranked by is last minus first.
+The first and the last point are each process's own: when several processes export the service, a test JVM that starts beside the application grows no thread of either, and the process that grew most is the finding.
 
 `subject.jvm` is `threads`, and the title is `threads grew from <first> to <last>`.
 

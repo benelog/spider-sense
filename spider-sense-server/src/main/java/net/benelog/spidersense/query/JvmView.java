@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -139,22 +140,38 @@ public record JvmView(@Nullable String service, Runtime runtime, Memory heap, Me
     }
 
     /**
-     * The heap of one service, summed over its pools.
+     * The heap of each process of one service, summed over its pools, one entry per process.
      *
-     * <p>Public for the same reason {@link #connectionPools} is: a
+     * <p>Public for the same reason {@link #connectionPoolsByProcess} is: a
      * {@code heap-pressure} finding asks the JVM page's question of the JVM page's
      * series (findings.adoc#heap-pressure), and two readings of "how full is the heap" would be two
-     * answers.
+     * answers. It asks it of each process, since a heap is one JVM's: an application's full heap
+     * beside its tests' empty one is half full only as a sum.
      */
-    public static Memory heap(MetricQueries metrics, String service, Window window) {
-        return memory(metrics.series(MetricSeriesNames.MEMORY_USED, service, Map.of(), window),
-                metrics.series(MetricSeriesNames.MEMORY_COMMITTED, service, Map.of(), window),
-                metrics.series(MetricSeriesNames.MEMORY_LIMIT, service, Map.of(), window), "heap");
+    public static List<Memory> heapByProcess(MetricQueries metrics, String service, Window window) {
+        List<SeriesData> used = metrics.series(MetricSeriesNames.MEMORY_USED, service, Map.of(), window);
+        List<SeriesData> committed =
+                metrics.series(MetricSeriesNames.MEMORY_COMMITTED, service, Map.of(), window);
+        List<SeriesData> limit = metrics.series(MetricSeriesNames.MEMORY_LIMIT, service, Map.of(), window);
+        List<Memory> heaps = new ArrayList<>();
+        for (String process : processes(used, committed, limit)) {
+            heaps.add(memory(ofProcess(used, process), ofProcess(committed, process),
+                    ofProcess(limit, process), "heap"));
+        }
+        return heaps;
     }
 
-    /** The thread counts of one service; a {@code thread-growth} finding reads these. */
-    public static Threads threads(MetricQueries metrics, String service, Window window) {
-        return threads(metrics.series(MetricSeriesNames.THREAD_COUNT, service, Map.of(), window));
+    /**
+     * The thread counts of each process of one service; a {@code thread-growth} finding reads
+     * these, so a test JVM that starts beside the application grows no thread of either.
+     */
+    public static List<Threads> threadsByProcess(MetricQueries metrics, String service, Window window) {
+        List<SeriesData> series = metrics.series(MetricSeriesNames.THREAD_COUNT, service, Map.of(), window);
+        List<Threads> threads = new ArrayList<>();
+        for (String process : processes(series)) {
+            threads.add(threads(ofProcess(series, process)));
+        }
+        return threads;
     }
 
     /** One entry per pool, sorted by name, with the processes that report it added as the heap's are. */
@@ -254,21 +271,53 @@ public record JvmView(@Nullable String service, Runtime runtime, Memory heap, Me
      */
     public static List<ConnectionPool> connectionPools(MetricQueries metrics, String service,
             Window window) {
-        List<SeriesData> usage =
-                metrics.series(MetricSeriesNames.POOL_CONNECTIONS, service, Map.of(), window);
-        List<SeriesData> max =
-                metrics.series(MetricSeriesNames.POOL_CONNECTIONS_MAX, service, Map.of(), window);
-        List<SeriesData> pending =
-                metrics.series(MetricSeriesNames.POOL_CONNECTIONS_PENDING, service, Map.of(), window);
-        String stateKey = MetricSeriesNames.POOL_STATE;
-        String poolKey = MetricSeriesNames.POOL_CONNECTIONS_NAME;
-        if (usage.isEmpty()) {
-            usage = metrics.series(MetricSeriesNames.CONNECTION_COUNT, service, Map.of(), window);
-            max = metrics.series(MetricSeriesNames.CONNECTION_MAX, service, Map.of(), window);
-            pending = metrics.series(MetricSeriesNames.CONNECTION_PENDING, service, Map.of(), window);
-            stateKey = MetricSeriesNames.CONNECTION_STATE;
-            poolKey = MetricSeriesNames.CONNECTION_POOL_NAME;
+        PoolSeries series = PoolSeries.of(metrics, service, window);
+        return connectionPools(series.usage(), series.max(), series.pending(), series.stateKey(),
+                series.poolKey());
+    }
+
+    /**
+     * The connection pools of each process of one service, one list per process: a
+     * {@code pool-exhausted} finding reads these, since a pool is one JVM's, and two processes
+     * that both name their pool {@code HikariPool-1} have two pools (findings.adoc#pool-exhausted).
+     */
+    public static List<List<ConnectionPool>> connectionPoolsByProcess(MetricQueries metrics,
+            String service, Window window) {
+        PoolSeries series = PoolSeries.of(metrics, service, window);
+        List<List<ConnectionPool>> pools = new ArrayList<>();
+        for (String process : processes(series.usage(), series.max(), series.pending())) {
+            pools.add(connectionPools(ofProcess(series.usage(), process), ofProcess(series.max(), process),
+                    ofProcess(series.pending(), process), series.stateKey(), series.poolKey()));
         }
+        return pools;
+    }
+
+    /**
+     * The series of the JDBC pools of one service: the older spelling when the service reports
+     * it, the stable one otherwise.
+     */
+    private record PoolSeries(List<SeriesData> usage, List<SeriesData> max, List<SeriesData> pending,
+            String stateKey, String poolKey) {
+
+        static PoolSeries of(MetricQueries metrics, String service, Window window) {
+            List<SeriesData> usage =
+                    metrics.series(MetricSeriesNames.POOL_CONNECTIONS, service, Map.of(), window);
+            if (!usage.isEmpty()) {
+                return new PoolSeries(usage,
+                        metrics.series(MetricSeriesNames.POOL_CONNECTIONS_MAX, service, Map.of(), window),
+                        metrics.series(MetricSeriesNames.POOL_CONNECTIONS_PENDING, service, Map.of(), window),
+                        MetricSeriesNames.POOL_STATE, MetricSeriesNames.POOL_CONNECTIONS_NAME);
+            }
+            return new PoolSeries(
+                    metrics.series(MetricSeriesNames.CONNECTION_COUNT, service, Map.of(), window),
+                    metrics.series(MetricSeriesNames.CONNECTION_MAX, service, Map.of(), window),
+                    metrics.series(MetricSeriesNames.CONNECTION_PENDING, service, Map.of(), window),
+                    MetricSeriesNames.CONNECTION_STATE, MetricSeriesNames.CONNECTION_POOL_NAME);
+        }
+    }
+
+    private static List<ConnectionPool> connectionPools(List<SeriesData> usage, List<SeriesData> max,
+            List<SeriesData> pending, String stateKey, String poolKey) {
         TreeSet<String> names = new TreeSet<>();
         for (SeriesData data : usage) {
             String name = data.attribute(poolKey);
@@ -298,6 +347,29 @@ public record JvmView(@Nullable String service, Runtime runtime, Memory heap, Me
     }
 
     // --- shared helpers ---
+
+    /** The processes of the series, in the order their first series came (storage.adoc#writer). */
+    @SafeVarargs
+    private static List<String> processes(List<SeriesData>... series) {
+        LinkedHashSet<String> processes = new LinkedHashSet<>();
+        for (List<SeriesData> each : series) {
+            for (SeriesData data : each) {
+                processes.add(String.valueOf(data.process()));
+            }
+        }
+        return new ArrayList<>(processes);
+    }
+
+    /** The series of one process, by the key {@link #processes} names it with. */
+    private static List<SeriesData> ofProcess(List<SeriesData> series, String process) {
+        List<SeriesData> own = new ArrayList<>();
+        for (SeriesData data : series) {
+            if (process.equals(String.valueOf(data.process()))) {
+                own.add(data);
+            }
+        }
+        return own;
+    }
 
     private static List<SeriesData> matching(List<SeriesData> series, Map<String, String> filter) {
         List<SeriesData> matched = new ArrayList<>();
