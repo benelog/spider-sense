@@ -2,6 +2,7 @@ package net.benelog.spidersense.api;
 
 import java.util.List;
 import java.util.Map;
+import java.util.function.DoubleUnaryOperator;
 import java.util.function.Function;
 
 import net.benelog.spidersense.query.Catalog;
@@ -111,6 +112,23 @@ public final class Codecs {
         return array;
     }
 
+    /**
+     * A metric's values as they are, {@code null} for what is not a number. A metric is in its
+     * own unit, seconds as often as milliseconds, so the three decimals of {@link #round} would
+     * read a 0.4 ms mean in seconds as {@code 0} (api.adoc#metrics).
+     */
+    static JsonArray unrounded(double[] values) {
+        JsonArray array = Json.array();
+        for (double value : values) {
+            if (!Double.isFinite(value)) {
+                array.add((JsonValue) null);
+            } else {
+                array.add(value);
+            }
+        }
+        return array;
+    }
+
     /** The same, with {@code null} wherever the bucket held no requests. */
     static JsonArray doubles(double[] values, long[] counts) {
         JsonArray array = Json.array();
@@ -134,15 +152,17 @@ public final class Codecs {
     }
 
     /**
-     * An attribute's value: rounded like every other duration, {@code null} for what is not a
-     * number, and a key/value list not yet stored as its JSON text, as it reads once it is.
+     * An attribute's value: a number as the application wrote it, since it is in no unit of ours
+     * to round ({@code 0.0004} is a sample rate as often as a duration), {@code null} for what is
+     * not a number, and a key/value list not yet stored as its JSON text, as it reads once it is.
      */
     private static final AttrJson.Rules ATTRIBUTE =
-            new AttrJson.Rules(AttrJson.NonFinite.NULL, Codecs::round, true);
+            new AttrJson.Rules(AttrJson.NonFinite.NULL, DoubleUnaryOperator.identity(), true);
 
     /**
-     * A finding's {@code numbers}, whose keys are the kind's own: the same, with a nested map an
-     * object, as a slow endpoint's hot span is.
+     * A finding's {@code numbers}, whose keys are the kind's own: rounded, since they are durations
+     * and shares of ours, {@code null} for what is not a number, and a nested map an object, as a
+     * slow endpoint's hot span is.
      *
      * <p>They are data rather than schema — every kind names different ones — so they are written
      * by the type of the value, which is the one place in this file that does not read like the
@@ -691,7 +711,7 @@ public final class Codecs {
                 .put("service", data.service())
                 .put("attributes", attributes(data.attributes()))
                 .put("t", longs(t))
-                .put("v", doubles(values));
+                .put("v", unrounded(values));
         if ("histogram".equals(data.type())) {
             JsonArray counts = Json.array();
             double[] p95 = new double[points.size()];
@@ -701,7 +721,7 @@ public final class Codecs {
                 p95[i] = points.get(i).percentile(0.95);
                 max[i] = points.get(i).max();
             }
-            object.put("count", counts).put("p95", doubles(p95)).put("max", doubles(max));
+            object.put("count", counts).put("p95", unrounded(p95)).put("max", unrounded(max));
         }
         return object;
     }
