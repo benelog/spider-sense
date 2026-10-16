@@ -38,11 +38,11 @@ public record MarkRow(long atMs, @Nullable String name, @Nullable String service
     }
 
     /**
-     * The service as {@link #bind} stores it: well-formed ({@link Utf16}) and cut to the width
-     * every service name has.
+     * The service as {@link #bind} stores it: none when it is blank, as a blank note is none, and
+     * otherwise well-formed ({@link Utf16}) and cut to the width every service name has.
      */
     @Nullable String storedService() {
-        return Columns.cut(Utf16.wellFormedOrNull(service), Columns.SERVICE);
+        return Columns.cut(Utf16.wellFormedOrNull(Columns.blankToNull(service)), Columns.SERVICE);
     }
 
     /** The note as {@link #bind} stores it: well-formed and cut to its column. */

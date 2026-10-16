@@ -113,6 +113,14 @@ class MarksTest {
         assertThat(store.marks().list(5)).extracting(Marks.Mark::note).containsOnlyNulls();
     }
 
+    /** A blank service is no service, as a blank note is no note, so no answer prints {@code ()}. */
+    @Test
+    void aBlankServiceIsStoredAsNone() {
+        assertThat(store.marks().create("before", "", null, 1_000L).service()).isNull();
+        store.marks().create("after", " ", null, 2_000L);
+        assertThat(store.marks().list(5)).extracting(Marks.Mark::service).containsOnlyNulls();
+    }
+
     /** A lone surrogate has no UTF-8 form, so the JSON and the text answers would read it apart. */
     @Test
     void aLoneSurrogateInTheServiceOrNoteIsStoredAsTheReplacementCharacter() {

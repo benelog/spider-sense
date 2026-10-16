@@ -166,7 +166,7 @@ public final class McpTools implements McpServer.ToolRunner {
     }
 
     private McpServer.ToolResult findings(Map<String, Object> arguments) {
-        String service = string(arguments, "service");
+        String service = service(arguments);
         return text(reports.findings(window(arguments, service), service, new Reports.FindingsAsk(
                 limit(arguments, Limits.FINDINGS, Limits.FINDINGS_MAX), flag(arguments, "full"),
                 flag(arguments, "hideAcked"))));
@@ -209,7 +209,7 @@ public final class McpTools implements McpServer.ToolRunner {
     }
 
     private McpServer.ToolResult mark(Map<String, Object> arguments) {
-        String service = string(arguments, "service");
+        String service = service(arguments);
         Marks.Mark mark = reports.mark(string(arguments, "name"), string(arguments, "note"), service);
         return text(reports.mark(mark));
     }
@@ -217,7 +217,7 @@ public final class McpTools implements McpServer.ToolRunner {
     /** The two windows, resolved the way {@code /api/compare} and the CLI resolve them. */
     private McpServer.ToolResult compare(Map<String, Object> arguments) {
         return text(reports.compare(string(arguments, "before"), string(arguments, "after"),
-                string(arguments, "until"), string(arguments, "service"), false));
+                string(arguments, "until"), service(arguments), false));
     }
 
     /**
@@ -226,7 +226,7 @@ public final class McpTools implements McpServer.ToolRunner {
      * (mcp.adoc#tools).
      */
     private McpServer.ToolResult check(Map<String, Object> arguments) {
-        String service = string(arguments, "service");
+        String service = service(arguments);
         Map<String, Double> rules = new LinkedHashMap<>();
         for (String rule : Check.RULES) {
             Object value = arguments.get(rule);
@@ -258,6 +258,16 @@ public final class McpTools implements McpServer.ToolRunner {
     private static @Nullable String string(Map<String, Object> arguments, String key) {
         Object value = arguments.get(key);
         return value instanceof String said ? said : null;
+    }
+
+    /**
+     * The {@code service} filter, read as {@code service=} is over HTTP: an empty one, which a
+     * model fills an optional argument with as often as it leaves it out, is no filter rather
+     * than a service named "" (api.adoc#conventions).
+     */
+    private static @Nullable String service(Map<String, Object> arguments) {
+        String service = string(arguments, "service");
+        return service == null || service.isEmpty() ? null : service;
     }
 
     private static boolean flag(Map<String, Object> arguments, String key) {

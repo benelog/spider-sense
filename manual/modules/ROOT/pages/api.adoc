@@ -613,7 +613,7 @@ The format of each rendering is given in xref:cli.adoc#text-rendering[The CLI].
 `name` is required and matches `[A-Za-z0-9._-]{1,64}`, and is otherwise `400`; so is a name a selector reads as something else, such as `5m`, `now` or `start` (xref:marks-and-compare.adoc#marks[Marks]).
 An `at` before the epoch or past the year 9999 is a `400` as it is for a window, since no selector could use the mark.
 `service` is cut to 255 characters and `note` to 1024, the widths of their columns, and the answer carries them as stored.
-A blank `note` is stored as `null`, here and in `ack` and `resolve`.
+A blank `note` is stored as `null`, here and in `ack` and `resolve`, and so is a blank `service`.
 
 `Mark`:
 

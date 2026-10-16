@@ -158,6 +158,31 @@ class McpApiTest {
     }
 
     /**
+     * An empty service is no filter, as {@code service=} is over HTTP: a model fills an optional
+     * argument with "" as often as it leaves it out, and a service named "" answers nothing.
+     */
+    @Test
+    void anEmptyServiceIsNoFilterAsItIsOverHttp() {
+        serve(client -> {
+            ingest(client);
+            text(call(client, "mark", "{\"name\":\"before\",\"service\":\"\"}"));
+            clock.addAndGet(1_000);
+
+            assertThat(text(call(client, "findings", "{\"since\":\"5m\",\"service\":\"\"}")))
+                    .isEqualTo(client.get("/api/findings?since=5m&limit=20&service=&format=text").body())
+                    .isEqualTo(text(call(client, "findings", "{\"since\":\"5m\"}")));
+            assertThat(text(call(client, "compare", "{\"before\":\"10m\",\"after\":\"before\",\"service\":\"\"}")))
+                    .isEqualTo(client.get("/api/compare?before=10m&after=before&service=&format=text").body())
+                    .contains("(all services)");
+            JsonObject checked = call(client, "check", "{\"since\":\"5m\",\"service\":\"\"}");
+            assertThat(text(checked)).isEqualTo(client.get("/api/check?since=5m&service=&format=text").body());
+            assertThat(checked.getObject("structuredContent").getLong("requests")).isEqualTo(1);
+            assertThat(text(call(client, "mark", "{\"name\":\"after\",\"service\":\"\"}")))
+                    .as("no service, rather than one named \"\"").doesNotContain("(");
+        });
+    }
+
+    /**
      * The step the instructions name first has a tool: status is /api/status's own text, the
      * server's mode and address included. The database's size is left out of the comparison,
      * because a flush between the two calls may grow it.
