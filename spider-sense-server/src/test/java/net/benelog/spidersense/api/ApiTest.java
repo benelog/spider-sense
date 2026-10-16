@@ -9,6 +9,10 @@ import java.net.http.HttpResponse;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.google.protobuf.InvalidProtocolBufferException;
+import com.google.protobuf.util.JsonFormat;
+import io.opentelemetry.proto.collector.trace.v1.ExportTraceServiceRequest;
+import io.opentelemetry.proto.collector.trace.v1.ExportTraceServiceResponse;
 import io.opentelemetry.proto.trace.v1.Span;
 
 import org.junit.jupiter.api.Test;
@@ -151,6 +155,66 @@ class ApiTest {
             assertThat(asJson.statusCode()).isEqualTo(200);
             assertThat(asJson.body()).isEqualTo("{}");
         });
+    }
+
+    /**
+     * OTLP asks a partially accepted export to say so: the spans the ingest cap drops are
+     * answered as rejected in a partial success, in the request's own encoding.
+     */
+    @Test
+    void anExportTheIngestCapCutsIsAnsweredWithAPartialSuccess() throws Exception {
+        String json = JsonFormat.printer().print(tenTraces(0));
+        byte[] protobuf = tenTraces(10).toByteArray();
+        SpiderSenseServer.Assembly assembly = SpiderSenseServer.assemble(
+                TestStore.config("--await-writes", "--ingest.max-spans-per-second=1"));
+        try {
+            WebTest.test(assembly.app(), client -> {
+                long dropped = assembly.store().droppedSpans();
+                HttpResponse<String> asJson = client.send(request -> request
+                        .uri(URI.create(client.url("/v1/traces")))
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString(json)));
+
+                assertThat(asJson.statusCode()).isEqualTo(200);
+                JsonObject partial = Json.parse(asJson.body()).asObject().getObject("partialSuccess");
+                long rejected = Long.parseLong(partial.getString("rejectedSpans"));
+                assertThat(rejected).as("at most one span a second is kept").isGreaterThanOrEqualTo(8)
+                        .isEqualTo(assembly.store().droppedSpans() - dropped);
+                assertThat(partial.getString("errorMessage")).contains("spidersense.ingest.max-spans-per-second");
+
+                long droppedBefore = assembly.store().droppedSpans();
+                HttpResponse<byte[]> asProtobuf = client.send(request -> request
+                        .uri(URI.create(client.url("/v1/traces")))
+                        .header("Content-Type", PROTOBUF)
+                        .POST(HttpRequest.BodyPublishers.ofByteArray(protobuf)),
+                        HttpResponse.BodyHandlers.ofByteArray());
+
+                assertThat(asProtobuf.statusCode()).isEqualTo(200);
+                assertThat(rejectedSpans(asProtobuf.body())).isGreaterThanOrEqualTo(8)
+                        .isEqualTo(assembly.store().droppedSpans() - droppedBefore);
+            });
+        } finally {
+            assembly.store().close();
+        }
+    }
+
+    /** An export of ten traces of one span each, numbered from {@code first}. */
+    private static ExportTraceServiceRequest tenTraces(int first) {
+        Span.Builder[] spans = new Span.Builder[10];
+        for (int n = 0; n < spans.length; n++) {
+            spans[n] = Otlp.span("%032x".formatted(first + n + 1), "%016x".formatted(first + n + 1), "GET /orders",
+                    Span.SpanKind.SPAN_KIND_SERVER, NOW, 5);
+        }
+        return Otlp.traces(Otlp.service("spring-orders"), spans);
+    }
+
+    /** {@code partial_success.rejected_spans} of a protobuf answer to a trace export. */
+    private static long rejectedSpans(byte[] answer) {
+        try {
+            return ExportTraceServiceResponse.parseFrom(answer).getPartialSuccess().getRejectedSpans();
+        } catch (InvalidProtocolBufferException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     @Test

@@ -39,8 +39,8 @@ import org.jspecify.annotations.Nullable;
  * <p>This is the only place that knows the wire format, so the store and the API
  * never see a protobuf class. Decoding runs on the request thread and produces a
  * {@link Batch}; the database is the writer's business. Decoding is total:
- * anything decodable is stored and nothing is reported back as partially
- * rejected, which is what the API contract promises.
+ * anything decodable is stored, and the only spans reported back as rejected
+ * are the ones the ingest cap refuses, which the batch counts.
  *
  * <p>Two steps, kept apart: the static {@code decode} methods are pure, a request and the time
  * in, every record, catalog row and service sighting out, and the {@code ingest} methods are
@@ -81,6 +81,7 @@ public final class OtlpDecoder {
             }
             // The ingest cap decides before the writer sees anything (storage.adoc#ingest-cap).
             if (!store.ingestCap().accept(record.traceId())) {
+                batch.rejectSpan();
                 continue;
             }
             batch.add(record);

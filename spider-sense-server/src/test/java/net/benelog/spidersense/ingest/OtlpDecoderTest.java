@@ -523,6 +523,7 @@ class OtlpDecoderTest {
             assertThat(first.spans()).as("the tenth span of the second is the last one kept")
                     .hasSize(10);
             assertThat(capped.droppedSpans()).isEqualTo(20);
+            assertThat(first.rejectedSpans()).as("what the answer reports as rejected").isEqualTo(20);
             assertThat(first.spans()).extracting(SpanRecord::traceId)
                     .containsExactlyElementsOf(List.of(1, 2, 3, 4, 5, 6, 7, 8, 9, 10).stream()
                             .map("%032x"::formatted).toList());

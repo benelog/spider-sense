@@ -312,6 +312,7 @@ A span of a trace that has fallen out of both sets is decided afresh.
 Every stored trace therefore stays complete, and the dropped ones are whole traces, as long as a trace's spans arrive while its decision is still kept.
 Logs and metric points are never dropped.
 The dropped spans are counted in `/api/status.storage.droppedSpans` and carried on the SSE `stats` event as `droppedSpans`.
+The answer to the export they came in reports them as rejected, in a partial success (xref:api.adoc#ingest[Ingest]).
 The UI shows the number in the sidebar foot while it grows (xref:ui.adoc[Layout and Controls]).
 
 [#reads]

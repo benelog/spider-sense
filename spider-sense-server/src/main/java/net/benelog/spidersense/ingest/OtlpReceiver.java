@@ -3,7 +3,7 @@ package net.benelog.spidersense.ingest;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
-import java.util.function.Consumer;
+import java.util.function.Function;
 
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.Message;
@@ -12,6 +12,7 @@ import io.opentelemetry.proto.collector.logs.v1.ExportLogsServiceRequest;
 import io.opentelemetry.proto.collector.logs.v1.ExportLogsServiceResponse;
 import io.opentelemetry.proto.collector.metrics.v1.ExportMetricsServiceRequest;
 import io.opentelemetry.proto.collector.metrics.v1.ExportMetricsServiceResponse;
+import io.opentelemetry.proto.collector.trace.v1.ExportTracePartialSuccess;
 import io.opentelemetry.proto.collector.trace.v1.ExportTraceServiceRequest;
 import io.opentelemetry.proto.collector.trace.v1.ExportTraceServiceResponse;
 import net.benelog.spidersense.store.Writer;
@@ -26,9 +27,10 @@ import org.jspecify.annotations.Nullable;
  * {@code /v1/logs}.
  *
  * <p>Both encodings the OpenTelemetry exporters use are accepted, gzipped or not,
- * and the answer is the empty {@code Export*ServiceResponse} in the request's own
+ * and the answer is the {@code Export*ServiceResponse} in the request's own
  * encoding — which is what an exporter checks before it considers the batch
- * delivered. There is no gRPC receiver; see design.adoc#rejected.
+ * delivered — empty unless the ingest cap rejected spans of it. There is no gRPC
+ * receiver; see design.adoc#rejected.
  */
 public final class OtlpReceiver {
 
@@ -61,22 +63,49 @@ public final class OtlpReceiver {
     }
 
     public WebResponse traces(WebRequest req) {
-        return receive(req, ExportTraceServiceRequest.newBuilder(), builder -> decoder.ingest(builder.build()),
-                ExportTraceServiceResponse.getDefaultInstance());
+        return receive(req, ExportTraceServiceRequest.newBuilder(),
+                builder -> traceResponse(decoder.ingest(builder.build()).rejectedSpans()));
     }
 
     public WebResponse metrics(WebRequest req) {
-        return receive(req, ExportMetricsServiceRequest.newBuilder(), builder -> decoder.ingest(builder.build()),
-                ExportMetricsServiceResponse.getDefaultInstance());
+        return receive(req, ExportMetricsServiceRequest.newBuilder(), builder -> {
+            decoder.ingest(builder.build());
+            return ExportMetricsServiceResponse.getDefaultInstance();
+        });
     }
 
     public WebResponse logs(WebRequest req) {
-        return receive(req, ExportLogsServiceRequest.newBuilder(), builder -> decoder.ingest(builder.build()),
-                ExportLogsServiceResponse.getDefaultInstance());
+        return receive(req, ExportLogsServiceRequest.newBuilder(), builder -> {
+            decoder.ingest(builder.build());
+            return ExportLogsServiceResponse.getDefaultInstance();
+        });
     }
 
-    private <B extends Message.Builder> WebResponse receive(WebRequest req, B builder, Consumer<B> ingest,
-            Message response) {
+    /** Why spans of an export were rejected, the only reason there is (storage.adoc#ingest-cap). */
+    private static final String CAPPED = "spidersense.ingest.max-spans-per-second dropped the spans"
+            + " of traces it had not accepted yet";
+
+    /**
+     * The answer to a trace export: empty, or a partial success that counts the spans the
+     * ingest cap dropped, as OTLP asks of a request it accepts only in part. A rejected span
+     * is not sent again, which is what the cap is for.
+     */
+    static ExportTraceServiceResponse traceResponse(long rejectedSpans) {
+        if (rejectedSpans == 0) {
+            return ExportTraceServiceResponse.getDefaultInstance();
+        }
+        return ExportTraceServiceResponse.newBuilder()
+                .setPartialSuccess(ExportTracePartialSuccess.newBuilder()
+                        .setRejectedSpans(rejectedSpans)
+                        .setErrorMessage(CAPPED))
+                .build();
+    }
+
+    /**
+     * @param ingest decodes and queues the request, and answers with the response the
+     *               exporter is sent
+     */
+    private <B extends Message.Builder> WebResponse receive(WebRequest req, B builder, Function<B, Message> ingest) {
         String encoding = encodingOf(req);
         if (encoding == null) {
             return unsupported(req);
@@ -91,7 +120,7 @@ public final class OtlpReceiver {
             // A gzip body that is not gzip, or is cut short: undecodable as much as bad protobuf.
             return error(HttpStatus.BAD_REQUEST, "Undecodable OTLP body: " + e.getMessage());
         }
-        ingest.accept(builder);
+        Message response = ingest.apply(builder);
         if (awaitWrites) {
             writer.awaitIdle(5_000);
         }

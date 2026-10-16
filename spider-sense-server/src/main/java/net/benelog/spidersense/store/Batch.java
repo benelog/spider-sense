@@ -46,6 +46,7 @@ public final class Batch {
     private final Map<String, Sighting> services = new LinkedHashMap<>();
     private final List<Tingle> tingles = new ArrayList<>();
     private final List<Catalog> catalogs = new ArrayList<>();
+    private int rejectedSpans;
 
     public void add(SpanRecord span) {
         spans.add(span);
@@ -69,6 +70,19 @@ public final class Batch {
 
     public void addTingles(List<Tingle> raised) {
         tingles.addAll(raised);
+    }
+
+    /**
+     * Counts a span of the export that the ingest cap refused (storage.adoc#ingest-cap),
+     * which the receiver answers as rejected in a partial success (api.adoc#ingest).
+     */
+    public void rejectSpan() {
+        rejectedSpans++;
+    }
+
+    /** How many spans of the export the ingest cap refused. */
+    public int rejectedSpans() {
+        return rejectedSpans;
     }
 
     public List<SpanRecord> spans() {

@@ -54,7 +54,9 @@ The request `Content-Type` is `application/x-protobuf` or `application/json`, an
 The answer is `200` with an empty `Export{Trace,Metrics,Logs}ServiceResponse` in the request's content type.
 An undecodable body is `400`, another content type is `415`, and a body of more than 64 MB, counted after gunzip, is `413`.
 The receiver reads the body into the heap of the process it runs in, which in agent mode is the monitored application's.
-Partial success is never reported, so everything decodable is stored.
+Everything decodable is stored, except the spans the ingest cap drops (xref:storage.adoc#ingest-cap[The ingest cap]).
+A trace export that loses spans to it is answered with a partial success, as OTLP asks of a request accepted in part: `partial_success.rejected_spans` counts the dropped spans, and `error_message` names `spidersense.ingest.max-spans-per-second`.
+An exporter does not send rejected spans again.
 A span received again, as an exporter sends an export whose answer it did not get, is stored once (xref:storage.adoc#writer[How it is written]).
 So is a tingle raised from it, which the live event stream publishes once as well.
 A log record carrying the attribute `spidersense.schema.table` is the index catalog of one table, as read by xref:design.adoc#extension[the extension].
