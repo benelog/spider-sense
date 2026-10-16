@@ -444,6 +444,40 @@ class OtlpDecoderTest {
         assertThat(store.sql().count("SELECT COUNT(*) FROM span", List.of())).isEqualTo(2);
     }
 
+    /**
+     * The same for OTLP/JSON: an id with a stray space, of a length base64 cannot be, or that
+     * is no string costs its span, and the export, on either parsing path, is stored.
+     */
+    @Test
+    void aMalformedJsonIdSkipsItsSpanAndTheRestOfTheExportIsStored() throws Exception {
+        // A uint64 past 2^63, which OTLP allows, sends the document down the text path.
+        for (String end : List.of("\"1700000005000000000\"", "18446744073709551615")) {
+            ExportTraceServiceRequest.Builder parsed = ExportTraceServiceRequest.newBuilder();
+            OtlpJson.merge(malformedIds(end), parsed);
+
+            Batch batch = decoder.ingest(parsed.build());
+
+            assertThat(batch.spans()).as(end).extracting(SpanRecord::name).containsExactly("GET /orders");
+        }
+    }
+
+    /** One span with good ids, ending at {@code end}, and three whose ids protobuf's parser refuses. */
+    private static String malformedIds(String end) {
+        return """
+                {"resourceSpans":[{"resource":{"attributes":[
+                  {"key":"service.name","value":{"stringValue":"spring-orders"}}]},
+                 "scopeSpans":[{"spans":[
+                  {"traceId":"%1$s","spanId":"%2$s","name":"GET /orders","kind":2,
+                   "startTimeUnixNano":"1700000000000000000","endTimeUnixNano":%3$s},
+                  {"traceId":"%1$s ","spanId":"%4$s","name":"a stray space","kind":1,
+                   "startTimeUnixNano":"1700000000000000000","endTimeUnixNano":"1700000005000000000"},
+                  {"traceId":"%1$s","spanId":"%4$s0","name":"seventeen characters","kind":1,
+                   "startTimeUnixNano":"1700000000000000000","endTimeUnixNano":"1700000005000000000"},
+                  {"traceId":12345,"spanId":"%4$s","name":"a number","kind":1,
+                   "startTimeUnixNano":"1700000000000000000","endTimeUnixNano":"1700000005000000000"}]}]}]}
+                """.formatted(TRACE, ROOT, end, CHILD);
+    }
+
     /** A log line's invalid ids are read as none, and the line itself is kept. */
     @Test
     void aLogWithInvalidIdsIsKeptUncorrelated() {

@@ -3,9 +3,6 @@ package net.benelog.spidersense.ingest;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.Map;
-import java.util.TreeSet;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.Message;
@@ -16,6 +13,7 @@ import net.benelog.silkjson.JsonValue;
 import net.benelog.silkjson.JsonObject;
 import net.benelog.silkjson.JsonArray;
 import net.benelog.silkjson.JsonException;
+import org.jspecify.annotations.Nullable;
 
 /**
  * OTLP/JSON, which is protobuf's JSON mapping with one deliberate difference:
@@ -30,7 +28,12 @@ import net.benelog.silkjson.JsonException;
  * <p>The rule that tells them apart is the length. A real base64 16-byte trace id
  * is 24 characters and a base64 8-byte span id is 12; only a hex id is exactly 32
  * or 16 characters of {@code [0-9a-f]}. So the pre-pass rewrites exactly those and
- * leaves everything else alone, which makes it a no-op for a base64 body.
+ * leaves base64 alone, which makes it a no-op for a base64 body.
+ *
+ * <p>An id that is neither, one with a stray space, of a length no base64 has, or
+ * not a string at all, is emptied instead: {@link JsonFormat} would refuse the
+ * whole export over it, and an empty id is one the decoder skips its span for, so
+ * the rest of the export is stored (api.adoc#status-and-ingest).
  */
 public final class OtlpJson {
 
@@ -132,30 +135,115 @@ public final class OtlpJson {
     }
 
     /**
-     * An id member in the text: its key, and a value that may be hex. Inside a string value
-     * every quote is escaped, so a key followed by an unescaped quote is a real member.
+     * {@link #hexIdsToBase64} over the text, for a document the tree cannot be built from.
+     *
+     * <p>The text is read as JSON tokens rather than matched, so a quoted key inside a string
+     * value is never taken for a member: a string followed by a colon is a member's key, and
+     * an id member's value, whatever it is, a string, a number, an object, is replaced whole.
      */
-    private static final Pattern ID_MEMBER = Pattern.compile(
-            "\"(" + String.join("|", new TreeSet<>(ID_HEX_LENGTH.keySet()))
-                    + ")\"(\\s*:\\s*)\"([0-9A-Fa-f]{16,32})\"");
-
-    /** {@link #hexIdsToBase64} over the text, for a document the tree cannot be built from. */
     static String hexIdsToBase64InText(String json) {
-        Matcher member = ID_MEMBER.matcher(json);
         StringBuilder out = new StringBuilder(json.length());
-        while (member.find()) {
-            String key = member.group(1);
-            member.appendReplacement(out, Matcher.quoteReplacement(
-                    "\"" + key + "\"" + member.group(2) + "\"" + convertIfHex(key, member.group(3)) + "\""));
+        int at = 0;
+        while (at < json.length()) {
+            if (json.charAt(at) != '"') {
+                out.append(json.charAt(at));
+                at++;
+                continue;
+            }
+            int end = stringEnd(json, at);
+            String key = json.substring(at + 1, Math.max(at + 1, end - 1));
+            out.append(json, at, end);
+            at = end;
+            int colon = skipSpace(json, at);
+            if (!isIdField(key) || colon >= json.length() || json.charAt(colon) != ':') {
+                continue;
+            }
+            int start = skipSpace(json, colon + 1);
+            int valueEnd = valueEnd(json, start);
+            String value = stringValue(json.substring(start, valueEnd));
+            out.append(json, at, start).append('"').append(value == null ? "" : idValue(key, value)).append('"');
+            at = valueEnd;
         }
-        member.appendTail(out);
         return out.toString();
+    }
+
+    /** The index just past the string that opens at {@code at}, or the end of the text when it never closes. */
+    private static int stringEnd(String json, int at) {
+        int i = at + 1;
+        while (i < json.length()) {
+            char c = json.charAt(i);
+            if (c == '\\') {
+                i += 2;
+            } else if (c == '"') {
+                return i + 1;
+            } else {
+                i++;
+            }
+        }
+        return json.length();
+    }
+
+    private static int skipSpace(String json, int at) {
+        int i = at;
+        while (i < json.length() && Character.isWhitespace(json.charAt(i))) {
+            i++;
+        }
+        return i;
+    }
+
+    /**
+     * The index just past the value that starts at {@code at}: a string, an object or an array
+     * read to its matching close, or a number or a literal read to the next separator.
+     */
+    private static int valueEnd(String json, int at) {
+        if (at >= json.length()) {
+            return at;
+        }
+        char first = json.charAt(at);
+        if (first == '"') {
+            return stringEnd(json, at);
+        }
+        int i = at;
+        if (first == '{' || first == '[') {
+            int depth = 0;
+            while (i < json.length()) {
+                char c = json.charAt(i);
+                if (c == '"') {
+                    i = stringEnd(json, i);
+                    continue;
+                }
+                if (c == '{' || c == '[') {
+                    depth++;
+                } else if ((c == '}' || c == ']') && --depth == 0) {
+                    return i + 1;
+                }
+                i++;
+            }
+            return i;
+        }
+        while (i < json.length() && ",}]".indexOf(json.charAt(i)) < 0 && !Character.isWhitespace(json.charAt(i))) {
+            i++;
+        }
+        return i;
+    }
+
+    /** The string a JSON string token stands for, or null when the token is no string. */
+    private static @Nullable String stringValue(String token) {
+        if (token.length() < 2 || token.charAt(0) != '"' || token.charAt(token.length() - 1) != '"') {
+            return null;
+        }
+        try {
+            JsonValue value = Json.parse(token);
+            return value.isString() ? value.asString() : null;
+        } catch (JsonException e) {
+            return null;
+        }
     }
 
     /**
      * Rewrites {@code traceId}, {@code spanId} and {@code parentSpanId} string
-     * values that are hex into base64. Any other value, including an already
-     * base64 one, is copied unchanged.
+     * values that are hex into base64, and empties one that is neither hex of its
+     * length nor base64, or no string at all. A base64 one is copied unchanged.
      *
      * <p>The snake-case spellings ({@code trace_id}, {@code span_id},
      * {@code parent_span_id}) are rewritten too: the specification asks for
@@ -172,8 +260,8 @@ public final class OtlpJson {
             for (var member : object) {
                 String key = member.getKey();
                 JsonValue child = member.getValue();
-                if (child.isString() && isIdField(key)) {
-                    rewritten.put(key, convertIfHex(key, child.asString()));
+                if (isIdField(key)) {
+                    rewritten.put(key, child.isString() ? idValue(key, child.asString()) : "");
                 } else {
                     rewritten.put(key, rewrite(child));
                 }
@@ -194,12 +282,31 @@ public final class OtlpJson {
         return ID_HEX_LENGTH.containsKey(key);
     }
 
-    private static String convertIfHex(String key, String value) {
+    /**
+     * What an id member's string becomes: hex of the id's length as base64, base64 as it is,
+     * and anything else empty.
+     */
+    private static String idValue(String key, String value) {
         Integer hexLength = ID_HEX_LENGTH.get(key);
-        if (hexLength == null || value.length() != hexLength || !isHex(value)) {
-            return value;
+        if (hexLength != null && value.length() == hexLength && isHex(value)) {
+            return Base64.getEncoder().encodeToString(HexFormat.of().parseHex(value));
         }
-        return Base64.getEncoder().encodeToString(HexFormat.of().parseHex(value));
+        return decodesAsBase64(value) ? value : "";
+    }
+
+    /** Whether protobuf's JSON parser reads {@code value} as bytes: base64, or failing that, URL-safe base64. */
+    private static boolean decodesAsBase64(String value) {
+        try {
+            Base64.getDecoder().decode(value);
+            return true;
+        } catch (IllegalArgumentException e) {
+            try {
+                Base64.getUrlDecoder().decode(value);
+                return true;
+            } catch (IllegalArgumentException alsoNot) {
+                return false;
+            }
+        }
     }
 
     private static boolean isHex(String value) {

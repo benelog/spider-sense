@@ -35,6 +35,32 @@ class OtlpJsonTest {
         assertThat(OtlpJson.hexIdsToBase64InText(json)).isEqualTo(json);
     }
 
+    /**
+     * An id that is neither hex of its length nor base64 protobuf decodes, or that is no
+     * string, is emptied, which the decoder reads as no id: it costs its span, where
+     * protobuf's parser would refuse the whole export.
+     */
+    @Test
+    void anIdThatIsNeitherHexNorBase64BecomesEmptyInBothPasses() {
+        String json = "{\"traceId\":\"" + TRACE + " \",\"spanId\":\"" + SPAN + "0\",\"parentSpanId\":12345,"
+                + "\"trace_id\":{\"a\":[1,\"}\"]},\"span_id\":[\"x\"],\"parent_span_id\":null,"
+                + "\"name\":\"" + SPAN + " \"}";
+        String expected = "{\"traceId\":\"\",\"spanId\":\"\",\"parentSpanId\":\"\",\"trace_id\":\"\",\"span_id\":\"\","
+                + "\"parent_span_id\":\"\",\"name\":\"" + SPAN + " \"}";
+
+        assertThat(OtlpJson.hexIdsToBase64(json)).isEqualTo(expected);
+        assertThat(OtlpJson.hexIdsToBase64InText(json)).isEqualTo(expected);
+    }
+
+    /** The text pass reads the document as JSON: a quoted id key inside a string value is no member. */
+    @Test
+    void theTextPassRewritesMembersAndNotTheTextOfAString() {
+        String json = "{\"name\":\"a \\\"traceId\\\": \\\"" + TRACE + "\\\"\", \"traceId\" : \"" + TRACE + "\"}";
+
+        assertThat(OtlpJson.hexIdsToBase64InText(json))
+                .isEqualTo("{\"name\":\"a \\\"traceId\\\": \\\"" + TRACE + "\\\"\", \"traceId\" : \"" + TRACE_BASE64 + "\"}");
+    }
+
     @Test
     void aLoneSurrogateBecomesTheReplacementCharacterAndAPairStaysWhole() throws Exception {
         assertThat(OtlpJson.withoutLoneSurrogates("\"a\\ud800x\\uDC00y\\ud83d\\ude00z\\\\ud800\\ud800\""))
