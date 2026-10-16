@@ -103,3 +103,17 @@ test('a trace of no length draws its spans at the start and reads them as 0% of 
   assert.equal(root.querySelector('tr.profile-row').children[5].textContent, '0.0');
   instance.destroy();
 });
+
+test('the span drawer gives the scope name last, after the attributes and the events', async () => {
+  const failed = span('root', null, 0, 4, {
+    error: true, status: 'ERROR', attributes: { 'http.route': '/items' },
+    events: [{ name: 'exception', time: T0 + 2, attributes: { 'exception.type': 'java.lang.IllegalStateException' } }],
+  });
+  const { root, instance } = await open('scoped', 4, [failed]);
+  root.querySelector('.wf-row').click();
+  const blocks = ui.drawerBody().children;
+  assert.ok(!blocks[0].textContent.includes('scope'), 'the first block holds the timing and the status, not the scope');
+  assert.equal(blocks[blocks.length - 2].querySelector('.sub-head').textContent, 'Events');
+  assert.equal(blocks[blocks.length - 1].textContent, 'scopeio.opentelemetry.test');
+  instance.destroy();
+});

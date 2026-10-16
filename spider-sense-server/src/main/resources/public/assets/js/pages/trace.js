@@ -287,7 +287,8 @@ export function render(root, ctx) {
     const selfMs = selfTimes(data.spans || []).get(span.spanId) || 0;
     const all = span.attributes || {};
     // The statement and the captured stack are read, not scanned: each gets a section of its own,
-    // the statement before the other attributes and the stack after them (pages.adoc#span-drawer).
+    // the statement before the other attributes and the stack after them, and the scope name comes
+    // last (pages.adoc#span-drawer).
     const statements = STATEMENT_KEYS.filter((k) => all[k] != null);
     const stack = all[STACK_KEY] != null ? String(all[STACK_KEY]) : null;
     const attrs = Object.entries(all)
@@ -301,8 +302,7 @@ export function render(root, ctx) {
         h('dt', 'start'), h('dd', offset(startMsOf(span) - t0) + ' (' + timeMs(span.start) + ')'),
         h('dt', 'duration'), h('dd', dur(span.durationMs) + ' · ' + ((span.durationMs / total) * 100).toFixed(1) + '% of trace'),
         h('dt', 'self'), h('dd', dur(selfMs) + ' · ' + ((selfMs / total) * 100).toFixed(1) + '% of trace'),
-        h('dt', 'status'), h('dd', { class: span.error ? 'bad' : '' }, (span.status || 'UNSET') + (span.statusMessage ? ' — ' + span.statusMessage : '')),
-        h('dt', 'scope'), h('dd', span.scope || '—')),
+        h('dt', 'status'), h('dd', { class: span.error ? 'bad' : '' }, (span.status || 'UNSET') + (span.statusMessage ? ' — ' + span.statusMessage : ''))),
       statements.map((k) => h('div',
         h('div.sub-head.mono', { style: { marginBottom: '6px' } }, k),
         copyBlock(formatSql(String(all[k]))))),
@@ -313,6 +313,7 @@ export function render(root, ctx) {
       (span.events || []).length ? h('div',
         h('div.sub-head', { style: { marginBottom: '6px' } }, 'Events'),
         h('div', { style: { display: 'grid', gap: '10px' } }, (span.events || []).map((ev) => eventBlock(ev, t0)))) : null,
+      h('dl.kv', h('dt', 'scope'), h('dd', span.scope || '—')),
     ];
   }
 
