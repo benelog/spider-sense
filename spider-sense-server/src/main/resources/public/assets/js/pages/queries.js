@@ -28,12 +28,12 @@ function unindexedCell(schema) {
   return h('span.cell-ellipsis.mono.accent', { title: text }, text);
 }
 
-/** `SELECT orders h2`: the operation, the table dimmed, the system dimmer, all three in the title. */
+/** `SELECT orders h2`: the operation, then the table and the system dimmed, all three in the title. */
 function opTableCell(q) {
   const title = [q.operation, q.table, q.system ? '(' + q.system + ')' : null].filter(Boolean).join(' ');
   return h('span.op-table.mono', { title },
     q.operation || '-', ' ', h('span.muted', q.table || '-'),
-    q.system ? h('span.muted', { style: { opacity: 0.7 } }, ' ' + q.system) : null);
+    q.system ? h('span.muted', ' ' + q.system) : null);
 }
 
 export function render(root, ctx) {

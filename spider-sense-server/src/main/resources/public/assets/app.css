@@ -219,7 +219,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .meta { display: grid; gap: 2px; font-size: 11px; color: var(--text-muted); }
 .meta > div { display: flex; justify-content: space-between; gap: 8px; }
-.meta dt { opacity: 0.8; }
 .meta dd { font-family: var(--font-mono); }
 
 .link-btn {
@@ -258,7 +257,8 @@ select, input[type="text"], input[type="number"], input[type="search"] {
   padding: 5px 8px; font-size: 12px; min-width: 0;
 }
 select { padding-right: 22px; appearance: none; background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%), linear-gradient(135deg, var(--text-muted) 50%, transparent 50%); background-position: right 10px center, right 6px center; background-size: 4px 4px, 4px 4px; background-repeat: no-repeat; }
-input::placeholder { color: var(--text-muted); opacity: 0.8; }
+/* At full opacity, which Firefox lowers for a placeholder by default: muted is as dim as text gets at 4.5:1. */
+input::placeholder { color: var(--text-muted); opacity: 1; }
 
 .btn {
   display: inline-flex; align-items: center; gap: 6px;
@@ -463,7 +463,9 @@ a.stat-link:focus-visible, a.hist-link:focus-visible { outline: 2px solid var(--
 button.legend-item { cursor: pointer; }
 button.legend-item:hover { color: var(--text); }
 .legend-item i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; flex: none; }
-.legend-item.off { opacity: 0.4; text-decoration: line-through; }
+/* A hidden series is struck through, and only its swatch fades: the label stays at 4.5:1. */
+.legend-item.off { text-decoration: line-through; }
+.legend-item.off i { opacity: 0.4; }
 .legend-value { font-family: var(--font-mono); color: var(--text); }
 
 /* ---------- query bar ---------- */
@@ -516,8 +518,8 @@ pre.stack {
 .st-cause { color: var(--warn-text); }
 .st-frame { color: var(--text-muted); }
 .st-own { color: var(--text); }
-.st-fold { color: var(--text-muted); opacity: 0.75; cursor: pointer; font-style: italic; }
-.st-fold:hover, .st-fold:focus-visible { opacity: 1; color: var(--text); outline: none; text-decoration: underline; }
+.st-fold { color: var(--text-muted); cursor: pointer; font-style: italic; }
+.st-fold:hover, .st-fold:focus-visible { color: var(--text); outline: none; text-decoration: underline; }
 
 /* ---------- tabs ---------- */
 
@@ -676,9 +678,11 @@ a.hist-link:hover .hist-label { color: var(--text); }
 .map-edge-halo { fill: var(--bg-panel); stroke: none; }
 .map-edge-label-g { pointer-events: none; }
 
-.map-node.dim, .map-edge.dim, .map-edge-label-g.dim { opacity: 0.22; }
-.map-nodes .map-node, .map-edges .map-edge, .map-labels .map-edge-label-g { transition: opacity 120ms ease; }
-@media (prefers-reduced-motion: reduce) { .map-nodes .map-node, .map-edges .map-edge, .map-labels .map-edge-label-g { transition: none; } }
+/* What a highlight leaves out fades to 22%, all but its text, which turns muted and so keeps 4.5:1. */
+.map-edge.dim, .map-node.dim .map-node-box, .map-node.dim .map-node-icon, .map-node.dim .map-hist { opacity: 0.22; }
+.map-node.dim .map-node-name, .map-edge-label-g.dim .map-edge-err { fill: var(--text-muted); }
+.map-nodes .map-node > *, .map-edges .map-edge, .map-labels .map-edge-label-g tspan { transition: opacity 120ms ease, fill 120ms ease; }
+@media (prefers-reduced-motion: reduce) { .map-nodes .map-node > *, .map-edges .map-edge, .map-labels .map-edge-label-g tspan { transition: none; } }
 
 /* ---------- waterfall ---------- */
 
@@ -800,9 +804,12 @@ a.hist-link:hover .hist-label { color: var(--text); }
 .f-links .btn, .f-links .f-targets { margin-left: auto; }
 .f-links .copy-as .btn, .f-links .f-targets .btn { margin-left: 0; }
 
-/* An acknowledged finding is still listed, last and dimmed, never hidden. */
-tr.is-acked > td { opacity: 0.55; }
-tr.is-acked:hover > td { opacity: 1; }
+/*
+ * An acknowledged finding is still listed, last and dimmed, never hidden. Dimmed, its text turns
+ * muted, which keeps 4.5:1, and only its dots fade; the pointer on the row shows it as it is.
+ */
+tr.is-acked:not(:hover) > td, tr.is-acked:not(:hover) > td * { color: var(--text-muted); }
+tr.is-acked:not(:hover) .sev-dot, tr.is-acked:not(:hover) .dot { opacity: 0.55; }
 .f-ack {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   padding-top: 8px; border-top: 1px solid var(--line); font-size: 11.5px;
@@ -833,7 +840,7 @@ tr.is-acked:hover > td { opacity: 1; }
 .verdict-worse { border-color: color-mix(in srgb, var(--err) 55%, var(--line)); color: var(--err-text); background: color-mix(in srgb, var(--err) 12%, transparent); }
 .verdict-better { border-color: color-mix(in srgb, var(--ok) 55%, var(--line)); color: var(--ok-text); background: color-mix(in srgb, var(--ok) 12%, transparent); }
 .verdict-new, .verdict-gone { color: var(--text-muted); }
-.verdict-same { color: var(--text-muted); opacity: 0.8; }
+.verdict-same { color: var(--text-muted); }
 
 /* ---------- the mark dialog ---------- */
 

@@ -1,9 +1,10 @@
 // app.css: the theme sets the colour scheme the browser draws its own controls in (ui.adoc#palette).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 
 const css = readFileSync(new URL('../../main/resources/public/assets/app.css', import.meta.url), 'utf8');
+const JS_DIR = new URL('../../main/resources/public/assets/js/', import.meta.url);
 
 /** The declarations of the first rule whose selector is exactly `selector`. */
 function rule(selector) {
@@ -53,6 +54,30 @@ test('the text colours reach 4.5:1 on every background of both palettes', () => 
     const onAccent = contrast('#ffffff', token('--accent-strong'));
     assert.ok(onAccent >= 4.5, `${light ? 'light' : 'dark'} white on --accent-strong is ${onAccent.toFixed(2)}:1`);
   }
+});
+
+/** app.css's rules as [selector list, declarations], without the comments and the @keyframes. */
+function rules() {
+  const plain = css.replace(/\/\*[\s\S]*?\*\//g, '').replace(/@keyframes[^{]*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/g, '');
+  return [...plain.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => [m[1].trim(), m[2]]);
+}
+
+/** What may fade, as it holds no text: an icon, a swatch, a dot, the logo, a map node's box, icon and histogram, an edge's curve. */
+const NO_TEXT = /(?:^|[\s>])(?:\.icon|i|\.dot|\.sev-dot|\.empty-hero|\.map-node-box|\.map-node-icon|\.map-hist|\.map-edge\.dim)$/;
+
+test('no text is dimmed with an opacity, which would take it under 4.5:1; only what holds no text fades', () => {
+  const faded = [];
+  for (const [selectors, body] of rules()) {
+    for (const m of body.matchAll(/(?<![-\w])opacity:\s*([\d.]+)/g)) {
+      if (+m[1] <= 0 || +m[1] >= 1) continue;
+      for (const s of selectors.split(',').map((x) => x.trim())) if (!NO_TEXT.test(s)) faded.push(s + ' at ' + m[1]);
+    }
+  }
+  for (const file of readdirSync(JS_DIR, { recursive: true }).filter((f) => f.endsWith('.js'))) {
+    const source = readFileSync(new URL(file, JS_DIR), 'utf8');
+    for (const m of source.matchAll(/(?<![-\w])opacity:\s*['"]?([\d.]+)/g)) if (+m[1] > 0 && +m[1] < 1) faded.push(file + ': ' + m[0]);
+  }
+  assert.deepEqual(faded, []);
 });
 
 /** `#rrggbb` laid at `alpha` over the #rrggbb `under`, as the browser composites a tint. */

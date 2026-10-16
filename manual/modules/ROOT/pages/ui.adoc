@@ -346,6 +346,9 @@ Their ratios are these, on the three backgrounds and on the tint each sits on, `
 | `--info-text`, light | 5.99:1 | 6.42:1 | 5.63:1 | 4.79:1
 |===
 
+Dimmed text is set in `--text-muted`, never in a colour at a reduced opacity.
+An opacity under 1 fades only what holds no text: a hidden series' swatch, an acknowledged finding's dots, and the boxes, icons and curves the Map leaves out of a highlight.
+
 A clickable table row takes the focus, and Enter or Space on the row does what a click does.
 Enter on a link or a button inside the row belongs to that control: the link opens, and the row does not act.
 A drawer takes the focus when it opens, and closing it gives the focus back to the row that opened it, unless the person has moved the focus elsewhere in the meantime.

@@ -123,6 +123,7 @@ The state chip is the finding's `state` (xref:findings.adoc#state[State]), with 
 
 An acknowledged finding (`ack` not null, xref:findings.adoc#acknowledgements[Acknowledgements]) is listed after the others, dimmed, with `acked` in its severity cell and the note as its title.
 A resolved finding that has not come back (`resolution` not null and a kind other than `regression`, xref:findings.adoc#resolutions[Resolutions]) is listed and dimmed the same way, with `resolved` in its severity cell.
+A dimmed row sets its text in `--text-muted` and fades its dots, until the pointer is on it.
 The expanded evidence of any finding ends with a *Resolve* button and an *Acknowledge* button.
 Each opens a small dialog for an optional note, then sends `+POST /api/findings/{id}/resolve+` or `+POST /api/findings/{id}/ack+`.
 An acknowledged finding shows the note and an *Unacknowledge* button (`+DELETE /api/findings/{id}/ack+`) instead.
@@ -198,6 +199,7 @@ Its label sits above the curve at 40% of its length, on a small `--bg-panel` hal
 The label gives the calls, and the errors in `--err` when there are any.
 The average and the p95 are in the hover tooltip.
 Hovering a node highlights it, its neighbours and the edges among them, and hovering an edge highlights it and the two nodes it joins; everything else dims.
+A dimmed node or edge fades to 22%, all but its text, which turns `--text-muted` and stays readable.
 
 A click on a node, or Enter or Space on a focused one, opens a drawer on the right, 420 px wide like the span drawer, with the node's name and kind.
 For a service the drawer holds the stat tiles (requests, Apdex, error rate, p95, rps), the Response summary bars, the Load chart for the window, fetched from `+/api/services/{name}+` and drawn as the Overview draws it in Load mode, and buttons for *Service*, *Scatter* and *Traces*, each filtered to that service.
@@ -387,7 +389,7 @@ The panel head links to the Logs page filtered by the trace id, over all service
 image::queries.jpg[Queries grouped by statement with calls, average, p95, max and total time,800]
 
 Above the table are a sort selector (total, avg, p95, max, calls) and a text filter on the statement.
-The table gives the statement in monospace on one line, with the full text in its tooltip, which ends in `… (cut at 2,000 characters)` when the store may have cut the statement (xref:api.adoc#query-stats[`statementCut`]), then one *Op · Table* cell with the operation, the table dimmed and the system dimmer (all three in its title), the unindexed columns, calls, avg, p95, max, total, the slow calls (in `--accent` when there are any), and when it was last seen.
+The table gives the statement in monospace on one line, with the full text in its tooltip, which ends in `… (cut at 2,000 characters)` when the store may have cut the statement (xref:api.adoc#query-stats[`statementCut`]), then one *Op · Table* cell with the operation, then the table and the system dimmed (all three in its title), the unindexed columns, calls, avg, p95, max, total, the slow calls (in `--accent` when there are any), and when it was last seen.
 The statement cell is the wide one: it takes the width the other columns leave and cuts its text with an ellipsis, so the table fits the page (xref:ui.adoc#narrow-screens[Narrow screens]).
 
 *Unindexed* is the xref:findings.adoc#schema[schema block]'s `unindexed`, the columns the statement filters on that no index leads with.
