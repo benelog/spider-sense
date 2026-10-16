@@ -228,7 +228,8 @@ export function depthMap(spans) {
  * A run of repeated siblings (siblingRuns) is one row where its first span stands, keyed by the
  * run, numbered `index` to `lastIndex`, with the run's total as its elapsed and self times;
  * when `expanded` holds its key, the row heads its spans, each one level deeper where it
- * stands. `sort` is `start`, `elapsed` or `self`; the last two put the largest first.
+ * stands and carrying `member`, the run's key. `sort` is `start`, `elapsed` or `self`; the last
+ * two put the largest first, and an expanded run's spans follow its row, in start order.
  */
 export function profileRows(trace, sort = 'start', expanded = new Set()) {
   const all = trace.spans || [];
@@ -263,11 +264,18 @@ export function profileRows(trace, sort = 'start', expanded = new Set()) {
     head.lastIndex = row.index;
     head.elapsed += row.elapsed;
     head.self += row.self;
-    if (expanded.has(run.key)) rows.push({ ...row, depth: row.depth + 1 });
+    if (expanded.has(run.key)) rows.push({ ...row, depth: row.depth + 1, member: run.key });
   }
-  if (sort === 'self') return rows.sort((a, b) => b.self - a.self);
-  if (sort === 'elapsed') return rows.sort((a, b) => b.elapsed - a.elapsed);
-  return rows;
+  const by = sort === 'self' ? (a, b) => b.self - a.self : sort === 'elapsed' ? (a, b) => b.elapsed - a.elapsed : null;
+  if (!by) return rows;
+  // Only the rows that stand on their own are sorted: a run's spans stay under the run.
+  const members = new Map();
+  for (const row of rows) {
+    if (!row.member) continue;
+    if (!members.has(row.member)) members.set(row.member, []);
+    members.get(row.member).push(row);
+  }
+  return rows.filter((r) => !r.member).sort(by).flatMap((r) => [r, ...(members.get(r.key) || [])]);
 }
 
 /** A step is hot when it spent at least this share of the trace in itself. */
@@ -275,10 +283,11 @@ const HOT_SPAN_MIN_SHARE = 0.05;
 
 /**
  * The keys of the three steps that spent the most time in themselves, each of them at least 5%
- * of the trace: a span's id, or a folded run's key for the run's total.
+ * of the trace: a span's id, or a folded run's key for the run's total. An expanded run's spans
+ * are not counted again, since the run's row already holds their time.
  */
 export function hotSpanIds(rows, totalMs) {
-  return new Set(rows.slice()
+  return new Set(rows.filter((r) => !r.member)
     .sort((a, b) => b.self - a.self)
     .filter((r) => r.self > 0 && r.self / totalMs >= HOT_SPAN_MIN_SHARE)
     .slice(0, 3)

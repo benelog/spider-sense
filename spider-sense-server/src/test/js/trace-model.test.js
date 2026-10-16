@@ -186,3 +186,18 @@ test('the profile folds a run where its first span stands, with the totals of it
   assert.deepEqual(open.map((r) => r.key + ':' + r.depth).slice(2, 8), ['run:p1:1', 'p1:2', 'p2:2', 'p3:2', 'p4:2', 'p5:2']);
   assert.ok(hotSpanIds(rows, 100).has('run:p1'), 'a run is hot on its total');
 });
+
+test('sorted by self or elapsed, an expanded run keeps its spans under it, and they are not hot beside it', () => {
+  // A run of four 40 ms statements, 160 ms in all, beside a 20 ms one, under a 200 ms request.
+  const trace = { spans: [
+    { spanId: 'root', parentSpanId: null, start: 0, durationMs: 200, category: 'http', service: 'orders', summary: 'GET /orders' },
+    db('o', 0, 'SELECT orders (h2)', { durationMs: 20 }),
+    ...[20, 60, 100, 140].map((at, i) => db('q' + (i + 1), at, 'SELECT product (h2)', { durationMs: 40 })),
+  ] };
+  const open = new Set(['run:q1']);
+  const rowsOf = (sort) => profileRows(trace, sort, open).map((r) => (r.run ? r.index + '–' + r.lastIndex : String(r.index)) + ':' + r.key + ':' + r.depth);
+  assert.deepEqual(rowsOf('self'), ['3–6:run:q1:1', '3:q1:2', '4:q2:2', '5:q3:2', '6:q4:2', '1:root:0', '2:o:1']);
+  assert.deepEqual(rowsOf('elapsed'), ['1:root:0', '3–6:run:q1:1', '3:q1:2', '4:q2:2', '5:q3:2', '6:q4:2', '2:o:1']);
+  assert.deepEqual([...hotSpanIds(profileRows(trace, 'self', open), 200)].sort(), ['o', 'root', 'run:q1'],
+    'the run holds its spans\' time, so they do not take two of the three marks from the steps beside it');
+});
