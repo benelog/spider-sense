@@ -45,7 +45,8 @@ public record MetricPoint(
     }
 
     /**
-     * The value at a percentile, interpolated inside the bucket that crosses it.
+     * The value at a percentile, interpolated inside the bucket that crosses it, narrowed to
+     * the point's own min and max where they fall inside that bucket.
      * Returns {@link Double#NaN} when the point carries no buckets to look in,
      * which includes a histogram whose one bucket has no bound: Micrometer's
      * bridged timers arrive that way, with every value in one bucket over
@@ -68,6 +69,14 @@ public record MetricPoint(
                 double high = i == edges.length
                         ? Math.max(Double.isNaN(max) ? edges[edges.length - 1] : max, edges[edges.length - 1])
                         : edges[i];
+                // Every value of the point lies between its own min and max, so the bucket is
+                // narrowed to them: no estimate passes the max the point reports beside it.
+                if (!Double.isNaN(min)) {
+                    low = Math.min(Math.max(low, min), high);
+                }
+                if (!Double.isNaN(max)) {
+                    high = Math.max(Math.min(high, max), low);
+                }
                 double within = (target - cumulative) / inBucket;
                 return low + (high - low) * Math.min(1.0, Math.max(0.0, within));
             }

@@ -17,6 +17,22 @@ class MetricPointTest {
         assertEquals(20 + (50 - 20) * 0.75, point.percentile(0.95), 1e-9);
     }
 
+    /** A point's own min and max bound every value in it, so no estimate passes its max. */
+    @Test
+    void theBucketIsNarrowedToThePointsOwnMinAndMax() {
+        // jvm.gc.duration's first bucket runs to 10 ms, and every pause took 3 to 6 ms.
+        MetricPoint gc = MetricPoint.histogram(0, 20, 0.09, 0.003, 0.006,
+                new long[] {20, 0, 0, 0, 0}, new double[] {0.01, 0.1, 1, 10});
+        assertEquals(0.003 + 0.003 * 0.95, gc.percentile(0.95), 1e-12);
+        assertEquals(0.003 + 0.003 * 0.5, gc.percentile(0.5), 1e-12);
+
+        // 20 requests of 30 to 41 ms, all in the bucket from 25 to 50 ms.
+        MetricPoint requests = MetricPoint.histogram(0, 20, 0.7, 0.030, 0.041,
+                new long[] {0, 0, 0, 20, 0}, new double[] {0.005, 0.01, 0.025, 0.05});
+        assertEquals(0.030 + 0.011 * 0.95, requests.percentile(0.95), 1e-12);
+        assertTrue(requests.percentile(0.95) <= requests.max());
+    }
+
     @Test
     void aBucketWithoutBoundsHasNoPercentile() {
         // Micrometer's bridged timers: one bucket over everything, no bound to interpolate in.
