@@ -44,7 +44,8 @@ class TableTest {
 
     @Test
     void theAgeDeleteNamesTheTimeColumn() {
-        assertThat(Table.DB_TABLE.deleteOlder()).isEqualTo("DELETE FROM db_table WHERE seen_ms < ?");
+        assertThat(Table.TINGLE.deleteOlder()).isEqualTo("DELETE FROM tingle WHERE at_ms < ?");
+        assertThat(Table.DB_TABLE.deleteOlder()).contains("d.seen_ms < ?1");
         assertThat(Table.MARK.deleteOlder().toLowerCase(Locale.ROOT)).contains("o.at_ms < ?");
     }
 }

@@ -251,9 +251,35 @@ class SweeperTest {
         assertThat(total("db_table")).as("DELETE /api/data empties it too").isZero();
     }
 
+    /**
+     * A service still running keeps its catalog however long ago it was read: the extension
+     * reads a table once per process and DDL, so a run longer than the retention would
+     * otherwise lose the schema block of the statements it still runs.
+     */
+    @Test
+    void aCatalogRowOfAServiceWithASpanInsideTheRetentionStays() {
+        catalog("orders", "ITEMS", NOW - 48 * HOUR);
+        catalog("billing", "INVOICES", NOW - 48 * HOUR);
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), Otlp.span("%032x".formatted(1),
+                "%016x".formatted(1), "GET /orders", Span.SpanKind.SPAN_KIND_SERVER,
+                NOW - HOUR / 4, 900)));
+        store.writer().awaitIdle(5_000);
+
+        new Sweeper(store.sql(), 24, 0, () -> NOW).sweep();
+
+        assertThat(store.sql().query("SELECT table_name FROM db_table", List.of(),
+                rs -> rs.getString(1)))
+                .as("billing has sent nothing for longer than the retention, orders still runs")
+                .containsExactly("ITEMS");
+    }
+
     private void catalog(String table, long seen) {
+        catalog("orders", table, seen);
+    }
+
+    private void catalog(String service, String table, long seen) {
         Batch batch = new Batch();
-        batch.add(new Batch.Catalog("orders", "PUBLIC", table, "H2",
+        batch.add(new Batch.Catalog(service, "PUBLIC", table, "H2",
                 "[{\"name\":\"PRIMARY_KEY_8\",\"unique\":true,\"columns\":[\"ID\"]}]", seen));
         store.submit(batch);
         store.writer().awaitIdle(5_000);

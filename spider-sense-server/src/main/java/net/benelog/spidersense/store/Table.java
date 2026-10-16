@@ -57,9 +57,19 @@ enum Table {
     ACK("ack", null, false, "DELETE FROM ack"),
     /**
      * A catalog older than the retention describes a run no window can show any
-     * more; one row per table, so the span cap leaves it.
+     * more, unless its service still sends spans: the extension reads a table once
+     * per process and DDL, so a run longer than the retention would lose the schema
+     * block of the statements it still runs. One row per table, so the span cap
+     * leaves it.
      */
-    DB_TABLE("db_table", "seen_ms", false, "DELETE FROM db_table"),
+    DB_TABLE("db_table", "seen_ms", false, "DELETE FROM db_table") {
+        @Override
+        String deleteOlder() {
+            // span_service (service, start_ms) answers the NOT EXISTS from the index.
+            return "DELETE FROM db_table d WHERE d.seen_ms < ?1 AND NOT EXISTS"
+                    + " (SELECT 1 FROM span s WHERE s.service = d.service AND s.start_ms >= ?1)";
+        }
+    },
     /** Metadata, describing a service: neither the retention nor {@code DELETE /api/data} deletes it. */
     SERVICE("service", null, false, null);
 

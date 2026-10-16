@@ -217,7 +217,7 @@ That is a fact read from the database rather than a guess from the statement.
 The block needs the index catalog, so it appears only for a service that ran under the agent with the extension.
 
 `tables` are the tables the statement names, each with its indexes as the extension read them through `DatabaseMetaData.getIndexInfo` on the application's own connection (xref:design.adoc#extension[The extension]).
-The store keeps them per service and table (xref:storage.adoc#schema[the `db_table` table]).
+The store keeps them per service and table (xref:storage.adoc#schema[the `db_table` table]), for as long as the service sends spans and for the retention after that (xref:storage.adoc#retention[Retention]), so an application that runs for longer than the retention keeps its block.
 The extension reads a table's indexes on the first statement of a process that names it, however fast, and again after DDL that names it, so once the index the block asked for exists, the next run of the application, or the next statement after the `create index` in the same run, takes its column out of `unindexed`.
 The names use the database's spelling: `ITEMS` on H2, `items` on PostgreSQL, and the case the table was created with on MySQL.
 `schema` is `null` when the database reports none, and `indexes` is empty for a table that has none.
