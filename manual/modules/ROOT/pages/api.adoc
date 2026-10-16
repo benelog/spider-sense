@@ -567,7 +567,7 @@ A record's own `severity` is the name of its OTLP severity range, and `UNSET` wh
   "series": [ { "service": "…", "attributes": { "jvm.memory.type": "heap", "jvm.memory.pool.name": "G1 Eden Space", "process.pid": 12345 }, "t": [...], "v": [...] } ] }
 ----
 
-A series is one process's: its `attributes` carry the `process.pid` of the resource that exported it, so two processes of one service answer a series each (xref:storage.adoc#writer[The writer]).
+A series is one process's: its `attributes` carry the `process.pid` and the `service.instance.id` of the resource that exported it, so two processes of one service answer a series each, even two containers whose JVMs both run as pid 1 (xref:storage.adoc#writer[The writer]).
 
 For a histogram, `v` is the per-point `sum/count` mean, and each series also carries `"count": [...]`, `"p95": [...]` (estimated from buckets) and `"max": [...]`.
 `v`, `p95` and `max` are in the metric's `unit` and unrounded, so a duration histogram in seconds keeps its fractions of a millisecond.

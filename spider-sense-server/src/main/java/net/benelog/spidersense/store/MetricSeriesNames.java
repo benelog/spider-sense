@@ -55,6 +55,12 @@ public final class MetricSeriesNames {
      */
     public static final String PROCESS_PID = "process.pid";
 
+    /**
+     * The other resource attribute a point carries: the instance the OpenTelemetry SDK names for
+     * each process, which tells apart two containers whose JVMs both run as pid 1.
+     */
+    public static final String SERVICE_INSTANCE_ID = "service.instance.id";
+
     private MetricSeriesNames() {
     }
 }

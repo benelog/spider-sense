@@ -40,12 +40,13 @@ public final class MetricQueries {
         }
 
         /**
-         * The process the series is one of: the {@code process.pid} its points carry, which keeps
-         * two processes that export one service name in series of their own, or null when the
-         * sender reported none (storage.adoc#writer).
+         * The process the series is one of: the {@code service.instance.id} its points carry, else
+         * their {@code process.pid}, which keeps two processes that export one service name in
+         * series of their own, or null when the sender reported neither (storage.adoc#writer).
          */
         public @Nullable String process() {
-            return attribute(MetricSeriesNames.PROCESS_PID);
+            String instance = attribute(MetricSeriesNames.SERVICE_INSTANCE_ID);
+            return instance != null ? instance : attribute(MetricSeriesNames.PROCESS_PID);
         }
 
         /**

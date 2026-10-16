@@ -256,7 +256,7 @@ public final class OtlpDecoder {
         Batch batch = new Batch();
         forEachResource(batch, request.getResourceMetricsList(), ResourceMetrics::getResource, now,
                 (resourceMetrics, service) -> {
-                    Long process = process(resourceMetrics.getResource());
+                    Map<String, Object> process = process(resourceMetrics.getResource());
                     for (ScopeMetrics scopeMetrics : resourceMetrics.getScopeMetricsList()) {
                         for (Metric metric : scopeMetrics.getMetricsList()) {
                             addMetric(batch, service, process, metric);
@@ -267,22 +267,33 @@ public final class OtlpDecoder {
     }
 
     /**
-     * The {@code process.pid} of a resource, the process each of its points is one of, or null when
-     * the sender reports none.
+     * The {@code process.pid} and the {@code service.instance.id} of a resource, which name the
+     * process each of its points is one of, and empty when the sender reports neither. Two
+     * containers of one service both run their JVM as pid 1, and their instance ids tell them apart.
      */
-    private static @Nullable Long process(Resource resource) {
-        Long process = null;
+    private static Map<String, Object> process(Resource resource) {
+        Long pid = null;
+        String instance = null;
         for (KeyValue attribute : resource.getAttributesList()) {
+            // The last of a repeated key, as the resource map a sighting stores keeps it.
             if (MetricSeriesNames.PROCESS_PID.equals(attribute.getKey())) {
-                // The last of a repeated key, as the resource map a sighting stores keeps it.
-                process = Attrs.value(attribute.getValue()) instanceof Number pid ? pid.longValue() : null;
+                pid = Attrs.value(attribute.getValue()) instanceof Number number ? number.longValue() : null;
+            } else if (MetricSeriesNames.SERVICE_INSTANCE_ID.equals(attribute.getKey())) {
+                instance = Attrs.value(attribute.getValue()) instanceof String id && !id.isEmpty() ? id : null;
             }
         }
-        return process;
+        Map<String, Object> process = new LinkedHashMap<>();
+        if (pid != null) {
+            process.put(MetricSeriesNames.PROCESS_PID, pid);
+        }
+        if (instance != null) {
+            process.put(MetricSeriesNames.SERVICE_INSTANCE_ID, instance);
+        }
+        return Map.copyOf(process);
     }
 
     /** One metric of one service and process, each point of which becomes a sample of it. */
-    private record Instrument(String service, @Nullable Long process, String name, String unit,
+    private record Instrument(String service, Map<String, Object> process, String name, String unit,
             String description) {
 
         Batch.MetricSample sample(String type, boolean monotonic, String temporality, List<KeyValue> attributes,
@@ -295,20 +306,20 @@ public final class OtlpDecoder {
          * The point's attributes and its process, so two processes that export one service name at
          * once, an application and its tests, keep a series each, and the cumulative points of one
          * are never differenced against the other's (storage.adoc#writer). A point that names a
-         * {@code process.pid} of its own keeps it.
+         * {@code process.pid} or a {@code service.instance.id} of its own keeps it.
          */
         private Map<String, Object> attributes(List<KeyValue> attributes) {
             Map<String, Object> own = Attrs.toMap(attributes);
-            if (process == null || own.containsKey(MetricSeriesNames.PROCESS_PID)) {
+            if (own.keySet().containsAll(process.keySet())) {
                 return own;
             }
             Map<String, Object> withProcess = new LinkedHashMap<>(own);
-            withProcess.put(MetricSeriesNames.PROCESS_PID, process);
+            process.forEach(withProcess::putIfAbsent);
             return Map.copyOf(withProcess);
         }
     }
 
-    private static void addMetric(Batch batch, String service, @Nullable Long process, Metric metric) {
+    private static void addMetric(Batch batch, String service, Map<String, Object> process, Metric metric) {
         Instrument instrument = new Instrument(service, process, fit(metric.getName()), metric.getUnit(),
                 metric.getDescription());
         switch (metric.getDataCase()) {

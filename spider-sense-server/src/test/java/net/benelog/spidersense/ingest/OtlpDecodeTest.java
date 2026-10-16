@@ -102,6 +102,17 @@ class OtlpDecodeTest {
                 NOW).metrics().get(0).attributes()).as("a sender that reports no process").isEmpty();
     }
 
+    /** Two containers both run their JVM as pid 1: the instance id the SDK names is what tells them apart. */
+    @Test
+    void aMetricPointCarriesTheInstanceOfItsResource() {
+        Resource container = Otlp.resource(Otlp.attr("service.name", "orders"), Otlp.attr("process.pid", 1),
+                Otlp.attr("service.instance.id", "8c1f6f8e-4a51-4c35-9d1e-0f2b6a7c9d10"));
+
+        assertThat(OtlpDecoder.decode(Otlp.gauge(container, "jvm.thread.count", "{thread}", NOW, 12), NOW)
+                .metrics().get(0).attributes()).containsOnly(Map.entry("process.pid", 1L),
+                Map.entry("service.instance.id", "8c1f6f8e-4a51-4c35-9d1e-0f2b6a7c9d10"));
+    }
+
     @Test
     void ourOwnTrafficIsAServerSpanOnOurPortOfTheEmbeddedService() {
         SpanRecord served = record(Span.SpanKind.SPAN_KIND_SERVER, 4000, "orders");

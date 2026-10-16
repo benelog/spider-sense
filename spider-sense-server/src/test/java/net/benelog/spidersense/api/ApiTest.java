@@ -824,6 +824,30 @@ class ApiTest {
         });
     }
 
+    /** Two containers of one service both run their JVM as pid 1, and their instance ids keep a series each. */
+    @Test
+    void twoContainersWithOnePidKeepASeriesEachByTheirInstanceId() {
+        serve((client, assembly) -> {
+            for (int k = 0; k < 5; k++) {
+                exportJvm(client, 1, "container-a", NOW - 50_000 + k * 10_000L, 500 + k, 40);
+                exportJvm(client, 1, "container-b", NOW - 45_000 + k * 10_000L, 20 + k, 25);
+            }
+
+            assertThat(json(client.get("/api/metrics/series?name=jvm.gc.duration"
+                    + windowQuery().replace('?', '&'))).getArray("series")).hasSize(2);
+            JsonObject jvm = json(client.get(
+                    "/api/jvm?service=spring-orders" + windowQuery().replace('?', '&')));
+            assertThat(counts(jvm.getArray("gc").get(0).asObject().getArray("count")).stream()
+                    .mapToLong(Long::longValue).sum()).isEqualTo(8);
+            for (JsonValue count : jvm.getObject("threads").getArray("count")) {
+                assertThat(count.asDouble()).isEqualTo(65.0);
+            }
+            for (JsonValue finding : json(client.get("/api/findings" + windowQuery())).getArray("findings")) {
+                assertThat(finding.asObject().getString("kind")).isNotEqualTo("gc-pause");
+            }
+        });
+    }
+
     /** A process restarted is followed by the one that replaced it, never added to it. */
     @Test
     void aRestartedProcessIsFollowedByTheNextOneNeverAddedToIt() {
@@ -869,8 +893,19 @@ class ApiTest {
 
     /** One export of one process of spring-orders: its collections so far, 5 ms each, and its threads. */
     private static void exportJvm(TestClient client, long pid, long at, long collections, double threads) {
-        Resource process = Otlp.resource(Otlp.attr("service.name", "spring-orders"),
-                Otlp.attr("process.pid", pid));
+        exportJvm(client, Otlp.resource(Otlp.attr("service.name", "spring-orders"), Otlp.attr("process.pid", pid)),
+                at, collections, threads);
+    }
+
+    /** The same, of a process that names its instance, as a container's JVM whose pid is 1 does. */
+    private static void exportJvm(TestClient client, long pid, String instance, long at, long collections,
+            double threads) {
+        exportJvm(client, Otlp.resource(Otlp.attr("service.name", "spring-orders"), Otlp.attr("process.pid", pid),
+                Otlp.attr("service.instance.id", instance)), at, collections, threads);
+    }
+
+    private static void exportJvm(TestClient client, Resource process, long at, long collections,
+            double threads) {
         postProtobuf(client, "/v1/metrics", Otlp.histogram(process, "jvm.gc.duration", "s", at, collections,
                 collections * 0.005, 0.005, Otlp.attr("jvm.gc.name", "G1 Young Generation"),
                 Otlp.attr("jvm.gc.action", "end of minor GC")).toByteArray());

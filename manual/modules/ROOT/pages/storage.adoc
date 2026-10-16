@@ -293,10 +293,11 @@ The SDK's hook waits for the answer, and the JVM waits for the hook, so a comman
 
 Metric points are written on the same path.
 A `metric` row describes one service's instrument, so two services that export one name as different instruments, one a `CUMULATIVE` sum and the other a `DELTA` sum, keep a row each, and each service's points are read by its own row.
-A point carries its resource's `process.pid` as an attribute of its own, and a point that names a `process.pid` of its own keeps that one.
+A point carries its resource's `process.pid` and `service.instance.id` as attributes of its own, and a point that names either of its own keeps that one.
 Each process therefore has series of its own, so two processes that export one service name at once, an application and its tests or two instances of one application, never interleave their cumulative points in one series, where one's total differenced against the other's would read as hundreds of collections.
+Two containers of one service both run their JVM as pid 1, and the `service.instance.id` the OpenTelemetry SDK gives every process tells them apart; a reader takes a series' process from its `service.instance.id`, else from its `process.pid`.
 A restarted process starts new series, and the old ones are swept once their points have aged out (<<retention,Retention>>).
-A sender that reports no `process.pid` keeps one series per attribute set, as before.
+A sender that reports neither keeps one series per attribute set, as before.
 A series row is looked up by `(service, name, attr_hash)` through a small in-memory cache of ids.
 The sweeper and `DELETE /api/data`, in this process or in any other sharing the file, delete series rows behind that cache.
 Each flush that carries metric points therefore checks, in one `SELECT`, that the cached ids of its series still have a row, and looks up or creates again a series whose row is gone.
