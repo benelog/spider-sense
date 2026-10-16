@@ -101,35 +101,43 @@ public record Config(
      * overridden by {@code --key=value} arguments; the keys are those of {@link Key}, e.g.
      * {@code --port=4001}.
      *
-     * <p>Bare flags are ignored so {@code --help} and {@code --version} can be handled by the
-     * caller. An unknown {@code --key=value} is a usage error, as a malformed number is, whoever
-     * owns the key: a typo is a usage line, not a stack trace from the server after the banner.
-     * A malformed property or variable costs its own key and no other: it falls back to its
-     * default with a warning, so a typo in {@code spidersense.slow.query.ms} does not also drop
-     * {@code spidersense.collector} and start an embedded UI where the user asked to forward.
+     * <p>Every argument is a {@code --key=value}, except {@code --help} and {@code --version},
+     * which the caller handles. Anything else is a usage error, whoever owns the key: an
+     * unknown {@code --key=value} or a malformed number, a key without its value, and a word,
+     * such as a command after a flag or an empty first argument, which would otherwise start a
+     * standalone server on a database the user only meant to read. A malformed property or
+     * variable costs its own key and no other: it falls back to its default with a warning, so
+     * a typo in {@code spidersense.slow.query.ms} does not also drop {@code spidersense.collector}
+     * and start an embedded UI where the user asked to forward.
      *
-     * @throws IllegalArgumentException for an unknown or malformed argument
+     * @throws IllegalArgumentException for an unknown, malformed or unexpected argument
      */
     static Parsed parse(String @Nullable [] args, Function<String, @Nullable String> property,
             Function<String, @Nullable String> env) {
         Map<Key, Argument> given = new EnumMap<>(Key.class);
         Map<String, String> serverProperties = new LinkedHashMap<>();
-        for (String arg : args == null ? new String[0] : args) {
-            if (arg == null || !arg.startsWith("--")) {
+        String[] all = args == null ? new String[0] : args;
+        for (int i = 0; i < all.length; i++) {
+            String arg = all[i];
+            if (arg == null || BARE_FLAGS.contains(arg)) {
                 continue;
+            }
+            if (!arg.startsWith("--") || arg.equals("--")) {
+                throw new IllegalArgumentException(unexpected(arg, i == 0));
             }
             int equals = arg.indexOf('=');
-            if (equals < 0) {
-                continue;
-            }
-            Argument argument = new Argument(arg.substring(2, equals).trim(), arg.substring(equals + 1).trim());
-            Key key = Key.ofArgument(argument.name());
+            String name = (equals < 0 ? arg.substring(2) : arg.substring(2, equals)).trim();
+            Key key = Key.ofArgument(name);
             if (key == null) {
                 // A typo would otherwise be invisible: the key would take its default and
                 // nothing would say so.
-                throw new IllegalArgumentException("unknown option: --" + argument.name()
+                throw new IllegalArgumentException("unknown option: --" + name
                         + "; java -jar spider-sense.jar --help lists them");
             }
+            if (equals < 0) {
+                throw new IllegalArgumentException("--" + name + " needs a value: --" + name + "=<value>");
+            }
+            Argument argument = new Argument(name, arg.substring(equals + 1).trim());
             if (key.owner() == Key.Owner.SERVER) {
                 argument.check(key.kind());
                 serverProperties.put(key.property(), argument.value());
@@ -153,6 +161,26 @@ public record Config(
                 // Not a key: the caller decides the mode with withMode.
                 defaults.mode());
         return new Parsed(config, Map.copyOf(serverProperties), List.copyOf(warnings));
+    }
+
+    /** The arguments the caller answers itself, before anything is parsed: help and the version. */
+    static final Set<String> BARE_FLAGS = Set.of("--help", "-h", "--version", "-V");
+
+    /**
+     * What an argument that is not {@code --key=value} is told: a command goes first, and the
+     * options are listed by {@code --help}.
+     *
+     * @param first whether it is the first argument, where a word is a command
+     */
+    static String unexpected(String arg, boolean first) {
+        if (arg.isEmpty()) {
+            return first ? "an empty argument is not a command" : "an empty argument is not an option";
+        }
+        if (arg.startsWith("-")) {
+            return "unexpected argument: " + arg + "; java -jar spider-sense.jar --help lists the options";
+        }
+        return "unexpected argument: " + arg + "; a command comes first: java -jar spider-sense.jar " + arg
+                + " [options]";
     }
 
     /** One {@code --name=value} argument, both trimmed, the name as it was typed. */

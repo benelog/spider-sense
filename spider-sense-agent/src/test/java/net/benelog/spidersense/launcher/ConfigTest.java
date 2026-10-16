@@ -184,11 +184,37 @@ class ConfigTest {
                 .config().host()).isEqualTo("0.0.0.0");
     }
 
+    /** Help and the version are answered before the arguments are parsed, and stand beside them. */
     @Test
-    void bareFlagsAreIgnored() {
-        Config c = config("--help", "-x", "--port=4100", "");
-        assertThat(c.port()).isEqualTo(4100);
+    void helpAndTheVersionAreTheOnlyBareFlags() {
+        Config c = config("--help", "-h", "--port=4100", "--version", "-V");
         assertThat(c).isEqualTo(Config.defaults().withPort(4100));
+    }
+
+    /**
+     * A word the launcher skipped would start a standalone server, which sweeps the database the
+     * user meant only to read: a command after a flag, an empty first argument, a bare flag.
+     */
+    @Test
+    void anArgumentThatIsNoKeyAndValueIsAUsageError() {
+        assertThatThrownBy(() -> parse("--db=./yesterday", "findings"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("unexpected argument: findings; a command comes first:"
+                        + " java -jar spider-sense.jar findings [options]");
+        assertThatThrownBy(() -> parse("", "status"))
+                .as("an unset variable as the command")
+                .hasMessage("an empty argument is not a command");
+        assertThatThrownBy(() -> parse("--port=4100", ""))
+                .hasMessage("an empty argument is not an option");
+        assertThatThrownBy(() -> parse("--json", "status"))
+                .hasMessage("unknown option: --json; java -jar spider-sense.jar --help lists them");
+        assertThatThrownBy(() -> parse("--", "findings"))
+                .hasMessage("unexpected argument: --; java -jar spider-sense.jar --help lists the options");
+        assertThatThrownBy(() -> parse("-x"))
+                .hasMessage("unexpected argument: -x; java -jar spider-sense.jar --help lists the options");
+        assertThatThrownBy(() -> parse("--port"))
+                .as("a key without its value")
+                .hasMessage("--port needs a value: --port=<value>");
     }
 
     /** A mistyped key would otherwise take its default with nothing to say so. */

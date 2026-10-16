@@ -554,6 +554,24 @@ class SingleJarIT {
         assertThat(unknown.err()).startsWith("spider-sense: unknown option: --prot");
     }
 
+    /**
+     * A command after a flag, or after an empty first argument, is a usage error rather than a
+     * standalone server on that database. Each line names a free port and a throwaway database,
+     * so that a launcher that started a server anyway would start it there.
+     */
+    @Test
+    void aCommandAfterAFlagOrAnEmptyArgumentIsAUsageError() throws Exception {
+        Command late = cli("--port=" + freePort(), "--db=" + throwawayDatabase(), "findings");
+        assertThat(late.exit()).isEqualTo(2);
+        assertThat(late.err()).isEqualTo("spider-sense: unexpected argument: findings; a command comes first:"
+                + " java -jar spider-sense.jar findings [options]\n");
+        assertThat(late.out()).doesNotContain("The UI is at");
+
+        Command empty = cli("", "status", "--port=" + freePort(), "--db=" + throwawayDatabase());
+        assertThat(empty.exit()).isEqualTo(2);
+        assertThat(empty.err()).isEqualTo("spider-sense: an empty argument is not a command\n");
+    }
+
     /** A held port is one line that says how to pick another, exit 2, and no banner announcing it. */
     @Test
     void aHeldPortIsOneLineAndExitTwo() throws Exception {
@@ -768,8 +786,12 @@ class SingleJarIT {
                 .redirectOutput(out.toFile())
                 .redirectError(err.toFile())
                 .start();
-        assertThat(process.waitFor(60, TimeUnit.SECONDS))
-                .as("the command finishes: %s", String.join(" ", command)).isTrue();
+        boolean finished = process.waitFor(60, TimeUnit.SECONDS);
+        if (!finished) {
+            // A command that serves instead of answering must not outlive the test.
+            process.destroyForcibly();
+        }
+        assertThat(finished).as("the command finishes: %s", String.join(" ", command)).isTrue();
         return new Command(process.exitValue(), read(out), read(err));
     }
 

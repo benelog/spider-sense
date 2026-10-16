@@ -116,7 +116,8 @@ public final class SpiderSenseMain {
 
     /**
      * A first argument that does not start with {@code -} is a CLI command ({@code findings},
-     * {@code trace}, {@code mark}, ...); flags alone mean the standalone server.
+     * {@code trace}, {@code mark}, ...); flags alone mean the standalone server. An empty first
+     * argument is neither, and {@link Config#parse} refuses it, as it refuses a word after a flag.
      */
     static boolean isCommand(String[] args) {
         return args != null && args.length > 0 && args[0] != null && !args[0].isEmpty()
@@ -212,7 +213,8 @@ public final class SpiderSenseMain {
     private static final String HELP_TAIL = """
                   --help, --version
 
-                An option not in this list is a usage error.
+                An option not in this list is a usage error, and so is any other word: a
+                command comes first.
 
                 Every otel.* property still works as the OpenTelemetry agent documents it;
                 Spider Sense only fills in defaults.""";

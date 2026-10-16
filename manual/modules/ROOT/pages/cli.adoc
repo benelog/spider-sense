@@ -18,6 +18,8 @@ java -jar spider-sense.jar <command> [arguments] [options]
 The launcher treats a first argument that does not start with `-` as a command, and hands the whole line to the CLI inside the nested server jar, through the same `SenseClassLoader` the embedded server uses (xref:design.adoc#jar[The jar]).
 The launcher itself stays dependency-free.
 `--port=` and the other standalone flags still start a server, so `java -jar spider-sense.jar` with no command is the standalone UI rather than a command (xref:modes.adoc#standalone[Standalone]).
+The command goes first.
+A word after a flag, such as `findings` in `java -jar spider-sense.jar --db=./yesterday findings`, is a usage error that exits `2` without starting a server, and so is an empty first argument, such as the `"$COMMAND"` of an unset variable.
 
 Under the Gradle plugin, the `spiderSense` task runs the same CLI, even in a project that never checked out the Spider Sense repository:
 

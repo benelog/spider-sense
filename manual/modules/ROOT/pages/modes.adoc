@@ -92,6 +92,8 @@ Anything that speaks OTLP/HTTP can send to it: the two modes above, another lang
 The standalone jar takes its properties as `--key=value` arguments as well as system properties, so `java -jar "$SENSE" --port=4001` is the same as `-Dspidersense.port=4001`.
 The banner names the UI, the database, and the commands to send to it and to ask it, each with the jar's own absolute path.
 The difference is that an argument is checked: a malformed number such as `--port=abc`, or a key the jar does not take such as `--prot=4001`, is a usage error that exits `2` without starting, where `-Dspidersense.port=abc` is a warning and the default (xref:configuration.adoc[Configuration] lists the keys).
+Every argument is a `--key=value`, apart from `--help` and `--version`, so a key without a value, a lone `--`, and a word such as a command after a flag are usage errors too.
+A command goes first, as xref:cli.adoc#invocation[The CLI] describes.
 A port that is held is one line on stderr and exit `2`, and the banner is printed only once the port is bound.
 When a Spider Sense holds it, standalone or embedded in an application, the line names that one, which shares the default database and is most likely what you wanted:
 
