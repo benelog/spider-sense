@@ -38,12 +38,14 @@ public final class Marks {
     public static final Pattern NAME = Pattern.compile("[A-Za-z0-9._-]{1," + MAX_NAME + "}");
 
     /**
-     * What begins with a number and goes on in letters, if at all: a duration such as
-     * {@code 5m}, a mistyped one such as {@code 5min}, or a number. A selector reads it
-     * as a duration or an instant, or refuses it as a mistyped one, but never as a mark
-     * (marks-and-compare.adoc#time-selectors).
+     * What begins with a number and goes on in numbers and letters alone, if at all: a
+     * duration such as {@code 5m}, a mistyped one such as {@code 5min} or the compound
+     * {@code 1h30m}, or a number. A selector reads it as a duration or an instant, or
+     * refuses it as a mistyped one, but never as a mark (marks-and-compare.adoc#time-selectors).
+     * A separator ends it, so {@code 2026-10-08} and {@code 2nd-try} stay names. The
+     * quantifiers are possessive, so a long run of digits is never backtracked through.
      */
-    public static final Pattern NUMBER_LIKE = Pattern.compile("\\d+(\\.\\d+)?[A-Za-z]*");
+    public static final Pattern NUMBER_LIKE = Pattern.compile("(?:\\d++(?:\\.\\d++)?+[A-Za-z]*+)++");
 
     /**
      * The last instant a mark may name, the end of the year 9999, which is the last a

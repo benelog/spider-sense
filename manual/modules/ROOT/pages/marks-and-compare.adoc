@@ -45,7 +45,8 @@ The default `since` is `15m`, and the default `until` is `now`.
 A heading prints its window's start as a date-time, such as `2026-10-08T05:50:00+09:00`, with the milliseconds when the start has any, such as `2026-10-08T05:50:00.846+09:00`, so that time pasted into `--since` asks for the same window again.
 
 A `since` that resolves to a moment after `until` is answered with `400` over HTTP and is a usage error in the CLI.
-So is a value that begins with a number but is no duration, such as `5min`, `1w`, `30sec` or `300`: it is a mistyped duration, never a mark name, and the answer says `Not a duration: 5min` with the forms a duration takes.
+So is a value of numbers and letters alone that begins with a number but is no duration, such as `5min`, `1w`, `30sec`, the compound `1h30m` or `300`: it is a mistyped duration, never a mark name, and the answer says `Not a duration: 5min` with the forms a duration takes.
+A separator ends the number, so `2026-10-08` or `2nd-try` is read as a mark name.
 A mark name that matches no mark is answered with a `404` that names it over HTTP and exits `4` in the CLI.
 The `from` and `to` parameters of the UI endpoints still work everywhere, and they win when both pairs are given.
 
@@ -73,7 +74,7 @@ mark after at 2026-09-17T08:19:35.837+09:00 — after the fix
 ----
 
 The name is required and matches `[A-Za-z0-9._-]{1,64}`.
-A name that a selector reads as something else is refused, because `--since` could never ask for the mark: a duration such as `5m`, a mistyped one such as `5min`, a number, a date-time, `now`, and `start`, which is the writer's own (<<start-marks>>).
+A name that a selector reads as something else is refused, because `--since` could never ask for the mark: a duration such as `5m`, a mistyped one such as `5min` or `1h30m`, a number, a date-time, `now`, and `start`, which is the writer's own (<<start-marks>>).
 The refusal says why, as a `400` over HTTP and a usage error in the CLI:
 
 [source]

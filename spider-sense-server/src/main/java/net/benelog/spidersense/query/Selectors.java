@@ -123,8 +123,8 @@ public final class Selectors {
             return dateTime(value);
         }
         if (Marks.NUMBER_LIKE.matcher(value).matches()) {
-            // 5min, 1w, 30sec, 0: a duration mistyped, which a mark lookup would answer as "no
-            // mark named 5min", a not-found that sends the caller looking for a mark.
+            // 5min, 1w, 30sec, 1h30m, 0: a duration mistyped, which a mark lookup would answer as
+            // "no mark named 5min", a not-found that sends the caller looking for a mark.
             throw new BadSelector("Not a duration: " + value + " (a duration is 30s, 5m, 2h or 1d"
                     + (value.chars().allMatch(Character::isDigit)
                             ? ", and epoch milliseconds have 13 or more digits" : "")

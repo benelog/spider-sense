@@ -96,6 +96,10 @@ class MarksTest {
                 .hasMessageContaining("mistyped duration");
         assertThatThrownBy(() -> store.marks().create("300", null, null, null))
                 .hasMessageContaining("mistyped duration");
+        assertThatThrownBy(() -> store.marks().create("1h30m", null, null, null))
+                .as("a compound duration is a mistyped one")
+                .hasMessage("A mark cannot be named 1h30m: --since and --until refuse 1h30m as a mistyped"
+                        + " duration; choose another name");
         assertThatThrownBy(() -> store.marks().create("2026-10-08T0550", null, null, null))
                 .hasMessageContaining("date-time");
 
@@ -103,6 +107,7 @@ class MarksTest {
         assertThat(store.marks().create("starting", null, null, null).name()).isEqualTo("starting");
         assertThat(store.marks().create("2026-10-08", null, null, null).name())
                 .as("a date alone is no selector form").isEqualTo("2026-10-08");
+        assertThat(store.marks().create("2nd-try", null, null, null).name()).isEqualTo("2nd-try");
     }
 
     /** An empty --note= is no note, so neither the answer nor the list shows an empty one. */

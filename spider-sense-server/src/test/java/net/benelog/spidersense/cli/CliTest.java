@@ -488,6 +488,10 @@ class CliTest {
             Run typo = runAt(base, "findings", "--since=5min", "--url=" + base);
             assertThat(typo.exit()).as("a mistyped duration is not a missing mark").isEqualTo(2);
             assertThat(typo.err()).contains("Not a duration: 5min");
+
+            Run compound = runAt(base, "findings", "--since=1h30m", "--url=" + base);
+            assertThat(compound.exit()).as("nor is a compound duration").isEqualTo(2);
+            assertThat(compound.err()).contains("Not a duration: 1h30m");
         });
     }
 

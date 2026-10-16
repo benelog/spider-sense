@@ -140,7 +140,7 @@ class SelectorsTest {
 
     @Test
     void aMistypedDurationIsTheCallersMistakeNotAMissingMark() {
-        for (String typo : new String[] {"5min", "1w", "30sec", "1.5h", "10M"}) {
+        for (String typo : new String[] {"5min", "1w", "30sec", "1.5h", "10M", "1h30m", "2m30s"}) {
             assertThatThrownBy(() -> selectors.resolve(typo, NOW, null))
                     .as(typo)
                     .isInstanceOf(Selectors.BadSelector.class)
@@ -153,6 +153,13 @@ class SelectorsTest {
                     .isInstanceOf(Selectors.BadSelector.class)
                     .hasMessage("Not a duration: " + number + " (a duration is 30s, 5m, 2h or 1d,"
                             + " and epoch milliseconds have 13 or more digits; `marks` lists the mark names)");
+        }
+        // A separator ends the number, so a date alone or 2nd-try is a mark name, looked up as one,
+        // and a long run of digits before it is not backtracked through.
+        for (String name : new String[] {"2026-10-08", "2nd-try", "1".repeat(60) + "-x"}) {
+            assertThatThrownBy(() -> selectors.resolve(name, NOW, null))
+                    .as(name)
+                    .isInstanceOf(Selectors.UnknownMark.class);
         }
     }
 
