@@ -323,7 +323,8 @@ export function evidence(finding, onChange, listWindow) {
     finding.statement ? copyBlock(storedSql(formatSql(finding.statement), finding.statementCut)) : null,
     schemaLines(finding.schema),
     (finding.code || []).length
-      ? codeFrames(h('div.f-code', h('div.sub-head', 'Code')), finding.code || [])
+      // Its frames resolve after it is built, so a refresh tells it by the frames it was built from.
+      ? codeFrames(h('div.f-code', { dataset: { sig: JSON.stringify(finding.code) } }, h('div.sub-head', 'Code')), finding.code)
       : null,
     h('div.f-links',
       traces.length
@@ -382,10 +383,14 @@ export function render(root, ctx) {
     { key: 'impact', label: 'Impact', align: 'right', sortable: false, width: '110px', render: (f) => impactOf(f) },
   ];
 
-  /** What has to change before an open evidence row is rebuilt: a Live refresh leaves it alone otherwise. */
-  function ackSignature(finding) {
-    const decided = finding.ack || finding.resolution;
-    return decided ? (finding.ack ? 'a' : 'r') + decided.at + '|' + (decided.note || '') : '';
+  /**
+   * What an open evidence row shows, from the kind and the numbers to the decision: a Live refresh
+   * redraws the parts of it that changed, as when a resolved finding comes back, and leaves it
+   * alone otherwise (pages.adoc#findings).
+   */
+  function evidenceSignature(f) {
+    return JSON.stringify([f.kind, f.why, f.numbers, f.statement, f.statementCut, f.schema, f.code, f.traces,
+      f.subject, f.service, f.ack, f.resolution]);
   }
 
   function paint() {
@@ -394,7 +399,7 @@ export function render(root, ctx) {
         rowKey: (f) => f.id,
         rowClass: (f) => (isSetAside(f) ? 'is-acked' : null),
         detail: (f) => evidence(f, loader.load, () => listWindow),
-        detailKey: ackSignature,
+        detailKey: evidenceSignature,
         detailClass: 'f-detail',
         expanded,
         empty: () => 'Nothing worth fixing ' + windowName() + '.',

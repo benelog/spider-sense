@@ -111,6 +111,27 @@ test('an open detail row survives new rows and is rebuilt only when its key chan
   assert.equal(built, 2);
 });
 
+test('an open detail row whose key changed keeps the parts that did not, a part with data-sig by its signature', () => {
+  const node = table(columns, {
+    rowKey: (r) => r.id, detailKey: (r) => r.why + '|' + r.code,
+    detail: (r) => h('div.ev', h('p', r.why), h('div.code', { dataset: { sig: r.code } }, r.code), h('a', { href: '#/x' }, 'link')),
+    rows: [{ id: 1, name: 'A', why: 'one', code: 'f()' }],
+  });
+  rowsOf(node)[0].click();
+  const [why, code, link] = rowsOf(node)[1].all('td')[0].children[0].children;
+  code.appendChild(h('span', 'resolved later'));    // as a code frame fills itself in
+  link.focus();
+  node.setRows([{ id: 1, name: 'A', why: 'two', code: 'f()' }]);
+  const parts = rowsOf(node)[1].all('td')[0].children[0].children;
+  assert.notEqual(parts[0], why);
+  assert.equal(parts[0].textContent, 'two');
+  assert.equal(parts[1], code, 'the same signature keeps what the part became');
+  assert.equal(parts[2], link);
+  assert.equal(document.activeElement, link);
+  node.setRows([{ id: 1, name: 'A', why: 'two', code: 'g()' }]);
+  assert.equal(rowsOf(node)[1].all('td')[0].children[0].children[1].textContent, 'g()');
+});
+
 test('a segmented switch presses one button and reports a change of choice only', async () => {
   const { segmented } = await import('../../main/resources/public/assets/js/ui.js');
   const chosen = [];

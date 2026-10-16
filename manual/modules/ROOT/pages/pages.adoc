@@ -114,6 +114,8 @@ The row also carries a link to the subject's page, the same destination as a row
 A finding whose subject names a statement as well as an endpoint, an `n-plus-one`, adds a second link, *Query*, to the statement's page.
 Then comes the <<copy-as-markdown,*Copy as Markdown* and *Copy CLI line*>> pair over `+GET /api/findings/{id}+` and the `findings` command.
 An expanded row stays expanded across a Live refresh while the finding is still in the list, keyed by its `id`.
+Its evidence follows the refresh: a part that changed, such as the numbers, is redrawn, and the other parts stay as they are.
+A resolved finding that comes back as a `regression` therefore shows its new `why` at once, and its decision line drops `not back since`.
 
 The state chip is the finding's `state` (xref:findings.adoc#state[State]), with a title saying what it means.
 `new` is in `--accent`, since it is what the last restart introduced, `ongoing` is in the muted text colour, and `regressed` is in `--err`.

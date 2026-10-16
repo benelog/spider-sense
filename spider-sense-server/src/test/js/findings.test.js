@@ -43,6 +43,38 @@ test('an absent value is a muted dash, a string is monospaced, a moment carries 
   assert.equal(numberText('lastSeen', 1_700_000_000_000, 'error').title, bothTimes(1_700_000_000_000));
 });
 
+test('an open finding\'s evidence follows a refresh, and a resolved one that came back says so (pages.adoc#findings)', async () => {
+  const JS = '../../main/resources/public/assets/js/';
+  const resolved = {
+    id: 'error:edc69249b67c', kind: 'error', severity: 'low', state: 'new', service: 'web', title: 'error from GET /x in GET /a',
+    why: '1 occurrence from GET /x in GET /a; boom', numbers: { count: 1 }, subject: { errorId: 'edc69249b67c' },
+    traces: ['a'.repeat(32)], resolution: { at: Date.now() - 60_000, note: null },
+  };
+  const answer = { findings: [resolved], total: 1, requests: 10 };
+  globalThis.fetch = async () => new Response(JSON.stringify(answer), { status: 200 });
+  const api = await import(JS + 'api.js');
+  const page = await import(JS + 'pages/findings.js');
+  api.state.service = '';
+  const root = document.createElement('main');
+  document.body.replaceChildren(root);
+  const instance = page.render(root, { params: {}, initialQuery: {}, query: () => ({}), setTitle() {}, navigate() {} });
+  await new Promise((r) => setTimeout(r, 30));
+  root.querySelector('tbody tr').click();
+  const part = (cls) => root.querySelector('tr.f-detail .' + cls);
+  assert.match(part('f-ack').textContent, /^Resolved, not back since /);
+  const links = part('f-links');
+  answer.findings = [{
+    ...resolved, kind: 'regression', severity: 'high', state: 'regressed',
+    why: 'came back after it was resolved; 1 occurrence from GET /x in GET /a; boom', numbers: { originalKind: 'error', count: 1 },
+  }];
+  instance.refresh();
+  await new Promise((r) => setTimeout(r, 30));
+  assert.match(part('f-ack').textContent, /^Resolved \d\d:\d\d:\d\d/, 'no longer "not back since"');
+  assert.match(part('f-why').textContent, /^came back after it was resolved; /);
+  assert.equal(part('f-links'), links, 'a part that did not change stays');
+  instance.destroy();
+});
+
 test('a list the limit cut says how many findings there are', async () => {
   const JS = '../../main/resources/public/assets/js/';
   const answer = { findings: [], total: 0, requests: 10 };

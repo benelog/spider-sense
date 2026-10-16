@@ -336,7 +336,9 @@ export function renderList(container, items, { key, create, update, enter } = {}
  * Brings `node`'s children to those of `fresh`, the same node built anew from newer data: a child
  * equal to its counterpart stays, so a link focused in it or a text selected in it survives a Live
  * refresh (ui.adoc#live-refresh), and a child that differs is replaced, the focus it held moving to
- * the same place in its replacement.
+ * the same place in its replacement. A child that carries `data-sig`, the data it was built from,
+ * stays for a counterpart of the same signature, whatever it became since, as code frames do once
+ * they resolve.
  */
 function patchChildren(node, fresh) {
   const now = Array.from(node.childNodes);
@@ -344,13 +346,35 @@ function patchChildren(node, fresh) {
   next.forEach((child, i) => {
     const old = now[i];
     if (!old) { node.appendChild(child); return; }
-    if (old.isEqualNode(child)) return;
+    if (sameNode(old, child)) return;
     const focus = focusIn(old);
     node.insertBefore(child, old);
     old.remove();
     if (focus) refocus(child, focus);
   });
   for (const extra of now.slice(next.length)) extra.remove();
+}
+
+/** Whether `old` can stay for `fresh`: equal to it, or of the same tag and `data-sig`. */
+function sameNode(old, fresh) {
+  const sig = old.nodeType === 1 && fresh.nodeType === 1 ? old.getAttribute('data-sig') : null;
+  if (sig === null || fresh.getAttribute('data-sig') === null) return old.isEqualNode(fresh);
+  return old.tagName === fresh.tagName && sig === fresh.getAttribute('data-sig');
+}
+
+/**
+ * An open detail row brought to its new cell. Content that is one element both times, as a
+ * finding's evidence is, keeps the parts of it that did not change; other content is replaced.
+ */
+function patchDetail(row, cell) {
+  const content = row.firstChild && row.firstChild.childNodes.length === 1 ? row.firstChild.firstChild : null;
+  const next = cell.childNodes.length === 1 ? cell.firstChild : null;
+  if (content && next && content.nodeType === 1 && next.nodeType === 1
+      && content.tagName === next.tagName && content.className === next.className) {
+    patchChildren(content, next);
+  } else {
+    row.replaceChildren(cell);
+  }
 }
 
 /** The way from `root` down to the focused element, as child positions, and its tag; null when the focus is elsewhere. */
@@ -386,7 +410,8 @@ function refocus(root, { path, tag }) {
  *
  * With `detail`, a row opens and closes a detail row under it on a click, Enter or Space;
  * `expanded` is the set of the open rows' keys, which the caller may share. An open detail row
- * is built once and left alone by later rows, unless its `detailKey` changed.
+ * is built once and left alone by later rows, unless its `detailKey` changed; then it is built
+ * anew, and the parts of it that did not change stay.
  */
 export function table(columns, opts = {}) {
   const wrap = h('div.table-wrap');
@@ -485,7 +510,7 @@ export function table(columns, opts = {}) {
           const signature = detailKeyOf(item.row);
           if (node.dataset.detail !== signature) {
             node.dataset.detail = signature;
-            node.replaceChildren(detailCell(item.row));
+            patchDetail(node, detailCell(item.row));
           }
           return;
         }
