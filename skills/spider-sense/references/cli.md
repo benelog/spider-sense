@@ -50,6 +50,8 @@ The launcher treats a first argument that does not start with `-` as a command a
 | `--no-git` | off | `findings` only: no suspect-change line under the code frames |
 
 `compare` takes no `--since`: its windows are the two selectors, and `--until` closes the second one.
+The selectors resolve from the end: `until` first, then `after`, whose duration counts back from `until`, then `before`, whose duration counts back from `after`.
+So `--before=10m --after=5m` is the ten minutes before the last five, not ten minutes ago against five minutes ago, and its before window is twice as long as its after window.
 `init` takes none of these: it reads nothing, and its own options are `--dir=<project dir>` (the working directory by default), `--jar=<path>` (the jar it was started from by default), `--url=<base url>` (the Spider Sense the block's commands ask, written into them rather than asked), `--gradle` (the project applies the Gradle plugin, so the block starts the application with `./gradlew bootRun` and runs the CLI as `./gradlew -q spiderSense --args="…"`), `--no-skill` and `--mcp`.
 `mcp` takes only `--url` and `--db`, because a window, a format and a service belong to each message of the session rather than to the command.
 It is idempotent — the block it writes is delimited by `<!-- spider-sense:start -->` and `<!-- spider-sense:end -->`, and a second run replaces what is between them and leaves the rest of the file untouched.
@@ -64,7 +66,7 @@ An option that takes a value is a usage error without one, so a bare `--since` i
 
 | Form | Example | Meaning |
 |---|---|---|
-| duration | `30s`, `5m`, `2h`, `1d` | that long before `until` (for `since`) or before now (for `until`) |
+| duration | `30s`, `5m`, `2h`, `1d` | that long before `until` for `since`, or before now for `until`; in `compare`, before `until` for `after` and before `after` for `before` |
 | date-time | `2026-10-08T05:50:00+09:00`, `2026-10-08T05:50:00` | the instant, in ISO-8601; without an offset, in the time zone Spider Sense started in (the machine's unless `-Duser.timezone` names another), so the time a heading prints can be pasted back |
 | epoch milliseconds | `1758000000000` | the instant, 13 or more digits |
 | mark name | `before`, `after-fix` | the newest mark with that name |
