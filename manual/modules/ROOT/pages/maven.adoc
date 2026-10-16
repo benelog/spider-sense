@@ -121,7 +121,7 @@ A test JVM is short-lived and may be forked more than once, and several embedded
 ----
 
 `-Xmx1g` stands for whatever the project already passes; a project that passes nothing writes `<argLine>${spider-sense.argLine}</argLine>`.
-A project whose `argLine` property is set by JaCoCo's `prepare-agent` writes `<argLine>@{argLine} ${spider-sense.argLine}</argLine>`, so that both agents load.
+A project whose `argLine` property is set by JaCoCo's `prepare-agent` writes `+<argLine>@{argLine} ${spider-sense.argLine}</argLine>+`, so that both agents load.
 The `sense` profile is where `spider-sense.jar` is defined and the jar copied, so `-Psense` alone puts the tests under Spider Sense.
 
 Start the standalone once before `mvn test -Psense` runs, as xref:modes.adoc#forwarding[forwarding] describes.
