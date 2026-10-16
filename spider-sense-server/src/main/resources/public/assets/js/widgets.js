@@ -12,10 +12,17 @@ import { dur, count, rate, pct, apdex, time, bothTimes, shortId, ifRequests } fr
 
 // --- traces ---------------------------------------------------------------
 
-/** The trace table of the Traces, Endpoint, Query, Error and Scatter pages. */
+/**
+ * The trace table of the Traces, Endpoint, Query, Error and Scatter pages. With `opts.match`,
+ * `{ label, title }`, the rows are the slowest of a group and carry `matchMs`, the group's own
+ * span they are ordered by: it is a column of its own before the trace's Duration, and the
+ * bar is drawn on it (pages.adoc#endpoints).
+ */
 export function traceTable(rows, opts = {}) {
+  const match = opts.match || null;
+  const scaled = match ? 'matchMs' : 'durationMs';
   const durationScale = { max: 0 };
-  const rescale = (nextRows) => { durationScale.max = nextRows.reduce((m, r) => Math.max(m, r.durationMs || 0), 0); };
+  const rescale = (nextRows) => { durationScale.max = nextRows.reduce((m, r) => Math.max(m, r[scaled] || 0), 0); };
   rescale(rows);
   const columns = [
     { key: 'start', label: 'Time', sortable: false, width: '88px', render: (r) => h('span.mono', { title: bothTimes(r.start) }, time(r.start)) },
@@ -27,11 +34,19 @@ export function traceTable(rows, opts = {}) {
           (r.services || []).slice(0, 3).map((s) => serviceChip(s)),
           (r.services || []).length > 3 ? h('span.muted', '+' + ((r.services || []).length - 3)) : null)),
     },
+    match ? {
+      key: 'matchMs', label: match.label, align: 'right', sortable: false, width: '110px',
+      render: (r) => h('div.duration-cell', { title: match.title },
+        h('span', dur(r.matchMs)),
+        durationBar(r.matchMs, durationScale.max, null)),
+    } : null,
     {
-      key: 'durationMs', label: 'Duration', align: 'right', sortable: false, width: '110px',
-      render: (r) => h('div.duration-cell',
-        h('span', { class: r.error ? 'bad' : r.slow ? 'warned' : '' }, dur(r.durationMs)),
-        durationBar(r.durationMs, durationScale.max, r.error ? 'err' : r.slow ? 'slow' : null)),
+      key: 'durationMs', label: 'Duration', align: 'right', sortable: false, width: match ? '80px' : '110px',
+      render: (r) => (match
+        ? h('span', { class: r.error ? 'bad' : r.slow ? 'warned' : '', title: 'The whole trace' }, dur(r.durationMs))
+        : h('div.duration-cell',
+          h('span', { class: r.error ? 'bad' : r.slow ? 'warned' : '' }, dur(r.durationMs)),
+          durationBar(r.durationMs, durationScale.max, r.error ? 'err' : r.slow ? 'slow' : null))),
     },
     { key: 'spanCount', label: 'Spans', align: 'right', sortable: false, width: '58px', render: (r) => count(r.spanCount) },
     { key: 'dbCount', label: 'DB', align: 'right', sortable: false, width: '48px', render: (r) => (r.dbCount ? count(r.dbCount) : h('span.muted', '-')) },
@@ -42,7 +57,7 @@ export function traceTable(rows, opts = {}) {
         r.error ? h('span.marker.err', { title: 'Error' }, icon('bolt')) : null,
         r.slow ? h('span.marker.slow', { title: 'Slow request' }, icon('turtle')) : null),
     },
-  ];
+  ].filter(Boolean);
   if (opts.showId) {
     columns.splice(1, 0, { key: 'traceId', label: 'Trace', sortable: false, width: '92px', render: (r) => h('span.mono.muted', { title: r.traceId }, shortId(r.traceId)) });
   }

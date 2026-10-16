@@ -503,6 +503,11 @@ public final class Codecs {
         return each(traces, Codecs::traceSummary);
     }
 
+    /** The slowest traces of a group, each with {@code matchMs}, the group's own span they are ordered by. */
+    static JsonArray matchedTraces(List<Queries.MatchedTrace> traces) {
+        return each(traces, matched -> put(traceSummary(matched.trace()), "matchMs", matched.matchMs()));
+    }
+
     static JsonObject span(SpanRecord span, Tingles tingles) {
         JsonArray events = Json.array();
         for (SpanRecord.SpanEvent event : span.events()) {

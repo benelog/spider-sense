@@ -111,12 +111,11 @@ public final class TrafficApi {
             throw new HttpException(HttpStatus.NOT_FOUND, "No such endpoint in this window: " + endpointId);
         }
         Stats.EndpointStats endpoint = found.get(0);
-        List<Stats.TraceSummary> slowest =
-                queries.tracesContaining(window, Queries.SpanMatch.endpoint(endpointId),
-                        DETAIL_TRACES, Queries.TraceOrder.SLOWEST);
+        List<Queries.MatchedTrace> slowest =
+                queries.slowestContaining(window, Queries.SpanMatch.endpoint(endpointId), DETAIL_TRACES);
         List<String> sample = new ArrayList<>(slowest.size());
-        for (Stats.TraceSummary trace : slowest) {
-            sample.add(trace.traceId());
+        for (Queries.MatchedTrace matched : slowest) {
+            sample.add(matched.trace().traceId());
         }
         // The same breakdown a slow-endpoint finding carries, over the same traces
         // (findings.adoc#time), so the page and the finding agree.
@@ -128,7 +127,7 @@ public final class TrafficApi {
                 .put("series", Codecs.serviceSeries(queries.buckets(window, null, endpointId)))
                 .put("queries", Codecs.queries(calledFrom(window, endpoint)))
                 .put("errors", Codecs.errorGroups(failedIn(window, endpoint)))
-                .put("traces", Codecs.traceSummaries(slowest))
+                .put("traces", Codecs.matchedTraces(slowest))
                 .put("recent", Codecs.traceSummaries(queries.tracesContaining(window,
                         Queries.SpanMatch.endpoint(endpointId), DETAIL_TRACES, Queries.TraceOrder.NEWEST)))
                 .put("breakdown", breakdown));
@@ -249,8 +248,8 @@ public final class TrafficApi {
                         .put("t", Codecs.longs(buckets.t()))
                         .put("calls", Codecs.longs(buckets.requests()))
                         .put("p95Ms", Codecs.doubles(buckets.p95Ms(), buckets.requests())))
-                .put("traces", Codecs.traceSummaries(queries.tracesContaining(window,
-                        Queries.SpanMatch.query(queryId), DETAIL_TRACES, Queries.TraceOrder.SLOWEST))));
+                .put("traces", Codecs.matchedTraces(queries.slowestContaining(window,
+                        Queries.SpanMatch.query(queryId), DETAIL_TRACES))));
     }
 
     public WebResponse errors(WebRequest req) {

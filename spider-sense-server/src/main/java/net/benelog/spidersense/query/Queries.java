@@ -1114,21 +1114,16 @@ public final class Queries {
      */
     public List<Stats.TraceSummary> tracesContaining(Window window, SpanMatch match, int limit,
             TraceOrder order) {
+        if (order == TraceOrder.SLOWEST) {
+            List<Stats.TraceSummary> traces = new ArrayList<>();
+            for (MatchedTrace matched : slowestContaining(window, match, limit)) {
+                traces.add(matched.trace());
+            }
+            return traces;
+        }
         List<Object> params = new ArrayList<>(match.params);
         params.add(window.from());
         params.add(window.to());
-        if (order == TraceOrder.SLOWEST) {
-            params.add(window.from());
-            params.add(window.to());
-            // The matching spans are grouped by trace in one read of the predicate's index,
-            // and their trace rows are then read by the key.
-            return sql.query("SELECT t.* FROM (SELECT s.trace_id, MAX(s.duration_ns) AS match_ns"
-                    + " FROM span s WHERE " + match.predicate + " AND s.start_ms BETWEEN ? AND ?"
-                    + " GROUP BY s.trace_id) m JOIN trace t ON t.trace_id = m.trace_id"
-                    + " WHERE t.start_ms BETWEEN ? AND ?"
-                    + " ORDER BY m.match_ns DESC, t.trace_id LIMIT " + Math.max(1, limit),
-                    params, Rows::trace);
-        }
         Where where = new Where("t.start_ms BETWEEN ? AND ?", window.from(), window.to())
                 // An IN over the matching spans rather than an EXISTS per trace: H2 reads
                 // the spans by the predicate's index once instead of probing every trace.
@@ -1139,6 +1134,34 @@ public final class Queries {
         // The trace id breaks a tie, so the same window names the same evidence (findings.adoc).
         return sql.query("SELECT * FROM trace t WHERE " + where.sql() + " ORDER BY t.start_ms DESC, t.trace_id"
                 + " LIMIT " + Math.max(1, limit), where.params(), Rows::trace);
+    }
+
+    /**
+     * A trace and the slowest span in it that a match names, which is what a list of the
+     * slowest is ordered by (api.adoc#endpoints).
+     */
+    public record MatchedTrace(Stats.TraceSummary trace, double matchMs) {
+    }
+
+    /**
+     * The traces of the window that contain a span the match names, slowest first by the
+     * slowest matching span each holds, with that span's duration: the order of
+     * {@link TraceOrder#SLOWEST}.
+     */
+    public List<MatchedTrace> slowestContaining(Window window, SpanMatch match, int limit) {
+        List<Object> params = new ArrayList<>(match.params);
+        params.add(window.from());
+        params.add(window.to());
+        params.add(window.from());
+        params.add(window.to());
+        // The matching spans are grouped by trace in one read of the predicate's index,
+        // and their trace rows are then read by the key.
+        return sql.query("SELECT t.*, m.match_ns FROM (SELECT s.trace_id, MAX(s.duration_ns) AS match_ns"
+                + " FROM span s WHERE " + match.predicate + " AND s.start_ms BETWEEN ? AND ?"
+                + " GROUP BY s.trace_id) m JOIN trace t ON t.trace_id = m.trace_id"
+                + " WHERE t.start_ms BETWEEN ? AND ?"
+                + " ORDER BY m.match_ns DESC, t.trace_id LIMIT " + Math.max(1, limit),
+                params, rs -> new MatchedTrace(Rows.trace(rs), Rows.ms(rs, "match_ns")));
     }
 
     /**

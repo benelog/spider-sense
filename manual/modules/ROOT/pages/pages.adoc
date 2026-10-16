@@ -252,8 +252,9 @@ The largest bucket is named in words under the caption, so the colour is not the
 Nothing is drawn when `breakdown` is `{}`.
 
 The same RED charts follow, with the same *Requests* | *Load* toggle.
-Under them are four tabs: *Slowest traces*, *Recent traces*, *Queries*, and *Errors*.
+Under them are four tabs: *Slowest requests*, *Recent traces*, *Queries*, and *Errors*.
 The trace rows have the same columns as the list on the Traces page.
+*Slowest requests* lists the traces of the endpoint's 20 slowest requests, slowest first by the request rather than by the trace, so it adds a *Request* column before *Duration*: the endpoint's own span in the trace, `matchMs`, which carries the bar, while *Duration* is the whole trace's.
 
 [#scatter]
 == Scatter
@@ -414,7 +415,8 @@ The cell reads `none` when every predicate is served, and `—` when the stateme
 A row click opens the statement.
 
 [#query]
-`+#/queries/{queryId}+` is one statement: the full text pretty-printed, marked the same way when the store may have cut it, the schema block under it as <<findings-schema-block,the Findings page renders it>>, a *Code* list of where the statement is issued, the <<copy-as-markdown,*Copy as Markdown* and *Copy CLI line*>> pair over `+GET /api/queries/{queryId}+` and the `queries` command, the stat tiles, a chart of calls and p95, the callers as endpoints with their counts, and the slowest traces.
+`+#/queries/{queryId}+` is one statement: the full text pretty-printed, marked the same way when the store may have cut it, the schema block under it as <<findings-schema-block,the Findings page renders it>>, a *Code* list of where the statement is issued, the <<copy-as-markdown,*Copy as Markdown* and *Copy CLI line*>> pair over `+GET /api/queries/{queryId}+` and the `queries` command, the stat tiles, a chart of calls and p95, the callers as endpoints with their counts, and *Slowest calls*.
+*Slowest calls* lists the traces of the statement's 20 slowest calls, slowest first by the call, with a *Query* column before *Duration* that gives the call's own duration, `matchMs`, and carries the bar, as the endpoint page's *Slowest requests* does.
 A caller whose endpoint has a page of its own (`endpointId`, xref:api.adoc#callers[Callers and error endpoints]) is a link to that page; `(no endpoint)` stays plain text.
 The *Code* list is the `code` of `+GET /api/queries/{queryId}+`, the application frames a `slow-query` finding on the statement would carry, as <<code-frames,code frames>>; it is left out when there are none.
 

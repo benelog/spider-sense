@@ -252,12 +252,13 @@ Every resource value is a string: a string attribute as itself, any other as its
 
 *`GET /api/endpoints?from&to&service`* answers `{ "endpoints": [ <EndpointStats> ] }` across services, sorted by total time descending.
 
-*`+GET /api/endpoints/{endpointId}?from&to+`* answers `{ "endpoint": <EndpointStats>, "series": {...as service series...}, "queries": [<QueryStats>], "errors": [<ErrorGroup>], "traces": [<TraceSummary> x 20 slowest], "recent": [<TraceSummary> x 20 newest], "breakdown": { "db": 0.44, "http": 0.21, "internal": 0.07, "self": 0.28 } }`.
+*`+GET /api/endpoints/{endpointId}?from&to+`* answers `{ "endpoint": <EndpointStats>, "series": {...as service series...}, "queries": [<QueryStats>], "errors": [<ErrorGroup>], "traces": [<TraceSummary> + "matchMs" x 20 slowest], "recent": [<TraceSummary> x 20 newest], "breakdown": { "db": 0.44, "http": 0.21, "internal": 0.07, "self": 0.28 } }`.
 
 `queries` are the query groups this endpoint called and `errors` the error groups that occurred in it, sorted as `/api/queries` and `/api/errors` sort them.
 Both are read from every group of the endpoint's service, never the top of a list, and matched by service as well as by name, so two services that expose the same route never share them.
 
 `traces` are slowest by the endpoint's own span in each, not by the trace's duration, as a finding's evidence is (xref:findings.adoc#fields[Fields]); for a query, its slowest call in each.
+Each of them carries `matchMs` beside the trace's `durationMs`: the duration of that span, the endpoint's slowest request in the trace or the query's slowest call, which is what the list is ordered by.
 `breakdown` is where the endpoint's time went over the 20 slowest traces, the same four shares a `slow-endpoint` finding carries (xref:findings.adoc#time[Where the time went]).
 It is `{}` when those traces add up to nothing.
 
@@ -432,7 +433,8 @@ It is `null` when there is no catalog to read.
 [#query]
 === One query
 
-*`+GET /api/queries/{queryId}?from&to+`* answers `{ "query": <QueryStats>, "code": [ "orders.ReportRepository.revenue(ReportRepository.java:27)" ], "series": { "t": [...], "calls": [...], "p95Ms": [...] }, "traces": [<TraceSummary> x 20 slowest containing it] }`.
+*`+GET /api/queries/{queryId}?from&to+`* answers `{ "query": <QueryStats>, "code": [ "orders.ReportRepository.revenue(ReportRepository.java:27)" ], "series": { "t": [...], "calls": [...], "p95Ms": [...] }, "traces": [<TraceSummary> + "matchMs" x 20 slowest containing it] }`.
+`traces` are slowest by the query's slowest call in each, whose duration is `matchMs` (<<endpoints,Endpoints>>).
 `code` is where the statement is issued: the application frames a `slow-query` finding on the group carries, read from the same span, the newest that has `code.stacktrace` (xref:findings.adoc#code[Code locations]).
 It is empty when no span of the group in the window names an application frame.
 With `format=text` it answers the group as the `queries` rendering prints it (xref:cli.adoc#one-finding[One finding]), and a group with no call in the window is `404` in both JSON and text.

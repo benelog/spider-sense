@@ -1544,7 +1544,9 @@ const ROUTES = [
       series: seriesFor(entries, w),
       queries: queryStats(w, ep.service).filter((qs) => ep.queries.some((i) => QUERIES[i].queryId === qs.queryId)),
       errors: errorGroups(w, ep.service).filter((e) => e.endpoints.some((x) => x.name === ep.name)).map(strip),
-      traces: list.slice().sort((a, b) => b.durationMs - a.durationMs).slice(0, 20).map(summary),
+      // Slowest by the endpoint's own span, which each row carries as matchMs (api.adoc#endpoints).
+      traces: list.map((t) => ({ ...summary(t), matchMs: t.spans[0].durationMs }))
+        .sort((a, b) => b.matchMs - a.matchMs).slice(0, 20),
       recent: list.slice().sort((a, b) => b.start - a.start).slice(0, 20).map(summary),
       breakdown: timeSplit(
         list.slice().sort((a, b) => b.durationMs - a.durationMs).slice(0, 20), ep.service).breakdown,
@@ -1636,7 +1638,10 @@ const ROUTES = [
       query: stats,
       code: QUERY_CODE[QUERIES.indexOf(def)] || [],
       series: { t, calls, p95Ms: buckets.map((d) => (d.length ? percentile(d.slice().sort((a, b) => a - b), 95) : null)) },
-      traces: holders.sort((a, b) => b.durationMs - a.durationMs).slice(0, 20).map(summary),
+      // Slowest by the statement's slowest call in each, which each row carries as matchMs.
+      traces: holders.map((tr) => ({ ...summary(tr), matchMs: Math.max(...tr.spans
+        .filter((s) => s.category === 'db' && s.attributes['db.statement'] === def.statement).map((s) => s.durationMs)) }))
+        .sort((a, b) => b.matchMs - a.matchMs).slice(0, 20),
     };
   }],
 

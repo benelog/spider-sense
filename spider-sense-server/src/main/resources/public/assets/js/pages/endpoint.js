@@ -63,7 +63,12 @@ export function render(root, ctx) {
   function tableOf(tab) {
     if (tables[tab]) return tables[tab];
     const rows = TAB_ROWS[tab]();
-    if (tab === 'slowest' || tab === 'recent') {
+    if (tab === 'slowest') {
+      tables[tab] = traceTable(rows, {
+        empty: 'No trace in this window.',
+        match: { label: 'Request', title: "This endpoint's slowest request in the trace, which the rows are ordered by" },
+      });
+    } else if (tab === 'recent') {
       tables[tab] = traceTable(rows, { empty: 'No trace in this window.' });
     } else if (tab === 'queries') {
       tables[tab] = table([
@@ -107,7 +112,7 @@ export function render(root, ctx) {
       return;
     }
     tabNode = tabs([
-      { id: 'slowest', label: 'Slowest traces', count: TAB_ROWS.slowest().length, render: () => tableOf('slowest') },
+      { id: 'slowest', label: 'Slowest requests', count: TAB_ROWS.slowest().length, render: () => tableOf('slowest') },
       { id: 'recent', label: 'Recent traces', count: TAB_ROWS.recent().length, render: () => tableOf('recent') },
       { id: 'queries', label: 'Queries', count: TAB_ROWS.queries().length, render: () => tableOf('queries') },
       { id: 'errors', label: 'Errors', count: TAB_ROWS.errors().length, render: () => tableOf('errors') },

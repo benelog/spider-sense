@@ -29,12 +29,15 @@ export function render(root, ctx) {
     rowKey: (c) => c.service + '|' + c.endpoint,
     empty: 'No caller recorded.',
   });
-  const tracesTable = traceTable([], { empty: 'No trace contains this query in this window.' });
+  const tracesTable = traceTable([], {
+    empty: 'No trace contains this query in this window.',
+    match: { label: 'Query', title: "This statement's slowest call in the trace, which the rows are ordered by" },
+  });
   const callersBody = h('div', callersTable);
   const tracesBody = h('div', tracesTable);
   const half = h('div.grid-2',
     panel({ title: 'Callers' }, callersBody),
-    panel({ title: 'Slowest traces' }, tracesBody));
+    panel({ title: 'Slowest calls' }, tracesBody));
 
   const layout = skeleton(root, () => [headPanel, statsRow, chart.node, half]);
 

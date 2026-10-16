@@ -1,6 +1,7 @@
 package net.benelog.spidersense.query;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.assertj.core.api.Assertions.within;
 
 import java.util.ArrayList;
@@ -685,6 +686,28 @@ class QueriesTest {
         // The time alone still pages strictly before it.
         assertThat(queries.traces(new Queries.TraceFilter(
                 window, null, null, null, null, null, null, NOW, 50))).isEmpty();
+    }
+
+    /** The slowest traces of a query are those of its slowest calls, each with that call's duration. */
+    @Test
+    void theSlowestTracesOfAGroupCarryTheSpanTheyAreOrderedBy() {
+        // Trace 1 lasts 3 s around an 80 ms query; trace 2 lasts 900 ms around an 850 ms one.
+        long[][] shapes = {{3_000, 80}, {900, 850}};
+        for (int n = 1; n <= 2; n++) {
+            Span.Builder root = Otlp.span(traceId(n), spanId(10 * n), "GET /report", Span.SpanKind.SPAN_KIND_SERVER,
+                    NOW, shapes[n - 1][0]);
+            decoder.ingest(Otlp.traces(Otlp.service("orders"), root,
+                    Otlp.child(root, spanId(10 * n + 1), "SELECT orders", Span.SpanKind.SPAN_KIND_CLIENT, NOW,
+                            shapes[n - 1][1], Otlp.attr("db.system", "h2"),
+                            Otlp.attr("db.statement", "select * from orders"))));
+        }
+        flush();
+        String queryId = queries.queries(window, null, "total", 10, null).get(0).queryId();
+
+        assertThat(queries.slowestContaining(window, Queries.SpanMatch.query(queryId), 20))
+                .extracting(matched -> matched.trace().traceId(), Queries.MatchedTrace::matchMs,
+                        matched -> matched.trace().durationMs())
+                .containsExactly(tuple(traceId(2), 850.0, 900.0), tuple(traceId(1), 80.0, 3_000.0));
     }
 
     /** Traces tied on duration or start come back in trace id order, whatever H2 scanned first. */

@@ -726,6 +726,10 @@ class ApiTest {
             assertThat(strings(detail.getArray("code"))).containsExactly(
                     "orders.OrderRepository.load(OrderRepository.java:64)",
                     "orders.OrderService.report(OrderService.java:18)");
+            // The list is ordered by the query's own call, which each row carries beside the trace's duration.
+            JsonObject trace = detail.getArray("traces").get(0).asObject();
+            assertThat(trace.getDouble("matchMs")).isEqualTo(200.0);
+            assertThat(trace.getDouble("durationMs")).isEqualTo(210.0);
         });
     }
 
