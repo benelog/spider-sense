@@ -64,7 +64,7 @@ This transport needs the server to be up, so it stops answering when the applica
 java -jar spider-sense.jar mcp [--url=<base url>] [--db=<path or jdbc url>]
 ----
 
-The `mcp` command reads newline-delimited JSON-RPC on stdin and writes it on stdout.
+The `mcp` command reads newline-delimited JSON-RPC on stdin and writes it on stdout, both in UTF-8 whatever the platform's charset.
 Nothing else goes to stdout, diagnostics go to stderr, and the command ends at end of input.
 
 `initialize`, `ping` and `tools/list` are answered in the process.

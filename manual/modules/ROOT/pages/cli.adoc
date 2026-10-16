@@ -783,6 +783,7 @@ Six commands write rather than read, and they write in this path too: `mark`, `a
 
 Every answer follows the same rules, so the output is small, stable and diffable.
 The same data renders to the same bytes, so two answers can be diffed.
+The CLI writes them, and its messages on stderr, in UTF-8 whatever charset the platform gives its streams, so a JVM started without `LANG` or through a pipe on Windows still prints `→`, `—` and `…` rather than `?`; a Windows console shows them once its code page is UTF-8 (`chcp 65001`).
 
 The CLI prints these renderings, and the HTTP API serves them too.
 An agent-facing endpoint answers Markdown when it is asked with `format=text`, or with an `Accept` header whose first type is `text/markdown` or `text/plain`, and the response is then `text/markdown; charset=utf-8`.

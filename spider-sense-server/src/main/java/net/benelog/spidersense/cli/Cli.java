@@ -56,9 +56,24 @@ public final class Cli {
     private Cli() {
     }
 
-    /** The entry point the launcher invokes. */
+    /**
+     * The entry point the launcher invokes.
+     *
+     * <p>Every answer is UTF-8 by contract, as the {@code text/markdown; charset=utf-8} of a server
+     * and the JSON-RPC of {@code mcp} are, so it goes into the bytes of the process's streams as
+     * UTF-8 rather than in the charset the platform gave them: a JVM started without {@code LANG},
+     * or one on Windows whose stdout is a pipe, would print every {@code →}, {@code —} and
+     * {@code …} as {@code ?} (cli.adoc#text-rendering).
+     */
     public static int run(String[] args) {
-        return run(args, defaultUrl(), System.in, System.out, System.err);
+        PrintStream out = new PrintStream(System.out, true, StandardCharsets.UTF_8);
+        PrintStream err = new PrintStream(System.err, true, StandardCharsets.UTF_8);
+        try {
+            return run(args, defaultUrl(), System.in, out, err);
+        } finally {
+            out.flush();
+            err.flush();
+        }
     }
 
     /**
