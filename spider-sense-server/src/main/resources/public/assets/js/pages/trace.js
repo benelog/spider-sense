@@ -9,7 +9,6 @@ import {
 import { pageLoader, skeleton } from '../page.js';
 import { formatSql } from '../sql.js';
 import { stackTrace, foldedStack, appFrames, codeFrames } from '../frames.js';
-import { slowRequestMs } from '../buckets.js';
 import { detailOf } from './logs.js';
 import { dur, counted, timeMs, bothTimes, offset, full } from '../format.js';
 import {
@@ -209,7 +208,6 @@ export function render(root, ctx) {
 
   function paintProfile() {
     const total = scaleOf(data);
-    const slowMs = slowRequestMs();
     const rows = profileRows(data, profileSort, expandedRuns);
     // The three steps that actually spent the time, and only when they spent enough of it to be worth reading.
     const hot = hotSpanIds(rows, total);
@@ -222,7 +220,8 @@ export function render(root, ctx) {
     };
     const members = (r) => (r.run ? r.run.spans : [r.span]);
     const failed = (r) => members(r).some((s) => s.error);
-    const slow = (r) => members(r).some((s) => s.slow || s.durationMs > slowMs);
+    // Slow as the server stored it, as the waterfall's ring, the fold and the CLI's `[slow]` read it.
+    const slow = (r) => members(r).some((s) => s.slow);
     fill(bodyBox, table([
       { key: 'index', label: '#', align: 'right', sortable: false, width: '58px', render: (r) => h('span.muted.mono', r.run ? r.index + '–' + r.lastIndex : String(r.index)) },
       { key: 'start', label: 'Start', align: 'right', width: '84px', render: (r) => h('span.mono', offset(r.startOffset)) },

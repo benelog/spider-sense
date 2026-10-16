@@ -385,7 +385,9 @@ Clicking the Elapsed or Self header sorts by that column, descending.
 The gap column then reads `-`.
 Clicking the Start header restores the chronological order.
 The three largest self times that are at least 5% of the trace are marked `hot`, with an `--accent` tint and a bold value, so the step that spent the time is visible without reading every row.
-A step over the slow threshold is tinted `--warn` and carries a turtle, and an error is tinted `--err` and carries a bolt.
+A slow step is tinted `--warn` and carries a turtle, and an error is tinted `--err` and carries a bolt.
+A step is slow as the span's `slow` says, as the waterfall's ring and the CLI's `[slow]` read it: a request over `slow.request.ms` or a statement over `slow.query.ms`.
+A span that is neither, such as an outbound call a request makes, is not slow however long it took.
 A slow or failed step keeps that tint when it is hot too, and its bold self value still marks it hot.
 A run of repeated siblings is one row where its first span stands, folded as in the <<waterfall,waterfall>>: its position reads `3–23`, its elapsed and self times are the totals of its spans, and a row click expands it in place rather than opening a span.
 

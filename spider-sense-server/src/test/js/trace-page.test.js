@@ -103,6 +103,21 @@ test('a hot step keeps its slow or error tint, and a slow step has a turtle besi
   assert.ok(at('.profile-row.hot td') < at('.profile-row.err td'), 'a failed step that is hot too stays --err');
 });
 
+test('a profile step is slow as the server marks it, so a run of outbound calls the waterfall folds unmarked is unmarked', async () => {
+  // Four outbound calls, one over slow.request.ms: a call is no request, so none is slow, and they fold.
+  const call = (id, at, ms) => span(id, 'get', at, ms, { kind: 'CLIENT', category: 'http', summary: 'GET http://inventory/stock/{id} → 200' });
+  const { root, instance } = await open('calls', 1000, [
+    span('get', null, 0, 1000, { summary: 'GET /orders → 200', category: 'http', slow: true }),
+    call('c1', 10, 100), call('c2', 120, 100), call('c3', 230, 700), call('c4', 940, 50),
+  ], { view: 'profile' });
+  const rows = root.querySelectorAll('tr.profile-row');
+  assert.equal(rows.length, 2, 'the four calls are one run');
+  const markers = (tr) => tr.querySelectorAll('span').filter((s) => s.classList.contains('marker')).map((s) => s.getAttribute('title'));
+  assert.deepEqual(rows.map(markers), [['Slow'], []]);
+  assert.ok(!rows[1].className.split(' ').includes('warn'), rows[1].className);
+  instance.destroy();
+});
+
 test('a trace of no length draws its spans at the start and reads them as 0% of it', async () => {
   const { root, instance } = await open('instant', 0, [span('root', null, 0, 0)]);
   assert.equal(root.querySelector('.wf-head').children[2].textContent, '0.0 ms total');
