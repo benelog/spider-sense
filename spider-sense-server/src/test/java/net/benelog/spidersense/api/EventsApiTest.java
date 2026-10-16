@@ -72,32 +72,48 @@ class EventsApiTest {
 
     @Test
     void noStatsFrameWhileNothingArrives() {
-        EventsApi.Pacer pacer = EventsApi.Pacer.start(T0);
+        EventsApi.Pacer pacer = EventsApi.Pacer.start(T0, 0);
 
         assertThat(pacer.statsDue(T0 + 5_000, 0)).isFalse();
     }
 
     @Test
     void statsAtMostOnceASecondAndOnlyForWhatArrivedSince() {
-        EventsApi.Pacer pacer = EventsApi.Pacer.start(T0);
-        assertThat(pacer.statsDue(T0 + 250, T0 + 5)).as("within the second of the opening frame").isFalse();
-        assertThat(pacer.statsDue(T0 + 1_000, T0 + 5)).isTrue();
+        EventsApi.Pacer pacer = EventsApi.Pacer.start(T0, 0);
+        assertThat(pacer.statsDue(T0 + 250, 1)).as("within the second of the opening frame").isFalse();
+        assertThat(pacer.statsDue(T0 + 1_000, 1)).isTrue();
         assertThat(pacer.secondsSinceStats(T0 + 1_000)).isEqualTo(1.0);
 
-        pacer = pacer.statsSent(T0 + 10);
-        assertThat(pacer.statsDue(T0 + 500, T0 + 400)).as("within the second").isFalse();
-        assertThat(pacer.statsDue(T0 + 1_010, T0 + 400)).isTrue();
-        assertThat(pacer.statsDue(T0 + 1_010, T0 + 10)).as("nothing new since the last frame").isFalse();
+        pacer = pacer.statsSent(T0 + 10, 1);
+        assertThat(pacer.statsDue(T0 + 500, 2)).as("within the second").isFalse();
+        assertThat(pacer.statsDue(T0 + 1_010, 2)).isTrue();
+        assertThat(pacer.statsDue(T0 + 1_010, 1)).as("nothing new since the last frame").isFalse();
         assertThat(pacer.secondsSinceStats(T0 + 2_010)).isEqualTo(2.0);
+    }
+
+    /**
+     * A flush that commits while a frame's counts are read, in the millisecond the frame goes
+     * out, is not in that frame, so it is due one of its own: a comparison of the flush's
+     * instant with the frame's would find nothing new, and leave the counts stale.
+     */
+    @Test
+    void aFlushInTheMillisecondOfAFrameIsDueTheNextOne() {
+        EventsApi.Pacer pacer = EventsApi.Pacer.start(T0, 0);
+        long readBeforeCounts = 1;
+        assertThat(pacer.statsDue(T0 + 1_000, readBeforeCounts)).isTrue();
+        // The flush commits now, at T0 + 1000, after the counts were read: ingests becomes 2.
+        pacer = pacer.statsSent(T0 + 1_000, readBeforeCounts);
+
+        assertThat(pacer.statsDue(T0 + 2_000, 2)).isTrue();
     }
 
     @Test
     void aKeepaliveAfterFifteenQuietSecondsAndAStatsFrameCountsAsSpeech() {
-        EventsApi.Pacer pacer = EventsApi.Pacer.start(T0);
+        EventsApi.Pacer pacer = EventsApi.Pacer.start(T0, 0);
         assertThat(pacer.keepaliveDue(T0 + 14_999)).isFalse();
         assertThat(pacer.keepaliveDue(T0 + 15_000)).isTrue();
 
-        pacer = pacer.statsSent(T0 + 10_000);
+        pacer = pacer.statsSent(T0 + 10_000, 0);
         assertThat(pacer.keepaliveDue(T0 + 15_000)).isFalse();
         assertThat(pacer.keepaliveSent(T0 + 25_000).keepaliveDue(T0 + 30_000)).isFalse();
     }

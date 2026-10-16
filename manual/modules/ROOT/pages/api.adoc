@@ -140,7 +140,7 @@ event: service
 data: {"name":"spring-orders","firstSeen":1758000000000}
 ----
 
-`stats` is sent at most every second while data arrives.
+`stats` is sent at most every second while data arrives, and a flush that commits while a frame is being counted is in the next frame, whatever the millisecond.
 A `stats` frame goes out after the `tingle` events of the traces it counts, so a client that waits for a count has their tingles by then.
 `service` is sent once for a service the store had no row of, when the row is stored, so `/api/services` lists the service by the time the event arrives; `firstSeen` is the row's `first_seen`.
 A `: keepalive` comment is sent every 15 s.

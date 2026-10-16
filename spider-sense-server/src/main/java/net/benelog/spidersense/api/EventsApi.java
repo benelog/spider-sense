@@ -54,7 +54,7 @@ public final class EventsApi {
     private void streamUntilClosed(SseStream stream, EventBus.Subscription subscription)
             throws InterruptedException {
         LongSupplier clock = store.clock();
-        Pacer pacer = Pacer.start(clock.getAsLong());
+        Pacer pacer = Pacer.start(clock.getAsLong(), store.events().ingests());
         Counts previous = counts();
         stream.event("stats").send(stats(previous, previous, 1, clock.getAsLong()).toJson());
 
@@ -66,7 +66,10 @@ public final class EventsApi {
             // only an instant before it queues them, so the tingles of every trace a stats frame
             // counts go out ahead of it, and tail --until-traces never ends before the tingles
             // of the traces it waited for (cli.adoc#tail).
-            Counts current = pacer.statsDue(now, store.events().lastIngestAt()) ? counts() : null;
+            // The ingests the frame covers are read before its counts, so a flush that commits
+            // while they are read, in the same millisecond too, is due a frame of its own.
+            long ingests = store.events().ingests();
+            Counts current = pacer.statsDue(now, ingests) ? counts() : null;
             if (event != null) {
                 send(stream, event);
             }
@@ -76,7 +79,7 @@ public final class EventsApi {
             if (current != null) {
                 stream.event("stats").send(stats(current, previous, pacer.secondsSinceStats(now), now).toJson());
                 previous = current;
-                pacer = pacer.statsSent(now);
+                pacer = pacer.statsSent(now, ingests);
             }
             if (pacer.keepaliveDue(now)) {
                 stream.comment("keepalive");
@@ -90,18 +93,27 @@ public final class EventsApi {
      * something was ingested since the last one, and a keepalive after fifteen seconds with no
      * frame at all. The rule, apart from the stream and the clock it runs on.
      *
+     * <p>What was ingested is counted, not timed: a flush stamped with the millisecond the last
+     * frame went out would be due no frame by a comparison of instants, and the frame read
+     * before that flush committed would be the last one until something else arrived.
+     *
      * @param lastStats     when the last stats frame went out, the opening one included
      * @param lastKeepalive when the stream last said anything that keeps it open
+     * @param covered       the {@link EventBus#ingests()} read before the last frame's counts
      */
-    record Pacer(long lastStats, long lastKeepalive) {
+    record Pacer(long lastStats, long lastKeepalive, long covered) {
 
-        /** The pacing after the opening stats frame, which went out at {@code now}. */
-        static Pacer start(long now) {
-            return new Pacer(now, now);
+        /**
+         * The pacing after the opening stats frame, which went out at {@code now} with the
+         * counts read after {@code ingests}.
+         */
+        static Pacer start(long now, long ingests) {
+            return new Pacer(now, now, ingests);
         }
 
-        boolean statsDue(long now, long lastIngestAt) {
-            return lastIngestAt > lastStats && now - lastStats >= STATS_INTERVAL_MS;
+        /** @param ingests the {@link EventBus#ingests()} read now, before any counts */
+        boolean statsDue(long now, long ingests) {
+            return ingests != covered && now - lastStats >= STATS_INTERVAL_MS;
         }
 
         /** The seconds the stats frame due at {@code now} covers, which its rates divide by. */
@@ -109,8 +121,9 @@ public final class EventsApi {
             return Math.max(0.001, (now - lastStats) / 1000.0);
         }
 
-        Pacer statsSent(long now) {
-            return new Pacer(now, now);
+        /** @param ingests the {@link EventBus#ingests()} read before the frame's counts */
+        Pacer statsSent(long now, long ingests) {
+            return new Pacer(now, now, ingests);
         }
 
         boolean keepaliveDue(long now) {
@@ -118,7 +131,7 @@ public final class EventsApi {
         }
 
         Pacer keepaliveSent(long now) {
-            return new Pacer(lastStats, now);
+            return new Pacer(lastStats, now, covered);
         }
     }
 

@@ -30,6 +30,7 @@ public final class EventBus {
 
     private final CopyOnWriteArrayList<Subscription> subscriptions = new CopyOnWriteArrayList<>();
     private final AtomicLong lastIngestAt = new AtomicLong();
+    private final AtomicLong ingests = new AtomicLong();
 
     public Subscription subscribe() {
         Subscription subscription = new Subscription();
@@ -53,6 +54,15 @@ public final class EventBus {
     /** Called whenever anything was stored; the SSE loop uses it to coalesce {@code stats}. */
     public void ingested(long at) {
         lastIngestAt.accumulateAndGet(at, Math::max);
+        ingests.incrementAndGet();
+    }
+
+    /**
+     * How many times {@link #ingested} was called: what a {@code stats} frame read before its
+     * counts covers, which two flushes in one millisecond still move, as a timestamp would not.
+     */
+    public long ingests() {
+        return ingests.get();
     }
 
     public long lastIngestAt() {
