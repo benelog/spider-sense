@@ -3,17 +3,15 @@ package net.benelog.spidersense.store;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 import org.jspecify.annotations.Nullable;
 
 /**
  * Which services exist, and which one the server is embedded in.
  *
- * <p>The rows live in the {@code service} table — the writer merges them — but
- * "have I seen this name before?" is asked on every export and answered from an
- * in-memory set, so ingest does not query the database to decide whether to push
- * a {@code service} SSE event.
+ * <p>The rows live in the {@code service} table, which the writer merges, and
+ * the writer announces a service with a {@code service} SSE event once the flush
+ * that inserted its row has committed (storage.adoc#writer).
  *
  * <p>The embedded service is named on the command line when the launcher knows
  * it. In agent mode it usually does not — the OpenTelemetry agent decides
@@ -23,7 +21,6 @@ import org.jspecify.annotations.Nullable;
  */
 public final class ServiceRegistry {
 
-    private final Map<String, Boolean> seen = new ConcurrentHashMap<>();
     private final Sql sql;
     private final @Nullable String configuredEmbedded;
     private final long ownPid;
@@ -36,29 +33,23 @@ public final class ServiceRegistry {
         this.embedded = configuredEmbedded;
         this.ownPid = ProcessHandle.current().pid();
         for (ServiceInfo service : all()) {
-            seen.put(service.name(), Boolean.TRUE);
             adoptIfOurOwnProcess(service.name(), service.resource());
         }
     }
 
     /**
-     * Records a sighting, and adopts the service as the embedded one when it
-     * reports this process's own pid.
+     * Records a sighting: adopts the service as the embedded one when it reports
+     * this process's own pid.
      *
      * <p>Every sighting is a chance until a service is adopted, a name already
      * stored included: the stored row of a name an earlier run exported carries
      * that run's pid, so the constructor cannot adopt it, and the first export of
      * this run is the first that names this process.
-     *
-     * @return whether this is the first time this process sees the service, which
-     *         is when the SSE stream sends a {@code service} event
      */
-    public boolean recordSighting(String name, Map<String, Object> resource) {
-        boolean isNew = seen.putIfAbsent(name, Boolean.TRUE) == null;
+    public void recordSighting(String name, Map<String, Object> resource) {
         if (embedded == null) {
             adoptIfOurOwnProcess(name, resource);
         }
-        return isNew;
     }
 
     private void adoptIfOurOwnProcess(String name, Map<String, Object> resource) {

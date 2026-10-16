@@ -144,12 +144,14 @@ public final class Store implements AutoCloseable {
         return ingestCap.droppedSpans();
     }
 
-    /** Records the sighting in {@code batch} and pushes a {@code service} event the first time. */
+    /**
+     * Records the sighting in {@code batch}, and in the registry, which may adopt the
+     * service as the embedded one. The writer announces a service with a {@code service}
+     * event once the flush that inserts its row has committed.
+     */
     public void sawService(Batch batch, String name, Map<String, Object> resource, long at) {
         batch.saw(new Batch.Sighting(name, resource, at));
-        if (services.recordSighting(name, resource)) {
-            events.publish("service", new ServiceInfo(name, resource, at, at, services.isEmbedded(name)));
-        }
+        services.recordSighting(name, resource);
     }
 
     public void submit(Batch batch) {

@@ -38,7 +38,8 @@ import org.jspecify.annotations.Nullable;
  * {@code trace} summary rows of the trace ids the flush touched — a trace arrives
  * in several exports and from several services, so the summary is only ever
  * correct as a re-aggregation — and then publishes the tingles the flush
- * stored, which leaves out those of a span the exporter sent again.
+ * stored, which leaves out those of a span the exporter sent again, and the
+ * services whose rows it inserted.
  */
 public final class Writer implements AutoCloseable {
 
@@ -388,7 +389,7 @@ public final class Writer implements AutoCloseable {
             if (batches.isEmpty()) {
                 return 0;
             }
-            List<Tingle> stored;
+            Stored stored;
             try {
                 stored = writeThroughPool(batches);
             } catch (SQLException | RuntimeException | StackOverflowError e) {
@@ -453,14 +454,17 @@ public final class Writer implements AutoCloseable {
     }
 
     /**
-     * Each batch of a failed flush in a transaction of its own, returning the tingles
+     * Each batch of a failed flush in a transaction of its own, returning what they
      * stored; a batch that fails again is lost, and counted.
      */
-    private List<Tingle> writeOneByOne(List<Batch> batches) {
-        List<Tingle> stored = new ArrayList<>();
+    private Stored writeOneByOne(List<Batch> batches) {
+        List<Batch.Sighting> services = new ArrayList<>();
+        List<Tingle> tingles = new ArrayList<>();
         for (int b = 0; b < batches.size(); b++) {
             try {
-                stored.addAll(writeThroughPool(List.of(batches.get(b))));
+                Stored one = writeThroughPool(List.of(batches.get(b)));
+                services.addAll(one.services());
+                tingles.addAll(one.tingles());
             } catch (SQLException | RuntimeException | StackOverflowError e) {
                 if (exiting) {
                     unwritten.addAll(batches.subList(b, batches.size()));
@@ -473,7 +477,14 @@ public final class Writer implements AutoCloseable {
                 throw e;
             }
         }
-        return stored;
+        return new Stored(services, tingles);
+    }
+
+    /**
+     * What a committed flush announces on the live stream: the services whose rows it
+     * inserted, and the tingles it stored.
+     */
+    private record Stored(List<Batch.Sighting> services, List<Tingle> tingles) {
     }
 
     /**
@@ -481,9 +492,9 @@ public final class Writer implements AutoCloseable {
      * committed: a failure to hand the connection back after that loses nothing,
      * so it is not reported as a failed write.
      *
-     * @return the tingles the flush stored
+     * @return what the flush stored that the live stream announces
      */
-    private List<Tingle> writeThroughPool(List<Batch> batches) throws SQLException {
+    private Stored writeThroughPool(List<Batch> batches) throws SQLException {
         Connection connection = sql.connection();
         try {
             return writeInTransaction(connection, batches);
@@ -499,24 +510,31 @@ public final class Writer implements AutoCloseable {
     /**
      * One flush as one transaction on {@code connection}, pooled or not, which stays open.
      *
-     * @return the tingles the flush stored, the only ones it publishes
+     * @return the services whose rows the flush inserted and the tingles it stored, the
+     *         only ones it publishes
      */
-    private List<Tingle> writeInTransaction(Connection connection, List<Batch> batches) throws SQLException {
+    private Stored writeInTransaction(Connection connection, List<Batch> batches) throws SQLException {
         return Sql.inTransaction(connection, c -> {
             Set<String> touched = insertSpans(c, batches);
             insertLogs(c, batches);
-            List<Tingle> stored = insertTingles(c, batches);
+            List<Tingle> tingles = insertTingles(c, batches);
             mergeCatalogs(c, batches);
-            mergeServices(c, batches);
+            List<Batch.Sighting> services = mergeServices(c, batches);
             writeMetrics(c, batches);
             traces.merge(c, touched);
-            return stored;
+            return new Stored(services, tingles);
         });
     }
 
-    private void publish(List<Tingle> stored) {
+    /**
+     * After the commit, so a reader that answers an event by asking the store finds what
+     * the event is about: a {@code service} event the service's row, which is what
+     * {@code /api/services} lists.
+     */
+    private void publish(Stored stored) {
         long now = clock.getAsLong();
-        events.publishAll("tingle", stored);
+        events.publishAll("service", stored.services());
+        events.publishAll("tingle", stored.tingles());
         events.ingested(now);
     }
 
@@ -624,14 +642,17 @@ public final class Writer implements AutoCloseable {
      * restarted, and that moment is worth a {@code start} mark: it is what
      * {@code since=start} resolves to, and nobody had to ask for it
      * (marks-and-compare.adoc#start-marks).
+     *
+     * @return the sightings of the services that had no row, whose rows this inserted
      */
-    private void mergeServices(Connection connection, List<Batch> batches) throws SQLException {
+    private List<Batch.Sighting> mergeServices(Connection connection, List<Batch> batches) throws SQLException {
         Map<String, Batch.Sighting> sightings = new LinkedHashMap<>();
         for (Batch batch : batches) {
             for (Batch.Sighting sighting : batch.services()) {
                 sightings.put(sighting.name(), sighting);
             }
         }
+        List<Batch.Sighting> inserted = new ArrayList<>();
         for (Batch.Sighting sighting : sightings.values()) {
             ServiceRow row = ServiceRow.of(sighting);
             markRestart(connection, row, startOf(batches, sighting));
@@ -645,7 +666,9 @@ public final class Writer implements AutoCloseable {
                 row.bindInsert(insert);
                 insert.executeUpdate();
             }
+            inserted.add(sighting);
         }
+        return inserted;
     }
 
     /** How far before its receipt a run's first record may have started (a metric export interval). */

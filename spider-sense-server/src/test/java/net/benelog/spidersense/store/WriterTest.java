@@ -96,6 +96,31 @@ class WriterTest {
     }
 
     /**
+     * The UI answers a {@code service} event by asking {@code /api/services}, which reads
+     * the {@code service} table: the event goes out once the flush that inserted the row
+     * has committed, and only for that flush.
+     */
+    @Test
+    void aServiceIsAnnouncedOnceTheFlushThatStoresItsRowHasCommitted() throws Exception {
+        try (EventBus.Subscription subscription = store.events().subscribe()) {
+            decoder.ingest(Otlp.traces(Otlp.service("billing"), Otlp.span("%032x".formatted(1),
+                    "%016x".formatted(1), "GET /invoices", Span.SpanKind.SPAN_KIND_SERVER, AT, 5)));
+
+            EventBus.Event event = subscription.poll(5_000);
+
+            assertThat(event).isNotNull();
+            assertThat(event.name()).isEqualTo("service");
+            assertThat(store.services().all()).as("what the UI asks for on the event")
+                    .extracting(ServiceInfo::name).containsExactly("billing");
+
+            decoder.ingest(Otlp.traces(Otlp.service("billing"), Otlp.span("%032x".formatted(2),
+                    "%016x".formatted(2), "GET /invoices", Span.SpanKind.SPAN_KIND_SERVER, AT, 5)));
+            store.writer().awaitIdle(5_000);
+            assertThat(subscription.poll(0)).as("a service is announced once").isNull();
+        }
+    }
+
+    /**
      * A tingle is derived from one span, so it is stored and published once as the span
      * is: whether the copy of the export lands in a later flush, in the same one, or in a
      * flush that failed and was written again batch by batch.

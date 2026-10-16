@@ -3,8 +3,8 @@ package net.benelog.spidersense.api;
 import java.util.function.LongSupplier;
 
 import net.benelog.spidersense.query.Queries;
+import net.benelog.spidersense.store.Batch;
 import net.benelog.spidersense.store.EventBus;
-import net.benelog.spidersense.store.ServiceInfo;
 import net.benelog.spidersense.store.Store;
 import net.benelog.spidersense.store.Tingle;
 import net.benelog.spidersilk.App;
@@ -125,9 +125,10 @@ public final class EventsApi {
     private void send(SseStream stream, EventBus.Event event) {
         switch (event.payload()) {
             case Tingle tingle -> stream.event("tingle").send(Codecs.tingle(tingle).toJson());
-            case ServiceInfo service -> stream.event("service").send(Json.object()
+            // The sighting that inserted the row, whose receipt is the row's first_seen.
+            case Batch.Sighting service -> stream.event("service").send(Json.object()
                     .put("name", service.name())
-                    .put("firstSeen", service.firstSeen())
+                    .put("firstSeen", service.at())
                     .toJson());
             default -> {
                 // An event kind the stream does not publish; nothing to send.

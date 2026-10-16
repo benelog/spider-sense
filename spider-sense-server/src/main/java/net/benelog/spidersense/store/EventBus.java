@@ -20,8 +20,8 @@ public final class EventBus {
 
     /**
      * One SSE frame waiting to go out: the event name and the value it carries
-     * ({@link Tingle}, {@link ServiceInfo}). Rendering is the API layer's job,
-     * so the store never builds JSON.
+     * ({@link Tingle}, or the {@link Batch.Sighting} that inserted a service's row).
+     * Rendering is the API layer's job, so the store never builds JSON.
      */
     public record Event(String name, Object payload) {
     }

@@ -274,6 +274,7 @@ It locks those rows first, by merging a placeholder in trace id order, and only 
 The spans are read 500 trace ids at a time, because H2's cost for one `IN` list grows with the square of its length, and a flush after a burst or an import touches tens of thousands of traces.
 Another process sharing the file may be flushing the other half of the same trace; the lock makes the second writer wait for the first one's commit and read every span, where it would otherwise overwrite the row with its own half.
 It then publishes the tingles the flush inserted, and its counts, to the SSE stream, so a tingle the copy of an export raised again is not published again either.
+It also publishes a `service` event for each service whose row the flush inserted, after the commit, so `/api/services` lists the service by the time the event arrives.
 The `service` row is merged on every flush that carries the service.
 When the sighting carries a `process.pid` that no `start` mark of that service names yet, the writer also inserts a `mark` named `start` for that service with the note `pid <pid>`.
 It compares with the marks rather than with the one `pid` the `service` row stores, because two processes may export one service name at once, an application and its tests or two instances of one application, and each export of the other would otherwise insert a mark.

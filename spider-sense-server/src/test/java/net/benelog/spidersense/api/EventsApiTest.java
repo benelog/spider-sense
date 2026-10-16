@@ -2,14 +2,73 @@ package net.benelog.spidersense.api;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.util.Iterator;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
+
+import io.opentelemetry.proto.trace.v1.Span;
+
 import org.junit.jupiter.api.Test;
 
+import net.benelog.silkjson.Json;
 import net.benelog.silkjson.JsonObject;
+import net.benelog.spidersense.Otlp;
+import net.benelog.spidersense.TestStore;
+import net.benelog.spidersense.ingest.OtlpDecoder;
+import net.benelog.spidersense.server.SpiderSenseServer;
+import net.benelog.spidersense.store.ServiceInfo;
 
-/** The pacing of {@code /api/events} and the arithmetic of its stats frame, with no stream. */
+/** The pacing of {@code /api/events} and the arithmetic of its stats frame, and the frames themselves. */
 class EventsApiTest {
 
     private static final long T0 = 1_700_000_000_000L;
+
+    /**
+     * The UI answers a {@code service} frame by asking {@code /api/services} for the list:
+     * the frame names the service once its row is stored, so the list has it.
+     */
+    @Test
+    void aNewServiceIsAFrameOnceItsRowIsStored() throws Exception {
+        SpiderSenseServer server = SpiderSenseServer.start(TestStore.config());
+        try {
+            HttpResponse<Stream<String>> events = HttpClient.newHttpClient().send(HttpRequest.newBuilder(
+                    URI.create("http://127.0.0.1:" + server.port() + "/api/events")).build(),
+                    HttpResponse.BodyHandlers.ofLines());
+            CompletableFuture<Void> subscribed = new CompletableFuture<>();
+            CompletableFuture<String> service = CompletableFuture.supplyAsync(() -> {
+                Iterator<String> lines = events.body().iterator();
+                while (lines.hasNext()) {
+                    String line = lines.next();
+                    if (line.equals("event: stats")) {
+                        // The opening frame, sent once the stream has subscribed.
+                        subscribed.complete(null);
+                    } else if (line.equals("event: service")) {
+                        return lines.next();
+                    }
+                }
+                return "";
+            });
+            subscribed.get(10, TimeUnit.SECONDS);
+
+            new OtlpDecoder(server.store(), server::port).ingest(Otlp.traces(Otlp.service("billing"),
+                    Otlp.span("%032x".formatted(1), "%016x".formatted(1), "GET /invoices",
+                            Span.SpanKind.SPAN_KIND_SERVER, System.currentTimeMillis(), 5)));
+            String data = service.get(10, TimeUnit.SECONDS);
+
+            assertThat(server.store().services().all()).extracting(ServiceInfo::name).containsExactly("billing");
+            JsonObject frame = Json.parse(data.substring("data:".length()).trim()).asObject();
+            assertThat(frame.getString("name")).isEqualTo("billing");
+            assertThat(frame.getLong("firstSeen")).isEqualTo(server.store().services().all().get(0).firstSeen());
+            events.body().close();
+        } finally {
+            server.stop();
+        }
+    }
 
     @Test
     void noStatsFrameWhileNothingArrives() {

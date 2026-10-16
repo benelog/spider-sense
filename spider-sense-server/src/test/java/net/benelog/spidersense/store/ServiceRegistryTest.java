@@ -29,9 +29,8 @@ class ServiceRegistryTest {
         ServiceRegistry registry = new ServiceRegistry(sql, null);
         assertThat(registry.embeddedService()).as("the stored row names the earlier run's pid").isNull();
 
-        boolean first = registry.recordSighting("orders", Map.of("process.pid", OWN_PID));
+        registry.recordSighting("orders", Map.of("process.pid", OWN_PID));
 
-        assertThat(first).as("the name was in the database already").isFalse();
         assertThat(registry.embeddedService()).isEqualTo("orders");
         assertThat(registry.isEmbedded("orders")).isTrue();
     }
