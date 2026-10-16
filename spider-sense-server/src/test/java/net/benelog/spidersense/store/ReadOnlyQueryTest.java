@@ -34,6 +34,17 @@ class ReadOnlyQueryTest {
     }
 
     /**
+     * A double the database computed as NaN or infinite is its name, which the JSON and the text
+     * renderings both carry, so a null cell is only ever a SQL NULL.
+     */
+    @Test
+    void aNonFiniteDoubleIsItsNameAndNeverANull() {
+        assertThat(row("SELECT SQRT(-1), POWER(10, 400), -POWER(10, 400), CAST(0 AS DOUBLE),"
+                + " ARRAY[SQRT(-1)], CAST(SQRT(-1) AS REAL)"))
+                .containsExactly("NaN", "Infinity", "-Infinity", 0.0, List.of("NaN"), "NaN");
+    }
+
+    /**
      * An ARRAY and a row value are lists of their elements and a JSON value is its text, not H2's
      * object dump, whose counter made the same statement answer different bytes on every call.
      */

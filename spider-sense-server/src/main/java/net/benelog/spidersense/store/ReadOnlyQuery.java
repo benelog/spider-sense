@@ -176,7 +176,10 @@ public final class ReadOnlyQuery {
             return integer.bitLength() < 64 ? (Object) integer.longValue() : integer.toString();
         }
         if (value instanceof Float || value instanceof Double) {
-            return ((Number) value).doubleValue();
+            // NaN and the infinities have no JSON number, and a JSON null is what a SQL NULL
+            // is: their names, as a decimal past a double's range is its decimal string.
+            double number = ((Number) value).doubleValue();
+            return Double.isFinite(number) ? (Object) number : Double.toString(number);
         }
         if (value instanceof Number number) {
             return number.longValue();
