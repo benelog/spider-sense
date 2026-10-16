@@ -13,6 +13,13 @@ test('count uses thousands separators and rounds', () => {
   assert.equal(fmt.count(NaN), '-');
 });
 
+test('counted names one alone in the singular and any other count in the plural', () => {
+  assert.equal(fmt.counted(1, 'span'), '1 span');
+  assert.equal(fmt.counted(0, 'error'), '0 errors');
+  assert.equal(fmt.counted(1234, 'call'), '1,234 calls');
+  assert.equal(fmt.counted(2, 'series', 'series'), '2 series');
+});
+
 test('dur has one decimal under 100 ms, none above, and seconds from 10 s', () => {
   assert.equal(fmt.dur(0), '0.0 ms');
   assert.equal(fmt.dur(12.34), '12.3 ms');

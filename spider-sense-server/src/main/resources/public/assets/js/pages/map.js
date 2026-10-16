@@ -11,7 +11,7 @@ import { pageLoader } from '../page.js';
 import { timeSeries } from '../charts.js';
 import { throughputSpec } from '../throughput.js';
 import { histogramBars, bucketVars, apdexClass, ERROR_RATE_BAD } from '../buckets.js';
-import { dur, count, rate, pct, apdex, truncate, truncateStart, ifRequests } from '../format.js';
+import { dur, count, counted, rate, pct, apdex, truncate, truncateStart, ifRequests } from '../format.js';
 
 const NODE_W = 200, NODE_H = 64, COL_PITCH = 260, ROW_PITCH = 96, PAD_X = 22, PAD_Y = 20;
 const HIST_W = 40, HIST_H = 14, HIST_X = NODE_W - HIST_W - 12, HIST_Y = NODE_H - HIST_H - 10;
@@ -395,8 +395,8 @@ export function render(root, ctx) {
 
   function edgeTitle(e) {
     return [
-      count(e.calls) + ' calls',
-      e.errors ? count(e.errors) + ' errors' : null,
+      counted(e.calls, 'call'),
+      e.errors ? counted(e.errors, 'error') : null,
       'avg ' + dur(e.avgMs),
       'p95 ' + dur(e.p95Ms),
     ].filter(Boolean).join(' · ');
@@ -463,8 +463,8 @@ export function render(root, ctx) {
   }
 
   function externalLine(n) {
-    if (n.kind === 'user') return count(totalUserCalls()) + ' requests';
-    return count(n.calls) + ' calls · ' + dur(n.p95Ms);
+    if (n.kind === 'user') return counted(totalUserCalls(), 'request');
+    return counted(n.calls, 'call') + ' · ' + dur(n.p95Ms);
   }
 
   function totalUserCalls() {
@@ -579,7 +579,7 @@ export function render(root, ctx) {
       h('div',
         h('div.sub-head', { style: { marginBottom: '6px' } }, 'Called by'),
         h('dl.kv', callers.length
-          ? callers.map((e) => [h('dt', nameOf(e.from)), h('dd', count(e.calls) + ' calls' + (e.errors ? ', ' + count(e.errors) + ' errors' : ''))])
+          ? callers.map((e) => [h('dt', nameOf(e.from)), h('dd', counted(e.calls, 'call') + (e.errors ? ', ' + counted(e.errors, 'error') : ''))])
           : [h('dt', '—'), h('dd', 'nothing in this window')])),
     ];
   }

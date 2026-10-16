@@ -18,6 +18,11 @@ export function count(n) {
   return NUM.format(Math.round(n));
 }
 
+/** `1 request`, `2 requests`: a count and its noun, singular for one alone. */
+export function counted(n, one, many = one + 's') {
+  return count(n) + ' ' + (n === 1 ? one : many);
+}
+
 /**
  * Durations in ms: 1 decimal under 100 ms, 0 decimals above, seconds above 10 s.
  * The unit is picked on the rounded value, so 99.96 ms reads as 100.0 ms does, "100 ms".

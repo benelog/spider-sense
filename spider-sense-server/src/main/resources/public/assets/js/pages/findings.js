@@ -5,7 +5,7 @@ import * as api from '../api.js';
 import * as router from '../router.js';
 import { h, fill, panel, table, chip, serviceChip, copyBlock, spinner, noDataYet, formDialog, errorText, toast, breakdownBar, breakdownLead, BREAKDOWN_BUCKETS } from '../ui.js';
 import { formatSql, storedSql } from '../sql.js';
-import { count, dur, rate, pct, apdex, bytes, time, bothTimes, truncate, shortId } from '../format.js';
+import { count, counted, dur, rate, pct, apdex, bytes, time, bothTimes, truncate, shortId } from '../format.js';
 import { codeFrames } from '../frames.js';
 import { copyButtons, cliLine } from '../copyas.js';
 import { pageLoader } from '../page.js';
@@ -52,11 +52,6 @@ const STATE_TITLE = {
 export function stateChip(state) {
   if (!state) return null;
   return chip(state, { class: 'chip-state state-' + state, title: STATE_TITLE[state] || state });
-}
-
-/** `1 request`, `2 requests`: a count and its noun. */
-function counted(n, one, many = one + 's') {
-  return count(n) + ' ' + (n === 1 ? one : many);
 }
 
 /**

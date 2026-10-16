@@ -11,7 +11,7 @@ import { formatSql } from '../sql.js';
 import { stackTrace, foldedStack, appFrames, codeFrames } from '../frames.js';
 import { slowRequestMs } from '../buckets.js';
 import { detailOf } from './logs.js';
-import { dur, count, timeMs, bothTimes, offset, full } from '../format.js';
+import { dur, counted, timeMs, bothTimes, offset, full } from '../format.js';
 import {
   startMsOf, traceStartMs, spanTree, flattenTree, selfTimes, profileRows, hotSpanIds,
 } from '../trace-model.js';
@@ -94,10 +94,10 @@ export function render(root, ctx) {
           idButton(data.traceId || traceId, 'Copy trace id'),
           h('span.muted', { style: { fontSize: '11px' }, title: bothTimes(data.start) }, full(data.start)),
           h('span.muted', { style: { fontSize: '11px' } }, dur(data.durationMs)),
-          h('span.muted', { style: { fontSize: '11px' } }, count((data.spans || []).length) + ' spans'),
-          errors ? h('span.bad', { style: { fontSize: '11px' } }, count(errors) + ' errors') : null,
+          h('span.muted', { style: { fontSize: '11px' } }, counted((data.spans || []).length, 'span')),
+          errors ? h('span.bad', { style: { fontSize: '11px' } }, counted(errors, 'error')) : null,
           (data.logs || []).length
-            ? h('a.link-btn', { href: '#trace-logs', onclick: (e) => { e.preventDefault(); logsPanel.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }, count(data.logs.length) + ' logs')
+            ? h('a.link-btn', { href: '#trace-logs', onclick: (e) => { e.preventDefault(); logsPanel.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }, counted(data.logs.length, 'log'))
             : null)),
       h('div.row', { style: { marginLeft: 'auto', gap: '8px' } },
         segmented({

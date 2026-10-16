@@ -42,8 +42,8 @@ function span(spanId, parentSpanId, at, ms, extra = {}) {
 }
 
 /** Puts a trace on the server and opens its page. */
-async function open(id, durationMs, spans, query = {}) {
-  traces.set(id, { traceId: id, start: T0, end: T0 + durationMs, durationMs, services: ['web'], spans, logs: [] });
+async function open(id, durationMs, spans, query = {}, logs = []) {
+  traces.set(id, { traceId: id, start: T0, end: T0 + durationMs, durationMs, services: ['web'], spans, logs });
   router.replace('/traces/' + id, query);
   const root = document.createElement('main');
   document.body.replaceChildren(root);
@@ -70,6 +70,14 @@ test('a trace under a millisecond is drawn and measured against its own duration
   const drawer = ui.drawerBody().querySelector('dl').children.map((c) => c.textContent);
   assert.equal(drawer[drawer.indexOf('duration') + 1], '0.5 ms · 100.0% of trace');
   assert.equal(drawer[drawer.indexOf('self') + 1], '0.3 ms · 50.0% of trace');
+  instance.destroy();
+});
+
+test('the header counts one span, one error and one log in the singular', async () => {
+  const log = { id: 'l1', at: T0 + 1, severity: 'ERROR', logger: 'web.Items', body: 'boom', attributes: {} };
+  const { root, instance } = await open('single', 4, [span('root', null, 0, 4, { error: true, status: 'ERROR' })], {}, [log]);
+  const counts = root.querySelector('.trace-head').querySelectorAll('span, a').map((e) => e.textContent).filter((t) => /^\d+ \w+$/.test(t));
+  assert.deepEqual(counts, ['1 span', '1 error', '1 log']);
   instance.destroy();
 });
 
