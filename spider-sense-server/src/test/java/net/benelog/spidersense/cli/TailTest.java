@@ -2,6 +2,7 @@ package net.benelog.spidersense.cli;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -258,6 +259,26 @@ class TailTest {
             assertThat(run.err()).isEmpty();
         } finally {
             server.stop(0);
+        }
+    }
+
+    /**
+     * A Spider Sense that took the connection and says nothing, as one whose JVM is suspended in a
+     * debugger does, is waited for no longer than {@code --timeout} either (cli.adoc#tail).
+     */
+    @Test
+    void aTimeoutAlsoBoundsTheWaitForTheFirstAnswer() throws IOException {
+        // The kernel completes the connection into the backlog; nothing ever accepts it or answers.
+        try (ServerSocket silent = new ServerSocket(0, 50, java.net.InetAddress.getLoopbackAddress())) {
+            long started = System.nanoTime();
+
+            Run run = assertTimeoutPreemptively(java.time.Duration.ofSeconds(20),
+                    () -> cli("http://127.0.0.1:" + silent.getLocalPort(), "tail", "--timeout=1s"));
+
+            assertThat(run.exit()).isZero();
+            assertThat(run.err()).isEmpty();
+            assertThat(java.time.Duration.ofNanos(System.nanoTime() - started))
+                    .isLessThan(java.time.Duration.ofSeconds(10));
         }
     }
 

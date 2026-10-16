@@ -10,12 +10,14 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import net.benelog.spidersense.api.Printable;
@@ -72,21 +74,29 @@ final class Tail {
     static int run(Options options, String defaultUrl, PrintStream out, PrintStream err) {
         String base = Remote.base(options.value("url", defaultUrl));
         Watch watch = watch(options);
-        // No read timeout: the stream is meant to stay open (--timeout closes it from the side).
-        HttpRequest request = HttpRequest.newBuilder(URI.create(base + "/api/events"))
+        Long timeoutMs = watch.timeoutMs();
+        // --timeout counts from here, so it bounds the wait for the first answer too: a Spider Sense
+        // whose JVM is suspended in a debugger still takes the connection, and says nothing.
+        long started = System.nanoTime();
+        // No read timeout: the stream is meant to stay open (--timeout closes it from the side). The
+        // request's own timeout ends only the wait for the response headers.
+        HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(base + "/api/events"))
                 .header("Accept", "text/event-stream")
-                .GET()
-                .build();
+                .GET();
+        if (timeoutMs != null) {
+            request.timeout(Duration.ofMillis(Math.max(1, timeoutMs)));
+        }
         try (HttpClient client = Remote.client()) {
             HttpResponse<InputStream> response =
-                    Remote.send(client, base, request, HttpResponse.BodyHandlers.ofInputStream());
+                    Remote.send(client, base, request.build(), HttpResponse.BodyHandlers.ofInputStream());
             if (!Remote.answered(response, Remote.EVENT_STREAM)) {
                 // An error, a redirect, or a page that is not an event stream: no Spider Sense.
                 response.body().close();
                 return unreachable(err, Remote.Unreachable.answered(response.statusCode(), "/api/events"), base);
             }
+            Long remainingMs = timeoutMs == null ? null : Math.max(0, timeoutMs - millisSince(started));
             try (InputStream body = response.body()) {
-                if (follow(body, watch, out)) {
+                if (follow(body, watch, remainingMs, out)) {
                     return Cli.OK;
                 }
             }
@@ -96,10 +106,19 @@ final class Tail {
             return Cli.USAGE;
         } catch (IOException e) {
             return unreachable(err, new Remote.Unreachable(Remote.reason(e)), base);
+        } catch (Remote.Busy e) {
+            // Only the request's timeout ends the wait for an answer this way, and it is --timeout's.
+            return Cli.OK;
         } catch (Remote.Unreachable e) {
-            // An interrupt while connecting ends the watch, as one while reading does.
-            return Thread.currentThread().isInterrupted() ? Cli.OK : unreachable(err, e, base);
+            // An interrupt while connecting ends the watch, as one while reading does, and so does a
+            // --timeout that elapsed before the connection was made.
+            boolean elapsed = timeoutMs != null && millisSince(started) >= timeoutMs;
+            return Thread.currentThread().isInterrupted() || elapsed ? Cli.OK : unreachable(err, e, base);
         }
+    }
+
+    private static long millisSince(long nanoTime) {
+        return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - nanoTime);
     }
 
     /** The options {@code tail} takes, read once so a bad one is refused before the stream. */
@@ -127,12 +146,12 @@ final class Tail {
      * is not either: the command was watching for something that did not come
      * (cli.adoc#tail).
      *
+     * @param timeoutMs what is left of {@code --timeout} once the stream opened, or null for none
      * @return whether the watch ended as asked: {@code --until-traces} met, {@code --timeout}
      *         elapsed, or an interrupt; false when the server closed the stream first
      */
-    private static boolean follow(InputStream body, Watch watch, PrintStream out) {
+    private static boolean follow(InputStream body, Watch watch, @Nullable Long timeoutMs, PrintStream out) {
         Thread deadline = null;
-        Long timeoutMs = watch.timeoutMs();
         AtomicBoolean elapsed = new AtomicBoolean();
         if (timeoutMs != null) {
             deadline = new Thread(() -> {
