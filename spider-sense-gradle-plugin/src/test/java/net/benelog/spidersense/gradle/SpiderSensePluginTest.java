@@ -32,8 +32,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>Two kinds of assertion: a {@code probe} task prints the arguments the
  * plugin contributed, which is the fastest way to see what a forked JVM would
  * get; and the two Spider Sense tasks are really run, against a stub jar that
- * carries a {@code SpiderSenseMain} printing its environment, arguments and JVM
- * options, because {@code SPIDERSENSE_URL} is set on the forked process and a
+ * carries the jar's main class, {@code VersionGate}, printing its environment,
+ * arguments and JVM options (the tasks run it as {@code java -jar} would, so that
+ * an older Java gets the gate's one line), because {@code SPIDERSENSE_URL} is set on the forked process and a
  * probe would not see it.
  */
 class SpiderSensePluginTest {
@@ -48,11 +49,11 @@ class SpiderSensePluginTest {
 
     @BeforeAll
     static void stubJar() throws IOException {
-        Path source = stubDir.resolve("SpiderSenseMain.java");
+        Path source = stubDir.resolve("VersionGate.java");
         Files.writeString(source, """
-                package net.benelog.spidersense.launcher;
+                package net.benelog.spidersense.boot;
 
-                public class SpiderSenseMain {
+                public class VersionGate {
                     public static void main(String[] args) {
                         System.out.println("SPIDERSENSE_URL=" + System.getenv("SPIDERSENSE_URL"));
                         System.out.println("args=" + java.util.Arrays.toString(args));
@@ -77,7 +78,7 @@ class SpiderSensePluginTest {
         assertThat(compiler).as("the tests run on a JDK").isNotNull();
         assertThat(compiler.run(null, null, null, "-d", classes.toString(), source.toString())).isZero();
 
-        String entry = "net/benelog/spidersense/launcher/SpiderSenseMain.class";
+        String entry = "net/benelog/spidersense/boot/VersionGate.class";
         stubJar = stubDir.resolve("spider-sense-stub.jar");
         try (OutputStream file = Files.newOutputStream(stubJar); JarOutputStream jar = new JarOutputStream(file)) {
             jar.putNextEntry(new JarEntry(entry));

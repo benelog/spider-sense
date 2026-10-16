@@ -64,8 +64,12 @@ public class SpiderSensePlugin implements Plugin<Project> {
     /** The group the three tasks are in. */
     public static final String GROUP = "Spider Sense";
 
-    /** The launcher's main class: the standalone server and the CLI in one entry point. */
-    public static final String MAIN_CLASS = "net.benelog.spidersense.launcher.SpiderSenseMain";
+    /**
+     * The jar's {@code Main-Class}, as {@code java -jar} runs it: the version gate, compiled for
+     * Java 8, which hands over to the standalone server and the CLI on Java 25 and answers an
+     * older {@code javaLauncher} with one line and exit code 2.
+     */
+    public static final String MAIN_CLASS = "net.benelog.spidersense.boot.VersionGate";
 
     /** {@code -PspiderSense.enabled=false} runs the application bare, {@code =true} the other way round. */
     public static final String ENABLED_PROPERTY = "spiderSense.enabled";
@@ -341,7 +345,7 @@ public class SpiderSensePlugin implements Plugin<Project> {
     }
 
     /**
-     * The setup the three tasks share: the jar as the class path, the launcher's main
+     * The setup the three tasks share: the jar as the class path, the jar's main
      * class, a Java the jar runs on, the block's options, and the URL.
      */
     private static SpiderSenseArguments configureJarRun(JavaExec task, FileCollection jar,

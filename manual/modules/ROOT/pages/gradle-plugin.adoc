@@ -258,10 +258,11 @@ spiderSense {
 ./gradlew -q spiderSense --args="check --max-n-plus-one=0"
 ----
 
-The `spiderSense` task is a `JavaExec` with the jar as its only class path, `net.benelog.spidersense.launcher.SpiderSenseMain` as its main class, and no dependency on compiling the project.
+The `spiderSense` task is a `JavaExec` with the jar as its only class path, the jar's `Main-Class`, `net.benelog.spidersense.boot.VersionGate`, as its main class, and no dependency on compiling the project.
 It runs no code of the project, so it does not run on the project's toolchain: the jar's server and CLI need Java 25 or later, whatever Java the project compiles for.
 It runs on the JVM that runs Gradle when that is Java 25 or later, and otherwise on a Java 25 toolchain, which Gradle finds among the installed JDKs or provisions as the build's toolchain settings allow.
 `spiderSenseInit` and `spiderSenseCheck` run the same way, and a build that wants another Java sets the task's `javaLauncher` itself.
+A `javaLauncher` older than Java 25 gets the line `java -jar` prints on it, naming the Java it found, and the task fails with exit code `2`.
 The block's `spidersense.*` properties are passed to it as they are to the application, so a standalone started this way listens where the block says.
 Its `service` is passed as well, and a standalone ignores it: the standalone runs inside no application, so its `status` names no embedded service.
 When the block sets no `port` and forwards to a `collector` on this machine (`127.0.0.1`, `localhost` or `[::1]`, with a port written in the URL), the task passes the collector's port as `-Dspidersense.port=`.
