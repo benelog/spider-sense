@@ -136,6 +136,7 @@ Every answer follows the same rules, so the output is small, stable and diffable
 - A trace and `logs` are lines rather than a table, and `status` and `mark` answer in their own shape.
 - Durations are milliseconds with one decimal and a thousands separator (`1,532.4 ms`), counts are integers, rates are percentages with one decimal, an Apdex is a score with three decimals.
 - A cell with nothing in it is `—`, and in `compare` the two sides of a row share one cell, `before → after`.
+- A control character in what the application recorded, such as an ESC or a BEL, is written as its escape (`\u001b`), so an answer never drives the terminal.
 - A statement is cut at 200 characters with `…`; `--full` keeps it whole.
 - Nothing in the body depends on when it was rendered, only on the window; `now` appears only in the heading.
 - An empty result says what was looked for and where, and, when there was no request at all, how to send some.

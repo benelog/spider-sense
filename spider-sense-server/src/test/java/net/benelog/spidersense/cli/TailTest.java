@@ -127,6 +127,28 @@ class TailTest {
                         + "never printed  09e96c4c6db157e690716c2615ffd146\n");
     }
 
+    /**
+     * What a request sent the application, quoted in a tingle, prints as text: a control character
+     * is its escape and a line break a space, so the line neither drives the terminal nor splits.
+     */
+    @Test
+    void aControlCharacterOrALineBreakInATingleIsTextOnItsLine() throws IOException {
+        String stream = """
+                event: tingle
+                data: {"kind":"error","at":%d,"service":"line\\nbreak","title":"GET /x\\u001b]0;pwned\\u0007",\
+                "detail":"For input string: \\u009b2J","traceId":"09e96c4c6db157e690716c2615ffd146","spanId":"bb"}
+
+                """.formatted(FIRST);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try (PrintStream toOut = new PrintStream(out, true, UTF_8)) {
+            Tail.read(new ByteArrayInputStream(stream.getBytes(UTF_8)), new Tail.Watch(null, null, null, null, false),
+                    toOut);
+        }
+
+        assertThat(out.toString(UTF_8)).isEqualTo(clock(FIRST) + "  error         line break      "
+                + "GET /x\\u001b]0;pwned\\u0007  For input string: \\u009b2J  09e96c4c6db157e690716c2615ffd146\n");
+    }
+
     @Test
     void kindAndServiceFilterOneValueEach() {
         assertThat(read(new Tail.Watch("slow-query", null, null, null, false)).out())

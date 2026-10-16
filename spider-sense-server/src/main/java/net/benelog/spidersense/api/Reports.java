@@ -54,8 +54,17 @@ import org.jspecify.annotations.Nullable;
  */
 public final class Reports implements AutoCloseable {
 
-    /** One answer, in both renderings. */
+    /**
+     * One answer, in both renderings.
+     *
+     * <p>The text is made printable here, where every text answer is made, so that whatever a
+     * rendering quotes, no control character but the newline reaches a terminal ({@link Printable}).
+     */
     public record Report(JsonValue json, String text) {
+
+        public Report {
+            text = Printable.text(text);
+        }
     }
 
     /**
@@ -684,7 +693,7 @@ public final class Reports implements AutoCloseable {
             boolean full) {
         Stats.ErrorGroup group = errorGroup(window, errorId);
         return group == null ? null
-                : Text.error(window, service, group, requests(window, service), full, frames);
+                : Printable.text(Text.error(window, service, group, requests(window, service), full, frames));
     }
 
     /** One error group over the window, whatever the service, or null when it did not occur in it. */
@@ -702,7 +711,8 @@ public final class Reports implements AutoCloseable {
     public @Nullable String queryText(Window window, @Nullable String service, String queryId,
             boolean full) {
         Stats.QueryStats query = queryStats(window, queryId);
-        return query == null ? null : Text.query(window, service, query, requests(window, service), full);
+        return query == null ? null
+                : Printable.text(Text.query(window, service, query, requests(window, service), full));
     }
 
     /**

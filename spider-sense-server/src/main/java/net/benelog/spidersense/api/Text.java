@@ -1467,8 +1467,16 @@ final class Text {
         return value == null ? "—" : singleLine(value);
     }
 
+    /**
+     * A value on one line: every run of whitespace one space, and no space at either end. Only
+     * the space is stripped there, so a control character at an end is kept for
+     * {@link Printable} to escape rather than dropped unseen, as {@link String#trim} would.
+     */
     private static String singleLine(String value) {
-        return value.replaceAll("\\s+", " ").trim();
+        String collapsed = value.replaceAll("\\s+", " ");
+        int from = collapsed.startsWith(" ") ? 1 : 0;
+        int to = Math.max(from, collapsed.endsWith(" ") ? collapsed.length() - 1 : collapsed.length());
+        return collapsed.substring(from, to);
     }
 
     private static String escapeBars(String value) {

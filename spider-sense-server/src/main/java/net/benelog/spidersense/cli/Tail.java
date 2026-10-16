@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import net.benelog.spidersense.api.Printable;
 import net.benelog.spidersense.query.Selectors;
 import net.benelog.spidersense.store.AttrJson;
 import net.benelog.spidersense.store.Tingle;
@@ -253,8 +254,8 @@ final class Tail {
      */
     private static String line(JsonObject tingle) {
         StringBuilder text = new StringBuilder(clock(tingle.getLong("at", 0))).append("  ")
-                .append(pad(tingle.getString("kind", "—"), KIND_WIDTH))
-                .append(pad(tingle.getString("service", "—"), SERVICE_WIDTH));
+                .append(pad(oneLine(tingle.getString("kind", "—")), KIND_WIDTH))
+                .append(pad(oneLine(tingle.getString("service", "—")), SERVICE_WIDTH));
         List<String> rest = new ArrayList<>(3);
         for (String key : List.of("title", "detail", "traceId")) {
             String value = AttrJson.optionalString(tingle, key);
@@ -262,7 +263,8 @@ final class Tail {
                 rest.add(oneLine(value));
             }
         }
-        return text.append(String.join("  ", rest)).toString();
+        // What a request sent the application reaches the terminal as text, never as a control.
+        return Printable.text(text.append(String.join("  ", rest)).toString());
     }
 
     /** The event as it arrived, with the name it arrived under: one object per line. */
@@ -290,8 +292,12 @@ final class Tail {
         return CLOCK.format(Instant.ofEpochMilli(at).atZone(Selectors.zone()));
     }
 
+    /** One line, as a text answer's cell is: whitespace runs one space, and no space at either end. */
     private static String oneLine(String value) {
-        return value.replaceAll("\\s+", " ").trim();
+        String collapsed = value.replaceAll("\\s+", " ");
+        int from = collapsed.startsWith(" ") ? 1 : 0;
+        int to = Math.max(from, collapsed.endsWith(" ") ? collapsed.length() - 1 : collapsed.length());
+        return collapsed.substring(from, to);
     }
 
     private static String pad(String value, int width) {

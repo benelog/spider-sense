@@ -112,7 +112,7 @@ public final class Params {
      */
     static WebResponse badRequest(WebRequest req, @Nullable String message) {
         return wantsText(req)
-                ? WebResponse.text(ErrorBody.message(message, "Bad request") + "\n")
+                ? WebResponse.text(Printable.text(ErrorBody.message(message, "Bad request")) + "\n")
                         .contentType(Text.CONTENT_TYPE).status(HttpStatus.BAD_REQUEST)
                 : ErrorBody.response(HttpStatus.BAD_REQUEST, message, "Bad request");
     }

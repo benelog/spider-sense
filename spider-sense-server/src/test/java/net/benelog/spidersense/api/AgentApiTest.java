@@ -829,6 +829,50 @@ class AgentApiTest {
         });
     }
 
+    /**
+     * cli.adoc#text-rendering: what a request sent the application, quoted by a span name, an
+     * exception message, a log line or a database's error, reaches no terminal as an instruction.
+     * Every control character but the newline is its escape, in every text answer.
+     */
+    @Test
+    void aControlCharacterTheApplicationRecordedIsItsEscapeInEveryTextAnswer() {
+        String input = "\u001b]52;c;cm0gLXJmIH4K\u0007\u001b]0;pwned\u0007\u001b[2J";
+        String escaped = "\\u001b]52;c;cm0gLXJmIH4K\\u0007\\u001b]0;pwned\\u0007\\u001b[2J";
+        serve((client, assembly) -> {
+            Span.Builder root = Otlp.span(TRACE, "00f067aa0ba902b7", "GET /nul\u0000bel\u0007bs\bdel\u007fcsi\u009bx",
+                    Span.SpanKind.SPAN_KIND_SERVER, NOW, 600, Otlp.attr("http.request.method", "GET"));
+            Span.Builder failed = Otlp.failing(Otlp.child(root, "00f067aa0ba902d1", "load",
+                            Span.SpanKind.SPAN_KIND_INTERNAL, NOW + 1, 1),
+                    "java.lang.NumberFormatException", "For input string: \"" + input + "\"",
+                    "java.lang.NumberFormatException: For input string\n"
+                            + "\tat orders.OrderService.load(OrderService.java:41)");
+            postProtobuf(client, "/v1/traces", Otlp.traces(Otlp.service("orders"), root, failed).toByteArray());
+            postProtobuf(client, "/v1/logs", Otlp.logs(Otlp.service("orders"), "orders.Web",
+                    Otlp.log(NOW, 13, "Resolved [" + input + "]", TRACE, "00f067aa0ba902b7")).toByteArray());
+
+            String errorId = json(client.get("/api/errors?" + window())).getArray("errors")
+                    .get(0).asObject().getString("errorId");
+            List<String> answers = new ArrayList<>();
+            for (String path : List.of("/api/traces/" + TRACE, "/api/traces", "/api/logs", "/api/endpoints",
+                    "/api/errors", "/api/errors/" + errorId, "/api/findings")) {
+                answers.add(client.get(path + "?format=text&" + window()).body());
+            }
+            HttpResponse<String> refused = postJson(client, "/api/sql?format=text",
+                    "{\"sql\":\"SELECT CAST(CHAR(27) || 'x' AS INT)\"}");
+            assertThat(refused.statusCode()).isEqualTo(400);
+            answers.add(refused.body());
+
+            for (String answer : answers) {
+                assertThat(answer.chars().filter(c -> c != '\n' && Character.getType(c) == Character.CONTROL))
+                        .as(answer).isEmpty();
+            }
+            assertThat(answers.get(0)).contains("exception NumberFormatException: For input string: \""
+                    + escaped + "\"\n");
+            assertThat(answers.get(2)).contains("  orders.Web  Resolved [" + escaped + "]  trace " + TRACE);
+            assertThat(answers.get(3)).contains("| GET /nul\\u0000bel\\u0007bs\\u0008del\\u007fcsi\\u009bx |");
+        });
+    }
+
     /** A fixed window, so two answers over it can be compared byte for byte. */
     private static String window() {
         return "from=" + (NOW - 60_000) + "&to=" + (NOW + 60_000);
