@@ -298,14 +298,16 @@ Anything thrown inside either callback is swallowed, since a missing code locati
 === The index catalog
 
 The index catalog is the one part of the extension that needs a `Connection`, which no span processor has.
-The extension reads the index catalog of the tables a slow statement touches, so a xref:findings.adoc#slow-query[`slow-query`] or xref:findings.adoc#n-plus-one[`n-plus-one`] finding can say which of the columns the statement filters on no index serves (xref:findings.adoc#schema[The schema block]).
+The extension reads the index catalog of the tables the application's statements touch, so a xref:findings.adoc#slow-query[`slow-query`] or xref:findings.adoc#n-plus-one[`n-plus-one`] finding can say which of the columns the statement filters on no index serves (xref:findings.adoc#schema[The schema block]).
 
 For the catalog, the extension carries one `InstrumentationModule` of its own, `spider-sense-schema`, registered through `META-INF/services/io.opentelemetry.javaagent.extension.instrumentation.InstrumentationModule`.
 Its advice sits on the `execute`, `executeQuery`, `executeUpdate` and `executeLargeUpdate` methods of every `java.sql.Statement` implementation.
-The advice measures the call and, when it took at least `spidersense.slow.query.ms` (the same threshold, read the same way) and threw nothing, hands the statement to `IndexCatalog`.
-The fifth repeat of a statement within a trace, which the span processor captures a stack for, is deliberately not a trigger here.
-It would cost a map lookup on every statement the application runs, for the one N+1 whose predicate column has no index, and the typical N+1 filters on a primary key.
-An `n-plus-one` finding therefore carries the block only when its statement has also been slow on that table.
+The advice measures the call and, when it threw nothing, hands the statement to `IndexCatalog`.
+`IndexCatalog` reads a table's catalog on the first statement of the process that names it, however fast, and again on the first one after DDL that names it.
+A catalog read only for a slow statement would outlive the index that made the statement fast: the developer adds the index the block asked for and restarts, the statement is never slow again, and the old row would keep calling the column unindexed for the whole retention.
+The DDL it reads is `create [unique] index … on t`, `create table t`, `alter table t`, `drop table t` and MySQL's `drop index … on t`; a `drop index` or an `alter index` that names no table makes every table's catalog worth reading again, and a temporary table's DDL is not read.
+A statement it has already read since the last such DDL costs one map lookup by its text and nothing else.
+It remembers 2,000 statement texts; past them, a statement it has not seen is read only when it took at least `spidersense.slow.query.ms` (the same threshold, read the same way), so an application that writes its literals into the SQL is not tokenised on every call.
 `IndexCatalog` is a helper class the agent injects beside the driver (`getAdditionalHelperClassNames`), because advice runs in the application's class loader and the extension's own classes are not visible there.
 Its package, `schema`, is the helper list: `IndexCatalog`, its nested classes, and `Thresholds` with the `Settings` it reads through, which the span processor also uses in the extension's own loader, so both read the threshold one way.
 A unit test compares the list with the compiled package, because a class missing from it would be a `NoClassDefFoundError` inside the application.
@@ -314,7 +316,7 @@ A unit test compares the list with the compiled package, because a class missing
 A statement with neither is left alone.
 `IndexCatalog` scans that SQL for the table names after `from`, `join`, `update`, `into` and `delete from`, reads a comma-separated list after `from`, keeps a `schema.table` qualifier, and unquotes a quoted name.
 
-The lookup runs once per table per process, keyed by the connection's JDBC URL and the table name, and stops after 200 tables.
+The lookup runs once per table per process and per DDL that names it, keyed by the connection's JDBC URL and the table name, and stops after 200 tables.
 It runs on the thread that ran the statement and on the connection it ran on.
 It asks the standard `DatabaseMetaData` whether the table exists (`getTables`, so a name the scanner misread is silently nothing, and so is a view, whose indexes are its base table's) and for its indexes (`getIndexInfo(catalog, schema, table, false, true)`, the statistic rows dropped, the columns in ordinal order).
 A name the statement does not qualify is looked up in the connection's current schema (`Connection.getSchema()`), because that is the table the database resolved it to: H2 also has an `INFORMATION_SCHEMA.USERS` beside the application's `users`, and PostgreSQL may hold an `audit.orders` beside `public.orders`.
@@ -330,7 +332,7 @@ MySQL on Linux (`lower_case_table_names=0`) folds to neither, so there the name 
 The lookup stays on the request thread and on the borrowed connection by design.
 A second connection borrowed from the pool for the lookup would itself be the pool exhaustion that a xref:findings.adoc#pool-exhausted[`pool-exhausted`] finding diagnoses.
 The connection the statement used cannot be handed to another thread, because the application returns it to the pool the moment the statement is done.
-The cost is the driver's catalog query, once per table, on a request that has already spent `slow.query.ms` in the database.
+The cost is the driver's catalog query, once per table, on the first request that touches it.
 
 On PostgreSQL that catalog query is a statement of its own, since the driver queries `pg_catalog` through an ordinary `Statement`, and it is a database span of the application's trace when the application itself calls `getIndexInfo`.
 MySQL's Connector/J answers the same call without an instrumented statement, so it is no span there even then.

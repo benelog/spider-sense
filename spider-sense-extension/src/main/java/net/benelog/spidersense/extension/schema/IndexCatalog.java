@@ -27,11 +27,12 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Reads the index catalog of the tables a slow statement touched and emits it as one log record per
- * table ({@code design.adoc#extension}; {@code findings.adoc#schema}).
+ * Reads the index catalog of the tables the application's statements touch and emits it as one log
+ * record per table ({@code design.adoc#extension}; {@code findings.adoc#schema}).
  *
  * <p>This class is a helper: the agent injects it into the class loader of the JDBC driver, beside
  * the advice that calls it, because advice never runs in the extension's own loader. That is why it
@@ -46,16 +47,18 @@ import org.jspecify.annotations.Nullable;
  * pool exhaustion the finding is meant to diagnose, and handing this one to another thread is not
  * possible either: the application returns it to the pool as soon as the statement is done.
  *
- * <p>Only a statement that has spent {@code spidersense.slow.query.ms} in the database is looked
- * up, which is what a {@code slow-query} finding is made of; an {@code n-plus-one} finding gets a
- * block only when its repeated statement has also been slow on some table, because counting the
- * repeats here would cost a map lookup on every statement for the one N+1 whose predicate column
- * has no index, and a typical N+1 filters on a primary key.
+ * <p>A table is looked up on the first statement of the process that names it, however fast,
+ * and again on the first one after DDL that names it ({@code create index … on t},
+ * {@code alter table t}), because a catalog read only when a statement was slow would outlive the
+ * index that made it fast: the developer adds the index the block asked for, restarts, and the
+ * statement never becomes slow enough to correct the row (findings.adoc#schema).
  *
- * <p>What that costs is bounded on every side: each table is looked up once per process, at most
- * {@value #MAX_TABLES} tables are looked up at all, a thread already inside a lookup does nothing
- * (a driver's own catalog queries come back through the same advice), and every exception is
- * swallowed. A missing catalog is never worth a slow or a broken statement.
+ * <p>What that costs is bounded on every side: a statement already handled since the last DDL
+ * costs one map lookup by its text, each table is looked up once per process and DDL, at most
+ * {@value #MAX_TABLES} tables are looked up at all, past {@value #MAX_STATEMENTS} distinct
+ * statements a new one is read only when it was slow, a thread already inside a lookup does
+ * nothing (a driver's own catalog queries come back through the same advice), and every exception
+ * is swallowed. A missing catalog is never worth a slow or a broken statement.
  */
 public final class IndexCatalog {
 
@@ -78,6 +81,9 @@ public final class IndexCatalog {
     /** How many tables one process ever looks up; past it the catalog stops growing. */
     static final int MAX_TABLES = 200;
 
+    /** How many statement texts are remembered as handled; past it only a slow one is read. */
+    static final int MAX_STATEMENTS = 2000;
+
     /**
      * Read once, at class initialisation: this sits on the path of every statement the application
      * runs, and the value cannot change while it runs.
@@ -90,6 +96,15 @@ public final class IndexCatalog {
 
     /** One entry per table that has been attempted, successfully or not; bounded by MAX_TABLES. */
     private static final Set<String> attemptedTables = ConcurrentHashMap.newKeySet();
+
+    /**
+     * The statements already read, by their text, each with the {@link #ddl} count it was read
+     * under: a statement read since the last DDL names no table that has not been attempted.
+     */
+    private static final Map<String, Integer> handled = new ConcurrentHashMap<>();
+
+    /** How many DDL statements have made a table's catalog worth reading again. */
+    private static final AtomicInteger ddl = new AtomicInteger();
 
     /** Set for the length of a lookup, so the driver's own catalog queries fall straight through. */
     private static final ThreadLocal<Boolean> insideLookup = new ThreadLocal<>();
@@ -111,18 +126,42 @@ public final class IndexCatalog {
         afterExecute(statement, sql, elapsedNanos, THRESHOLD_NANOS);
     }
 
-    /** The same, with the threshold given rather than configured, which is what a test wants. */
+    /**
+     * The same, with the threshold given rather than configured, which is what a test wants.
+     *
+     * <p>The threshold only matters once {@value #MAX_STATEMENTS} statement texts are remembered:
+     * past that, a statement not among them is read only when it was slow, as every statement was
+     * before a fast one could correct the catalog.
+     */
     static void afterExecute(
             Statement statement, @Nullable String sql, long elapsedNanos, long thresholdNanos) {
         try {
-            if (elapsedNanos < thresholdNanos || Boolean.TRUE.equals(insideLookup.get())) {
+            if (Boolean.TRUE.equals(insideLookup.get())) {
                 return;
             }
             String text = sql != null ? sql : preparedSql(statement);
             if (text == null) {
                 return;
             }
+            int generation = ddl.get();
+            Integer seen = handled.get(text);
+            if (seen != null && seen == generation) {
+                return;
+            }
+            boolean remembered = seen != null || handled.size() < MAX_STATEMENTS;
+            if (!remembered && elapsedNanos < thresholdNanos) {
+                return;
+            }
+            List<String> changed = ddlTargets(text);
+            if (changed != null) {
+                // Not remembered: every run of a DDL statement changes what the catalog holds.
+                forgetTables(changed);
+                return;
+            }
             List<TableRef> tables = tableRefsOf(text);
+            if (remembered) {
+                handled.put(text, generation);
+            }
             if (tables.isEmpty()) {
                 return;
             }
@@ -161,7 +200,10 @@ public final class IndexCatalog {
         return VirtualField.find(PreparedStatement.class, String.class).get(prepared);
     }
 
-    /** One attempt per table per process, recorded before the attempt so a failure is not retried. */
+    /**
+     * One attempt per table per process and DDL, recorded before the attempt so a failure is not
+     * retried.
+     */
     private static void lookUpAll(Connection connection, List<TableRef> tables) throws SQLException {
         DatabaseMetaData meta = connection.getMetaData();
         String url = meta.getURL();
@@ -465,9 +507,29 @@ public final class IndexCatalog {
         provider = loggerProvider;
     }
 
-    /** For tests: forget which tables have been looked up. */
+    /**
+     * After DDL, the tables it names are looked up again on their next statement; a DDL statement
+     * that names none ({@code drop index idx}, on PostgreSQL and H2) may have changed any of them.
+     * A name is matched without its schema and its case, since the DDL and the statements need not
+     * spell it alike, and looking a table up once too often costs one catalog query.
+     */
+    private static void forgetTables(List<String> names) {
+        if (names.isEmpty()) {
+            attemptedTables.clear();
+        } else {
+            attemptedTables.removeIf(key -> names.contains(lastPart(key.substring(key.indexOf('\0') + 1))));
+        }
+        ddl.incrementAndGet();
+    }
+
+    private static String lastPart(String name) {
+        return name.substring(name.lastIndexOf('.') + 1).toLowerCase(Locale.ROOT);
+    }
+
+    /** For tests: forget which tables and statements have been looked up. */
     static void forget() {
         attemptedTables.clear();
+        handled.clear();
     }
 
     // ---------------------------------------------------------------- the scanner
@@ -558,6 +620,88 @@ public final class IndexCatalog {
             i = at - 1;
         }
         return found;
+    }
+
+    /**
+     * The tables whose indexes a DDL statement may change, each lower-cased without its schema;
+     * empty when it may change any table's, and null when the statement is not such DDL.
+     *
+     * <p>Read: {@code create [unique] index … on t}, {@code create table t}, {@code alter table t},
+     * {@code drop table t, u}, {@code drop index idx on t} (MySQL), and {@code drop index idx} or
+     * {@code alter index}, which name no table. A temporary table is no catalog a statement is
+     * judged against, so its DDL is not read: an application creating one per request would
+     * otherwise read every statement again on every request.
+     */
+    static @Nullable List<String> ddlTargets(String sql) {
+        List<Token> words = tokens(sql);
+        if (words.isEmpty() || words.get(0).quoted()) {
+            return null;
+        }
+        String verb = words.get(0).text().toLowerCase(Locale.ROOT);
+        if (!verb.equals("create") && !verb.equals("alter") && !verb.equals("drop")) {
+            return null;
+        }
+        int at = 1;
+        while (at < words.size() && !words.get(at).quoted() && DDL_MODIFIERS.contains(lower(words.get(at)))) {
+            at++;
+        }
+        if (at >= words.size() || words.get(at).quoted()) {
+            return null;
+        }
+        String object = lower(words.get(at));
+        if (object.equals("index")) {
+            if (verb.equals("alter")) {
+                return List.of();
+            }
+            for (int i = at + 1; i < words.size(); i++) {
+                if (!words.get(i).quoted() && lower(words.get(i)).equals("on")) {
+                    return namesFrom(words, i + 1, false);
+                }
+            }
+            return List.of();
+        }
+        if (object.equals("table")) {
+            return namesFrom(words, at + 1, verb.equals("drop"));
+        }
+        return null;
+    }
+
+    /**
+     * The words DDL may carry before the object it creates, alters or drops. A temporary table's
+     * words are not among them, so its DDL reads as no DDL at all.
+     */
+    private static final Set<String> DDL_MODIFIERS = new HashSet<>(Arrays.asList(
+            "or", "replace", "unique", "fulltext", "spatial", "bitmap", "clustered", "nonclustered",
+            "cached", "memory"));
+
+    /** The words between {@code table}, {@code on} or {@code index} and the name. */
+    private static final Set<String> DDL_SKIPPED = new HashSet<>(Arrays.asList(
+            "if", "not", "exists", "only", "concurrently"));
+
+    /** The table names from there on, the last part of each lower-cased; empty when there is none. */
+    private static List<String> namesFrom(List<Token> words, int at, boolean list) {
+        while (at < words.size() && !words.get(at).quoted() && DDL_SKIPPED.contains(lower(words.get(at)))) {
+            at++;
+        }
+        List<String> names = new ArrayList<>();
+        while (at < words.size() && isName(words.get(at))) {
+            String last = words.get(at).text();
+            at++;
+            while (at + 1 < words.size() && ".".equals(words.get(at).text()) && isName(words.get(at + 1))) {
+                last = words.get(at + 1).text();
+                at += 2;
+            }
+            names.add(last.toLowerCase(Locale.ROOT));
+            if (!list || at >= words.size() || !",".equals(words.get(at).text())) {
+                break;
+            }
+            at++;
+        }
+        return names;
+    }
+
+    private static String lower(Token token) {
+        return token.text().toLowerCase(Locale.ROOT);
     }
 
     /** Past the table's alias, whether it was written with {@code as} or without one at all. */

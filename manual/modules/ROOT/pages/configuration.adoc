@@ -61,7 +61,7 @@ The application starts all the same, and the misspelt key has no effect.
 
 | `spidersense.slow.query.ms`
 | `100`
-| A database span slower than this is a tingle, and the one the extension captures a stack trace for and reads the index catalog for.
+| A database span slower than this is a tingle, and the one the extension captures a stack trace for.
 
 | `spidersense.open`
 | `false`

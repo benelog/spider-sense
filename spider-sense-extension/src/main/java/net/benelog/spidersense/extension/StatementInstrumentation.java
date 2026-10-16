@@ -43,8 +43,8 @@ public final class StatementInstrumentation implements TypeInstrumentation {
      * <p>Advice code is copied into the instrumented method and cannot see the extension's own
      * classes, only the helpers injected beside the driver; every decision therefore belongs in
      * {@link IndexCatalog}, and what is left here has to stay small enough to be obviously harmless
-     * in a method the application calls on every query; the helper returns at once for a statement
-     * under the threshold.
+     * in a method the application calls on every query; the helper returns after one map lookup for
+     * a statement it has already read.
      */
     @SuppressWarnings("unused")
     public static class ExecuteAdvice {

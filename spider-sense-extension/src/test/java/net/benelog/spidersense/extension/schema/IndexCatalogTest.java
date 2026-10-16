@@ -133,14 +133,71 @@ class IndexCatalogTest {
         assertThat(exporter.getFinishedLogRecordItems()).hasSize(1);
     }
 
+    /**
+     * Read only when slow, the catalog would outlive the index that made the statement fast: the
+     * index the block asked for is added, the application restarts, and the row never changes.
+     */
     @Test
-    void aStatementUnderTheThresholdIsNotLookedUp() throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("select * from items where name = ?")) {
-            IndexCatalog.afterExecute(statement, "select * from items where name = ?",
-                    THRESHOLD_NANOS - 1, THRESHOLD_NANOS);
-        }
+    void aStatementUnderTheThresholdIsLookedUpToo() throws SQLException {
+        fast("select * from items where name = ?");
 
+        assertThat(onlyRecord().getAttributes().get(TABLE)).isEqualTo("ITEMS");
+    }
+
+    /** An index created after a table was read, by a seed insert say, is read on its next statement. */
+    @Test
+    void aTableIsLookedUpAgainAfterDdlThatNamesIt() throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("create table members (id bigint primary key, email varchar)");
+        }
+        fast("select id from members where email = ?");
+        fast("select id from items where name = ?");
+        ddl("create index idx_members_email on public.members (email)");
+        fast("select id from members where email = ?");
+        fast("select id from items where name = ?");
+
+        assertThat(exporter.getFinishedLogRecordItems())
+                .extracting(record -> record.getAttributes().get(TABLE) + " " + record.getAttributes().get(INDEXES))
+                .as("members twice, the second time with its new index; items, which no DDL named, once")
+                .hasSize(3)
+                .satisfies(records -> {
+                    assertThat(records.get(0)).startsWith("MEMBERS ").doesNotContain("IDX_MEMBERS_EMAIL");
+                    assertThat(records.get(1)).startsWith("ITEMS ");
+                    assertThat(records.get(2)).startsWith("MEMBERS ").contains("IDX_MEMBERS_EMAIL");
+                });
+    }
+
+    @Test
+    void theDdlThatChangesATablesIndexesIsRead() {
+        assertThat(IndexCatalog.ddlTargets("create index idx on members (email)")).containsExactly("members");
+        assertThat(IndexCatalog.ddlTargets("CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx ON ONLY public.\"Members\" (email)"))
+                .containsExactly("members");
+        assertThat(IndexCatalog.ddlTargets("create index idx on orders ((lower(email)), status)")).containsExactly("orders");
+        assertThat(IndexCatalog.ddlTargets("alter table if exists shop.orders add constraint uq unique (code)"))
+                .containsExactly("orders");
+        assertThat(IndexCatalog.ddlTargets("create table if not exists orders (id bigint primary key)"))
+                .containsExactly("orders");
+        assertThat(IndexCatalog.ddlTargets("drop table if exists orders, order_lines")).containsExactly("orders", "order_lines");
+        assertThat(IndexCatalog.ddlTargets("drop index idx on orders")).as("MySQL").containsExactly("orders");
+        assertThat(IndexCatalog.ddlTargets("drop index if exists idx")).as("any table's").isEmpty();
+        assertThat(IndexCatalog.ddlTargets("create temporary table scratch (x int)")).as("no catalog").isNull();
+        assertThat(IndexCatalog.ddlTargets("create local temporary table scratch (x int)")).isNull();
+        assertThat(IndexCatalog.ddlTargets("create view v as select * from orders")).isNull();
+        assertThat(IndexCatalog.ddlTargets("select * from orders where note = 'create index'")).isNull();
+    }
+
+    /** Past the statements it remembers, a new one is read only when slow, as before. */
+    @Test
+    void pastTheStatementsItRemembersOnlyASlowOneIsRead() throws SQLException {
+        for (int i = 0; i < IndexCatalog.MAX_STATEMENTS; i++) {
+            fast("select * from items where id = " + i);
+        }
+        exporter.reset();
+
+        fast("select * from bare where x = ?");
         assertThat(exporter.getFinishedLogRecordItems()).isEmpty();
+        slow("select * from bare where x = ?");
+        assertThat(onlyRecord().getAttributes().get(TABLE)).isEqualTo("BARE");
     }
 
     @Test
@@ -243,6 +300,21 @@ class IndexCatalogTest {
             // Outside the agent the VirtualField the JDBC instrumentation fills is empty, so the
             // SQL is passed the way an execute(String) call would carry it.
             IndexCatalog.afterExecute(statement, sql, THRESHOLD_NANOS, THRESHOLD_NANOS);
+        }
+    }
+
+    /** A statement that took less than the threshold. */
+    private void fast(String sql) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            IndexCatalog.afterExecute(statement, sql, 0, THRESHOLD_NANOS);
+        }
+    }
+
+    /** DDL, run and then handed over as the advice would hand it. */
+    private void ddl(String sql) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            statement.execute(sql);
+            IndexCatalog.afterExecute(statement, sql, 0, THRESHOLD_NANOS);
         }
     }
 
