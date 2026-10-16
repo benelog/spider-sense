@@ -2035,39 +2035,51 @@ public final class Queries {
          * <p>Only a label: what counts requests, such as an N+1, asks {@link #entryOf}.
          */
         @Nullable Entry placeOf(String traceId, @Nullable String spanId) {
-            String current = spanId == null ? null : key(traceId, spanId);
-            String last = null;
-            for (int hops = 0; current != null && hops <= maxHops(); hops++) {
-                Entry entry = entries.get(current);
-                if (entry != null) {
-                    return entry;
-                }
-                last = current;
-                current = parents.get(current);
-            }
-            return current == null && last != null ? roots.get(last) : null;
+            return walk(traceId, spanId, true);
         }
 
         @Nullable Entry entryOf(String traceId, @Nullable String spanId) {
-            String current = spanId == null ? null : key(traceId, spanId);
-            for (int hops = 0; current != null && hops <= maxHops(); hops++) {
+            return walk(traceId, spanId, false);
+        }
+
+        /**
+         * The first entry span up the parent chain; else, with {@code toRoot}, the root
+         * span the chain ends at. Null when the chain leaves the window, and when it goes
+         * round a parent cycle.
+         *
+         * <p>A chain of any depth reaches its end. A cycle is told by Brent's method: the
+         * walk keeps a mark it moves up to where it stands after 1, 2, 4, 8… links, and
+         * coming back to the mark is going round a cycle. So a span below a cycle gives
+         * up after a few turns of its own trace's cycle, whatever else the window holds.
+         */
+        private @Nullable Entry walk(String traceId, @Nullable String spanId, boolean toRoot) {
+            if (spanId == null) {
+                return null;
+            }
+            String current = key(traceId, spanId);
+            String mark = current;
+            int stride = 1;
+            int climbed = 0;
+            while (true) {
                 Entry entry = entries.get(current);
                 if (entry != null) {
                     return entry;
                 }
-                current = parents.get(current);
+                String parent = parents.get(current);
+                if (parent == null) {
+                    // A root, or a span the window does not hold, which is no root of it.
+                    return toRoot ? roots.get(current) : null;
+                }
+                if (parent.equals(mark)) {
+                    return null;
+                }
+                current = parent;
+                if (++climbed == stride) {
+                    mark = current;
+                    stride *= 2;
+                    climbed = 0;
+                }
             }
-            return null;
-        }
-
-        /**
-         * How far up a parent chain the walk goes before it gives up: a chain without
-         * a cycle has no more links than there are parent ids, so a walk that takes
-         * more is going round a cycle, and a chain of any real depth still reaches
-         * its entry span.
-         */
-        private int maxHops() {
-            return parents.size();
         }
 
         /** A span's key in the maps: its trace id beside its span id, which is unique within the trace only. */

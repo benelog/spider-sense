@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -313,6 +314,35 @@ class FindingsTest {
                 .containsExactly("IllegalStateException in GET /deep");
         assertThat(queries.queries(window, null, "total", 10, null).get(0).callers())
                 .extracting(Stats.Caller::endpoint).containsExactly("GET /deep");
+    }
+
+    /**
+     * A span below a parent cycle gives up after going round it once or twice, however many
+     * other spans of the window have a parent: the walk climbs its own trace and no further.
+     */
+    @Test
+    void aWalkBelowAParentCycleStopsAfterGoingRoundItNotAfterEveryParentOfTheWindow() {
+        Map<String, String> parents = new HashMap<>();
+        for (int n = 0; n < 10_000; n++) {
+            parents.put(Queries.Ancestry.key(traceId(2), spanId(n)), Queries.Ancestry.key(traceId(2), spanId(n + 1)));
+        }
+        // "a" and "b" name each other; "q" hangs under "a".
+        parents.put(Queries.Ancestry.key(traceId(1), "a"), Queries.Ancestry.key(traceId(1), "b"));
+        parents.put(Queries.Ancestry.key(traceId(1), "b"), Queries.Ancestry.key(traceId(1), "a"));
+        parents.put(Queries.Ancestry.key(traceId(1), "q"), Queries.Ancestry.key(traceId(1), "a"));
+        int[] lookups = {0};
+        Map<String, String> counted = new HashMap<>(parents) {
+            @Override
+            public String get(Object key) {
+                lookups[0]++;
+                return super.get(key);
+            }
+        };
+        Queries.Ancestry ancestry = new Queries.Ancestry(Map.of(), counted, Map.of());
+
+        assertThat(ancestry.entryOf(traceId(1), "q")).isNull();
+        assertThat(ancestry.placeOf(traceId(1), "q")).isNull();
+        assertThat(lookups[0]).isLessThan(20);
     }
 
     /** A span id is unique within its trace only: equal ids in two traces are two spans, not one. */
