@@ -8,6 +8,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 
@@ -73,7 +74,7 @@ public final class Cli {
         PrintStream out = new PrintStream(System.out, true, StandardCharsets.UTF_8);
         PrintStream err = new PrintStream(System.err, true, StandardCharsets.UTF_8);
         try {
-            return run(args, defaultUrl(), System.in, out, err);
+            return run(args, defaultUrl(err::println), System.in, out, err);
         } finally {
             out.flush();
             err.flush();
@@ -290,7 +291,8 @@ public final class Cli {
                 : "see: java -jar spider-sense.jar " + command + " --help";
     }
 
-    static String defaultUrl() {
+    /** @param warn where a malformed setting is reported, which is stderr */
+    static String defaultUrl(Consumer<String> warn) {
         String named = System.getenv("SPIDERSENSE_URL");
         if (named != null && !named.isBlank()) {
             return named.trim();
@@ -302,7 +304,7 @@ public final class Cli {
                 settings.setProperty(key, value);
             }
         }
-        return configuredUrl(settings);
+        return configuredUrl(settings, warn);
     }
 
     /**
@@ -310,8 +312,13 @@ public final class Cli {
      * else the host and port, with the defaults filled in. The launcher fills these properties in
      * from the properties file before it runs a command, so a command run where the application
      * runs asks the Spider Sense the application sends to.
+     *
+     * <p>A port that is no port is read as the application reads it: a warning, and the default
+     * (configuration.adoc), rather than a URL that no command could ask.
+     *
+     * @param warn where a malformed port is reported
      */
-    static String configuredUrl(java.util.Properties properties) {
+    static String configuredUrl(java.util.Properties properties, Consumer<String> warn) {
         String collector = nonBlank(properties, "spidersense.collector");
         if (collector != null) {
             return Remote.trimSlash(collector);
@@ -321,8 +328,26 @@ public final class Cli {
         if (host == null && port == null) {
             return DEFAULT_URL;
         }
-        return "http://" + Config.callableHost(host == null ? "" : host) + ":"
-                + (port == null ? String.valueOf(Config.DEFAULT_PORT) : port);
+        return "http://" + Config.callableHost(host == null ? "" : host) + ":" + port(port, warn);
+    }
+
+    /** A port a URL can carry, 0 to 65535, or the default with a warning. */
+    private static int port(@Nullable String value, Consumer<String> warn) {
+        if (value == null) {
+            return Config.DEFAULT_PORT;
+        }
+        String why;
+        try {
+            long port = Long.parseLong(value);
+            if (port >= 0 && port <= 65_535) {
+                return (int) port;
+            }
+            why = "is not a port from 0 to 65535";
+        } catch (NumberFormatException e) {
+            why = "is not a number";
+        }
+        warn.accept("[spider-sense] spidersense.port=" + value + " " + why + "; using " + Config.DEFAULT_PORT);
+        return Config.DEFAULT_PORT;
     }
 
     private static @Nullable String nonBlank(java.util.Properties properties, String key) {

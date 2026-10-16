@@ -132,6 +132,7 @@ A `spidersense.*` key that is not in the table is applied with a warning naming 
 
 The file is read in every mode: under `-javaagent`, by the standalone jar, and by the xref:cli.adoc[CLI].
 The CLI's default `--url` is then the Spider Sense that the file's `spidersense.collector`, or `spidersense.host` and `spidersense.port` with the defaults filled in, point to.
+A `spidersense.port` that is not a port from 0 to 65535 is a warning on the CLI's stderr too, and the CLI asks the default port.
 A command run from the project's directory therefore asks the Spider Sense that directory's file points at.
 The environment variable `SPIDERSENSE_URL` still wins over what the file implies.
 Under xref:gradle-plugin.adoc[the Gradle plugin] or xref:maven.adoc[Maven] the file is read as well, because the working directory of the forked JVM is the project's.

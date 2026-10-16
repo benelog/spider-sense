@@ -139,29 +139,59 @@ class CliTest {
     @Test
     void theDefaultUrlIsWhatTheSpidersensePropertiesImply() {
         java.util.Properties none = new java.util.Properties();
-        assertThat(Cli.configuredUrl(none)).isEqualTo("http://127.0.0.1:4000");
+        assertThat(configured(none)).isEqualTo("http://127.0.0.1:4000");
 
         java.util.Properties port = new java.util.Properties();
         port.setProperty("spidersense.port", "4001");
-        assertThat(Cli.configuredUrl(port)).isEqualTo("http://127.0.0.1:4001");
+        assertThat(configured(port)).isEqualTo("http://127.0.0.1:4001");
 
         java.util.Properties everywhere = new java.util.Properties();
         everywhere.setProperty("spidersense.host", "0.0.0.0");
         everywhere.setProperty("spidersense.port", "4002");
-        assertThat(Cli.configuredUrl(everywhere))
+        assertThat(configured(everywhere))
                 .as("0.0.0.0 is a bind address, not one to connect to")
                 .isEqualTo("http://127.0.0.1:4002");
 
         java.util.Properties v6 = new java.util.Properties();
         v6.setProperty("spidersense.host", "::1");
-        assertThat(Cli.configuredUrl(v6)).as("an IPv6 address in brackets").isEqualTo("http://[::1]:4000");
+        assertThat(configured(v6)).as("an IPv6 address in brackets").isEqualTo("http://[::1]:4000");
 
         java.util.Properties collector = new java.util.Properties();
         collector.setProperty("spidersense.collector", "http://elsewhere:4000/");
         collector.setProperty("spidersense.port", "4002");
-        assertThat(Cli.configuredUrl(collector))
+        assertThat(configured(collector))
                 .as("an application that forwards sends there, so that is what to ask")
                 .isEqualTo("http://elsewhere:4000");
+    }
+
+    /**
+     * A {@code spidersense.port} that is no port is a warning and the default port, as the
+     * application reads it (configuration.adoc), rather than a URL no command can ask.
+     */
+    @Test
+    void aPortThatIsNoPortIsAWarningAndTheDefaultPort() {
+        Map<String, String> why = Map.of(
+                "abc", "is not a number",
+                "4001x", "is not a number",
+                "70000", "is not a port from 0 to 65535",
+                "-1", "is not a port from 0 to 65535");
+        why.forEach((port, reason) -> {
+            java.util.Properties typo = new java.util.Properties();
+            typo.setProperty("spidersense.port", port);
+            List<String> warnings = new ArrayList<>();
+
+            assertThat(Cli.configuredUrl(typo, warnings::add)).as(port).isEqualTo("http://127.0.0.1:4000");
+            assertThat(warnings).as(port)
+                    .containsExactly("[spider-sense] spidersense.port=" + port + " " + reason + "; using 4000");
+        });
+    }
+
+    /** The URL the properties imply, which a well-formed set implies without a warning. */
+    private static String configured(java.util.Properties properties) {
+        List<String> warnings = new ArrayList<>();
+        String url = Cli.configuredUrl(properties, warnings::add);
+        assertThat(warnings).isEmpty();
+        return url;
     }
 
     /**
