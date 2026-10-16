@@ -107,6 +107,45 @@ test('the chart switches press their buttons and the legends follow the series',
   error.instance.destroy();
 });
 
+test('the Metrics and JVM charts take the new palette when the theme flips (ui.adoc#palette)', async () => {
+  const charts = await import(JS + 'charts.js');
+  const LIGHT = ['#d1532f', '#6f7889', '#2e9e57', '#c98c14', '#2f7fc4', '#c9497a', '#6a5ad6', '#17867f'];
+  const browserStyle = globalThis.getComputedStyle;
+  /** What app.js's applyTheme does once the stylesheet answers with `series` for --series-1 to --series-8. */
+  const theme = (series) => {
+    globalThis.getComputedStyle = series
+      ? () => ({ getPropertyValue: (name) => series[+(/^--series-(\d)$/.exec(name) || [])[1] - 1] || '', paddingLeft: '0', paddingRight: '0' })
+      : browserStyle;
+    ui.readSeriesColors();
+    charts.retheme();
+  };
+  const panelOf = (root, title) => root.querySelectorAll('section.panel').find((p) => (p.querySelector('.panel-title') || {}).textContent === title);
+  const strokes = (panelNode) => panelNode.querySelector('div.chart').children[0].plot.series.slice(1).map((s) => s.stroke);
+  const swatches = (panelNode) => panelNode.querySelectorAll('.chart-legend i').map((i) => i.style.background);
+  try {
+    const metrics = await visit('metrics');
+    await until(() => metrics.root.querySelectorAll('div.chart').every((c) => c.children.length), 'the metric charts');
+    const [metricPanel, countPanel] = metrics.root.querySelectorAll('section.panel').filter((p) => p.querySelector('div.chart'));
+    theme(LIGHT);
+    for (const panelNode of [metricPanel, countPanel]) {
+      assert.ok(strokes(panelNode).every((c) => LIGHT.includes(c)), 'a Metrics chart in the light palette: ' + strokes(panelNode).join(' '));
+    }
+    assert.ok(swatches(metricPanel).slice(0, -1).every((s) => /^var\(--series-\d\)$/.test(s)), 'its swatches are the tokens: ' + swatches(metricPanel).join(' '));
+    theme(null);
+    metrics.instance.destroy();
+
+    const jvm = await visit('jvm', {}, ids.service);
+    theme(LIGHT);
+    assert.deepEqual(strokes(panelOf(jvm.root, 'Memory pools')), LIGHT.slice(0, strokes(panelOf(jvm.root, 'Memory pools')).length), 'the memory pools');
+    const gc = strokes(panelOf(jvm.root, 'Garbage collection'));
+    assert.ok(gc.length && gc.filter((c, i) => i % 2 === 0).every((c) => LIGHT.includes(c)), 'the collection counts: ' + gc.join(' '));
+    assert.ok(swatches(panelOf(jvm.root, 'Memory pools')).every((s) => /^var\(--series-\d\)$/.test(s)));
+    jvm.instance.destroy();
+  } finally {
+    theme(null);
+  }
+});
+
 test('the query page\'s callers and the error page\'s endpoints link to the endpoint page (api.adoc#callers)', async () => {
   for (const [name, id] of [['query', ids.query], ['error', ids.error]]) {
     const { root, instance } = await visit(name, { id });

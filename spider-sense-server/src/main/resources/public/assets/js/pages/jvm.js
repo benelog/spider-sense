@@ -2,9 +2,9 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, panel, chip, emptyState, seriesColor } from '../ui.js';
+import { h, fill, panel, chip, emptyState } from '../ui.js';
 import { pageLoader, skeleton } from '../page.js';
-import { chartBox, alignedTimes, alignTo } from '../charts.js';
+import { chartBox, alignedTimes, alignTo, seriesToken } from '../charts.js';
 import { count } from '../format.js';
 
 const MIB = 1024 * 1024;
@@ -101,7 +101,7 @@ export function render(root, ctx) {
     const poolTimes = alignedTimes(memoryPools);
     chartPanel('pools', 'Memory pools', {
       height: 170, t: poolTimes,
-      series: memoryPools.map((p, i) => ({ label: p.name, values: toMib(alignTo(poolTimes, p, 'used')), color: seriesColor(i), type: 'line', width: 1.6 })),
+      series: memoryPools.map((p, i) => ({ label: p.name, values: toMib(alignTo(poolTimes, p, 'used')), color: seriesToken(i), type: 'line', width: 1.6 })),
       axes: [{ scale: 'y', label: 'MiB' }],
     });
 
@@ -109,7 +109,7 @@ export function render(root, ctx) {
     chartPanel('gc', 'Garbage collection', {
       height: 170, t: (gc[0] || {}).t || [],
       series: gc.flatMap((g, i) => [
-        { label: g.name + ' count', values: g.count || [], color: seriesColor(i), type: 'bar', scale: 'y' },
+        { label: g.name + ' count', values: g.count || [], color: seriesToken(i), type: 'bar', scale: 'y' },
         {
           label: g.name + ' time', legendLabel: g.name + ' time, right axis',
           values: g.durationMs || [], color: 'accent', type: 'line', scale: 'ms', width: 1.8,

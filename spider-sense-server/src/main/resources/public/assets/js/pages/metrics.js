@@ -2,9 +2,9 @@
 
 import * as api from '../api.js';
 import * as router from '../router.js';
-import { h, fill, icon, panel, renderList, debounce, spinner, emptyState, placeholder, seriesColor } from '../ui.js';
+import { h, fill, icon, panel, renderList, debounce, spinner, emptyState, placeholder } from '../ui.js';
 import { pageLoader } from '../page.js';
-import { chartBox, alignedTimes, alignTo } from '../charts.js';
+import { chartBox, alignedTimes, alignTo, seriesToken } from '../charts.js';
 import { count } from '../format.js';
 
 /**
@@ -146,8 +146,8 @@ export function render(root, ctx) {
       height: 260,
       t,
       series: series.flatMap((s, i) => {
-        const base = [{ label: labels[i], values: at(s, 'v'), color: seriesColor(i), type: 'line', width: 1.8 }];
-        if (isHistogram && s.p95) base.push({ label: labels[i] + ' p95', legend: false, values: at(s, 'p95'), color: seriesColor(i), type: 'line', width: 1.2, dash: [4, 3] });
+        const base = [{ label: labels[i], values: at(s, 'v'), color: seriesToken(i), type: 'line', width: 1.8 }];
+        if (isHistogram && s.p95) base.push({ label: labels[i] + ' p95', legend: false, values: at(s, 'p95'), color: seriesToken(i), type: 'line', width: 1.2, dash: [4, 3] });
         return base;
       }),
       axes: [{ scale: 'y', label: data.unit || '' }],
@@ -160,7 +160,7 @@ export function render(root, ctx) {
       const countSpec = {
         height: 130,
         t,
-        series: series.map((s, i) => ({ label: labels[i], values: at(s, 'count'), color: seriesColor(i), type: 'bar' })),
+        series: series.map((s, i) => ({ label: labels[i], values: at(s, 'count'), color: seriesToken(i), type: 'bar' })),
         axes: [{ scale: 'y', label: 'Count' }],
       };
       countChart.show(countSpec);

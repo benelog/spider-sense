@@ -48,6 +48,14 @@ export function cssColor(color) {
   return color;
 }
 
+/**
+ * The i-th of the eight series colours as a spec colour, `series1` to `series8`: a name, not the
+ * palette's hex, so the rebuild after a theme flip draws it in the new palette.
+ */
+export function seriesToken(i) {
+  return 'series' + ((i % 8) + 1);
+}
+
 /** Called by app.js after the theme flips. */
 export function retheme() {
   for (const c of charts) c.rebuild();
