@@ -99,6 +99,7 @@ The plugin also makes the CLI a task, pointed at the port the block names, so `$
 ```
 
 The plugin attaches by the Java the task runs on, the project's toolchain: on Java 17 to 24 it warns unless the block sets `collector = 'http://127.0.0.1:4000'`, which forwards to the Spider Sense `./gradlew spiderSense` starts, and below Java 17 it attaches nothing ([Java versions](#java-versions)).
+The `spiderSense`, `spiderSenseInit` and `spiderSenseCheck` tasks run the jar on Java 25 themselves, on Gradle's own JVM when that is 25 or later and on a Java 25 toolchain otherwise.
 Prefer this over editing `jvmArgs` when the build file is the user's to change; the sections below are for everything else.
 
 ### A jar, or a main class

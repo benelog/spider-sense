@@ -18,6 +18,7 @@ import java.nio.file.Path;
 import java.util.Properties;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
+import org.jspecify.annotations.Nullable;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -57,8 +58,13 @@ class SpiderSensePluginTest {
                         System.out.println("args=" + java.util.Arrays.toString(args));
                         System.out.println("jvmArgs="
                                 + java.lang.management.ManagementFactory.getRuntimeMXBean().getInputArguments());
-                        // The exit code the real CLI would give a verdict, so the check
-                        // task's four outcomes can be run without a Spider Sense.
+                        System.out.println("java=" + Runtime.version().feature());
+                        // The heading and the exit code the real CLI would give a verdict, so
+                        // the check task's outcomes can be run without a Spider Sense.
+                        String heading = System.getProperty("stub.heading");
+                        if (heading != null) {
+                            System.out.println(heading);
+                        }
                         int exit = Integer.getInteger("stub.exit", 0);
                         if (exit != 0) {
                             System.exit(exit);
@@ -640,10 +646,47 @@ class SpiderSensePluginTest {
 
     @Test
     void aFailedCheckFailsTheBuildAndTheCliKeepsItsOutput() throws IOException {
-        String output = checkExiting(1, "").buildAndFail().getOutput();
+        String output = checkExiting(1, "# check  fail  2026-09-17T08:19:28.122+09:00 → 08:19:45", "")
+                .buildAndFail().getOutput();
 
         assertThat(output).contains("Spider Sense check failed");
         assertThat(output).contains("args=[check, --since=start, --service=scratch]");
+        assertThat(output).as("the CLI's own output reaches the log").contains("# check  fail  2026-09-17");
+    }
+
+    /** A JVM that cannot load the CLI exits 1 too, and printed no verdict. */
+    @Test
+    void anExitCodeOneWithoutAVerdictIsACheckThatCouldNotRun() throws IOException {
+        String output = checkExiting(1, "").buildAndFail().getOutput();
+
+        assertThat(output).contains("Spider Sense check could not run (exit 1)");
+        assertThat(output).doesNotContain("Spider Sense check failed");
+    }
+
+    /** The jar needs Java 25 whatever the project compiles for, so the three tasks bring their own. */
+    @Test
+    void theSpiderSenseTasksRunOnAJavaTheJarRunsOnWhateverTheProjectsToolchain() throws IOException {
+        buildFile("jar = file('" + stubJar.toAbsolutePath() + "')", """
+                java {
+                    toolchain {
+                        languageVersion = JavaLanguageVersion.of(21)
+                    }
+                }
+                tasks.register('launchers') {
+                    def javas = ['spiderSense', 'spiderSenseInit', 'spiderSenseCheck'].collect { name ->
+                        tasks.named(name, JavaExec).flatMap { it.javaLauncher }.map { it.metadata.languageVersion.asInt() }
+                    }
+                    doLast {
+                        println 'launchers=' + javas*.get()
+                    }
+                }
+                """);
+        int gradles = Runtime.version().feature();
+        int expected = gradles >= 25 ? gradles : 25;
+
+        String output = gradle("launchers", "-q").build().getOutput();
+
+        assertThat(output).contains("launchers=[" + expected + ", " + expected + ", " + expected + "]");
     }
 
     @Test
@@ -669,6 +712,11 @@ class SpiderSensePluginTest {
      * for the real one.
      */
     private GradleRunner checkExiting(int exit, String rules) throws IOException {
+        return checkExiting(exit, null, rules);
+    }
+
+    /** The same, with the heading the CLI prints first, or none. */
+    private GradleRunner checkExiting(int exit, @Nullable String heading, String rules) throws IOException {
         buildFile("""
                 jar = file('%JAR%')
                 check {
@@ -676,7 +724,8 @@ class SpiderSensePluginTest {
                 }
                 """.replace("%JAR%", stubJar.toAbsolutePath().toString())
                         .replace("%RULES%", rules.indent(4).stripTrailing()),
-                "tasks.named('spiderSenseCheck') { jvmArgs '-Dstub.exit=" + exit + "' }");
+                "tasks.named('spiderSenseCheck') { jvmArgs '-Dstub.exit=" + exit + "'"
+                        + (heading == null ? "" : ", '-Dstub.heading=" + heading + "'") + " }");
         return gradle("spiderSenseCheck", "-q");
     }
 

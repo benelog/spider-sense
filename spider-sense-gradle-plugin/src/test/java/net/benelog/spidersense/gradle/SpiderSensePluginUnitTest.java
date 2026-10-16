@@ -2,8 +2,10 @@ package net.benelog.spidersense.gradle;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -183,13 +185,58 @@ class SpiderSensePluginUnitTest {
 
     @Test
     void theExitCodeDecidesTheBuild() {
-        assertThat(SpiderSensePlugin.FailOnVerdict.failure(0, true)).isNull();
-        assertThat(SpiderSensePlugin.FailOnVerdict.failure(1, false)).isEqualTo("Spider Sense check failed");
-        assertThat(SpiderSensePlugin.FailOnVerdict.failure(3, true))
+        assertThat(SpiderSensePlugin.FailOnVerdict.failure(0, false, true)).isNull();
+        assertThat(SpiderSensePlugin.FailOnVerdict.failure(1, true, false)).isEqualTo("Spider Sense check failed");
+        assertThat(SpiderSensePlugin.FailOnVerdict.failure(3, false, true))
                 .isEqualTo("Spider Sense check had no request to judge");
-        assertThat(SpiderSensePlugin.FailOnVerdict.failure(3, false)).as("the block said so").isNull();
-        assertThat(SpiderSensePlugin.FailOnVerdict.failure(2, false))
+        assertThat(SpiderSensePlugin.FailOnVerdict.failure(3, false, false)).as("the block said so").isNull();
+        assertThat(SpiderSensePlugin.FailOnVerdict.failure(2, false, false))
                 .isEqualTo("Spider Sense check could not run (exit 2)");
+    }
+
+    /** Exit code 1 is also a JVM that could not load the CLI, or an error nothing caught. */
+    @Test
+    void anExitCodeOneWithoutAFailingVerdictIsACheckThatCouldNotRun() {
+        assertThat(SpiderSensePlugin.FailOnVerdict.failure(1, false, true))
+                .isEqualTo("Spider Sense check could not run (exit 1)");
+    }
+
+    @Test
+    void theVerdictIsTheHeadingOfALineAndTheOutputPassesThroughUnchanged() throws IOException {
+        String failing = """
+                # check  fail  2026-09-17T08:19:28.122+09:00 → 08:19:45  (17s, all services, 33 requests)
+
+                | rule | limit | actual | verdict | detail |
+                """;
+        assertThat(watched(failing, 7).sawFailingVerdict()).isTrue();
+        assertThat(watched(failing, 1).sawFailingVerdict()).as("one byte at a time").isTrue();
+        assertThat(watched("# check  pass  …\n", 64).sawFailingVerdict()).isFalse();
+        assertThat(watched("Error: LinkageError occurred while loading main class\n", 64).sawFailingVerdict())
+                .isFalse();
+        assertThat(watched("note: # check  fail\n", 64).sawFailingVerdict()).as("not at the start of a line")
+                .isFalse();
+        assertThat(watched("first line\n# check  fail  …\n", 5).sawFailingVerdict()).as("on a later line").isTrue();
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try (SpiderSensePlugin.VerdictWatch watch = new SpiderSensePlugin.VerdictWatch(out)) {
+            watch.write(failing.getBytes(StandardCharsets.UTF_8));
+        }
+        assertThat(out.toString(StandardCharsets.UTF_8)).isEqualTo(failing);
+    }
+
+    /** The output written through a watch in chunks of {@code chunk} bytes. */
+    private static SpiderSensePlugin.VerdictWatch watched(String output, int chunk) throws IOException {
+        SpiderSensePlugin.VerdictWatch watch = new SpiderSensePlugin.VerdictWatch(OutputStream.nullOutputStream());
+        byte[] bytes = output.getBytes(StandardCharsets.UTF_8);
+        for (int at = 0; at < bytes.length; at += chunk) {
+            int length = Math.min(chunk, bytes.length - at);
+            if (length == 1) {
+                watch.write(bytes[at]);
+            } else {
+                watch.write(bytes, at, length);
+            }
+        }
+        return watch;
     }
 
     /** A rule added to the CLI and its manual page and not to the block fails here. */

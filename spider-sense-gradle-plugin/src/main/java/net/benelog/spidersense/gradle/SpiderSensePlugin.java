@@ -13,20 +13,25 @@ import org.gradle.api.provider.Provider;
 import org.gradle.api.provider.ProviderFactory;
 import org.gradle.api.tasks.JavaExec;
 import org.gradle.api.tasks.testing.Test;
+import org.gradle.jvm.toolchain.JavaLanguageVersion;
 import org.gradle.jvm.toolchain.JavaLauncher;
+import org.gradle.jvm.toolchain.JavaToolchainService;
 import org.gradle.process.JavaForkOptions;
 
 import java.io.File;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.Callable;
+import javax.inject.Inject;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -85,6 +90,14 @@ public class SpiderSensePlugin implements Plugin<Project> {
 
     /** A task's Java when its launcher does not say, which is then the JVM that runs Gradle. */
     static final int UNKNOWN_JAVA = 0;
+
+    private final JavaToolchainService toolchains;
+
+    /** @param toolchains where the three tasks find a Java the jar runs on */
+    @Inject
+    public SpiderSensePlugin(JavaToolchainService toolchains) {
+        this.toolchains = toolchains;
+    }
 
     @Override
     public void apply(Project project) {
@@ -278,6 +291,7 @@ public class SpiderSensePlugin implements Plugin<Project> {
             NamedJar namedJar, Configuration configuration, Provider<List<String>> systemProperties,
             Provider<List<String>> checkArguments, File projectDir) {
         FileCollection jar = objects.fileCollection().from(JarSource.always(namedJar, configuration));
+        Provider<JavaLauncher> launcher = jarLauncher(toolchains);
         Provider<String> url = baseUrl(extension);
         // The standalone listens where the block forwards to, when that is here.
         Provider<List<String>> standaloneProperties = systemProperties(objects, extension, extension.getService(),
@@ -286,7 +300,7 @@ public class SpiderSensePlugin implements Plugin<Project> {
         project.getTasks().register(NAME, JavaExec.class, task -> {
             task.setGroup(GROUP);
             task.setDescription("Runs Spider Sense standalone, or a CLI command given with --args");
-            configureJarRun(task, jar, standaloneProperties, configuration.getName(), url);
+            configureJarRun(task, jar, launcher, standaloneProperties, configuration.getName(), url);
         });
 
         // init writes the CLAUDE.md block and installs the skills, and the
@@ -296,7 +310,8 @@ public class SpiderSensePlugin implements Plugin<Project> {
         project.getTasks().register(NAME + "Init", JavaExec.class, task -> {
             task.setGroup(GROUP);
             task.setDescription("Writes the Spider Sense block into CLAUDE.md and installs the agent skills");
-            SpiderSenseArguments options = configureJarRun(task, jar, systemProperties, configuration.getName(), url);
+            SpiderSenseArguments options =
+                    configureJarRun(task, jar, launcher, systemProperties, configuration.getName(), url);
             ListProperty<String> initArguments = objects.listProperty(String.class);
             // Mapped from a fixed provider so the jar is resolved when the task runs, not now.
             initArguments.addAll(objects.property(Boolean.class).value(true).map(ignored -> List.of(
@@ -316,23 +331,42 @@ public class SpiderSensePlugin implements Plugin<Project> {
         project.getTasks().register(NAME + "Check", JavaExec.class, task -> {
             task.setGroup(GROUP);
             task.setDescription("Runs the Spider Sense check and fails the build when the verdict is fail");
-            configureJarRun(task, jar, systemProperties, configuration.getName(), url);
+            configureJarRun(task, jar, launcher, systemProperties, configuration.getName(), url);
             task.getArgumentProviders().add(
                     SpiderSenseArguments.programArguments(objects.fileCollection(), checkArguments));
             task.setIgnoreExitValue(true);
+            task.doFirst(new WatchVerdict());
             task.doLast(new FailOnVerdict(extension.getCheck().getFailOnNoRequests()));
         });
     }
 
-    /** The setup the three tasks share: the jar as the class path, the launcher, the block's options, and the URL. */
+    /**
+     * The setup the three tasks share: the jar as the class path, the launcher's main
+     * class, a Java the jar runs on, the block's options, and the URL.
+     */
     private static SpiderSenseArguments configureJarRun(JavaExec task, FileCollection jar,
-            Provider<List<String>> systemProperties, String configuration, Provider<String> url) {
+            Provider<JavaLauncher> launcher, Provider<List<String>> systemProperties, String configuration,
+            Provider<String> url) {
         SpiderSenseArguments options = SpiderSenseArguments.jvmOptions(jar, systemProperties, configuration);
         task.setClasspath(jar);
         task.getMainClass().set(MAIN_CLASS);
+        task.getJavaLauncher().set(launcher);
         task.getJvmArgumentProviders().add(options);
         task.doFirst(new SetSenseUrl(url));
         return options;
+    }
+
+    /**
+     * The Java the three tasks run the jar on: they run no code of the project, and the
+     * jar's server and CLI need Java {@value #SERVER_JAVA} whatever the project's
+     * toolchain is. That is the JVM that runs Gradle when it is new enough, which needs
+     * no lookup, and a Java {@value #SERVER_JAVA} toolchain otherwise. A build that wants
+     * another sets the task's {@code javaLauncher} itself.
+     */
+    static Provider<JavaLauncher> jarLauncher(JavaToolchainService toolchains) {
+        return toolchains.launcherFor(spec -> { })
+                .filter(gradles -> gradles.getMetadata().getLanguageVersion().canCompileOrRun(SERVER_JAVA))
+                .orElse(toolchains.launcherFor(spec -> spec.getLanguageVersion().set(JavaLanguageVersion.of(SERVER_JAVA))));
     }
 
     /**
@@ -609,11 +643,92 @@ public class SpiderSensePlugin implements Plugin<Project> {
     }
 
     /**
+     * Passes the check's standard output through a {@link VerdictWatch} as the
+     * task starts, so {@link FailOnVerdict} can tell a failed check from a JVM that
+     * failed. Set when the task runs, because a stream is nothing the
+     * configuration cache can store, and this action holds nothing.
+     */
+    static final class WatchVerdict implements Action<Task> {
+
+        @Override
+        public void execute(Task task) {
+            JavaExec exec = (JavaExec) task;
+            // Unset is where Gradle forwards a process's output itself: this JVM's System.out,
+            // which the daemon hands to the build's log.
+            OutputStream current = exec.getStandardOutput();
+            exec.setStandardOutput(new VerdictWatch(current != null ? current : System.out));
+        }
+    }
+
+    /**
+     * The check task's standard output, passed on unchanged, noting whether a line
+     * starts with the heading of a failing verdict, {@code # check  fail}
+     * (check.adoc#text-rendering). Exit code {@code 1} is also what a JVM gives for
+     * a main class it cannot load or an error nothing caught, and only the heading
+     * tells the two apart.
+     */
+    static final class VerdictWatch extends OutputStream {
+
+        private static final byte[] HEADING = "# check  fail".getBytes(StandardCharsets.UTF_8);
+
+        private final OutputStream out;
+        /** How much of the heading the current line has matched; -1 once it cannot match. */
+        private int matched;
+        private volatile boolean failingVerdict;
+
+        VerdictWatch(OutputStream out) {
+            this.out = out;
+        }
+
+        /** Whether the CLI printed the heading of a failing verdict. */
+        boolean sawFailingVerdict() {
+            return failingVerdict;
+        }
+
+        @Override
+        public void write(int b) throws IOException {
+            out.write(b);
+            see((byte) b);
+        }
+
+        @Override
+        public void write(byte[] bytes, int offset, int length) throws IOException {
+            out.write(bytes, offset, length);
+            for (int i = offset; i < offset + length; i++) {
+                see(bytes[i]);
+            }
+        }
+
+        private void see(byte b) {
+            if (b == '\n') {
+                matched = 0;
+            } else if (matched >= 0 && matched < HEADING.length) {
+                matched = b == HEADING[matched] ? matched + 1 : -1;
+                if (matched == HEADING.length) {
+                    failingVerdict = true;
+                }
+            }
+        }
+
+        @Override
+        public void flush() throws IOException {
+            out.flush();
+        }
+
+        /** Flushes and no more: the stream it writes to is the build's, or {@code System.out}. */
+        @Override
+        public void close() throws IOException {
+            out.flush();
+        }
+    }
+
+    /**
      * Turns the CLI's exit code into the build's verdict, after the CLI has
-     * printed its own rendering: {@link #CHECK_FAILED} is a failed check,
-     * {@link #NO_REQUESTS} a window with no request in it, which is not a pass
-     * unless the build says it is, and anything else is the check not having run
-     * at all — no Spider Sense at the URL, or a scope that is not there.
+     * printed its own rendering: {@link #CHECK_FAILED} after the heading of a
+     * failing verdict is a failed check, {@link #NO_REQUESTS} a window with no
+     * request in it, which is not a pass unless the build says it is, and anything
+     * else is the check not having run at all — no Spider Sense at the URL, a
+     * scope that is not there, or a JVM that failed before the CLI could judge.
      *
      * <p>A named action holding one provider and reading the result off the task
      * it is given: no {@code Project} is captured, so the configuration cache
@@ -639,18 +754,26 @@ public class SpiderSensePlugin implements Plugin<Project> {
 
         @Override
         public void execute(Task task) {
-            int exit = ((JavaExec) task).getExecutionResult().get().getExitValue();
-            String failure = failure(exit, failOnNoRequests.get());
+            JavaExec exec = (JavaExec) task;
+            int exit = exec.getExecutionResult().get().getExitValue();
+            boolean failingVerdict = exec.getStandardOutput() instanceof VerdictWatch watch
+                    && watch.sawFailingVerdict();
+            String failure = failure(exit, failingVerdict, failOnNoRequests.get());
             if (failure != null) {
                 throw new GradleException(failure);
             }
         }
 
-        /** Why the build fails for this exit code, or null when it does not. */
-        static @Nullable String failure(int exit, boolean failOnNoRequests) {
+        /**
+         * Why the build fails for this exit code, or null when it does not.
+         *
+         * @param failingVerdict whether the CLI printed the heading of a failing verdict
+         */
+        static @Nullable String failure(int exit, boolean failingVerdict, boolean failOnNoRequests) {
             return switch (exit) {
                 case PASSED -> null;
-                case CHECK_FAILED -> "Spider Sense check failed";
+                case CHECK_FAILED -> failingVerdict ? "Spider Sense check failed"
+                        : "Spider Sense check could not run (exit " + exit + ")";
                 case NO_REQUESTS -> failOnNoRequests ? "Spider Sense check had no request to judge" : null;
                 default -> "Spider Sense check could not run (exit " + exit + ")";
             };
