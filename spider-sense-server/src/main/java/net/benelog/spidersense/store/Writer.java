@@ -72,8 +72,9 @@ public final class Writer implements AutoCloseable {
     private final Map<String, Long> seriesIds = new ConcurrentHashMap<>();
 
     /**
-     * The {@code service} and process id pairs whose start mark this writer has found
-     * stored: such a process has been marked, and is never marked again.
+     * The {@code service} and process pairs, the process named as a start mark's note
+     * names it, whose start mark this writer has found stored: such a process has been
+     * marked, and is never marked again.
      */
     private final Set<String> markedStarts = ConcurrentHashMap.newKeySet();
     private final AtomicLong droppedBatches = new AtomicLong();
@@ -642,9 +643,9 @@ public final class Writer implements AutoCloseable {
      * {@code first_seen} must survive, so this is an update-then-insert rather
      * than a MERGE that would overwrite it.
      *
-     * <p>The start marks are read first, because a sighting whose
-     * {@code process.pid} is new to this service means the application was
-     * restarted, and that moment is worth a {@code start} mark: it is what
+     * <p>The start marks are read first, because a sighting from a process new to
+     * this service means the application was restarted, and that moment is worth a
+     * {@code start} mark: it is what
      * {@code since=start} resolves to, and nobody had to ask for it
      * (marks-and-compare.adoc#start-marks).
      *
@@ -660,7 +661,7 @@ public final class Writer implements AutoCloseable {
         List<Batch.Sighting> inserted = new ArrayList<>();
         for (Batch.Sighting sighting : sightings.values()) {
             ServiceRow row = ServiceRow.of(sighting);
-            markRestart(connection, row, startOf(batches, sighting));
+            markRestart(connection, row, instanceOf(sighting), startOf(batches, sighting));
             try (PreparedStatement update = connection.prepareStatement(ServiceRow.UPDATE)) {
                 row.bindUpdate(update);
                 if (update.executeUpdate() > 0) {
@@ -709,9 +710,25 @@ public final class Writer implements AutoCloseable {
     }
 
     /**
-     * A {@code start} mark for a service whose process id is new.
+     * The {@code service.instance.id} of a sighting's resource, which the OpenTelemetry
+     * Java agent sets to a new UUID at every start of the JVM, or null when it has none.
+     */
+    private static @Nullable String instanceOf(Batch.Sighting sighting) {
+        Object instance = sighting.resource().get(INSTANCE_ID);
+        return instance instanceof String id && !id.isBlank() ? id : null;
+    }
+
+    private static final String INSTANCE_ID = "service.instance.id";
+
+    /**
+     * A {@code start} mark for a service whose process is new.
      *
-     * <p>"New" is a process id that no {@code start} mark of the service names yet:
+     * <p>A process is its {@code process.pid} and, when the sighting carries one, its
+     * {@code service.instance.id}, which the mark's note names beside the pid
+     * ({@code pid 1 instance 3f2…}). The pid alone repeats: a container's entrypoint is
+     * pid 1 at every start, and a restart there would never be marked.
+     *
+     * <p>"New" is a process that no {@code start} mark of the service names yet:
      * the restart an agent has just caused by rebuilding and running the
      * application again, or the first sighting of the service. It is not decided
      * against the one pid the service row stores, because two processes may export
@@ -732,21 +749,24 @@ public final class Writer implements AutoCloseable {
      * export is not new after one either: the service row keeps its pid, and the
      * flush that wrote the row marked it ({@link #lastExportedBy}).
      */
-    private void markRestart(Connection connection, ServiceRow service, long at) throws SQLException {
+    private void markRestart(Connection connection, ServiceRow service, @Nullable String instance, long at)
+            throws SQLException {
         Long pid = service.pid();
         if (pid == null) {
             return;
         }
-        MarkRow mark = new MarkRow(at, Marks.START, service.name(), "pid " + pid);
-        String marked = mark.storedService() + "\0" + mark.note();
+        MarkRow mark = new MarkRow(at, Marks.START, service.name(),
+                instance == null ? "pid " + pid : "pid " + pid + " instance " + instance);
+        String marked = mark.storedService() + "\0" + mark.storedNote();
         if (markedStarts.contains(marked)) {
             return;
         }
         try (PreparedStatement select = connection.prepareStatement(
                 "SELECT COUNT(*) FROM mark WHERE name = ? AND service = ? AND note = ?")) {
+            // As stored: an instance id long enough to be cut must still find its mark.
             select.setString(1, mark.name());
-            select.setString(2, mark.service());
-            select.setString(3, mark.note());
+            select.setString(2, mark.storedService());
+            select.setString(3, mark.storedNote());
             try (ResultSet rs = select.executeQuery()) {
                 if (rs.next() && rs.getLong(1) > 0) {
                     markedStarts.add(marked);
@@ -754,7 +774,7 @@ public final class Writer implements AutoCloseable {
                 }
             }
         }
-        if (lastExportedBy(connection, service.name(), pid)) {
+        if (lastExportedBy(connection, service.name(), pid, instance)) {
             markedStarts.add(marked);
             return;
         }
@@ -765,21 +785,29 @@ public final class Writer implements AutoCloseable {
     }
 
     /**
-     * Whether the stored row of {@code service} names {@code pid}, the process of its
-     * last export, while the service has a start mark: the flush that wrote that pid
-     * into the row marked the process, whatever became of the mark since. A service
-     * with no start mark at all gets one, since {@code since=start} needs it, which also
-     * covers a row an import wrote with the pid of a process on another machine.
+     * Whether the stored row of {@code service} names {@code pid} and {@code instance},
+     * the process of its last export, while the service has a start mark: the flush that
+     * wrote that process into the row marked it, whatever became of the mark since. The
+     * instance is the {@code service.instance.id} of the row's resource, so a process
+     * that reuses the pid of the last one, as a restarted container's entrypoint does, is
+     * not the last one. A service with no start mark at all gets one, since
+     * {@code since=start} needs it, which also covers a row an import wrote with the pid
+     * of a process on another machine.
      */
-    private static boolean lastExportedBy(Connection connection, String service, long pid) throws SQLException {
+    private static boolean lastExportedBy(Connection connection, String service, long pid,
+            @Nullable String instance) throws SQLException {
         try (PreparedStatement select = connection.prepareStatement(
-                "SELECT COUNT(*) FROM service s WHERE s.name = ? AND s.pid = ?"
+                "SELECT s.resource FROM service s WHERE s.name = ? AND s.pid = ?"
                         + " AND EXISTS (SELECT 1 FROM mark m WHERE m.name = ? AND m.service = s.name)")) {
             select.setString(1, service);
             select.setLong(2, pid);
             select.setString(3, Marks.START);
             try (ResultSet rs = select.executeQuery()) {
-                return rs.next() && rs.getLong(1) > 0;
+                if (!rs.next()) {
+                    return false;
+                }
+                Object stored = AttrJson.decode(rs.getString(1)).get(INSTANCE_ID);
+                return instance == null || instance.equals(stored);
             }
         }
     }

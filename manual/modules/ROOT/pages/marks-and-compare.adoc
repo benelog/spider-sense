@@ -97,24 +97,27 @@ $ java -jar spider-sense.jar marks
 | --- | --- | --- | --- |
 | 2026-09-17T08:19:35.837+09:00 | after | — | after the fix |
 | 2026-09-17T08:19:28.122+09:00 | before | — | — |
-| 2026-09-17T08:19:16.727+09:00 | start | spring-orders | pid 178056 |
+| 2026-09-17T08:19:16.727+09:00 | start | spring-orders | pid 178056 instance 5c1e9a52-3f0d-4b8e-a7c4-0e6b2d9f8a13 |
 | 2026-09-17T08:16:42.507+09:00 | file-mode | — | — |
 | 2026-09-17T08:15:38.928+09:00 | after | — | — |
 | 2026-09-17T08:14:20.087+09:00 | before | — | — |
-| 2026-09-17T08:14:06.284+09:00 | start | spring-orders | pid 170140 |
+| 2026-09-17T08:14:06.284+09:00 | start | spring-orders | pid 170140 instance 9e2f47b0-61ac-4d35-8b0e-c3a5f1d7e264 |
 ----
 
 [#start-marks]
 === Automatic start marks
 
 Spider Sense records a mark by itself whenever a service restarts.
-When the writer sees a service with a `process.pid` that no `start` mark of that service names yet, it inserts a mark named `start` with that service and the note `pid <pid>`.
+When the writer sees a service from a process that no `start` mark of that service names yet, it inserts a mark named `start` with that service and the note `pid <pid> instance <service.instance.id>`, or `pid <pid>` for a sighting without a `service.instance.id`.
 Two processes that export one service name at once, an application and its tests or two instances of one application, therefore leave one start mark each, not one per export.
+A process is its `process.pid` and its `service.instance.id`, which the OpenTelemetry Java agent sets to a new UUID at every start of the JVM.
+The pid alone repeats: an application that is a container's entrypoint is pid 1 at every start, and its restarts are seen by the instance id.
+A service that reports no `service.instance.id` is told apart by its pid alone, so a restart of it that reuses the pid is not seen as one.
 The mark is at the earliest span start, log record or metric point of that service in the flush that carries the new process id, never after that flush and never more than a minute before it, since an exporter batches for seconds and the run's first requests arrive after they began.
 `--since=start` therefore means "since the application was last restarted", which is what an agent that just rebuilt the application wants, and it needs no cooperation from anyone.
 The retention sweeper and `DELETE /api/data` spare each service's newest start mark, so it lasts as long as the process does.
 The older of two processes sharing the name loses its mark to them, and is not marked again: the writer remembers each process whose mark it has seen stored, so `--since=start` does not jump to that process's next export.
-A restart of the standalone Spider Sense they send to ends that memory: the process that exported last before it is still not marked again, since the `service` row keeps its process id, but another whose mark is gone is, at its next export.
+A restart of the standalone Spider Sense they send to ends that memory: the process that exported last before it is still not marked again, since the `service` row keeps its process id and its `service.instance.id`, but another whose mark is gone is, at its next export.
 
 A service that reports no `process.pid` gets no start mark.
 The Java agent always reports one, so every application under `-javaagent:spider-sense.jar` has a start mark from its first export on.

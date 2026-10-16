@@ -392,7 +392,7 @@ $ java -jar spider-sense.jar marks
 | --- | --- | --- | --- |
 | 2026-09-17T08:19:35.837+09:00 | after | — | after the fix |
 | 2026-09-17T08:19:28.122+09:00 | before | — | — |
-| 2026-09-17T08:19:16.727+09:00 | start | spring-orders | pid 178056 |
+| 2026-09-17T08:19:16.727+09:00 | start | spring-orders | pid 178056 instance 5c1e9a52-3f0d-4b8e-a7c4-0e6b2d9f8a13 |
 ----
 
 [#compare]

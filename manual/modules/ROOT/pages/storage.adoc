@@ -276,7 +276,7 @@ Another process sharing the file may be flushing the other half of the same trac
 It then publishes the tingles the flush inserted, and its counts, to the SSE stream, so a tingle the copy of an export raised again is not published again either.
 It also publishes a `service` event for each service whose row the flush inserted, after the commit, so `/api/services` lists the service by the time the event arrives.
 The `service` row is merged on every flush that carries the service.
-When the sighting carries a `process.pid` that no `start` mark of that service names yet, the writer also inserts a `mark` named `start` for that service with the note `pid <pid>`.
+When the sighting comes from a process that no `start` mark of that service names yet, the writer also inserts a `mark` named `start` for that service with the note `pid <pid> instance <service.instance.id>`, or `pid <pid>` when the resource has no `service.instance.id` (xref:marks-and-compare.adoc#start-marks[Automatic start marks]).
 It compares with the marks rather than with the one `pid` the `service` row stores, because two processes may export one service name at once, an application and its tests or two instances of one application, and each export of the other would otherwise insert a mark.
 `since=start` resolves to that mark.
 A JVM shutdown hook flushes what is queued, and then closes the database.

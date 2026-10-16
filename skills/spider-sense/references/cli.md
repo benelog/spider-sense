@@ -201,11 +201,11 @@ $ java -jar spider-sense.jar marks
 | --- | --- | --- | --- |
 | 2026-09-17T08:19:35.837+09:00 | after | — | after the fix |
 | 2026-09-17T08:19:28.122+09:00 | before | — | — |
-| 2026-09-17T08:19:16.727+09:00 | start | spring-orders | pid 178056 |
+| 2026-09-17T08:19:16.727+09:00 | start | spring-orders | pid 178056 instance 5c1e9a52-3f0d-4b8e-a7c4-0e6b2d9f8a13 |
 | 2026-09-17T08:16:42.507+09:00 | file-mode | — | — |
 | 2026-09-17T08:15:38.928+09:00 | after | — | — |
 | 2026-09-17T08:14:20.087+09:00 | before | — | — |
-| 2026-09-17T08:14:06.284+09:00 | start | spring-orders | pid 170140 |
+| 2026-09-17T08:14:06.284+09:00 | start | spring-orders | pid 170140 instance 9e2f47b0-61ac-4d35-8b0e-c3a5f1d7e264 |
 ```
 
 The newest 50, newest first; a `start` mark with a `pid` note is the one the writer records by itself whenever a service restarts, so `--since=start` needs no cooperation from anyone.

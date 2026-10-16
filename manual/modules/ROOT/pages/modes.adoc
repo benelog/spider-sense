@@ -354,7 +354,7 @@ The setup works when the `services` row names the application's service, as in `
 A service named `unknown_service:java` is an application started without `-Dotel.service.name=`.
 The UI at http://127.0.0.1:4000[] shows the same information to a person.
 
-A restart also writes an automatic `start` mark for the service, so `marks` shows a new row with the note `pid <pid>` every time the application comes up.
+A restart also writes an automatic `start` mark for the service, so `marks` shows a new row with the note `pid <pid> instance <service.instance.id>` every time the application comes up.
 `--since=start` therefore means the current run.
 xref:marks-and-compare.adoc#marks[Marks] describes them.
 

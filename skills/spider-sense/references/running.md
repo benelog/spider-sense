@@ -219,7 +219,7 @@ java -jar "$SENSE" status
 That name, and a span count that grows after a request, is the confirmation.
 The UI at <http://127.0.0.1:4000> is the same information for the user; leave the browser to them.
 
-A restart also writes an automatic `start` mark for the service, so `marks` shows a new row with the note `pid <pid>` every time the application comes up, and `--since=start` means the current run.
+A restart also writes an automatic `start` mark for the service, so `marks` shows a new row with the note `pid <pid> instance <service.instance.id>` every time the application comes up, a container restarted as pid 1 included, and `--since=start` means the current run.
 
 ## When it does not work
 

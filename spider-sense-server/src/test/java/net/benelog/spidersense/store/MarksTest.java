@@ -248,10 +248,47 @@ class MarksTest {
         }
     }
 
+    /**
+     * A container's entrypoint is pid 1 at every start, so the pid alone never changes: each
+     * run's {@code service.instance.id}, a new UUID per JVM start, is what tells the restart,
+     * after a restart of the writing process too.
+     */
+    @Test
+    void aRestartThatReusesThePidIsMarkedByItsInstanceId() {
+        long minutes = 600_000L;
+        String url = TestStore.memoryUrl();
+        try (Store first = new Store(Store.Settings.defaults(url).withClock(() -> NOW))) {
+            exportTo(first, 1, "run-a", NOW);
+            exportTo(first, 1, "run-a", NOW + 1_000);
+            exportTo(first, 1, "run-b", NOW + minutes);
+            assertThat(startNotes(first)).containsExactly("pid 1 instance run-b", "pid 1 instance run-a");
+        }
+
+        try (Store restarted = new Store(Store.Settings.defaults(url).withClock(() -> NOW))) {
+            exportTo(restarted, 1, "run-b", NOW + minutes + 1_000);
+            exportTo(restarted, 1, "run-c", NOW + 2 * minutes);
+
+            assertThat(startNotes(restarted))
+                    .containsExactly("pid 1 instance run-c", "pid 1 instance run-b", "pid 1 instance run-a");
+            assertThat(restarted.marks().newest(Marks.START, "orders")).isNotNull()
+                    .extracting(Marks.Mark::at).isEqualTo(NOW + 2 * minutes);
+        }
+    }
+
     /** A span of {@code orders} from process {@code pid}, received and written by {@code store} at {@code at}. */
     private static void exportTo(Store store, long pid, long at) {
+        exportTo(store, Map.of("telemetry.sdk.language", "java", "process.pid", pid), at);
+    }
+
+    /** The same from the run {@code instance} of process {@code pid}. */
+    private static void exportTo(Store store, long pid, String instance, long at) {
+        exportTo(store, Map.of("telemetry.sdk.language", "java", "process.pid", pid,
+                "service.instance.id", instance), at);
+    }
+
+    private static void exportTo(Store store, Map<String, Object> resource, long at) {
         Batch batch = new Batch();
-        store.sawService(batch, "orders", Map.of("telemetry.sdk.language", "java", "process.pid", pid), at);
+        store.sawService(batch, "orders", resource, at);
         batch.add(new SpanRecord("%032x".formatted(at), "%016x".formatted(at), null, "orders", "GET /orders",
                 "SERVER", at * 1_000_000L, at * 1_000_000L + 5_000_000L, "UNSET", null, Map.of(), List.of(), "test"));
         store.submit(batch);
