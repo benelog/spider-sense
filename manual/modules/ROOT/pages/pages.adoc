@@ -47,6 +47,7 @@ In both, p95 is a line on a second y-axis in the accent colour.
 Beside the chart, one third of the width, the *Response summary* draws five vertical bars, one per response-time bucket and one for errors, in the bucket colours, with the count above each bar and the label beneath.
 The tallest bar sets the scale, and a tooltip gives each bar's share.
 Each bar is a link to the Traces page filtered to it: `status=ok` with `minMs` and `maxMs` set to the bucket's bounds for a response-time bucket, `minMs` open as the bucket's lower bound is, and `status=error` for the error bar.
+The bars count requests, so the link carries `by=entry`, and the list holds the traces with a request in the bar (xref:api.adoc#traces[Traces]).
 The bars are labelled from the bucket bounds, `≤125 ms`, `≤500 ms`, `≤2 s`, `>2 s`, and `error`, and they keep those colours wherever a histogram or a load chart appears (xref:ui.adoc#response-buckets[Response-time buckets]).
 Below 900 px the chart and the summary stack.
 
@@ -286,6 +287,7 @@ Turning one off hides those points, and the counts, the selection and the y-axis
 
 Drag a rectangle in either mode to list the traces inside it, in a table beneath the chart.
 The table asks `/api/traces` with `from`, `to`, `minMs` and `maxMs` from the rectangle, each widened outwards to a whole millisecond so no point drawn inside it is left out, plus the current service, plus `status=error` or `status=ok` when only one of Success and Failed is on.
+A point is a request, so the table asks with `by=entry` and lists the traces with a request drawn inside the rectangle, a downstream one included (xref:api.adoc#traces[Traces]).
 The chart panel's header then reads the selection's time span and response-time span, beside a *Clear* button.
 Each end of the time span reads as a tooltip's time does (xref:ui.adoc#numbers-and-times[Numbers and times]), so an end outside today names its day.
 `Esc` clears the selection.
@@ -304,7 +306,8 @@ The rectangle stays on the chart through every redraw, a toggle, a Live merge or
 [#traces-list]
 === The list
 
-The query bar takes free text (`q`), a duration range (`minMs` and `maxMs`, two small number fields joined by "–"), a status of `all`, `error` or `ok`, and an endpoint from the current service's endpoints when a service is selected.
+The query bar takes free text (`q`), a duration range (`minMs` and `maxMs`, two small number fields joined by "–"), a status of `all`, `error` or `ok`, *By trace* or *By request* (`by=trace` or `by=entry`), and an endpoint from the current service's endpoints when a service is selected.
+*By request* reads the duration, the status, the service and the endpoint off one request of the trace rather than off the trace, as a Response summary bar does; a bar's link opens the list that way.
 A fraction typed in either field widens outwards to a whole millisecond before the page asks, since the API takes whole milliseconds (xref:api.adoc#traces[Traces]): `2.5` in *Min* asks `minMs=2`, and `7.2` in *Max* asks `maxMs=8`.
 No trace in the typed range is therefore left out.
 The URL keeps the value as typed.

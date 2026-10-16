@@ -55,9 +55,9 @@ test('the slow-request threshold comes from the status, 500 ms before it arrives
 
 test('a bucket opens the traces between its bounds, and the error bar the failed ones (pages.adoc#overview)', () => {
   state.status = { thresholds: { responseBucketsMs: [100, 400, 1600] } };
-  assert.deepEqual(bucketFilter(0), { status: 'ok', maxMs: 100 });
-  assert.deepEqual(bucketFilter(1), { status: 'ok', minMs: 100, maxMs: 400 });
-  assert.deepEqual(bucketFilter(2), { status: 'ok', minMs: 400, maxMs: 1600 });
-  assert.deepEqual(bucketFilter(3), { status: 'ok', minMs: 1600 });
-  assert.deepEqual(bucketFilter(4), { status: 'error' });
+  assert.deepEqual(bucketFilter(0), { by: 'entry', status: 'ok', maxMs: 100 });
+  assert.deepEqual(bucketFilter(1), { by: 'entry', status: 'ok', minMs: 100, maxMs: 400 });
+  assert.deepEqual(bucketFilter(2), { by: 'entry', status: 'ok', minMs: 400, maxMs: 1600 });
+  assert.deepEqual(bucketFilter(3), { by: 'entry', status: 'ok', minMs: 1600 });
+  assert.deepEqual(bucketFilter(4), { by: 'entry', status: 'error' });
 });

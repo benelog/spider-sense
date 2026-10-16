@@ -185,7 +185,8 @@ public final class TrafficApi {
                 req.queryParamOrNull("q"),
                 Params.optionalLong(req, "before"),
                 req.queryParamOrNull("beforeId"),
-                Params.limit(req, Limits.TRACES, Limits.TRACES_MAX));
+                Params.limit(req, Limits.TRACES, Limits.TRACES_MAX),
+                "entry".equals(req.queryParamOrNull("by")));
         return Params.answer(req, reports.traces(filter, Params.full(req)));
     }
 

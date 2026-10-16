@@ -214,7 +214,8 @@ export function render(root, ctx) {
   /** The traces under the chart: the window's, or the selection's, filtered as the toggles are. */
   const traceList = pageLoader({
     fetch: () => {
-      const extra = { limit: 50 };
+      // A point is a request, an entry span, so the list matches traces by their requests (api.adoc#traces).
+      const extra = { limit: 50, by: 'entry' };
       if (showOk !== showErr) extra.status = showErr ? 'error' : 'ok';
       let opts;
       if (selection) {

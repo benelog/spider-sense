@@ -105,10 +105,21 @@ public final class Queries {
      * <p>{@code before} and {@code beforeId} are the cursor of the next page, the last row's start
      * and trace id: with both, a trace that starts in the same millisecond as the last one and
      * sorts after it is still listed.
+     *
+     * <p>{@code byEntry} reads the window, the duration bounds, the status, the service and the
+     * endpoint off one entry span of the trace rather than off the trace, so a list matches what
+     * the Scatter draws and the Response summary counts (api.adoc#traces).
      */
     public record TraceFilter(Window window, @Nullable String service, @Nullable String endpointId,
             @Nullable Long minMs, @Nullable Long maxMs, @Nullable String status, @Nullable String q,
-            @Nullable Long before, @Nullable String beforeId, int limit) {
+            @Nullable Long before, @Nullable String beforeId, int limit, boolean byEntry) {
+
+        /** A filter on the trace itself. */
+        public TraceFilter(Window window, @Nullable String service, @Nullable String endpointId,
+                @Nullable Long minMs, @Nullable Long maxMs, @Nullable String status,
+                @Nullable String q, @Nullable Long before, @Nullable String beforeId, int limit) {
+            this(window, service, endpointId, minMs, maxMs, status, q, before, beforeId, limit, false);
+        }
 
         /** A filter with no tie-breaking id: {@code before} alone pages strictly before it. */
         public TraceFilter(Window window, @Nullable String service, @Nullable String endpointId,
@@ -897,7 +908,15 @@ public final class Queries {
 
     private Where traceWhere(TraceFilter filter, boolean paging) {
         Window window = filter.window();
-        Where where = new Where("t.start_ms BETWEEN ? AND ?", window.from(), window.to());
+        Where where;
+        if (filter.byEntry()) {
+            // A trace starts no later than any of its spans: the bound on the trace narrows the
+            // scan, and the window itself is the entry span's.
+            Where entry = entryWhere(filter);
+            where = new Where("t.start_ms <= ?", window.to()).and(entry.sql(), entry.params().toArray());
+        } else {
+            where = new Where("t.start_ms BETWEEN ? AND ?", window.from(), window.to());
+        }
         Long before = filter.before();
         if (paging && before != null) {
             where = filter.beforeId() == null
@@ -905,25 +924,16 @@ public final class Queries {
                     : where.and("(t.start_ms < ? OR (t.start_ms = ? AND t.trace_id < ?))",
                             before, before, filter.beforeId());
         }
-        // minMs is open and maxMs closed, as the Response summary's buckets are (api.adoc#traces).
-        if (filter.minMs() != null) {
-            where = where.and("t.duration_ns > ?", nanos(filter.minMs()));
-        }
-        if (filter.maxMs() != null) {
-            where = where.and("t.duration_ns <= ?", nanos(filter.maxMs()));
-        }
-        if ("error".equals(filter.status())) {
-            where = where.and("t.error");
-        } else if ("ok".equals(filter.status())) {
-            where = where.and("NOT t.error");
-        }
-        if (filter.service() != null) {
-            where = where.and("EXISTS (SELECT 1 FROM span s WHERE s.trace_id = t.trace_id"
-                    + " AND s.service = ?)", filter.service());
-        }
-        if (filter.endpointId() != null) {
-            where = where.and("EXISTS (SELECT 1 FROM span s WHERE s.trace_id = t.trace_id"
-                    + " AND s.endpoint_id = ?)", filter.endpointId());
+        if (!filter.byEntry()) {
+            where = measuredOn(where, "t", filter);
+            if (filter.service() != null) {
+                where = where.and("EXISTS (SELECT 1 FROM span s WHERE s.trace_id = t.trace_id"
+                        + " AND s.service = ?)", filter.service());
+            }
+            if (filter.endpointId() != null) {
+                where = where.and("EXISTS (SELECT 1 FROM span s WHERE s.trace_id = t.trace_id"
+                        + " AND s.endpoint_id = ?)", filter.endpointId());
+            }
         }
         if (filter.q() != null && !filter.q().isBlank()) {
             Where attributes = containingInJson("s.attributes", filter.q());
@@ -933,6 +943,45 @@ public final class Queries {
                     + " AND (LOWER(s.name) LIKE ? ESCAPE '\\' OR " + attributes.sql() + "))", params.toArray());
         }
         return where;
+    }
+
+    /**
+     * {@code where} and the duration bounds and the status on the rows of {@code alias}, a
+     * trace or a span: {@code minMs} is open and {@code maxMs} closed, as the Response
+     * summary's buckets are (api.adoc#traces).
+     */
+    private static Where measuredOn(Where where, String alias, TraceFilter filter) {
+        if (filter.minMs() != null) {
+            where = where.and(alias + ".duration_ns > ?", nanos(filter.minMs()));
+        }
+        if (filter.maxMs() != null) {
+            where = where.and(alias + ".duration_ns <= ?", nanos(filter.maxMs()));
+        }
+        if ("error".equals(filter.status())) {
+            where = where.and(alias + ".error");
+        } else if ("ok".equals(filter.status())) {
+            where = where.and("NOT " + alias + ".error");
+        }
+        return where;
+    }
+
+    /**
+     * "One entry span of the trace starts in the window, is of the service and the endpoint,
+     * and has the duration and the status": a point the Scatter draws, a request a Response
+     * summary bar counts.
+     */
+    private static Where entryWhere(TraceFilter filter) {
+        Window window = filter.window();
+        Where span = new Where("s.entry AND s.start_ms BETWEEN ? AND ?", window.from(), window.to());
+        if (filter.service() != null) {
+            span = span.and("s.service = ?", filter.service());
+        }
+        if (filter.endpointId() != null) {
+            span = span.and("s.endpoint_id = ?", filter.endpointId());
+        }
+        span = measuredOn(span, "s", filter);
+        return new Where("t.trace_id IN (SELECT s.trace_id FROM span s WHERE " + span.sql() + ")",
+                span.params().toArray());
     }
 
     /**

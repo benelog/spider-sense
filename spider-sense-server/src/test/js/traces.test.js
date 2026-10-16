@@ -94,6 +94,24 @@ test('a fraction in Min or Max asks for whole milliseconds, widened outwards, an
   page.destroy();
 });
 
+test('a bar of the Response summary opens the list by request, and the select says so', async () => {
+  api.state.service = '';
+  server.asked.length = 0;
+  const { root, page } = open({ status: 'ok', maxMs: '125', by: 'entry' });
+  await settle();
+  const select = root.querySelectorAll('select').find((s) => s.getAttribute('aria-label') === 'Filter by the trace or by one of its requests');
+  assert.equal(select.value, 'entry');
+  const asked = server.asked.find((u) => u.startsWith('/api/traces?'));
+  assert.ok(asked && new URL(asked, 'http://localhost').searchParams.get('by') === 'entry', asked);
+  select.value = 'trace';
+  select.dispatch('change');
+  await settle();
+  assert.equal(router.currentRoute().query.by, undefined, 'by trace is the default, so the hash leaves it out');
+  const last = server.asked.filter((u) => u.startsWith('/api/traces?')).at(-1);
+  assert.equal(new URL(last, 'http://localhost').searchParams.get('by'), null, last);
+  page.destroy();
+});
+
 test('the endpoint the URL names stays chosen when the window has no call of it', async () => {
   api.state.service = 'bookstore';
   server.endpoints = [{ endpointId: 'aaaa1111', name: 'GET /books' }, { endpointId: 'bbbb2222', name: 'GET /authors' }];

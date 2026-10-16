@@ -34,3 +34,13 @@ test('q on the logs matches the logger, as the API does, so a log-error finding 
   assert.equal(body.total, 1);
   assert.deepEqual(body.logs.map((l) => l.logger), ['net.benelog.Checkout']);
 });
+
+test('by=entry lists the traces by one of their requests, as the API does (api.adoc#traces)', async () => {
+  asked.length = 0;
+  await fetch('/api/traces?by=entry&service=silk-bookstore&status=ok&minMs=29&maxMs=31&from=1040&to=1060');
+  const list = asked.find((q) => q.startsWith('SELECT * FROM trace t WHERE'));
+  assert.ok(list, asked.join('\n'));
+  assert.ok(list.includes("t.trace_id IN (SELECT s.trace_id FROM span s WHERE s.entry AND s.start_ms BETWEEN 1040 AND 1060"
+    + " AND s.service = 'silk-bookstore' AND s.duration_ns > 29 * 1000000 AND s.duration_ns <= 31 * 1000000 AND NOT s.error)"), list);
+  assert.ok(!list.includes('t.duration_ns') && !list.includes('t.error') && !list.includes('t.start_ms BETWEEN'), list);
+});

@@ -93,6 +93,29 @@ test('an empty list with no rectangle drawn says the window holds no trace, not 
   instance.destroy();
 });
 
+test('the trace list asks by request, since every point is one (api.adoc#traces)', async () => {
+  const JS = '../../main/resources/public/assets/js/';
+  const asked = [];
+  globalThis.fetch = async (input) => {
+    const url = new URL(input, 'http://localhost:4000');
+    if (url.pathname === '/api/traces') asked.push(url.searchParams.get('by'));
+    const body = url.pathname === '/api/scatter' ? { points: [] } : url.pathname === '/api/traces' ? { traces: [], total: 0 } : {};
+    return new Response(JSON.stringify(body), { status: 200 });
+  };
+  const api = await import(JS + 'api.js');
+  const router = await import(JS + 'router.js');
+  const page = await import(JS + 'pages/scatter.js');
+  api.state.status = { counts: { spans: 10, traces: 5 } };
+  router.register('/scatter');
+  router.replace('/scatter', {});
+  const root = document.createElement('main');
+  document.body.replaceChildren(root);
+  const instance = page.render(root, { params: {}, initialQuery: {}, query: () => router.currentRoute().query || {}, setTitle() {}, navigate() {} });
+  await new Promise((r) => setTimeout(r, 30));
+  assert.deepEqual(asked, ['entry']);
+  instance.destroy();
+});
+
 test('the selection label reads the clock within today and names the day of an end outside it', () => {
   const now = new Date(2026, 9, 15, 15, 0, 0).getTime();
   const sel = (from, to) => ({ from, to, minMs: 10, maxMs: 250 });

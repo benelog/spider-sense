@@ -79,17 +79,21 @@ export function histogramTitle(histogram) {
 
 /**
  * The Traces page filter that lists the requests of bucket `i` (pages.adoc#overview): the
- * successful ones between its bounds, or the failed ones for the error bucket.
+ * successful ones between its bounds, or the failed ones for the error bucket. The bars count
+ * requests, so the filter is `by=entry`: a trace is listed for a request of it in the bucket.
  */
 export function bucketFilter(i, status = api.state.status) {
   const [a, b, c] = bucketBounds(status);
-  return [
-    { status: 'ok', maxMs: a },
-    { status: 'ok', minMs: a, maxMs: b },
-    { status: 'ok', minMs: b, maxMs: c },
-    { status: 'ok', minMs: c },
-    { status: 'error' },
-  ][i];
+  return {
+    by: 'entry',
+    ...[
+      { status: 'ok', maxMs: a },
+      { status: 'ok', minMs: a, maxMs: b },
+      { status: 'ok', minMs: b, maxMs: c },
+      { status: 'ok', minMs: c },
+      { status: 'error' },
+    ][i],
+  };
 }
 
 /**

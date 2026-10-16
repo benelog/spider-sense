@@ -144,9 +144,22 @@ async function acks(params) {
   return { acks: rows.map((r) => ({ findingId: r.finding_id, at: num(r.at_ms), note: r.note })) };
 }
 
+/** The duration bounds and the status on the rows of `alias`, a trace or a span. */
+function measuredOn(alias, params, where) {
+  const minMs = num(params.get('minMs'));
+  if (minMs !== null) where.push(alias + '.duration_ns > ' + minMs + ' * 1000000');
+  const maxMs = num(params.get('maxMs'));
+  if (maxMs !== null) where.push(alias + '.duration_ns <= ' + maxMs + ' * 1000000');
+  if (params.get('status') === 'error') where.push(alias + '.error');
+  else if (params.get('status') === 'ok') where.push('NOT ' + alias + '.error');
+}
+
 function traceWhere(params, paging) {
   const w = windowOf(params);
-  const where = ['t.start_ms BETWEEN ' + w.from + ' AND ' + w.to];
+  // by=entry reads the window, the bounds, the status, the service and the endpoint off one
+  // entry span of the trace (api.adoc#traces).
+  const byEntry = params.get('by') === 'entry';
+  const where = [byEntry ? 't.start_ms <= ' + w.to : 't.start_ms BETWEEN ' + w.from + ' AND ' + w.to];
   const before = num(params.get('before'));
   const beforeId = params.get('beforeId');
   if (paging && before !== null) {
@@ -154,17 +167,20 @@ function traceWhere(params, paging) {
       ? '(t.start_ms < ' + before + ' OR (t.start_ms = ' + before + ' AND t.trace_id < ' + lit(beforeId) + '))'
       : 't.start_ms < ' + before);
   }
-  const minMs = num(params.get('minMs'));
-  if (minMs !== null) where.push('t.duration_ns > ' + minMs + ' * 1000000');
-  const maxMs = num(params.get('maxMs'));
-  if (maxMs !== null) where.push('t.duration_ns <= ' + maxMs + ' * 1000000');
-  if (params.get('status') === 'error') where.push('t.error');
-  else if (params.get('status') === 'ok') where.push('NOT t.error');
-  if (params.get('service')) {
-    where.push('EXISTS (SELECT 1 FROM span s WHERE s.trace_id = t.trace_id AND s.service = ' + lit(params.get('service')) + ')');
-  }
-  if (params.get('endpointId')) {
-    where.push('EXISTS (SELECT 1 FROM span s WHERE s.trace_id = t.trace_id AND s.endpoint_id = ' + lit(params.get('endpointId')) + ')');
+  if (byEntry) {
+    const span = ['s.entry', 's.start_ms BETWEEN ' + w.from + ' AND ' + w.to];
+    if (params.get('service')) span.push('s.service = ' + lit(params.get('service')));
+    if (params.get('endpointId')) span.push('s.endpoint_id = ' + lit(params.get('endpointId')));
+    measuredOn('s', params, span);
+    where.push('t.trace_id IN (SELECT s.trace_id FROM span s WHERE ' + span.join(' AND ') + ')');
+  } else {
+    measuredOn('t', params, where);
+    if (params.get('service')) {
+      where.push('EXISTS (SELECT 1 FROM span s WHERE s.trace_id = t.trace_id AND s.service = ' + lit(params.get('service')) + ')');
+    }
+    if (params.get('endpointId')) {
+      where.push('EXISTS (SELECT 1 FROM span s WHERE s.trace_id = t.trace_id AND s.endpoint_id = ' + lit(params.get('endpointId')) + ')');
+    }
   }
   const q = (params.get('q') || '').trim().toLowerCase();
   if (q) {

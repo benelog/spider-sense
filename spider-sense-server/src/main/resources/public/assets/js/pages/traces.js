@@ -26,6 +26,9 @@ export function render(root, ctx) {
     maxMs: initialQuery.maxMs || '',
     status: router.queryParam(initialQuery, 'status', ['all', 'error', 'ok'], 'all'),
     endpointId: initialQuery.endpointId || '',
+    // What the duration, the status, the service and the endpoint are read off: the trace, or
+    // one request of it, as the Scatter and the Response summary count (api.adoc#traces).
+    by: router.queryParam(initialQuery, 'by', ['trace', 'entry'], 'trace'),
   };
   const LIMIT = 50;
   let rows = [];
@@ -44,6 +47,10 @@ export function render(root, ctx) {
     h('option', { value: 'error' }, 'Errors only'),
     h('option', { value: 'ok' }, 'No error'));
   statusSelect.value = filter.status;
+  const bySelect = h('select', { 'aria-label': 'Filter by the trace or by one of its requests' },
+    h('option', { value: 'trace' }, 'By trace'),
+    h('option', { value: 'entry' }, 'By request'));
+  bySelect.value = filter.by;
   const endpointSelect = h('select', { 'aria-label': 'Endpoint filter' }, h('option', { value: '' }, 'Any endpoint'));
   endpointSelect.hidden = true;
 
@@ -53,7 +60,8 @@ export function render(root, ctx) {
     filter.maxMs = maxInput.value;
     filter.status = statusSelect.value;
     filter.endpointId = endpointSelect.value;
-    router.setQuery({ ...filter }, { defaults: { status: 'all' } });
+    filter.by = bySelect.value;
+    router.setQuery({ ...filter }, { defaults: { status: 'all', by: 'trace' } });
     rows = [];
     list.load();
   }, 400);
@@ -64,12 +72,14 @@ export function render(root, ctx) {
   maxInput.addEventListener('input', applyFilter);
   statusSelect.addEventListener('change', () => applyFilter.flush());
   endpointSelect.addEventListener('change', () => applyFilter.flush());
+  bySelect.addEventListener('change', () => applyFilter.flush());
 
   const countLabel = h('span.muted', { style: { marginLeft: 'auto', fontSize: '11px' } });
   const bar = h('div.querybar',
     h('div.search', icon('search'), input),
     h('label.range-field', 'Min', minInput, h('span.range-dash', '–'), 'Max', maxInput),
     statusSelect,
+    bySelect,
     endpointSelect,
     countLabel);
 
@@ -129,7 +139,7 @@ export function render(root, ctx) {
 
   /** The top-bar state and the filter the rows answer: a change of either starts over. */
   function viewKey() {
-    return JSON.stringify([api.state.service, api.state.range, filter.q, filter.minMs, filter.maxMs, filter.status, filter.endpointId]);
+    return JSON.stringify([api.state.service, api.state.range, filter.q, filter.minMs, filter.maxMs, filter.status, filter.endpointId, filter.by]);
   }
 
   /**
@@ -148,6 +158,7 @@ export function render(root, ctx) {
         maxMs: wholeMs(filter.maxMs, Math.ceil),
         status: filter.status === 'all' ? '' : filter.status,
         endpointId: filter.endpointId,
+        by: filter.by === 'trace' ? '' : filter.by,
         limit: LIMIT,
         before: cursor && cursor.before,
         beforeId: cursor && cursor.beforeId,

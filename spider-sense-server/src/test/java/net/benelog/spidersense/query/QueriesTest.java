@@ -614,6 +614,50 @@ class QueriesTest {
                 .extracting(Stats.TraceSummary::traceId).containsExactly(traceId(1));
     }
 
+    /**
+     * A downstream request and a handled error: by its entry spans a trace is listed where the
+     * Scatter draws it and the Response summary counts it, by itself it is not.
+     */
+    @Test
+    void byEntryTheFiltersReadTheRequestsOfTheTrace() {
+        // GET /orders, 200 ms, calls the bookstore 50 ms in; the bookstore answers in 30 ms.
+        Span.Builder orders = Otlp.span(traceId(1), spanId(1), "GET /orders", Span.SpanKind.SPAN_KIND_SERVER,
+                NOW, 200);
+        Span.Builder call = Otlp.child(orders, spanId(2), "GET", Span.SpanKind.SPAN_KIND_CLIENT, NOW + 50, 30);
+        Span.Builder books = Otlp.child(call, spanId(3), "GET /books", Span.SpanKind.SPAN_KIND_SERVER, NOW + 50, 30);
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), orders, call));
+        decoder.ingest(Otlp.traces(Otlp.service("bookstore"), books));
+        // GET /fast answers in 20 ms, after a statement under it failed and was handled.
+        Span.Builder fast = Otlp.span(traceId(2), spanId(4), "GET /fast", Span.SpanKind.SPAN_KIND_SERVER,
+                NOW + 1_000, 20);
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), fast, Otlp.failing(
+                Otlp.child(fast, spanId(5), "INSERT", Span.SpanKind.SPAN_KIND_CLIENT, NOW + 1_005, 5),
+                "SQLException", "duplicate key", "at Orders.save")));
+        flush();
+
+        // The rectangle around the bookstore point, and its Response summary's first bar.
+        Window rectangle = Window.of(NOW + 40, NOW + 60);
+        assertThat(queries.traces(byEntry(rectangle, null, 29L, 31L, null))).extracting(Stats.TraceSummary::traceId)
+                .containsExactly(traceId(1));
+        assertThat(queries.traces(new Queries.TraceFilter(rectangle, null, null, 29L, 31L, null, null, null, 50)))
+                .isEmpty();
+        assertThat(queries.traces(byEntry(window, "bookstore", null, 125L, "ok")))
+                .extracting(Stats.TraceSummary::traceId).containsExactly(traceId(1));
+        assertThat(queries.traces(byEntry(window, "orders", 125L, 500L, "ok")))
+                .extracting(Stats.TraceSummary::traceId).containsExactly(traceId(1));
+        // The handled error: its request is in the first bar, and not behind the error bar.
+        assertThat(queries.traces(byEntry(window, "orders", null, 125L, "ok")))
+                .extracting(Stats.TraceSummary::traceId).containsExactly(traceId(2));
+        assertThat(queries.traceTotal(byEntry(window, "orders", null, null, "error"))).isZero();
+        assertThat(queries.traces(new Queries.TraceFilter(window, "orders", null, null, null, "error", null, null, 50)))
+                .extracting(Stats.TraceSummary::traceId).containsExactly(traceId(2));
+    }
+
+    private Queries.TraceFilter byEntry(Window in, String service, Long minMs,
+            Long maxMs, String status) {
+        return new Queries.TraceFilter(in, service, null, minMs, maxMs, status, null, null, null, 50, true);
+    }
+
     @Test
     void tracesThatStartInTheSameMillisecondPageByTheirTraceId() {
         for (int i = 1; i <= 5; i++) {

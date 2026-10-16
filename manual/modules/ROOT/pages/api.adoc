@@ -264,11 +264,17 @@ It is `{}` when those traces add up to nothing.
 [#traces]
 == Traces
 
-*`GET /api/traces?from&to&service&endpointId&minMs&maxMs&status=error|ok|all&q&limit=50&before=<epoch ms>&beforeId=<traceId>`*
+*`GET /api/traces?from&to&service&endpointId&minMs&maxMs&status=error|ok|all&by=trace|entry&q&limit=50&before=<epoch ms>&beforeId=<traceId>`*
 
 `minMs` and `maxMs`::
 Whole milliseconds; a trace is listed when its duration is above `minMs` and at most `maxMs`.
 The lower bound is open and the upper closed, as the Response summary's buckets are, so the lists behind two neighbouring bars never share a request on their common bound.
+`by`::
+What `from` and `to`, `minMs` and `maxMs`, `status`, `service` and `endpointId` are read off.
+With `trace`, the default, they are the trace's: its start, its duration, whether any of its spans failed, and any of its spans for the service and the endpoint.
+With `entry` they are one entry span's: a trace is listed when one of its entry spans starts in the window, is of the service and the endpoint, lasts between the bounds, and has the status.
+That is what the Scatter draws and what the Response summary counts, so a downstream request, a request that answered while a statement under it failed and was handled, and a request that started after its trace did are listed behind the bar or the rectangle they are drawn in.
+`q` and the order, newest trace first, are the same either way.
 `q`::
 A case-insensitive substring match over the root span name, every span name, and every string attribute value of the trace.
 `before` and `beforeId`::
