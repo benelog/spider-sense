@@ -61,7 +61,7 @@ final class SqlShape {
             "desc", "nulls", "first", "last", "distinct", "all", "any", "some", "interval",
             "current_date", "current_timestamp", "current_time", "date", "time", "timestamp",
             "cast", "only", "rows", "row", "next", "with", "recursive", "except", "intersect", "minus",
-            "symmetric", "asymmetric");
+            "symmetric", "asymmetric", "window");
 
     /**
      * The keywords that are also common column names. In a predicate, one that a
@@ -89,7 +89,8 @@ final class SqlShape {
      */
     private static final Set<String> REGION_END = Set.of(
             "select", "from", "group", "having", "limit", "offset", "fetch", "union", "except",
-            "intersect", "minus", "set", "values", "insert", "update", "delete", "join");
+            "intersect", "minus", "set", "values", "insert", "update", "delete", "join", "returning",
+            "window");
 
     /**
      * The keywords a {@code ::} cast's type may be spelt with
@@ -231,6 +232,22 @@ final class SqlShape {
                 i = skipToClose(tokens, i + 1);     // "for update of o1_0 skip locked"
                 continue;
             }
+            if (token.isWord("lock") && wordAt(tokens, i + 1, "in") && wordAt(tokens, i + 2, "share")
+                    && wordAt(tokens, i + 3, "mode")) {
+                i = skipToClose(tokens, i + 4);     // MySQL's "lock in share mode"
+                continue;
+            }
+            if (token.isWord("over") && followedByParenthesis(tokens, i)) {
+                // "sum(total) over (partition by … order by …)": a window sorts the rows its
+                // function reads, not the result, and filters nothing.
+                i = skipGroup(tokens, i + 2);
+                continue;
+            }
+            if (token.isWord("window")) {
+                i = skipWindows(tokens, i + 1);     // "window w as (partition by … order by …)"
+                region = Region.NONE;
+                continue;
+            }
             if (token.is("::")) {
                 i = skipType(tokens, i + 1);     // ?::uuid names a type, not a column
                 continue;
@@ -306,6 +323,11 @@ final class SqlShape {
                 i++;
                 continue;
             }
+            if (region == Region.NONE && isAliasWithoutAs(tokens, i)) {
+                selectAliases.add(token.text());     // "count(*) cnt"
+                i++;
+                continue;
+            }
             if (region == Region.NONE || token.kind() != Token.Kind.NAME) {
                 i++;
                 continue;
@@ -328,6 +350,44 @@ final class SqlShape {
             column(token);
             i++;
         }
+    }
+
+    /**
+     * Whether the name at {@code i} is an alias a select list gives without {@code as}
+     * ({@code count(*) cnt}, {@code o.status st}): a plain name right after the end of an
+     * expression and right before the {@code ,} or the {@code from} that ends the item.
+     */
+    private static boolean isAliasWithoutAs(List<Token> tokens, int i) {
+        Token token = tokens.get(i);
+        if (token.kind() != Token.Kind.NAME || token.isKeyword() || token.parts().size() != 1
+                || i == 0 || i + 1 >= tokens.size()) {
+            return false;
+        }
+        Token next = tokens.get(i + 1);
+        if (!next.is(",") && !next.isWord("from")) {
+            return false;
+        }
+        Token previous = tokens.get(i - 1);
+        return previous.is(")") || previous.isWord("end")
+                || previous.kind() == Token.Kind.NUMBER || previous.kind() == Token.Kind.PARAMETER
+                || (previous.kind() == Token.Kind.NAME && !previous.isKeyword());
+    }
+
+    /**
+     * Past the definitions of a {@code window} clause, {@code w as (…)} and each one more
+     * after a comma: what a window partitions and sorts by is no predicate.
+     */
+    private static int skipWindows(List<Token> tokens, int start) {
+        int i = start;
+        while (i + 2 < tokens.size() && tokens.get(i).kind() == Token.Kind.NAME
+                && tokens.get(i + 1).isWord("as") && tokens.get(i + 2).is("(")) {
+            i = skipGroup(tokens, i + 3);
+            if (i >= tokens.size() || !tokens.get(i).is(",")) {
+                break;
+            }
+            i++;
+        }
+        return i;
     }
 
     /**

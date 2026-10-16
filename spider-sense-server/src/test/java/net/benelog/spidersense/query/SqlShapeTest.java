@@ -73,6 +73,23 @@ class SqlShapeTest {
                 .containsExactly("items.name");
     }
 
+    /** An alias written without "as" is the select list's own name too. */
+    @Test
+    void aSelectListAliasWithoutAsInTheOrderByIsNoColumn() {
+        assertThat(predicates("select o.status, count(*) cnt from orders o where o.status = ?"
+                + " group by o.status order by cnt desc"))
+                .containsExactly("orders.status");
+        assertThat(predicates("select o.status st, sum(o.total) revenue from orders o where o.total > ?"
+                + " group by o.status order by revenue desc, st"))
+                .containsExactly("orders.total");
+        assertThat(predicates("select case when total > ? then 1 else 0 end big from orders where status = ?"
+                + " order by big"))
+                .containsExactly("orders.status");
+        assertThat(predicates("select id, name from items where sku = ? order by name"))
+                .as("a column the select list names is still a column of the order by")
+                .containsExactly("items.sku", "items.name");
+    }
+
     @Test
     void aSetOperatorEndsTheWhereItFollows() {
         assertThat(predicates("select id from items where name = ? except select id from items where sku = ?"))
@@ -253,6 +270,43 @@ class SqlShapeTest {
                 + " order by j.id limit ? for update skip locked) returning id";
         assertThat(tables(queue)).containsExactly("jobs");
         assertThat(predicates(queue)).containsExactly("jobs.id", "jobs.state");
+
+        String shareMode = "select o1_0.id from orders o1_0 where o1_0.id=? lock in share mode";
+        assertThat(SqlShape.of(shareMode).readable()).isTrue();
+        assertThat(predicates(shareMode)).as("MySQL's lock in share mode, Hibernate's PESSIMISTIC_READ")
+                .containsExactly("orders.id");
+    }
+
+    /** What a write returns is a list of columns, not a predicate. */
+    @Test
+    void aReturningListIsNoPredicate() {
+        assertThat(predicates("delete from sessions where expires_at < ? returning user_id"))
+                .containsExactly("sessions.expires_at");
+        String queue = "update jobs set state = ? where id = (select j.id from jobs j where j.state = ?"
+                + " order by j.id limit ? for update skip locked) returning id, payload, attempts";
+        assertThat(predicates(queue)).containsExactly("jobs.id", "jobs.state");
+        assertThat(predicates("insert into jobs (state, payload) values (?, ?) returning id"))
+                .isEmpty();
+    }
+
+    /** A window sorts the rows its function reads, not the result, and filters nothing. */
+    @Test
+    void aWindowNamesNoPredicate() {
+        String named = "select id, sum(total) over w from orders where status = ?"
+                + " window w as (partition by customer_id order by created_at)";
+        assertThat(SqlShape.of(named).readable()).isTrue();
+        assertThat(tables(named)).containsExactly("orders");
+        assertThat(predicates(named)).containsExactly("orders.status");
+
+        String inline = "select id, sum(total) over (partition by customer_id order by created_at)"
+                + " from orders where status = ?";
+        assertThat(SqlShape.of(inline).readable()).as("the same window written inline").isTrue();
+        assertThat(predicates(inline)).containsExactly("orders.status");
+
+        assertThat(predicates("select id from orders where status = ?"
+                + " window w1 as (order by created_at), w2 as (partition by customer_id) order by id"))
+                .as("several windows, and the order by after them")
+                .containsExactly("orders.status", "orders.id");
     }
 
     /** Inside extract, trim, substring and overlay, "from" and "for" separate arguments. */
