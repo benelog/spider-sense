@@ -524,7 +524,7 @@ export function render(root, ctx) {
 
   function openNode(n) {
     if (drawerChart) { drawerChart.destroy(); drawerChart = null; }
-    const body = n.kind === 'service' ? serviceDrawer(n) : externalDrawer(n);
+    const body = n.kind === 'service' ? serviceDrawer(n) : n.kind === 'user' ? userDrawer(n) : externalDrawer(n);
     drawer({
       title: n.name,
       subtitle: n.kind === 'user' ? 'traffic from outside every traced service' : n.kind,
@@ -567,9 +567,33 @@ export function render(root, ctx) {
     }
   }
 
+  /** A node's name by its id, or the id when the map has no such node. */
+  function nameOf(id) {
+    return ((data.nodes || []).find((x) => x.id === id) || {}).name || id;
+  }
+
+  /**
+   * The `user` node carries no numbers of its own and is called by nothing: its drawer gives the
+   * requests its edges carry, as its node line does, and the services those requests reach.
+   */
+  function userDrawer(n) {
+    const calls = (data.edges || []).filter((e) => e.from === n.id);
+    const errors = calls.reduce((sum, e) => sum + (e.errors || 0), 0);
+    return [
+      h('dl.kv',
+        h('dt', 'requests'), h('dd', count(totalUserCalls())),
+        h('dt', 'errors'), h('dd', { class: errors ? 'bad' : '' }, count(errors))),
+      h('div',
+        h('div.sub-head', { style: { marginBottom: '6px' } }, 'Calls'),
+        h('dl.kv', calls.length
+          ? calls.map((e) => [h('dt', nameOf(e.to)),
+            h('dd', counted(e.calls, 'request') + (e.errors ? ', ' + counted(e.errors, 'error') : '') + ' · p95 ' + dur(e.p95Ms))])
+          : [h('dt', '—'), h('dd', 'nothing in this window')])),
+    ];
+  }
+
   function externalDrawer(n) {
     const callers = (data.edges || []).filter((e) => e.to === n.id);
-    const nameOf = (id) => ((data.nodes || []).find((x) => x.id === id) || {}).name || id;
     return [
       h('dl.kv',
         h('dt', 'calls'), h('dd', count(n.calls)),

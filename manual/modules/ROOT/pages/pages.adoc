@@ -204,6 +204,7 @@ A dimmed node or edge fades to 22%, all but its text, which turns `--text-muted`
 A click on a node, or Enter or Space on a focused one, opens a drawer on the right, 420 px wide like the span drawer, with the node's name and kind.
 For a service the drawer holds the stat tiles (requests, Apdex, error rate, p95, rps), the Response summary bars, the Load chart for the window, fetched from `+/api/services/{name}+` and drawn as the Overview draws it in Load mode, and buttons for *Service*, *Scatter* and *Traces*, each filtered to that service.
 For an external node it holds the calls, the errors, the average, the p95, and the services that call it with their counts.
+For the `user` node, which has no numbers of its own and no caller, it holds the requests its edges carry, as its node line counts them, their errors, and the services they reach, each with its requests, errors and p95.
 
 The SVG has a minimum width of `columns × 260` px and scrolls horizontally inside its panel on a narrow screen.
 The panel is as high as the viewport minus the top bar, and at least 420 px.

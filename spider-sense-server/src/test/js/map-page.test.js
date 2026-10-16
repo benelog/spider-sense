@@ -65,3 +65,27 @@ test('a count of one reads in the singular on a node, an edge and a drawer', asy
   assert.ok(called.includes('1 call, 1 error'), called.join(' | '));
   instance.destroy();
 });
+
+/** A drawer's `dl` as [term, description] pairs. */
+const pairsOf = (dl) => {
+  const items = dl.children.map((c) => c.textContent);
+  return items.filter((_, i) => i % 2 === 0).map((dt, i) => [dt, items[2 * i + 1]]);
+};
+
+test('the Clients node\'s drawer gives the requests its node line counts and the services they reach', async () => {
+  const books = { ...MAP.nodes[1], id: 'svc:books', name: 'books', requests: 159 };
+  const map = {
+    ...MAP,
+    nodes: [...MAP.nodes, books],
+    edges: [...MAP.edges, { from: 'user', to: 'svc:books', calls: 159, errors: 2, avgMs: 12, p95Ms: 30 }],
+  };
+  const { root, instance } = await open(map);
+  assert.equal(lineOf(root, 'user'), '160 requests');
+  nodeOf(root, 'user').dispatch('click');
+  const body = ui.drawerBody();
+  const [totals, reached] = body.querySelectorAll('dl');
+  assert.deepEqual(pairsOf(totals), [['requests', '160'], ['errors', '2']]);
+  assert.equal(body.querySelector('.sub-head').textContent, 'Calls');
+  assert.deepEqual(pairsOf(reached), [['orders', '1 request · p95 40.0 ms'], ['books', '159 requests, 2 errors · p95 30.0 ms']]);
+  instance.destroy();
+});
