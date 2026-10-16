@@ -2,12 +2,14 @@ package net.benelog.spidersense.cli;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -317,13 +319,70 @@ class InitTest {
         assertThat(run.exit()).as("stderr: %s", run.err()).isZero();
         assertThat(block(project))
                 .contains("and the jar is at `" + jar + "`.")
-                .contains("`java -javaagent:\"" + jar + "\" -jar <app jar>`")
-                .contains("`./gradlew bootRun -PspiderSense.jar=\"" + jar + "\"`")
-                .contains("`mvn spring-boot:run -Dspring-boot.run.agents=\"" + jar + "\"`")
+                .contains("`java -javaagent:'" + jar + "' -jar <app jar>`")
+                .contains("`./gradlew bootRun -PspiderSense.jar='" + jar + "'`")
+                .contains("`mvn spring-boot:run -Dspring-boot.run.agents='" + jar + "'`")
                 .contains("`JAVA_TOOL_OPTIONS=\"-javaagent:'" + jar + "'\" <command>`")
-                .contains("java -jar \"" + jar + "\" findings --since=start  # ranked")
+                .contains("java -jar '" + jar + "' findings --since=start  # ranked")
                 .doesNotContain("-javaagent:" + jar)
                 .doesNotContain("java -jar " + jar);
+    }
+
+    /**
+     * A jar path with an apostrophe or a character a shell expands is quoted so that the shell
+     * passes it on as it is, and inside {@code JAVA_TOOL_OPTIONS} with the quote the JVM can read it
+     * in (agent-skill.adoc#block).
+     */
+    @Test
+    void aJarPathWithAnApostropheOrADollarIsQuotedForTheShellAndTheJvm() {
+        assertThat(blockFor("/opt/O'Brien tools/spider-sense.jar"))
+                .contains("`java -javaagent:'/opt/O'\\''Brien tools/spider-sense.jar' -jar <app jar>`")
+                .contains("`JAVA_TOOL_OPTIONS=\"-javaagent:\\\"/opt/O'Brien tools/spider-sense.jar\\\"\" <command>`");
+        assertThat(blockFor("/opt/tools$v2/spider-sense.jar"))
+                .contains("`java -javaagent:'/opt/tools$v2/spider-sense.jar' -jar <app jar>`")
+                .contains("`JAVA_TOOL_OPTIONS=\"-javaagent:'/opt/tools\\$v2/spider-sense.jar'\" <command>`");
+    }
+
+    /** Every quoted form is the path again once bash has read it, and once the JVM has read the variable. */
+    @Test
+    void theQuotedJarPathIsThePathToBashAndToTheJvm() throws IOException, InterruptedException {
+        Path bash = Path.of("/bin/bash");
+        assumeTrue(Files.isExecutable(bash), "bash runs the block's commands");
+        String java = Path.of(System.getProperty("java.home"), "bin", "java").toString();
+        for (String jar : List.of("/opt/my tools/spider-sense.jar", "/opt/O'Brien tools/spider-sense.jar",
+                "/opt/tools$v2/spider-sense.jar", "/opt/back`tick` dir/spider-sense.jar",
+                "/opt/say \"hi\"/spider-sense.jar", "/opt/it's \"both\" here/spider-sense.jar",
+                "/opt/C:\\Tools\\$x\\\\/spider-sense.jar")) {
+            String block = blockFor(jar);
+            String word = between(block, "`java -javaagent:", " -jar <app jar>`");
+            assertThat(run(bash.toString(), "-c", "printf '%s' " + word)).as(jar).isEqualTo(jar);
+
+            // The variable as the block sets it, with a property in the agent's place, quoted alike.
+            String variable = between(block, "`JAVA_TOOL_OPTIONS=", " <command>`")
+                    .replace("-javaagent:", "-Dquoted.jar=");
+            String settings = run(bash.toString(), "-c",
+                    "JAVA_TOOL_OPTIONS=" + variable + " exec \"$0\" -XshowSettings:properties -version", java);
+            assertThat(settings).as(jar).contains("    quoted.jar = " + jar + "\n");
+        }
+    }
+
+    private static String blockFor(String jar) {
+        return Init.block(new Init.Setup(jar, false, null, false, Init.Build.UNKNOWN, false));
+    }
+
+    private static String between(String text, String start, String end) {
+        int from = text.indexOf(start);
+        assertThat(from).as("%s in the block", start).isNotNegative();
+        from += start.length();
+        return text.substring(from, text.indexOf(end, from));
+    }
+
+    /** A command's stdout and stderr together. */
+    private static String run(String... command) throws IOException, InterruptedException {
+        Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
+        String output = new String(process.getInputStream().readAllBytes(), UTF_8);
+        process.waitFor();
+        return output;
     }
 
     /**

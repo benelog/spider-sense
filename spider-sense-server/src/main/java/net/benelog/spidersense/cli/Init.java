@@ -58,10 +58,16 @@ final class Init {
     /** The placeholder the jar path replaces; the block is written once, here. */
     private static final String JAR_PLACEHOLDER = "${jar}";
 
-    /** The jar path as one word of a shell command, quoted when it would split (agent-skill.adoc#block). */
+    /**
+     * The jar path as one word of a shell command, in single quotes when it would split or expand,
+     * with each {@code '} in it as {@code '\''} (agent-skill.adoc#block).
+     */
     private static final String JAR_WORD = "${jar-word}";
 
-    /** The jar path inside the double-quoted {@code JAVA_TOOL_OPTIONS}, whose own quotes the JVM reads. */
+    /**
+     * The jar path inside the double-quoted {@code JAVA_TOOL_OPTIONS}: in the JVM's own quotes when
+     * it would split, then escaped for the shell's double quotes.
+     */
     private static final String JAR_OPTION = "${jar-option}";
 
     /** What a shell leaves alone in a word: anything else in the jar path has it quoted. */
@@ -197,9 +203,43 @@ final class Init {
         String jar = setup.jar();
         boolean safe = SHELL_SAFE.matcher(jar).matches();
         return (START + "\n" + body + END)
-                .replace(JAR_WORD, safe ? jar : '"' + jar + '"')
-                .replace(JAR_OPTION, safe ? jar : "'" + jar + "'")
+                .replace(JAR_WORD, safe ? jar : "'" + jar.replace("'", "'\\''") + "'")
+                .replace(JAR_OPTION, inDoubleQuotes(safe ? jar : jvmQuoted(jar)))
                 .replace(JAR_PLACEHOLDER, jar);
+    }
+
+    /**
+     * The jar path as the JVM reads it inside {@code JAVA_TOOL_OPTIONS}: whitespace splits the
+     * variable, a quote of either kind groups up to the next one of its kind, quoted runs that
+     * touch are one option, and nothing escapes. So the path is in whichever quote it does not
+     * hold, and one that holds both has each {@code '} as {@code "'"} between single-quoted runs.
+     */
+    private static String jvmQuoted(String jar) {
+        if (jar.indexOf('\'') < 0) {
+            return "'" + jar + "'";
+        }
+        if (jar.indexOf('"') < 0) {
+            return '"' + jar + '"';
+        }
+        return "'" + jar.replace("'", "'\"'\"'") + "'";
+    }
+
+    /**
+     * Text the shell reads inside double quotes, where {@code $}, a backtick, {@code "} and a
+     * {@code \} before one of them or before the closing quote are still its own: each of those
+     * gets a {@code \}, and the shell passes the text on as it is.
+     */
+    private static String inDoubleQuotes(String text) {
+        StringBuilder quoted = new StringBuilder(text.length());
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            boolean escapes = c == '\\' && (i + 1 == text.length() || "$`\"\\".indexOf(text.charAt(i + 1)) >= 0);
+            if (c == '$' || c == '`' || c == '"' || escapes) {
+                quoted.append('\\');
+            }
+            quoted.append(c);
+        }
+        return quoted.toString();
     }
 
     /**

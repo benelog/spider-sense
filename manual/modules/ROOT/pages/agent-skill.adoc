@@ -109,7 +109,10 @@ Query tuning — an index to add, a rewrite, a fetch join, a batch — is in the
 ----
 
 The jar path above, `/home/me/tools/spider-sense.jar`, is the one `init` resolved, and every other line is written exactly as shown.
-A jar path that holds a space, or any character a shell would split or expand at, is quoted in the commands, so the agent can copy each into a shell as it stands: `java -javaagent:"/opt/my tools/spider-sense.jar" -jar <app jar>`, and in single quotes inside `JAVA_TOOL_OPTIONS`, whose own quotes the JVM reads: `JAVA_TOOL_OPTIONS="-javaagent:'/opt/my tools/spider-sense.jar'" <command>`.
+A jar path that holds a space, or any character a shell would split or expand at, is quoted in the commands, so the agent can copy each into a shell as it stands.
+A word of a command is in single quotes, with each `'` of the path written `'\''`: `java -javaagent:'/opt/my tools/spider-sense.jar' -jar <app jar>`.
+Inside `JAVA_TOOL_OPTIONS`, whose own quotes the JVM reads, the path is in single quotes, or in double quotes when it holds a `'`, and a path that holds both has each `'` as `"'"` between single-quoted runs, which the JVM joins: `JAVA_TOOL_OPTIONS="-javaagent:'/opt/my tools/spider-sense.jar'" <command>`.
+There a `$`, a backtick and a `"` get a `\`, because the shell still reads them inside the variable's double quotes.
 The sentence that names where the jar is keeps it unquoted.
 The block is generated from one place in the code.
 Without `--url` the block names no port of the project, only the Spider Sense UI's own default, `http://127.0.0.1:4000`.
