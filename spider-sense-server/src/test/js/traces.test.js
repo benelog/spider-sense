@@ -20,6 +20,13 @@ globalThis.fetch = async (input) => {
   server.asked.push(url.pathname + url.search);
   let body = {};
   if (url.pathname === '/api/traces') {
+    // As Params.optionalLong does: a bound that is no whole number is a 400.
+    for (const name of ['minMs', 'maxMs']) {
+      const bound = url.searchParams.get(name);
+      if (bound !== null && !/^-?\d+$/.test(bound)) {
+        return new Response(JSON.stringify({ error: 'Invalid value for parameter ' + name + ': ' + bound }), { status: 400 });
+      }
+    }
     const before = Number(url.searchParams.get('before')) || server.newest + 1;
     const limit = Number(url.searchParams.get('limit'));
     const list = [];
@@ -64,6 +71,26 @@ test('a Live tick after Load more puts the newest traces on top and keeps the ro
   await settle();
   assert.equal(countLabel(root), '102 of 402');
   assert.equal(startsOf(root).length, 102);
+  page.destroy();
+});
+
+test('a fraction in Min or Max asks for whole milliseconds, widened outwards, and the list stays', async () => {
+  api.state.service = '';
+  const lastAsked = () => new URL(server.asked.filter((p) => p.startsWith('/api/traces?')).at(-1), 'http://localhost').searchParams;
+  const { root, page } = open({ minMs: '2.5', maxMs: '7.2' });
+  await settle();
+  assert.equal(lastAsked().get('minMs'), '2', 'the open lower bound goes down');
+  assert.equal(lastAsked().get('maxMs'), '8', 'the closed upper bound goes up');
+  assert.equal(countLabel(root), '50 of ' + server.total);
+  const [search, min, max] = root.querySelectorAll('input');
+  min.value = '1e3';
+  max.value = '';
+  search.dispatch('keydown', { key: 'Enter' });
+  await settle();
+  assert.equal(lastAsked().get('minMs'), '1000');
+  assert.equal(lastAsked().get('maxMs'), null);
+  assert.equal(root.querySelector('.error-box'), null);
+  assert.equal(router.currentRoute().query.minMs, '1e3', 'the hash keeps what was typed');
   page.destroy();
 });
 

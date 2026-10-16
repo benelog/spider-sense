@@ -7,6 +7,17 @@ import { pageLoader, mergeNewestPage } from '../page.js';
 import { traceTable } from '../widgets.js';
 import { count } from '../format.js';
 
+/**
+ * A duration bound as the API takes it, whole milliseconds (api.adoc#traces): a fraction typed in a
+ * field widens outwards, `round` taking the open lower bound down and the closed upper one up, so no
+ * trace in the typed range is left out. An empty or unreadable field is no bound.
+ */
+function wholeMs(typed, round) {
+  const text = String(typed).trim();
+  const ms = text === '' ? NaN : Number(text);
+  return Number.isFinite(ms) ? Math.max(-Number.MAX_SAFE_INTEGER, Math.min(Number.MAX_SAFE_INTEGER, round(ms))) : '';
+}
+
 export function render(root, ctx) {
   const initialQuery = { ...ctx.query() };
   const filter = {
@@ -133,8 +144,8 @@ export function render(root, ctx) {
       const w = api.windowFor();
       const res = await api.traces({
         q: filter.q,
-        minMs: filter.minMs,
-        maxMs: filter.maxMs,
+        minMs: wholeMs(filter.minMs, Math.floor),
+        maxMs: wholeMs(filter.maxMs, Math.ceil),
         status: filter.status === 'all' ? '' : filter.status,
         endpointId: filter.endpointId,
         limit: LIMIT,

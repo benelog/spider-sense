@@ -304,6 +304,9 @@ The rectangle stays on the chart through every redraw, a toggle, a Live merge or
 === The list
 
 The query bar takes free text (`q`), a duration range (`minMs` and `maxMs`, two small number fields joined by "–"), a status of `all`, `error` or `ok`, and an endpoint from the current service's endpoints when a service is selected.
+A fraction typed in either field widens outwards to a whole millisecond before the page asks, since the API takes whole milliseconds (xref:api.adoc#traces[Traces]): `2.5` in *Min* asks `minMs=2`, and `7.2` in *Max* asks `maxMs=8`.
+No trace in the typed range is therefore left out.
+The URL keeps the value as typed.
 An endpoint belongs to one service, so a change of the top bar's service clears the endpoint, from the URL as well.
 An endpoint the window holds no call of stays chosen, as `<name> (not seen)`, so the select names the filter the URL and the list apply.
 Enter applies the query, and so does a 400 ms pause in typing.
