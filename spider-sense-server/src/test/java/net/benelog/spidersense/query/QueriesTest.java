@@ -532,6 +532,27 @@ class QueriesTest {
         assertThat(queries.traces(filterWithQuery("nothing-like-this"))).isEmpty();
     }
 
+    /**
+     * A value holding a quote or a backslash is found as it reads, though the attribute JSON
+     * holds it escaped, and the JSON text itself is still found.
+     */
+    @Test
+    void theFreeTextSearchFindsAValueTheJsonEscapes() {
+        decoder.ingest(Otlp.traces(Otlp.service("orders"),
+                Otlp.span(traceId(1), spanId(1), "GET /report", Span.SpanKind.SPAN_KIND_SERVER, NOW, 5,
+                        Otlp.attr("file.path", "C:\\Users\\me\\report.csv"),
+                        Otlp.attr("db.statement", "select \"ID\" from \"ORDERS\" where \"STATUS\" = ?"))));
+        decoder.ingest(Otlp.logs(Otlp.service("orders"), "orders.Report",
+                Otlp.log(NOW, 9, "written", traceId(1), spanId(1), Otlp.attr("file.path", "C:\\tmp\\out.csv"))));
+        flush();
+
+        assertThat(queries.traces(filterWithQuery("C:\\Users\\me"))).hasSize(1);
+        assertThat(queries.traces(filterWithQuery("from \"ORDERS\" where"))).hasSize(1);
+        assertThat(queries.traces(filterWithQuery("\"file.path\":\"c:"))).hasSize(1);
+        assertThat(queries.logs(new Queries.LogFilter(window, null, null, "C:\\tmp", null, null, 50)))
+                .extracting(LogRecord::body).containsExactly("written");
+    }
+
     /** A bound past 2,147 ms must not overflow a 32-bit multiplication in SQL. */
     @Test
     void theDurationFilterTakesBoundsOfSeveralSeconds() {

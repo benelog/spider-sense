@@ -373,6 +373,7 @@ A finding's xref:findings.adoc#state[state] reads the two newest `start` marks o
 It runs the rules of the page's kinds again over the run between those two marks, for ids alone, and keeps what they found in memory for as long as the server runs.
 * Free-text search (`q`): `+LOWER(name) LIKE ? ESCAPE '\' OR LOWER(attributes) LIKE ? ESCAPE '\'+` over the spans of the window, and `+LOWER(body) LIKE ? ESCAPE '\' OR LOWER(logger) LIKE ? ESCAPE '\' OR LOWER(attributes) LIKE ? ESCAPE '\'+` over its logs.
 The pattern is the lower-cased text with its `%`, `_` and `\` escaped, between two `%`.
+A text that holds a quote, a backslash or a control character is matched against the `attributes` a second time, as the JSON writer escapes it, with an `OR`.
 A scan of the window is acceptable at local-development volumes.
 * JVM and metrics: `metric_point` joined with `metric_series`, resampled in Java where the API asks for it.
 

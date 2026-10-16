@@ -921,12 +921,32 @@ public final class Queries {
                     + " AND s.endpoint_id = ?)", filter.endpointId());
         }
         if (filter.q() != null && !filter.q().isBlank()) {
-            String like = likeContaining(filter.q());
+            Where attributes = containingInJson("s.attributes", filter.q());
+            List<Object> params = new ArrayList<>(List.of(likeContaining(filter.q())));
+            params.addAll(attributes.params());
             where = where.and("EXISTS (SELECT 1 FROM span s WHERE s.trace_id = t.trace_id"
-                    + " AND (LOWER(s.name) LIKE ? ESCAPE '\\' OR LOWER(s.attributes) LIKE ? ESCAPE '\\'))",
-                    like, like);
+                    + " AND (LOWER(s.name) LIKE ? ESCAPE '\\' OR " + attributes.sql() + "))", params.toArray());
         }
         return where;
+    }
+
+    /**
+     * "A column of attribute JSON contains {@code text}", case-insensitively: the text as it
+     * reads, and, when the JSON writer escapes any of its characters, the text as the JSON
+     * holds it. A quote, a backslash or a control character of a value is written escaped,
+     * so {@code C:\Users} is stored as {@code C:\\Users} (api.adoc#free-text-search).
+     */
+    private static Where containingInJson(String column, String text) {
+        String like = "LOWER(" + column + ") LIKE ? ESCAPE '\\'";
+        String escaped = jsonEscaped(text);
+        return escaped.equals(text) ? new Where(like, likeContaining(text))
+                : new Where("(" + like + " OR " + like + ")", likeContaining(text), likeContaining(escaped));
+    }
+
+    /** The text as the JSON writer writes it inside a string, without the quotes around it. */
+    private static String jsonEscaped(String text) {
+        String json = AttrJson.toJson(text).toJson();
+        return json.substring(1, json.length() - 1);
     }
 
     /**
@@ -1196,9 +1216,12 @@ public final class Queries {
         }
         if (filter.q() != null && !filter.q().isBlank()) {
             String like = likeContaining(filter.q());
+            Where attributes = containingInJson("attributes", filter.q());
+            List<Object> params = new ArrayList<>(List.of(like, like));
+            params.addAll(attributes.params());
             // The logger too: a log-error finding's link names its logger in q (pages.adoc#findings).
             where = where.and("(LOWER(body) LIKE ? ESCAPE '\\' OR LOWER(logger) LIKE ? ESCAPE '\\'"
-                    + " OR LOWER(attributes) LIKE ? ESCAPE '\\')", like, like, like);
+                    + " OR " + attributes.sql() + ")", params.toArray());
         }
         return where;
     }

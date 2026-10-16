@@ -824,6 +824,8 @@ Lists paged with `before` are newest first, with the row id breaking a tie insid
 `q` on `/api/traces` matches, case-insensitively, any span name or any part of the span's attribute JSON in that trace.
 It runs as the `+LOWER(name) LIKE ? ESCAPE '\' OR LOWER(attributes) LIKE ? ESCAPE '\'+` that xref:storage.adoc[Storage] describes.
 `q` is a plain substring on both endpoints: its `%`, `_` and `\` are escaped, so `100%` matches the text "100%" and not every text that starts with "100".
+An attribute value is found as it reads, though the JSON holds its quotes, backslashes and control characters escaped: `C:\Users\me` finds the path the JSON holds as `C:\\Users\\me`, and `from "ORDERS"` finds a statement that quotes its identifiers.
+A `q` that holds such a character is matched against the attribute JSON both as it reads and as the JSON writes it, so it still finds the JSON text itself.
 Span *event* attributes, notably `exception.message`, are not searched.
 Search an error's endpoint or type instead, or use `/api/errors`.
 `q` on `/api/logs` matches the body, the logger and the attribute JSON, so the logger a `log-error` finding names finds its records.
