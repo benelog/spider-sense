@@ -58,6 +58,11 @@ public final class Utf16 {
         return value.substring(0, end);
     }
 
+    /** Whether {@code text} has no unpaired surrogate, so {@link #wellFormed(String)} would leave it as it is. */
+    public static boolean isWellFormed(String text) {
+        return firstLone(text, 0) < 0;
+    }
+
     /** The index of the first unpaired surrogate at or after {@code from}, or -1 when there is none. */
     private static int firstLone(String text, int from) {
         int i = from;

@@ -568,6 +568,34 @@ class ExportImportTest {
         });
     }
 
+    /**
+     * Every other string of the document too, a span's name, an attribute's key and value
+     * and a log's body: a hand-edited file, or one an older store wrote, is stored with
+     * U+FFFD, so the JSON and the text renderings of the trace read the same character.
+     */
+    @Test
+    void aLoneSurrogateAnywhereInAnImportedDocumentIsTheReplacementCharacter() {
+        serve(client -> {
+            String document = "{\"spiderSense\":{\"schema\":" + Schema.VERSION + "},"
+                    + "\"spans\":[{\"traceId\":\"" + TRACE + "\",\"spanId\":\"" + ROOT + "\","
+                    + "\"service\":\"spring-orders\",\"name\":\"lone\\ud800name\",\"kind\":\"SERVER\","
+                    + "\"startMs\":" + NOW + ",\"startNs\":" + NOW * 1_000_000L + ",\"durationNs\":1000000,"
+                    + "\"status\":\"UNSET\",\"category\":\"http\",\"attributes\":{\"key\\udbff\":\"x\\udc00y\"}}],"
+                    + "\"logs\":[{\"atMs\":" + NOW + ",\"service\":\"spring-orders\",\"severity\":\"INFO\","
+                    + "\"severityNumber\":9,\"body\":\"half \\ud83d of a pair\",\"traceId\":\"" + TRACE + "\","
+                    + "\"spanId\":\"" + ROOT + "\"}]}";
+
+            assertThat(postJson(client, "/api/import", document).statusCode()).isEqualTo(200);
+
+            JsonObject trace = Json.parse(client.get("/api/traces/" + TRACE).body()).asObject();
+            JsonObject span = trace.getArray("spans").get(0).asObject();
+            assertThat(span.getString("name")).isEqualTo("lone�name");
+            assertThat(span.getObject("attributes").getString("key�")).isEqualTo("x�y");
+            assertThat(trace.getArray("logs").get(0).asObject().getString("body")).isEqualTo("half � of a pair");
+            assertThat(client.get("/api/traces/" + TRACE + "?format=text").body()).contains("lone�name");
+        });
+    }
+
     private static JsonObject section(String key, JsonObject row) {
         return Json.object()
                 .put("spiderSense", Json.object().put("schema", Schema.VERSION))

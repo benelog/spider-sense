@@ -107,8 +107,9 @@ public final class Importer {
      */
     public Result importDocument(JsonObject document) {
         checkSchema(document);
+        JsonObject wellFormed = wellFormed(document);
         try (Connection connection = sql.connection()) {
-            return Sql.inTransaction(connection, c -> write(c, document));
+            return Sql.inTransaction(connection, c -> write(c, wellFormed));
         } catch (SQLException e) {
             SQLException refused = refusedValue(e);
             if (refused != null) {
@@ -117,6 +118,71 @@ public final class Importer {
             }
             throw new Sql.SqlException("could not import the document", e);
         }
+    }
+
+    /**
+     * The document with every string made well-formed ({@link Utf16}), a member's name as
+     * much as a value: a JSON string may escape half of a surrogate pair on its own, which
+     * no UTF-8 answer can carry, so the JSON and the text renderings of the stored value
+     * would read it apart (api.adoc#status-and-ingest). A hand-edited file holds one, or one
+     * a store wrote before every received string was made well-formed. A document that
+     * holds none, which is the rule, is answered as it is; the parser nests no deeper than
+     * a few hundred levels, so the walk cannot overflow the stack.
+     */
+    static JsonObject wellFormed(JsonObject document) {
+        return holdsLoneSurrogate(document) ? wellFormedCopy(document) : document;
+    }
+
+    private static boolean holdsLoneSurrogate(JsonValue value) {
+        if (value instanceof JsonObject object) {
+            for (Map.Entry<String, JsonValue> member : object) {
+                if (!Utf16.isWellFormed(member.getKey()) || holdsLoneSurrogate(member.getValue())) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        if (value instanceof JsonArray array) {
+            for (JsonValue element : array) {
+                if (holdsLoneSurrogate(element)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        return value.isString() && !Utf16.isWellFormed(value.asString());
+    }
+
+    private static JsonObject wellFormedCopy(JsonObject object) {
+        JsonObject copy = Json.object();
+        for (Map.Entry<String, JsonValue> member : object) {
+            JsonValue value = member.getValue();
+            String key = Utf16.wellFormed(member.getKey());
+            if (value.isString()) {
+                copy.put(key, Utf16.wellFormed(value.asString()));
+            } else {
+                copy.put(key, wellFormedCopy(value));
+            }
+        }
+        return copy;
+    }
+
+    private static JsonValue wellFormedCopy(JsonValue value) {
+        if (value instanceof JsonObject object) {
+            return wellFormedCopy(object);
+        }
+        if (value instanceof JsonArray array) {
+            JsonArray copy = Json.array();
+            for (JsonValue element : array) {
+                if (element.isString()) {
+                    copy.add(Utf16.wellFormed(element.asString()));
+                } else {
+                    copy.add(wellFormedCopy(element));
+                }
+            }
+            return copy;
+        }
+        return value;
     }
 
     /**
