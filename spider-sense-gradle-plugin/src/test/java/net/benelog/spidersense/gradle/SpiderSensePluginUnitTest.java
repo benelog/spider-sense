@@ -175,6 +175,9 @@ class SpiderSensePluginUnitTest {
         block.getCollector().set("http://box:4100");
         assertThat(SpiderSensePlugin.standalonePort(block).isPresent()).as("another machine").isFalse();
 
+        block.getCollector().set("localhost:4103");
+        assertThat(SpiderSensePlugin.standalonePort(block).get()).as("no scheme is http://").isEqualTo(4103);
+
         block.getCollector().set("http://127.0.0.1");
         assertThat(SpiderSensePlugin.standalonePort(block).isPresent()).as("no port written").isFalse();
 

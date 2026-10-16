@@ -376,7 +376,11 @@ public record Config(
         return "http://" + callable + ":" + port;
     }
 
-    /** Where the agent should export to: the forwarding collector if given, else our own UI. */
+    /**
+     * Where the agent should export to: the forwarding collector if given, else our own UI. A
+     * collector without a scheme is {@code http://}, as the CLI reads {@code --url}: the agent
+     * would refuse it and not start.
+     */
     public String otlpEndpoint() {
         if (collector == null || collector.isEmpty()) {
             return baseUrl();
@@ -385,7 +389,7 @@ public record Config(
         while (c.endsWith("/")) {
             c = c.substring(0, c.length() - 1);
         }
-        return c;
+        return c.contains("://") ? c : "http://" + c;
     }
 
     /**

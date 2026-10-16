@@ -302,6 +302,17 @@ class ConfigTest {
                 .isEqualTo("http://box:4000");
     }
 
+    /**
+     * The agent refuses an endpoint without a scheme and does not start; the CLI reads
+     * {@code --url=127.0.0.1:4001} as {@code http://}, and so does the collector.
+     */
+    @Test
+    void aCollectorWithoutASchemeIsHttp() {
+        assertThat(config("--collector=127.0.0.1:4676").otlpEndpoint()).isEqualTo("http://127.0.0.1:4676");
+        assertThat(config("--collector=localhost:4676/").otlpEndpoint()).isEqualTo("http://localhost:4676");
+        assertThat(config("--collector=https://box:4000").otlpEndpoint()).isEqualTo("https://box:4000");
+    }
+
     @Test
     void serverArgumentsCarryEveryKeyTheServerKnows() {
         Config c = Config.defaults().withMode("standalone");

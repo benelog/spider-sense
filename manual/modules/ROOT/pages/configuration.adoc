@@ -33,7 +33,7 @@ The application starts all the same, and the misspelt key has no effect.
 
 | `spidersense.collector`
 | unset
-| Agent mode: forward to this base URL instead of starting the embedded UI. See xref:modes.adoc#forwarding[forwarding].
+| Agent mode: forward to this base URL instead of starting the embedded UI. A value without a scheme, such as `127.0.0.1:4000`, is `http://`, as the CLI reads `--url`. See xref:modes.adoc#forwarding[forwarding].
 
 | `spidersense.service`
 | unset

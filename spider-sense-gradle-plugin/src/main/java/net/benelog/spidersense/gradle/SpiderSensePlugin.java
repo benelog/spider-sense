@@ -410,11 +410,15 @@ public class SpiderSensePlugin implements Plugin<Project> {
         return extension.getPort().orElse(extension.getCollector().map(SpiderSensePlugin::loopbackPort));
     }
 
-    /** The explicit port of a collector URL on a loopback host, or null for any other URL. */
+    /**
+     * The explicit port of a collector URL on a loopback host, or null for any other URL. A
+     * collector without a scheme is {@code http://}, as the jar reads it.
+     */
     static @Nullable Integer loopbackPort(String collector) {
+        String trimmed = collector.trim();
         URI uri;
         try {
-            uri = new URI(collector.trim());
+            uri = new URI(trimmed.contains("://") ? trimmed : "http://" + trimmed);
         } catch (URISyntaxException e) {
             return null;
         }
