@@ -822,6 +822,36 @@ class CliTest {
     }
 
     /**
+     * A threshold that is not a whole number is the same usage error whichever mode would have
+     * answered, and one a server answered without is said to have changed nothing, since the
+     * thresholds are the file path's settings (cli.adoc#options).
+     */
+    @Test
+    void aThresholdIsCheckedInBothModesAndSaidToChangeNothingWhenAServerAnswers() {
+        serve(false, (server, base) -> {
+            Run refused = runAt(base, "findings", "--no-git", "--slow.query.ms=abc", "--url=" + base);
+            assertThat(refused.exit()).isEqualTo(2);
+            assertThat(refused.err()).isEqualTo("""
+                    spider-sense: --slow.query.ms is not a whole number: abc
+                    see: java -jar spider-sense.jar findings --help
+                    """);
+            assertThat(refused.out()).isEmpty();
+
+            Run answered = runAt(base, "endpoints", "--slow.request.ms=50", "--app.packages=orders",
+                    "--url=" + base);
+            assertThat(answered.exit()).isZero();
+            assertThat(answered.err()).isEqualTo("(the Spider Sense at " + base + " answered with its own "
+                    + "settings; --slow.request.ms and --app.packages apply only when the file is read)\n");
+        });
+        Run local = run("endpoints", "--slow.request.ms=1x", "--db=" + TestStore.writtenUrl());
+        assertThat(local.exit()).isEqualTo(2);
+        assertThat(local.err()).isEqualTo("""
+                spider-sense: --slow.request.ms is not a whole number: 1x
+                see: java -jar spider-sense.jar endpoints --help
+                """);
+    }
+
+    /**
      * A status or a severity the store does not know is a usage error listing what it takes, in
      * both modes, rather than a filter that narrows nothing; the case of a known one is free.
      */

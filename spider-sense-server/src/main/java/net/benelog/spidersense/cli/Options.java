@@ -80,6 +80,9 @@ final class Options {
      */
     static final List<String> SETTINGS = List.of("db", "slow.request.ms", "slow.query.ms", "app.packages");
 
+    /** The settings that are numbers, which {@code Config} reads as whole milliseconds. */
+    private static final List<String> THRESHOLDS = List.of("slow.request.ms", "slow.query.ms");
+
     /**
      * Options every command that reads the store takes: where to read from, and how to print it.
      * {@code --service} is not one of them: only a command that narrows by service takes it, so
@@ -176,6 +179,15 @@ final class Options {
                 throw new Usage("unexpected argument: " + arg, command);
             }
         }
+        // The thresholds are settings only the file path reads, and a server answers without them:
+        // a value that is no number is refused here, before either mode runs, rather than by the
+        // file path alone (cli.adoc#options).
+        for (String threshold : THRESHOLDS) {
+            String value = values.get(threshold);
+            if (value != null && !isWholeNumber(value)) {
+                throw new Usage("--" + threshold + " is not a whole number: " + value, command);
+            }
+        }
         // An empty word is a missing one: trace "$ID" with ID unset must not ask /api/traces/,
         // which is the list, nor name a finding the server cannot route.
         if (label != null && (argument == null || argument.isBlank())) {
@@ -194,6 +206,16 @@ final class Options {
             throw new Usage("compare needs both --before and --after, as marks or time selectors", command);
         }
         return new Options(command, argument, values);
+    }
+
+    /** Whether a value is a whole number as {@code Config} reads one, which is how the file path reads it. */
+    private static boolean isWholeNumber(String value) {
+        try {
+            Long.parseLong(value.trim());
+            return true;
+        } catch (NumberFormatException e) {
+            return false;
+        }
     }
 
     /**

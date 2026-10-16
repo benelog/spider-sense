@@ -234,7 +234,9 @@ public final class Cli {
         String named = options.valueOrNull("url");
         String base = Remote.base(named == null ? defaultUrl : named);
         try {
-            return Remote.run(options, base, out, err);
+            int code = Remote.run(options, base, out, err);
+            unappliedSettings(options, base, err);
+            return code;
         } catch (Remote.Busy e) {
             err.println("spider-sense: " + e.getMessage());
             return USAGE;
@@ -249,6 +251,25 @@ public final class Cli {
             err.println(Local.fallbackNotice(base, config));
             return Local.run(options, config, out, err);
         }
+    }
+
+    /**
+     * The line saying that the thresholds and packages the command line set changed nothing: they are
+     * settings of the file path, where no server is there to ask, and the server that answered uses
+     * its own (cli.adoc#options).
+     */
+    private static void unappliedSettings(Options options, String base, PrintStream err) {
+        List<String> given = Options.SETTINGS.stream()
+                .filter(key -> !"db".equals(key) && options.has(key))
+                .map(key -> "--" + key)
+                .toList();
+        if (given.isEmpty()) {
+            return;
+        }
+        String named = given.size() == 1 ? given.get(0)
+                : String.join(", ", given.subList(0, given.size() - 1)) + " and " + given.get(given.size() - 1);
+        err.println("(the Spider Sense at " + base + " answered with its own settings; " + named
+                + (given.size() == 1 ? " applies" : " apply") + " only when the file is read)");
     }
 
     /**
