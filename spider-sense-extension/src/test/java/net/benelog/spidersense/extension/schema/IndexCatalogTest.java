@@ -12,13 +12,20 @@ import io.opentelemetry.sdk.logs.SdkLoggerProvider;
 import io.opentelemetry.sdk.logs.data.LogRecordData;
 import io.opentelemetry.sdk.logs.export.SimpleLogRecordProcessor;
 import io.opentelemetry.sdk.testing.exporter.InMemoryLogRecordExporter;
+import java.lang.reflect.Proxy;
 import java.sql.Connection;
+import java.sql.DatabaseMetaData;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -100,6 +107,22 @@ class IndexCatalogTest {
                 .contains("\"unique\":true,\"columns\":[\"ID\"]")
                 .contains("{\"name\":\"IDX_ITEMS_SUPPLIER\",\"unique\":false,"
                         + "\"columns\":[\"SUPPLIER_ID\",\"NAME\"]}");
+    }
+
+    /**
+     * MySQL reports no column for a functional key part, which H2 cannot have: the part keeps its
+     * place, so the column after it is never taken for the one the index seeks on.
+     */
+    @Test
+    void aKeyPartWithNoColumnKeepsItsPlace() throws SQLException {
+        DatabaseMetaData meta = indexInfo(
+                indexRow("idx_email_status", 1, null),
+                indexRow("idx_email_status", 2, "status"),
+                indexRow("PRIMARY", 1, "id"));
+
+        assertThat(IndexCatalog.indexesJson(IndexCatalog.indexesOf(meta, "shop", null, "customers")))
+                .isEqualTo("[{\"name\":\"idx_email_status\",\"unique\":false,\"columns\":[\"\",\"status\"]},"
+                        + "{\"name\":\"PRIMARY\",\"unique\":false,\"columns\":[\"id\"]}]");
     }
 
     @Test
@@ -193,6 +216,46 @@ class IndexCatalogTest {
         try (Statement statement = connection.createStatement()) {
             IndexCatalog.afterExecute(statement, sql, THRESHOLD_NANOS, THRESHOLD_NANOS);
         }
+    }
+
+    /** One row of {@code getIndexInfo}, as a driver answers it for a non-unique index's key part. */
+    private static Map<String, Object> indexRow(String index, int ordinal, String column) {
+        Map<String, Object> row = new HashMap<>();
+        row.put("INDEX_NAME", index);
+        row.put("NON_UNIQUE", true);
+        row.put("TYPE", (short) DatabaseMetaData.tableIndexOther);
+        row.put("ORDINAL_POSITION", (short) ordinal);
+        row.put("COLUMN_NAME", column);
+        return row;
+    }
+
+    /** A catalog whose {@code getIndexInfo} answers these rows: what H2 cannot be made to say. */
+    @SafeVarargs
+    private static DatabaseMetaData indexInfo(Map<String, Object>... rows) {
+        return (DatabaseMetaData) Proxy.newProxyInstance(IndexCatalogTest.class.getClassLoader(),
+                new Class<?>[] {DatabaseMetaData.class}, (proxy, method, args) -> {
+                    if (!method.getName().equals("getIndexInfo")) {
+                        throw new UnsupportedOperationException(method.getName());
+                    }
+                    Iterator<Map<String, Object>> next = Arrays.asList(rows).iterator();
+                    Object[] current = new Object[1];
+                    return Proxy.newProxyInstance(IndexCatalogTest.class.getClassLoader(),
+                            new Class<?>[] {ResultSet.class}, (set, call, values) -> {
+                                @SuppressWarnings("unchecked")
+                                Map<String, Object> row = (Map<String, Object>) current[0];
+                                return switch (call.getName()) {
+                                    case "next" -> {
+                                        current[0] = next.hasNext() ? next.next() : null;
+                                        yield current[0] != null;
+                                    }
+                                    case "getString" -> (String) row.get((String) values[0]);
+                                    case "getShort" -> (Short) row.get((String) values[0]);
+                                    case "getBoolean" -> Boolean.TRUE.equals(row.get((String) values[0]));
+                                    case "close" -> null;
+                                    default -> throw new UnsupportedOperationException(call.getName());
+                                };
+                            });
+                });
     }
 
     private LogRecordData onlyRecord() {

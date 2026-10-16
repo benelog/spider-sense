@@ -189,7 +189,7 @@ CREATE TABLE IF NOT EXISTS db_table (
     schema_name VARCHAR(255) NOT NULL,       -- '' when the database reports none
     table_name  VARCHAR(255) NOT NULL,       -- as the database reports it: ITEMS on H2, items on PostgreSQL
     product     VARCHAR(64),                 -- DatabaseMetaData.getDatabaseProductName()
-    indexes     VARCHAR(65535) NOT NULL,     -- JSON array [{"name":…,"unique":…,"columns":[…]}], columns in key order
+    indexes     VARCHAR(65535) NOT NULL,     -- JSON array [{"name":…,"unique":…,"columns":[…]}], columns in key order, "" for a key part with no column
     seen_ms     BIGINT NOT NULL,
     PRIMARY KEY (service, schema_name, table_name)
 );

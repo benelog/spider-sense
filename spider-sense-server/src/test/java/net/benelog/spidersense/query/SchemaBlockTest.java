@@ -28,6 +28,17 @@ class SchemaBlockTest {
         assertThat(block.unindexed()).containsExactly("customers.status");
     }
 
+    /** MySQL names no column for a functional key part, which keeps its place as an empty name. */
+    @Test
+    void theColumnAfterAKeyPartWithNoNameIsNotTheIndexsFirst() {
+        String statement = "select * from customers where status = ?";
+        SchemaBlock block = SchemaBlock.of(statement, catalog(
+                new Catalog.Index("idx_email_status", false, List.of("", "status"))));
+
+        assertThat(block).isNotNull();
+        assertThat(block.unindexed()).containsExactly("customers.status");
+    }
+
     /**
      * The store keeps {@value SpanRecord#MAX_STATEMENT} characters of a statement; a cut inside
      * the where clause leaves a stub ({@code … and i}) that reads like a column.

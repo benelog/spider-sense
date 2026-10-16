@@ -303,8 +303,12 @@ public final class IndexCatalog {
      * <p>Approximate rows are asked for ({@code approximate = true}), because the alternative is
      * letting the driver update the table's statistics on a request thread. The statistic rows the
      * call also returns carry no index and are dropped.
+     *
+     * <p>A key part with no column, such as MySQL's functional one ({@code ((lower(email)), status)}),
+     * keeps its place as an empty name: dropped, it would make the column after it the index's first,
+     * the one an index seeks on, which it is not.
      */
-    private static List<Index> indexesOf(DatabaseMetaData meta, @Nullable String catalog,
+    static List<Index> indexesOf(DatabaseMetaData meta, @Nullable String catalog,
             @Nullable String schema, String table) throws SQLException {
         Map<String, Index> byName = new LinkedHashMap<>();
         try (ResultSet rows = meta.getIndexInfo(catalog, schema, table, false, true)) {
@@ -323,15 +327,16 @@ public final class IndexCatalog {
                     byName.put(key, index);
                 }
                 String column = rows.getString("COLUMN_NAME");
-                if (column != null) {
-                    index.columns.put((int) rows.getShort("ORDINAL_POSITION"), column);
-                }
+                index.columns.put((int) rows.getShort("ORDINAL_POSITION"), column == null ? "" : column);
             }
         }
         return new ArrayList<>(byName.values());
     }
 
-    /** One index of one table, its columns kept by ordinal so the seek column comes first. */
+    /**
+     * One index of one table, its columns kept by ordinal so the seek column comes first; a key part
+     * that names no column is an empty name in its place.
+     */
     static final class Index {
         final String name;
         final boolean unique;
