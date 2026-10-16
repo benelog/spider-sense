@@ -58,6 +58,19 @@ class ReadOnlyQueryTest {
         assertThat(row(statement)).isEqualTo(row(statement));
     }
 
+    /**
+     * A CLOB is its text and a BLOB its bytes in hex, as a BINARY value is, not H2's object dump,
+     * whose counter made the same statement answer different bytes on every call.
+     */
+    @Test
+    void aClobIsItsTextAndABlobItsBytes() {
+        String statement = "SELECT CAST('orders' AS CLOB), CAST(X'01ff' AS BLOB), X'0102',"
+                + " CAST('a' || CHAR(27) || 'b' AS CLOB), ARRAY[CAST('x' AS CLOB)], CAST(NULL AS CLOB)";
+
+        assertThat(row(statement)).containsExactly("orders", "01ff", "0102", "a\u001bb", List.of("x"), null);
+        assertThat(row(statement)).isEqualTo(row(statement));
+    }
+
     /** A JSON element of an ARRAY is its text as well, as a JSON column's value is, not its bytes in hex. */
     @Test
     void aJsonElementOfAnArrayIsItsText() {

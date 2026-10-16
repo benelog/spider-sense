@@ -199,6 +199,22 @@ public final class ReadOnlyQuery {
         if (value instanceof byte[] bytes) {
             return HexFormat.of().formatHex(bytes);
         }
+        // A large object is its text or its bytes, not H2's dump of it, whose counter made the
+        // same statement answer different bytes on every call.
+        if (value instanceof java.sql.Clob clob) {
+            try {
+                return Utf16.wellFormed(clob.getSubString(1, (int) Math.min(clob.length(), Integer.MAX_VALUE)));
+            } finally {
+                clob.free();
+            }
+        }
+        if (value instanceof java.sql.Blob blob) {
+            try {
+                return HexFormat.of().formatHex(blob.getBytes(1, (int) Math.min(blob.length(), Integer.MAX_VALUE)));
+            } finally {
+                blob.free();
+            }
+        }
         if (value instanceof java.sql.Array array) {
             try {
                 // H2 hands a JSON element over as its bytes, as it does a JSON column's value.
