@@ -83,6 +83,7 @@ A `since` that resolves to a moment after `until` is an error, and so is a misty
 | `4` | not found: a trace id, a mark name, a finding id to `ack` or `resolve` that no finding has, a finding id to `unack` or `unresolve` |
 
 A trace id that matches nothing prints `spider-sense: No such trace: <id>` on stderr and exits `4`, whether the answer came over HTTP or from the file; a mark name that matches no mark does the same, naming the mark, and so does `unack` with `spider-sense: No such acknowledgement: <id>`, and `unresolve` with `spider-sense: No such resolution: <id>`.
+A word that cannot be a trace id, which is at most 32 hex digits, gets the same line and exit code before any server or file is asked.
 
 ## The direct-file fallback
 

@@ -157,6 +157,12 @@ class CliParityTest {
                 of("trace", TRACE, "--full", "--json"),
                 of("trace", TRACE, "--diff=" + FAILING),
                 of("trace", "f".repeat(32)),
+                // A word no trace id can be never reaches a path the server's own checks refuse.
+                of("trace", ".."),
+                of("trace", "."),
+                of("trace", "\\"),
+                of("trace", "a\tb"),
+                of("trace", "a".repeat(9000)),
                 of("traces", SINCE, UNTIL),
                 of("traces", SINCE, UNTIL, "--status=error", "--q=ship", "--full"),
                 of("traces", SINCE, UNTIL, "--min-ms=100", "--limit=1", "--json"),

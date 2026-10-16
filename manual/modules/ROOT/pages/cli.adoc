@@ -709,6 +709,7 @@ A command's own word, such as the trace id of `trace` or the finding id of `unac
 |===
 
 A trace id that matches nothing prints `spider-sense: No such trace: <id>` on stderr and exits `4`, whether the answer came over HTTP or from the file.
+A word that cannot be a trace id, which is at most 32 hex digits, gets the same line and exit code before any server or file is asked, so `trace ..` never meets the server's refusal of a path that holds it.
 A mark name that matches no mark also exits `4`, with a message naming the mark.
 A mistyped duration such as `--since=5min` is not a mark name: it is a usage error and exits `2`.
 `unack` of a finding that has no acknowledgement prints `spider-sense: No such acknowledgement: <id>` and exits `4` as well.

@@ -9,6 +9,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Function;
+import java.util.regex.Pattern;
 
 import net.benelog.spidersense.api.Reports;
 import net.benelog.spidersense.query.Selectors;
@@ -52,6 +53,9 @@ public final class Cli {
      * application (cli.adoc#fallback).
      */
     static final String STOPPED = "; if the application stopped, read its database with --db=<path>";
+
+    /** What a stored trace id can be: hex digits, 32 of them as OTLP writes one (api.adoc#conventions). */
+    private static final Pattern TRACE_ID = Pattern.compile("[0-9a-fA-F]{1,32}");
 
     private Cli() {
     }
@@ -217,6 +221,13 @@ public final class Cli {
 
     /** HTTP first, the file second, as {@link #dispatch} describes. */
     private static int answer(Options options, String defaultUrl, PrintStream out, PrintStream err) {
+        if (Options.TRACE.equals(options.command()) && !TRACE_ID.matcher(options.requiredArgument()).matches()) {
+            // A trace id travels as a path segment, which the server checks before any handler runs:
+            // a word no trace id can be, such as "..", would be refused there in other words and with
+            // exit 2. It names no trace, so it is told so before either mode is asked, in the words and
+            // the exit code both give a trace that is not there (cli.adoc#exit-codes).
+            throw new Reports.NoSuchTrace(options.requiredArgument());
+        }
         if (options.has("db")) {
             return Local.run(options, out, err);
         }

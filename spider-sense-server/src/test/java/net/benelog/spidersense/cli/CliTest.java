@@ -461,6 +461,21 @@ class CliTest {
         });
     }
 
+    /**
+     * A word no trace id can be names no trace, and is told so before any server or file is asked:
+     * over HTTP it would travel as a path segment the server's own checks refuse (cli.adoc#exit-codes).
+     */
+    @Test
+    void aWordThatIsNoTraceIdIsNoSuchTraceWithoutAskingAnyone() {
+        String nobody = closedUrl();
+        for (String word : List.of("..", ".", "\\", "a\tb", "a".repeat(33), "trace-1")) {
+            Run run = run("trace", word, "--url=" + nobody);
+            assertThat(run.exit()).as(word).isEqualTo(4);
+            assertThat(run.err()).as(word).isEqualTo("spider-sense: No such trace: " + word + "\n");
+            assertThat(run.out()).as(word).isEmpty();
+        }
+    }
+
     @Test
     void aMarkIsRecordedOverHttpAndListedAgain() {
         serve(false, (server, base) -> {
