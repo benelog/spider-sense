@@ -29,7 +29,7 @@ The launcher treats a first argument that does not start with `-` as a command a
 | `sql "<statement>" [--limit=200]` | one read-only statement over the store, for a question no other command answers ([sql.md](sql.md)) |
 | `export [--out=<file>]` | the window as one JSON document, to the file or to stdout; a name ending in `.gz` is gzipped |
 | `import <file>` | that document back into the store, and one line saying what arrived |
-| `init [--dir=<project dir>] [--jar=<path>] [--url=<base url>] [--gradle] [--no-skill] [--mcp]` | writes the Spider Sense block into the project's `CLAUDE.md` (or `AGENTS.md`, when only that one exists, or both when both do) and installs the skills into its `.claude/skills/`; `--mcp` writes the stdio MCP server into its `.mcp.json` instead of the skills, and a block that names its tools instead of the CLI |
+| `init [--dir=<project dir>] [--jar=<path>] [--url=<base url>] [--gradle] [--no-skill] [--mcp]` | writes the Spider Sense block into the project's `CLAUDE.md` (or `AGENTS.md`, when only that one exists, or both when both do) and installs the skills into its `.claude/skills/`; `--mcp` writes the stdio MCP server into its `.mcp.json` instead of the skills, and a block that names its tools instead of the CLI, and removes the skills an earlier run installed; a run without `--mcp` removes that server |
 | `mcp` | the MCP server over stdio, for a host that has no shell; it takes `--url` and `--db` and nothing else ([MCP over stdio](#mcp-over-stdio)) |
 | `help [<command>]` | this table, or what one command takes; `<command> --help` and `-h` print the same block |
 | `version` | the version of the jar, as `--version` prints it |
@@ -126,7 +126,7 @@ It reads newline-delimited JSON-RPC on stdin and writes it on stdout, nothing el
 `initialize`, `ping` and `tools/list` are answered in the process; a tool call goes to the Spider Sense at `--url` when one answers and to the H2 file when none does, exactly as every command here decides it, so MCP still answers after the application has crashed.
 The tools are `findings`, `trace`, `mark`, `resolve`, `compare`, `check`, `sql` and `status`, their arguments are the options of the same name, and each answers the same Markdown the matching command prints over the same window.
 
-`java -jar spider-sense.jar init --mcp` writes that server into the project's `.mcp.json` as `mcpServers.spider-sense`, keeping every other entry, and prints a last line saying so; it then installs no skill and writes a block that names the tools instead of the CLI, because the host is to use one or the other; a host that reaches a running Spider Sense over HTTP instead is configured by hand with `{"type": "http", "url": "http://127.0.0.1:4000/mcp"}`.
+`java -jar spider-sense.jar init --mcp` writes that server into the project's `.mcp.json` as `mcpServers.spider-sense`, keeping every other entry, and prints a last line saying so; it then installs no skill, removes the skills an earlier `init` installed, and writes a block that names the tools instead of the CLI, because the host is to use one or the other, and `init` without `--mcp` removes that server; a host that reaches a running Spider Sense over HTTP instead is configured by hand with `{"type": "http", "url": "http://127.0.0.1:4000/mcp"}`.
 Do not enable both the CLI and MCP in one host: two tools that give the same answer make the model choose between them and cost the schema twice.
 
 ## Text rendering conventions

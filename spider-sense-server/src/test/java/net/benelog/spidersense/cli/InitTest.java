@@ -157,6 +157,51 @@ class InitTest {
         assertThat(project.resolve(".claude/skills/spider-sense-sql-tuning")).doesNotExist();
     }
 
+    /**
+     * A second run in the other mode takes away what the first installed: {@code --mcp} hands the
+     * host the MCP server instead of the CLI, never beside it (mcp.adoc#configuring). What init did
+     * not install stays.
+     */
+    @Test
+    void mcpAfterTheCliRemovesTheSkillsItInstalled(@TempDir Path project) throws IOException {
+        assertThat(init("--dir=" + project, "--jar=" + JAR).exit()).isZero();
+        Path skills = project.resolve(".claude/skills");
+        Path mine = skills.resolve("spider-sense/references/notes.md");
+        Files.writeString(mine, "my own\n", UTF_8);
+
+        Run run = init("--dir=" + project, "--jar=" + JAR, "--mcp");
+
+        assertThat(run.exit()).as("stderr: %s", run.err()).isZero();
+        List<String> lines = run.out().lines().toList();
+        assertThat(lines.get(0)).isEqualTo("updated CLAUDE.md block (jar: " + JAR + ")");
+        assertThat(lines.subList(1, lines.size() - 1))
+                .allMatch(line -> line.startsWith("removed skill from " + skills.resolve("spider-sense")))
+                .hasSize(2);
+        assertThat(lines.get(lines.size() - 1)).isEqualTo("wrote .mcp.json (spider-sense over stdio)");
+        assertThat(skills.resolve("spider-sense/SKILL.md")).doesNotExist();
+        assertThat(skills.resolve("spider-sense-sql-tuning")).as("emptied, so gone").doesNotExist();
+        assertThat(mine).as("not init's to remove").hasContent("my own");
+        assertThat(spiderSense(read(project.resolve(".mcp.json"))).getString("command")).isEqualTo("java");
+    }
+
+    @Test
+    void theCliAfterMcpRemovesTheServerAndKeepsTheOthers(@TempDir Path project) throws IOException {
+        Path file = project.resolve(".mcp.json");
+        Files.writeString(file, "{\"mcpServers\": {\"other\": {\"command\": \"node\"}}}\n", UTF_8);
+        assertThat(init("--dir=" + project, "--jar=" + JAR, "--mcp").exit()).isZero();
+        assertThat(read(file).getObject("mcpServers").keys()).containsExactly("other", "spider-sense");
+
+        Run run = init("--dir=" + project, "--jar=" + JAR, "--no-skill");
+
+        assertThat(run.exit()).as("stderr: %s", run.err()).isZero();
+        assertThat(run.out().lines().toList()).containsExactly(
+                "updated CLAUDE.md block (jar: " + JAR + ")",
+                "skipped skills (--no-skill)",
+                "removed spider-sense from .mcp.json");
+        assertThat(read(file).getObject("mcpServers").keys()).containsExactly("other");
+        assertThat(block(project)).contains("Ask it from the terminal").doesNotContain("MCP server");
+    }
+
     @Test
     void aSecondRunUpdatesTheEntryAndKeepsEveryOtherOne(@TempDir Path project) throws IOException {
         Path file = project.resolve(".mcp.json");

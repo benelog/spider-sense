@@ -205,6 +205,7 @@ The skill lines become the single line `skipped skills (--no-skill)` when the sk
 It writes the stdio MCP server into the project's `.mcp.json` and adds a last line, `wrote .mcp.json (spider-sense over stdio)` or `updated .mcp.json (…)` (xref:mcp.adoc#configuring[Configuring a host]).
 A `--url` goes into the server's arguments as well as into the block, because with `--mcp` the agent asks through the server and through nothing else.
 It installs no skill, and the skill lines become `skipped skills (--mcp)`, because both skills teach the loop through the CLI and the server's `instructions` carry it instead.
+The skills an earlier `init` installed go: their files are deleted, and so is each directory they leave empty, while a file `init` did not install stays, and the skill lines become one per skill, such as `removed skill from /home/me/project/.claude/skills/spider-sense (5 files)`.
 The block keeps its first paragraph, with the jar and the ways to start the application under it, and in place of the CLI's lines and the skill lines it reads:
 
 [source,markdown]
@@ -213,7 +214,8 @@ Ask it through the tools of the `spider-sense` MCP server in `.mcp.json`: `statu
 ----
 
 An existing `.mcp.json` that is not a JSON object stops `init` before it writes anything, with a message on stderr and exit code `2`.
-Without `--mcp` nothing is written and nothing is printed about MCP, because a host with a shell is meant to use the CLI, and `init` should not hand it a second tool for the same answers.
+Without `--mcp`, `init` writes no server, because a host with a shell is meant to use the CLI, and `init` should not hand it a second tool for the same answers.
+It takes away the `spider-sense` server an earlier `init --mcp` wrote into `.mcp.json`, keeping every other entry, and prints `removed spider-sense from .mcp.json` as its last line; a `.mcp.json` without that server, or one it cannot read as a JSON object, it leaves alone and says nothing about.
 
 `init` reads every file it changes, and checks that it can write every file it writes, before it writes any, so a file it cannot read or write stops it the same way, with the file named.
 A read-only `CLAUDE.md`, `AGENTS.md` or `.mcp.json`, or a `.claude` it cannot create the skills in, prints `spider-sense: /home/me/project/.mcp.json is not writable; nothing was written`.

@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.regex.Pattern;
 
+import net.benelog.spidersense.mcp.McpServer;
 import net.benelog.silkjson.Json;
 import net.benelog.silkjson.JsonValue;
 import net.benelog.silkjson.JsonObject;
@@ -281,6 +282,7 @@ final class Init {
         }
         // --mcp hands the host the MCP server instead of the CLI, never beside it: two tools for
         // the same answers make the model choose between them (agent-loop.adoc#choosing-an-interface).
+        // So each mode also takes away what an earlier run in the other one installed.
         boolean mcp = options.flag("mcp");
         boolean withSkill = !mcp && !options.flag("no-skill");
         String url = options.valueOrNull("url");
@@ -314,26 +316,30 @@ final class Init {
             targets.add(new Target(name, file, text));
         }
         List<SkillFile> skillFiles = withSkill ? skillFiles(skills) : List.of();
+        List<SkillFile> installed = mcp ? installed(skills) : List.of();
+        JsonObject withoutServer = mcp ? null : withoutServer(mcpFile);
         List<Path> inPlace = new ArrayList<>(targets.stream().map(Target::file).toList());
-        if (mcpConfig != null) {
+        if (mcpConfig != null || withoutServer != null) {
             inPlace.add(mcpFile);
         }
-        String unwritable = unwritable(inPlace, skillFiles.stream().map(SkillFile::file).toList());
+        List<Path> inTheirDirectory = new ArrayList<>();
+        skillFiles.forEach(skillFile -> inTheirDirectory.add(skillFile.file()));
+        installed.forEach(skillFile -> inTheirDirectory.add(skillFile.file()));
+        String unwritable = unwritable(inPlace, inTheirDirectory);
         if (unwritable != null) {
             err.println("spider-sense: " + unwritable + "; nothing was written");
             return Cli.USAGE;
         }
         Lines lines = new Lines();
         try {
-            // The skills and the server go in before the block that names them.
+            // The skills and the server go in before the block that names them, and what the block
+            // no longer names goes after it.
             if (withSkill) {
                 installSkills(skillFiles).forEach((skill, files) -> lines.skills.add(
                         "installed skill to " + skills.resolve(skill) + " (" + files + " files)"));
-            } else {
-                lines.skills.add(mcp ? "skipped skills (--mcp)" : "skipped skills (--no-skill)");
+            } else if (!mcp) {
+                lines.skills.add("skipped skills (--no-skill)");
             }
-            // Without --mcp nothing is written and nothing is said: a host with a shell
-            // is meant to use the CLI.
             if (mcpConfig != null) {
                 lines.mcp.add(writeMcpServer(mcpFile, mcpConfig, jar, setup.url()));
             }
@@ -341,10 +347,96 @@ final class Init {
             for (Target target : targets) {
                 lines.blocks.add(writeBlock(target, block) + " " + target.name() + " block (jar: " + jar + ")");
             }
+            if (mcp) {
+                Map<String, Integer> removed = removeSkills(skills, installed);
+                removed.forEach((skill, files) -> lines.skills.add(
+                        "removed skill from " + skills.resolve(skill) + " (" + files + " files)"));
+                if (removed.isEmpty()) {
+                    lines.skills.add("skipped skills (--mcp)");
+                }
+            }
+            if (withoutServer != null) {
+                write(mcpFile, pretty(withoutServer) + "\n");
+                lines.mcp.add("removed spider-sense from .mcp.json");
+            }
         } finally {
             lines.print(out);
         }
         return Cli.OK;
+    }
+
+    /**
+     * The project's {@code .mcp.json} without the {@code spider-sense} server an earlier
+     * {@code init --mcp} wrote into it, or null when it has none. A file that is not a JSON object
+     * init can read is left alone: without {@code --mcp} it is not init's to change.
+     */
+    private static @Nullable JsonObject withoutServer(Path file) {
+        if (!Files.isRegularFile(file)) {
+            return null;
+        }
+        JsonObject root;
+        try {
+            root = Json.parse(Files.readString(file, UTF_8)) instanceof JsonObject object ? object : null;
+        } catch (IOException | RuntimeException e) {
+            return null;
+        }
+        if (root == null || !root.has("mcpServers") || !(root.get("mcpServers") instanceof JsonObject servers)
+                || !servers.has(McpServer.NAME)) {
+            return null;
+        }
+        JsonObject kept = Json.object();
+        for (Map.Entry<String, JsonValue> server : servers) {
+            if (!McpServer.NAME.equals(server.getKey())) {
+                kept.put(server.getKey(), server.getValue());
+            }
+        }
+        return root.put("mcpServers", kept);
+    }
+
+    /** The packaged skill files an earlier init installed under {@code target}; none when this jar carries no skill. */
+    private static List<SkillFile> installed(Path target) {
+        if (Init.class.getClassLoader().getResource(SKILL_INDEX) == null) {
+            return List.of();
+        }
+        return skillFiles(target).stream().filter(skillFile -> Files.isRegularFile(skillFile.file())).toList();
+    }
+
+    /**
+     * Deletes the skill files an earlier init installed, and each directory of a skill they leave
+     * empty; a file init does not own stays, and so does its directory.
+     *
+     * @return how many files were deleted, per skill, in the skills' name order
+     */
+    private static Map<String, Integer> removeSkills(Path target, List<SkillFile> files) {
+        Map<String, Integer> removed = new TreeMap<>();
+        for (SkillFile skillFile : files) {
+            try {
+                if (Files.deleteIfExists(skillFile.file())) {
+                    removed.merge(skillFile.skill(), 1, Integer::sum);
+                }
+            } catch (IOException e) {
+                throw cannotWrite(skillFile.file(), e);
+            }
+        }
+        for (SkillFile skillFile : files) {
+            Path skill = target.resolve(skillFile.skill());
+            Path dir = skillFile.file().getParent();
+            while (dir != null && dir.startsWith(skill) && deletedIfEmpty(dir)) {
+                dir = dir.getParent();
+            }
+        }
+        return removed;
+    }
+
+    /** Whether the directory is gone: it was empty, or another file's turn took it already. */
+    private static boolean deletedIfEmpty(Path dir) {
+        try {
+            Files.deleteIfExists(dir);
+            return true;
+        } catch (IOException e) {
+            // Not empty, most often, since a file init does not own is in it: it stays, harmlessly.
+            return false;
+        }
     }
 
     /** A file the block goes into, by the name init prints, with its text as it was read, or null for none. */
@@ -378,13 +470,13 @@ final class Init {
      *
      * <p>A block file and {@code .mcp.json} are rewritten in place, so one that is there must be
      * writable itself. A file that is not there, and a skill's file, which {@link Files#copy} replaces
-     * by deleting it first, need the directory it goes in writable, or else the nearest one above it
-     * that is there, since init creates the rest.
+     * by deleting it first and {@code --mcp} deletes, need the directory it is in writable, or else
+     * the nearest one above it that is there, since init creates the rest.
      *
-     * @param inPlace the files rewritten in place
-     * @param created the files created or replaced
+     * @param inPlace          the files rewritten in place
+     * @param inTheirDirectory the files created, replaced or deleted
      */
-    private static @Nullable String unwritable(List<Path> inPlace, List<Path> created) {
+    private static @Nullable String unwritable(List<Path> inPlace, List<Path> inTheirDirectory) {
         for (Path file : inPlace) {
             if (Files.exists(file)) {
                 if (!Files.isWritable(file)) {
@@ -397,7 +489,7 @@ final class Init {
                 }
             }
         }
-        for (Path file : created) {
+        for (Path file : inTheirDirectory) {
             if (Files.isDirectory(file)) {
                 return file + " is a directory";
             }
@@ -507,7 +599,7 @@ final class Init {
         if (url != null) {
             args.add("--url=" + url);
         }
-        servers.put(net.benelog.spidersense.mcp.McpServer.NAME, Json.object()
+        servers.put(McpServer.NAME, Json.object()
                 .put("command", "java")
                 .put("args", args));
         root.put("mcpServers", servers);

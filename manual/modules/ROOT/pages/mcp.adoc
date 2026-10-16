@@ -168,9 +168,9 @@ A file that is not a JSON object is left alone, with a message on stderr and exi
 
 `--mcp` hands the host MCP instead of the CLI, never beside it, as the warning under <<when,When to use it>> asks.
 The block it writes still says where the jar is and how to start the application under it, and names the MCP server's tools where the CLI's lines would be.
-It installs no skill, because both skills teach the loop through the CLI, and the server's `instructions` carry the same loop (xref:agent-skill.adoc#init-output[What it prints]).
+It installs no skill, because both skills teach the loop through the CLI, and the server's `instructions` carry the same loop, and it removes the skills an earlier `init` installed (xref:agent-skill.adoc#init-output[What it prints]).
 
-Without `--mcp` nothing is written and nothing is printed about it, because a host with a shell is meant to use the CLI.
+Without `--mcp`, `init` writes no server, because a host with a shell is meant to use the CLI, and it removes the `spider-sense` server an earlier `init --mcp` wrote, so a second run in the other mode leaves one interface and not both.
 
 A host that reaches a running Spider Sense over HTTP is configured by hand instead:
 
