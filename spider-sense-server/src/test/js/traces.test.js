@@ -31,7 +31,10 @@ globalThis.fetch = async (input) => {
     const limit = Number(url.searchParams.get('limit'));
     const list = [];
     for (let at = Math.min(before - 1, server.newest); list.length < limit && at > server.newest - server.total; at--) list.push(traceAt(at));
-    body = { traces: list, total: server.total };
+    // By request a trace that started before the window is listed when one of its requests starts in it.
+    const old = url.searchParams.get('by') === 'entry' ? server.oldByEntry : null;
+    if (old && list.length < limit && old.start < before) list.push(old);
+    body = { traces: list, total: server.total + (old ? 1 : 0) };
   } else if (url.pathname === '/api/endpoints') {
     body = { endpoints: server.endpoints };
   }
@@ -72,6 +75,27 @@ test('a Live tick after Load more puts the newest traces on top and keeps the ro
   assert.equal(countLabel(root), '102 of 402');
   assert.equal(startsOf(root).length, 102);
   page.destroy();
+});
+
+test('by request, a Live tick after Load more keeps a trace that started before the window but has a request in it', async () => {
+  api.state.service = '';
+  const saved = { total: server.total };
+  server.total = 60;
+  // A twenty-minute job whose request, near its end, started inside the fifteen-minute window.
+  server.oldByEntry = { ...traceAt(Date.now() - 20 * 60_000), traceId: 'f'.repeat(32), durationMs: 19.5 * 60_000 };
+  const { root, page } = open({ by: 'entry' });
+  await settle();
+  assert.equal(countLabel(root), '50 of 61');
+  root.querySelector('.panel-note button').click();
+  await settle();
+  assert.equal(countLabel(root), '61 of 61');
+  page.refresh();
+  await settle();
+  assert.equal(countLabel(root), '61 of 61', 'the server still lists the old trace, so the page does');
+  assert.equal(startsOf(root).length, 61);
+  page.destroy();
+  server.total = saved.total;
+  server.oldByEntry = null;
 });
 
 test('a fraction in Min or Max asks for whole milliseconds, widened outwards, and the list stays', async () => {

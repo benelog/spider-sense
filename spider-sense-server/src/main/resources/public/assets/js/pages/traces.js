@@ -168,7 +168,10 @@ export function render(root, ctx) {
     paint: ({ res, key, tail, w }, cursor) => {
       const incoming = res.traces || [];
       total = res.total || incoming.length;
-      const kept = tail ? mergeNewestPage(rows, incoming, w.from, LIMIT, (r) => r.start, (r) => r.traceId) : null;
+      // By request the window is the request's, which may start after its trace does: a row has
+      // left the window only when its whole trace ended before it (pages.adoc#traces-list).
+      const reach = filter.by === 'entry' ? (r) => r.start + (r.durationMs || 0) : (r) => r.start;
+      const kept = tail ? mergeNewestPage(rows, incoming, w.from, LIMIT, (r) => r.start, (r) => r.traceId, reach) : null;
       if (cursor) {
         const seen = new Set(rows.map((r) => r.traceId));
         rows = rows.concat(incoming.filter((r) => !seen.has(r.traceId)));
