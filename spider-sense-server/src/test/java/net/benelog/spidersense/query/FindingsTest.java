@@ -719,6 +719,51 @@ class FindingsTest {
                 "SELECT items is slow: p95 200.0 ms in GET /report");
     }
 
+    /**
+     * A readiness probe runs the statement an endpoint runs, a hundred times and fast: the
+     * finding is the endpoint's, titled and credited to it, never to the ignored health check.
+     */
+    @Test
+    void aSlowQueryIsNamedAfterTheRequestsNotAnIgnoredHealthCheck() {
+        healthChecksAndOrders(10);
+
+        List<Findings.Finding> slow = of(Findings.SLOW_QUERY);
+
+        assertThat(slow).hasSize(1);
+        assertThat(slow.get(0).title()).isEqualTo("SELECT orders is slow: p95 200.0 ms in GET /orders/{id}");
+        assertThat(slow.get(0).numbers().get("calls")).isEqualTo(10L);
+        assertThat(slow.get(0).numbers().get("callers")).isEqualTo(List.of(Map.of(
+                "endpoint", "GET /orders/{id}", "service", "orders", "calls", 10L)));
+    }
+
+    /** The ignored calls do not dilute the group either: four slow requests are a finding. */
+    @Test
+    void anIgnoredHealthChecksFastCallsDoNotHideASlowQuery() {
+        healthChecksAndOrders(4);
+
+        List<Findings.Finding> slow = of(Findings.SLOW_QUERY);
+
+        assertThat(slow).extracting(Findings.Finding::title)
+                .containsExactly("SELECT orders is slow: p95 200.0 ms in GET /orders/{id}");
+        assertThat(slow.get(0).numbers().get("calls")).isEqualTo(4L);
+    }
+
+    /** A hundred ignored health checks running a statement in 5 ms, and requests running it in 200. */
+    private void healthChecksAndOrders(int requests) {
+        String statement = "select * from orders where id = ?";
+        for (int i = 0; i < 100; i++) {
+            Span.Builder health = entry(1_000 + i, "/actuator/health", 10);
+            decoder.ingest(Otlp.traces(Otlp.service("orders"), health,
+                    query(health, 5_000 + i, statement, "orders", NOW, 5)));
+        }
+        for (int i = 0; i < requests; i++) {
+            Span.Builder order = entry(1 + i, "/orders/{id}", 300);
+            decoder.ingest(Otlp.traces(Otlp.service("orders"), order,
+                    query(order, 100 + i, statement, "orders", NOW, 200)));
+        }
+        flush();
+    }
+
     /** Two letters for {@code n}, so that no digit is normalised away and two names stay two groups. */
     private static String letters(int n) {
         return "" + (char) ('a' + n / 26) + (char) ('a' + n % 26);

@@ -474,10 +474,12 @@ Every group of the window is asked, however it ranks by total time, so a report 
 It is `high` when the p95 exceeds ten times the threshold, and `medium` otherwise.
 The impact it is ranked by is total time.
 
+The group is aggregated over the calls no ignored endpoint's trace made (xref:configuration.adoc#ignored-endpoints[Ignored endpoints]), so a health check that runs the statement a hundred times fast neither dilutes the p95 of four slow requests below the threshold nor counts among `calls`.
+
 The title is `<statement summary> is slow: p95 <p95> in <caller>`, as in `SELECT items is slow: p95 812.0 ms in GET /items`, where the caller is the first of `callers`, the endpoint that ran the group most.
 The summary alone would title a search and two reports over one table alike, and the p95 and the caller tell them apart.
 
-`numbers`: `calls`, `slowCalls`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `callers` (the endpoint, service and call count of the nearest entry span up the parent chain, as xref:api.adoc#query-stats[`QueryStats.callers`] has them).
+`numbers`: `calls`, `slowCalls`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `callers` (the endpoint, service and call count of the nearest entry span up the parent chain, as xref:api.adoc#query-stats[`QueryStats.callers`] has them, leaving out the calls of an ignored endpoint's trace, which the queries page still lists).
 
 A p95 far above p50 is a query that is fast for most inputs and slow for some, which usually means a plan that degrades with the data rather than a statement that is always wrong.
 `callers` says which endpoints pay for it, and the trace ids give the individual calls.

@@ -354,6 +354,7 @@ Only the endpoints and jobs that crossed the threshold are counted, since only t
 The job's aggregate carries `MAX(start_ms)`, and its newest run, whose attributes give the code frames, is read at that instant through the same index, with the row id breaking a tie; ordered by start with a second sort key, the read sorted every span of the service in the window.
 The sample of traces a `slow-endpoint` or `slow-job` splits its time over is read by the `(trace_id, span_id)` index (`USE INDEX (span_trace)`), as the database work is: left to itself, H2 read every span of the service in the window for a sample of twenty traces.
 `slow-query` and `slow-job` put their threshold in the statement, `HAVING PERCENTILE_DISC(0.95) WITHIN GROUP (ORDER BY duration_ns) > :thresholdNs`, and read every group that passes it rather than the top of a list.
+`slow-query` aggregates, in that one pass, only the statements no ignored endpoint ran: a span that is not an ignored span and whose trace root, read through the trace summary, is not one either (xref:configuration.adoc#ignored-endpoints[Ignored endpoints]).
 The other kinds are the endpoint, query and error aggregations above, filtered by the thresholds.
 A scan of the window that several rules need is made once per answer and handed to each of them.
 The parent-chain walk is one: the query callers, the error endpoints, `n-plus-one`, `n-plus-one-http`, `slow-external` and `log-error` all read the same one.
@@ -361,7 +362,7 @@ The outbound HTTP spans are the other: `n-plus-one-http` and `slow-external` rea
 Every outbound HTTP span of the window is read, with no limit, because the call's target and name live in its attributes and a finding counts every call and every request of the window.
 A row is held as the names it is grouped by and its measures, without its attributes, which are read again by span id for the one call a finding takes its code from.
 For one service the walk reads only the traces that have a span of that service in the window, which is where every entry span its spans can reach lies.
-The query and error lists read it the same way, so a finding's callers and endpoints are the list's.
+The query and error lists read it the same way, so a finding's callers and endpoints are the list's, except that a `slow-query` finding's callers leave out the calls an ignored endpoint's trace made, which the queries page still lists.
 * The traces that contain a group (a finding's evidence and sample, the slowest and newest traces of the endpoint, query and error pages): `SELECT * FROM trace t WHERE t.start_ms BETWEEN ? AND ? AND t.trace_id IN (SELECT s.trace_id FROM span s WHERE s.<group> = ? AND s.start_ms BETWEEN ? AND ?)`.
 The matching span starts in the window too, so the subquery is a range of the group's `(…, start_ms)` index.
 It costs the window's share of the group, never its whole history.

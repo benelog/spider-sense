@@ -21,8 +21,8 @@ final class SpanSql {
      *
      * <p>The root is the trace summary's, one seek away, so the condition costs two index
      * lookups a row rather than a scan of the trace; that is why it sits on the reads of the
-     * rules, whose rows are failures, outbound calls and the statements of slow groups, and not
-     * on every aggregate of the pages.
+     * rules, whose rows are failures, outbound calls, log records and the statements the
+     * {@code slow-query} rule and {@code check} judge, and not on every aggregate of the pages.
      */
     static final String NOT_IGNORED = "NOT (" + ignored("") + ") AND NOT EXISTS (SELECT 1 FROM trace t"
             + " JOIN span r ON r.trace_id = t.trace_id AND r.span_id = t.root_span_id"

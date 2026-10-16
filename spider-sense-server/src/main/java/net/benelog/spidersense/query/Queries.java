@@ -564,7 +564,7 @@ public final class Queries {
     List<Stats.QueryStats> queries(Window window, @Nullable String service, @Nullable String sort,
             int limit, @Nullable String queryId, Supplier<Ancestry> ancestry) {
         return withSchema(withCallers(queryGroups(window, service, sort, limit, queryId), window,
-                ancestry));
+                ancestry, false));
     }
 
     /**
@@ -573,32 +573,25 @@ public final class Queries {
      *
      * <p>The threshold is a {@code HAVING} rather than a filter over the top of a
      * list, so a slow group that ranks low by total time is still one
-     * (findings.adoc#slow-query).
+     * (findings.adoc#slow-query). The callers are the requests and jobs alone, so a health
+     * check that ran the statement more often than any request does not name the finding.
      */
     List<Stats.QueryStats> slowQueries(Window window, @Nullable String service,
             Supplier<Ancestry> ancestry) {
-        return withSchema(withCallers(slowQueryGroups(window, service), window, ancestry));
+        return withSchema(withCallers(slowQueryGroups(window, service), window, ancestry, true));
     }
 
     /**
      * The same groups alone, with no callers and no schema block, for a finding's state.
      *
      * <p>A statement an ignored endpoint ran is no finding (configuration.adoc#ignored-endpoints),
-     * so the groups that crossed the threshold are read again without those spans, which is a
-     * walk to each one's trace root, and only the ones still past it are kept.
+     * so the groups are aggregated and judged over the other spans in one pass: a hundred fast
+     * health checks running the statement an endpoint runs slowly neither dilute its p95 below
+     * the threshold nor count among its calls.
      */
     List<Stats.QueryStats> slowQueryGroups(Window window, @Nullable String service) {
-        String having = SpanSql.slowerThan(SpanSql.P95, tingles.slowQueryMs());
-        List<Stats.QueryStats> candidates = queryGroups(window, service, "total", ALL_GROUPS, null, having,
-                null);
-        if (candidates.isEmpty()) {
-            return candidates;
-        }
-        Set<String> ids = new LinkedHashSet<>();
-        for (Stats.QueryStats group : candidates) {
-            ids.add(group.queryId());
-        }
-        return queryGroups(window, service, "total", ALL_GROUPS, null, having, ids);
+        return queryGroups(window, service, "total", ALL_GROUPS, null,
+                SpanSql.slowerThan(SpanSql.P95, tingles.slowQueryMs()), true);
     }
 
     /**
@@ -620,23 +613,22 @@ public final class Queries {
      */
     List<Stats.QueryStats> queryGroups(Window window, @Nullable String service,
             @Nullable String sort, int limit, @Nullable String queryId) {
-        return queryGroups(window, service, sort, limit, queryId, null, null);
+        return queryGroups(window, service, sort, limit, queryId, null, false);
     }
 
     /**
      * The same, keeping only the groups that satisfy {@code having}, an aggregate condition,
-     * and, when {@code withoutIgnored} names groups, only those, over the spans no ignored
-     * endpoint ran.
+     * and, when {@code withoutIgnored}, over the spans no ignored endpoint ran.
      */
     private List<Stats.QueryStats> queryGroups(Window window, @Nullable String service,
             @Nullable String sort, int limit, @Nullable String queryId, @Nullable String having,
-            @Nullable Set<String> withoutIgnored) {
+            boolean withoutIgnored) {
         Where where = Where.window(window, service).and("query_id IS NOT NULL");
         if (queryId != null) {
             where = where.and("query_id = ?", queryId);
         }
-        if (withoutIgnored != null) {
-            where = where.andIn("query_id", withoutIgnored).and(SpanSql.NOT_IGNORED);
+        if (withoutIgnored) {
+            where = where.and(SpanSql.NOT_IGNORED);
         }
         String order = switch (sort == null ? "total" : sort) {
             case "avg" -> "SUM(duration_ns) / COUNT(*) DESC";   // an alias cannot sit inside an ORDER BY expression in H2
@@ -694,9 +686,12 @@ public final class Queries {
      * <p>A query id hashes its service (storage.adoc), so every span read here is a
      * span of the groups' service, and the walk over that service's traces reaches
      * every entry span the walk over all of them would.
+     *
+     * @param withoutIgnored whether to leave out the spans an ignored endpoint ran, as a
+     *     finding's callers do; the queries page lists every caller
      */
     private List<Stats.QueryStats> withCallers(List<Stats.QueryStats> stats, Window window,
-            Supplier<Ancestry> ancestors) {
+            Supplier<Ancestry> ancestors, boolean withoutIgnored) {
         if (stats.isEmpty()) {
             return stats;
         }
@@ -709,6 +704,9 @@ public final class Queries {
         Map<String, Map<String, String>> callerService = new HashMap<>();
         Map<String, Map<String, String>> callerEndpointId = new HashMap<>();
         Where where = Where.window(window, null).andIn("query_id", ids);
+        if (withoutIgnored) {
+            where = where.and(SpanSql.NOT_IGNORED);
+        }
         sql.forEach("SELECT query_id, trace_id, span_id, service FROM span WHERE " + where.sql(),
                 where.params(), rs -> {
                     String queryId = rs.getString("query_id");
