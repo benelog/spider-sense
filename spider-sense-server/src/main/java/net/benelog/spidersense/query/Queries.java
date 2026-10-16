@@ -1914,8 +1914,9 @@ public final class Queries {
      * spans are the databases, hosts and queues nobody traces. An outbound span
      * whose child is an entry span called a traced service, so it is dropped from the
      * third: a call to {@code localhost:8081} shows as a call to the bookstore when
-     * the bookstore is traced too, and a call a service makes to itself shows as
-     * nothing, as the first read draws no edge from a service to itself.
+     * the bookstore is traced too, and an HTTP or RPC call a service makes to itself
+     * shows as nothing, as the first read draws no edge from a service to itself. A
+     * message a service consumes itself stays a call to its destination.
      *
      * <p>A service node's numbers are the {@link Stats.ServiceSummary} numbers, so
      * the map and the service page can never disagree.
@@ -2036,16 +2037,18 @@ public final class Queries {
      * The databases, hosts and queues every service calls, and one edge per caller.
      * An outbound span whose child is a {@code SERVER} or {@code CONSUMER} span called a
      * traced service, and is left out: a call to another service is already a
-     * {@code service → service} edge, a call a service makes to itself is no edge at all,
-     * and neither is a call to an ignored endpoint, which is no request. They are keyed by trace
-     * id and span id together, as {@link Ancestry} keys a span: a span id is unique
-     * within its trace only.
+     * {@code service → service} edge, an HTTP or RPC call a service makes to itself is no
+     * edge at all, and neither is a call to an ignored endpoint, which is no request. A
+     * message a service produces and consumes itself still went through the broker, so it
+     * stays a call to the destination. They are keyed by trace id and span id together, as
+     * {@link Ancestry} keys a span: a span id is unique within its trace only.
      */
     private Targets targets(Window window) {
         Set<String> toTracedServices = new HashSet<>(sql.query(
                 "SELECT DISTINCT c.trace_id, c.parent_span_id FROM span c JOIN span p"
                         + " ON p.trace_id = c.trace_id AND p.span_id = c.parent_span_id"
-                        + " WHERE c.start_ms BETWEEN ? AND ? AND c.kind IN ('SERVER', 'CONSUMER')",
+                        + " WHERE c.start_ms BETWEEN ? AND ? AND c.kind IN ('SERVER', 'CONSUMER')"
+                        + " AND (p.service <> c.service OR p.category IN ('http', 'rpc'))",
                 List.of(window.from(), window.to()),
                 rs -> Ancestry.key(rs.getString(1), rs.getString(2))));
 

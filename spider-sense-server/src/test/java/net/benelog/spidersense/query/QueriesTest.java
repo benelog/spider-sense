@@ -423,6 +423,26 @@ class QueriesTest {
                 .containsExactly("user -> svc:warehouse 1");
     }
 
+    /** A message a service consumes itself still went through the broker: the destination is on the map. */
+    @Test
+    void aQueueAServiceProducesToAndConsumesFromIsOnTheMap() {
+        Span.Builder publish = Otlp.span(traceId(1), spanId(1), "orders publish", Span.SpanKind.SPAN_KIND_PRODUCER,
+                NOW, 1_000, Otlp.attr("messaging.system", "kafka"), Otlp.attr("messaging.destination.name", "orders"));
+        Span.Builder process = Otlp.child(publish, spanId(2), "orders process", Span.SpanKind.SPAN_KIND_CONSUMER,
+                NOW + 5, 20, Otlp.attr("messaging.system", "kafka"), Otlp.attr("messaging.destination.name", "orders"));
+        decoder.ingest(Otlp.traces(Otlp.service("events"), publish, process));
+        flush();
+
+        Stats.ServiceMap map = queries.map(window);
+
+        assertThat(map.nodes()).extracting(Stats.Node::id)
+                .containsExactlyInAnyOrder("svc:events", "messaging:orders");
+        assertThat(map.edges()).extracting(edge -> edge.from() + " -> " + edge.to() + " " + edge.calls())
+                .containsExactly("svc:events -> messaging:orders 1");
+        assertThat(queries.dependencies("events", window)).extracting(Stats.Dependency::target)
+                .containsExactly("orders");
+    }
+
     /** A traced load generator's requests are root CLIENT spans to a host nobody traces. */
     @Test
     void aServiceWhoseRequestsAreRootCallsIsOnTheMapWithWhatItCalls() {
