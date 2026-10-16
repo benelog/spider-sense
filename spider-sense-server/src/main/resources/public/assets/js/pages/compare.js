@@ -34,13 +34,18 @@ function sidesColumn(key, label, format) {
   return { key, label, align: 'right', width: '86px', render: (r) => beforeAfterCell(sideValue(r.before), sideValue(r.after), format) };
 }
 
-/** More than a fifth bigger and bigger by at least 10 ms: Compare.java's bounds for a p95. */
-const RELATIVE = 0.2;
+/** More than a fifth of where it was and at least 10 ms: Compare.java's bounds for a p95. */
+const PARTS = 5;
 const ABSOLUTE_MS = 10;
 
-/** `to` grew past both bounds over `from`, as Compare.grew decides it. */
+/** `to` grew past both bounds over `from`, as Compare.grew decides it, in whole fifths. */
 function grew(from, to) {
-  return to > from * (1 + RELATIVE) && to - from >= ABSOLUTE_MS;
+  return PARTS * to > (PARTS + 1) * from && to - from >= ABSOLUTE_MS;
+}
+
+/** `to` shrank past both bounds under `from`, a fifth of `from`, as Compare.shrank decides it. */
+function shrank(from, to) {
+  return PARTS * to < (PARTS - 1) * from && from - to >= ABSOLUTE_MS;
 }
 
 /**
@@ -52,7 +57,7 @@ export function verdictOf(kind, before, after) {
   if (kind === 'errors') return after > before ? 'worse' : after < before ? 'better' : 'same';
   if (kind === 'p95') {
     if (grew(before, after)) return 'worse';
-    if (grew(after, before)) return 'better';
+    if (shrank(before, after)) return 'better';
     return 'same';
   }
   if (kind === 'apdex') {

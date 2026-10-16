@@ -16,9 +16,12 @@ test('a p95 is worse when it grew by more than a fifth and by at least 10 ms', (
   assert.equal(verdictOf('p95', 1, 9), 'same');
 });
 
-test('a p95 is better when it shrank by the same bounds', () => {
-  assert.equal(verdictOf('p95', 50, 40), 'better');
-  assert.equal(verdictOf('p95', 49.9, 40), 'same');
+test('a p95 is better when it shrank by more than a fifth of where it was and by at least 10 ms', () => {
+  assert.equal(verdictOf('p95', 50, 39.9), 'better');
+  assert.equal(verdictOf('p95', 50, 40), 'same', 'exactly a fifth is no change');
+  assert.equal(verdictOf('p95', 100, 82), 'same', '18% faster is within the bound');
+  assert.equal(verdictOf('p95', 100, 79.9), 'better');
+  assert.equal(verdictOf('p95', 30, 20.5), 'same', 'a third faster, but by 9.5 ms');
 });
 
 test('errors are worse when they grew and better when they fell', () => {

@@ -200,7 +200,8 @@ Every row carries a verdict, decided in this order.
 * `worse` when errors appear or grow, or when p95 grows by more than 20% and by at least 10 ms.
   For a query the measure is calls per request, and the second bound is 0.5 calls.
   When either window has no request, a query's measure is its calls in the window, with the same two bounds, so a worker whose statement ran 2 times before and 200 after is `worse`; exercise both windows the same way for the counts to compare.
-* `better` when the same measure shrinks by that much, or when errors disappear.
+* `better` when the same measure shrinks by more than 20% and by at least the same bound, or when errors disappear.
+  Both percentages are of the before value, so a p95 that went from 100 ms to 82 ms, 18% faster, is `same`, and so is a change of exactly 20% either way.
 * `same` otherwise.
 
 Every reason for `worse` is asked before any reason for `better`.

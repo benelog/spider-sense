@@ -94,6 +94,33 @@ class CompareTest {
                 .isEqualTo(Compare.BETTER);
     }
 
+    /**
+     * Better is a shrink by more than a fifth of where the measure was, and by the absolute bound,
+     * as worse is a growth by both: 18% faster is the same, and so is exactly a fifth either way.
+     */
+    @Test
+    void betterNeedsMoreThanAFifthOfTheBeforeValueAsWorseDoes() {
+        assertThat(Compare.verdict(p95(100), p95(82))).as("18% faster").isEqualTo(Compare.SAME);
+        assertThat(Compare.verdict(p95(100), p95(80))).as("a fifth faster").isEqualTo(Compare.SAME);
+        assertThat(Compare.verdict(p95(100), p95(79.9))).isEqualTo(Compare.BETTER);
+        assertThat(Compare.verdict(p95(30), p95(20.5))).as("a third faster, by 9.5 ms").isEqualTo(Compare.SAME);
+        assertThat(Compare.verdict(p95(100), p95(120))).as("a fifth slower").isEqualTo(Compare.SAME);
+        assertThat(Compare.verdict(p95(100), p95(120.1))).isEqualTo(Compare.WORSE);
+
+        assertThat(Compare.queryVerdict(perRequest(3.0), perRequest(2.4))).as("a fifth fewer").isEqualTo(Compare.SAME);
+        assertThat(Compare.queryVerdict(perRequest(3.0), perRequest(2.3))).isEqualTo(Compare.BETTER);
+        assertThat(Compare.queryVerdict(perRequest(3.0), perRequest(3.6))).as("a fifth more").isEqualTo(Compare.SAME);
+        assertThat(Compare.queryVerdict(perRequest(3.0), perRequest(3.7))).isEqualTo(Compare.WORSE);
+    }
+
+    private static Compare.Side p95(double ms) {
+        return new Compare.Side(3, 0, ms, ms, ms, 0, 0);
+    }
+
+    private static Compare.QuerySide perRequest(double calls) {
+        return new Compare.QuerySide(30, calls, 2, 60);
+    }
+
     @Test
     void theWorstIsFirstAndASideThatIsMissingIsNull() {
         send(entry("/slower", BEFORE + 1000, 100), entry("/gone", BEFORE + 1000, 100));

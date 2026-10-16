@@ -23,9 +23,10 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>A verdict is deliberately blunt — {@code worse}, {@code better},
  * {@code same}, {@code new}, {@code gone} — and deliberately deaf to noise: a
- * change has to be both more than a fifth and more than ten milliseconds (half a
- * call per request for a query) before it is called anything but {@code same},
- * because a local machine's timings wobble by more than that on their own.
+ * change has to be both more than a fifth of where it was and at least ten
+ * milliseconds (half a call per request for a query), either way, before it is
+ * called anything but {@code same}, because a local machine's timings wobble by
+ * more than that on their own.
  */
 public final class Compare {
 
@@ -35,8 +36,8 @@ public final class Compare {
     public static final String BETTER = "better";
     public static final String SAME = "same";
 
-    /** How much a percentile has to move before it means anything. */
-    private static final double RELATIVE = 0.2;
+    /** How much a percentile has to move before it means anything: more than one part in this many. */
+    private static final int PARTS = 5;
     private static final double ABSOLUTE_MS = 10;
     private static final double ABSOLUTE_CALLS = 0.5;
 
@@ -211,7 +212,7 @@ public final class Compare {
         if (before.errors() > 0 && after.errors() == 0) {
             return BETTER;
         }
-        if (grew(after.p95Ms(), before.p95Ms(), ABSOLUTE_MS)) {
+        if (shrank(before.p95Ms(), after.p95Ms(), ABSOLUTE_MS)) {
             return BETTER;
         }
         return SAME;
@@ -237,7 +238,7 @@ public final class Compare {
         if (grew(from, to, ABSOLUTE_CALLS)) {
             return WORSE;
         }
-        if (grew(to, from, ABSOLUTE_CALLS)) {
+        if (shrank(from, to, ABSOLUTE_CALLS)) {
             return BETTER;
         }
         return SAME;
@@ -259,9 +260,25 @@ public final class Compare {
         return SAME;
     }
 
-    /** More than a fifth bigger <em>and</em> bigger by at least {@code absolute}. */
+    /**
+     * More than a fifth bigger <em>and</em> bigger by at least {@code absolute}.
+     *
+     * <p>The fifth is compared in whole multiples, {@code 5 × to > 6 × from}, rather than as
+     * {@code to > 1.2 × from}: 1.2 has no exact binary form, and the rounding of the product
+     * would call a change of exactly a fifth, such as 3.0 → 3.6 calls per request, more than one.
+     */
     private static boolean grew(double from, double to, double absolute) {
-        return to > from * (1 + RELATIVE) && to - from >= absolute;
+        return PARTS * to > (PARTS + 1) * from && to - from >= absolute;
+    }
+
+    /**
+     * More than a fifth smaller <em>and</em> smaller by at least {@code absolute}: a fifth of
+     * {@code from}, as {@link #grew} measures it, so 100 → 82 ms is 18% and no change, where a
+     * fifth of {@code to} would have called it one. In whole multiples for the same reason, so
+     * 3.0 → 2.4 calls per request is exactly a fifth.
+     */
+    private static boolean shrank(double from, double to, double absolute) {
+        return PARTS * to < (PARTS - 1) * from && from - to >= absolute;
     }
 
     /**

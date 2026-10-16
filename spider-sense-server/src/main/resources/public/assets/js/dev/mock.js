@@ -1361,11 +1361,12 @@ function totalsOf(w, service) {
 
 const VERDICT_ORDER = { worse: 0, new: 1, same: 2, better: 3, gone: 4 };
 
-/** Compare.java's bounds: more than a fifth bigger and bigger by at least the absolute step. */
-const RELATIVE = 0.2;
+/** Compare.java's bounds: more than a fifth of where it was, either way, and at least the absolute step. */
+const PARTS = 5;
 const ABSOLUTE_MS = 10;
 const ABSOLUTE_CALLS = 0.5;
-const grew = (from, to, absolute) => to > from * (1 + RELATIVE) && to - from >= absolute;
+const grew = (from, to, absolute) => PARTS * to > (PARTS + 1) * from && to - from >= absolute;
+const shrank = (from, to, absolute) => PARTS * to < (PARTS - 1) * from && from - to >= absolute;
 
 /** Compare.verdict: every reason for worse is asked before any reason for better. */
 function endpointVerdict(before, after) {
@@ -1374,7 +1375,7 @@ function endpointVerdict(before, after) {
   if ((after.errors || 0) > (before.errors || 0)) return 'worse';
   if (grew(before.p95Ms || 0, after.p95Ms || 0, ABSOLUTE_MS)) return 'worse';
   if ((before.errors || 0) > 0 && !after.errors) return 'better';
-  if (grew(after.p95Ms || 0, before.p95Ms || 0, ABSOLUTE_MS)) return 'better';
+  if (shrank(before.p95Ms || 0, after.p95Ms || 0, ABSOLUTE_MS)) return 'better';
   return 'same';
 }
 
@@ -1383,7 +1384,7 @@ function queryVerdict(before, after) {
   if (!before) return after ? 'new' : 'same';
   if (!after) return 'gone';
   if (grew(before.callsPerRequest || 0, after.callsPerRequest || 0, ABSOLUTE_CALLS)) return 'worse';
-  if (grew(after.callsPerRequest || 0, before.callsPerRequest || 0, ABSOLUTE_CALLS)) return 'better';
+  if (shrank(before.callsPerRequest || 0, after.callsPerRequest || 0, ABSOLUTE_CALLS)) return 'better';
   return 'same';
 }
 
