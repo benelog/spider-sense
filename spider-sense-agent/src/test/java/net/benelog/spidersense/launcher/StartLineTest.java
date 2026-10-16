@@ -91,11 +91,17 @@ class StartLineTest {
     }
 
     @Test
-    void theJarIsItsAbsolutePathQuotedWhenItHoldsASpace() {
+    void theJarIsItsAbsolutePathQuotedForTheShell() {
         assertThat(NestedJar.commandPath(Path.of("/opt/tools/spider-sense-0.1.0.jar")))
                 .isEqualTo("/opt/tools/spider-sense-0.1.0.jar");
         assertThat(NestedJar.commandPath(Path.of("/opt/my tools/spider-sense-0.1.0.jar")))
-                .isEqualTo("\"/opt/my tools/spider-sense-0.1.0.jar\"");
+                .isEqualTo("'/opt/my tools/spider-sense-0.1.0.jar'");
+        assertThat(NestedJar.commandPath(Path.of("/home/OBrien's/spider-sense.jar")))
+                .as("an apostrophe closes the quotes, escaped, and opens them again")
+                .isEqualTo("'/home/OBrien'\\''s/spider-sense.jar'");
+        assertThat(NestedJar.commandPath(Path.of("/opt/tools$v2/`id`/spider-sense.jar")))
+                .as("nothing a shell would expand inside double quotes")
+                .isEqualTo("'/opt/tools$v2/`id`/spider-sense.jar'");
         assertThat(NestedJar.commandPath(null)).as("exploded classes have no jar").isEqualTo("spider-sense.jar");
     }
 

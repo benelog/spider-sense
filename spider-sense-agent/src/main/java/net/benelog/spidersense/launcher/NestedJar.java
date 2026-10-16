@@ -155,9 +155,9 @@ final class NestedJar {
     }
 
     /**
-     * This jar as a command to copy names it: the absolute path of {@link #ownJar()}, in double
-     * quotes when it holds a space, or {@code spider-sense.jar} for exploded classes, which have
-     * no jar to name.
+     * This jar as a command to copy names it: the absolute path of {@link #ownJar()}, quoted as
+     * {@link SpiderSenseAgent#shellWord(String)} quotes a word a shell would break on or expand,
+     * or {@code spider-sense.jar} for exploded classes, which have no jar to name.
      */
     static String commandPath() {
         return commandPath(ownJar());
@@ -167,8 +167,7 @@ final class NestedJar {
         if (jar == null) {
             return "spider-sense.jar";
         }
-        String path = jar.toAbsolutePath().toString();
-        return path.contains(" ") ? "\"" + path + "\"" : path;
+        return SpiderSenseAgent.shellWord(jar.toAbsolutePath().toString());
     }
 
     /** Whether {@code jar} carries the nested server, which is what makes it the distributable. */
