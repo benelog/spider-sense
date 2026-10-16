@@ -15,6 +15,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
@@ -148,11 +149,12 @@ class DatabaseCatalogIT {
                     () -> get(base + "/api/status"),
                     body -> compact(body).contains("\"mode\":\"agent\""));
 
-            // The catalog travels as a log record and lands in a later flush than the span.
-            findings = await("a slow-query finding with its schema block", log, app,
+            // The catalog travels as a log record and lands in a later flush than the span. On a
+            // loaded machine the sample's setup statements can be slow too, so the wait is for the
+            // finding of the statement the sample ran, not for the first slow-query.
+            findings = await("the sample's slow-query finding with its schema block", log, app,
                     () -> get(base + "/api/findings?since=15m&format=json"),
-                    body -> compact(body).contains("\"kind\":\"slow-query\"")
-                            && compact(body).contains("\"unindexed\":["));
+                    body -> sampleQuery(body).filter(f -> f.contains("\"unindexed\":[")).isPresent());
 
             summaries = objects(await("the request's trace", log, app,
                     () -> get(base + "/api/traces?limit=200"),
@@ -170,11 +172,8 @@ class DatabaseCatalogIT {
             }
         }
 
-        String slowQuery = objects(findings, "findings").stream()
-                .filter(f -> f.contains("\"kind\":\"slow-query\""))
-                .findFirst()
-                .orElseThrow(() -> new AssertionError("no slow-query finding in " + findings));
-        assertThat(slowQuery).as("the statement the sample ran").contains("sleep(?)");
+        String slowQuery = sampleQuery(findings)
+                .orElseThrow(() -> new AssertionError("no slow-query finding of sleep(?) in " + findings));
         assertThat(slowQuery).as("the predicates, lower-cased whatever the statement wrote")
                 .contains("\"predicates\":[\"items.name\",\"items.supplier_id\"]");
 
@@ -302,6 +301,13 @@ class DatabaseCatalogIT {
         try (ServerSocket socket = new ServerSocket(0)) {
             return socket.getLocalPort();
         }
+    }
+
+    /** The slow-query finding of the statement the sample ran, the one whose SQL calls {@code sleep(?)}. */
+    private static Optional<String> sampleQuery(String findings) {
+        return objects(findings, "findings").stream()
+                .filter(f -> f.contains("\"kind\":\"slow-query\"") && f.contains("sleep(?)"))
+                .findFirst();
     }
 
     private static void sleep(long millis) {
