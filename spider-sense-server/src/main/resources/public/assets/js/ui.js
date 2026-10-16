@@ -271,21 +271,22 @@ export function copyBlock(text, opts = {}) {
  * The "how to send data" snippets, used by the dialog and by empty states (ui.adoc#dialogs):
  * the jar the server was started from and its endpoint, from /api/status. A bare `-javaagent`
  * starts a Spider Sense of its own on :4000, so it leads only when that is this one; otherwise
- * the line that sends here, `-Dspidersense.collector=<endpoint>`, comes first.
+ * the line that sends here, `-Dspidersense.collector=<endpoint>`, comes first. A command line
+ * quotes an endpoint the shell would read as a pattern, an IPv6 one; an assignment is no pattern.
  */
 export function snippetText(status = api.state.status) {
   const s = status || {};
   const base = s.endpoint || api.collectorBase();
   const jar = api.jarOf(s);
   const own = `java -javaagent:${jar} -jar your-app.jar`;
-  const forward = `java -javaagent:${jar} \\\n  -Dspidersense.collector=${base} \\\n  -jar your-app.jar`;
+  const forward = `java -javaagent:${jar} \\\n  -Dspidersense.collector=${api.shellWord(base)} \\\n  -jar your-app.jar`;
   const sendsHere = s.mode === 'standalone' || !api.isDefaultUrl(base);
   return {
     agent: sendsHere
       ? `# send to this Spider Sense\n${forward}\n\n# or start a Spider Sense of its own, embedded in the app\n${own}`
       : `${own}\n\n# or point an app at a Spider Sense that is already running\n${forward}`,
     env: `OTEL_EXPORTER_OTLP_ENDPOINT=${base}\nOTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf\nOTEL_SERVICE_NAME=your-service`,
-    curl: `curl -X POST ${(s.otlp || {}).traces || base + '/v1/traces'} \\\n  -H 'content-type: application/json' \\\n  -d '{"resourceSpans":[]}'`,
+    curl: `curl -X POST ${api.shellWord((s.otlp || {}).traces || base + '/v1/traces')} \\\n  -H 'content-type: application/json' \\\n  -d '{"resourceSpans":[]}'`,
   };
 }
 

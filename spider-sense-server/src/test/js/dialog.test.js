@@ -79,3 +79,10 @@ test('the send-data snippets name the real jar, and lead with the collector line
   assert.match(otherPort.agent, /^# send to this Spider Sense\njava -javaagent:spider-sense\.jar \\\n  -Dspidersense\.collector=http:\/\/127\.0\.0\.1:4001/);
   assert.match(otherPort.curl, /^curl -X POST http:\/\/127\.0\.0\.1:4001\/v1\/traces/);
 });
+
+test('the send-data command lines quote an IPv6 endpoint, which zsh would read as a pattern (ui.adoc#dialogs)', () => {
+  const ipv6 = snippetText({ mode: 'standalone', endpoint: 'http://[::1]:4681', otlp: { traces: 'http://[::1]:4681/v1/traces' } });
+  assert.match(ipv6.agent, /\n {2}-Dspidersense\.collector='http:\/\/\[::1\]:4681' \\\n/);
+  assert.match(ipv6.curl, /^curl -X POST 'http:\/\/\[::1\]:4681\/v1\/traces' \\\n/);
+  assert.match(ipv6.env, /^OTEL_EXPORTER_OTLP_ENDPOINT=http:\/\/\[::1\]:4681$/m, 'an assignment is no pattern, and an IDE takes its value as it is');
+});
