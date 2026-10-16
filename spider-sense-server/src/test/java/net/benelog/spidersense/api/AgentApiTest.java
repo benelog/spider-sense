@@ -66,6 +66,19 @@ class AgentApiTest {
                 .POST(HttpRequest.BodyPublishers.ofString(body)));
     }
 
+    /**
+     * A body past the limit, sent after {@code 100 Continue} only: the server refuses it on its
+     * {@code Content-Length} and closes the connection, so a body already on its way could reset
+     * the connection before the client reads the 413.
+     */
+    private static HttpResponse<String> postTooLarge(TestClient client, String path, String body) {
+        return client.send(request -> request
+                .uri(URI.create(client.url(path)))
+                .header("Content-Type", "application/json")
+                .expectContinue(true)
+                .POST(HttpRequest.BodyPublishers.ofString(body)));
+    }
+
     private static HttpResponse<String> get(TestClient client, String path, String accept) {
         return client.send(request -> request
                 .uri(URI.create(client.url(path)))
@@ -456,7 +469,7 @@ class AgentApiTest {
             bodies.put("/api/sql", statement);
             bodies.put("/api/sql?format=text", statement);
             bodies.forEach((path, body) -> {
-                HttpResponse<String> refused = postJson(client, path, body);
+                HttpResponse<String> refused = postTooLarge(client, path, body);
                 assertThat(refused.statusCode()).as(path).isEqualTo(413);
                 assertThat(refused.headers().firstValue("content-type")).as(path)
                         .hasValueSatisfying(type -> assertThat(type).startsWith("application/json"));

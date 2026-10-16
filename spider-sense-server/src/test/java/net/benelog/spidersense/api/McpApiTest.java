@@ -61,6 +61,19 @@ class McpApiTest {
                 .POST(HttpRequest.BodyPublishers.ofString(body)));
     }
 
+    /**
+     * A body past the limit, sent after {@code 100 Continue} only: the server refuses it on its
+     * {@code Content-Length} and closes the connection, so a body already on its way could reset
+     * the connection before the client reads the 413.
+     */
+    private static HttpResponse<String> postTooLarge(TestClient client, String path, String body) {
+        return client.send(request -> request
+                .uri(URI.create(client.url(path)))
+                .header("Content-Type", "application/json")
+                .expectContinue(true)
+                .POST(HttpRequest.BodyPublishers.ofString(body)));
+    }
+
     /** One JSON-RPC message, and the {@code result} object it answered with. */
     private static JsonObject call(TestClient client, String name, String arguments) {
         HttpResponse<String> response = post(client, "/mcp",
@@ -326,7 +339,7 @@ class McpApiTest {
     @Test
     void aBodyPastTheLimitIs413WithAJsonRpcError() {
         serve(client -> {
-            HttpResponse<String> refused = post(client, "/mcp",
+            HttpResponse<String> refused = postTooLarge(client, "/mcp",
                     "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"tools/call\",\"params\":{\"name\":\"sql\","
                             + "\"arguments\":{\"sql\":\"SELECT 1 " + " ".repeat(1024 * 1024) + "\"}}}");
             assertThat(refused.statusCode()).isEqualTo(413);
