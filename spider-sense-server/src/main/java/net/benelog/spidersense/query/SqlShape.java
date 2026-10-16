@@ -71,6 +71,20 @@ final class SqlShape {
     private static final Set<String> COLUMN_WORDS = Set.of(
             "date", "time", "timestamp", "first", "last", "next", "row", "rows", "only", "interval");
 
+    /**
+     * The words a predicate or an order list may hold that are never a column, though a
+     * table may be named by one: an operator spelt as a word ({@code email regexp ?},
+     * {@code id mod ? = ?}, {@code a = ? xor b = ?}, {@code name sounds like ?},
+     * {@code like binary ?}, {@code is unknown}), a pseudo-column ({@code rownum},
+     * {@code rowid}) and a function called without parentheses ({@code sysdate},
+     * {@code localtimestamp}, {@code current_user}). Unlike {@link #KEYWORDS} they are
+     * only skipped where a column is read, so {@code from member} still names a table.
+     */
+    private static final Set<String> NOT_COLUMNS = Set.of(
+            "regexp", "rlike", "mod", "div", "xor", "sounds", "binary", "unknown", "glob", "member",
+            "rownum", "rowid", "sysdate", "systimestamp", "localtime", "localtimestamp",
+            "current_user", "session_user", "system_user", "current_role", "current_schema", "user");
+
     /** What follows a column in a comparison, besides an operator. */
     private static final Set<String> COMPARISON_WORDS = Set.of("is", "in", "like", "ilike", "between", "not");
 
@@ -345,6 +359,10 @@ final class SqlShape {
             }
             if (i > 0 && "as".equals(tokens.get(i - 1).keyword())) {
                 i++;     // the target type of a cast, not a column
+                continue;
+            }
+            if (!token.quoted() && token.parts().size() == 1 && NOT_COLUMNS.contains(token.text())) {
+                i++;     // "email regexp ?", "rownum <= ?": an operator or a pseudo-column
                 continue;
             }
             column(token);

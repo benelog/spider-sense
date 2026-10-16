@@ -163,6 +163,33 @@ class SqlShapeTest {
                 .containsExactly("items.category");
     }
 
+    /** An operator spelt as a word, a pseudo-column and a function without parentheses name no column. */
+    @Test
+    void anOperatorWordAPseudoColumnAndANiladicFunctionAreNoColumns() {
+        assertThat(predicates("select * from customers where email regexp ?"))
+                .containsExactly("customers.email");
+        assertThat(predicates("select * from customers where email rlike ? and name not regexp ?"))
+                .containsExactly("customers.email", "customers.name");
+        assertThat(predicates("select * from items where id mod ? = ? and id div ? = ?"))
+                .containsExactly("items.id");
+        assertThat(predicates("select * from items where a = ? xor b = ?"))
+                .containsExactly("items.a", "items.b");
+        assertThat(predicates("select * from items where name sounds like ? and sku like binary ?"))
+                .containsExactly("items.name", "items.sku");
+        assertThat(predicates("select * from items where flag is unknown and path glob ?"))
+                .containsExactly("items.flag", "items.path");
+        assertThat(predicates("select * from items where status = ? and rownum <= ? order by rowid"))
+                .containsExactly("items.status");
+        assertThat(predicates("select * from items where created_at > sysdate - ?"
+                + " and updated_at < systimestamp and due_at > localtimestamp - interval ? day"))
+                .containsExactly("items.created_at", "items.updated_at", "items.due_at");
+        assertThat(predicates("select * from items where owner = current_user or owner = user"))
+                .containsExactly("items.owner");
+        assertThat(predicates("select * from member where name = ?"))
+                .as("the words are no keywords: a table may still be named by one")
+                .containsExactly("member.name");
+    }
+
     @Test
     void aBareColumnBelongsToTheOnlyTable() {
         assertThat(predicates("select * from items where category = ? and supplier_id = ?"))

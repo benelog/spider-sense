@@ -236,6 +236,7 @@ Nor is a word of a comment, which the agent's sanitiser keeps (`-- …` or MySQL
 A `#` that begins one of PostgreSQL's operators (`#>`, `#>>`, `#-`, `##`) starts no comment.
 A name the select list gives, with `as` or without it, is not a column when the `order by` sorts by it (`price * qty as total … order by total`, `count(*) cnt … order by cnt`), and `except`, `intersect` and `minus` end the clause before them as `union` does.
 A keyword that is also a common column name (`date`, `time`, `timestamp`, `first`, `last`, `next`, `row`, `rows`, `only`, `interval`) is that column in a `where` or `on` clause when a comparison follows it (`where date = ?`), and the keyword anywhere else.
+An operator spelt as a word is no column (`regexp`, `rlike`, `mod`, `div`, `xor`, `sounds`, `binary`, `unknown`, `glob`, `member`, as in `where email regexp ?` or `where id mod ? = ?`), nor is a pseudo-column (`rownum`, `rowid`) or a function called without parentheses (`sysdate`, `systimestamp`, `localtime`, `localtimestamp`, `current_user`, `session_user`, `system_user`, `current_role`, `current_schema`, `user`); a table may still be named by one of these words (`from member`).
 
 A function in an `order by` list is skipped whole (`order by sum(l.quantity) desc` names no column), because no index sorts an aggregate.
 `unindexed` is the subset of `predicates` that no index of their table has as its first column, the one an index can seek on.
