@@ -63,6 +63,7 @@ The instrumentation is the same as in agent mode, but no UI starts in the applic
 The agent exports to a Spider Sense running elsewhere, so several applications can share one Spider Sense.
 
 Use forwarding when two applications call each other, so that a trace crossing both arrives in one place.
+Forwarding is also how an application on Java 17 to 24 is measured, because the embedded UI needs Java 25 (<<java-versions,Java versions>>).
 Start the standalone Spider Sense first, then each application with `-Dspidersense.collector=` pointing at it.
 
 When nothing accepts a connection at the collector as the application starts, the launcher says so once on stderr, with the command that starts a Spider Sense there when the collector is on this machine:
@@ -286,11 +287,21 @@ The command asks the running Spider Sense over HTTP, or reads the H2 file direct
 It is for people in a terminal and for AI agents.
 xref:cli.adoc[The CLI] documents every command, and xref:agent-loop.adoc[The Loop] is how an AI agent uses them.
 
+[#java-versions]
 == Java versions
 
-The jar itself needs Java 25 or later.
-The monitored application can run on any JVM the OpenTelemetry Java agent supports, but the embedded UI needs 25 or later, so agent mode requires 25 or later.
-For an application on an older JVM, run Spider Sense standalone and forward to it.
+Standalone, the command line and the embedded UI need Java 25 or later.
+An application on Java 17 to 24 is measured by forwarding: start Spider Sense standalone on Java 25 or later, and give the application `-Dspidersense.collector=` pointing at it.
+Without a collector the agent starts no UI on such a JVM, and the telemetry goes to a Spider Sense that already answers at `spidersense.port`.
+When none answers there, nothing is exported, and the launcher says so in one line on stderr:
+
+[source,text]
+----
+[spider-sense] the embedded UI needs Java 25 or later, and this JVM is Java 21.0.8, so nothing is exported; forward to a Spider Sense on Java 25 with -Dspidersense.collector=http://127.0.0.1:4000, started by: java -jar /home/me/tools/spider-sense-0.1.0.jar
+----
+
+On Java 8 to 16 the launcher prints one line, `this JVM is Java <version>, and Spider Sense needs 17 or later; the application runs without it`, and the application starts uninstrumented.
+xref:install.adoc#java-versions[Installation] has the whole table.
 
 == Starting a JVM that is not `java -jar`
 

@@ -4,6 +4,19 @@ plugins {
 
 description = 'Spider Sense: the OpenTelemetry agent extension that gives a slow database span a stack trace'
 
+// The agent loads the extension in the application's JVM, which forwards from Java 17
+// (design.adoc#java-versions): Java 17 features only, and no API added after it.
+tasks.named('compileJava', JavaCompile) {
+    options.release = 17
+}
+
+// Spider Silk, which the route instrumentation compiles against, is built for Java 25, and
+// Gradle would otherwise refuse it to a module compiled for 17. Its advice only ever runs
+// inside a Spider Silk application, which is on 25 already.
+java {
+    disableAutoTargetJvm()
+}
+
 dependencies {
     // compileOnly and nothing else: the agent's ExtensionClassLoader rewrites these references to
     // the shaded classes inside the agent jar as it loads us, so shipping a copy of the SDK would

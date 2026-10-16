@@ -6,7 +6,8 @@ import java.util.OptionalInt;
 import java.util.function.Predicate;
 
 /**
- * The {@code Main-Class} of the distributable jar: {@code java -jar spider-sense.jar}.
+ * What {@code java -jar spider-sense.jar} runs, once the jar's {@code Main-Class},
+ * {@code net.benelog.spidersense.boot.VersionGate}, has seen a JVM of Java 25 or later.
  *
  * <p>Standalone mode is the collector + UI on its own, with nothing instrumented in this JVM.
  * Anything that speaks OTLP/HTTP sends to it, including other JVMs running the same jar as an agent

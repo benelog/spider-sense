@@ -18,6 +18,12 @@ final class EmbeddedServer {
 
     static final String SERVER_CLASS = "net.benelog.spidersense.server.SpiderSenseServer";
 
+    /**
+     * The oldest Java the nested server runs on, the release it is compiled for: Spider Silk's
+     * floor. An older JVM cannot load it, so agent mode skips it there (design.adoc#java-versions).
+     */
+    static final int JAVA_FLOOR = 25;
+
     /** Non-null once started; keeps the loader alive and makes a second attach a no-op. */
     private static volatile @Nullable SenseClassLoader started;
 

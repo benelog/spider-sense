@@ -7,9 +7,10 @@ This module is the launcher and the packaging task that assembles `spider-sense-
 `./gradlew :spider-sense-agent:senseJar` writes `spider-sense-agent/build/libs/spider-sense-0.1.0.jar`, roughly 33 MB, containing four things.
 
 - The stock OpenTelemetry Java agent 2.31.1, verbatim: its bootstrap classes at the top level (`io/opentelemetry/javaagent/**`), everything else under `inst/**` as `.classdata`, plus `META-INF/licenses/**` and `META-INF/native-image/**`.
-- The launcher, `net/benelog/spidersense/launcher/**`: six small classes with no dependencies at all, because the agent appends this whole jar to the bootstrap class path.
+- The launcher, `net/benelog/spidersense/launcher/**`: a handful of small classes with no dependencies at all, because the agent appends this whole jar to the bootstrap class path, compiled for Java 17.
+- `net/benelog/spidersense/boot/VersionGate.class`, compiled for Java 8 from its own source set, `src/boot/java`: the class every JVM loads first, which checks the Java version before handing over to the launcher.
 - The collector and UI as a nested fat jar at `spider-sense/server.jar`, extracted at startup to `${java.io.tmpdir}/spider-sense-<user>/server-<version>-<crc>.jar` and loaded by `SenseClassLoader`, whose parent is the platform class loader.
-- A manifest that makes the same file a Java agent and an executable jar: `Premain-Class`/`Agent-Class: net.benelog.spidersense.launcher.SpiderSenseAgent`, `Main-Class: net.benelog.spidersense.launcher.SpiderSenseMain`, `Can-Redefine-Classes` and `Can-Retransform-Classes`.
+- A manifest that makes the same file a Java agent and an executable jar: `Premain-Class`, `Agent-Class` and `Main-Class: net.benelog.spidersense.boot.VersionGate`, which hands over to `SpiderSenseAgent` and `SpiderSenseMain`, and `Can-Redefine-Classes` and `Can-Retransform-Classes`.
 
 The OpenTelemetry agent's own manifest is replaced by ours, which its jar check accepts because it only requires a `Premain-Class` attribute to be present.
 Its version is kept where it looks for it: `io.opentelemetry.javaagent.tooling.AgentVersion` reads `OpenTelemetryAgent.class.getPackage().getImplementationVersion()`, so the manifest carries a per-package section `io/opentelemetry/javaagent/` with `Implementation-Version: 2.31.1` while the main attributes carry Spider Sense's own version.
@@ -44,7 +45,8 @@ export OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4000
 export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 ```
 
-Agent mode needs Java 21 or later, because the embedded UI is a Spider Silk application; the monitored application itself can be any JVM the OpenTelemetry agent supports when it forwards instead.
+Agent mode with the embedded UI needs Java 25 or later, because the UI is a Spider Silk application, and so do standalone and the CLI.
+An application on Java 17 to 24 forwards instead; on Java 8 to 16 the launcher prints one line and the application starts without Spider Sense, so no JVM aborts because of `-javaagent`.
 
 ## Configuration
 
@@ -70,7 +72,8 @@ The launcher also fills in OpenTelemetry defaults, and only where neither the pr
 
 **Port already in use.** Another Spider Sense or another program holds 4000; start on a different one with `-Dspidersense.port=4001` (or `--port=4001` standalone), and remember that the port is also the OTLP endpoint, so a forwarding application must be pointed at the same number.
 
-**The application runs on Java 17 or older.** The embedded UI needs Java 21, so agent mode cannot serve it there; run Spider Sense standalone in a Java 21 JVM and put the application in forwarding mode with `-Dspidersense.collector=http://127.0.0.1:4000`, which works on any JVM the OpenTelemetry agent supports.
+**The application runs on Java 24 or older.** The embedded UI needs Java 25, so agent mode starts no UI there and says so in one line; run Spider Sense standalone on Java 25 and put the application in forwarding mode with `-Dspidersense.collector=http://127.0.0.1:4000`, which works from Java 17.
+Below Java 17 Spider Sense does not attach at all, and the application starts without it.
 
 **Nothing appears in the UI.** Check the first lines of the application's output for `[otel.javaagent ... version: 2.31.1` (the agent installed) and `[spider-sense] UI: ...` (the collector bound, with the service the telemetry carries); an `otel.*` property or environment variable you set yourself always wins over our defaults, so `OTEL_TRACES_EXPORTER=none` or an `OTEL_EXPORTER_OTLP_ENDPOINT` pointing elsewhere silently sends the data somewhere else.
 

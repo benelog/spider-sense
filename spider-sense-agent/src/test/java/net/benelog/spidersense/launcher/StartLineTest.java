@@ -36,6 +36,27 @@ class StartLineTest {
                         + " UI: http://127.0.0.1:4000  service: orders  CLI: java -jar " + JAR + " findings --since=start");
     }
 
+    /** Below the server's floor no UI starts, and a Spider Sense at the port is where the telemetry goes. */
+    @Test
+    void anOlderJavaExportsToTheSpiderSenseAtThePort() {
+        assertThat(SpiderSenseAgent.exportedFromOlderJava("21.0.8", 4000,
+                SpiderSenseAgent.startLine("http://127.0.0.1:4000", "orders", JAR)))
+                .isEqualTo("the embedded UI needs Java 25 or later, and this JVM is Java 21.0.8; the telemetry is exported"
+                        + " to the Spider Sense on port 4000. UI: http://127.0.0.1:4000  service: orders  CLI: java -jar "
+                        + JAR + " findings --since=start");
+    }
+
+    /** With nothing at the port, nothing is exported, and the one line says how to forward. */
+    @Test
+    void anOlderJavaWithNothingAtThePortSaysHowToForward() {
+        assertThat(SpiderSenseAgent.noEmbeddedUi("21.0.8", "http://127.0.0.1:4000", 4000, JAR))
+                .isEqualTo("the embedded UI needs Java 25 or later, and this JVM is Java 21.0.8, so nothing is exported;"
+                        + " forward to a Spider Sense on Java 25 with -Dspidersense.collector=http://127.0.0.1:4000,"
+                        + " started by: java -jar " + JAR);
+        assertThat(SpiderSenseAgent.noEmbeddedUi("17.0.16", "http://127.0.0.1:4105", 4105, JAR))
+                .endsWith("-Dspidersense.collector=http://127.0.0.1:4105, started by: java -jar " + JAR + " --port=4105");
+    }
+
     /** {@code spidersense.open} opens the UI the telemetry goes to, the collector's when forwarding. */
     @Test
     void theBrowserOpensTheUiTheTelemetryGoesTo() {

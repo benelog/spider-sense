@@ -37,6 +37,19 @@ Forwarding is what to use when two applications call each other, because a trace
 Start the standalone first, then each application with `-Dspidersense.collector=` pointing at it.
 When nothing answers there, the application's stderr says `[spider-sense] nothing answers at http://127.0.0.1:4000 yet; start it with: java -jar …` and the exporter's stack traces follow every few seconds; start the standalone with that command and the exports are retried.
 
+## Java versions
+
+Check the application's Java before choosing the mode: `java -version` for a plain `java`, the toolchain in the build file for Gradle or Maven.
+
+| The application's Java | What to run |
+|---|---|
+| 25 or later | any mode |
+| 17 to 24 | forwarding: a standalone on Java 25 or later, and the application with `-Dspidersense.collector=` pointing at it |
+| 8 to 16 | nothing measures it; `-javaagent` only prints a line and the application starts without Spider Sense |
+
+The standalone and every CLI command need Java 25 or later themselves; on an older `java` the jar prints `spider-sense: the standalone server and the command line need Java 25 or later, and this JVM is Java …` and exits `2`.
+An application on Java 17 to 24 under `-javaagent` with no collector starts no UI: its stderr says `[spider-sense] the embedded UI needs Java 25 or later, …`, and the telemetry goes to a Spider Sense only when one already answers at `spidersense.port`.
+
 ## Properties
 
 All are system properties, given after `-javaagent:` on the same command line; the standalone jar also takes them as `--key=value`.
@@ -85,6 +98,7 @@ The plugin also makes the CLI a task, pointed at the port the block names, so `$
 ./gradlew -q spiderSense --args="check --max-n-plus-one=0"
 ```
 
+The plugin attaches by the Java the task runs on, the project's toolchain: on Java 17 to 24 it warns unless the block sets `collector = 'http://127.0.0.1:4000'`, which forwards to the Spider Sense `./gradlew spiderSense` starts, and below Java 17 it attaches nothing ([Java versions](#java-versions)).
 Prefer this over editing `jvmArgs` when the build file is the user's to change; the sections below are for everything else.
 
 ### A jar, or a main class
@@ -215,6 +229,8 @@ A restart also writes an automatic `start` mark for the service, so `marks` show
 | The service is not called what you expected | Without `-Dotel.service.name=` the name is `spring.application.name`, else the jar or the project; set it and restart |
 | Port 4000 is already in use | Another Spider Sense, or another application under the agent, has it; the start-up line then says `port 4000 is held by another Spider Sense; the telemetry is exported to it` and names that UI. Use `-Dspidersense.port=4001` and `--url=http://127.0.0.1:4001` to keep them apart, or point the second application at the first with `-Dspidersense.collector=http://127.0.0.1:4000`. Something that is not a Spider Sense on the port is a line on stderr, and nothing is exported |
 | Two applications, and each trace stops at the service boundary | Both are embedding their own Spider Sense. Put them in forwarding mode against one standalone |
+| stderr says `the embedded UI needs Java 25 or later` | The application runs on Java 17 to 24. Start a standalone on Java 25 and restart the application with `-Dspidersense.collector=http://127.0.0.1:4000` ([Java versions](#java-versions)) |
+| stderr says `Spider Sense needs 17 or later` | The application runs on Java 16 or older, which Spider Sense does not measure |
 | The application crashed and the UI went with it | The CLI reads the H2 file directly and says so on stderr; `findings --since=start` still answers |
 | A finding's `code` is empty or full of framework classes | Only errors carry stack traces, and the package heuristic can guess wrong. Set `-Dspidersense.app.packages=com.acme` |
 | The window is full of another run | Windows default to `15m`. Use `--since=start`, or mark a moment and use `--since=<mark>` |

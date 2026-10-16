@@ -13,6 +13,7 @@ import org.gradle.api.provider.Provider;
 import org.gradle.api.provider.ProviderFactory;
 import org.gradle.api.tasks.JavaExec;
 import org.gradle.api.tasks.testing.Test;
+import org.gradle.jvm.toolchain.JavaLauncher;
 import org.gradle.process.JavaForkOptions;
 
 import java.io.File;
@@ -75,6 +76,15 @@ public class SpiderSensePlugin implements Plugin<Project> {
 
     /** The task names that get the agent unless the block says otherwise. */
     static final Set<String> DEFAULT_ATTACH_TO = Set.of("bootRun", "bootTestRun", "run");
+
+    /** The oldest Java the agent instruments an application on, forwarding (gradle-plugin.adoc#java-versions). */
+    static final int AGENT_JAVA = 17;
+
+    /** The oldest Java the jar's server runs on: the embedded UI, the standalone and the CLI. */
+    static final int SERVER_JAVA = 25;
+
+    /** A task's Java when its launcher does not say, which is then the JVM that runs Gradle. */
+    static final int UNKNOWN_JAVA = 0;
 
     @Override
     public void apply(Project project) {
@@ -168,6 +178,11 @@ public class SpiderSensePlugin implements Plugin<Project> {
      *
      * <p>A {@link Test} task reports as {@code testService}, every other task as
      * {@code service}.
+     *
+     * <p>The Java the task runs the application on decides too, read from its
+     * launcher when it runs: below {@value #AGENT_JAVA} nothing is attached, and
+     * below {@value #SERVER_JAVA} no UI starts in the application's JVM. The build
+     * says so in one warning, unless the block forwards (gradle-plugin.adoc#java-versions).
      */
     private void attach(Project project, ObjectFactory objects, SpiderSenseExtension extension,
             Provider<Boolean> enabled, NamedJar namedJar, Configuration configuration,
@@ -183,13 +198,62 @@ public class SpiderSensePlugin implements Plugin<Project> {
             Provider<List<String>> systemProperties) {
         return task -> {
             String name = task.getName();
-            Provider<Boolean> attached = enabled.zip(extension.getAttachTo(),
+            Provider<Boolean> named = enabled.zip(extension.getAttachTo(),
                     (on, names) -> on && names.contains(name));
+            // The task's Java is read only when the block names the task, so no other
+            // task's toolchain is looked up for it.
+            Provider<Integer> java = javaOf(task);
+            Provider<Boolean> forwarding = extension.getCollector().map(collector -> true).orElse(false);
+            Provider<Boolean> no = objects.property(Boolean.class).value(false);
+            Provider<String> nothing = objects.property(String.class);
+            Provider<Boolean> attached = named.flatMap(on -> on ? java.map(SpiderSensePlugin::canAttach) : no);
+            Provider<String> warning = named.flatMap(on -> on
+                    ? java.zip(forwarding, (version, forwards) -> launcherWarning(name, version, forwards))
+                    : nothing);
             FileCollection jar = objects.fileCollection()
                     .from(JarSource.whenAttached(attached, namedJar, configuration));
             ((JavaForkOptions) task).getJvmArgumentProviders().add(SpiderSenseArguments.javaagent(
-                    jar, systemProperties, attached, configuration.getName()));
+                    jar, systemProperties, attached, warning, configuration.getName()));
         };
+    }
+
+    /**
+     * The feature release of the Java a {@link JavaExec} or {@link Test} task runs on,
+     * from its launcher: the project's toolchain, or the one the build gives the task.
+     * {@link #UNKNOWN_JAVA} when it has none, such as a task with an executable of its
+     * own or a project without the {@code java} plugin.
+     */
+    static Provider<Integer> javaOf(Task task) {
+        Provider<JavaLauncher> launcher = task instanceof JavaExec exec
+                ? exec.getJavaLauncher()
+                : ((Test) task).getJavaLauncher();
+        return launcher.map(it -> it.getMetadata().getLanguageVersion().asInt()).orElse(UNKNOWN_JAVA);
+    }
+
+    /** Whether the agent is attached to a task on this Java: from {@value #AGENT_JAVA}, or when it is not known. */
+    static boolean canAttach(int java) {
+        return java == UNKNOWN_JAVA || java >= AGENT_JAVA;
+    }
+
+    /**
+     * What the build says of a task the block names on a Java the jar cannot fully
+     * serve, or null when there is nothing to say: below {@value #AGENT_JAVA}
+     * nothing is attached, and below {@value #SERVER_JAVA} with no {@code collector}
+     * the agent starts no UI and exports to nothing unless a Spider Sense already
+     * listens at the block's port.
+     */
+    static @Nullable String launcherWarning(String task, int java, boolean forwarding) {
+        if (java == UNKNOWN_JAVA || java >= SERVER_JAVA) {
+            return null;
+        }
+        if (java < AGENT_JAVA) {
+            return "Spider Sense is not attached to " + task + ": it runs on Java " + java
+                    + ", and Spider Sense needs Java " + AGENT_JAVA + " or later.";
+        }
+        return forwarding ? null
+                : "Spider Sense starts no UI in " + task + ": it runs on Java " + java + ", and the embedded UI needs Java "
+                        + SERVER_JAVA + " or later. Start one on Java " + SERVER_JAVA
+                        + " with ./gradlew spiderSense, and set collector in the spiderSense block to forward to it.";
     }
 
     /**

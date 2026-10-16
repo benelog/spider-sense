@@ -24,6 +24,8 @@ The ones to know are `design.adoc` (architecture and decisions), `storage.adoc` 
 
 - **Spider Silk principles apply to the server**: no reflection-based frameworks, no DI container, routes registered explicitly, JSON written with `Json`/`JsonWriter`, handlers are `WebRequest -> WebResponse`. The Spider Silk agent skill is at `../spider-silk/skills/spider-silk/SKILL.md` with references beside it; consult it before writing web code.
 - **The launcher stays dependency-free and tiny.** Everything else lives in the nested server jar loaded by `SenseClassLoader`.
+- **The jar holds three Java versions** (`design.adoc#java-versions`): `VersionGate`, the manifest's entry class, is compiled for Java 8, the launcher and the extension for Java 17, and only the nested server for 25.
+  A JVM that cannot read the class `-javaagent` names aborts before `main`, so no Java 18+ feature or API goes into `spider-sense-agent` or `spider-sense-extension` main code.
 - **Nothing in Spider Sense may prevent the monitored application from starting.** Every failure in `premain` is logged and swallowed.
 - **Storage is H2 under `~/db/spider-sense/`** (`storage.adoc`), opened with `AUTO_SERVER=TRUE` so several processes share it and the data outlives the monitored application. Plain JDBC, no ORM; nothing else keeps state.
 - **Every agent-facing answer comes from the same `Queries` as the UI**, and its text rendering is deterministic over the window (`cli.adoc`); the CLI never renders on its own, it prints what the server or the in-process renderer produced.

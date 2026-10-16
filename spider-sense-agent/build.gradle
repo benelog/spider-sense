@@ -1,3 +1,5 @@
+import net.ltgt.gradle.errorprone.CheckSeverity
+
 plugins {
     id 'java'
     id 'maven-publish'
@@ -5,6 +7,35 @@ plugins {
 }
 
 description = 'Spider Sense: the launcher (premain/main) and the single distributable jar'
+
+// The jar runs on three floors (design.adoc#java-versions). The JVM loads the manifest's
+// entry class before anything can ask which Java it is, and a class it cannot read aborts
+// the whole JVM under -javaagent, so that class, VersionGate, is its own source set
+// compiled for Java 8, the oldest JVM the OpenTelemetry agent supports. It hands over to
+// the launcher, compiled for 17 below, which forwards on 17 and later; only the nested
+// server needs 25.
+sourceSets {
+    boot
+}
+
+tasks.named('compileBootJava', JavaCompile) {
+    options.release = 8
+    // javac 25 calls release 8 obsolete, which is the point of this source set. The two
+    // "unknown enum constant ElementType.MODULE" warnings that remain are JSpecify's
+    // @NullMarked naming a target Java 8 does not have, and are no lint javac lets us switch off.
+    options.compilerArgs << '-Xlint:-options'
+    // Main code, held to NullAway as compileJava is; the root build switches it off for
+    // every other compile task, tests among them.
+    options.errorprone {
+        check('NullAway', CheckSeverity.ERROR)
+        option('NullAway:OnlyNullMarked', 'true')
+        option('NullAway:JSpecifyMode', 'true')
+    }
+}
+
+tasks.named('compileJava', JavaCompile) {
+    options.release = 17
+}
 
 configurations {
     // The stock OpenTelemetry Java agent, unpacked verbatim into the distributable jar.
@@ -48,6 +79,10 @@ dependencies {
     sampleApp "org.postgresql:postgresql:${rootProject.ext.postgresqlVersion}"
     sampleApp "com.mysql:mysql-connector-j:${rootProject.ext.mysqlConnectorVersion}"
 
+    // The root build gives compileJava JSpecify; the gate's source set needs it the same way.
+    bootCompileOnly "org.jspecify:jspecify:${rootProject.ext.jspecifyVersion}"
+
+    testImplementation sourceSets.boot.output
     testImplementation "org.junit.jupiter:junit-jupiter:${rootProject.ext.junitVersion}"
     testImplementation "org.assertj:assertj-core:${rootProject.ext.assertjVersion}"
     testImplementation "com.h2database:h2:${rootProject.ext.h2Version}"
@@ -65,17 +100,20 @@ dependencies {
 // whole top level of the distributable jar ends up on the bootstrap class path. The one
 // jar allowed on the compile class path is JSpecify, which the root build adds to every
 // module as compileOnly: its annotations are read by NullAway at compile time and by
-// nothing at run time, so the launcher still ships and loads without it.
-tasks.named('compileJava') {
-    // The class path is read into a provider here, while the build file is
-    // read: a closure that asked `configurations` when the task runs would
-    // reach back into this script, which the configuration cache cannot store.
-    def compileClasspath = configurations.compileClasspath.elements
-    doFirst {
-        def dependencies = compileClasspath.get().collect { it.asFile }
-                .findAll { !(it.name ==~ /jspecify-.*\.jar/) }
-        if (!dependencies.isEmpty()) {
-            throw new GradleException('The launcher must have no compile dependencies: ' + dependencies)
+// nothing at run time, so the launcher still ships and loads without it. The gate is
+// held to the same rule.
+['compileJava': 'compileClasspath', 'compileBootJava': 'bootCompileClasspath'].each { task, classpath ->
+    tasks.named(task) {
+        // The class path is read into a provider here, while the build file is
+        // read: a closure that asked `configurations` when the task runs would
+        // reach back into this script, which the configuration cache cannot store.
+        def compileClasspath = configurations.getByName(classpath).elements
+        doFirst {
+            def dependencies = compileClasspath.get().collect { it.asFile }
+                    .findAll { !(it.name ==~ /jspecify-.*\.jar/) }
+            if (!dependencies.isEmpty()) {
+                throw new GradleException('The launcher must have no compile dependencies: ' + dependencies)
+            }
         }
     }
 }
@@ -122,7 +160,8 @@ def senseJar = tasks.register('senseJar', Jar) {
         exclude 'META-INF/INDEX.LIST'
     }
 
-    // Our launcher classes and spider-sense-version.properties.
+    // The gate, our launcher classes and spider-sense-version.properties.
+    from(sourceSets.boot.output)
     from(sourceSets.main.output)
 
     // The collector + UI, as a nested fat jar extracted at run time by NestedJar.
@@ -140,9 +179,11 @@ def senseJar = tasks.register('senseJar', Jar) {
 
     manifest {
         attributes(
-                'Premain-Class': 'net.benelog.spidersense.launcher.SpiderSenseAgent',
-                'Agent-Class': 'net.benelog.spidersense.launcher.SpiderSenseAgent',
-                'Main-Class': 'net.benelog.spidersense.launcher.SpiderSenseMain',
+                // All three are the gate, which hands over to SpiderSenseAgent and
+                // SpiderSenseMain on a JVM that can load them.
+                'Premain-Class': 'net.benelog.spidersense.boot.VersionGate',
+                'Agent-Class': 'net.benelog.spidersense.boot.VersionGate',
+                'Main-Class': 'net.benelog.spidersense.boot.VersionGate',
                 'Can-Redefine-Classes': 'true',
                 'Can-Retransform-Classes': 'true',
                 'Implementation-Title': 'Spider Sense',

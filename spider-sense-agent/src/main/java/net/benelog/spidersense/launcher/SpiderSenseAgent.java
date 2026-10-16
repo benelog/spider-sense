@@ -10,10 +10,12 @@ import java.util.concurrent.Callable;
 import org.jspecify.annotations.Nullable;
 
 /**
- * The {@code Premain-Class}/{@code Agent-Class} of the distributable jar.
+ * What {@code -javaagent} runs, once the jar's {@code Premain-Class}/{@code Agent-Class},
+ * {@code net.benelog.spidersense.boot.VersionGate}, has seen a JVM of Java 17 or later.
  *
  * <p>It does the steps of {@code design.adoc#premain}, in order: read the configuration (the
- * properties file, then the system properties), start the embedded collector + UI unless we are forwarding, fill in the OpenTelemetry defaults a local tool
+ * properties file, then the system properties), start the embedded collector + UI unless we are
+ * forwarding or the JVM is older than the server's floor, fill in the OpenTelemetry defaults a local tool
  * wants, hand over to the stock agent's own {@code premain}, and then say in one line where the UI is.
  *
  * <p>Nothing here may stop the monitored application from starting, so every step is wrapped: a
@@ -64,12 +66,24 @@ public final class SpiderSenseAgent {
         boolean exportNowhere = false;
         boolean serving = false;
         boolean anotherSpiderSense = false;
+        boolean belowServerFloor = false;
         try {
             if (config.collector() != null) {
                 String collector = config.otlpEndpoint();
                 System.out.println(LOG_PREFIX + "forwarding to " + collector);
                 if (!answers(collector)) {
                     System.err.println(LOG_PREFIX + nothingAnswers(collector, NestedJar.commandPath()));
+                }
+            } else if (Runtime.version().feature() < EmbeddedServer.JAVA_FLOOR) {
+                // The nested server is built for a newer Java than this JVM, so no UI starts here.
+                // A Spider Sense already at the port takes the telemetry, as step 5 says; nothing
+                // else would receive it, and an export to nothing would fail on every interval.
+                belowServerFloor = true;
+                anotherSpiderSense = spiderSenseAt(config.baseUrl());
+                exportNowhere = !anotherSpiderSense;
+                if (exportNowhere) {
+                    System.err.println(LOG_PREFIX + noEmbeddedUi(javaVersion(), config.baseUrl(), config.port(),
+                            NestedJar.commandPath()));
                 }
             } else {
                 Config serverConfig = config.withService(effectiveServiceName(config, settings));
@@ -133,7 +147,9 @@ public final class SpiderSenseAgent {
                 String line = startLine(config.baseUrl(),
                         service != null ? service : effectiveServiceName(config, settings),
                         NestedJar.commandPath());
-                System.out.println(LOG_PREFIX + (serving ? line : heldBy(config.port(), line)));
+                System.out.println(LOG_PREFIX + (serving ? line
+                        : belowServerFloor ? exportedFromOlderJava(javaVersion(), config.port(), line)
+                        : heldBy(config.port(), line)));
             }
             String browse = browserUrl(config, serving || anotherSpiderSense);
             if (browse != null) {
@@ -180,6 +196,35 @@ public final class SpiderSenseAgent {
      */
     static String heldBy(int port, String startLine) {
         return "port " + port + " is held by another Spider Sense; the telemetry is exported to it. " + startLine;
+    }
+
+    /**
+     * The start-up line on a JVM older than the embedded UI's floor when a Spider Sense answers at
+     * the port: the telemetry goes to that one, as it would to a forwarding collector.
+     */
+    static String exportedFromOlderJava(String javaVersion, int port, String startLine) {
+        return "the embedded UI needs Java " + EmbeddedServer.JAVA_FLOOR + " or later, and this JVM is Java "
+                + javaVersion + "; the telemetry is exported to the Spider Sense on port " + port + ". " + startLine;
+    }
+
+    /**
+     * The one line on a JVM older than the embedded UI's floor when no Spider Sense answers at the
+     * port: nothing is exported, and forwarding to one that runs on a newer Java is how to measure
+     * this application (modes.adoc#java-versions).
+     *
+     * @param baseUrl where the forwarding would go: the port this JVM was given
+     * @param jar     this jar as {@link NestedJar#commandPath()} names it
+     */
+    static String noEmbeddedUi(String javaVersion, String baseUrl, int port, String jar) {
+        return "the embedded UI needs Java " + EmbeddedServer.JAVA_FLOOR + " or later, and this JVM is Java "
+                + javaVersion + ", so nothing is exported; forward to a Spider Sense on Java "
+                + EmbeddedServer.JAVA_FLOOR + " with -Dspidersense.collector=" + baseUrl + ", started by: java -jar "
+                + jar + (port == Config.DEFAULT_PORT ? "" : " --port=" + port);
+    }
+
+    private static String javaVersion() {
+        String version = System.getProperty("java.version");
+        return version == null ? "unknown" : version;
     }
 
     /** {@code java -jar <jar> findings --since=start}, with {@code --url=} for a UI elsewhere than the default. */

@@ -1,6 +1,8 @@
 package net.benelog.spidersense.gradle;
 
 import org.gradle.api.file.FileCollection;
+import org.gradle.api.logging.Logger;
+import org.gradle.api.logging.Logging;
 import org.gradle.api.provider.Provider;
 import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.InputFiles;
@@ -35,18 +37,24 @@ import org.jspecify.annotations.Nullable;
  */
 public class SpiderSenseArguments implements CommandLineArgumentProvider {
 
+    private static final Logger LOGGER = Logging.getLogger(SpiderSenseArguments.class);
+
     private final FileCollection jar;
     private final Provider<List<String>> arguments;
     /** Null for always; see {@link #javaagent} for what false means. */
     private final @Nullable Provider<Boolean> attached;
+    /** What the build says as the task starts, or nothing; null for a task that runs the jar. */
+    private final @Nullable Provider<String> warning;
     private final boolean agent;
     private final String configuration;
 
     private SpiderSenseArguments(FileCollection jar, Provider<List<String>> arguments,
-            @Nullable Provider<Boolean> attached, boolean agent, String configuration) {
+            @Nullable Provider<Boolean> attached, @Nullable Provider<String> warning, boolean agent,
+            String configuration) {
         this.jar = jar;
         this.arguments = arguments;
         this.attached = attached;
+        this.warning = warning;
         this.agent = agent;
         this.configuration = configuration;
     }
@@ -56,26 +64,29 @@ public class SpiderSenseArguments implements CommandLineArgumentProvider {
      * task that runs the application.
      *
      * @param attached      false when the block does not list this task to attach
-     *                      to, or Spider Sense is switched off: nothing is
-     *                      contributed, and because the file collection is built
-     *                      from the same decision, no jar is resolved either
+     *                      to, Spider Sense is switched off, or the task runs on a
+     *                      Java the agent does not run on: nothing is contributed,
+     *                      and because the file collection is built from the same
+     *                      decision, no jar is resolved either
+     * @param warning       what the build says of the task's Java, logged once the
+     *                      arguments are asked for, or no value
      * @param configuration the configuration the jar is resolved through, named
      *                      when it does not resolve to exactly one file
      */
     static SpiderSenseArguments javaagent(FileCollection jar, Provider<List<String>> systemProperties,
-            Provider<Boolean> attached, String configuration) {
-        return new SpiderSenseArguments(jar, systemProperties, attached, true, configuration);
+            Provider<Boolean> attached, Provider<String> warning, String configuration) {
+        return new SpiderSenseArguments(jar, systemProperties, attached, warning, true, configuration);
     }
 
     /** The block's {@code -Dspidersense.*} options alone, for a task that runs the jar itself. */
     static SpiderSenseArguments jvmOptions(FileCollection jar, Provider<List<String>> systemProperties,
             String configuration) {
-        return new SpiderSenseArguments(jar, systemProperties, null, false, configuration);
+        return new SpiderSenseArguments(jar, systemProperties, null, null, false, configuration);
     }
 
     /** A command line after the main class, which needs no jar of its own. */
     static SpiderSenseArguments programArguments(FileCollection none, Provider<List<String>> arguments) {
-        return new SpiderSenseArguments(none, arguments, null, false, "");
+        return new SpiderSenseArguments(none, arguments, null, null, false, "");
     }
 
     /** The Spider Sense jar, or nothing when this task is not attached. */
@@ -108,6 +119,9 @@ public class SpiderSenseArguments implements CommandLineArgumentProvider {
 
     @Override
     public Iterable<String> asArguments() {
+        if (warning != null && warning.isPresent()) {
+            LOGGER.warn(warning.get());
+        }
         if (!isAttached()) {
             return List.of();
         }

@@ -36,7 +36,9 @@ dependencies {
 
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
-    options.release = 21
+    // The plugin runs inside Gradle's daemon, and Gradle 9 runs on Java 17 or later; the
+    // application's Java is the launcher's business (gradle-plugin.adoc#java-versions).
+    options.release = 17
     // Gradle instantiates an abstract extension or task type through a generated
     // subclass, and the @Inject on the abstract constructor is what tells it
     // which services to pass; Error Prone knows only Guice's rule.

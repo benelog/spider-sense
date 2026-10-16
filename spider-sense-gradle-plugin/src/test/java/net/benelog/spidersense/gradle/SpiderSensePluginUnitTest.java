@@ -2,16 +2,25 @@ package net.benelog.spidersense.gradle;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.io.File;
 import java.io.IOException;
+import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.gradle.api.Project;
+import org.gradle.api.tasks.JavaExec;
+import org.gradle.jvm.toolchain.JavaInstallationMetadata;
+import org.gradle.jvm.toolchain.JavaLanguageVersion;
+import org.gradle.jvm.toolchain.JavaLauncher;
 import org.gradle.testfixtures.ProjectBuilder;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -51,6 +60,42 @@ class SpiderSensePluginUnitTest {
         block.getTestService().set("shop-it");
         assertThat(block.getTestService().get()).isEqualTo("shop-it");
         assertThat(block.getCheck().getService().get()).as("the check judges the application").isEqualTo("shop");
+    }
+
+    /** The agent goes onto a task by the Java it runs on, which its launcher says (gradle-plugin.adoc#java-versions). */
+    @Test
+    void aTaskOnAJavaTheAgentDoesNotRunOnGetsNothing() throws IOException {
+        File jar = Files.createTempFile("spider-sense", ".jar").toFile();
+        jar.deleteOnExit();
+        block.getJar().set(jar);
+        JavaExec onJava11 = project.getTasks().register("bootRun", JavaExec.class).get();
+        JavaExec onJava21 = project.getTasks().register("run", JavaExec.class).get();
+        JavaExec onJava25 = project.getTasks().register("bootTestRun", JavaExec.class).get();
+        onJava11.getJavaLauncher().set(launcherOf(11));
+        onJava21.getJavaLauncher().set(launcherOf(21));
+        onJava25.getJavaLauncher().set(launcherOf(25));
+
+        assertThat(agentArguments(onJava11)).as("Java 11").isEmpty();
+        assertThat(agentArguments(onJava21)).as("Java 21 forwards")
+                .containsExactly("-javaagent:" + jar.getAbsolutePath(), "-Dspidersense.service=orders");
+        assertThat(agentArguments(onJava25)).as("Java 25")
+                .containsExactly("-javaagent:" + jar.getAbsolutePath(), "-Dspidersense.service=orders");
+    }
+
+    @Test
+    void aTaskOnAnOlderJavaIsWarnedAboutUnlessItForwards() {
+        assertThat(SpiderSensePlugin.launcherWarning("bootRun", 11, false))
+                .isEqualTo("Spider Sense is not attached to bootRun: it runs on Java 11, and Spider Sense needs Java 17"
+                        + " or later.");
+        assertThat(SpiderSensePlugin.launcherWarning("bootRun", 11, true)).as("forwarding needs 17 too").isNotNull();
+        assertThat(SpiderSensePlugin.launcherWarning("run", 21, false))
+                .isEqualTo("Spider Sense starts no UI in run: it runs on Java 21, and the embedded UI needs Java 25 or"
+                        + " later. Start one on Java 25 with ./gradlew spiderSense, and set collector in the spiderSense"
+                        + " block to forward to it.");
+        assertThat(SpiderSensePlugin.launcherWarning("run", 21, true)).as("it forwards").isNull();
+        assertThat(SpiderSensePlugin.launcherWarning("run", 25, false)).isNull();
+        assertThat(SpiderSensePlugin.launcherWarning("run", SpiderSensePlugin.UNKNOWN_JAVA, false))
+                .as("a launcher that does not say").isNull();
     }
 
     @Test
@@ -164,5 +209,24 @@ class SpiderSensePluginUnitTest {
     private List<String> systemProperties() {
         return SpiderSensePlugin.systemProperties(project.getObjects(), block, block.getService(), block.getPort())
                 .get();
+    }
+
+    /** What the plugin adds to a task's JVM arguments, its own provider's share only. */
+    private static List<String> agentArguments(JavaExec task) {
+        List<String> arguments = new ArrayList<>();
+        task.getJvmArgumentProviders().forEach(provider -> provider.asArguments().forEach(arguments::add));
+        return arguments;
+    }
+
+    /** A launcher that says it is Java {@code version} and nothing else, which is all the plugin reads of it. */
+    private static JavaLauncher launcherOf(int version) {
+        JavaInstallationMetadata metadata = proxy(JavaInstallationMetadata.class,
+                method -> method.equals("getLanguageVersion") ? JavaLanguageVersion.of(version) : null);
+        return proxy(JavaLauncher.class, method -> method.equals("getMetadata") ? metadata : null);
+    }
+
+    private static <T> T proxy(Class<T> type, Function<String, @Nullable Object> answer) {
+        return type.cast(Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[] {type},
+                (self, method, arguments) -> answer.apply(method.getName())));
     }
 }

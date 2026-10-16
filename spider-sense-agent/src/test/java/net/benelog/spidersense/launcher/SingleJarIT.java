@@ -64,6 +64,55 @@ class SingleJarIT {
         return v;
     }
 
+    // --- the Java versions --------------------------------------------------------------------
+
+    /** The class file major versions of Java 8 and of Java 17. */
+    private static final int JAVA_8 = 52;
+    private static final int JAVA_17 = 61;
+
+    /**
+     * A JVM reads the class {@code -javaagent} names before any code of ours runs, and one it
+     * cannot read aborts that JVM, the application with it (design.adoc#java-versions): the
+     * manifest's classes are Java 8's, and the launcher's and the extension's no newer than 17's.
+     */
+    @Test
+    void everyClassAnOlderJvmLoadsIsOneItCanRead() throws Exception {
+        Path extensionJar = work.resolve("extension.jar");
+        try (java.util.jar.JarFile jar = new java.util.jar.JarFile(senseJar.toFile())) {
+            java.util.jar.Attributes manifest = jar.getManifest().getMainAttributes();
+            for (String attribute : List.of("Premain-Class", "Agent-Class", "Main-Class")) {
+                String entry = manifest.getValue(attribute).replace('.', '/') + ".class";
+                assertThat(majorVersion(jar, entry)).as("%s %s", attribute, entry).isEqualTo(JAVA_8);
+            }
+            List<String> launcher = jar.stream().map(java.util.jar.JarEntry::getName)
+                    .filter(name -> name.startsWith("net/benelog/spidersense/") && name.endsWith(".class"))
+                    .toList();
+            assertThat(launcher).contains("net/benelog/spidersense/launcher/SpiderSenseAgent.class");
+            for (String entry : launcher) {
+                assertThat(majorVersion(jar, entry)).as(entry).isLessThanOrEqualTo(JAVA_17);
+            }
+            try (java.io.InputStream in = jar.getInputStream(jar.getEntry(NestedJar.EXTENSION_ENTRY))) {
+                Files.copy(in, extensionJar);
+            }
+        }
+        try (java.util.jar.JarFile extension = new java.util.jar.JarFile(extensionJar.toFile())) {
+            List<String> classes = extension.stream().map(java.util.jar.JarEntry::getName)
+                    .filter(name -> name.endsWith(".class")).toList();
+            assertThat(classes).contains("net/benelog/spidersense/extension/CallSiteSpanProcessor.class");
+            for (String entry : classes) {
+                assertThat(majorVersion(extension, entry)).as("extension.jar " + entry).isLessThanOrEqualTo(JAVA_17);
+            }
+        }
+    }
+
+    private static int majorVersion(java.util.jar.JarFile jar, String entry) throws IOException {
+        try (java.io.DataInputStream in = new java.io.DataInputStream(jar.getInputStream(jar.getEntry(entry)))) {
+            assertThat(in.readInt()).as("the magic number of " + entry).isEqualTo(0xCAFEBABE);
+            in.readUnsignedShort();
+            return in.readUnsignedShort();
+        }
+    }
+
     // --- agent mode ---------------------------------------------------------------------------
 
     @Test

@@ -1,7 +1,7 @@
 = Installation
 :navtitle: Installation
 
-Spider Sense requires Java 25 or later.
+Spider Sense runs on Java 25 or later, and it measures an application on Java 17 or later (<<java-versions,Java versions>>).
 It is one jar, and that jar carries the OpenTelemetry Java agent, the collector, the UI and the command line.
 Nothing else has to be installed: no Docker, no account, and no server to run.
 
@@ -104,9 +104,31 @@ The Gradle plugin and the Maven parameters exist to hand it over.
 [#java-versions]
 == Java versions
 
-The jar itself needs Java 25 or later, which is Spider Silk's floor.
-The monitored application can run on any JVM the OpenTelemetry Java agent supports, but the embedded UI needs 25 or later, so agent mode requires 25 or later.
-An application on an older JVM can still be measured: run Spider Sense standalone on Java 25 or later and point the application at it, as xref:modes.adoc#forwarding[forwarding] describes.
+The collector, the UI and the command line run on Java 25 or later, which is Spider Silk's floor.
+The application they measure runs on Java 17 or later, and what `-javaagent:spider-sense.jar` does depends on its Java:
+
+[cols="1,3",options="header"]
+|===
+| The application's Java | What the agent does
+
+| 25 or later
+| Either agent mode: the embedded UI, or forwarding to a Spider Sense elsewhere.
+
+| 17 to 24
+| The OpenTelemetry agent instruments the application, and no UI starts in its JVM.
+The telemetry goes to the Spider Sense `spidersense.collector` names, or without one to the Spider Sense that already answers at `spidersense.port`.
+With neither, nothing is exported, and one line on stderr says how to forward.
+
+| 8 to 16
+| Nothing: one line on stderr says that Spider Sense needs Java 17, and the application starts without it.
+|===
+
+The agent never stops the application from starting, on any Java.
+The class the JVM loads first is built for Java 8, the oldest Java the OpenTelemetry agent supports, and it checks the version before anything else of Spider Sense loads.
+`java -jar spider-sense.jar` on a Java older than 25 prints one line that names the Java it found and exits `2`.
+
+An application on Java 17 to 24 is measured by forwarding: run Spider Sense standalone on Java 25 or later and point the application at it, as xref:modes.adoc#forwarding[forwarding] describes.
+The Gradle plugin reads the Java a task runs on from its toolchain and attaches accordingly (xref:gradle-plugin.adoc#java-versions[Java versions]).
 
 [#next]
 == What to read next

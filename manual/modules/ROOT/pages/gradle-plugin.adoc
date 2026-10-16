@@ -52,7 +52,7 @@ A project in a checkout of this repository uses the jar it just built this way: 
 A name in `attachTo` that is neither kind of task attaches nothing.
 The provider contributes `-javaagent:<jar>` first, then one `-Dspidersense.<key>=<value>` per property of the block that has a value.
 The jar is a declared input of the task, so a project dependency on it is built first.
-A task that is not in `attachTo`, or a run with `spiderSense.enabled` false, gets nothing: no argument, no jar resolution.
+A task that is not in `attachTo`, a task that runs on a Java older than 17 (<<java-versions,Java versions>>), or a run with `spiderSense.enabled` false, gets nothing: no argument, no jar resolution.
 The plugin adds a provider and never edits `jvmArgs`, so the task's own `jvmArgs` stay as the build wrote them.
 The arguments are computed when the task runs, so a `spiderSense { }` block anywhere in the build file, before or after `tasks.named('bootRun')`, is seen.
 . Registers the tasks `spiderSense`, `spiderSenseInit` and `spiderSenseCheck` in the group `Spider Sense`, which `./gradlew tasks` lists as "Spider Sense tasks".
@@ -213,6 +213,38 @@ tasks.named('bootRun') {
 `./gradlew bootRun -PspiderSense.enabled=false` runs the application bare.
 `spiderSense { enabled = false }` with `-PspiderSense.enabled=true` reverses that: the plugin stays in the build, and attaches only when you pass the property.
 An `enabled` of `false` is the same as not applying the plugin, except that the block and the tasks are still there.
+
+[#java-versions]
+== Java versions
+
+The plugin runs inside Gradle, on any Java that Gradle 9 runs on, which is 17 or later.
+The application runs on the Java of its task: the project's toolchain, or the launcher the build gives the task.
+The plugin reads that Java from the task's launcher when the task runs, and attaches by it:
+
+[cols="1,3",options="header"]
+|===
+| The task's Java | What the plugin does
+
+| 25 or later
+| Attaches `-javaagent` and the block's options, as <<applying,What applying it does>> describes.
+
+| 17 to 24
+| Attaches them too, and the agent starts no UI in the application's JVM (xref:install.adoc#java-versions[Java versions]).
+Without a `collector` in the block the build prints one warning, because the telemetry then goes only to a Spider Sense that already listens at the block's port.
+
+| 16 or older
+| Attaches nothing, and the build prints one warning that Spider Sense is not attached to the task.
+|===
+
+A task with no launcher, such as one given an `executable` of its own, is attached whatever its Java is, and the agent checks the version itself.
+A project on Java 17 to 24 forwards to a Spider Sense on Java 25 or later, which `./gradlew spiderSense` starts:
+
+[source,groovy]
+----
+spiderSense {
+    collector = 'http://127.0.0.1:4000'
+}
+----
 
 [#tasks]
 == The tasks
