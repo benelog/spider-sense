@@ -40,6 +40,9 @@ class TailTest {
 
     private static final DateTimeFormatter CLOCK = DateTimeFormatter.ofPattern("HH:mm:ss.SSS");
 
+    /** {@code 12:37:28.565}, the first column of a line. */
+    private static final int CLOCK_WIDTH = "HH:mm:ss.SSS".length();
+
     private static final long FIRST = 1_700_000_000_123L;
     private static final long SECOND = 1_700_000_001_456L;
 
@@ -305,6 +308,42 @@ class TailTest {
         }
     }
 
+    /**
+     * Every tingle of the trace it waited for is printed before it ends: the {@code stats} frame
+     * that counts a trace never goes out ahead of that trace's tingles (cli.adoc#tail).
+     */
+    @Test
+    void theTinglesOfTheTraceItWaitedForAreAllPrintedBeforeItEnds() {
+        Config config = TestStore.config();
+        SpiderSenseServer server = SpiderSenseServer.start(config);
+        try {
+            String base = "http://127.0.0.1:" + server.port();
+            Thread traffic = new Thread(() -> {
+                try {
+                    // Past the stream's first second, so a stats frame is due the moment the flush lands.
+                    Thread.sleep(1_500);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+                new OtlpDecoder(server.store(), server::port).ingest(slowRequestWithASlowQuery());
+                server.store().writer().awaitIdle(5_000);
+            });
+            traffic.setDaemon(true);
+            traffic.start();
+
+            Run run = cli(base, "tail", "--until-traces=1", "--timeout=30s");
+
+            assertThat(run.exit()).isZero();
+            assertThat(run.out().lines().map(line -> line.substring(CLOCK_WIDTH).strip().replaceAll(" .*", ""))
+                    .toList())
+                    .as(run.out())
+                    .containsExactlyInAnyOrder("slow-request", "slow-query");
+        } finally {
+            server.stop();
+        }
+    }
+
     /** One request slow enough to be a tingle, so the stream has something to say. */
     private static io.opentelemetry.proto.collector.trace.v1.ExportTraceServiceRequest sample() {
         return Otlp.traces(Otlp.service("orders"),
@@ -314,5 +353,20 @@ class TailTest {
                         Otlp.attr("http.request.method", "GET"),
                         Otlp.attr("http.route", "/orders/report"),
                         Otlp.attr("http.response.status_code", 200)));
+    }
+
+    /** One request, slow because of one slow statement: a trace with two tingles, stored in one flush. */
+    private static io.opentelemetry.proto.collector.trace.v1.ExportTraceServiceRequest slowRequestWithASlowQuery() {
+        long start = System.currentTimeMillis() - 2_000;
+        Span.Builder root = Otlp.span("4bf92f3577b34da6a3ce929d0e0e4738", "00f067aa0ba902b8",
+                "GET /orders/report", Span.SpanKind.SPAN_KIND_SERVER, start, 900,
+                Otlp.attr("http.request.method", "GET"),
+                Otlp.attr("http.route", "/orders/report"),
+                Otlp.attr("http.response.status_code", 200));
+        Span.Builder query = Otlp.child(root, "00f067aa0ba902b9", "SELECT item",
+                Span.SpanKind.SPAN_KIND_CLIENT, start + 10, 850,
+                Otlp.attr("db.system", "h2"),
+                Otlp.attr("db.statement", "select * from item where id = ?"));
+        return Otlp.traces(Otlp.service("orders"), root, query);
     }
 }

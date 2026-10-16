@@ -60,12 +60,20 @@ public final class EventsApi {
 
         while (stream.isOpen()) {
             EventBus.Event event = subscription.poll(POLL_MS);
+            long now = clock.getAsLong();
+            // The counts are read before the queue is emptied, and the ingest they are due for
+            // before either. A flush queues its tingles before it marks the ingest, and commits
+            // only an instant before it queues them, so the tingles of every trace a stats frame
+            // counts go out ahead of it, and tail --until-traces never ends before the tingles
+            // of the traces it waited for (cli.adoc#tail).
+            Counts current = pacer.statsDue(now, store.events().lastIngestAt()) ? counts() : null;
             if (event != null) {
                 send(stream, event);
             }
-            long now = clock.getAsLong();
-            if (pacer.statsDue(now, store.events().lastIngestAt())) {
-                Counts current = counts();
+            for (EventBus.Event waiting : subscription.drain()) {
+                send(stream, waiting);
+            }
+            if (current != null) {
                 stream.event("stats").send(stats(current, previous, pacer.secondsSinceStats(now), now).toJson());
                 previous = current;
                 pacer = pacer.statsSent(now);

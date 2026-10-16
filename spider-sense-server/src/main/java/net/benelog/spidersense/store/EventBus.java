@@ -1,5 +1,6 @@
 package net.benelog.spidersense.store;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
@@ -81,6 +82,13 @@ public final class EventBus {
         /** The next event, or null when none arrived within {@code timeoutMillis}. */
         public Event poll(long timeoutMillis) throws InterruptedException {
             return queue.poll(timeoutMillis, TimeUnit.MILLISECONDS);
+        }
+
+        /** Every event waiting now, oldest first, taken at once and without waiting for more. */
+        public List<Event> drain() {
+            List<Event> waiting = new ArrayList<>();
+            queue.drainTo(waiting);
+            return waiting;
         }
 
         @Override

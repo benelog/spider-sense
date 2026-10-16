@@ -138,6 +138,7 @@ data: {"name":"spring-orders","firstSeen":1758000000000}
 ----
 
 `stats` is sent at most every second while data arrives.
+A `stats` frame goes out after the `tingle` events of the traces it counts, so a client that waits for a count has their tingles by then.
 A `: keepalive` comment is sent every 15 s.
 
 [#overview]
