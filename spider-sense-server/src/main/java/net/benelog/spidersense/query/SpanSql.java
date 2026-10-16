@@ -15,6 +15,19 @@ final class SpanSql {
     /** The failed spans of a group, as an aggregate. */
     static final String ERRORS = "SUM(CASE WHEN error THEN 1 ELSE 0 END)";
 
+    /**
+     * Not a span of an ignored endpoint's request: neither the ignored entry span itself nor a
+     * span of a trace whose root is one (configuration.adoc#ignored-endpoints).
+     *
+     * <p>The root is the trace summary's, one seek away, so the condition costs two index
+     * lookups a row rather than a scan of the trace; that is why it sits on the reads of the
+     * rules, whose rows are failures, outbound calls and the statements of slow groups, and not
+     * on every aggregate of the pages.
+     */
+    static final String NOT_IGNORED = "NOT (" + ignored("") + ") AND NOT EXISTS (SELECT 1 FROM trace t"
+            + " JOIN span r ON r.trace_id = t.trace_id AND r.span_id = t.root_span_id"
+            + " WHERE t.trace_id = span.trace_id AND " + ignored("r.") + ")";
+
     /** The p95 of a group's durations, in nanoseconds: one of them, as {@link Queries#percentile} picks it. */
     static final String P95 = "PERCENTILE_DISC(0.95) WITHIN GROUP (ORDER BY duration_ns)";
 
@@ -24,6 +37,17 @@ final class SpanSql {
     /** {@link #JOB} with each column prefixed by a table alias, as {@code r.}. */
     static String job(String prefix) {
         return prefix + "parent_span_id IS NULL AND " + prefix + "kind = 'INTERNAL'";
+    }
+
+    /**
+     * An entry span that {@code spidersense.ignore.endpoints} took out: one {@code SpanRecord#isEntry}
+     * calls an entry span and the store wrote with {@code entry} false, which only the ignore
+     * list does (design.adoc#endpoint-identity).
+     */
+    static String ignored(String prefix) {
+        return "NOT " + prefix + "entry AND (" + prefix + "kind IN ('SERVER', 'CONSUMER') OR ("
+                + prefix + "parent_span_id IS NULL AND " + prefix + "kind IN ('CLIENT', 'PRODUCER') AND "
+                + prefix + "db_system IS NULL))";
     }
 
     /** {@code duration_ns} past a threshold given in milliseconds. */

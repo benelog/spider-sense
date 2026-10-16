@@ -154,6 +154,43 @@ class FindingsTest {
         assertThat(of(Findings.ERROR).get(0).why()).isEqualTo("1 occurrence in GET /orders/{id}");
     }
 
+    /**
+     * A health check that answers 503 because a dependency is down locally, polled every few
+     * seconds: an ignored endpoint, so neither its failure nor what ran under it is a finding.
+     */
+    @Test
+    void anIgnoredEndpointThatFailsProducesNoFinding() {
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), failingHealthChecks(12)));
+        decoder.ingest(Otlp.logs(Otlp.service("orders"), "orders.health.RedisHealthIndicator",
+                Otlp.log(NOW, 17, "Redis health check failed", traceId(100), spanId(100))));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), entry(1, "/orders/{id}", 10)));
+        flush();
+
+        assertThat(findings.findings(window, null, 20)).isEmpty();
+    }
+
+    /**
+     * Health checks as the agent records them when the application reports itself DOWN: a 503
+     * {@code GET /actuator/health} with a slow validation query and a slow call under it.
+     */
+    static Span.Builder[] failingHealthChecks(int count) {
+        List<Span.Builder> spans = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            Span.Builder health = Otlp.span(traceId(100 + i), spanId(100 + i), "GET /actuator/health",
+                    Span.SpanKind.SPAN_KIND_SERVER, NOW + i, 2_100,
+                    Otlp.attr("http.request.method", "GET"),
+                    Otlp.attr("http.route", "/actuator/health"),
+                    Otlp.attr("http.response.status_code", 503))
+                    .setStatus(io.opentelemetry.proto.trace.v1.Status.newBuilder()
+                            .setCode(io.opentelemetry.proto.trace.v1.Status.StatusCode.STATUS_CODE_ERROR));
+            spans.add(health);
+            spans.add(query(health, 1_000 + i, "SELECT 1", "dual", NOW + i, 150));
+            spans.add(Otlp.failing(outbound(health, 2_000 + i, "localhost", 6380, NOW + i, 2_000),
+                    "java.net.ConnectException", "Connection refused", "java.net.ConnectException"));
+        }
+        return spans.toArray(new Span.Builder[0]);
+    }
+
     @Test
     void anErrorAsFrequentAtTwoEndpointsIsNamedAfterTheFirstByName() {
         decoder.ingest(Otlp.traces(Otlp.service("orders"),

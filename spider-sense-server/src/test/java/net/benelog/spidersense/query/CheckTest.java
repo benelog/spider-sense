@@ -162,6 +162,20 @@ class CheckTest {
                 .isEqualTo("1 occurrence: IllegalStateException in GET /ship ×1");
     }
 
+    /** A health check that answers 503 locally is an ignored endpoint, and no verdict counts it. */
+    @Test
+    void anIgnoredEndpointThatFailsFailsNoRule() {
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), FindingsTest.failingHealthChecks(12)));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), entry("/orders/{id}", 10)));
+        flush();
+
+        Check.CheckResult result = check.check(window, null, null, null);
+
+        assertThat(result.requests()).isEqualTo(1);
+        assertThat(rule(result, Check.MAX_ERRORS).actual()).isZero();
+        assertThat(result.pass()).isTrue();
+    }
+
     /** A statement run slow by one endpoint does not count against another that runs it fast. */
     @Test
     void anEndpointsSlowQueriesAreTheOnesItsOwnRequestsMade() {

@@ -580,10 +580,25 @@ public final class Queries {
         return withSchema(withCallers(slowQueryGroups(window, service), window, ancestry));
     }
 
-    /** The same groups alone, with no callers and no schema block, for a finding's state. */
+    /**
+     * The same groups alone, with no callers and no schema block, for a finding's state.
+     *
+     * <p>A statement an ignored endpoint ran is no finding (configuration.adoc#ignored-endpoints),
+     * so the groups that crossed the threshold are read again without those spans, which is a
+     * walk to each one's trace root, and only the ones still past it are kept.
+     */
     List<Stats.QueryStats> slowQueryGroups(Window window, @Nullable String service) {
-        return queryGroups(window, service, "total", ALL_GROUPS, null,
-                SpanSql.slowerThan(SpanSql.P95, tingles.slowQueryMs()));
+        String having = SpanSql.slowerThan(SpanSql.P95, tingles.slowQueryMs());
+        List<Stats.QueryStats> candidates = queryGroups(window, service, "total", ALL_GROUPS, null, having,
+                null);
+        if (candidates.isEmpty()) {
+            return candidates;
+        }
+        Set<String> ids = new LinkedHashSet<>();
+        for (Stats.QueryStats group : candidates) {
+            ids.add(group.queryId());
+        }
+        return queryGroups(window, service, "total", ALL_GROUPS, null, having, ids);
     }
 
     /**
@@ -594,15 +609,23 @@ public final class Queries {
      */
     List<Stats.QueryStats> queryGroups(Window window, @Nullable String service,
             @Nullable String sort, int limit, @Nullable String queryId) {
-        return queryGroups(window, service, sort, limit, queryId, null);
+        return queryGroups(window, service, sort, limit, queryId, null, null);
     }
 
-    /** The same, keeping only the groups that satisfy {@code having}, an aggregate condition. */
+    /**
+     * The same, keeping only the groups that satisfy {@code having}, an aggregate condition,
+     * and, when {@code withoutIgnored} names groups, only those, over the spans no ignored
+     * endpoint ran.
+     */
     private List<Stats.QueryStats> queryGroups(Window window, @Nullable String service,
-            @Nullable String sort, int limit, @Nullable String queryId, @Nullable String having) {
+            @Nullable String sort, int limit, @Nullable String queryId, @Nullable String having,
+            @Nullable Set<String> withoutIgnored) {
         Where where = Where.window(window, service).and("query_id IS NOT NULL");
         if (queryId != null) {
             where = where.and("query_id = ?", queryId);
+        }
+        if (withoutIgnored != null) {
+            where = where.andIn("query_id", withoutIgnored).and(SpanSql.NOT_IGNORED);
         }
         String order = switch (sort == null ? "total" : sort) {
             case "avg" -> "SUM(duration_ns) / COUNT(*) DESC";   // an alias cannot sit inside an ORDER BY expression in H2
@@ -731,7 +754,7 @@ public final class Queries {
 
     /** Occurrences per bucket for one error group. */
     public Stats.Buckets errorBuckets(Window window, String errorId) {
-        return groupBuckets(window, "error_id = ?", errorId);
+        return groupBuckets(window, SpanSql.NOT_IGNORED + " AND error_id = ?", errorId);
     }
 
     /** The most points an error group's {@code series} has: a sparkline, not a chart. */
@@ -757,7 +780,8 @@ public final class Queries {
         for (String id : errorIds) {
             series.put(id, new long[points]);
         }
-        Where where = Where.window(window, null).and("error").andIn("error_id", errorIds);
+        Where where = Where.window(window, null).and("error").andIn("error_id", errorIds)
+                .and(SpanSql.NOT_IGNORED);
         sql.forEach("SELECT error_id, " + window.bucketExpression() + " AS b, COUNT(*) AS calls"
                 + " FROM span WHERE " + where.sql() + " GROUP BY error_id, " + window.bucketExpression(),
                 where.params(), rs -> {
@@ -826,7 +850,8 @@ public final class Queries {
      */
     List<Stats.ErrorGroup> errorGroups(Window window, @Nullable String service, int limit,
             @Nullable String errorId) {
-        Where where = Where.window(window, service).and("error").and("error_id IS NOT NULL");
+        Where where = Where.window(window, service).and("error").and("error_id IS NOT NULL")
+                .and(SpanSql.NOT_IGNORED);
         if (errorId != null) {
             where = where.and("error_id = ?", errorId);
         }
@@ -843,7 +868,7 @@ public final class Queries {
     }
 
     private Map<String, Stats.ErrorSample> errorSamples(Window window, Set<String> ids) {
-        Where where = Where.window(window, null).andIn("error_id", ids);
+        Where where = Where.window(window, null).andIn("error_id", ids).and(SpanSql.NOT_IGNORED);
         String query = "SELECT * FROM (SELECT error_id, trace_id, span_id, start_ms, error_message, events,"
                 + " ROW_NUMBER() OVER (PARTITION BY error_id ORDER BY start_ms DESC, id DESC) AS rn"
                 + " FROM span WHERE " + where.sql() + ") WHERE rn = 1";
@@ -867,7 +892,7 @@ public final class Queries {
     private Map<String, List<Stats.EndpointCount>> errorEndpoints(Window window, Set<String> ids,
             Supplier<Ancestry> ancestors) {
         Ancestry ancestry = ancestors.get();
-        Where where = Where.window(window, null).andIn("error_id", ids);
+        Where where = Where.window(window, null).andIn("error_id", ids).and(SpanSql.NOT_IGNORED);
         Map<String, Map<String, Long>> counts = new LinkedHashMap<>();
         Map<String, Map<String, String>> endpointIds = new HashMap<>();
         sql.forEach("SELECT error_id, trace_id, span_id FROM span WHERE " + where.sql(), where.params(), rs -> {
@@ -1502,10 +1527,12 @@ public final class Queries {
      * in the attributes rather than in a column ({@link #target}). Every row is read,
      * because a finding's numbers count every call and every request of the window
      * (findings.adoc#n-plus-one-http); a row is kept as an {@link OutboundCall}, its
-     * repeated names shared, rather than as the span with its attributes.
+     * repeated names shared, rather than as the span with its attributes. A call an ignored
+     * endpoint made is left out, because it is no finding (configuration.adoc#ignored-endpoints).
      */
     public List<OutboundCall> outboundHttp(Window window, @Nullable String service) {
-        Where where = Where.window(window, service).and("kind = 'CLIENT'").and("category = 'http'");
+        Where where = Where.window(window, service).and("kind = 'CLIENT'").and("category = 'http'")
+                .and(SpanSql.NOT_IGNORED);
         Map<String, String> shared = new HashMap<>();
         List<OutboundCall> calls = new ArrayList<>();
         sql.forEach("SELECT " + Rows.SPAN_COLUMNS + " FROM span WHERE " + where.sql(),

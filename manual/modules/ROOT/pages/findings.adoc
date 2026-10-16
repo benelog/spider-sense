@@ -30,7 +30,7 @@ A list the limit cut says so: the JSON carries `total`, the number of findings b
 
 Two thresholds decide the slow kinds: `slow.request.ms` is 500 milliseconds by default and `slow.query.ms` is 100.
 `status` prints the thresholds in force, and xref:configuration.adoc#properties[Configuration] says how to change them.
-An endpoint that `spidersense.ignore.endpoints` excludes (xref:configuration.adoc#ignored-endpoints[Ignored endpoints]) is not an entry span and produces no finding of any kind.
+An endpoint that `spidersense.ignore.endpoints` excludes (xref:configuration.adoc#ignored-endpoints[Ignored endpoints]) is not an entry span and produces no finding of any kind, and neither does what its trace ran: its failure, the failures under it, its statements and its outbound calls.
 An entry span is what xref:design.adoc#endpoint-identity[Endpoint identity] defines, and it is what every count of requests below counts.
 
 The three JVM kinds, `gc-pause`, `heap-pressure` and `thread-growth`, read the same `metric_point` series the xref:pages.adoc#jvm[JVM page] draws.
