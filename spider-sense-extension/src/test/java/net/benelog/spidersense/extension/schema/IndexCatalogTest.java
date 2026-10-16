@@ -200,6 +200,21 @@ class IndexCatalogTest {
         assertThat(onlyRecord().getAttributes().get(TABLE)).isEqualTo("BARE");
     }
 
+    /** A fast DDL is read however many statements are remembered, or the index it made never is. */
+    @Test
+    void pastTheStatementsItRemembersAFastDdlIsStillRead() throws SQLException {
+        fast("select id from items where name = ?");
+        for (int i = 0; i < IndexCatalog.MAX_STATEMENTS; i++) {
+            fast("select * from bare where x = " + i);
+        }
+        exporter.reset();
+
+        ddl("create index idx_items_name on items (name)");
+        fast("select id from items where name = ?");
+
+        assertThat(onlyRecord().getAttributes().get(INDEXES)).contains("IDX_ITEMS_NAME");
+    }
+
     @Test
     void aTableWithoutAnIndexSaysSoRatherThanNothing() throws SQLException {
         slow("select * from bare where x = ?");

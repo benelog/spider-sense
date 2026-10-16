@@ -56,7 +56,7 @@ import org.jspecify.annotations.Nullable;
  * <p>What that costs is bounded on every side: a statement already handled since the last DDL
  * costs one map lookup by its text, each table is looked up once per process and DDL, at most
  * {@value #MAX_TABLES} tables are looked up at all, past {@value #MAX_STATEMENTS} distinct
- * statements a new one is read only when it was slow, a thread already inside a lookup does
+ * statements a new one is read only when it was slow or is DDL, a thread already inside a lookup does
  * nothing (a driver's own catalog queries come back through the same advice), and every exception
  * is swallowed. A missing catalog is never worth a slow or a broken statement.
  */
@@ -131,7 +131,8 @@ public final class IndexCatalog {
      *
      * <p>The threshold only matters once {@value #MAX_STATEMENTS} statement texts are remembered:
      * past that, a statement not among them is read only when it was slow, as every statement was
-     * before a fast one could correct the catalog.
+     * before a fast one could correct the catalog. DDL is read at any speed, because the index a
+     * fast {@code create index} made would otherwise never be read in this run.
      */
     static void afterExecute(
             Statement statement, @Nullable String sql, long elapsedNanos, long thresholdNanos) {
@@ -149,13 +150,19 @@ public final class IndexCatalog {
                 return;
             }
             boolean remembered = seen != null || handled.size() < MAX_STATEMENTS;
-            if (!remembered && elapsedNanos < thresholdNanos) {
+            boolean read = remembered || elapsedNanos >= thresholdNanos;
+            // DDL is asked about before the cap, at any speed: a fast create index past the cap
+            // would otherwise leave its table's old catalog in place for the rest of the run.
+            if (!read && !mayBeDdl(text)) {
                 return;
             }
             List<String> changed = ddlTargets(text);
             if (changed != null) {
                 // Not remembered: every run of a DDL statement changes what the catalog holds.
                 forgetTables(changed);
+                return;
+            }
+            if (!read) {
                 return;
             }
             List<TableRef> tables = tableRefsOf(text);
@@ -620,6 +627,22 @@ public final class IndexCatalog {
             i = at - 1;
         }
         return found;
+    }
+
+    /**
+     * Whether the statement may be DDL, by its first word alone, so a statement past the cap that
+     * is not DDL costs no tokenising; one that starts with a comment is handed to
+     * {@link #ddlTargets(String)}, which reads past it.
+     */
+    static boolean mayBeDdl(String sql) {
+        int at = 0;
+        while (at < sql.length() && Character.isWhitespace(sql.charAt(at))) {
+            at++;
+        }
+        return sql.startsWith("/*", at) || sql.startsWith("--", at)
+                || sql.regionMatches(true, at, "create", 0, 6)
+                || sql.regionMatches(true, at, "alter", 0, 5)
+                || sql.regionMatches(true, at, "drop", 0, 4);
     }
 
     /**
