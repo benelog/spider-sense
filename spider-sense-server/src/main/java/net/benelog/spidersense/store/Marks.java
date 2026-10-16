@@ -106,12 +106,8 @@ public final class Marks {
     public Mark create(@Nullable String requestedName, @Nullable String service, @Nullable String note,
             @Nullable Long at) {
         String name = checkName(requestedName);
-        if (at != null && at < 0) {
-            throw new IllegalArgumentException("at is " + at + ", which is before the epoch");
-        }
-        if (at != null && at > LATEST) {
-            throw new IllegalArgumentException("at is " + at + ", which is past the year 9999:"
-                    + " times are epoch milliseconds, not microseconds or nanoseconds");
+        if (at != null) {
+            checkAt(at);
         }
         MarkRow row = new MarkRow(at == null ? clock.getAsLong() : at, name, service, Columns.blankToNull(note));
         long id = sql.withConnection(connection -> {
@@ -146,6 +142,23 @@ public final class Marks {
                     + "; choose another name");
         }
         return name;
+    }
+
+    /**
+     * Refuses an instant no selector could use the mark at, as {@link #create} does, which
+     * the importer applies to a document's marks too: one before the epoch, which the next
+     * sweep would delete, and one past the year 9999, a time in microseconds or nanoseconds.
+     *
+     * @throws IllegalArgumentException when the instant is out of that range
+     */
+    static void checkAt(long at) {
+        if (at < 0) {
+            throw new IllegalArgumentException("at is " + at + ", which is before the epoch");
+        }
+        if (at > LATEST) {
+            throw new IllegalArgumentException("at is " + at + ", which is past the year 9999:"
+                    + " times are epoch milliseconds, not microseconds or nanoseconds");
+        }
     }
 
     /**

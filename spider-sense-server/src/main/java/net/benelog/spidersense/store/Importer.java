@@ -416,6 +416,7 @@ public final class Importer {
      *
      * <p>A name {@code POST /api/marks} refuses, one a selector reads as something
      * else, refuses the document: stored, the mark would be listed and never usable.
+     * So does an instant it refuses, before the epoch or past the year 9999.
      */
     private static long insertMarks(Connection connection, JsonArray marks) throws SQLException {
         long count = 0;
@@ -429,6 +430,7 @@ public final class Importer {
             }
             try {
                 Marks.checkName(name);
+                Marks.checkAt(mark.atMs());
             } catch (IllegalArgumentException refused) {
                 throw new BadDocument("a mark of the document is refused: " + refused.getMessage());
             }

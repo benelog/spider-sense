@@ -547,6 +547,28 @@ class ExportImportTest {
     }
 
     /**
+     * An instant {@code POST /api/marks} refuses: before the epoch the next sweep deletes the
+     * mark, and past the year 9999 no selector can use it and no sweep ever does.
+     */
+    @Test
+    void aDocumentWithAMarkBeforeTheEpochOrPastTheYear9999IsRefused() {
+        serve(client -> {
+            for (long at : new long[] {-5L, 253_402_300_800_001L}) {
+                JsonObject document = section("marks", Json.object().put("atMs", at).put("name", "far"))
+                        .put("spans", Json.array());
+                HttpResponse<String> response = postJson(client, "/api/import", document.toJson());
+                assertThat(response.statusCode()).as("%d", at).isEqualTo(400);
+                assertThat(Json.parse(response.body()).asObject().getString("error"))
+                        .startsWith("a mark of the document is refused: at is " + at);
+            }
+            assertThat(rows(client, "SELECT COUNT(*) FROM mark")).isZero();
+
+            JsonObject last = section("marks", Json.object().put("atMs", 253_402_300_799_999L).put("name", "last"));
+            assertThat(postJson(client, "/api/import", last.toJson()).statusCode()).isEqualTo(200);
+        });
+    }
+
+    /**
      * A document's JSON may escape half of a surrogate pair on its own: a mark's note keeps U+FFFD
      * in its place, as a typed one does, and a mark name holding one is refused as any other is.
      */
