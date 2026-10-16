@@ -184,6 +184,35 @@ class ConfigTest {
                 .config().host()).isEqualTo("0.0.0.0");
     }
 
+    /**
+     * {@code --db=$SPIDERSENSE_DB_PATH} with the variable unset is no database, so the property or
+     * variable beneath it is the one the launcher passes on and the banner names, the file the
+     * server opens. Every other launcher key reads an empty argument the same way.
+     */
+    @Test
+    void anEmptyArgumentLeavesThePropertyInForce() {
+        Map<String, String> property = Map.of("spidersense.db", "/tmp/sense/f", "spidersense.port", "4770",
+                "spidersense.collector", "http://127.0.0.1:4318", "spidersense.service", "orders",
+                "spidersense.slow.query.ms", "7", "spidersense.open", "true",
+                "spidersense.retention.hours", "3");
+        Config c = Config.parse(new String[] {"--db=", "--port=", "--collector=", "--service=",
+                "--slow.query.ms=", "--open=", "--retention.hours="}, property::get, NONE::get).config();
+        assertThat(c.db()).isEqualTo("/tmp/sense/f");
+        assertThat(c.databaseDescription()).isEqualTo("/tmp/sense/f.mv.db");
+        assertThat(c.toServerArgs()).contains("--db=/tmp/sense/f", "--port=4770", "--slow.query.ms=7",
+                "--retention.hours=3");
+        assertThat(c.collector()).isEqualTo("http://127.0.0.1:4318");
+        assertThat(c.service()).isEqualTo("orders");
+        assertThat(c.open()).isTrue();
+        assertThat(Config.parse(new String[] {"--db="}, NONE::get, Map.of("SPIDERSENSE_DB", "/tmp/sense/g")::get)
+                .config().databaseDescription()).as("the variable, too").isEqualTo("/tmp/sense/g.mv.db");
+        assertThat(config("--db=", "--port=", "--open=")).as("nothing beneath: the defaults")
+                .isEqualTo(Config.defaults());
+        assertThat(parse("--retention.spans=", "--app.packages=", "--source.dirs=").serverProperties())
+                .as("a server key's empty argument hides no property, except where empty is a value")
+                .containsExactly(Map.entry("spidersense.source.dirs", ""));
+    }
+
     /** Help and the version are answered before the arguments are parsed, and stand beside them. */
     @Test
     void helpAndTheVersionAreTheOnlyBareFlags() {

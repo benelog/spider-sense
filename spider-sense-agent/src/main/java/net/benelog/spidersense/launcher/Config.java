@@ -59,7 +59,8 @@ public record Config(
      * @param config           the launcher's configuration
      * @param serverProperties the server's own keys given as arguments, as the {@code spidersense.*}
      *                         system properties the caller sets for the server in this JVM to read;
-     *                         a value is kept as written, because an empty
+     *                         an empty value is left out, except for the keys of
+     *                         {@link #EMPTY_IS_A_VALUE}, because an empty
      *                         {@code spidersense.ignore.endpoints} means "ignore nothing"
      *                         (configuration.adoc#ignored-endpoints)
      * @param warnings         one line per malformed property or variable, which fell back to its
@@ -140,7 +141,11 @@ public record Config(
             Argument argument = new Argument(name, arg.substring(equals + 1).trim());
             if (key.owner() == Key.Owner.SERVER) {
                 argument.check(key.kind());
-                serverProperties.put(key.property(), argument.value());
+                // An empty argument is unset, as it is for the launcher's keys, and must not hide
+                // the property beneath it; for the two keys where empty is a value, it is that value.
+                if (!argument.value().isEmpty() || EMPTY_IS_A_VALUE.contains(key.property())) {
+                    serverProperties.put(key.property(), argument.value());
+                }
             } else {
                 given.put(key, argument);
             }
@@ -219,13 +224,20 @@ public record Config(
             List<String> warnings) {
 
         /**
-         * The argument, else the property or variable, else the fallback. An empty argument is
-         * unset, as an empty property is: {@code --host=$SPIDERSENSE_HOST} with the variable unset
-         * names no host.
+         * The key's argument, or null when it was not given or was given empty. An empty argument
+         * is unset, as an empty property is: {@code --db=$SPIDERSENSE_DB_PATH} with the variable
+         * unset names no database and leaves the property beneath it in force, rather than hiding
+         * it from the launcher while the server reads it.
          */
-        String string(Key key, String fallback) {
+        @Nullable Argument argument(Key key) {
             Argument argument = given.get(key);
-            if (argument != null && !argument.value().isEmpty()) {
+            return argument != null && !argument.value().isEmpty() ? argument : null;
+        }
+
+        /** The argument, else the property or variable, else the fallback. */
+        String string(Key key, String fallback) {
+            Argument argument = argument(key);
+            if (argument != null) {
                 return argument.value();
             }
             String value = read.apply(key.property());
@@ -234,7 +246,7 @@ public record Config(
 
         /** Empty is unset, from either channel. */
         @Nullable String optionalString(Key key) {
-            Argument argument = given.get(key);
+            Argument argument = argument(key);
             return emptyToNull(argument != null ? argument.value() : read.apply(key.property()));
         }
 
@@ -249,7 +261,7 @@ public record Config(
          * property again and warn a second time.
          */
         @Nullable Integer optionalInteger(Key key, int malformedFallback) {
-            Argument argument = given.get(key);
+            Argument argument = argument(key);
             if (argument != null) {
                 argument.check(Key.Kind.INT);
                 return Integer.valueOf(argument.value());
@@ -267,7 +279,7 @@ public record Config(
         }
 
         long number(Key key, long fallback) {
-            Argument argument = given.get(key);
+            Argument argument = argument(key);
             if (argument != null) {
                 try {
                     return Long.parseLong(argument.value());
@@ -294,7 +306,7 @@ public record Config(
          * malformed number is.
          */
         boolean bool(Key key, boolean fallback) {
-            Argument argument = given.get(key);
+            Argument argument = argument(key);
             if (argument != null) {
                 argument.check(Key.Kind.BOOLEAN);
                 return Boolean.parseBoolean(argument.value());
