@@ -75,7 +75,8 @@ public final class CallSiteSpanProcessor implements ExtendedSpanProcessor {
      * How many traces are counted at once, so a map keyed by trace id cannot grow without bound.
      *
      * <p>A trace is normally forgotten when the last of its open local roots ends; this is the guard
-     * for one that never does, which is a crash or a leak in the monitored application.
+     * for one that never does, which is a crash or a leak in the monitored application, and for
+     * the late work of a trace whose root has already ended, which no root end forgets.
      */
     static final int MAX_TRACES = 1_000;
 
@@ -194,7 +195,7 @@ public final class CallSiteSpanProcessor implements ExtendedSpanProcessor {
                     counted.openRoots++;
                     return counted;
                 });
-                bound(repeats, MAX_TRACES);
+                boundTraces(span.getSpanContext().getTraceId());
             }
             Throwable callSite = null;
             if (span.getKind() == SpanKind.CLIENT && !isDatabase(span)) {
@@ -287,8 +288,59 @@ public final class CallSiteSpanProcessor implements ExtendedSpanProcessor {
         if (raced != null) {
             return raced.counts;
         }
-        bound(repeats, MAX_TRACES);
+        boundTraces(traceId);
         return fresh.counts;
+    }
+
+    /**
+     * The trace map back within {@link #MAX_TRACES}, dropping first the traces no open local root
+     * holds, and never the one just inserted.
+     *
+     * <p>Such a trace is the late work of a request that has already answered, an {@code @Async}
+     * or after-commit listener's statements: its counts are kept, so that work's repeats can still
+     * reach the fifth, but nothing will ever end them. Dropped in any order, a map full of them
+     * would push out the counts of a request still running, whose loop would then never reach its
+     * fifth repeat ({@code design.adoc#stack-capture}).
+     */
+    private void boundTraces(String keep) {
+        while (repeats.size() > MAX_TRACES) {
+            if (!dropEndedTrace(keep) && !dropAnyTrace(keep)) {
+                break;
+            }
+        }
+    }
+
+    /** Drops one trace no open local root holds, or says there is none. */
+    private boolean dropEndedTrace(String keep) {
+        boolean[] dropped = {false};
+        for (String traceId : repeats.keySet()) {
+            if (traceId.equals(keep)) {
+                continue;
+            }
+            // Decided inside computeIfPresent, which serialises it with the root count's changes.
+            repeats.computeIfPresent(traceId, (id, trace) -> {
+                if (trace.openRoots > 0) {
+                    return trace;
+                }
+                dropped[0] = true;
+                return null;
+            });
+            if (dropped[0]) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Drops one trace other than {@code keep}, or says there is none. */
+    private boolean dropAnyTrace(String keep) {
+        for (Iterator<String> traces = repeats.keySet().iterator(); traces.hasNext(); ) {
+            if (!traces.next().equals(keep)) {
+                traces.remove();
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

@@ -489,6 +489,40 @@ class CallSiteSpanProcessorTest {
     }
 
     @Test
+    void theLateWorkOfEndedTracesNeverPushesOutTheCountsOfARunningRequest() {
+        // An @Async or after-commit listener's statements, after the response: their trace's local
+        // root has ended, so each counts in an entry no open root holds.
+        int lateTraces = 10 * CallSiteSpanProcessor.MAX_TRACES;
+        for (int i = 0; i < CallSiteSpanProcessor.MAX_TRACES; i++) {
+            lateStatement(i);
+        }
+        Span entry = tracer.spanBuilder("GET /loop").startSpan();
+        try (Scope ignored = entry.makeCurrent()) {
+            for (int i = 0; i < CallSiteSpanProcessor.N_PLUS_ONE_REPEATS - 1; i++) {
+                query("select * from item where id = ?");
+            }
+            for (int i = CallSiteSpanProcessor.MAX_TRACES; i < lateTraces; i++) {
+                lateStatement(i);
+            }
+            query("select * from item where id = ?");
+        } finally {
+            entry.end();
+        }
+
+        assertThat(processor.tracesCounted()).isLessThanOrEqualTo(CallSiteSpanProcessor.MAX_TRACES);
+        List<SpanData> loop = new ArrayList<>();
+        for (SpanData span : exportedQueries()) {
+            if (span.getTraceId().equals(entry.getSpanContext().getTraceId())) {
+                loop.add(span);
+            }
+        }
+        assertThat(loop).hasSize(CallSiteSpanProcessor.N_PLUS_ONE_REPEATS);
+        assertThat(stacktraceOf(loop.get(4)))
+                .as("a full map drops the traces no open root holds before a running request's")
+                .isNotNull();
+    }
+
+    @Test
     void anOutboundCallThatIsNotHttpIsNeverCounted() {
         inOneTrace(() -> {
             for (int i = 0; i < 6; i++) {
@@ -565,6 +599,22 @@ class CallSiteSpanProcessorTest {
         tracer.spanBuilder(statement)
                 .setAttribute("db.system", "h2")
                 .setAttribute("db.query.text", statement)
+                .startSpan()
+                .end();
+    }
+
+    /**
+     * A statement of trace {@code n} under a parent of this process that has already ended, which
+     * is what a listener's statement after the response is.
+     */
+    private void lateStatement(int n) {
+        Context ended = Context.root().with(Span.wrap(SpanContext.create(
+                String.format("%032x", n + 1), String.format("%016x", n + 1),
+                TraceFlags.getSampled(), TraceState.getDefault())));
+        tracer.spanBuilder("insert into audit values (?)")
+                .setParent(ended)
+                .setAttribute("db.system", "h2")
+                .setAttribute("db.query.text", "insert into audit values (?)")
                 .startSpan()
                 .end();
     }

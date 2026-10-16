@@ -274,9 +274,10 @@ The processor counts the open local roots of each trace, raising the count in `o
 A trace can enter the same process twice at once: a loop that calls an endpoint of its own application, or sends a message the same JVM consumes, opens a second local root inside the first on every turn.
 Dropping the counts when that inner root ends would reset them on every turn, so no statement or call of the loop would reach its fifth repeat and the finding would have no code location.
 A span of that trace that starts later simply starts the count again, which is what a thread-local counter did when a thread moved on.
-The map also holds at most 1,000 traces, because a trace whose local root never ends, which is a crash or a leak in the monitored application, would otherwise keep its counts for ever.
-Inserting past the cap drops other traces until the map is back within it.
-Which traces are dropped is not defined, and under that much load a missing code location is the least of the problems.
+Such a span is the late work of a request that has already answered, the statements of an `@Async` or after-commit listener, and its counts are kept so that work's repeats can still reach the fifth, but no local root holds them and no root's end forgets them.
+The map also holds at most 1,000 traces, because a trace whose local root never ends, which is a crash or a leak in the monitored application, would otherwise keep its counts for ever, and so would every trace with late work.
+Inserting past the cap drops other traces until the map is back within it, first the traces no open local root holds and only then any other, so the late work of finished requests never pushes out the counts of a request still running.
+Among each kind, which traces are dropped is not defined, and under that much load a missing code location is the least of the problems.
 At most 256 distinct statements and calls are counted per trace, and beyond that the counter stops and nothing else changes.
 
 The third case is a slow outbound call.
