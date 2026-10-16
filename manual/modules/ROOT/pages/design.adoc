@@ -148,7 +148,8 @@ Senders set `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf`.
 . *Store*: an H2 file database under the user's home, `~/db/spider-sense/sense` with `AUTO_SERVER=TRUE`, shared by every Spider Sense process on the machine and kept after the monitored application stops, so the analysis screen is still there after a restart or a crash.
 Ingest goes through a write-behind queue and one writer thread, and every API answer is SQL over indexed columns.
 The schema, the writer, the queries and the retention sweeper are specified in xref:storage.adoc[Storage].
-The one in-memory piece is the `EventBus`, which sends ingest notifications to SSE subscribers, coalesced to at most 4 messages per second.
+The one in-memory piece is the `EventBus`, which hands ingest notifications to SSE subscribers.
+Tingles and first sightings are sent as they happen, one frame each, and the counts are coalesced into a `stats` frame at most once a second (xref:api.adoc#events[Live events]).
 Tingles are rows like everything else, and no in-memory mirror of them is kept (xref:api.adoc#tingles[Tingles]).
 . *JSON API and static UI*: the contract in xref:api.adoc[The HTTP API], and the UI in `src/main/resources/public` as xref:pages.adoc[The Pages] describes it.
 . *The agent interface*: findings, marks, compare, check and a Markdown rendering of every list, over the same `Queries` as the UI.
