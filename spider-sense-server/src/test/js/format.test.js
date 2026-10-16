@@ -107,6 +107,18 @@ test('shortId, splitType and truncate', () => {
   assert.equal(fmt.truncate(null, 4), '');
 });
 
+test('truncate and truncateStart never split a surrogate pair, such as an emoji (ui.adoc#narrow-screens)', () => {
+  assert.equal(fmt.truncate('ab😀cd', 4), 'ab…', 'the cut would fall between the two halves of the emoji');
+  assert.equal(fmt.truncate('a😀cd', 4), 'a😀…', 'a pair before the cut stays whole');
+  assert.equal(fmt.truncateStart('ab😀cd', 4), '…cd', 'the tail would start with the second half of the emoji');
+  assert.equal(fmt.truncateStart('abc😀d', 4), '…😀d');
+  for (let max = 2; max < 20; max++) {
+    for (const s of [fmt.truncate('select 😀😀 from t😀', max), fmt.truncateStart('😀x/😀😀/y😀z', max)]) {
+      assert.ok(s.isWellFormed(), JSON.stringify(s) + ' at ' + max);
+    }
+  }
+});
+
 test('apdex has two decimals and a dash for no request', () => {
   assert.equal(fmt.apdex(0.934), '0.93');
   assert.equal(fmt.apdex(1), '1.00');

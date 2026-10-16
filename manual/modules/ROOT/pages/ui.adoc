@@ -327,6 +327,7 @@ Below 420 px the waterfall's name column narrows, so the timeline still fits.
 The Queries, Logs, Errors and Compare tables fit the page at 1280 px and wider, so every column is on screen without scrolling.
 Their columns have fixed widths, and the wide column takes the rest: a statement, an error message or an endpoint is cut with an ellipsis, the whole of it in the title, and a log body wraps.
 No other cell widens the table: its text is cut the same way.
+Every such cut stops before a surrogate pair it would split, such as an emoji, as the store's cuts do.
 Below 200 px for the wide column the table scrolls instead.
 A table that scrolls sideways fades at the edge there is more of, and the fade goes once that edge is reached.
 

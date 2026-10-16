@@ -159,20 +159,29 @@ export function splitType(type) {
   return i < 0 ? { pkg: '', name: type } : { pkg: type.slice(0, i + 1), name: type.slice(i + 1) };
 }
 
+/** Whether the UTF-16 unit at `i` is the high (first) or the low (second) half of a surrogate pair. */
+const highAt = (s, i) => { const c = s.charCodeAt(i); return c >= 0xd800 && c <= 0xdbff; };
+const lowAt = (s, i) => { const c = s.charCodeAt(i); return c >= 0xdc00 && c <= 0xdfff; };
+
+/** `s` cut to `max` units with an ellipsis; the cut stops before a surrogate pair it would split. */
 export function truncate(s, max) {
   if (s == null) return '';
-  return s.length <= max ? s : s.slice(0, max - 1) + '…';
+  if (s.length <= max) return s;
+  const end = highAt(s, max - 2) ? max - 2 : max - 1;
+  return s.slice(0, end) + '…';
 }
 
 /**
  * `truncate` from the other end, for a name whose tail tells it apart, such as a database file:
  * `h2:~/db/spider-sense/bookstore` becomes `…/bookstore`. The cut moves on to the next `/`
- * when there is one, so a path segment is never shown half.
+ * when there is one, so a path segment is never shown half, and past the second half of a
+ * surrogate pair it would split.
  */
 export function truncateStart(s, max) {
   if (s == null) return '';
   if (s.length <= max) return s;
-  const tail = s.slice(s.length - (max - 1));
+  const from = s.length - (max - 1);
+  const tail = s.slice(lowAt(s, from) ? from + 1 : from);
   const slash = tail.indexOf('/');
   return '…' + (slash > 0 ? tail.slice(slash) : tail);
 }
