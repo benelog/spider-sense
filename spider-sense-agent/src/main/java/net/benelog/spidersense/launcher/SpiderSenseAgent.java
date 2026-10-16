@@ -7,6 +7,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.OptionalInt;
 import java.util.concurrent.Callable;
+import java.util.regex.Pattern;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -218,7 +219,7 @@ public final class SpiderSenseAgent {
     static String noEmbeddedUi(String javaVersion, String baseUrl, int port, String jar) {
         return "the embedded UI needs Java " + EmbeddedServer.JAVA_FLOOR + " or later, and this JVM is Java "
                 + javaVersion + ", so nothing is exported; forward to a Spider Sense on Java "
-                + EmbeddedServer.JAVA_FLOOR + " with -Dspidersense.collector=" + baseUrl + ", started by: java -jar "
+                + EmbeddedServer.JAVA_FLOOR + " with -Dspidersense.collector=" + shellWord(baseUrl) + ", started by: java -jar "
                 + jar + (port == Config.DEFAULT_PORT ? "" : " --port=" + port);
     }
 
@@ -230,7 +231,19 @@ public final class SpiderSenseAgent {
     /** {@code java -jar <jar> findings --since=start}, with {@code --url=} for a UI elsewhere than the default. */
     static String cliLine(String jar, String baseUrl) {
         return "java -jar " + jar + " findings --since=start"
-                + (DEFAULT_URL.equals(baseUrl) ? "" : " --url=" + baseUrl);
+                + (DEFAULT_URL.equals(baseUrl) ? "" : " --url=" + shellWord(baseUrl));
+    }
+
+    /** What a shell takes as it is, unquoted: no pattern, no space, no quote. */
+    private static final Pattern SHELL_SAFE = Pattern.compile("[\\w@%+=:,./-]+");
+
+    /**
+     * {@code word} as a command line to copy carries it: as it is when a shell takes it so, else in
+     * single quotes, as the UI's command lines quote it. An IPv6 URL such as {@code http://[::1]:4000}
+     * is a pattern to zsh, which refuses a pattern that matches no file.
+     */
+    static String shellWord(String word) {
+        return SHELL_SAFE.matcher(word).matches() ? word : "'" + word.replace("'", "'\\''") + "'";
     }
 
     static final String AGENT_INITIALIZER_CLASS = "io.opentelemetry.javaagent.bootstrap.AgentInitializer";

@@ -175,7 +175,7 @@ public final class SpiderSenseMain {
                 .append("  OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf\n")
                 .append("or attach this very jar to it:\n")
                 .append("  java -javaagent:").append(jar).append(" -Dspidersense.collector=")
-                .append(url).append(" -jar app.jar\n")
+                .append(SpiderSenseAgent.shellWord(url)).append(" -jar app.jar\n")
                 .append("Ask it from a terminal (help lists the commands):\n")
                 .append("  ").append(SpiderSenseAgent.cliLine(jar, url)).append('\n');
         return banner.toString();

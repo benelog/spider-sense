@@ -107,6 +107,13 @@ class StartLineTest {
                 .contains("java -jar " + JAR + " findings --since=start --url=http://127.0.0.1:4105")
                 .doesNotContain("spider-sense.jar ");
 
+        String ipv6 = SpiderSenseMain.banner(
+                Config.parse(new String[] {"--host=::1", "--port=4105"}, key -> null, key -> null).config(), JAR);
+        assertThat(ipv6).as("zsh reads an unquoted IPv6 URL as a pattern")
+                .contains(" -Dspidersense.collector='http://[::1]:4105' -jar app.jar")
+                .contains(" findings --since=start --url='http://[::1]:4105'")
+                .as("an assignment is no pattern").contains("  OTEL_EXPORTER_OTLP_ENDPOINT=http://[::1]:4105\n");
+
         String help = SpiderSenseMain.help(JAR);
         assertThat(help)
                 .contains("java -javaagent:" + JAR + " -jar app.jar")
