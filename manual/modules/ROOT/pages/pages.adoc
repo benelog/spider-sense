@@ -226,7 +226,7 @@ A row click opens the service.
 . Three charts in a row, the RED charts: requests, latency at p50, p95 and p99, and error rate as a percentage.
 The first carries the *Requests* | *Load* toggle of the Overview and defaults to Load.
 The choice is shared with the Overview through `chart=` in the hash query.
-. The *Endpoints* table: method chip, route, calls, rps, Apdex, avg, p50, p95, p99, max, errors, and a status-code mini-bar (2xx green, 4xx `--warn`, 5xx `--err`).
+. The *Endpoints* table: method chip, route, calls, rps, Apdex, avg, p50, p95, p99, max, errors, a status-code mini-bar (2xx green, 4xx `--warn`, 5xx `--err`), and total time.
 Clicking a header sorts by that column.
 The default sort is total time.
 A row click opens the endpoint.
