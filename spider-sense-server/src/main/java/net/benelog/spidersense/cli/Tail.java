@@ -56,6 +56,12 @@ final class Tail {
     private static final int KIND_WIDTH = 14;
     private static final int SERVICE_WIDTH = 16;
 
+    /** The least time a connection is given, so {@code --timeout=0s} still reaches a running Spider Sense. */
+    private static final long MIN_CONNECT_MS = 100;
+
+    /** How long after the connection's own timeout the request's fires, so the two never race. */
+    private static final long AFTER_CONNECT_MS = 100;
+
     /** What one {@code tail} was asked to show, and what ends it. */
     record Watch(@Nullable String kind, @Nullable String service, @Nullable Long untilTraces,
             @Nullable Long timeoutMs, boolean json) {
@@ -85,10 +91,18 @@ final class Tail {
         HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(base + "/api/events"))
                 .header("Accept", "text/event-stream")
                 .GET();
+        // A connection not made within --timeout is nothing at --url, as one refused is, so the
+        // client gives up on connecting by then. The client's timers fire in deadline order, so the
+        // request's timeout, whose expiry means a server that took the connection and has not
+        // answered, comes a little after the connection's, never before it.
+        Duration connect = Remote.CONNECT;
         if (timeoutMs != null) {
-            request.timeout(Duration.ofMillis(Math.max(1, timeoutMs)));
+            long connectMs = Math.max(MIN_CONNECT_MS, timeoutMs);
+            connect = Duration.ofMillis(connectMs);
+            request.timeout(Duration.ofMillis(Math.max(timeoutMs, Math.min(connectMs, Remote.CONNECT.toMillis())
+                    + AFTER_CONNECT_MS)));
         }
-        try (HttpClient client = Remote.client()) {
+        try (HttpClient client = Remote.client(connect)) {
             HttpResponse<InputStream> response =
                     Remote.send(client, base, request.build(), HttpResponse.BodyHandlers.ofInputStream());
             if (!Remote.answered(response, Remote.EVENT_STREAM)) {
@@ -112,10 +126,9 @@ final class Tail {
             // Only the request's timeout ends the wait for an answer this way, and it is --timeout's.
             return Cli.OK;
         } catch (Remote.Unreachable e) {
-            // An interrupt while connecting ends the watch, as one while reading does, and so does a
-            // --timeout that elapsed before the connection was made.
-            boolean elapsed = timeoutMs != null && millisSince(started) >= timeoutMs;
-            return Thread.currentThread().isInterrupted() || elapsed ? Cli.OK : unreachable(err, e, base);
+            // An interrupt while connecting ends the watch, as one while reading does; a connection
+            // refused, or not made within --timeout, is nothing at --url whatever the clock says.
+            return Thread.currentThread().isInterrupted() ? Cli.OK : unreachable(err, e, base);
         }
     }
 

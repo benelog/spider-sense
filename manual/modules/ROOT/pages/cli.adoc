@@ -971,6 +971,7 @@ A stream the server closes first, as an embedded Spider Sense does when its appl
 
 `tail` needs a running Spider Sense, because there is no file to tail.
 Nothing at `--url` is a message on stderr and exit `2`, and so is a server there that answers with something other than an event stream.
+That holds whatever `--timeout` says: a connection refused, or not made within `--timeout` (given at least 100 ms, and at most the CLI's 2-second connect timeout), is nothing at `--url`, so `tail --timeout=0s` with nothing there exits `2` as well.
 
 [#export-import]
 == Export and import

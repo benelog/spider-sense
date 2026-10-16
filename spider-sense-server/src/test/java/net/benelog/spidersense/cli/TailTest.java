@@ -3,6 +3,7 @@ package net.benelog.spidersense.cli;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -13,6 +14,7 @@ import java.net.ServerSocket;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
 
 import io.opentelemetry.proto.trace.v1.Span;
@@ -339,6 +341,54 @@ class TailTest {
         assertThat(run.err()).startsWith("spider-sense: no Spider Sense at " + closed)
                 .contains("no file to tail");
         assertThat(run.out()).isEmpty();
+    }
+
+    /** A {@code --timeout} that has elapsed does not make a refused connection a watch that ended as asked. */
+    @Test
+    void nothingAtTheUrlIsAnErrorWhateverTheTimeout() {
+        String closed = closedUrl();
+
+        Run run = cli(closed, "tail", "--timeout=0s");
+
+        assertThat(run.exit()).isEqualTo(2);
+        assertThat(run.err()).startsWith("spider-sense: no Spider Sense at " + closed)
+                .contains("no file to tail");
+    }
+
+    /**
+     * A host that never completes the connection, within a {@code --timeout} shorter than the
+     * client's own connect timeout, is nothing at {@code --url} rather than a silent server.
+     */
+    @Test
+    void aConnectionNotMadeWithinTheTimeoutIsNothingAtTheUrl() throws IOException {
+        // A backlog of one, filled: the kernel then drops each further SYN, so a connection hangs.
+        try (ServerSocket full = new ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress())) {
+            List<java.net.Socket> fillers = new ArrayList<>();
+            try {
+                boolean hangs = false;
+                for (int i = 0; i < 8 && !hangs; i++) {
+                    java.net.Socket filler = new java.net.Socket();
+                    fillers.add(filler);
+                    try {
+                        filler.connect(full.getLocalSocketAddress(), 200);
+                    } catch (java.net.SocketTimeoutException e) {
+                        hangs = true;
+                    }
+                }
+                assumeTrue(hangs, "this kernel completes connections past a full backlog");
+
+                Run run = assertTimeoutPreemptively(java.time.Duration.ofSeconds(20),
+                        () -> cli("http://127.0.0.1:" + full.getLocalPort(), "tail", "--timeout=1s"));
+
+                assertThat(run.exit()).isEqualTo(2);
+                assertThat(run.err()).startsWith("spider-sense: no Spider Sense at http://127.0.0.1:"
+                        + full.getLocalPort() + " (HttpConnectTimeoutException");
+            } finally {
+                for (java.net.Socket filler : fillers) {
+                    filler.close();
+                }
+            }
+        }
     }
 
     @Test

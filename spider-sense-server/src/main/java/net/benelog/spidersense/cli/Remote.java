@@ -123,7 +123,7 @@ final class Remote {
     /** What {@code /api/events} streams. */
     static final String EVENT_STREAM = "text/event-stream";
 
-    private static final Duration CONNECT = Duration.ofSeconds(2);
+    static final Duration CONNECT = Duration.ofSeconds(2);
     private static final Duration READ = Duration.ofMinutes(2);
 
     /**
@@ -148,7 +148,12 @@ final class Remote {
 
     /** A client that gives up on a connection not made in {@link #CONNECT}; the caller closes it. */
     static HttpClient client() {
-        return HttpClient.newBuilder().connectTimeout(CONNECT).build();
+        return client(CONNECT);
+    }
+
+    /** A client that gives up on a connection not made in {@code connect}, at most {@link #CONNECT}. */
+    static HttpClient client(Duration connect) {
+        return HttpClient.newBuilder().connectTimeout(connect.compareTo(CONNECT) < 0 ? connect : CONNECT).build();
     }
 
     /**
