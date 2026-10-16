@@ -221,6 +221,8 @@ export function render(root, ctx) {
       paintProfile();
     };
     const members = (r) => (r.run ? r.run.spans : [r.span]);
+    const failed = (r) => members(r).some((s) => s.error);
+    const slow = (r) => members(r).some((s) => s.slow || s.durationMs > slowMs);
     fill(bodyBox, table([
       { key: 'index', label: '#', align: 'right', sortable: false, width: '58px', render: (r) => h('span.muted.mono', r.run ? r.index + '–' + r.lastIndex : String(r.index)) },
       { key: 'start', label: 'Start', align: 'right', width: '84px', render: (r) => h('span.mono', offset(r.startOffset)) },
@@ -242,7 +244,9 @@ export function render(root, ctx) {
               : null,
             icon(categoryIcon(r.span.category, 'chart')),
             h('span', r.run ? runLabel(r.run) : summaryOf(r.span)),
-            members(r).some((s) => s.error) ? icon('bolt') : null)),
+            // The tint is not the only mark: a bolt says failed, and a turtle slow.
+            failed(r) ? h('span.marker.err', { title: 'Error' }, icon('bolt')) : null,
+            slow(r) ? h('span.marker.slow', { title: 'Slow' }, icon('turtle')) : null)),
       },
       { key: 'service', label: 'Service', sortable: false, width: '150px', render: (r) => serviceChip(r.span.service) },
     ], {
@@ -250,9 +254,7 @@ export function render(root, ctx) {
       sort: sortState,
       onSort,
       rowKey: (r) => r.key,
-      rowClass: (r) => 'profile-row'
-        + (members(r).some((s) => s.error) ? ' err' : members(r).some((s) => s.slow || s.durationMs > slowMs) ? ' warn' : '')
-        + (hot.has(r.key) ? ' hot' : ''),
+      rowClass: (r) => 'profile-row' + (failed(r) ? ' err' : slow(r) ? ' warn' : '') + (hot.has(r.key) ? ' hot' : ''),
       // A run's row opens and folds it in place; a span's opens the span.
       onRowClick: (r) => (r.run ? flip(expandedRuns, r.run.key) : openSpan(r.span)),
       empty: 'This trace has no span.',

@@ -3,6 +3,7 @@
 import './browser-env.js';
 import { test, before } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 const JS = '../../main/resources/public/assets/js/';
 const settle = (ms = 20) => new Promise((r) => setTimeout(r, ms));
@@ -70,6 +71,28 @@ test('a trace under a millisecond is drawn and measured against its own duration
   assert.equal(drawer[drawer.indexOf('duration') + 1], '0.5 ms · 100.0% of trace');
   assert.equal(drawer[drawer.indexOf('self') + 1], '0.3 ms · 50.0% of trace');
   instance.destroy();
+});
+
+test('a hot step keeps its slow or error tint, and a slow step has a turtle besides', async () => {
+  // POST /items took 1,100 ms, its INSERT 700 ms, and a failed notify 300 ms: all three are hot.
+  const { root, instance } = await open('hot', 1100, [
+    span('post', null, 0, 1100, { summary: 'POST /items → 201', category: 'http', slow: true }),
+    span('insert', 'post', 10, 700, { summary: 'INSERT items', category: 'db', slow: true }),
+    span('notify', 'post', 720, 300, { summary: 'notify', error: true, status: 'ERROR' }),
+  ], { view: 'profile' });
+  const rows = root.querySelectorAll('tr.profile-row');
+  const marks = (tr) => tr.className.split(' ').filter((c) => ['hot', 'warn', 'err'].includes(c)).sort().join(' ');
+  assert.deepEqual(rows.map(marks), ['hot warn', 'hot warn', 'err hot']);
+  const markers = (tr) => tr.querySelectorAll('span').filter((s) => s.classList.contains('marker')).map((s) => s.getAttribute('title'));
+  assert.deepEqual(rows.map(markers), [['Slow'], ['Slow'], ['Error']]);
+  instance.destroy();
+
+  // With equal specificity the last rule wins, so the hot tint comes before the status tints.
+  const css = readFileSync(new URL('../../main/resources/public/assets/app.css', import.meta.url), 'utf8');
+  const at = (selector) => css.indexOf('\n' + selector + ' {');
+  assert.ok(at('.profile-row.hot td') >= 0);
+  assert.ok(at('.profile-row.hot td') < at('.profile-row.warn td'), 'a slow step that is hot too stays --warn');
+  assert.ok(at('.profile-row.hot td') < at('.profile-row.err td'), 'a failed step that is hot too stays --err');
 });
 
 test('a trace of no length draws its spans at the start and reads them as 0% of it', async () => {

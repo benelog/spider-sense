@@ -711,9 +711,10 @@ a.hist-link:hover .hist-label { color: var(--text); }
 .wf-row.slow .wf-bar { box-shadow: 0 0 0 1.5px var(--warn); }
 .wf-svc { width: 3px; align-self: stretch; border-radius: 2px; flex: none; }
 
+/* hot first: a slow or failed step that is hot too keeps its status tint, and its bold self value still says hot */
+.profile-row.hot td { background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .profile-row.warn td { background: color-mix(in srgb, var(--warn) 9%, transparent); }
 .profile-row.err td { background: color-mix(in srgb, var(--err) 10%, transparent); }
-.profile-row.hot td { background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .profile-row.hot .self-value { font-weight: 600; color: var(--accent-text); }
 .depth-pad { display: inline-block; }
 
