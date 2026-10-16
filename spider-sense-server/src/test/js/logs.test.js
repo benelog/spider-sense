@@ -25,6 +25,15 @@ test('rows at the same instant are ordered by id', () => {
   assert.deepEqual(mergeNewestPage(rows, [log(2, 100), log(1, 100)], 0, 10).map((l) => l.id), [2, 1]);
 });
 
+test('a row the newest page holds again replaces the loaded one, as a trace whose spans arrived since does (pages.adoc#traces-list)', () => {
+  const trace = (traceId, start, spanCount) => ({ traceId, start, spanCount });
+  const rows = [trace('e', 300, 1), trace('d', 200, 1), trace('c', 100, 4)];
+  const incoming = [trace('f', 400, 2), trace('e', 250, 3)];
+  const merged = mergeNewestPage(rows, incoming, 0, 50, (r) => r.start, (r) => r.traceId);
+  assert.deepEqual(merged.map((r) => [r.traceId, r.start, r.spanCount]), [['f', 400, 2], ['e', 250, 3], ['d', 200, 1], ['c', 100, 4]],
+    'the root that came later moved its start, and the row keeps its place by it');
+});
+
 test('a full page that holds none of the loaded rows would open a gap, so it is not merged', () => {
   const rows = [log(1, 100)];
   assert.equal(mergeNewestPage(rows, [log(3, 300), log(2, 200)], 0, 2), null);

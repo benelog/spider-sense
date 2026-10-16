@@ -73,15 +73,16 @@ export function pageLoader({ fetch, paint, body, onError, retry }) {
  * A Live tick's newest page merged into the rows Load more fetched (ui.adoc#live-refresh): newest
  * first by `time` then `id`, as the API orders them, less the rows the window has left (before
  * `from`); null when a full page of `limit` rows holds none of the loaded ones, since it may not
- * reach them and a gap would open. The Logs page keys a row on `(at, id)`, the Traces page on
- * `(start, traceId)`.
+ * reach them and a gap would open. A row the page holds again replaces the loaded one, since a
+ * trace listed before all its spans arrived changes as they come, its start too. The Logs page
+ * keys a row on `(at, id)`, the Traces page on `(start, traceId)`.
  */
 export function mergeNewestPage(rows, incoming, from, limit, time = (r) => r.at, id = (r) => r.id) {
-  const known = new Set(rows.map(id));
-  const fresh = incoming.filter((r) => !known.has(id(r)));
-  if (fresh.length === incoming.length && incoming.length >= limit) return null;
+  const newer = new Set(incoming.map(id));
+  const kept = rows.filter((r) => !newer.has(id(r)));
+  if (kept.length === rows.length && incoming.length >= limit) return null;
   const order = (a, b) => (a < b ? 1 : a > b ? -1 : 0);
-  return fresh.concat(rows)
+  return incoming.concat(kept)
     .filter((r) => time(r) >= from)
     .sort((a, b) => order(time(a), time(b)) || order(id(a), id(b)));
 }
