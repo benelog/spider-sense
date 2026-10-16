@@ -72,7 +72,7 @@ It is decided by what the host can reach.
 | The CLI and the skill
 | No setup beyond `init`. It works with the application down, `check` is an exit code, output can be piped, and the tool costs no context.
 
-| A host without a shell (Claude Desktop, a browser-based agent, an IDE chat panel)
+| A host without a shell (Claude Desktop, an IDE chat panel)
 | MCP
 | The only case the CLI cannot serve. `init --mcp` writes the host's server entry.
 

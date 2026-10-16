@@ -138,7 +138,9 @@ The jar and the plugin are published together to Maven Central as `net.benelog.s
 The Gradle module `spider-sense-server` is a Spider Silk `App` with four concerns.
 
 . *OTLP/HTTP receiver*: `POST /v1/traces`, `/v1/metrics` and `/v1/logs`.
-It accepts `Content-Type: application/x-protobuf`, which is the agent's format, and `application/json` for browser SDKs and `curl`, and `Content-Encoding: gzip`.
+It accepts `Content-Type: application/x-protobuf`, which is the agent's format, and `application/json` for `curl` and scripts, and `Content-Encoding: gzip`.
+A web page cannot export to it, because the server answers no CORS preflight and refuses a request whose `Origin` is not its own (xref:api.adoc#conventions[API conventions]).
+A browser application's telemetry goes through an OpenTelemetry Collector, whose OTLP receiver answers the browser's CORS and exports to Spider Sense.
 It decodes with the `io.opentelemetry.proto:opentelemetry-proto` bindings, the same classes the OpenTelemetry Java SDK is generated from.
 The answer is an empty `Export*ServiceResponse` in the request's content type.
 There is no gRPC receiver, because gRPC needs Netty or Armeria in the jar for a benefit no local setup has.
