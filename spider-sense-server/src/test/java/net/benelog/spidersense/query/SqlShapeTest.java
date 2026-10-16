@@ -90,6 +90,29 @@ class SqlShapeTest {
                 .containsExactly("items.sku", "items.name");
     }
 
+    /** A row limit or a distinct on before the first item ends no expression the item could alias. */
+    @Test
+    void theFirstItemAfterATopOrADistinctOnIsNoAlias() {
+        assertThat(predicates("select top 10 name from orders where x = ? order by name"))
+                .containsExactly("orders.x", "orders.name");
+        assertThat(predicates("select top (?) percent name, total from orders where x = ? order by name"))
+                .containsExactly("orders.x", "orders.name");
+        assertThat(predicates("select top 5 with ties name from orders where x = ? order by name"))
+                .containsExactly("orders.x", "orders.name");
+        assertThat(predicates("select first ? name from orders where x = ? order by name"))
+                .containsExactly("orders.x", "orders.name");
+        String distinctOn = "select distinct on (customer_id) customer_id, created_at from orders"
+                + " where status = ? order by customer_id, created_at desc";
+        assertThat(SqlShape.of(distinctOn).readable())
+                .as("the on of a distinct on opens no join condition before any table")
+                .isTrue();
+        assertThat(predicates(distinctOn))
+                .containsExactly("orders.status", "orders.customer_id", "orders.created_at");
+        assertThat(predicates("select top 10 count(*) cnt from orders where x = ? order by cnt"))
+                .as("an alias after the first item's expression is still an alias")
+                .containsExactly("orders.x");
+    }
+
     @Test
     void aSetOperatorEndsTheWhereItFollows() {
         assertThat(predicates("select id from items where name = ? except select id from items where sku = ?"))

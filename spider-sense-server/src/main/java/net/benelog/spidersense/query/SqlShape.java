@@ -385,10 +385,63 @@ final class SqlShape {
         if (!next.is(",") && !next.isWord("from")) {
             return false;
         }
+        if (endsSelectModifier(tokens, i - 1)) {
+            return false;     // "select top 10 name from": the first item, no alias
+        }
         Token previous = tokens.get(i - 1);
         return previous.is(")") || previous.isWord("end")
                 || previous.kind() == Token.Kind.NUMBER || previous.kind() == Token.Kind.PARAMETER
                 || (previous.kind() == Token.Kind.NAME && !previous.isKeyword());
+    }
+
+    /**
+     * Whether the token at {@code end} ends what may stand between {@code select} and the
+     * first item of its list: a row limit ({@code top 10}, {@code top (?) percent},
+     * {@code top 10 with ties}, {@code first ?}, {@code skip ?}, {@code limit 10}) or
+     * PostgreSQL's {@code distinct on (…)}. Such a number or {@code )} ends no expression,
+     * so the name after it is a column, not the alias of one.
+     */
+    private static boolean endsSelectModifier(List<Token> tokens, int end) {
+        int at = end;
+        if (at >= 1 && tokens.get(at).isWord("ties") && tokens.get(at - 1).isWord("with")) {
+            at -= 2;
+        }
+        if (at >= 0 && tokens.get(at).isWord("percent")) {
+            at--;
+        }
+        if (at < 0) {
+            return false;
+        }
+        Token last = tokens.get(at);
+        int before;
+        if (last.is(")")) {
+            before = openingOf(tokens, at) - 1;
+        } else if (last.kind() == Token.Kind.NUMBER || last.kind() == Token.Kind.PARAMETER) {
+            before = at - 1;
+        } else {
+            return false;
+        }
+        if (before < 0) {
+            return false;
+        }
+        Token word = tokens.get(before);
+        if (word.isWord("top") || word.isWord("first") || word.isWord("skip") || word.isWord("limit")) {
+            return true;
+        }
+        return last.is(")") && word.isWord("on") && before > 0 && tokens.get(before - 1).isWord("distinct");
+    }
+
+    /** The index of the {@code (} that the {@code )} at {@code close} closes, or -1. */
+    private static int openingOf(List<Token> tokens, int close) {
+        int depth = 0;
+        for (int i = close; i >= 0; i--) {
+            if (tokens.get(i).is(")")) {
+                depth++;
+            } else if (tokens.get(i).is("(") && --depth == 0) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     /**
@@ -410,9 +463,13 @@ final class SqlShape {
 
     /**
      * {@code having} is skipped rather than read: its columns are aggregates over
-     * groups, which no index on a column serves.
+     * groups, which no index on a column serves. The {@code on} of PostgreSQL's
+     * {@code select distinct on (…)} opens nothing: it is the select list's.
      */
     private static @Nullable Region opens(List<Token> tokens, int i, String word) {
+        if (word.equals("on") && i > 0 && tokens.get(i - 1).isWord("distinct")) {
+            return null;
+        }
         if (word.equals("where") || word.equals("on")) {
             return Region.PREDICATE;
         }
