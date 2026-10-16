@@ -137,6 +137,18 @@ class ConfigTest {
         assertThat(parse("--host=192.168.0.7").baseUrl(4000)).isEqualTo("http://192.168.0.7:4000");
     }
 
+    /**
+     * {@code --host=$SPIDERSENSE_HOST} with the variable unset: Jetty would bind the loopback
+     * address for the empty value, so it is that address, never a wildcard bind that accepts
+     * any {@code Host}.
+     */
+    @Test
+    void anEmptyHostIsTheLoopbackDefault() {
+        assertThat(parse("--host=").host()).isEqualTo("127.0.0.1");
+        assertThat(parse("--host= ").host()).isEqualTo("127.0.0.1");
+        assertThat(parse(Map.of("spidersense.host", ""), Map.of()).host()).isEqualTo("127.0.0.1");
+    }
+
     /** The one table the advertised endpoint, the host check and the CLI's default URL share. */
     @Test
     void aBindAddressBecomesAHostToCall() {

@@ -172,6 +172,18 @@ class ConfigTest {
         assertThat(c.slowQueryMs()).as("untouched by arguments").isEqualTo(14);
     }
 
+    /**
+     * {@code --host=$SPIDERSENSE_HOST} with the variable unset is no host, as an empty property
+     * is: the default, or the property beneath it, rather than an empty bind address passed on.
+     */
+    @Test
+    void anEmptyHostArgumentIsUnset() {
+        assertThat(config("--host=").host()).isEqualTo("127.0.0.1");
+        assertThat(config("--host=").toServerArgs()).contains("--host=127.0.0.1");
+        assertThat(Config.parse(new String[] {"--host="}, Map.of("spidersense.host", "0.0.0.0")::get, NONE::get)
+                .config().host()).isEqualTo("0.0.0.0");
+    }
+
     @Test
     void bareFlagsAreIgnored() {
         Config c = config("--help", "-x", "--port=4100", "");

@@ -190,9 +190,14 @@ public record Config(
     private record Values(Map<Key, Argument> given, Function<String, @Nullable String> read,
             List<String> warnings) {
 
+        /**
+         * The argument, else the property or variable, else the fallback. An empty argument is
+         * unset, as an empty property is: {@code --host=$SPIDERSENSE_HOST} with the variable unset
+         * names no host.
+         */
         String string(Key key, String fallback) {
             Argument argument = given.get(key);
-            if (argument != null) {
+            if (argument != null && !argument.value().isEmpty()) {
                 return argument.value();
             }
             String value = read.apply(key.property());

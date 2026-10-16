@@ -125,7 +125,7 @@ public record Config(
         NumericSettings numbers = new NumericSettings(settings);
         boolean agent = AGENT.equalsIgnoreCase(settings.string("mode", STANDALONE));
         return new Config(
-                settings.string("host", DEFAULT_HOST),
+                bindHost(settings.string("host", DEFAULT_HOST)),
                 numbers.number("port", DEFAULT_PORT).intValue(),
                 agent ? AGENT : STANDALONE,
                 settings.string("db", DEFAULT_DB),
@@ -189,6 +189,15 @@ public record Config(
     /** {@code spidersense.slow.query.ms} is {@code SPIDERSENSE_SLOW_QUERY_MS}. */
     public static String envName(String property) {
         return property.toUpperCase(Locale.ROOT).replace('.', '_').replace('-', '_');
+    }
+
+    /**
+     * A blank bind address is none said, as an empty {@code -Dspidersense.host=} is: Jetty would
+     * bind the loopback address for it, so it is {@link #DEFAULT_HOST}, and never read as the
+     * wildcard that accepts any {@code Host} (api.adoc#conventions).
+     */
+    private static String bindHost(String host) {
+        return host.isBlank() ? DEFAULT_HOST : host;
     }
 
     public boolean agentMode() {

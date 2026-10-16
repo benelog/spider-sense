@@ -56,9 +56,14 @@ final class LocalRequests {
         return colon >= 0 && name.indexOf(':') == colon ? name.substring(0, colon) : name;
     }
 
+    /**
+     * Whether {@code name} is a name of this machine for a server bound to {@code bindHost}.
+     * No bind address is no wildcard here, unlike for a URL to call: Jetty binds the loopback
+     * address for it.
+     */
     static boolean acceptedHost(String name, String bindHost) {
         String bound = hostName(bindHost);
-        if (Config.isWildcard(bound)) {
+        if (!bound.isBlank() && Config.isWildcard(bound)) {
             return true;
         }
         return loopback(name) || name.equals(bound);

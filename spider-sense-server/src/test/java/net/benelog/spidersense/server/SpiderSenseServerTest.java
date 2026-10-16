@@ -135,6 +135,23 @@ class SpiderSenseServerTest {
         }
     }
 
+    /**
+     * An empty {@code --host=}, as an unset shell variable leaves it, binds the loopback
+     * address, so a rebound host name is turned away as it is on the default bind.
+     */
+    @Test
+    void aRequestUnderAReboundHostIsForbiddenOnAnEmptyHost() throws Exception {
+        SpiderSenseServer server = SpiderSenseServer.start(TestStore.config("--host="));
+        try {
+            int port = server.port();
+
+            assertThat(statusLine(port, "attacker.example:" + port)).contains(" 403 ");
+            assertThat(statusLine(port, "127.0.0.1:" + port)).contains(" 200 ");
+        } finally {
+            server.stop();
+        }
+    }
+
     @Test
     void theHostCheckAcceptsLoopbackNamesAndAnyNameOnAWildcardBind() {
         assertThat(LocalRequests.hostName("[::1]:4000")).isEqualTo("::1");
@@ -147,6 +164,8 @@ class SpiderSenseServerTest {
         assertThat(LocalRequests.acceptedHost("192.168.1.5", "192.168.1.5")).isTrue();
         assertThat(LocalRequests.acceptedHost("my-laptop", "0.0.0.0")).isTrue();
         assertThat(LocalRequests.acceptedHost("my-laptop", "::")).isTrue();
+        assertThat(LocalRequests.acceptedHost("evil.example", "")).as("no bind address is no wildcard").isFalse();
+        assertThat(LocalRequests.acceptedHost("localhost", "")).isTrue();
     }
 
     /** The status line of a GET under a {@code Host} the JDK's client will not send. */
