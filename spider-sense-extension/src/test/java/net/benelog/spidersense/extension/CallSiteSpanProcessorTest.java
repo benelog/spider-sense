@@ -3,7 +3,10 @@ package net.benelog.spidersense.extension;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanContext;
 import io.opentelemetry.api.trace.SpanKind;
+import io.opentelemetry.api.trace.TraceFlags;
+import io.opentelemetry.api.trace.TraceState;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
@@ -422,6 +425,46 @@ class CallSiteSpanProcessorTest {
 
         assertThat(processor.tracesCounted())
                 .as("the entry span ends after everything it started, so the counts can go")
+                .isZero();
+    }
+
+    @Test
+    void aCallIntoThisSameProcessDoesNotResetTheCountsOfTheLoopThatMadeIt() {
+        Span entry = tracer.spanBuilder("GET /loop").startSpan();
+        try (Scope ignored = entry.makeCurrent()) {
+            for (int i = 0; i < 6; i++) {
+                query("select * from item where id = ?");
+                call("http://localhost:8081/item/" + i);
+                // The callee's entry span: the same trace, under a parent in "another process",
+                // which is this one, so it is a local root that ends while the loop goes on.
+                Span callee = tracer.spanBuilder("GET /item/{n}")
+                        .setSpanKind(SpanKind.SERVER)
+                        .setParent(Context.root().with(Span.wrap(SpanContext.createFromRemoteParent(
+                                entry.getSpanContext().getTraceId(), "00000000000000" + (10 + i),
+                                TraceFlags.getSampled(), TraceState.getDefault()))))
+                        .startSpan();
+                callee.end();
+            }
+            assertThat(processor.tracesCounted())
+                    .as("still counted while the loop's own entry span is open")
+                    .isEqualTo(1);
+        } finally {
+            entry.end();
+        }
+
+        List<SpanData> queries = new ArrayList<>();
+        for (SpanData span : exportedQueries()) {
+            if (span.getKind() == SpanKind.INTERNAL) {
+                queries.add(span);
+            }
+        }
+        assertThat(queries).hasSize(6);
+        assertThat(stacktraceOf(queries.get(4)))
+                .as("the callee's entry span ending is not this process's work on the trace ending")
+                .isNotNull();
+        assertThat(stacktraceOf(exportedCalls().get(4))).as("the fifth call").isNotNull();
+        assertThat(processor.tracesCounted())
+                .as("forgotten once the last local root of the trace has ended")
                 .isZero();
     }
 

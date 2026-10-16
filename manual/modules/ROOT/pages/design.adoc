@@ -242,8 +242,11 @@ Spring's `JdkClientHttpRequestFactory` over the JDK `HttpClient` calls `sendAsyn
 A thread-local counter therefore gave an xref:findings.adoc#n-plus-one-http[`n-plus-one-http`] finding no code location at all in the common case, which is the whole of what the capture is for.
 
 The map is bounded twice, because a map keyed by trace id in a long-running process is a leak waiting to happen.
-A trace is forgotten when its *local root* ends, a span with no parent or with a parent in another process, because this process's work on the trace is then finished.
-A span of that trace that ends later simply starts the count again, which is what a thread-local counter did when a thread moved on.
+A trace is forgotten when its last open *local root* ends, a span with no parent or with a parent in another process, because this process's work on the trace is then finished.
+The processor counts the open local roots of each trace, raising the count in `onStart` and lowering it in `onEnding`, and drops the trace's counts when it reaches zero.
+A trace can enter the same process twice at once: a loop that calls an endpoint of its own application, or sends a message the same JVM consumes, opens a second local root inside the first on every turn.
+Dropping the counts when that inner root ends would reset them on every turn, so no statement or call of the loop would reach its fifth repeat and the finding would have no code location.
+A span of that trace that starts later simply starts the count again, which is what a thread-local counter did when a thread moved on.
 The map also holds at most 1,000 traces, because a trace whose local root never ends, which is a crash or a leak in the monitored application, would otherwise keep its counts for ever.
 Inserting past the cap drops other traces until the map is back within it.
 Which traces are dropped is not defined, and under that much load a missing code location is the least of the problems.

@@ -74,8 +74,8 @@ public final class CallSiteSpanProcessor implements ExtendedSpanProcessor {
     /**
      * How many traces are counted at once, so a map keyed by trace id cannot grow without bound.
      *
-     * <p>A trace is normally forgotten when its local root ends; this is the guard for the one that
-     * never does, which is a crash or a leak in the monitored application.
+     * <p>A trace is normally forgotten when the last of its open local roots ends; this is the guard
+     * for one that never does, which is a crash or a leak in the monitored application.
      */
     static final int MAX_TRACES = 1_000;
 
@@ -86,7 +86,7 @@ public final class CallSiteSpanProcessor implements ExtendedSpanProcessor {
     private final long requestThresholdNanos;
 
     /**
-     * How often each statement and call of a trace has ended, by trace id.
+     * How often each statement and call of a trace has started, by trace id.
      *
      * <p>Per trace and not per thread, which is what this was. A counter on the thread is cheaper
      * and needs no lifecycle, and it is also wrong for anything asynchronous: a client that
@@ -98,8 +98,22 @@ public final class CallSiteSpanProcessor implements ExtendedSpanProcessor {
      * <p>Not static: the counter belongs to this processor, so a second processor, which is what a
      * test builds, starts from nothing rather than inheriting another one's counts.
      */
-    private final ConcurrentMap<String, ConcurrentMap<String, Integer>> repeats =
-            new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, TraceCounts> repeats = new ConcurrentHashMap<>();
+
+    /**
+     * One trace's counts, and how many of its local roots are open in this process.
+     *
+     * <p>A trace can enter a process more than once at the same time: a loop that calls an endpoint
+     * of its own application, or sends a message the same JVM consumes, opens a second local root
+     * under the first, and that one ends on every turn while the loop goes on. The counts are
+     * dropped when the last one ends, not the first, or the loop would never reach its fifth.
+     */
+    private static final class TraceCounts {
+        final ConcurrentMap<String, Integer> counts = new ConcurrentHashMap<>();
+
+        /** Changed only inside {@code compute} on the trace's key, which serialises it. */
+        int openRoots;
+    }
 
     /**
      * The configured thresholds, the ones the server reports at ({@link Thresholds}), read once:
@@ -123,7 +137,10 @@ public final class CallSiteSpanProcessor implements ExtendedSpanProcessor {
     public void onEnding(ReadWriteSpan span) {
         try {
             if (isLocalRoot(span)) {
-                repeats.remove(span.getSpanContext().getTraceId());
+                // Forgotten only when this was the last open local root of the trace; a span that
+                // never counted as one (the map was over its cap at its start) cannot go below zero.
+                repeats.computeIfPresent(span.getSpanContext().getTraceId(),
+                        (traceId, trace) -> --trace.openRoots > 0 ? trace : null);
             }
             // The repeats are counted and captured at the start (onStart); here only the
             // thresholds, which need a duration and can therefore only be read at the end.
@@ -152,6 +169,14 @@ public final class CallSiteSpanProcessor implements ExtendedSpanProcessor {
     @Override
     public void onStart(Context parentContext, ReadWriteSpan span) {
         try {
+            if (isLocalRoot(span)) {
+                repeats.compute(span.getSpanContext().getTraceId(), (traceId, trace) -> {
+                    TraceCounts counted = trace == null ? new TraceCounts() : trace;
+                    counted.openRoots++;
+                    return counted;
+                });
+                boundTraces();
+            }
             String key = repeatKey(span);
             if (key != null && count(span, key) == N_PLUS_ONE_REPEATS) {
                 capture(span);
@@ -215,20 +240,27 @@ public final class CallSiteSpanProcessor implements ExtendedSpanProcessor {
         return repeats.size();
     }
 
-    /** The counts of one trace, made on first sight and kept until its local root ends. */
+    /** The counts of one trace, made on first sight and kept until its last local root ends. */
     private ConcurrentMap<String, Integer> countsOf(String traceId) {
-        ConcurrentMap<String, Integer> counts = repeats.get(traceId);
-        if (counts != null) {
-            return counts;
+        TraceCounts trace = repeats.get(traceId);
+        if (trace != null) {
+            return trace.counts;
         }
-        ConcurrentMap<String, Integer> fresh = new ConcurrentHashMap<>();
-        ConcurrentMap<String, Integer> raced = repeats.putIfAbsent(traceId, fresh);
+        TraceCounts fresh = new TraceCounts();
+        TraceCounts raced = repeats.putIfAbsent(traceId, fresh);
         if (raced != null) {
-            return raced;
+            return raced.counts;
         }
-        // Bounded on insert rather than swept: an application that never ends a root span would
-        // otherwise keep every trace it ever started. Which traces go is not defined, and under
-        // that much load a missing code location is the least of it.
+        boundTraces();
+        return fresh.counts;
+    }
+
+    /**
+     * Bounded on insert rather than swept: an application that never ends a root span would
+     * otherwise keep every trace it ever started. Which traces go is not defined, and under that
+     * much load a missing code location is the least of it.
+     */
+    private void boundTraces() {
         while (repeats.size() > MAX_TRACES) {
             Iterator<String> oldest = repeats.keySet().iterator();
             if (!oldest.hasNext()) {
@@ -237,16 +269,17 @@ public final class CallSiteSpanProcessor implements ExtendedSpanProcessor {
             oldest.next();
             oldest.remove();
         }
-        return fresh;
     }
 
     /**
      * Whether this span is where the trace entered this process: a root span, or the entry span
      * under a caller that is traced too.
      *
-     * <p>It ends after everything it started, so it is when this process's work on the trace is
-     * done and the counts can go. A span of that trace that ends later simply starts the count
-     * again, which is what a counter on the thread did when the thread moved on.
+     * <p>It ends after everything it started, so when the last open one of a trace ends, this
+     * process's work on the trace is done and the counts can go. Not the first: a call into this
+     * same process opens another local root of the trace inside the first. A span of that trace that
+     * starts later simply starts the count again, which is what a counter on the thread did when the
+     * thread moved on.
      */
     private static boolean isLocalRoot(ReadWriteSpan span) {
         SpanContext parent = span.getParentSpanContext();
