@@ -153,10 +153,14 @@ public final class Queries {
 
     private static Stats.Totals totals(ResultSet rs, double seconds) throws SQLException {
         long calls = rs.getLong("calls");
+        if (calls == 0) {
+            // The percentiles of no request are NULL, which getLong reads as a 0 ms request.
+            return Stats.Totals.EMPTY;
+        }
         long errors = rs.getLong("errors");
         long[] histogram = ResponseBuckets.histogram(rs, errors);
         return new Stats.Totals(calls, errors,
-                calls == 0 ? 0 : (double) errors / calls,
+                (double) errors / calls,
                 calls / seconds,
                 Rows.ms(rs, "p50_ns"), Rows.ms(rs, "p95_ns"), Rows.ms(rs, "p99_ns"),
                 Rows.ms(rs, "max_ns"), histogram, ResponseBuckets.apdex(histogram, calls));

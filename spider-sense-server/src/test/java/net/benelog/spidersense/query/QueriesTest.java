@@ -65,6 +65,27 @@ class QueriesTest {
         assertThat(totals.errors()).isZero();
     }
 
+    /** A window, a service or a filter with no request has no percentile and no max, not a 0 ms one. */
+    @Test
+    void noRequestIsNoPercentileAndNoMax() {
+        decoder.ingest(Otlp.traces(Otlp.service("orders"),
+                Otlp.span(traceId(1), spanId(1), "GET /orders", Span.SpanKind.SPAN_KIND_SERVER,
+                        NOW, 10, Otlp.attr("http.route", "/orders"), Otlp.attr("http.request.method", "GET"))));
+        flush();
+        Window quiet = Window.of(NOW - 120_000, NOW - 61_000);
+
+        for (Stats.Totals totals : List.of(queries.totals(quiet, null), queries.totals(window, "nope"),
+                queries.services(quiet).get(0).totals())) {
+            assertThat(totals.requests()).isZero();
+            assertThat(totals.p50Ms()).isNaN();
+            assertThat(totals.p95Ms()).isNaN();
+            assertThat(totals.p99Ms()).isNaN();
+            assertThat(totals.maxMs()).isNaN();
+            assertThat(totals.apdex()).isNull();
+        }
+        assertThat(queries.totals(window, null).p95Ms()).isEqualTo(10.0);
+    }
+
     /** A percentile read row by row names the rank H2's PERCENTILE_DISC names over the same values. */
     @Test
     void theJavaPercentileIsTheDefinitionOfPercentileDisc() {

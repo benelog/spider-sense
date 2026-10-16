@@ -494,8 +494,9 @@ function apdexOf(histogram) {
   return Math.round(((histogram[0] + histogram[1] + histogram[2] / 2) / total) * 1000) / 1000;
 }
 
+/** No value has no percentile: `null`, as the API answers for a window with no request (api.adoc#nulls). */
 function percentile(sorted, p) {
-  if (!sorted.length) return 0;
+  if (!sorted.length) return null;
   const i = Math.min(sorted.length - 1, Math.max(0, Math.ceil((p / 100) * sorted.length) - 1));
   return Math.round(sorted[i] * 100) / 100;
 }
@@ -559,7 +560,7 @@ function summaryFor(service, w) {
     p50Ms: percentile(durations, 50),
     p95Ms: percentile(durations, 95),
     p99Ms: percentile(durations, 99),
-    maxMs: durations.length ? durations[durations.length - 1] : 0,
+    maxMs: durations.length ? durations[durations.length - 1] : null,
     apdex: apdexOf(histogram),
     histogram,
     sparkline: series.requests,
@@ -1353,7 +1354,7 @@ function totalsOf(w, service) {
     errorRate: entries.length ? errors / entries.length : 0,
     rps: Math.round((entries.length / secs) * 100) / 100,
     p50Ms: percentile(durations, 50), p95Ms: percentile(durations, 95), p99Ms: percentile(durations, 99),
-    maxMs: durations.length ? durations[durations.length - 1] : 0,
+    maxMs: durations.length ? durations[durations.length - 1] : null,
     apdex: apdexOf(histogram),
     histogram,
   };
@@ -1499,7 +1500,7 @@ const ROUTES = [
         errorRate: entries.length ? errors / entries.length : 0,
         rps: Math.round((entries.length / secs) * 100) / 100,
         p50Ms: percentile(durations, 50), p95Ms: percentile(durations, 95), p99Ms: percentile(durations, 99),
-        maxMs: durations.length ? durations[durations.length - 1] : 0,
+        maxMs: durations.length ? durations[durations.length - 1] : null,
         apdex: apdexOf(histogram),
         histogram,
       },

@@ -157,6 +157,7 @@ The answer has four parts.
 
 Totals::
 Requests, errors, p95 and Apdex, for each window.
+A window with no request has no p95 and no Apdex, so both read `—` rather than `0.0 ms` and a score.
 
 Endpoints::
 One row per endpoint, with `calls`, `errors`, `p95`, `db/req` and `db ms/req` for both windows.

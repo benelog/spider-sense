@@ -27,7 +27,9 @@ public final class Stats {
      *
      * <p>{@code histogram} is the five counts {@link ResponseBuckets} describes and
      * {@code apdex} is the score they imply, {@code null} when nothing was
-     * requested.
+     * requested. The percentiles and the maximum are {@link Double#NaN} then, which
+     * the wire writes as {@code null} and the text as a dash (api.adoc#nulls): a 0
+     * would read as a window that answered instantly.
      */
     // Arrays rather than lists: the histogram is five fixed counts the UI reads
     // positionally, and the wire format is a JSON array either way (api.adoc).
@@ -36,8 +38,8 @@ public final class Stats {
             double p50Ms, double p95Ms, double p99Ms, double maxMs, long[] histogram,
             @Nullable Double apdex) {
 
-        public static final Totals EMPTY =
-                new Totals(0, 0, 0, 0, 0, 0, 0, 0, ResponseBuckets.empty(), null);
+        public static final Totals EMPTY = new Totals(0, 0, 0, 0, Double.NaN, Double.NaN, Double.NaN,
+                Double.NaN, ResponseBuckets.empty(), null);
     }
 
     /**

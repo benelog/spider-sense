@@ -215,7 +215,7 @@ The errors of a time bucket are already in `series.errors`.
 == Services
 
 *`GET /api/services?from&to`* answers `{ "services": [ <ServiceSummary> ] }`.
-It lists every service ever seen, with zeros when nothing falls in the window.
+It lists every service ever seen, with zero counts and rates when nothing falls in the window, and `null` for its percentiles, its `maxMs` and its `apdex`.
 
 *`+GET /api/services/{name}?from&to+`*
 
@@ -792,6 +792,7 @@ Both lists are sorted by count descending, then by name, so the endpoint an `err
 
 Every duration that has no value is `null`, never `0`.
 That covers a percentile in a bucket with no requests, the first point of a `rate=true` series and a point where its counter reset, and an estimated `p95` for a histogram point that carries no buckets, or whose one bucket has no bound (a Micrometer timer bridged by the agent).
+It covers totals that counted no request too: those of the overview, of a `ServiceSummary`, of a service node of the map and of a side of `compare` have `null` for `p50Ms`, `p95Ms`, `p99Ms` and `maxMs`, as they have for `apdex`.
 `jvm.nonHeap` has no `limit` array, and `cpu.systemLoad1m` is an empty array on a platform that reports no load average.
 
 [#ordering]

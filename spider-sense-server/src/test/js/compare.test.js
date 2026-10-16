@@ -89,8 +89,8 @@ test('a Live tick leaves the mark selects alone when the marks did not change, s
 
 test('a before window without a request has no p95, and the tile calls nothing worse', async () => {
   server.marks = twoMarks;
-  // the API's Totals.EMPTY: a p95 of 0 over no request
-  server.totals = { before: { requests: 0, errors: 0, p95Ms: 0, apdex: null }, after: { requests: 201, errors: 0, p95Ms: 285, apdex: 0.97 } };
+  // the API's totals over no request: no p95 and no Apdex
+  server.totals = { before: { requests: 0, errors: 0, p95Ms: null, apdex: null }, after: { requests: 201, errors: 0, p95Ms: 285, apdex: 0.97 } };
   const { root, instance } = await openCompare();
   const tile = root.querySelectorAll('.cmp-tile').find((t) => t.querySelector('.stat-caption').textContent === 'p95');
   assert.equal(tile.querySelector('.cmp-before').textContent, '—');

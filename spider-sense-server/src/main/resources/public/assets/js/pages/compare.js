@@ -215,7 +215,7 @@ export function render(root, ctx) {
     const totals = (data && data.totals) || {};
     const before = totals.before || {};
     const after = totals.after || {};
-    // The API's p95 over no request is 0, which is no value: that side reads — and has no verdict.
+    // A side with no request has no p95 (the API's null): it reads — and has no verdict.
     const p95Of = (side) => (side.requests ? side.p95Ms : null);
     const p95Before = p95Of(before), p95After = p95Of(after);
     tiles.hidden = false;

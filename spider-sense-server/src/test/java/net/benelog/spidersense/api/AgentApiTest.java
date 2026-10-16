@@ -644,7 +644,12 @@ class AgentApiTest {
             JsonObject body = json(client.get(
                     "/api/compare?before=" + (NOW - 60_000) + "&after=start-of-run"));
             assertThat(body.getObject("totals").getObject("after").getLong("requests")).isEqualTo(1);
-            assertThat(body.getObject("totals").getObject("before").getLong("requests")).isZero();
+            JsonObject quiet = body.getObject("totals").getObject("before");
+            assertThat(quiet.getLong("requests")).isZero();
+            // A window with no request has no p95 to compare, rather than one of 0 ms.
+            for (String duration : new String[] {"p50Ms", "p95Ms", "p99Ms", "maxMs", "apdex"}) {
+                assertThat(quiet.get(duration).isNull()).as(duration).isTrue();
+            }
             JsonObject endpoint = body.getArray("endpoints").get(0).asObject();
             assertThat(endpoint.getString("verdict")).isEqualTo("new");
             assertThat(endpoint.get("before").isNull()).isTrue();
@@ -653,6 +658,8 @@ class AgentApiTest {
             String text = client.get("/api/compare?before=" + (NOW - 60_000)
                     + "&after=start-of-run&format=text").body();
             assertThat(text).startsWith("# compare  ");
+            assertThat(text).contains("| requests | 0 | 1 |\n").contains("| p95 | — | ")
+                    .contains("| apdex | — | ");
             assertThat(text).contains("## endpoints");
             assertThat(text).contains("## queries");
             assertThat(text).contains("## errors");
@@ -817,6 +824,9 @@ class AgentApiTest {
                     .startsWith("# traces  ");
             assertThat(client.get("/api/services?since=5m&format=text").body())
                     .startsWith("# services  ");
+            // A service quiet in the window has no percentile and no max to print.
+            assertThat(client.get("/api/services?from=" + (NOW - 120_000) + "&to=" + (NOW - 60_000)
+                    + "&format=text").body()).contains(" | 0 | 0 | — | — | — | — | ");
             assertThat(client.get("/api/logs?since=5m&format=text").body())
                     .startsWith("# logs  ");
             assertThat(client.get("/api/status?format=text").body())
