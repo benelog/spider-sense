@@ -47,6 +47,15 @@ class ReadOnlyQueryTest {
         assertThat(row(statement)).isEqualTo(row(statement));
     }
 
+    /** A JSON element of an ARRAY is its text as well, as a JSON column's value is, not its bytes in hex. */
+    @Test
+    void aJsonElementOfAnArrayIsItsText() {
+        assertThat(row("SELECT ARRAY[JSON '{\"a\":1}', JSON '[2]'], ARRAY[ARRAY[JSON '3']],"
+                + " (SELECT ARRAY_AGG(JSON_OBJECT('n': X) ORDER BY X) FROM (VALUES 1, 2) T(X))"))
+                .containsExactly(List.of("{\"a\":1}", "[2]"), List.of(List.of("3")),
+                        List.of("{\"n\":1}", "{\"n\":2}"));
+    }
+
     /**
      * A lone surrogate, typed into a literal or made by the query, is U+FFFD in the cell, which the
      * JSON and the text renderings then both show.

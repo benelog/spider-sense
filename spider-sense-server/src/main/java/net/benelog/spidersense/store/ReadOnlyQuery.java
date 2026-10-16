@@ -139,9 +139,9 @@ public final class ReadOnlyQuery {
      * <p>The store keeps every instant as epoch milliseconds, so the numbers that
      * matter stay numbers; a {@code TIMESTAMP} a query computes itself becomes an
      * ISO string rather than an object nobody can read back. An {@code ARRAY} and a
-     * row value are lists of their elements, and a {@code JSON} value is its text, so
-     * the same statement answers the same cell rather than H2's object dump, which
-     * carries a counter of its own.
+     * row value are lists of their elements, and a {@code JSON} value is its text, an
+     * element of an {@code ARRAY} as much as a column, so the same statement answers
+     * the same cell rather than H2's object dump, which carries a counter of its own.
      */
     private static Object value(ResultSet rs, int column) throws SQLException {
         Object value = rs.getObject(column);
@@ -198,10 +198,14 @@ public final class ReadOnlyQuery {
         }
         if (value instanceof java.sql.Array array) {
             try {
+                // H2 hands a JSON element over as its bytes, as it does a JSON column's value.
+                boolean json = "JSON".equalsIgnoreCase(array.getBaseTypeName());
                 Object[] elements = (Object[]) array.getArray();
                 List<Object> list = new ArrayList<>(elements.length);
                 for (Object element : elements) {
-                    list.add(cell(element));
+                    list.add(json && element instanceof byte[] bytes
+                            ? new String(bytes, StandardCharsets.UTF_8)
+                            : cell(element));
                 }
                 return list;
             } finally {
