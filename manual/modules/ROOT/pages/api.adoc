@@ -554,8 +554,9 @@ A record's own `severity` is the name of its OTLP severity range, and `UNSET` wh
 For a histogram, `v` is the per-point `sum/count` mean, and each series also carries `"count": [...]`, `"p95": [...]` (estimated from buckets) and `"max": [...]`.
 `v`, `p95` and `max` are in the metric's `unit` and unrounded, so a duration histogram in seconds keeps its fractions of a millisecond.
 The `p95` is interpolated inside the bucket that crosses it, narrowed to the point's own `min` and `max`, so it never passes the `max` beside it.
-For a monotonic sum such as `jvm.cpu.time` or the count of `jvm.gc.duration`, `v` is the rate per second between points when `rate=true`, and the cumulative value otherwise.
+For a monotonic sum such as `jvm.cpu.time`, `v` is the rate per second between points when `rate=true`, and the cumulative value otherwise.
 A cumulative point is differenced from the one before it, and a point below the one before it, which is the counter resetting when the process restarted, has no rate; a `DELTA` point is already the increment, and is divided by the seconds since the one before it.
+A histogram is no sum, so `rate=true` leaves it as it is, its `count` included: the count of a cumulative `jvm.gc.duration` stays the collections since the JVM started.
 
 [#jvm]
 === JVM
