@@ -543,8 +543,9 @@ export function legendItems(spec) {
 
 /**
  * A time series in a panel, its legend above it: `show(spec)` draws it the first time and
- * redraws it after, `empty(content)` puts something else where the chart was until the next
- * `show`, and `destroy()` lets it go. `legend: false` leaves the legend out.
+ * redraws it after, `empty(content)` lets the chart go and puts something else in its place until
+ * the next `show`, so a theme flip does not draw it back, and `destroy()` lets it go.
+ * `legend: false` leaves the legend out.
  */
 export function chartBox({ title, actions, legend: withLegend = true } = {}) {
   const legendNode = document.createElement('div');
@@ -561,6 +562,8 @@ export function chartBox({ title, actions, legend: withLegend = true } = {}) {
       else chart = timeSeries(body, spec);
     },
     empty(content) {
+      if (chart) chart.destroy();
+      chart = null;
       legendNode.replaceChildren();
       body.replaceChildren(content);
     },

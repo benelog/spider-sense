@@ -5,7 +5,7 @@ import './browser-env.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { document } from './fake-dom.js';
-import { legendItems, alignedTimes, alignTo, stackColumns, tipLeft, valueText, tickText, durationRange, countScales, COUNT_INCRS, timeTicks, timeSeries } from '../../main/resources/public/assets/js/charts.js';
+import { legendItems, alignedTimes, alignTo, stackColumns, tipLeft, valueText, tickText, durationRange, countScales, COUNT_INCRS, timeTicks, timeSeries, chartBox, retheme } from '../../main/resources/public/assets/js/charts.js';
 import * as fmt from '../../main/resources/public/assets/js/format.js';
 import { throughputSpec } from '../../main/resources/public/assets/js/throughput.js';
 
@@ -31,6 +31,22 @@ test('the throughput legend follows its mode', () => {
     ['Requests per bucket', 'Errors', 'p95 response time, right axis']);
   assert.deepEqual(legendItems(throughputSpec(series, 'load')).map((i) => i.label),
     ['≤125 ms', '≤500 ms', '≤2 s', '>2 s', 'Errors']);
+});
+
+test('what replaced a chart box\'s chart stays when the theme flips, until the next show', () => {
+  const box = chartBox({ title: 'Metric' });
+  const spec = { t: [Date.now() - 60000, Date.now()], series: [{ label: 'v', values: [1, 2] }] };
+  box.show(spec);
+  const sentence = document.createElement('p');
+  box.empty(sentence);
+  retheme();
+  assert.deepEqual(box.body.children, [sentence], 'the empty state, not the chart it replaced');
+  assert.equal(box.node.querySelector('.chart-legend'), null, 'and no legend');
+  box.show(spec);
+  assert.ok(box.body.children[0].plot, 'the next show draws the chart again');
+  retheme();
+  assert.ok(box.body.children[0].plot, 'which a flip redraws');
+  box.destroy();
 });
 
 test('series sampled at different instants share the union of their times', () => {

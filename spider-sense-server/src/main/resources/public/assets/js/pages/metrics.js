@@ -169,7 +169,8 @@ export function render(root, ctx) {
     }
   }
 
-  const seriesLoader = pageLoader({ fetch: fetchSeries, paint: paintSeries, body: chart.body });
+  // An error box takes the chart's place as an empty state does, so a theme flip does not draw the chart back over it.
+  const seriesLoader = pageLoader({ fetch: fetchSeries, paint: paintSeries, body: { replace: chart.empty } });
 
   const catalogLoader = pageLoader({
     fetch: () => api.metricCatalog({}),
