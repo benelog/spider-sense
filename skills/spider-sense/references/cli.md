@@ -493,6 +493,7 @@ Rules and the value each one measures:
 | `--min-apdex` | the Apdex over the scope |
 
 `--endpoint=` narrows the scope to one endpoint, by `endpointId` or by name (`GET /api/orders/{id}`), and the heading names it.
+A name that endpoints of several services share is a usage error (exit 2) without `--service`; the message lists each service with its endpoint's id.
 
 ### `help`
 

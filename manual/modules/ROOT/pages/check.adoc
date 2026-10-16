@@ -68,6 +68,7 @@ A limit is a finite decimal number (`500`, `0.05`, `1e3`); `NaN`, an infinity an
 
 `--endpoint=` narrows the scope to one endpoint, by `endpointId` or by name (`GET /api/orders/\{id}`), and the heading names it.
 An endpoint the window does not have, while the window has requests, is a usage error (exit `2`, `400` over HTTP) that names the endpoint and points at `endpoints`, rather than a check with no request to judge, so a mistyped endpoint cannot pass a build as exit `3`.
+A name that endpoints of several services share is a usage error too, without `--service`, since one verdict over all of them would fail one service's endpoint for another's: it lists each service with its endpoint's id, the two ways to name one of them.
 `--max-n-plus-one` and `--max-regressions` then count only the findings about that endpoint.
 `--service=` narrows the scope to one service.
 `requests` counts the entry spans in scope, as xref:design.adoc#endpoint-identity[Endpoint identity] defines an entry span, so a seeder's or a scheduler's root spans never make a verdict of their own.

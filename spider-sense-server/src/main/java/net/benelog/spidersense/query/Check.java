@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
@@ -287,7 +288,28 @@ public final class Check {
                 matching.add(each);
             }
         }
+        refuseShared(endpoint, matching);
         return matching;
+    }
+
+    /**
+     * A name that endpoints of several services share is no one endpoint: a gate over all of them
+     * would fail one service's for another's slowness (check.adoc#rules), so it is refused with
+     * each service and its endpoint's id, the two ways to name one of them.
+     */
+    private static void refuseShared(String endpoint, List<Stats.EndpointStats> matching) {
+        Map<String, String> idsByService = new TreeMap<>();
+        for (Stats.EndpointStats each : matching) {
+            idsByService.put(each.service(), each.endpointId());
+        }
+        if (idsByService.size() < 2) {
+            return;
+        }
+        List<String> named = new ArrayList<>();
+        idsByService.forEach((service, id) -> named.add(service + " (" + id + ")"));
+        throw new Selectors.BadSelector("`" + endpoint + "` is an endpoint of " + named.size() + " services, "
+                + String.join(", ", named.subList(0, named.size() - 1)) + " and " + named.get(named.size() - 1)
+                + ": name the service, or the endpoint by its id");
     }
 
     /**

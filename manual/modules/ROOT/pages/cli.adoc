@@ -460,6 +460,7 @@ $ echo $?
 
 `--endpoint=` narrows the scope to one endpoint, by its id or by its name, and the heading names that endpoint.
 An endpoint the window does not have, while the window has requests, is a usage error that exits `2` and points at `endpoints`, rather than a check with no request to judge.
+So is a name that endpoints of several services share, without `--service`: the message lists each service with its endpoint's id.
 
 [#tail-command]
 === tail

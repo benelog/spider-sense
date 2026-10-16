@@ -1,6 +1,7 @@
 package net.benelog.spidersense.query;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -14,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import net.benelog.spidersense.Otlp;
 import net.benelog.spidersense.TestStore;
 import net.benelog.spidersense.ingest.OtlpDecoder;
+import net.benelog.spidersense.store.Ids;
 import net.benelog.spidersense.store.Store;
 
 /** Thresholds as a verdict: the default rule set, one failing rule, and no data at all. */
@@ -220,6 +222,29 @@ class CheckTest {
         Check.CheckResult unknown = check.check(window, null, "GET /nothing", Map.of());
         assertThat(unknown.pass()).isNull();
         assertThat(unknown.reason()).isEqualTo(Check.NO_REQUESTS);
+    }
+
+    /** Two services' GET /x are two endpoints: a name both have is refused rather than judged as one. */
+    @Test
+    void anEndpointNameTwoServicesShareNeedsTheServiceOrTheId() {
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), entry("/x", 50)));
+        decoder.ingest(Otlp.traces(Otlp.service("billing"), entry("/x", 900)));
+        flush();
+        String orders = Ids.endpointId("orders", "GET /x");
+        String billing = Ids.endpointId("billing", "GET /x");
+        Map<String, Double> rules = Map.of(Check.MAX_P95_MS, 500.0);
+
+        assertThatThrownBy(() -> check.check(window, null, "GET /x", rules))
+                .isInstanceOf(Selectors.BadSelector.class)
+                .hasMessage("`GET /x` is an endpoint of 2 services, billing (" + billing + ") and orders ("
+                        + orders + "): name the service, or the endpoint by its id");
+
+        Check.CheckResult ofOrders = check.check(window, "orders", "GET /x", rules);
+        assertThat(ofOrders.pass()).isTrue();
+        assertThat(ofOrders.requests()).isEqualTo(1);
+        Check.CheckResult byId = check.check(window, null, billing, rules);
+        assertThat(byId.pass()).isFalse();
+        assertThat(byId.requests()).isEqualTo(1);
     }
 
     @Test
