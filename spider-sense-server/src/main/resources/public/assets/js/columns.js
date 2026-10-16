@@ -3,7 +3,7 @@
 // `sortable` out, so a column sorts in a table that sorts; pass { sortable: false } to stop it.
 
 import { h, serviceChip } from './ui.js';
-import { detailHref } from './router.js';
+import { detailLink } from './router.js';
 import { oneLineSql, storedSql } from './sql.js';
 import { dur, count, rel, bothTimes, truncate, splitType } from './format.js';
 
@@ -86,6 +86,6 @@ export function fitTable(node, columns, wideMin = 200) {
  */
 export function endpointCell(name, endpointId) {
   return endpointId
-    ? h('a.cell-ellipsis', { href: detailHref('endpoints', endpointId), title: 'Open ' + name }, name)
+    ? h('a.cell-ellipsis', { ...detailLink('endpoints', endpointId), title: 'Open ' + name }, name)
     : h('span.cell-ellipsis', { title: name }, name);
 }

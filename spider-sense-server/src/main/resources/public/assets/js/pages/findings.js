@@ -306,9 +306,10 @@ export function evidence(finding, onChange, listWindow) {
       return true;
     });
   const traces = finding.traces || [];
-  const target = findingTarget(finding);
+  // The targets' own queries: their links add the top bar's, and keep it as it changes.
+  const target = findingTarget(finding, {});
   // An N+1 goes to its endpoint, and its statement has a page too.
-  const query = target && target.label !== 'Query' ? queryTarget(finding) : null;
+  const query = target && target.label !== 'Query' ? queryTarget(finding, {}) : null;
   return h('div.f-evidence',
     finding.why ? h('p.f-why', finding.why) : null,
     numbers.length
@@ -328,13 +329,13 @@ export function evidence(finding, onChange, listWindow) {
       traces.length
         ? h('span.row', { style: { gap: '6px' } }, h('span.muted', 'Traces'),
           traces.map((id) => h('a.mono', {
-            href: router.detailHref('traces', id),
+            ...router.detailLink('traces', id),
             title: id,
           }, shortId(id, 12))))
         : null,
       target
         ? h('span.row.f-targets', { style: { gap: '6px' } }, [target, query].filter(Boolean).map((t) => h('a.btn.btn-ghost', {
-          href: router.href(t.path, t.query),
+          ...router.link(t.path, t.query),
           title: TARGET_TITLE[t.label],
         }, t.label)))
         : null,

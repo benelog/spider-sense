@@ -113,10 +113,12 @@ function syncStateFromQuery(query) {
 /**
  * The sidebar's links, the logo and the tingles entry carry the top bar's query, as every
  * internal link does (ui.adoc#urls), so a page picked there keeps the service, range, Live and chart.
+ * So do the links a page built with router.link, which it does not rebuild on every change.
  */
 function carryQuery() {
   const query = api.sharedQuery();
   for (const a of document.querySelectorAll('a[data-nav]')) a.setAttribute('href', router.href(a.dataset.nav, query));
+  for (const a of document.querySelectorAll('a[data-carry]')) a.setAttribute('href', router.carriedHref(a.dataset.carry));
 }
 
 let knownServices = [];

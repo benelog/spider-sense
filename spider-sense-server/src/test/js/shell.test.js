@@ -104,6 +104,43 @@ test('a hash the page did not set opens the view it names, on the same route too
   follow('#/');
 });
 
+const linkNamed = (text) => main().querySelectorAll('a').find((a) => a.textContent === text);
+
+test('a link a page built once carries the service, the range and Live the top bar shows now (ui.adoc#urls)', async () => {
+  follow('#/');
+  await until(() => linkNamed('All findings'), 'the Overview');
+  router.setQuery({ service: 'spring-orders', range: '1h', live: '1' });
+  assert.equal(linkNamed('All findings').getAttribute('href'), '#/findings?service=spring-orders&range=1h&live=1');
+  assert.equal(linkNamed('All services').getAttribute('href'), '#/services?service=spring-orders&range=1h&live=1');
+  router.setQuery({ service: '', range: '', live: '' });
+
+  follow('#/services/spring-orders');
+  await until(() => linkNamed('All queries'), 'the Service page');
+  router.setQuery({ range: '6h' });
+  assert.equal(linkNamed('All queries').getAttribute('href'), '#/queries?range=6h&service=spring-orders', 'its own service stays');
+  assert.equal(linkNamed('All errors').getAttribute('href'), '#/errors?range=6h&service=spring-orders');
+  router.setQuery({ range: '' });
+
+  follow('#/findings');
+  await until(() => main().querySelector('tbody tr'), 'the findings');
+  main().querySelector('tbody tr').click();
+  const evidenceLinks = () => main().querySelectorAll('tr.f-detail a').map((a) => a.getAttribute('href')).filter((href) => href.startsWith('#/'));
+  assert.ok(evidenceLinks().length > 0, 'the open finding links its subject');
+  router.setQuery({ range: '1h' });
+  for (const href of evidenceLinks()) assert.match(href, /[?&]range=1h(&|$)/);
+  router.setQuery({ range: '' });
+
+  let id = null;
+  for (const t of (await api.traces({ limit: 200 })).traces) if (((await api.trace(t.traceId)).logs || []).length) { id = t.traceId; break; }
+  follow('#/traces/' + id);
+  await until(() => linkNamed('Logs page') && linkNamed('Logs page').dataset.carry, 'the trace page');
+  router.setQuery({ live: '1' });
+  const logs = new URLSearchParams(linkNamed('Logs page').getAttribute('href').split('?')[1]);
+  assert.deepEqual([logs.get('live'), logs.get('traceId'), logs.has('service')], ['1', id, false]);
+  router.setQuery({ live: '' });
+  follow('#/');
+});
+
 /** A key pressed on the page, outside any field. */
 function press(key) {
   const event = { key, target: document.body, preventDefault() {} };

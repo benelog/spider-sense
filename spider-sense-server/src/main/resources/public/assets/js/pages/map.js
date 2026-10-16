@@ -535,7 +535,7 @@ export function render(root, ctx) {
 
   function serviceDrawer(n) {
     const chartBody = h('div.chart');
-    const q = { ...api.sharedQuery(), service: n.name };
+    const own = { service: n.name };
     loadDrawerChart(n.name, chartBody);
     return [
       h('div.stat-row',
@@ -547,9 +547,9 @@ export function render(root, ctx) {
       h('div', h('div.sub-head', { style: { marginBottom: '6px' } }, 'Response summary'), histogramBars(n.histogram)),
       h('div', h('div.sub-head', { style: { marginBottom: '6px' } }, 'Load'), chartBody),
       h('div.row', { style: { gap: '8px' } },
-        h('a.btn', { href: router.href(router.detailPath('services', n.name), q) }, 'Service'),
-        h('a.btn', { href: router.href('/scatter', q) }, 'Scatter'),
-        h('a.btn', { href: router.href('/traces', q) }, 'Traces')),
+        h('a.btn', router.link(router.detailPath('services', n.name), own), 'Service'),
+        h('a.btn', router.link('/scatter', own), 'Scatter'),
+        h('a.btn', router.link('/traces', own), 'Traces')),
     ];
   }
 

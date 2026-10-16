@@ -1,7 +1,7 @@
 // router.js: the hash as a path and a query (ui.adoc#urls).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parse, href, detailPath, detailHref, queryParam, compile, match } from '../../main/resources/public/assets/js/router.js';
+import { parse, href, detailPath, detailHref, link, carriedHref, queryParam, compile, match } from '../../main/resources/public/assets/js/router.js';
 import { state } from '../../main/resources/public/assets/js/api.js';
 
 test('parse splits the hash into a path and a query', () => {
@@ -47,6 +47,23 @@ test('detailHref carries the top bar query', () => {
   } finally {
     state.service = '';
     state.range = '15m';
+  }
+});
+
+test('a link names its own query beside the top bar\'s, and is rebuilt from it under a new top bar (ui.adoc#urls)', () => {
+  state.service = 'orders';
+  try {
+    const logs = link('/logs', { service: '', range: '5m', traceId: 'abc', q: undefined });
+    assert.deepEqual(logs, { href: '#/logs?range=5m&traceId=abc', dataset: { carry: '/logs?service=&range=5m&traceId=abc' } });
+    const trace = link(detailPath('endpoints', 'GET /a'));
+    assert.equal(trace.href, '#/endpoints/GET%20%2Fa?service=orders');
+    state.service = 'books';
+    state.range = '1h';
+    state.live = true;
+    assert.equal(carriedHref(logs.dataset.carry), '#/logs?range=5m&live=1&traceId=abc', 'an empty value of its own keeps the service out');
+    assert.equal(carriedHref(trace.dataset.carry), '#/endpoints/GET%20%2Fa?service=books&range=1h&live=1');
+  } finally {
+    Object.assign(state, { service: '', range: '15m', live: false });
   }
 });
 

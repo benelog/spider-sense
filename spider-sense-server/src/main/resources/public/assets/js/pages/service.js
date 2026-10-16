@@ -56,8 +56,8 @@ export function render(root, ctx) {
   const queriesBody = h('div');
   const errorsBody = h('div');
   const half = h('div.grid-2',
-    panel({ title: 'Top queries', actions: h('a.link-btn', { href: router.href('/queries', { ...api.sharedQuery(), service: name }) }, 'All queries') }, queriesBody),
-    panel({ title: 'Top errors', actions: h('a.link-btn', { href: router.href('/errors', { ...api.sharedQuery(), service: name }) }, 'All errors') }, errorsBody));
+    panel({ title: 'Top queries', actions: h('a.link-btn', router.link('/queries', { service: name }), 'All queries') }, queriesBody),
+    panel({ title: 'Top errors', actions: h('a.link-btn', router.link('/errors', { service: name }), 'All errors') }, errorsBody));
   const depsBody = h('div');
   const depsPanel = panel({ title: 'Dependencies' }, depsBody);
   const resourceBody = h('div');

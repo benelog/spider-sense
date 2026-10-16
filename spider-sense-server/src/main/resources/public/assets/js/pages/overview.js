@@ -27,12 +27,12 @@ export function render(root, ctx) {
   const findingsBody = h('div.findings', spinner());
   const findingsPanel = panel({
     title: 'Findings',
-    actions: h('a.link-btn', { href: router.href('/findings', api.sharedQuery()) }, 'All findings'),
+    actions: h('a.link-btn', router.link('/findings'), 'All findings'),
   }, findingsBody);
   const servicesBody = h('div.service-cards');
   const servicesPanel = panel({
     title: 'Services',
-    actions: h('a.link-btn', { href: router.href('/services', api.sharedQuery()) }, 'All services'),
+    actions: h('a.link-btn', router.link('/services'), 'All services'),
   }, servicesBody);
   const tingleBody = h('div.tingles');
   const tinglePanel = panel({ title: 'Tingles' }, tingleBody);

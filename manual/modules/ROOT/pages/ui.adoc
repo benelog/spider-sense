@@ -265,6 +265,7 @@ The service filter and the time range live in the hash query, as in `+#/traces?s
 So do *Live*, as `live=1`, and the *Requests* | *Load* choice of the throughput charts, as `chart=requests` or `chart=load` (xref:pages.adoc#overview[Overview]).
 Every internal link carries these four, so a choice made on one page holds on the next.
 The sidebar's entries, the logo and the tingles entry are rewritten on every change of the hash, so they carry them too.
+Every link a page has already built is rewritten too, such as the Overview's *All findings* or the links of an open finding's evidence, and leads to the service, range and Live the top bar shows when it is followed.
 A path parameter is percent-encoded in the hash and decoded once, so a service named `50% off` is `+#/services/50%25%20off+`, and an encoded `/` stays part of its name.
 A URL can therefore be shared as it is, and opens on the same view.
 A hash the page did not set itself, from a link, *Back* or *Forward*, or an edited URL, opens its view the same way, on the page already open too, so the page never keeps a filter, a sort or a metric the URL no longer names.

@@ -342,10 +342,10 @@ export function render(root, ctx) {
   function paintLogs() {
     const logs = data.logs || [];
     const t0 = traceStartMs(data);
-    // Every service's records, over a range that still holds the trace.
-    logsLink.href = router.href('/logs', {
-      ...api.sharedQuery(), service: '', range: rangeHolding(t0), traceId: data.traceId || traceId,
-    });
+    // Every service's records, over a range that still holds the trace, and Live as the top bar has it.
+    const to = router.link('/logs', { service: '', range: rangeHolding(t0), traceId: data.traceId || traceId });
+    logsLink.href = to.href;
+    logsLink.dataset.carry = to.dataset.carry;
     fill(logsBox, table([
       { key: 'offset', label: 'Offset', align: 'right', sortable: false, width: '80px', render: (l) => h('span.mono.muted', offset(l.at - t0)) },
       { key: 'severity', label: 'Level', sortable: false, width: '68px', render: (l) => severityChip(l.severity) },

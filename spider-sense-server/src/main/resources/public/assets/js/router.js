@@ -85,6 +85,29 @@ export function detailHref(kind, id) {
   return href(detailPath(kind, id), sharedQuery());
 }
 
+/**
+ * A link's attributes for h(): the href to `path` with the top bar's query and `own` over it, and
+ * `data-carry`, from which the shell rewrites the href on every change of the hash, so a link a
+ * page built once still carries the service, range, Live and chart the top bar shows (ui.adoc#urls).
+ * An empty value in `own` keeps the top bar's value out of the link.
+ */
+export function link(path, own = {}) {
+  const kept = Object.entries(own).filter(([, v]) => v !== undefined && v !== null && v !== false);
+  const qs = new URLSearchParams(kept.map(([k, v]) => [k, String(v)])).toString();
+  return { href: href(path, { ...sharedQuery(), ...own }), dataset: { carry: path + (qs ? '?' + qs : '') } };
+}
+
+/** link() to the page of one thing. */
+export function detailLink(kind, id) {
+  return link(detailPath(kind, id));
+}
+
+/** The href of a link's `data-carry` (see link) under the top bar's query as it is now. */
+export function carriedHref(carry) {
+  const { path, query } = parse(carry);
+  return href(path, { ...sharedQuery(), ...query });
+}
+
 /** Go to that page, carrying the top bar's query. */
 export function openDetail(kind, id) {
   go(detailPath(kind, id), sharedQuery());

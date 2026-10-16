@@ -82,7 +82,7 @@ export function render(root, ctx) {
     {
       key: 'traceId', label: 'Trace', sortable: false, width: '80px',
       render: (log) => (log.traceId
-        ? h('a.mono', { href: router.detailHref('traces', log.traceId), title: log.traceId, onclick: (e) => e.stopPropagation() }, shortId(log.traceId))
+        ? h('a.mono', { ...router.detailLink('traces', log.traceId), title: log.traceId, onclick: (e) => e.stopPropagation() }, shortId(log.traceId))
         : h('span.muted', '-')),
     },
   ];
