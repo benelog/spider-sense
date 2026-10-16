@@ -1020,7 +1020,9 @@ function resolveSelector(selector, fallback, service) {
 const FRAMEWORK = ['java.', 'javax.', 'jdk.', 'sun.', 'com.sun.', 'jakarta.', 'org.springframework.',
   'org.hibernate.', 'org.eclipse.jetty.', 'org.apache.', 'io.opentelemetry.', 'com.zaxxer.', 'org.h2.',
   'net.benelog.spidersilk.', 'kotlin.', 'scala.', 'reactor.', 'io.netty.', 'ch.qos.logback.', 'org.slf4j.',
-  'org.junit.', 'gg.jte.'];
+  'org.junit.', 'gg.jte.', 'org.postgresql.', 'com.mysql.', 'org.mariadb.', 'oracle.', 'com.microsoft.sqlserver.',
+  'org.sqlite.', 'org.hsqldb.', 'org.jooq.', 'org.mybatis.', 'com.mongodb.', 'io.lettuce.', 'redis.clients.',
+  'com.fasterxml.', 'com.google.', 'kotlinx.', 'okhttp3.', 'feign.', 'io.grpc.', 'org.jboss.'];
 
 /** A stack trace as its exception chain, innermost first, as api.adoc#cause answers it. */
 function chainOf(stack) {

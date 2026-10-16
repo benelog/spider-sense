@@ -65,6 +65,45 @@ class ExceptionChainTest {
         assertThat(Ids.errorId("billing", "X", "a", WRAPPED)).isNotEqualTo(Ids.errorId("orders", "X", "a", WRAPPED));
     }
 
+    /**
+     * A JDBC driver throws from frames of its own, as H2 does: two bugs in two methods are two
+     * groups however the driver names its exception, and the driver's frames are no code.
+     */
+    @Test
+    void aDriversOwnFramesAreNotTheApplicationsWhateverTheDriver() {
+        String duplicateKey = """
+                org.springframework.dao.DataIntegrityViolationException: could not execute statement
+                \tat org.springframework.orm.jpa.EntityManagerFactoryUtils.convert(EntityManagerFactoryUtils.java:360)
+                \tat shop.OrderService.place(OrderService.java:30)
+                Caused by: org.postgresql.util.PSQLException: ERROR: duplicate key value violates unique constraint
+                \tat org.postgresql.core.v3.QueryExecutorImpl.receiveErrorResponse(QueryExecutorImpl.java:2725)
+                \tat org.postgresql.core.v3.QueryExecutorImpl.processResults(QueryExecutorImpl.java:2412)
+                \tat org.postgresql.jdbc.PgStatement.executeInternal(PgStatement.java:517)
+                \tat com.zaxxer.hikari.pool.ProxyPreparedStatement.executeUpdate(ProxyPreparedStatement.java:61)
+                \tat shop.OrderRepository.insert(OrderRepository.java:41)
+                \t... 12 more""";
+        String badGrammar = duplicateKey.replace("shop.OrderRepository.insert(OrderRepository.java:41)",
+                "shop.ReportRepository.revenue(ReportRepository.java:27)");
+
+        assertThat(ExceptionChain.parse(duplicateKey).innermost(ExceptionChain::notFramework))
+                .isEqualTo("shop.OrderRepository.insert(OrderRepository.java:41)");
+        assertThat(Ids.errorId("shop", "X", "a", duplicateKey))
+                .isNotEqualTo(Ids.errorId("shop", "X", "a", badGrammar));
+
+        for (String frame : java.util.List.of(
+                "com.mysql.cj.jdbc.exceptions.SQLError.createSQLException(SQLError.java:121)",
+                "org.mariadb.jdbc.export.ExceptionFactory.createException(ExceptionFactory.java:300)",
+                "oracle.jdbc.driver.T4CTTIoer11.processError(T4CTTIoer11.java:629)",
+                "com.microsoft.sqlserver.jdbc.SQLServerException.makeFromDatabaseError(SQLServerException.java:265)",
+                "org.sqlite.core.DB.newSQLException(DB.java:1179)",
+                "org.hsqldb.jdbc.JDBCUtil.sqlException(Unknown Source)",
+                "com.fasterxml.jackson.databind.exc.MismatchedInputException.from(MismatchedInputException.java:59)",
+                "com.google.gson.Gson.fromJson(Gson.java:1227)",
+                "kotlinx.coroutines.DispatchedTask.run(DispatchedTask.kt:108)")) {
+            assertThat(ExceptionChain.notFramework(frame)).as(frame).isFalse();
+        }
+    }
+
     @Test
     void withoutAnApplicationFrameTheKeyIsTheOuterTypeAndTheNormalisedMessage() {
         String framework = "java.lang.IllegalStateException: Order 42 is shipped\n"

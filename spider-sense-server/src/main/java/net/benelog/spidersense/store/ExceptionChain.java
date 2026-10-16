@@ -29,12 +29,22 @@ import org.jspecify.annotations.Nullable;
  */
 public record ExceptionChain(List<Cause> causes) {
 
-    /** What is framework rather than application when no allowlist is given (findings.adoc#code). */
+    /**
+     * What is framework rather than application when no allowlist is given (findings.adoc#code).
+     *
+     * <p>A JDBC driver, a data-access library, a JSON mapper or a client throws from frames of its
+     * own, so each must be here: otherwise its throwing frame is the innermost "application" frame
+     * of every failure that passes through it, and one group swallows them all (design.adoc#errors).
+     */
     public static final List<String> FRAMEWORK_PREFIXES = List.of(
             "java.", "javax.", "jdk.", "sun.", "com.sun.", "jakarta.", "org.springframework.",
             "org.hibernate.", "org.eclipse.jetty.", "org.apache.", "io.opentelemetry.", "com.zaxxer.",
             "org.h2.", "net.benelog.spidersilk.", "kotlin.", "scala.", "reactor.", "io.netty.",
-            "ch.qos.logback.", "org.slf4j.", "org.junit.", "gg.jte.");
+            "ch.qos.logback.", "org.slf4j.", "org.junit.", "gg.jte.",
+            "org.postgresql.", "com.mysql.", "org.mariadb.", "oracle.", "com.microsoft.sqlserver.",
+            "org.sqlite.", "org.hsqldb.", "org.jooq.", "org.mybatis.", "com.mongodb.", "io.lettuce.",
+            "redis.clients.", "com.fasterxml.", "com.google.", "kotlinx.", "okhttp3.", "feign.",
+            "io.grpc.", "org.jboss.");
 
     /**
      * One exception of the chain.
