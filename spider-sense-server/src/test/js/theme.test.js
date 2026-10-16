@@ -148,6 +148,23 @@ test('the accent and INFO text reach 4.5:1 on the tints they sit on as well', ()
   }
 });
 
+test('a status chip\'s text reaches 4.5:1 on its tint too, in the sidebar and on a hovered row', () => {
+  const chips = [['.chip-warn', '--warn'], ['.sev[data-sev="ERROR"], .sev[data-sev="FATAL"]', '--err'], ['.sev[data-sev="WARN"]', '--warn'],
+    ['.chip-state.state-regressed', '--err'], ['.verdict-worse', '--err'], ['.verdict-better', '--ok']];
+  for (const light of [false, true]) {
+    const token = palette(light);
+    for (const [selector, tint] of chips) {
+      const declarations = rule(selector);
+      const fg = /(?:^|[{;\s])color: var\((--[\w-]+)\)/.exec(declarations)[1];
+      const alpha = Number(new RegExp('background: color-mix\\(in srgb, var\\(' + tint + '\\) (\\d+)%').exec(declarations)[1]) / 100;
+      for (const bg of ['--bg', '--bg-panel', '--bg-raised']) {
+        const ratio = contrast(token(fg), over(token(tint), alpha, token(bg)));
+        assert.ok(ratio >= 4.5, `${light ? 'light' : 'dark'} ${selector}: ${fg} on ${tint} ${Math.round(alpha * 100)}% over ${bg} is ${ratio.toFixed(2)}:1`);
+      }
+    }
+  }
+});
+
 test('a status colour set as text takes its text token, and white text sits on the strong accent', () => {
   for (const [selector, token] of [['.warned', '--warn-text'], ['.good', '--ok-text'], ['.bad', '--err-text'],
     ['.status-code.warn', '--warn-text'], ['.stat.is-warn .stat-number', '--warn-text'], ['.st-head', '--err-text'],

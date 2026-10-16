@@ -22,7 +22,7 @@
   /* The status colours set as text or as an icon rather than as a fill, 4.5:1 on the panels (ui.adoc#palette). */
   --ok-text: var(--ok);
   --warn-text: var(--warn);
-  --err-text: #f47a7d;
+  --err-text: #f6827f;
   --silk: #8a93a6;
   --spider: #5a3a22;
 
@@ -68,9 +68,9 @@
     --ok: #2e9e57;
     --warn: #c98c14;
     --err: #c9363b;
-    --ok-text: #1f7a43;
-    --warn-text: #8a6100;
-    --err-text: #b8302f;
+    --ok-text: #1b723e;
+    --warn-text: #845d00;
+    --err-text: #b02d2c;
     --accent-text: #ab3c25;
     --info-text: #246297;
     --series-1: #d1532f;
@@ -102,9 +102,9 @@
   --ok: #2e9e57;
   --warn: #c98c14;
   --err: #c9363b;
-  --ok-text: #1f7a43;
-  --warn-text: #8a6100;
-  --err-text: #b8302f;
+  --ok-text: #1b723e;
+  --warn-text: #845d00;
+  --err-text: #b02d2c;
   --accent-text: #ab3c25;
   --info-text: #246297;
   --series-1: #d1532f;

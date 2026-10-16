@@ -28,7 +28,7 @@ const TOKENS = {
   accentText: ['--accent-text', '#ea8e76'],
   okText: ['--ok-text', '#5ec27f'],
   warnText: ['--warn-text', '#f0b64b'],
-  errText: ['--err-text', '#f47a7d'],
+  errText: ['--err-text', '#f6827f'],
 };
 
 /** The colours with a token of their own for text, which reaches 4.5:1 where the colour itself may not (ui.adoc#accessibility). */
