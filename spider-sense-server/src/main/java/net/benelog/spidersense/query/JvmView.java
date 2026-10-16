@@ -1,10 +1,14 @@
 package net.benelog.spidersense.query;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.function.DoubleBinaryOperator;
 
 import net.benelog.spidersense.query.MetricQueries.SeriesData;
 import net.benelog.spidersense.store.MetricPoint;
@@ -24,6 +28,11 @@ import org.jspecify.annotations.Nullable;
  * <p>Everything is empty rather than absent when a service sent no JVM metrics:
  * the UI draws empty charts, which is the honest answer for a service that is not
  * a JVM.
+ *
+ * <p>A series is one process's (storage.adoc#writer), so a service that two processes
+ * export at once, an application and its tests, is the sum of the two: each
+ * process's collections are differenced on their own, and each process's gauges count
+ * at every instant of either with their latest value (api.adoc#jvm).
  */
 public record JvmView(@Nullable String service, Runtime runtime, Memory heap, Memory nonHeap,
         List<Pool> pools,
@@ -148,22 +157,21 @@ public record JvmView(@Nullable String service, Runtime runtime, Memory heap, Me
         return threads(metrics.series(MetricSeriesNames.THREAD_COUNT, service, Map.of(), window));
     }
 
+    /** One entry per pool, sorted by name, with the processes that report it added as the heap's are. */
     private static List<Pool> pools(List<SeriesData> used) {
-        List<Pool> pools = new ArrayList<>();
+        Map<String, SeriesData> named = new TreeMap<>();
         for (SeriesData series : used) {
             String name = series.attribute(MetricSeriesNames.POOL_NAME);
-            if (name == null) {
-                continue;
+            if (name != null) {
+                named.putIfAbsent(name, series);
             }
-            long[] t = new long[series.points().size()];
-            double[] values = new double[t.length];
-            for (int i = 0; i < t.length; i++) {
-                t[i] = series.points().get(i).at();
-                values[i] = series.points().get(i).value();
-            }
-            pools.add(new Pool(name, series.attribute(MetricSeriesNames.MEMORY_TYPE), t, values));
         }
-        pools.sort((a, b) -> a.name().compareTo(b.name()));
+        List<Pool> pools = new ArrayList<>(named.size());
+        named.forEach((name, first) -> {
+            TreeMap<Long, Double> byTime = sum(matching(used, Map.of(MetricSeriesNames.POOL_NAME, name)));
+            long[] t = timeline(byTime);
+            pools.add(new Pool(name, first.attribute(MetricSeriesNames.MEMORY_TYPE), t, align(byTime, t)));
+        });
         return pools;
     }
 
@@ -171,26 +179,47 @@ public record JvmView(@Nullable String service, Runtime runtime, Memory heap, Me
      * One entry per collector and action, bucketed: for a cumulative histogram the
      * value a person wants is "how many collections in this bucket and how long
      * did they take", which is the difference between consecutive points.
+     *
+     * <p>The differences are each process's own, added in the buckets once taken: one
+     * process's total differenced against another's reads as hundreds of collections.
      */
     private static List<Gc> gc(List<SeriesData> series, Window window) {
         long[] t = window.bucketStarts();
         List<Gc> collectors = new ArrayList<>();
-        for (SeriesData data : series) {
+        for (List<SeriesData> collector : byCollector(series)) {
             long[] counts = new long[t.length];
             double[] durations = new double[t.length];
-            double toMillis = data.toMillis();
-            for (SeriesData.Interval interval : data.intervals()) {
-                int bucket = window.indexOf(interval.at());
-                if (bucket >= 0) {
-                    counts[bucket] += interval.count();
-                    durations[bucket] += Math.max(0, interval.sum()) * toMillis;
+            for (SeriesData data : collector) {
+                double toMillis = data.toMillis();
+                for (SeriesData.Interval interval : data.intervals()) {
+                    int bucket = window.indexOf(interval.at());
+                    if (bucket >= 0) {
+                        counts[bucket] += interval.count();
+                        durations[bucket] += Math.max(0, interval.sum()) * toMillis;
+                    }
                 }
             }
-            collectors.add(new Gc(data.attribute(MetricSeriesNames.GC_NAME),
-                    data.attribute(MetricSeriesNames.GC_ACTION), t, counts, durations));
+            SeriesData first = collector.get(0);
+            collectors.add(new Gc(first.attribute(MetricSeriesNames.GC_NAME),
+                    first.attribute(MetricSeriesNames.GC_ACTION), t, counts, durations));
         }
         collectors.sort((a, b) -> String.valueOf(a.name()).compareTo(String.valueOf(b.name())));
         return collectors;
+    }
+
+    /**
+     * The series of {@code jvm.gc.duration} by collector and action, each list holding the
+     * series of every process that exported it, in the order their first series came: one
+     * collector is one {@code gc-pause} finding as it is one entry of the chart
+     * (findings.adoc#gc-pause).
+     */
+    public static Collection<List<SeriesData>> byCollector(List<SeriesData> series) {
+        Map<String, List<SeriesData>> collectors = new LinkedHashMap<>();
+        for (SeriesData data : series) {
+            collectors.computeIfAbsent(data.attribute(MetricSeriesNames.GC_NAME) + "\0"
+                    + data.attribute(MetricSeriesNames.GC_ACTION), key -> new ArrayList<>()).add(data);
+        }
+        return collectors.values();
     }
 
     private static Threads threads(List<SeriesData> series) {
@@ -202,7 +231,8 @@ public record JvmView(@Nullable String service, Runtime runtime, Memory heap, Me
 
     private static Cpu cpu(List<SeriesData> utilization, List<SeriesData> load) {
         TreeMap<Long, Double> utilisationByTime = sum(utilization);
-        TreeMap<Long, Double> loadByTime = sum(load);
+        // The machine's load, which every process reads alike: the highest, never a sum.
+        TreeMap<Long, Double> loadByTime = across(load, Math::max);
         long[] t = timeline(utilisationByTime, loadByTime);
         return new Cpu(t, align(utilisationByTime, t),
                 loadByTime.isEmpty() ? NO_VALUES : align(loadByTime, t));
@@ -286,15 +316,90 @@ public record JvmView(@Nullable String service, Runtime runtime, Memory heap, Me
         return matched;
     }
 
-    /** Series exported together share their timestamps, so summing on the instant is exact. */
+    /**
+     * Series added up on one timeline: the series of a process on its own instants, which is
+     * exact since a process exports its series together, and then the processes as
+     * {@link #across} adds them.
+     */
     private static TreeMap<Long, Double> sum(List<SeriesData> series) {
-        TreeMap<Long, Double> byTime = new TreeMap<>();
+        return across(series, Double::sum);
+    }
+
+    /**
+     * The processes of the series at every instant of any of them, combined by {@code combine}.
+     *
+     * <p>A process counts at an instant with its latest value, from its first point to one
+     * export interval past its last: two processes that export one service name at different
+     * moments, an application and its tests, then add up rather than take turns, and a process
+     * restarted is not counted beside the one that replaced it. One whose first point comes
+     * within an interval of the earliest point of all was running before it, so it counts from
+     * there with that first value, and the timeline does not open on one process alone.
+     */
+    private static TreeMap<Long, Double> across(List<SeriesData> series, DoubleBinaryOperator combine) {
+        Map<String, TreeMap<Long, Double>> byProcess = new LinkedHashMap<>();
         for (SeriesData data : series) {
+            TreeMap<Long, Double> own = byProcess.computeIfAbsent(String.valueOf(data.process()),
+                    process -> new TreeMap<>());
             for (MetricPoint point : data.points()) {
-                byTime.merge(point.at(), point.value(), Double::sum);
+                own.merge(point.at(), point.value(), Double::sum);
             }
         }
-        return byTime;
+        byProcess.values().removeIf(TreeMap::isEmpty);
+        if (byProcess.size() < 2) {
+            return byProcess.isEmpty() ? new TreeMap<>() : byProcess.values().iterator().next();
+        }
+        TreeSet<Long> instants = new TreeSet<>();
+        for (TreeMap<Long, Double> own : byProcess.values()) {
+            instants.addAll(own.keySet());
+        }
+        long earliest = instants.first();
+        List<Run> runs = new ArrayList<>(byProcess.size());
+        for (TreeMap<Long, Double> own : byProcess.values()) {
+            long interval = interval(own);
+            long first = own.firstKey();
+            runs.add(new Run(own, first - earliest <= interval ? earliest : first, own.lastKey() + interval,
+                    own.values().iterator().next()));
+        }
+        TreeMap<Long, Double> combined = new TreeMap<>();
+        for (long at : instants) {
+            Double value = null;
+            for (Run run : runs) {
+                if (at < run.from() || at > run.to()) {
+                    continue;
+                }
+                Map.Entry<Long, Double> latest = run.values().floorEntry(at);
+                double own = latest == null ? run.first() : latest.getValue();
+                value = value == null ? own : combine.applyAsDouble(value, own);
+            }
+            if (value != null) {
+                combined.put(at, value);
+            }
+        }
+        return combined;
+    }
+
+    /**
+     * One process's values and the instants it counts between.
+     *
+     * @param first its first value, which it counts with before its first point
+     */
+    private record Run(TreeMap<Long, Double> values, long from, long to, double first) {
+    }
+
+    /** How often a process exports: the median gap between its points, zero for a single one. */
+    private static long interval(TreeMap<Long, Double> values) {
+        if (values.size() < 2) {
+            return 0;
+        }
+        long[] gaps = new long[values.size() - 1];
+        long previous = values.firstKey();
+        int i = 0;
+        for (long at : values.tailMap(previous, false).keySet()) {
+            gaps[i++] = at - previous;
+            previous = at;
+        }
+        Arrays.sort(gaps);
+        return gaps[gaps.length / 2];
     }
 
     @SafeVarargs

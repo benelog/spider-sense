@@ -1,6 +1,7 @@
 package net.benelog.spidersense.ingest;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.BiConsumer;
@@ -29,6 +30,7 @@ import io.opentelemetry.proto.trace.v1.Status;
 import net.benelog.spidersense.store.Batch;
 import net.benelog.spidersense.store.LogRecord;
 import net.benelog.spidersense.store.MetricPoint;
+import net.benelog.spidersense.store.MetricSeriesNames;
 import net.benelog.spidersense.store.SpanRecord;
 import net.benelog.spidersense.store.Store;
 import org.jspecify.annotations.Nullable;
@@ -254,27 +256,60 @@ public final class OtlpDecoder {
         Batch batch = new Batch();
         forEachResource(batch, request.getResourceMetricsList(), ResourceMetrics::getResource, now,
                 (resourceMetrics, service) -> {
+                    Long process = process(resourceMetrics.getResource());
                     for (ScopeMetrics scopeMetrics : resourceMetrics.getScopeMetricsList()) {
                         for (Metric metric : scopeMetrics.getMetricsList()) {
-                            addMetric(batch, service, metric);
+                            addMetric(batch, service, process, metric);
                         }
                     }
                 });
         return batch;
     }
 
-    /** One metric of one service, each point of which becomes a sample of it. */
-    private record Instrument(String service, String name, String unit, String description) {
+    /**
+     * The {@code process.pid} of a resource, the process each of its points is one of, or null when
+     * the sender reports none.
+     */
+    private static @Nullable Long process(Resource resource) {
+        Long process = null;
+        for (KeyValue attribute : resource.getAttributesList()) {
+            if (MetricSeriesNames.PROCESS_PID.equals(attribute.getKey())) {
+                // The last of a repeated key, as the resource map a sighting stores keeps it.
+                process = Attrs.value(attribute.getValue()) instanceof Number pid ? pid.longValue() : null;
+            }
+        }
+        return process;
+    }
+
+    /** One metric of one service and process, each point of which becomes a sample of it. */
+    private record Instrument(String service, @Nullable Long process, String name, String unit,
+            String description) {
 
         Batch.MetricSample sample(String type, boolean monotonic, String temporality, List<KeyValue> attributes,
                 MetricPoint point) {
             return new Batch.MetricSample(service, name, type, unit, description, monotonic, temporality,
-                    Attrs.toMap(attributes), point);
+                    attributes(attributes), point);
+        }
+
+        /**
+         * The point's attributes and its process, so two processes that export one service name at
+         * once, an application and its tests, keep a series each, and the cumulative points of one
+         * are never differenced against the other's (storage.adoc#writer). A point that names a
+         * {@code process.pid} of its own keeps it.
+         */
+        private Map<String, Object> attributes(List<KeyValue> attributes) {
+            Map<String, Object> own = Attrs.toMap(attributes);
+            if (process == null || own.containsKey(MetricSeriesNames.PROCESS_PID)) {
+                return own;
+            }
+            Map<String, Object> withProcess = new LinkedHashMap<>(own);
+            withProcess.put(MetricSeriesNames.PROCESS_PID, process);
+            return Map.copyOf(withProcess);
         }
     }
 
-    private static void addMetric(Batch batch, String service, Metric metric) {
-        Instrument instrument = new Instrument(service, fit(metric.getName()), metric.getUnit(),
+    private static void addMetric(Batch batch, String service, @Nullable Long process, Metric metric) {
+        Instrument instrument = new Instrument(service, process, fit(metric.getName()), metric.getUnit(),
                 metric.getDescription());
         switch (metric.getDataCase()) {
             case GAUGE -> {

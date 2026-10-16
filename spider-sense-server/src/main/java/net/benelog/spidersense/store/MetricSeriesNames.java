@@ -49,6 +49,12 @@ public final class MetricSeriesNames {
     public static final String GC_ACTION = "jvm.gc.action";
     public static final String THREAD_DAEMON = "jvm.thread.daemon";
 
+    /**
+     * The resource attribute every point of a series carries as one of its own: the process it
+     * came from, so each process has series of its own (storage.adoc#writer).
+     */
+    public static final String PROCESS_PID = "process.pid";
+
     private MetricSeriesNames() {
     }
 }

@@ -548,8 +548,10 @@ A record's own `severity` is the name of its OTLP severity range, and `UNSET` wh
 [source,json]
 ----
 { "name": "jvm.memory.used", "type": "gauge", "unit": "By",
-  "series": [ { "service": "…", "attributes": { "jvm.memory.type": "heap", "jvm.memory.pool.name": "G1 Eden Space" }, "t": [...], "v": [...] } ] }
+  "series": [ { "service": "…", "attributes": { "jvm.memory.type": "heap", "jvm.memory.pool.name": "G1 Eden Space", "process.pid": 12345 }, "t": [...], "v": [...] } ] }
 ----
+
+A series is one process's: its `attributes` carry the `process.pid` of the resource that exported it, so two processes of one service answer a series each (xref:storage.adoc#writer[The writer]).
 
 For a histogram, `v` is the per-point `sum/count` mean, and each series also carries `"count": [...]`, `"p95": [...]` (estimated from buckets) and `"max": [...]`.
 `v`, `p95` and `max` are in the metric's `unit` and unrounded, so a duration histogram in seconds keeps its fractions of a millisecond.
@@ -577,6 +579,13 @@ A histogram is no sum, so `rate=true` leaves it as it is, its `count` included: 
   "connectionPools": [ { "name": "HikariPool-1", "t": [...], "used": [...], "idle": [...], "max": [...], "pending": [...] } ]
 }
 ----
+
+A service that several processes export at once, an application and its tests or two instances of one application, is the sum of its processes.
+The `gc` counts and durations are each process's own differences between consecutive points, added in the buckets.
+A gauge, such as `heap`, `threads` or a pool's `used`, has a point at every instant of any process, at which each process counts with its latest value, from its first point to one export interval past its last.
+Two processes running together therefore add up rather than take turns, and a restarted process follows the one it replaced rather than being added to it.
+A process whose first point comes within one export interval of the earliest point of all was already running then, so it counts from there with its first value.
+`systemLoad1m` is the machine's load, which every process reads alike, so it is the highest of the processes rather than their sum.
 
 `connectionPools` feeds the JVM page's connection pool charts.
 It holds one entry per JDBC pool the agent instruments (HikariCP, Tomcat JDBC, c3p0, and so on), and is empty when the service reports none.

@@ -9,6 +9,7 @@ import java.util.Set;
 
 import net.benelog.spidersense.store.AttrJson;
 import net.benelog.spidersense.store.MetricPoint;
+import net.benelog.spidersense.store.MetricSeriesNames;
 import net.benelog.spidersense.store.Sql;
 import net.benelog.silkjson.Json;
 import net.benelog.silkjson.JsonException;
@@ -36,6 +37,15 @@ public final class MetricQueries {
         public @Nullable String attribute(String key) {
             Object value = attributes.get(key);
             return value == null ? null : String.valueOf(value);
+        }
+
+        /**
+         * The process the series is one of: the {@code process.pid} its points carry, which keeps
+         * two processes that export one service name in series of their own, or null when the
+         * sender reported none (storage.adoc#writer).
+         */
+        public @Nullable String process() {
+            return attribute(MetricSeriesNames.PROCESS_PID);
         }
 
         /**

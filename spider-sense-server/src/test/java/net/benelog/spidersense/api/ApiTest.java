@@ -13,6 +13,7 @@ import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.util.JsonFormat;
 import io.opentelemetry.proto.collector.trace.v1.ExportTraceServiceRequest;
 import io.opentelemetry.proto.collector.trace.v1.ExportTraceServiceResponse;
+import io.opentelemetry.proto.resource.v1.Resource;
 import io.opentelemetry.proto.trace.v1.Span;
 
 import org.junit.jupiter.api.Test;
@@ -771,6 +772,106 @@ class ApiTest {
             }
             assertThat(total).isCloseTo(12.0, within(1e-6));
         });
+    }
+
+    /**
+     * Two processes that export one service name at once, an application and its tests, keep a
+     * series each: the collections are each process's own differences, and the gauges add up
+     * rather than take turns, so no difference between the two totals reads as a pause.
+     */
+    @Test
+    void twoProcessesOfOneServiceAddUpAndAreNeverDifferencedAgainstEachOther() {
+        serve((client, assembly) -> {
+            // The application has collected 500 times and runs 40 threads, the tests 20 times and
+            // 25; each collects once, for 5 ms, every 10 s, and they export 5 s apart.
+            for (int k = 0; k < 5; k++) {
+                exportJvm(client, 100, NOW - 50_000 + k * 10_000L, 500 + k, 40);
+                exportJvm(client, 200, NOW - 45_000 + k * 10_000L, 20 + k, 25);
+            }
+
+            List<Long> pids = new ArrayList<>();
+            for (JsonValue series : json(client.get("/api/metrics/series?name=jvm.gc.duration"
+                    + windowQuery().replace('?', '&'))).getArray("series")) {
+                pids.add(series.asObject().getObject("attributes").getLong("process.pid"));
+            }
+            assertThat(pids).containsExactlyInAnyOrder(100L, 200L);
+
+            JsonObject jvm = json(client.get(
+                    "/api/jvm?service=spring-orders" + windowQuery().replace('?', '&')));
+            assertThat(jvm.getArray("gc")).hasSize(1);
+            JsonObject gc = jvm.getArray("gc").get(0).asObject();
+            List<Long> collections = counts(gc.getArray("count"));
+            assertThat(collections).allMatch(count -> count <= 1);
+            assertThat(collections.stream().mapToLong(Long::longValue).sum()).isEqualTo(8);
+            double collected = 0;
+            for (JsonValue ms : gc.getArray("durationMs")) {
+                collected += ms.asDouble();
+            }
+            assertThat(collected).isCloseTo(40.0, within(1e-6));
+            JsonArray threads = jvm.getObject("threads").getArray("count");
+            assertThat(threads).hasSize(10);
+            for (JsonValue count : threads) {
+                assertThat(count.asDouble()).as("40 threads and 25 at every instant of either").isEqualTo(65.0);
+            }
+
+            for (JsonValue finding : json(client.get("/api/findings" + windowQuery())).getArray("findings")) {
+                assertThat(finding.asObject().getString("kind")).isNotEqualTo("gc-pause");
+            }
+        });
+    }
+
+    /** A process restarted is followed by the one that replaced it, never added to it. */
+    @Test
+    void aRestartedProcessIsFollowedByTheNextOneNeverAddedToIt() {
+        serve((client, assembly) -> {
+            for (int k = 0; k < 3; k++) {
+                exportJvm(client, 100, NOW - 50_000 + k * 5_000L, 10 + k, 40);
+                exportJvm(client, 200, NOW - 20_000 + k * 5_000L, 1 + k, 25);
+            }
+
+            JsonObject jvm = json(client.get(
+                    "/api/jvm?service=spring-orders" + windowQuery().replace('?', '&')));
+            List<Double> threads = new ArrayList<>();
+            for (JsonValue count : jvm.getObject("threads").getArray("count")) {
+                threads.add(count.asDouble());
+            }
+            assertThat(threads).containsExactly(40.0, 40.0, 40.0, 25.0, 25.0, 25.0);
+            assertThat(counts(jvm.getArray("gc").get(0).asObject().getArray("count")).stream()
+                    .mapToLong(Long::longValue).sum()).as("two collections in each run").isEqualTo(4);
+        });
+    }
+
+    /** A process that starts beside another counts from its own first point, not before it. */
+    @Test
+    void aProcessThatStartsBesideAnotherCountsFromItsFirstPoint() {
+        serve((client, assembly) -> {
+            for (int k = 0; k < 5; k++) {
+                exportJvm(client, 100, NOW - 50_000 + k * 10_000L, 10, 40);
+            }
+            for (int k = 0; k < 3; k++) {
+                exportJvm(client, 200, NOW - 25_000 + k * 10_000L, 1, 25);
+            }
+
+            JsonObject jvm = json(client.get(
+                    "/api/jvm?service=spring-orders" + windowQuery().replace('?', '&')));
+            List<Double> threads = new ArrayList<>();
+            for (JsonValue count : jvm.getObject("threads").getArray("count")) {
+                threads.add(count.asDouble());
+            }
+            // At -50, -40 and -30 s the application alone; from -25 s, both.
+            assertThat(threads).containsExactly(40.0, 40.0, 40.0, 65.0, 65.0, 65.0, 65.0, 65.0);
+        });
+    }
+
+    /** One export of one process of spring-orders: its collections so far, 5 ms each, and its threads. */
+    private static void exportJvm(TestClient client, long pid, long at, long collections, double threads) {
+        Resource process = Otlp.resource(Otlp.attr("service.name", "spring-orders"),
+                Otlp.attr("process.pid", pid));
+        postProtobuf(client, "/v1/metrics", Otlp.histogram(process, "jvm.gc.duration", "s", at, collections,
+                collections * 0.005, 0.005, Otlp.attr("jvm.gc.name", "G1 Young Generation"),
+                Otlp.attr("jvm.gc.action", "end of minor GC")).toByteArray());
+        postProtobuf(client, "/v1/metrics", Otlp.sum(process, "jvm.thread.count", "{thread}", at, threads,
+                false).toByteArray());
     }
 
     @Test

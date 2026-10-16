@@ -1795,9 +1795,9 @@ public final class Findings {
     private List<Ranked> jvm(Window window, @Nullable String service) {
         List<Ranked> found = new ArrayList<>();
         for (String name : servicesInScope(service)) {
-            for (MetricQueries.SeriesData series :
-                    metrics.series(MetricSeriesNames.GC_DURATION, name, Map.of(), window)) {
-                addIfFound(found, gcPause(name, series, tingles.slowRequestMs()));
+            for (List<MetricQueries.SeriesData> collector : JvmView.byCollector(
+                    metrics.series(MetricSeriesNames.GC_DURATION, name, Map.of(), window))) {
+                addIfFound(found, gcPause(name, collector, tingles.slowRequestMs()));
             }
             addIfFound(found, heapPressure(name, JvmView.heap(metrics, name, window)));
             addIfFound(found, threadGrowth(name, JvmView.threads(metrics, name, window)));
@@ -1823,53 +1823,74 @@ public final class Findings {
      */
     static @Nullable Ranked gcPause(String service, MetricQueries.SeriesData series,
             long slowRequestMs) {
-        List<MetricPoint> points = series.points();
-        if (points.isEmpty()) {
-            return null;
-        }
-        double toMillis = series.toMillis();
-        boolean cumulative = series.cumulative();
+        return gcPause(service, List.of(series), slowRequestMs);
+    }
+
+    /**
+     * One collector over the series of every process that exported it: each series is
+     * differenced on its own, since one process's total differenced against another's reads
+     * as hundreds of collections, and the worst interval of any of them is the collector's.
+     */
+    static @Nullable Ranked gcPause(String service, List<MetricQueries.SeriesData> perProcess,
+            long slowRequestMs) {
+        MetricQueries.SeriesData named = null;
         double worstMs = 0;
-        long worstAt = points.get(0).at();
+        long worstAt = 0;
         double shareMax = 0;
-        long shareAt = points.get(0).at();
+        long shareAt = 0;
         long collections = 0;
-        for (MetricQueries.SeriesData.Interval interval : series.intervals()) {
-            long count = interval.count();
-            double sum = interval.sum();
-            double longest;
-            if (cumulative) {
-                // A cumulative point's max is the longest collection since the JVM started, so
-                // it names this interval only when it rose in it; the interval's mean is a
-                // collection at least that long in any case.
-                longest = count > 0 ? sum / count * toMillis : 0;
-                if (count > 0 && interval.maxIsOwn()) {
-                    longest = Math.max(longest, interval.max() * toMillis);
+        for (MetricQueries.SeriesData series : perProcess) {
+            List<MetricPoint> points = series.points();
+            if (points.isEmpty()) {
+                continue;
+            }
+            if (named == null) {
+                named = series;
+                worstAt = points.get(0).at();
+                shareAt = points.get(0).at();
+            }
+            double toMillis = series.toMillis();
+            boolean cumulative = series.cumulative();
+            for (MetricQueries.SeriesData.Interval interval : series.intervals()) {
+                long count = interval.count();
+                double sum = interval.sum();
+                double longest;
+                if (cumulative) {
+                    // A cumulative point's max is the longest collection since the JVM started, so
+                    // it names this interval only when it rose in it; the interval's mean is a
+                    // collection at least that long in any case.
+                    longest = count > 0 ? sum / count * toMillis : 0;
+                    if (count > 0 && interval.maxIsOwn()) {
+                        longest = Math.max(longest, interval.max() * toMillis);
+                    }
+                } else {
+                    longest = interval.max() * toMillis;
                 }
-            } else {
-                longest = interval.max() * toMillis;
-            }
-            if (longest > worstMs) {
-                worstMs = longest;
-                worstAt = interval.at();
-            }
-            if (count > 0) {
-                collections += count;
-            }
-            if (interval.lengthMs() > 0) {
-                double share = Math.max(0, sum) * toMillis / interval.lengthMs();
-                if (share > shareMax) {
-                    shareMax = share;
-                    shareAt = interval.at();
+                if (longest > worstMs) {
+                    worstMs = longest;
+                    worstAt = interval.at();
+                }
+                if (count > 0) {
+                    collections += count;
+                }
+                if (interval.lengthMs() > 0) {
+                    double share = Math.max(0, sum) * toMillis / interval.lengthMs();
+                    if (share > shareMax) {
+                        shareMax = share;
+                        shareAt = interval.at();
+                    }
                 }
             }
+        }
+        if (named == null) {
+            return null;
         }
         boolean paused = worstMs >= slowRequestMs;
         if (!paused && shareMax < GC_SHARE) {
             return null;
         }
-        String name = series.attribute(MetricSeriesNames.GC_NAME);
-        String action = series.attribute(MetricSeriesNames.GC_ACTION);
+        String name = named.attribute(MetricSeriesNames.GC_NAME);
+        String action = named.attribute(MetricSeriesNames.GC_ACTION);
         String collector = name == null ? "the collector" : name;
 
         Map<String, Object> numbers = new LinkedHashMap<>();

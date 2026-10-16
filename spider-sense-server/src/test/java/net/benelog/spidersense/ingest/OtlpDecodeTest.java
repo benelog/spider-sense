@@ -2,8 +2,11 @@ package net.benelog.spidersense.ingest;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.Map;
+
 import com.google.protobuf.ByteString;
 import io.opentelemetry.proto.logs.v1.LogRecord;
+import io.opentelemetry.proto.resource.v1.Resource;
 import io.opentelemetry.proto.trace.v1.Span;
 
 import org.junit.jupiter.api.Test;
@@ -82,6 +85,21 @@ class OtlpDecodeTest {
 
         assertThat(batch.metrics()).extracting(Batch.MetricSample::name).containsExactly("jvm.threads");
         assertThat(batch.services()).extracting(Batch.Sighting::name).containsExactly("orders");
+    }
+
+    /** A metric point carries its resource's process.pid, so each process has series of its own. */
+    @Test
+    void aMetricPointCarriesTheProcessOfItsResource() {
+        Resource process = Otlp.resource(Otlp.attr("service.name", "orders"), Otlp.attr("process.pid", 4242));
+
+        assertThat(OtlpDecoder.decode(Otlp.gauge(process, "jvm.thread.count", "{thread}", NOW, 12,
+                Otlp.attr("jvm.thread.daemon", "true")), NOW).metrics().get(0).attributes())
+                .containsOnly(Map.entry("process.pid", 4242L), Map.entry("jvm.thread.daemon", "true"));
+        assertThat(OtlpDecoder.decode(Otlp.gauge(process, "custom", "1", NOW, 1, Otlp.attr("process.pid", 7)),
+                NOW).metrics().get(0).attributes()).as("a point's own process.pid is kept")
+                .containsOnly(Map.entry("process.pid", 7L));
+        assertThat(OtlpDecoder.decode(Otlp.gauge(Otlp.service("orders"), "jvm.thread.count", "{thread}", NOW, 12),
+                NOW).metrics().get(0).attributes()).as("a sender that reports no process").isEmpty();
     }
 
     @Test

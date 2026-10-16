@@ -101,6 +101,24 @@ class JvmRulesTest {
         assertThat(Findings.gcPause("svc", gcSeries("s", "CUMULATIVE"), 1_000)).isNull();
     }
 
+    /** One collector of two processes: each series is differenced on its own, and the worst of either is the collector's. */
+    @Test
+    void aCollectorOfTwoProcessesIsDifferencedOneProcessAtATime() {
+        // An application's totals and its tests' interleave; each collected once an interval.
+        MetricQueries.SeriesData application = gcSeries("s", "CUMULATIVE",
+                gc(0, 500, 2.5, 0.005), gc(10_000, 501, 2.505, 0.005), gc(20_000, 502, 2.51, 0.005));
+        MetricQueries.SeriesData tests = gcSeries("s", "CUMULATIVE",
+                gc(5_000, 20, 0.1, 0.005), gc(15_000, 21, 0.105, 0.005), gc(25_000, 22, 1.305, 1.2));
+
+        assertThat(Findings.gcPause("svc", List.of(application), 1_000)).isNull();
+        Findings.Ranked ranked = Findings.gcPause("svc", List.of(application, tests), 1_000);
+
+        assertThat(ranked).isNotNull();
+        assertThat(ranked.finding().numbers()).containsEntry("worstMs", 1_200.0)
+                .containsEntry("collections", 4L)
+                .containsEntry("at", 25_000L);
+    }
+
     // --- heap-pressure ---------------------------------------------------------
 
     private static JvmView.Memory heap(double[] used, double[] limit) {

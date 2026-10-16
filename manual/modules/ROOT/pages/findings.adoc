@@ -664,6 +664,7 @@ One collector, `jvm.gc.duration` per `jvm.gc.name` and `jvm.gc.action`, with a p
 It is `high` for a single collection over the threshold, and `medium` otherwise.
 The impact it is ranked by is the longest collection.
 Under cumulative temporality, the OpenTelemetry Java agent's default, a point's `max` is the longest collection since the JVM started, so a point stands for a collection in its own interval only when its `max` rose above the previous point's; otherwise its interval's mean collection counts, and the window's first point is only the baseline.
+A collector that several processes of the service export, an application and its tests, is one finding: each process's series is differenced on its own, and the worst interval of any of them is the collector's.
 
 `subject.jvm` is `gc:<name>`, and the title is `<gc> paused for <worstMs>`.
 
