@@ -473,12 +473,20 @@ export function timeSeries(container, spec) {
   return chart;
 }
 
+/**
+ * A value scale's range: from 0, or from 15% under the lowest value when one is below 0, to 15%
+ * over the highest, or to 0 when none is above it. uPlot gives a scale with no value a null or an
+ * infinite min and max.
+ */
 function rangeFor(scale, count) {
-  if (scale === 'pct') return (u, min, max) => [0, Math.max(1, max * 1.15)];
-  // A count scale never shrinks below [0, 1], so a series that stays at 0 still
-  // gets whole-number ticks rather than thirds.
-  if (count) return (u, min, max) => [0, Math.max(1, max == null || max <= 0 ? 1 : max * 1.15)];
-  return (u, min, max) => [0, max == null || max <= 0 ? 1 : max * 1.15];
+  return (u, min, max) => {
+    const top = Number.isFinite(max) && max > 0 ? max * 1.15 : 0;
+    if (Number.isFinite(min) && min < 0) return [min * 1.15, top];
+    // A count or a percentage never shrinks below [0, 1], so a series that stays at 0 still
+    // gets whole-number ticks rather than thirds.
+    if (count || scale === 'pct') return [0, Math.max(1, top)];
+    return [0, top || 1];
+  };
 }
 
 function resolveColor(color, colors) {

@@ -139,6 +139,25 @@ test('a value axis widens to its widest tick, so a count in the billions keeps i
   chart.destroy();
 });
 
+test('a value axis reaches under 0 when a value does, so a gauge below zero stays in the plot', () => {
+  const t = [Date.now() - 60000, Date.now()];
+  /** The range the chart gives uPlot for `values`, with uPlot's own min and max of them. */
+  const rangeOf = (values, scale = 'y') => {
+    const chart = timeSeries(document.createElement('div'), { t, series: [{ label: 'v', values, scale }] });
+    const range = chart.plot.opts.scales[scale].range(chart.plot, Math.min(...values), Math.max(...values));
+    chart.destroy();
+    return range;
+  };
+  for (const values of [[-21, -18], [-21, 4], [-0.75, -0.25], [-3.5, 12.25]]) {
+    const [low, high] = rangeOf(values);
+    assert.ok(low < Math.min(...values) && high >= Math.max(...values), `[${values}] is drawn on [${low}, ${high}]`);
+  }
+  assert.deepEqual(rangeOf([-21, -18]), [-21 * 1.15, 0], 'all below zero: from under the lowest up to 0');
+  assert.deepEqual(rangeOf([3, 7]), [0, 7 * 1.15], 'none below zero: from 0, as before');
+  assert.deepEqual(rangeOf([0, 0]), [0, 1], 'a count at 0 keeps whole-number ticks');
+  assert.deepEqual(rangeOf([0.2, 0.4], 'pct'), [0, 1], 'a percentage keeps its least of 1');
+});
+
 test('a time axis names the day under its first tick before today and under the first tick of each day after', () => {
   const now = Date.UTC(2026, 9, 15, 12, 0, 0) / 1000;
   const hours = (...hs) => hs.map((h) => now + h * 3600);
