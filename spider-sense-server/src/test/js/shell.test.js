@@ -1,10 +1,10 @@
 // app.js: the shell around the pages, booted against the mock on index.html's own body
-// (ui.adoc#urls, ui.adoc#keyboard, ui.adoc#recording).
+// (ui.adoc#urls, ui.adoc#keyboard, ui.adoc#recording), and the size of what it serves (ui.adoc#size).
 import './browser-env.js';
 import { document, Element } from './fake-dom.js';
 import { test, before } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { EventSourceStub } from '../../main/resources/public/assets/js/dev/shim.js';
 
 const JS = '../../main/resources/public/assets/js/';
@@ -219,4 +219,13 @@ test('a recording has no Live: L does nothing, live=1 leaves the hash, and the k
   assert.equal(api.state.live, true, 'outside a recording L turns Live on');
   press('L');
   assert.equal(api.state.live, false);
+});
+
+test('everything the UI serves but uPlot, the mock under dev/ included, is under 600 KB uncompressed (ui.adoc#size)', () => {
+  const PUBLIC = new URL('../../main/resources/public/', import.meta.url);
+  const bytes = readdirSync(PUBLIC, { recursive: true })
+    .filter((file) => !file.startsWith('assets/vendor/') && statSync(new URL(file, PUBLIC)).isFile())
+    .reduce((sum, file) => sum + statSync(new URL(file, PUBLIC)).size, 0);
+  assert.ok(bytes > 100000, 'the walk found the UI: ' + bytes + ' bytes');
+  assert.ok(bytes < 600000, 'the UI is ' + bytes + ' bytes');
 });
