@@ -11,7 +11,8 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>The rows live in the {@code service} table, which the writer merges, and
  * the writer announces a service with a {@code service} SSE event once the flush
- * that inserted its row has committed (storage.adoc#writer).
+ * that inserted its row has committed (storage.adoc#writer), as the importer does
+ * for a row an import inserted.
  *
  * <p>The embedded service is named on the command line when the launcher knows
  * it. In agent mode it usually does not — the OpenTelemetry agent decides

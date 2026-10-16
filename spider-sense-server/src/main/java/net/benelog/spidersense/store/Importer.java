@@ -4,6 +4,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -76,14 +77,29 @@ public final class Importer {
 
     private final Sql sql;
     private final TraceSummaries traces;
+    private final EventBus events;
 
     /**
+     * An importer whose {@code service} events nobody hears: a store with no live stream,
+     * such as the file the CLI imports into.
+     *
      * @param tingles the rules whose slow-request threshold decides whether an
      *                imported trace is slow, as the writer's decide a received one's
      */
     public Importer(Sql sql, Tingles tingles) {
+        this(sql, tingles, new EventBus());
+    }
+
+    /**
+     * @param tingles the rules whose slow-request threshold decides whether an
+     *                imported trace is slow, as the writer's decide a received one's
+     * @param events  where a {@code service} event goes for each service row the import
+     *                inserts, once it has committed, as the writer's go for its rows
+     */
+    public Importer(Sql sql, Tingles tingles, EventBus events) {
         this.sql = sql;
         this.traces = new TraceSummaries(tingles.slowRequestMs());
+        this.events = events;
     }
 
     /**
@@ -108,8 +124,9 @@ public final class Importer {
     public Result importDocument(JsonObject document) {
         checkSchema(document);
         JsonObject wellFormed = wellFormed(document);
+        Written written;
         try (Connection connection = sql.connection()) {
-            return Sql.inTransaction(connection, c -> write(c, wellFormed));
+            written = Sql.inTransaction(connection, c -> write(c, wellFormed));
         } catch (SQLException e) {
             SQLException refused = refusedValue(e);
             if (refused != null) {
@@ -118,6 +135,13 @@ public final class Importer {
             }
             throw new Sql.SqlException("could not import the document", e);
         }
+        // After the commit, so a reader that answers the event by asking /api/services finds the row.
+        events.publishAll("service", written.services());
+        return written.result();
+    }
+
+    /** What a committed import answers, and the sightings of the service rows it inserted. */
+    private record Written(Result result, List<Batch.Sighting> services) {
     }
 
     /**
@@ -211,7 +235,7 @@ public final class Importer {
      * service would wait out H2's lock timeout and be lost. So the rows only this
      * import touches come first, and the shared ones last, just before the commit.
      */
-    private Result write(Connection connection, JsonObject document) throws SQLException {
+    private Written write(Connection connection, JsonObject document) throws SQLException {
         JsonArray spans = array(document, "spans");
         Set<String> present = alreadyStored(connection, traceIds(spans));
 
@@ -225,12 +249,12 @@ public final class Importer {
         insertMissingMetricMetadata(connection, array(document, "metrics"));
         Map<Long, Long> series = mapSeries(connection, array(document, "metricSeries"));
         long points = mergePoints(connection, array(document, "metricPoints"), series);
-        mergeServices(connection, array(document, "services"));
+        List<Batch.Sighting> services = mergeServices(connection, array(document, "services"));
 
         long from = imported.count() > 0 ? imported.from() : windowFrom(document);
         long to = imported.count() > 0 ? imported.to() : windowTo(document);
-        return new Result(imported.count(), logs, points, tingles, marks, tables, present.size(),
-                from, to);
+        return new Written(new Result(imported.count(), logs, points, tingles, marks, tables, present.size(),
+                from, to), services);
     }
 
     // --- spans ----------------------------------------------------------------
@@ -488,8 +512,9 @@ public final class Importer {
      * so importing an older session into a live database widens the row rather
      * than rewriting it. No {@code start} mark: an import is not a restart.
      */
-    private static void mergeServices(Connection connection, JsonArray services)
+    private static List<Batch.Sighting> mergeServices(Connection connection, JsonArray services)
             throws SQLException {
+        List<Batch.Sighting> inserted = new ArrayList<>();
         for (JsonValue value : services) {
             ServiceRow service = ServiceRow.fromJson(value.asObject());
             if (service == null) {
@@ -517,7 +542,10 @@ public final class Importer {
                 service.bindInsert(insert);
                 insert.executeUpdate();
             }
+            // The receipt the event names is the row's first_seen, as the writer's sighting is.
+            inserted.add(new Batch.Sighting(service.name(), AttrJson.decode(service.resource()), service.firstSeen()));
         }
+        return inserted;
     }
 
     /** A service row's {@code first_seen} and {@code last_seen}. */

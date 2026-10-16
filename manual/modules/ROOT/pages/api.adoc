@@ -144,6 +144,7 @@ data: {"name":"spring-orders","firstSeen":1758000000000}
 A `stats` frame goes out after the `tingle` events of the traces it counts, so a client that waits for a count has their tingles by then.
 `spans`, `traces` and `logs` are the store's row counts, which a retention sweep or a clear lowers; `tracesIngested` is the number of traces whose `trace` row this server's writer inserted since it started, which nothing lowers, so a client that waits for new traces compares it.
 `service` is sent once for a service the store had no row of, when the row is stored, so `/api/services` lists the service by the time the event arrives; `firstSeen` is the row's `first_seen`.
+The row is stored by a flush of an export or by an import (`POST /api/import`), whose `service` events go out once its transaction has committed, one for each service row it inserted.
 A `: keepalive` comment is sent every 15 s.
 
 [#overview]

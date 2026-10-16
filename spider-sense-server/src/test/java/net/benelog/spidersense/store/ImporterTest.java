@@ -119,6 +119,32 @@ class ImporterTest {
     }
 
     /**
+     * The open UI refills its service filter on a {@code service} event: a service the import
+     * gives a row is announced once the import has committed, with the row's first sighting,
+     * and a service that had a row already is not.
+     */
+    @Test
+    void aServiceTheImportGivesARowIsAnnouncedOnceItHasCommitted() throws Exception {
+        flush("orders", 1);
+        EventBus events = new EventBus();
+        Importer announcing = new Importer(database.sql(), tingles, events);
+        try (EventBus.Subscription subscription = events.subscribe()) {
+            announcing.importDocument(document("billing"));
+
+            EventBus.Event event = subscription.poll(0);
+            assertThat(event).isNotNull();
+            assertThat(event.name()).isEqualTo("service");
+            Batch.Sighting sighting = (Batch.Sighting) event.payload();
+            assertThat(sighting.name()).isEqualTo("billing");
+            assertThat(sighting.at()).isEqualTo(AT - 86_400_000L);
+            assertThat(count("SELECT COUNT(*) FROM service WHERE name = 'billing'")).isEqualTo(1);
+
+            announcing.importDocument(document("orders"));
+            assertThat(subscription.poll(0)).as("orders had a row").isNull();
+        }
+    }
+
+    /**
      * A series whose points have all aged out still has its row until the orphan
      * sweep runs. An import that carries points of it must lock the row, as the
      * writer does, so a sweep running meanwhile waits for the import and keeps it.
