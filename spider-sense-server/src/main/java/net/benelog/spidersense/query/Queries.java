@@ -1158,7 +1158,10 @@ public final class Queries {
         List<Object> params = new ArrayList<>(match.params);
         params.add(window.from());
         params.add(window.to());
-        Where where = new Where("t.start_ms BETWEEN ? AND ?", window.from(), window.to())
+        // The matching span is what has to start in the window, not the trace: a request in
+        // it whose trace began before it, under a job, is counted in its group and is its
+        // evidence too. The trace's own start only narrows the scan.
+        Where where = new Where("t.start_ms <= ?", window.to())
                 // An IN over the matching spans rather than an EXISTS per trace: H2 reads
                 // the spans by the predicate's index once instead of probing every trace.
                 // The span's own window makes that read a range of the (…, start_ms) index,
@@ -1186,14 +1189,14 @@ public final class Queries {
         List<Object> params = new ArrayList<>(match.params);
         params.add(window.from());
         params.add(window.to());
-        params.add(window.from());
         params.add(window.to());
         // The matching spans are grouped by trace in one read of the predicate's index,
-        // and their trace rows are then read by the key.
+        // and their trace rows are then read by the key. The matching span is what has to
+        // start in the window, not the trace, as in tracesContaining.
         return sql.query("SELECT t.*, m.match_ns FROM (SELECT s.trace_id, MAX(s.duration_ns) AS match_ns"
                 + " FROM span s WHERE " + match.predicate + " AND s.start_ms BETWEEN ? AND ?"
                 + " GROUP BY s.trace_id) m JOIN trace t ON t.trace_id = m.trace_id"
-                + " WHERE t.start_ms BETWEEN ? AND ?"
+                + " WHERE t.start_ms <= ?"
                 + " ORDER BY m.match_ns DESC, t.trace_id LIMIT " + Math.max(1, limit),
                 params, rs -> new MatchedTrace(Rows.trace(rs), Rows.ms(rs, "match_ns")));
     }
@@ -1211,11 +1214,12 @@ public final class Queries {
             return List.of();
         }
         List<Object> params = new ArrayList<>(traceIds);
-        params.add(window.from());
         params.add(window.to());
         Map<String, Stats.TraceSummary> byId = new HashMap<>();
+        // The ids are those of calls in the window, and a trace that began before it, under
+        // a job, holds such a call as well as any other.
         for (Stats.TraceSummary trace : sql.query("SELECT * FROM trace t WHERE t.trace_id IN ("
-                + Sql.placeholders(traceIds.size()) + ") AND t.start_ms BETWEEN ? AND ?", params, Rows::trace)) {
+                + Sql.placeholders(traceIds.size()) + ") AND t.start_ms <= ?", params, Rows::trace)) {
             byId.put(trace.traceId(), trace);
         }
         List<Stats.TraceSummary> ordered = new ArrayList<>();

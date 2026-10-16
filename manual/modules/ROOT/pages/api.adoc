@@ -259,6 +259,7 @@ Every resource value is a string: a string attribute as itself, any other as its
 Both are read from every group of the endpoint's service, never the top of a list, and matched by service as well as by name, so two services that expose the same route never share them.
 
 `traces` are slowest by the endpoint's own span in each, not by the trace's duration, as a finding's evidence is (xref:findings.adoc#fields[Fields]); for a query, its slowest call in each.
+A trace is in `traces` and `recent` when the endpoint's span, or the query's call, starts in the window, whenever the trace began, so a request under a job that was already running is listed with the requests it is counted among.
 Each of them carries `matchMs` beside the trace's `durationMs`: the duration of that span, the endpoint's slowest request in the trace or the query's slowest call, which is what the list is ordered by.
 `breakdown` is where the endpoint's time went over the 20 slowest traces, the same four shares a `slow-endpoint` finding carries (xref:findings.adoc#time[Where the time went]).
 It is `{}` when those traces add up to nothing.

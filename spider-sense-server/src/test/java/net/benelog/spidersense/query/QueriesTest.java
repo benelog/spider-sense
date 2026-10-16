@@ -743,6 +743,35 @@ class QueriesTest {
                 .containsExactly(tuple(traceId(2), 850.0, 900.0), tuple(traceId(1), 80.0, 3_000.0));
     }
 
+    /**
+     * A request inside the window whose trace began before it, under a job running since then, is
+     * evidence of its group as it is counted in it: the matching span bounds the read, not the trace.
+     */
+    @Test
+    void aRequestInTheWindowIsEvidenceWhenItsTraceStartedBeforeIt() {
+        Span.Builder job = Otlp.span(traceId(1), spanId(1), "nightly", Span.SpanKind.SPAN_KIND_INTERNAL,
+                NOW - 120_000, 200_000);
+        Span.Builder call = Otlp.child(job, spanId(2), "GET", Span.SpanKind.SPAN_KIND_CLIENT, NOW, 950,
+                Otlp.attr("http.request.method", "GET"), Otlp.attr("server.address", "localhost"));
+        Span.Builder request = Otlp.child(call, spanId(3), "GET /orders/{id}", Span.SpanKind.SPAN_KIND_SERVER,
+                NOW, 900, Otlp.attr("http.request.method", "GET"), Otlp.attr("http.route", "/orders/{id}"));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), job, call, request,
+                Otlp.child(request, spanId(4), "SELECT orders", Span.SpanKind.SPAN_KIND_CLIENT, NOW, 800,
+                        Otlp.attr("db.system", "h2"), Otlp.attr("db.statement", "select * from orders"))));
+        flush();
+        Queries.SpanMatch endpoint = Queries.SpanMatch.endpoint(Ids.endpointId("orders", "GET /orders/{id}"));
+
+        assertThat(queries.slowestContaining(window, endpoint, 20))
+                .extracting(matched -> matched.trace().traceId(), Queries.MatchedTrace::matchMs)
+                .containsExactly(tuple(traceId(1), 900.0));
+        assertThat(queries.tracesContaining(window, endpoint, 20, Queries.TraceOrder.NEWEST))
+                .extracting(Stats.TraceSummary::traceId).containsExactly(traceId(1));
+        assertThat(queries.tracesAmong(window, List.of(traceId(1)), 3))
+                .extracting(Stats.TraceSummary::traceId).containsExactly(traceId(1));
+        assertThat(queries.timeSplit(window, "orders", endpoint, List.of(traceId(1))).breakdown().get("db"))
+                .isCloseTo(800 / 900.0, within(1e-9));
+    }
+
     /** Traces tied on duration or start come back in trace id order, whatever H2 scanned first. */
     @Test
     void tracesTiedOnTheOrderingColumnAreOrderedByTheirId() {
