@@ -169,6 +169,22 @@ class TimeSplitTest {
     }
 
     /**
+     * A traced load generator's request is a root {@code CLIENT} span with nothing under it in
+     * its own service: its time is the wait on the call, not code of its own.
+     */
+    @Test
+    void aTopSpanThatIsAnOutboundCallIsTheWaitOnTheCall() {
+        List<SpanRecord> spans = List.of(call("get", null, "http://localhost:8082/api/report", 0, 805));
+
+        Queries.TimeSplit split = Queries.TimeSplit.of(spans, span -> true, span -> true);
+
+        assertThat(split.breakdown()).containsEntry("http", 1.0).containsEntry("self", 0.0);
+        assertThat(split.hotSpans()).extracting(Queries.HotSpan::name)
+                .containsExactly("GET localhost:8081/api/report");
+        assertThat(split.hotSpans().get(0).selfMs()).isEqualTo(805.0);
+    }
+
+    /**
      * Two requests from an SDK that numbers its spans per trace, so both traces hold a
      * span 01 and a span 02: each trace's statement stays under its own request.
      */

@@ -1415,7 +1415,8 @@ public final class Queries {
          * <p>The top spans are the ones {@code top} picks: the endpoint's own entry spans,
          * the job's runs. Only what lies under them counts, down to the next entry span,
          * which is a request of its own: a call the service makes to itself, a message
-         * it consumes itself. A top span's own self time is {@code self}. Every other
+         * it consumes itself. A top span's own self time is {@code self}, unless the top
+         * span is itself an outbound call, which has no code of its own. Every other
          * span's self time goes to {@code db}, {@code http} or {@code internal} by its
          * category, and to the summary it is named by.
          *
@@ -1452,9 +1453,11 @@ public final class Queries {
                 }
                 double selfMs = Rows.ms(nanos);
                 totalMs += selfMs;
-                if (top.test(span)) {
+                if (top.test(span) && !isOutboundCall(span)) {
                     // A top span: the entry span of a request, the root span of a job. Its own
-                    // self time is the request's own code.
+                    // self time is the request's own code. A root call, a traced load
+                    // generator's request, has no code of its own: its time is the wait on
+                    // the call, which is a call like any other.
                     shares.merge("self", selfMs, Double::sum);
                     continue;
                 }
@@ -1542,6 +1545,11 @@ public final class Queries {
                     stack.push(new Clipped(child, from, to));
                 }
             }
+        }
+
+        /** Whether a span waits on something outside the process: a {@code CLIENT} or a {@code PRODUCER} span. */
+        private static boolean isOutboundCall(SpanRecord span) {
+            return "CLIENT".equals(span.kind()) || "PRODUCER".equals(span.kind());
         }
 
         /** A span and the part of it inside its parent, as {@link #selfUnderTheTops} walks it. */

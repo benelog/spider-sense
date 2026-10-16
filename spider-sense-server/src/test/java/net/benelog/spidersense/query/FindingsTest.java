@@ -1120,6 +1120,27 @@ class FindingsTest {
                 .isCloseTo(1.0, within(1e-9));
     }
 
+    /** A traced load generator's request is a root {@code CLIENT} span: its time is the wait on the call. */
+    @Test
+    void aSlowRootCallSpendsItsTimeWaitingOnTheCall() {
+        Span.Builder request = Otlp.span(traceId(1), spanId(1), "GET", Span.SpanKind.SPAN_KIND_CLIENT, NOW, 805,
+                Otlp.attr("http.request.method", "GET"),
+                Otlp.attr("url.full", "http://localhost:8082/api/report"),
+                Otlp.attr("server.address", "localhost"),
+                Otlp.attr("server.port", 8082L));
+        decoder.ingest(Otlp.traces(Otlp.service("load-gen"), request));
+        flush();
+
+        Findings.Finding finding = of(Findings.SLOW_ENDPOINT).get(0);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Double> breakdown = (Map<String, Double>) finding.numbers().get("breakdown");
+        assertThat(breakdown).containsEntry("http", 1.0).containsEntry("self", 0.0);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> hotSpan = (Map<String, Object>) finding.numbers().get("hotSpan");
+        assertThat(hotSpan.get("category")).isEqualTo("http");
+    }
+
     @Test
     void theSpansOfADownstreamServiceBelongToItsOwnEndpoint() {
         Span.Builder root = entry(1, "/orders/{id}", 1000);

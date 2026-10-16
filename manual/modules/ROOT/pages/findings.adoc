@@ -289,12 +289,13 @@ A top span is never cut to its parent: a listener that runs on after its message
 The shares are taken over the sum of the self times, which is the top spans' summed duration.
 Children that run at once each count their overlap, which makes the sum the larger, and the shares still sum to 1.
 
-`hotSpans` groups every span except the top spans by category and name, sums each group's self time, and lists the three largest by `selfMs`, largest first.
+`hotSpans` groups every span whose self time is not `self` by category and name, sums each group's self time, and lists the three largest by `selfMs`, largest first.
 The name is the span's summary with every run of digits replaced by `?`, and an outbound call is named as <<repeated-call,the repeated call>> names it (`GET localhost:8081/api/books/?`), so one call to 40 items is one row and reads the same here as it does in an `n-plus-one-http`.
 `count` is how many spans went into the row, and `share` is the row's `selfMs` over the sample's total.
 
 `breakdown` is `db`, `http`, `internal` and `self`, which sum to 1.
 `self` is the top spans' own self time: the request's own code, the framework, everything not in a child span.
+A top span that is itself an outbound call, a root `CLIENT` or `PRODUCER` span such as a traced load generator's request, has no code of its own: its self time is the wait on the call, which goes to its category's share and into `hotSpans` as any other call does.
 `internal` absorbs the `messaging` and `rpc` categories.
 The four shares answer whether the time was spent waiting on the database, waiting on the network, or working.
 `breakdown` is the number to read first when `dbShare` is low, because it says whether to look at the queries, at the calls or at the code without opening a trace.
