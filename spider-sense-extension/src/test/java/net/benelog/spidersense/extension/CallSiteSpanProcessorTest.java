@@ -117,6 +117,26 @@ class CallSiteSpanProcessorTest {
     }
 
     @Test
+    void aSlowOutboundCallEndedOnAnotherThreadCarriesTheStackItWasMadeFrom() {
+        Span span = tracer.spanBuilder("GET")
+                .setSpanKind(SpanKind.CLIENT)
+                .setAttribute("http.request.method", "GET")
+                .setAttribute("url.full", "http://localhost:8081/api/books/1")
+                .startSpan();
+        sleep(THRESHOLD_MS * 2);
+        // As sendAsync(...).get() ends it: on the completion callback's worker, while the caller
+        // waits on the future, so the stack at the end is the JDK's and names no line.
+        onItsOwnThread(span::end);
+
+        String stacktrace = exported().getAttributes().get(CallSiteSpanProcessor.CODE_STACKTRACE);
+        assertThat(stacktrace).as("code.stacktrace").isNotNull();
+        assertThat(stacktrace)
+                .as("the call site, which only the starting thread knows")
+                .contains("CallSiteSpanProcessorTest.aSlowOutboundCallEndedOnAnotherThreadCarriesTheStackItWasMadeFrom");
+        assertThat(processor.callsInFlight()).as("the start's frames are let go at the end").isZero();
+    }
+
+    @Test
     void aFastOutboundCallIsLeftAlone() {
         Span span = tracer.spanBuilder("GET")
                 .setSpanKind(SpanKind.CLIENT)

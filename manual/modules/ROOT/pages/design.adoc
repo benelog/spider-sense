@@ -205,7 +205,7 @@ It also names a service nothing else named (<<service-name-default,below>>).
 
 It registers, through `META-INF/services/io.opentelemetry.sdk.autoconfigure.spi.AutoConfigurationCustomizerProvider`, a span processor, `CallSiteSpanProcessor`, that implements `io.opentelemetry.sdk.trace.internal.ExtendedSpanProcessor` and applies its thresholds in `onEnding(ReadWriteSpan)`.
 That callback runs on the thread that is ending the span, before the span becomes immutable: the duration is already known and an attribute can still be set, which no ordinary `SpanProcessor` callback allows.
-The repeats are counted in `onStart`, for the reason <<stack-capture,below>>.
+The repeats are counted in `onStart`, and an outbound call's frames are taken there too, for the reason <<stack-capture,below>>.
 
 [#stack-capture]
 === Where a query or a call was made
@@ -226,12 +226,19 @@ The cost is therefore one capture per repeated statement per trace.
 The server's `n-plus-one` rule prefers the span of the group that carries `code.stacktrace` for the finding's `code`.
 
 *At the start, not at the end.*
-Counting the repeats and capturing the fifth are the one thing the processor does in `onStart` rather than in `onEnding`, and they have to be.
+Counting the repeats and capturing the fifth happen in `onStart` rather than in `onEnding`, and they have to.
 The stack at the end is the stack of whichever thread ends the span, and for an asynchronous client that is a `CompletableFuture` completion callback on a worker, every frame of which belongs to the JDK.
 The finding would then carry a code location made entirely of framework frames, which the server reduces to nothing.
 At the start the thread is still the one that made the call, so the stack is the call site.
 The span already carries what the instrumentation sets on the request, the statement or the URL, so the key is the one the end would have computed.
 The threshold cases stay in `onEnding`, because a duration is the one thing the start does not know.
+A slow outbound call has both problems at once: it is known to be slow only at the end, and an asynchronous client ends it on the worker.
+`sendAsync(...).get()`, which is what `JdkClientHttpRequestFactory` does, is such a client: the caller waits on the future while a worker ends the span.
+So every outbound `CLIENT` span that is not a database span takes a `Throwable` in `onStart`, on the thread that makes the call, and `onEnding` lets it go.
+Its frames are turned into text only when the call has taken at least the threshold, and then they are what `code.stacktrace` carries, whichever thread ends the span.
+The cost is one `Throwable` per outbound call, which records the stack but formats no frame, against a call that takes milliseconds.
+A slow query keeps taking the ending thread's stack, because a JDBC statement ends on the thread that issued it and a `Throwable` per query would be paid on far more spans.
+At most 1,000 calls in flight keep their frames, by the same rule as the traces below; a call whose frames were dropped falls back to the ending thread's stack.
 
 *Per trace, not per thread.*
 The counter is one `ConcurrentHashMap` from trace id to that trace's counts, read on every database and outbound span that ends.
@@ -253,7 +260,7 @@ Which traces are dropped is not defined, and under that much load a missing code
 At most 256 distinct statements and calls are counted per trace, and beyond that the counter stops and nothing else changes.
 
 The third case is a slow outbound call.
-A `CLIENT` span that is not a database span (no `db.system` or `db.system.name`) and has taken at least `spidersense.slow.request.ms` (`SPIDERSENSE_SLOW_REQUEST_MS`, default 500, read once like the other threshold) gets the same `code.stacktrace`, so a xref:findings.adoc#slow-external[`slow-external`] finding names the line that made the call.
+A `CLIENT` span that is not a database span (no `db.system` or `db.system.name`) and has taken at least `spidersense.slow.request.ms` (`SPIDERSENSE_SLOW_REQUEST_MS`, default 500, read once like the other threshold) gets the same `code.stacktrace`, taken at the start of the call as described above, so a xref:findings.adoc#slow-external[`slow-external`] finding names the line that made the call.
 
 The fourth case is the N+1 of outbound calls, and it counts exactly as the statements do.
 An outbound `CLIENT` span that carries an HTTP method or a `url.full` is counted under the key `<method> <url.full>`, with every run of digits in the URL replaced by `?`, in the same per-trace map, and the fifth repeat gets the stack, so an xref:findings.adoc#n-plus-one-http[`n-plus-one-http`] finding names the loop rather than only the host.
@@ -263,7 +270,7 @@ The same frames are dropped, the same cap applies, and a span that already carri
 
 The lines are formatted as `Throwable.printStackTrace` writes them: `\tat package.Class.method(File.java:41)`, one per line, no header.
 The server therefore reduces them to application frames with exactly the code it already uses for `exception.stacktrace` (xref:findings.adoc#code[Code frames]).
-The leading frames of `Thread.getStackTrace`, of the processor itself and of `io.opentelemetry.`, which is the SDK's own `end()` path, are dropped, and the trace is cut at 64 frames.
+The leading frames of `Thread.getStackTrace`, of the processor itself and of `io.opentelemetry.`, which is the SDK's own `start()` or `end()` path, are dropped, and the trace is cut at 64 frames.
 `isStartRequired()` and `isOnEndingRequired()` are true and `isEndRequired()` is false, because by `onEnd` the span is immutable and nothing can be set on it.
 Anything thrown inside either callback is swallowed, since a missing code location is never worth a broken span.
 

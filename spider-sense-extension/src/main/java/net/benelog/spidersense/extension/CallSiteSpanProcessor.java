@@ -79,6 +79,9 @@ public final class CallSiteSpanProcessor implements ExtendedSpanProcessor {
      */
     static final int MAX_TRACES = 1_000;
 
+    /** How many outbound calls in flight keep the frames of their start, for the same reason. */
+    static final int MAX_CALLS_IN_FLIGHT = 1_000;
+
     /** A finding wants a line to open, not a core dump. */
     static final int MAX_FRAMES = 64;
 
@@ -99,6 +102,18 @@ public final class CallSiteSpanProcessor implements ExtendedSpanProcessor {
      * test builds, starts from nothing rather than inheriting another one's counts.
      */
     private final ConcurrentMap<String, TraceCounts> repeats = new ConcurrentHashMap<>();
+
+    /**
+     * The frames each outbound call in flight was started from, by its span context.
+     *
+     * <p>A slow call is only known to be slow at its end, and an asynchronous client ends it on the
+     * completion callback's worker, whose stack belongs to the JDK: {@code sendAsync(...).get()},
+     * which is what Spring's {@code JdkClientHttpRequestFactory} does, gave its {@code slow-external}
+     * finding no line. So every outbound call that is not a statement takes a {@link Throwable} at
+     * its start, whose frames are only turned into text if the call turns out slow, and lets it go
+     * at its end ({@code design.adoc#stack-capture}).
+     */
+    private final ConcurrentMap<SpanContext, Throwable> callSites = new ConcurrentHashMap<>();
 
     /**
      * One trace's counts, and how many of its local roots are open in this process.
@@ -142,12 +157,16 @@ public final class CallSiteSpanProcessor implements ExtendedSpanProcessor {
                 repeats.computeIfPresent(span.getSpanContext().getTraceId(),
                         (traceId, trace) -> --trace.openRoots > 0 ? trace : null);
             }
+            boolean database = isDatabase(span);
+            // Let go whether or not the call is slow, so the map only ever holds calls in flight.
+            Throwable callSite = !database && span.getKind() == SpanKind.CLIENT
+                    ? callSites.remove(span.getSpanContext()) : null;
             // The repeats are counted and captured at the start (onStart); here only the
             // thresholds, which need a duration and can therefore only be read at the end.
-            long threshold = isDatabase(span) ? thresholdNanos
+            long threshold = database ? thresholdNanos
                     : span.getKind() == SpanKind.CLIENT ? requestThresholdNanos : Long.MAX_VALUE;
             if (span.getLatencyNanos() >= threshold) {
-                capture(span);
+                capture(span, callSite);
             }
         } catch (Throwable swallowed) {
             // Documented: nothing this processor does may reach the application.
@@ -175,11 +194,19 @@ public final class CallSiteSpanProcessor implements ExtendedSpanProcessor {
                     counted.openRoots++;
                     return counted;
                 });
-                boundTraces();
+                bound(repeats, MAX_TRACES);
+            }
+            Throwable callSite = null;
+            if (span.getKind() == SpanKind.CLIENT && !isDatabase(span)) {
+                // The frames of the thread that makes the call, kept for the end in case the call
+                // is slow and ends on another thread.
+                callSite = new Throwable("call site");
+                callSites.put(span.getSpanContext(), callSite);
+                bound(callSites, MAX_CALLS_IN_FLIGHT);
             }
             String key = repeatKey(span);
             if (key != null && count(span, key) == N_PLUS_ONE_REPEATS) {
-                capture(span);
+                capture(span, callSite);
             }
         } catch (Throwable swallowed) {
             // Documented: nothing this processor does may reach the application.
@@ -203,12 +230,16 @@ public final class CallSiteSpanProcessor implements ExtendedSpanProcessor {
         return span.getAttribute(DB_SYSTEM) != null || span.getAttribute(DB_SYSTEM_NAME) != null;
     }
 
-    /** The stack of the thread the span is on, unless the span already carries one. */
-    private static void capture(ReadWriteSpan span) {
+    /**
+     * The frames of the call's start when they were kept, else the stack of the thread the span is
+     * on, unless the span already carries one.
+     */
+    private static void capture(ReadWriteSpan span, @Nullable Throwable callSite) {
         if (span.getAttribute(CODE_STACKTRACE) != null) {
             return;
         }
-        String stacktrace = stacktraceOf(Thread.currentThread().getStackTrace());
+        String stacktrace = stacktraceOf(callSite != null
+                ? callSite.getStackTrace() : Thread.currentThread().getStackTrace());
         if (!stacktrace.isEmpty()) {
             span.setAttribute(CODE_STACKTRACE, stacktrace);
         }
@@ -235,6 +266,11 @@ public final class CallSiteSpanProcessor implements ExtendedSpanProcessor {
         return counts.merge(key, 1, Integer::sum);
     }
 
+    /** How many outbound calls hold their start's frames; a test's way of seeing they are let go. */
+    int callsInFlight() {
+        return callSites.size();
+    }
+
     /** How many traces are being counted; a test's way of seeing that they are forgotten. */
     int tracesCounted() {
         return repeats.size();
@@ -251,18 +287,18 @@ public final class CallSiteSpanProcessor implements ExtendedSpanProcessor {
         if (raced != null) {
             return raced.counts;
         }
-        boundTraces();
+        bound(repeats, MAX_TRACES);
         return fresh.counts;
     }
 
     /**
-     * Bounded on insert rather than swept: an application that never ends a root span would
-     * otherwise keep every trace it ever started. Which traces go is not defined, and under that
+     * Bounded on insert rather than swept: an application that never ends a root span, or a call,
+     * would otherwise keep every trace or call it ever started. Which traces go is not defined, and under that
      * much load a missing code location is the least of it.
      */
-    private void boundTraces() {
-        while (repeats.size() > MAX_TRACES) {
-            Iterator<String> oldest = repeats.keySet().iterator();
+    private static void bound(ConcurrentMap<?, ?> map, int max) {
+        while (map.size() > max) {
+            Iterator<?> oldest = map.keySet().iterator();
             if (!oldest.hasNext()) {
                 break;
             }
@@ -332,7 +368,8 @@ public final class CallSiteSpanProcessor implements ExtendedSpanProcessor {
      * {@code exception.stacktrace}.
      *
      * <p>The leading frames are ours and the SDK's — {@code Thread.getStackTrace}, this class, and
-     * the {@code io.opentelemetry.} call chain down from {@code end()} — and say nothing about the
+     * the {@code io.opentelemetry.} call chain down from {@code start()} or {@code end()} — and say
+     * nothing about the
      * query; they are dropped until the first frame that is neither, which is the JDBC driver the
      * instrumentation advice sits in. Dropping only leading frames keeps a later application frame
      * that happens to live in one of those packages.
