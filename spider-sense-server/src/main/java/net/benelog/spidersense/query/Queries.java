@@ -1496,12 +1496,27 @@ public final class Queries {
          * is not clipped, as it is a request of its own. Walked with a stack, as a deep trace
          * nests further than the call stack goes.
          *
+         * <p>Each trace is a tree of its own: a span id is unique within its trace only, and
+         * an SDK that numbers its spans per trace repeats them in every one.
+         *
          * <p>A span under none of the top spans is not in the answer.
          */
         static IdentityHashMap<SpanRecord, Long> selfUnderTheTops(List<SpanRecord> spans,
                 Predicate<SpanRecord> top, Predicate<SpanRecord> entry) {
-            SpanTree tree = SpanTree.of(spans);
+            Map<String, List<SpanRecord>> byTrace = new LinkedHashMap<>();
+            for (SpanRecord span : spans) {
+                byTrace.computeIfAbsent(span.traceId(), id -> new ArrayList<>()).add(span);
+            }
             IdentityHashMap<SpanRecord, Long> self = new IdentityHashMap<>();
+            for (List<SpanRecord> trace : byTrace.values()) {
+                walk(SpanTree.of(trace), trace, top, entry, self);
+            }
+            return self;
+        }
+
+        /** {@link #selfUnderTheTops} over the spans of one trace, into {@code self}. */
+        private static void walk(SpanTree tree, List<SpanRecord> spans, Predicate<SpanRecord> top,
+                Predicate<SpanRecord> entry, IdentityHashMap<SpanRecord, Long> self) {
             Deque<Clipped> stack = new ArrayDeque<>();
             for (SpanRecord span : spans) {
                 if (top.test(span)) {
@@ -1527,7 +1542,6 @@ public final class Queries {
                     stack.push(new Clipped(child, from, to));
                 }
             }
-            return self;
         }
 
         /** A span and the part of it inside its parent, as {@link #selfUnderTheTops} walks it. */

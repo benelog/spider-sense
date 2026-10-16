@@ -283,6 +283,7 @@ The database work of a downstream service belongs to that service's own endpoint
 Leaving the entry span below out makes the wait on an outbound call land in `http`, where the caller can see it.
 
 Self time is a span's duration less the time its direct children within that set cover inside it, as the xref:pages.adoc#profile[Profile view] computes it.
+A span's children are looked up within its own trace, since a span id is unique within its trace only.
 Here each span counts only the part of it that lies inside its parent, down from the top span, so an `@Async` child that runs on after the response adds only what it did before it.
 A top span is never cut to its parent: a listener that runs on after its message was published is still its whole request.
 The shares are taken over the sum of the self times, which is the top spans' summed duration.

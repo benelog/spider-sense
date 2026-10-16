@@ -168,6 +168,31 @@ class TimeSplitTest {
         assertThat(consumer.hotSpans().get(0).selfMs()).isEqualTo(880.0);
     }
 
+    /**
+     * Two requests from an SDK that numbers its spans per trace, so both traces hold a
+     * span 01 and a span 02: each trace's statement stays under its own request.
+     */
+    @Test
+    void spanIdsThatRepeatAcrossTracesKeepEachTracesSpansInIt() {
+        List<SpanRecord> spans = new ArrayList<>();
+        for (long at : new long[] {0, 10_000}) {
+            String trace = "t" + at;
+            spans.add(new SpanRecord(trace, "01", null, "orders", "GET /x", "SERVER", at * MS,
+                    (at + 1000) * MS, "UNSET", null, Map.of("http.request.method", "GET"), List.of(), "test"));
+            spans.add(new SpanRecord(trace, "02", "01", "orders", "SELECT item", "CLIENT", (at + 50) * MS,
+                    (at + 950) * MS, "UNSET", null,
+                    Map.of("db.system", "h2", "db.operation", "SELECT", "db.sql.table", "item"), List.of(), "test"));
+        }
+
+        Queries.TimeSplit split = Queries.TimeSplit.of(spans, span -> span.spanId().equals("01"),
+                TimeSplitTest::isEntry);
+
+        assertThat(split.breakdown().get("db")).isCloseTo(0.9, offset(1e-9));
+        assertThat(split.breakdown().get("self")).isCloseTo(0.1, offset(1e-9));
+        assertThat(split.hotSpans().get(0).selfMs()).isEqualTo(1800.0);
+        assertThat(split.hotSpans().get(0).count()).isEqualTo(2);
+    }
+
     @Test
     void theSharesSumToOneAndArePrintedInTheirOrder() {
         Queries.TimeSplit split = split(List.of(
