@@ -359,8 +359,11 @@ function clearDataDialog() {
 // --- live events ---------------------------------------------------------
 
 function updateBadge() {
+  const shown = tingleCount > 99 ? '99+' : String(tingleCount);
   shell.tingleBadge.hidden = tingleCount === 0;
-  shell.tingleBadge.textContent = tingleCount > 99 ? '99+' : String(tingleCount);
+  shell.tingleBadge.textContent = shown;
+  // The entry's aria-label stands in for its text, the badge's included, so it says the count too (ui.adoc#layout).
+  document.getElementById('tingle-link').setAttribute('aria-label', tingleCount ? 'Tingles, ' + shown + ' new' : 'Tingles');
 }
 
 function pulse() {

@@ -5,6 +5,7 @@ import { document, Element } from './fake-dom.js';
 import { test, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { EventSourceStub } from '../../main/resources/public/assets/js/dev/shim.js';
 
 const JS = '../../main/resources/public/assets/js/';
 const settle = (ms = 20) => new Promise((r) => setTimeout(r, ms));
@@ -169,6 +170,25 @@ test('Try again after the server came back brings the foot and the service filte
     globalThis.fetch = served;
     follow('#/');
   }
+});
+
+/** The live stream app.js subscribes to, caught as it subscribes, so a test can deliver an event as the server would. */
+let stream = null;
+const subscribe = EventSourceStub.prototype.addEventListener;
+EventSourceStub.prototype.addEventListener = function (type, fn) {
+  if (type === 'tingle') stream = this;
+  return subscribe.call(this, type, fn);
+};
+
+test('the tingles entry carries its name as a title and an aria-label, and the label the count of new tingles (ui.adoc#layout)', () => {
+  const link = document.getElementById('tingle-link');
+  assert.equal(link.getAttribute('title'), 'Tingles');
+  assert.equal(link.getAttribute('aria-label'), 'Tingles', 'a collapsed icon still says where it goes');
+  stream.dispatch('tingle', { kind: 'error', at: Date.now(), service: 'spring-orders', title: 'GET /orders', detail: 'IllegalStateException', traceId: 'a1b2' });
+  assert.equal(document.getElementById('tingle-badge').textContent, '1');
+  assert.equal(link.getAttribute('aria-label'), 'Tingles, 1 new', 'and the count its badge shows');
+  link.click();
+  assert.equal(link.getAttribute('aria-label'), 'Tingles', 'which a click clears with the badge');
 });
 
 /** A key pressed on the page, outside any field. */
