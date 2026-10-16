@@ -118,6 +118,7 @@ This second guard ensures that a misconfiguration never shows the UI monitoring 
 `CLIENT` spans are kept: an application that calls Spider Sense's port is doing something real, and that call belongs in its trace.
 
 The UI server's Jetty thread pool is marked daemon in agent mode (`JettyServer.threadPool(...)` with `QueuedThreadPool.setDaemon(true)`) and with `shutdownHook(false)`, so a short-lived command-line application still exits when its `main` returns.
+The export the OpenTelemetry SDK sends from its own exit hook is stored before it is answered, so such an application keeps its spans (xref:storage.adoc#writer[How it is written]).
 
 xref:configuration.adoc[Configuration] lists every `spidersense.*` key, its precedence, the properties file and the environment variables.
 Every `otel.*` property still works as the OpenTelemetry agent documents it, because Spider Sense only fills in defaults.

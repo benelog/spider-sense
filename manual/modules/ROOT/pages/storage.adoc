@@ -285,6 +285,10 @@ It writes through a connection of its own outside the pool, in transactions of a
 Opened while H2 is closing the file, that connection waits for the close to finish and opens the file again, and a write that H2 closed under it is tried again the same way.
 Once the rows are in, the flush shuts down the engine this process holds, so the file is written and closed before the JVM halts, whichever hook ran first; a file that has grown past its data is compacted on the way (<<file-size,The size of the file>>).
 After the flush at exit has begun, the writer's thread writes nothing more, since writing through the pool after H2 closed the file would open it again behind that flush.
+An export that arrives after it has begun is still stored.
+The OpenTelemetry SDK sends its last spans, logs and metrics from an exit hook of its own, which usually runs after the writer's has found the queue empty, and in agent mode the embedded server's daemon threads keep answering while the hooks run.
+Such an export is written on the request thread before it is answered, the same way: through a connection of its own, after which the engine is shut down again.
+The SDK's hook waits for the answer, and the JVM waits for the hook, so a command-line job whose `main` returns before the exporter's first scheduled export still has every span it made stored.
 
 Metric points are written on the same path.
 A `metric` row describes one service's instrument, so two services that export one name as different instruments, one a `CUMULATIVE` sum and the other a `DELTA` sum, keep a row each, and each service's points are read by its own row.

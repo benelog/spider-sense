@@ -97,6 +97,8 @@ public final class Writer implements AutoCloseable {
 
     private volatile boolean running = true;
     private volatile boolean exiting;
+    /** The database the flush at exit writes to, set before {@link #exiting}; null until the exit. */
+    private volatile @Nullable Database exitDatabase;
     /** Whether a flush wrote through the pool after the exit began; guarded by {@link #flushLock}. */
     private boolean wroteWhileExiting;
     private volatile @Nullable Thread exitHook;
@@ -132,7 +134,8 @@ public final class Writer implements AutoCloseable {
     }
 
     /**
-     * Hands a decoded export over. Never blocks, never throws.
+     * Hands a decoded export over. Never blocks, never throws, until the JVM begins to
+     * exit: from then on it writes the batch itself, see {@link #storeAfterExit}.
      *
      * <p>When the queue is full of batches, or the batch would take it past
      * {@link #QUEUE_RECORDS} records, the oldest batches go first, each counted.
@@ -141,6 +144,18 @@ public final class Writer implements AutoCloseable {
         if (batch.isEmpty()) {
             return;
         }
+        if (exiting) {
+            storeAfterExit(batch);
+            return;
+        }
+        queue(batch);
+        if (exiting) {
+            // The flush at exit began while the batch was on its way in, and may have missed it.
+            storeAfterExit(null);
+        }
+    }
+
+    private void queue(Batch batch) {
         int records = batch.recordCount();
         while (queuedRecords.get() + records > QUEUE_RECORDS) {
             if (!dropOldest()) {
@@ -230,15 +245,50 @@ public final class Writer implements AutoCloseable {
      * ran first. Nothing to write and nothing written since the exit began means
      * nothing to close: H2's own hook does that, unless the file is large enough
      * that its close may need to compact it ({@link Database#mayNeedCompaction}),
-     * which H2's own close never does (storage.adoc#file-size).
+     * which H2's own close never does (storage.adoc#file-size). An export that
+     * arrives after this has begun is written the same way by {@link #storeAfterExit}.
      */
     void exit(Database database) {
+        exitDatabase = database;
         exiting = true;
         synchronized (flushLock) {
             List<Batch> batches = new ArrayList<>(unwritten);
             unwritten.clear();
             batches.addAll(take(Integer.MAX_VALUE));
             if (batches.isEmpty() && !wroteWhileExiting && !database.mayNeedCompaction()) {
+                return;
+            }
+            writeOutsidePool(database, batches);
+        }
+    }
+
+    /**
+     * An export that arrives once the flush at exit has begun, with whatever is still
+     * queued, written on the request thread before the receiver answers it.
+     *
+     * <p>The OpenTelemetry SDK sends its last spans, logs and metrics from an exit hook
+     * of its own, which runs beside this writer's and usually after it has found the
+     * queue empty, and the embedded server's daemon threads keep answering while the
+     * hooks run. A short job's every span is in that export. So it is written as the
+     * flush at exit writes, through a connection of its own, and the engine is shut
+     * down again; the SDK's hook waits for the answer and the JVM for the hook, so the
+     * rows are in the file before the JVM halts.
+     */
+    private void storeAfterExit(@Nullable Batch batch) {
+        Database database = exitDatabase;
+        synchronized (flushLock) {
+            List<Batch> batches = new ArrayList<>(unwritten);
+            unwritten.clear();
+            batches.addAll(take(Integer.MAX_VALUE));
+            if (batch != null) {
+                batches.add(batch);
+            }
+            if (batches.isEmpty()) {
+                return;
+            }
+            if (database == null) {
+                // Not reached: the exit sets the database before it sets exiting. Its flush would write these.
+                unwritten.addAll(batches);
                 return;
             }
             writeOutsidePool(database, batches);

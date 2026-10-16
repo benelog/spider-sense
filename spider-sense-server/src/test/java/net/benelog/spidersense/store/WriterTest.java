@@ -623,18 +623,40 @@ class WriterTest {
         database.close();
     }
 
-    /** Once the flush at exit has run, a late flush must not open the file again behind it. */
+    /**
+     * The OpenTelemetry SDK sends its last export from an exit hook of its own, which
+     * usually runs after the flush at exit found the queue empty: the export is stored
+     * before it is answered, and the file it opened again is closed again. The writer's
+     * own flush still never opens the file through the pool behind the exit.
+     */
     @Test
-    void aFlushAfterTheExitWritesNothing() {
+    void anExportAfterTheFlushAtExitIsStoredBeforeItIsAnswered() {
         Database database = Database.open(fileUrl(), dir.resolve("sense.mv.db"));
         Writer writer = writer(database);
         writer.exit(database);
-        writer.submit(spans(1));
 
+        writer.submit(spans(7));
+
+        assertThat(writer.queuedBatches()).isZero();
+        assertThat(dir.resolve("sense.lock.db")).as("the file is closed again").doesNotExist();
         writer.flushNow();
+        assertThat(dir.resolve("sense.lock.db")).as("and the writer's flush leaves it closed").doesNotExist();
+        assertThat(storedSpans()).isEqualTo(7);
+        database.close();
+    }
 
-        assertThat(writer.queuedBatches()).as("left for nobody, rather than written into a closed file")
-                .isEqualTo(1);
+    /** The same when H2's own exit hook closed the file before either. */
+    @Test
+    void anExportAfterTheFlushAtExitIsStoredAfterH2ClosedTheFile() {
+        Database database = Database.open(fileUrl(), dir.resolve("sense.mv.db"));
+        Writer writer = writer(database);
+        database.sql().execute("SHUTDOWN");
+        writer.exit(database);
+
+        writer.submit(spans(7));
+
+        assertThat(dir.resolve("sense.lock.db")).doesNotExist();
+        assertThat(storedSpans()).isEqualTo(7);
         database.close();
     }
 }
