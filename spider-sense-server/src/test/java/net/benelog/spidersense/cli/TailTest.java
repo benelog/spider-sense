@@ -190,6 +190,33 @@ class TailTest {
         assertThat(run.err()).startsWith("spider-sense: --until-traces must be at least 0: -1\n");
     }
 
+    /**
+     * A reader that went away, as {@code head -1} does once it has its line, ends the watch at the
+     * next line: the JVM ignores SIGPIPE, so all {@code tail} sees is a write that failed.
+     */
+    @Test
+    void aReaderThatWentAwayEndsTheWatchAtTheNextLine() throws IOException {
+        java.util.concurrent.atomic.AtomicInteger written = new java.util.concurrent.atomic.AtomicInteger();
+        java.io.OutputStream pipe = new java.io.OutputStream() {
+            @Override
+            public void write(int b) throws IOException {
+                if (written.get() > 0) {
+                    throw new IOException("Broken pipe");
+                }
+                if (b == '\n') {
+                    written.incrementAndGet();
+                }
+            }
+        };
+        try (PrintStream out = new PrintStream(pipe, true, UTF_8)) {
+            boolean ended = Tail.read(new ByteArrayInputStream(STREAM.getBytes(UTF_8)),
+                    new Tail.Watch(null, null, null, null, false), out);
+
+            assertThat(ended).as("the watch ended as asked, rather than with the stream").isTrue();
+        }
+        assertThat(written).hasValue(1);
+    }
+
     @Test
     void jsonPrintsTheEventObjectWithItsNameAddedOnePerLine() {
         Run run = read(new Tail.Watch(null, null, null, null, true));

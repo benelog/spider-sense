@@ -148,7 +148,8 @@ final class Tail {
      *
      * @param timeoutMs what is left of {@code --timeout} once the stream opened, or null for none
      * @return whether the watch ended as asked: {@code --until-traces} met, {@code --timeout}
-     *         elapsed, or an interrupt; false when the server closed the stream first
+     *         elapsed, the reader of the lines gone, or an interrupt; false when the server closed
+     *         the stream first
      */
     private static boolean follow(InputStream body, Watch watch, @Nullable Long timeoutMs, PrintStream out) {
         Thread deadline = null;
@@ -193,7 +194,8 @@ final class Tail {
      * — and this reads exactly those, because the keepalive comment must not be
      * mistaken for data.
      *
-     * @return true when the {@code --until-traces} count arrived, false when the stream ended first
+     * @return true when the {@code --until-traces} count arrived or nothing reads the lines any
+     *         more, false when the stream ended first
      */
     static boolean read(InputStream sse, Watch watch, PrintStream out) throws IOException {
         return new Tail(watch, out).parse(sse);
@@ -234,7 +236,7 @@ final class Tail {
         return false;
     }
 
-    /** One event; true when it is the one the command was waiting for. */
+    /** One event; true when it is the one the command was waiting for, or nothing reads the lines any more. */
     private boolean handle(String name, String data) {
         JsonObject event;
         try {
@@ -243,16 +245,13 @@ final class Tail {
             return false;
         }
         if ("tingle".equals(name)) {
-            if (matches(event)) {
-                print(watch.json() ? json(name, event) : line(event));
-            }
-            return false;
+            return matches(event) && !print(watch.json() ? json(name, event) : line(event));
         }
         if (!"stats".equals(name)) {
             return false;
         }
-        if (watch.json()) {
-            print(json(name, event));
+        if (watch.json() && !print(json(name, event))) {
+            return true;
         }
         long traces = event.getLong("traces", 0);
         if (baseline < 0) {
@@ -299,10 +298,16 @@ final class Tail {
         return object.toJson();
     }
 
-    /** Flushed line by line: a tail nobody sees until the buffer fills is not one. */
-    private void print(String text) {
+    /**
+     * Flushed line by line: a tail nobody sees until the buffer fills is not one.
+     *
+     * @return false once nothing reads the lines, as after {@code tail | head -1}: the JVM ignores
+     *         SIGPIPE and the stream keeps the failed write to itself, so its error flag is the one sign
+     */
+    private boolean print(String text) {
         out.println(text);
         out.flush();
+        return !out.checkError();
     }
 
     private static int unreachable(PrintStream err, Remote.Unreachable e, String base) {
