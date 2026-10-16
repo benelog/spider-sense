@@ -193,7 +193,9 @@ export function render(root, ctx) {
   return {
     refresh: load,
     onTingle: (t) => {
-      if (!layout.built) return;
+      // With Live off the feed stays the window the page loaded, as the tiles and the chart do;
+      // the shell's badge still counts the tingle (pages.adoc#overview).
+      if (!layout.built || !api.state.live) return;
       // The feed is the top bar's service's, as the rest of the page is (pages.adoc#overview).
       if (api.state.service && t.service !== api.state.service) return;
       tingles = [{ ...t, fresh: true }, ...tingles].slice(0, 50);

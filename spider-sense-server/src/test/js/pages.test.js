@@ -407,14 +407,25 @@ test('a tingle without a trace is not a link', async () => {
 test('the Overview feed takes only the tingles of the service the top bar names (pages.adoc#overview)', async () => {
   const services = (await api.services()).services.map((s) => s.name);
   const [chosen, other] = services;
+  api.state.live = true;
   const { root, instance } = await visit('overview', {}, chosen);
   const before = root.querySelectorAll('.tingle').length;
   instance.onTingle({ kind: 'error', service: other, title: 'elsewhere', detail: '', at: Date.now(), traceId: null });
   assert.equal(root.querySelectorAll('.tingle').length, before, 'another service\'s tingle stays out');
   instance.onTingle({ kind: 'error', service: chosen, title: 'here', detail: '', at: Date.now(), traceId: null });
   assert.equal(root.querySelectorAll('.tingle').length, Math.min(before + 1, 50), 'the chosen service\'s tingle comes in');
+  assert.equal(root.querySelector('.tingle').textContent.includes('here'), true, 'on top');
   instance.destroy();
   api.state.service = '';
+  api.state.live = false;
+});
+
+test('with Live off the Overview feed stays as the page loaded it (pages.adoc#overview)', async () => {
+  const { root, instance } = await visit('overview');
+  const before = root.querySelectorAll('.tingle').map((t) => t.textContent);
+  instance.onTingle({ kind: 'error', service: (await api.services()).services[0].name, title: 'arrived after the window', detail: '', at: Date.now(), traceId: null });
+  assert.deepEqual(root.querySelectorAll('.tingle').map((t) => t.textContent), before);
+  instance.destroy();
 });
 
 test('two error tingles of one trace and one millisecond are two entries, in order, until newer ones push them out (pages.adoc#overview)', async () => {
