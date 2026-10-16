@@ -593,11 +593,17 @@ final class Remote {
         return url;
     }
 
-    /** A whole limit stays whole in the URL: {@code maxErrors=0}, not {@code 0.0}. */
+    /**
+     * A whole limit stays whole in the URL: {@code maxErrors=0}, not {@code 0.0}; one beyond a
+     * {@code long}, such as {@code 1e20}, is written out in full rather than cast to {@code Long.MAX_VALUE}.
+     */
     private static String plainNumber(double value) {
-        return value == Math.rint(value) && !Double.isInfinite(value)
+        if (value != Math.rint(value) || Double.isInfinite(value)) {
+            return String.valueOf(value);
+        }
+        return Math.abs(value) < 0x1p63
                 ? String.valueOf((long) value)
-                : String.valueOf(value);
+                : new java.math.BigDecimal(value).toPlainString();
     }
 
     static String encode(@Nullable String value) {

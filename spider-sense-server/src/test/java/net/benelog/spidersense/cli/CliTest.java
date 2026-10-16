@@ -416,6 +416,8 @@ class CliTest {
                 .isEqualTo("/api/check?since=15m&endpoint=GET%20%2Forders&maxP95Ms=500&maxNPlusOne=0&format=text");
         assertThat(path("check", "--min-apdex=0.9", "--max-error-rate=0.01"))
                 .isEqualTo("/api/check?since=15m&maxErrorRate=0.01&minApdex=0.9&format=text");
+        assertThat(path("check", "--max-p95-ms=1e20")).as("beyond a long, the limit the user typed")
+                .isEqualTo("/api/check?since=15m&maxP95Ms=100000000000000000000&format=text");
         assertThat(path("sql", "SELECT 1")).as("the statement travels in the body")
                 .isEqualTo("/api/sql?format=text");
         assertThat(path("sql", "SELECT 1", "--json", "--limit=10"))
