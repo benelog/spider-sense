@@ -161,9 +161,11 @@ export function render(root, ctx) {
   return {
     // Live tail: new lines arrive at the top; the scroll position is left alone. An open row
     // scrolled away from the top holds the tail, but not a change of service or range, which
-    // starts the list over (pages.adoc#logs).
+    // starts the list over (pages.adoc#logs). Only a row still on the page holds it: `expanded`
+    // keeps the key of a record a tail or a merge has dropped since.
     refresh: () => {
-      if (viewKey() !== loadedFor || !expanded.size || window.scrollY < TAIL_SCROLL_SLACK_PX) loader.load();
+      const openOnPage = rows.some((log) => expanded.has(String(log.id)));
+      if (viewKey() !== loadedFor || !openOnPage || window.scrollY < TAIL_SCROLL_SLACK_PX) loader.load();
     },
     destroy: () => { loader.destroy(); applyFilter.cancel(); },
   };

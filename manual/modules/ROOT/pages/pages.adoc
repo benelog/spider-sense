@@ -519,6 +519,7 @@ A row click expands its attributes and its stack trace.
 With Live on the page tails: new lines arrive at the top, and the scroll position is kept unless you are already at the top.
 The rows *Load more* fetched stay under them until they leave the window; only a change of filter, service or range starts the list over from the newest page.
 While a row is open and the page is scrolled away from the top, Live leaves the list as it is, so the open record does not move under you.
+Only a row still listed holds the list: a record that was open when a tail dropped it from the list no longer does.
 A change of filter, service or range reloads the list all the same.
 
 [#jvm]

@@ -87,3 +87,45 @@ test('a change of service or range reloads the list while a row is open and the 
     instance.destroy();
   }
 });
+
+test('an open record the tail has replaced no longer holds the tail once the page is scrolled down (pages.adoc#logs)', async () => {
+  const asked = [];
+  let newest = 10;
+  globalThis.fetch = async (input) => {
+    const url = new URL(input, 'http://localhost:4000');
+    asked.push(url.searchParams);
+    const logs = [newest, newest - 1].map((id) => ({ id, at: Date.now() - 1000 * (100 - id), service: 'web', severity: 'INFO', body: 'line ' + id }));
+    return new Response(JSON.stringify({ logs, total: logs.length }), { status: 200 });
+  };
+  const api = await import(JS + 'api.js');
+  const router = await import(JS + 'router.js');
+  const page = await import(JS + 'pages/logs.js');
+  router.register('/logs');
+  router.replace('/logs', {});
+  api.state.status = { counts: { logs: 2 } };
+  const root = document.createElement('main');
+  document.body.replaceChildren(root);
+  const instance = page.render(root, { params: {}, initialQuery: {}, query: () => router.currentRoute().query || {}, setTitle() {}, navigate() {} });
+  await settle();
+  const bodies = () => root.querySelectorAll('tbody tr').filter((tr) => !tr.classList.contains('log-detail'))
+    .map((tr) => tr.querySelector('.log-body').textContent);
+  assert.deepEqual(bodies(), ['line 10', 'line 9']);
+  root.querySelector('tbody tr').click();      // open record 10
+  try {
+    newest = 20;
+    globalThis.scrollY = 0;
+    instance.refresh();                        // a tick at the top tails, and record 10 leaves the page
+    await settle();
+    assert.deepEqual(bodies(), ['line 20', 'line 19']);
+    globalThis.scrollY = 600;
+    newest = 30;
+    asked.length = 0;
+    instance.refresh();                        // no record on the page is open: the tail runs
+    await settle();
+    assert.equal(asked.length, 1);
+    assert.deepEqual(bodies(), ['line 30', 'line 29']);
+  } finally {
+    globalThis.scrollY = 0;
+    instance.destroy();
+  }
+});
