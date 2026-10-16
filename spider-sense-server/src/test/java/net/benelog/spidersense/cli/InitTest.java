@@ -184,6 +184,61 @@ class InitTest {
         assertThat(spiderSense(read(project.resolve(".mcp.json"))).getString("command")).isEqualTo("java");
     }
 
+    /** A packaged name is not enough: a file whose bytes are not this jar's copy is the user's, and stays. */
+    @Test
+    void mcpLeavesASkillFileThatDiffersFromTheJarsCopy(@TempDir Path project) throws IOException {
+        assertThat(init("--dir=" + project, "--jar=" + JAR).exit()).isZero();
+        Path skill = project.resolve(".claude/skills/spider-sense/SKILL.md");
+        Files.writeString(skill, "edited by hand\n", UTF_8);
+
+        Run run = init("--dir=" + project, "--jar=" + JAR, "--mcp");
+
+        assertThat(run.exit()).as("stderr: %s", run.err()).isZero();
+        assertThat(skill).hasContent("edited by hand");
+        assertThat(run.out()).contains("left " + skill + ", which differs from this jar's copy\n");
+        assertThat(project.resolve(".claude/skills/spider-sense/references/cli.md")).doesNotExist();
+    }
+
+    /**
+     * A skill linked into the project from elsewhere was not installed by init: {@code --mcp} deletes
+     * neither the files behind the link nor the link, and a run without it writes nothing through it.
+     */
+    @Test
+    void aLinkedSkillIsLeftAsItIs(@TempDir Path root) throws IOException {
+        Path project = Files.createDirectories(root.resolve("project"));
+        Path elsewhere = Files.createDirectories(root.resolve("tools/spider-sense/references")).getParent();
+        Path mine = elsewhere.resolve("SKILL.md");
+        Files.writeString(mine, "my own skill\n", UTF_8);
+        try (var in = InitTest.class.getResourceAsStream("/spider-sense/skills/spider-sense/references/cli.md")) {
+            assertThat(in).as("packaged").isNotNull();
+            Files.copy(in, elsewhere.resolve("references/cli.md"));
+        }
+        Path link = Files.createDirectories(project.resolve(".claude/skills")).resolve("spider-sense");
+        try {
+            Files.createSymbolicLink(link, elsewhere);
+        } catch (UnsupportedOperationException | IOException e) {
+            assumeTrue(false, "no symbolic links here: " + e);
+        }
+
+        Run mcp = init("--dir=" + project, "--jar=" + JAR, "--mcp");
+
+        assertThat(mcp.exit()).as("stderr: %s", mcp.err()).isZero();
+        assertThat(mcp.out()).contains("left " + link + ", which is a link\n")
+                .doesNotContain("removed skill from " + link);
+        assertThat(Files.isSymbolicLink(link)).isTrue();
+        assertThat(mine).hasContent("my own skill");
+        assertThat(elsewhere.resolve("references/cli.md")).as("this jar's bytes, behind a link").exists();
+
+        Run cli = init("--dir=" + project, "--jar=" + JAR);
+
+        assertThat(cli.exit()).as("stderr: %s", cli.err()).isZero();
+        assertThat(cli.out()).contains("left " + link + ", which is a link\n")
+                .doesNotContain("installed skill to " + link + " ")
+                .contains("installed skill to " + project.resolve(".claude/skills/spider-sense-sql-tuning"));
+        assertThat(mine).hasContent("my own skill");
+        assertThat(elsewhere.resolve("references")).isDirectoryNotContaining("glob:**/findings.md");
+    }
+
     @Test
     void theCliAfterMcpRemovesTheServerAndKeepsTheOthers(@TempDir Path project) throws IOException {
         Path file = project.resolve(".mcp.json");

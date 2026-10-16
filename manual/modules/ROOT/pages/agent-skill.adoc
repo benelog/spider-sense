@@ -178,6 +178,7 @@ Claude Code reads `CLAUDE.md`, and Codex and most other agents read `AGENTS.md`.
 `init` copies every directory under `skills/`, with its `SKILL.md` and `references/*.md`, into `<dir>/.claude/skills/` under the same name.
 `--no-skill` skips all of them, and so does `--mcp`.
 It overwrites the files it owns and leaves anything else in those directories alone.
+A skill whose directory, or a directory or file in it, is a symbolic link is left as it is, link and target, because a skill kept elsewhere and linked into the project is not `init`'s to write: its skill line becomes `left /home/me/project/.claude/skills/spider-sense, which is a link`.
 
 It is a copy rather than a pointer, because the jar is the distributable and the repository it was built from may not be on the machine at all.
 The files travel inside the jar, so no checkout is needed.
@@ -206,6 +207,8 @@ It writes the stdio MCP server into the project's `.mcp.json` and adds a last li
 A `--url` goes into the server's arguments as well as into the block, because with `--mcp` the agent asks through the server and through nothing else.
 It installs no skill, and the skill lines become `skipped skills (--mcp)`, because both skills teach the loop through the CLI and the server's `instructions` carry it instead.
 The skills an earlier `init` installed go: their files are deleted, and so is each directory they leave empty, while a file `init` did not install stays, and the skill lines become one per skill, such as `removed skill from /home/me/project/.claude/skills/spider-sense (5 files)`.
+A file counts as installed when it holds the bytes this jar carries for it, so one edited by hand, or written by an `init` of another version, stays, and `init` prints `left <file>, which differs from this jar's copy` for it.
+A linked skill stays whole, link and target, with the line `left <directory>, which is a link`.
 The block keeps its first paragraph, with the jar and the ways to start the application under it, and in place of the CLI's lines and the skill lines it reads:
 
 [source,markdown]

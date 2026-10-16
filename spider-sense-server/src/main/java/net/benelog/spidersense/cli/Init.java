@@ -7,10 +7,12 @@ import java.io.UncheckedIOException;
 import java.nio.charset.CharacterCodingException;
 import java.nio.file.FileSystemException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -315,8 +317,13 @@ final class Init {
             }
             targets.add(new Target(name, file, text));
         }
-        List<SkillFile> skillFiles = withSkill ? skillFiles(skills) : List.of();
-        List<SkillFile> installed = mcp ? installed(skills) : List.of();
+        // A skill whose directory, or anything in it init would touch, is a symbolic link is the
+        // user's own arrangement: init neither writes through the link nor deletes it.
+        List<SkillFile> packaged = withSkill || (mcp && carriesSkills()) ? skillFiles(skills) : List.of();
+        Map<String, Path> linked = linked(skills, packaged);
+        List<SkillFile> skillFiles = withSkill ? unlinked(packaged, linked) : List.of();
+        List<SkillFile> installed = mcp ? onDisk(unlinked(packaged, linked), true) : List.of();
+        List<SkillFile> changed = mcp ? onDisk(unlinked(packaged, linked), false) : List.of();
         JsonObject withoutServer = mcp ? null : withoutServer(mcpFile);
         List<Path> inPlace = new ArrayList<>(targets.stream().map(Target::file).toList());
         if (mcpConfig != null || withoutServer != null) {
@@ -335,8 +342,10 @@ final class Init {
             // The skills and the server go in before the block that names them, and what the block
             // no longer names goes after it.
             if (withSkill) {
-                installSkills(skillFiles).forEach((skill, files) -> lines.skills.add(
+                Map<String, String> perSkill = new TreeMap<>(leftLinks(linked));
+                installSkills(skillFiles).forEach((skill, files) -> perSkill.put(skill,
                         "installed skill to " + skills.resolve(skill) + " (" + files + " files)"));
+                lines.skills.addAll(perSkill.values());
             } else if (!mcp) {
                 lines.skills.add("skipped skills (--no-skill)");
             }
@@ -348,10 +357,17 @@ final class Init {
                 lines.blocks.add(writeBlock(target, block) + " " + target.name() + " block (jar: " + jar + ")");
             }
             if (mcp) {
-                Map<String, Integer> removed = removeSkills(skills, installed);
-                removed.forEach((skill, files) -> lines.skills.add(
-                        "removed skill from " + skills.resolve(skill) + " (" + files + " files)"));
-                if (removed.isEmpty()) {
+                Map<String, List<String>> perSkill = new TreeMap<>();
+                leftLinks(linked).forEach((skill, line) -> perSkill
+                        .computeIfAbsent(skill, name -> new ArrayList<>()).add(line));
+                removeSkills(skills, installed).forEach((skill, files) -> perSkill
+                        .computeIfAbsent(skill, name -> new ArrayList<>())
+                        .add("removed skill from " + skills.resolve(skill) + " (" + files + " files)"));
+                changed.forEach(skillFile -> perSkill
+                        .computeIfAbsent(skillFile.skill(), name -> new ArrayList<>())
+                        .add("left " + skillFile.file() + ", which differs from this jar's copy"));
+                perSkill.values().forEach(lines.skills::addAll);
+                if (perSkill.isEmpty()) {
                     lines.skills.add("skipped skills (--mcp)");
                 }
             }
@@ -393,12 +409,78 @@ final class Init {
         return root.put("mcpServers", kept);
     }
 
-    /** The packaged skill files an earlier init installed under {@code target}; none when this jar carries no skill. */
-    private static List<SkillFile> installed(Path target) {
-        if (Init.class.getClassLoader().getResource(SKILL_INDEX) == null) {
-            return List.of();
+    /** Whether this jar carries the skills' index, without which there is no skill to install or remove. */
+    private static boolean carriesSkills() {
+        return Init.class.getClassLoader().getResource(SKILL_INDEX) != null;
+    }
+
+    /**
+     * The skill files on disk that hold ({@code same}), or do not hold, the bytes this jar carries
+     * for them: the first are what an earlier init installed, the second a file of the same name the
+     * user placed or edited, or one an init of another version wrote, which stays
+     * (agent-skill.adoc#init-output). A path that is not a regular file of its own is in neither.
+     */
+    private static List<SkillFile> onDisk(List<SkillFile> files, boolean same) {
+        List<SkillFile> found = new ArrayList<>();
+        for (SkillFile skillFile : files) {
+            if (Files.isRegularFile(skillFile.file(), LinkOption.NOFOLLOW_LINKS)
+                    && Arrays.equals(bytes(skillFile.file()), packagedBytes(skillFile)) == same) {
+                found.add(skillFile);
+            }
         }
-        return skillFiles(target).stream().filter(skillFile -> Files.isRegularFile(skillFile.file())).toList();
+        return found;
+    }
+
+    private static byte[] bytes(Path file) {
+        try {
+            return Files.readAllBytes(file);
+        } catch (IOException e) {
+            throw new UncheckedIOException("could not read " + file + ": " + Sessions.why(e)
+                    + "; nothing was written", e);
+        }
+    }
+
+    private static byte[] packagedBytes(SkillFile skillFile) {
+        try (InputStream in = Init.class.getClassLoader().getResourceAsStream(skillFile.resource())) {
+            return in == null ? new byte[0] : in.readAllBytes();
+        } catch (IOException e) {
+            throw new UncheckedIOException("could not read the skills this jar carries: " + Sessions.why(e), e);
+        }
+    }
+
+    /**
+     * Per skill, the first symbolic link on the way from its directory under {@code target} to one
+     * of its files, both ends included: a skill kept elsewhere and linked into the project, whose
+     * files init did not write and must neither overwrite nor delete, nor the link itself.
+     */
+    private static Map<String, Path> linked(Path target, List<SkillFile> files) {
+        Map<String, Path> links = new TreeMap<>();
+        for (SkillFile skillFile : files) {
+            Path path = target.resolve(skillFile.skill());
+            Path link = Files.isSymbolicLink(path) ? path : null;
+            for (Path part : path.relativize(skillFile.file())) {
+                if (link != null) {
+                    break;
+                }
+                path = path.resolve(part);
+                link = Files.isSymbolicLink(path) ? path : null;
+            }
+            if (link != null) {
+                links.putIfAbsent(skillFile.skill(), link);
+            }
+        }
+        return links;
+    }
+
+    private static List<SkillFile> unlinked(List<SkillFile> files, Map<String, Path> linked) {
+        return files.stream().filter(skillFile -> !linked.containsKey(skillFile.skill())).toList();
+    }
+
+    /** The line for each linked skill, which init leaves as it is. */
+    private static Map<String, String> leftLinks(Map<String, Path> linked) {
+        Map<String, String> lines = new TreeMap<>();
+        linked.forEach((skill, link) -> lines.put(skill, "left " + link + ", which is a link"));
+        return lines;
     }
 
     /**
