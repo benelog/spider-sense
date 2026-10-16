@@ -332,6 +332,46 @@ export function renderList(container, items, { key, create, update, enter } = {}
   return container;
 }
 
+/**
+ * Brings `node`'s children to those of `fresh`, the same node built anew from newer data: a child
+ * equal to its counterpart stays, so a link focused in it or a text selected in it survives a Live
+ * refresh (ui.adoc#live-refresh), and a child that differs is replaced, the focus it held moving to
+ * the same place in its replacement.
+ */
+function patchChildren(node, fresh) {
+  const now = Array.from(node.childNodes);
+  const next = Array.from(fresh.childNodes);
+  next.forEach((child, i) => {
+    const old = now[i];
+    if (!old) { node.appendChild(child); return; }
+    if (old.isEqualNode(child)) return;
+    const focus = focusIn(old);
+    node.insertBefore(child, old);
+    old.remove();
+    if (focus) refocus(child, focus);
+  });
+  for (const extra of now.slice(next.length)) extra.remove();
+}
+
+/** The way from `root` down to the focused element, as child positions, and its tag; null when the focus is elsewhere. */
+function focusIn(root) {
+  const active = document.activeElement;
+  if (!active) return null;
+  const path = [];
+  for (let n = active; n !== root; n = n.parentNode) {
+    if (!n.parentNode) return null;
+    path.unshift(Array.prototype.indexOf.call(n.parentNode.childNodes, n));
+  }
+  return { path, tag: active.tagName };
+}
+
+/** Focuses what lies at `path` under `root`, when it is the element of the same tag. */
+function refocus(root, { path, tag }) {
+  let n = root;
+  for (const i of path) n = n && n.childNodes[i];
+  if (n && n.tagName === tag && typeof n.focus === 'function') n.focus({ preventScroll: true });
+}
+
 // --- tables -------------------------------------------------------------
 
 /**
@@ -340,8 +380,9 @@ export function renderList(container, items, { key, create, update, enter } = {}
  *         detail(row), expanded, detailKey(row), detailClass }
  *
  * The node it returns keeps the options: `node.setRows(rows)` renders new rows into the same
- * table, reusing each row by its key, so a Live refresh keeps the scroll position and the focus
- * (ui.adoc#live-refresh). `empty` is the sentence of an empty table, or a function returning it.
+ * table, reusing each row by its key and each cell that did not change, so a Live refresh keeps
+ * the scroll position, the focus and a text selection (ui.adoc#live-refresh). `empty` is the
+ * sentence of an empty table, or a function returning it.
  *
  * With `detail`, a row opens and closes a detail row under it on a click, Enter or Space;
  * `expanded` is the set of the open rows' keys, which the caller may share. An open detail row
@@ -451,7 +492,8 @@ export function table(columns, opts = {}) {
         const fresh = buildRow(item.row, item.i, item.key);
         node.className = fresh.className;
         if (opts.detail) node.setAttribute('aria-expanded', fresh.getAttribute('aria-expanded'));
-        node.replaceChildren(...fresh.childNodes);
+        // Only the cells that changed are replaced, so the focus and a selection in the rest stay.
+        patchChildren(node, fresh);
         if (activate) { node.onclick = fresh.onclick; node.onkeydown = fresh.onkeydown; }
       },
     });

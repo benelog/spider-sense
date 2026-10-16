@@ -2,7 +2,7 @@
 import './fake-dom.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { table, sortFromQuery, nextSort, categoryIcon } from '../../main/resources/public/assets/js/ui.js';
+import { h, table, sortFromQuery, nextSort, categoryIcon } from '../../main/resources/public/assets/js/ui.js';
 
 const columns = [
   { key: 'name', label: 'Name', render: (r) => r.name },
@@ -19,6 +19,30 @@ test('setRows renders the rows and reuses a row by its key', () => {
   assert.deepEqual(rows.map((r) => r.textContent), ['C1', 'A22']);
   assert.equal(rows[1], first, 'the row keyed a is the same node');
   assert.equal(rows[0].all('td')[1].className, 'right');
+});
+
+test('a refresh keeps the cells that did not change, with the focus in them, and moves the focus into a cell it replaces (ui.adoc#live-refresh)', () => {
+  const linked = [
+    { key: 'name', label: 'Name', render: (r) => h('a', { href: '#/things/' + r.id }, r.name) },
+    { key: 'n', label: 'N', render: (r) => String(r.n) },
+  ];
+  const node = table(linked, { rowKey: (r) => r.id, rows: [{ id: 'a', name: 'A', n: 1 }] });
+  const [nameCell, nCell] = rowsOf(node)[0].all('td');
+  const link = nameCell.all('a')[0];
+  link.focus();
+  node.setRows([{ id: 'a', name: 'A', n: 1 }]);
+  assert.equal(rowsOf(node)[0].all('td')[0], nameCell, 'a Live tick with the same data keeps the cell');
+  assert.equal(nameCell.all('a')[0], link);
+  node.setRows([{ id: 'a', name: 'A', n: 2 }]);
+  const [keptCell, newCell] = rowsOf(node)[0].all('td');
+  assert.equal(keptCell, nameCell, 'a change in another cell leaves this one');
+  assert.notEqual(newCell, nCell);
+  assert.equal(newCell.textContent, '2');
+  assert.equal(document.activeElement, link);
+  node.setRows([{ id: 'a', name: 'B', n: 2 }]);
+  const moved = rowsOf(node)[0].all('td')[0].all('a')[0];
+  assert.equal(moved.textContent, 'B');
+  assert.equal(document.activeElement, moved, 'the focus goes to the same link in the new cell');
 });
 
 test('an empty table says so, in the words it was given', () => {

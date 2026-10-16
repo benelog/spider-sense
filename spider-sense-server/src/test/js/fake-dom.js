@@ -37,6 +37,18 @@ class Node {
   prepend(child) { this.insertBefore(child, this.firstChild); }
   append(...nodes) { for (const n of nodes) this.appendChild(typeof n === 'string' ? new Text(n) : n); }
   get isConnected() { let n = this; while (n.parentNode) n = n.parentNode; return n === document.body || n === document; }
+  /** As the DOM's: the same kind, tag, attributes (in any order), text and children; listeners are not compared. */
+  isEqualNode(other) {
+    if (!other || other.nodeType !== this.nodeType || other.childNodes.length !== this.childNodes.length) return false;
+    if (this.nodeType === 3) return this.data === other.data;
+    if (this.nodeType === 1) {
+      if (this.tagName !== other.tagName || this.attributes.size !== other.attributes.size) return false;
+      for (const [name, value] of this.attributes) if (other.attributes.get(name) !== value) return false;
+      // A browser keeps the style in an attribute; this DOM keeps it apart.
+      if (JSON.stringify(this.style) !== JSON.stringify(other.style)) return false;
+    }
+    return this.childNodes.every((child, i) => child.isEqualNode(other.childNodes[i]));
+  }
 }
 
 class Text extends Node {

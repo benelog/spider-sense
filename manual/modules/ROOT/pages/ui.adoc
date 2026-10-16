@@ -278,6 +278,8 @@ A change made on the page, in the top bar or in the page's own controls, keeps t
 === Live refresh
 
 Every list re-renders in place when Live refreshes it, without losing the scroll position or the selection.
+A table row keeps every cell whose content did not change, so a focused link or selected text in it stays.
+A cell that changed is replaced, and the focus it held moves to the same place in the new cell.
 A select's options, such as the Compare page's marks or the Traces page's endpoints, are rebuilt only when they changed, since a browser closes an open list whose options change.
 A page paints only the answer to the newest of its requests: an older range, filter or page that answers last is dropped, so a slow `all` never overwrites the `5m` asked after it, and a *Load more* still pending when the filter changes adds nothing to the new list.
 A Live tick that comes while a load of the page has not answered yet leaves that load alone, so a slow answer, such as the findings over a long window, is not asked for again behind itself.
