@@ -61,7 +61,7 @@ The palette uses the same tokens as the Spider Silk badges, extended for a dark 
 | `--text-muted` | `#949db0` | `#5f6878` | Secondary text, the strand grey
 | `--accent` | `#e2603f` | `#d1532f` | The tingle: primary actions, the active nav item, slow markers
 | `--accent-strong` | `#c4452a` | `#c4452a` | The accent behind white text: the primary button, the tingle badge
-| `--accent-text` | `#ea8e76` | `#ab3c25` | The accent set as text or as an icon: a link's hover, the active page and tab, a pressed toggle, the slow-call count
+| `--accent-text` | `#ea8e76` | `#ab3c25` | The accent set as text or as an icon: a link's hover, the active page and tab, a pressed toggle, the slow-call count, a chart's p95 axis, a mark's name
 | `--ok` | `#5ec27f` | `#2e9e57` | Healthy
 | `--warn` | `#f0b64b` | `#c98c14` | Slow
 | `--err` | `#e5484d` | `#c9363b` | Errors
@@ -196,7 +196,7 @@ It is prepended to the Overview feed without a refetch, unless the top bar names
 == Marks on charts
 
 Every time-series chart draws the marks that fall inside its window as a vertical dashed line the full height of the plot, with the name as a small label at the top.
-The automatic `start` marks are in `--text-muted`, and every other mark is in `--accent`.
+The automatic `start` marks are in `--text-muted`, and every other mark is in `--accent`, with its name in `--accent-text`.
 A mark that names a service is drawn only when the service filter is off or is that service.
 The marks come from `GET /api/marks?limit=50`, which the shell fetches on every route change and every Live refresh and keeps in the shared state.
 A page therefore never fetches them itself, and every chart gets them for free.
@@ -351,6 +351,7 @@ Their ratios are these, on the three backgrounds and on the tint each sits on, `
 
 Dimmed text is set in `--text-muted`, never in a colour at a reduced opacity.
 An opacity under 1 fades only what holds no text: a hidden series' swatch, an acknowledged finding's dots, and the boxes, icons and curves the Map leaves out of a highlight.
+A chart writes the text on its canvas in the text tokens too: an axis drawn in a colour, such as the `--accent` p95 axis, writes its values and its label in that colour's text token, or in `--text-muted` when the colour has none.
 
 A clickable table row takes the focus, and Enter or Space on the row does what a click does.
 Enter on a link or a button inside the row belongs to that control: the link opens, and the row does not act.

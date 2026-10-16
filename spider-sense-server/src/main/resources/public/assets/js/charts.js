@@ -25,7 +25,19 @@ const TOKENS = {
   bucket2: ['--bucket-2', '#35c0b6'],
   bucket3: ['--bucket-3', '#f0b64b'],
   bucket4: ['--bucket-4', '#e2603f'],
+  accentText: ['--accent-text', '#ea8e76'],
+  okText: ['--ok-text', '#5ec27f'],
+  warnText: ['--warn-text', '#f0b64b'],
+  errText: ['--err-text', '#f47a7d'],
 };
+
+/** The colours with a token of their own for text, which reaches 4.5:1 where the colour itself may not (ui.adoc#accessibility). */
+const TEXT_OF = { accent: 'accentText', ok: 'okText', warn: 'warnText', err: 'errText', text: 'text', muted: 'muted' };
+
+/** A spec colour as canvas text: its text token, or the muted grey for a colour that has none. */
+function textColor(color, colors) {
+  return colors[TEXT_OF[color]] || colors.muted;
+}
 
 /** Colours for the current theme, read fresh from the stylesheet. */
 export function themeColors() {
@@ -269,8 +281,8 @@ function tooltipFor(container) {
 /**
  * The marks of the shared state, drawn on every time series (ui.adoc#marks-on-charts): a dashed
  * vertical line the full height of the plot with the name beside it, muted for the
- * automatic `start` marks and accent for the ones a person or an agent made.
- * A mark that names a service belongs to that service only.
+ * automatic `start` marks and accent for the ones a person or an agent made, the name in the
+ * accent's text token. A mark that names a service belongs to that service only.
  */
 function drawMarks(u, colors) {
   const list = (state.marks || []).filter((m) => m && m.at != null
@@ -291,8 +303,8 @@ function drawMarks(u, colors) {
   for (const mark of list.slice().sort((a, b) => a.at - b.at)) {
     const x = Math.round(u.valToPos(mark.at / 1000, 'x', true)) + 0.5;
     if (x < left || x > left + width) continue;
-    const color = mark.name === 'start' ? colors.muted : colors.accent;
-    ctx.strokeStyle = color;
+    const start = mark.name === 'start';
+    ctx.strokeStyle = start ? colors.muted : colors.accent;
     ctx.setLineDash([4 * dpr, 3 * dpr]);
     ctx.beginPath();
     ctx.moveTo(x, top);
@@ -301,7 +313,7 @@ function drawMarks(u, colors) {
     ctx.setLineDash([]);
     // two marks a few seconds apart still get two lines, but only one readable name
     if (x < labelEnd) continue;
-    ctx.fillStyle = color;
+    ctx.fillStyle = start ? colors.muted : colors.accentText;
     ctx.fillText(mark.name, x + 3 * dpr, top + 2 * dpr);
     labelEnd = x + 3 * dpr + ctx.measureText(mark.name).width + 4 * dpr;
   }
@@ -423,7 +435,8 @@ export function timeSeries(container, spec) {
         scale: a.scale || 'y',
         side: a.side !== undefined ? a.side : (i === 0 ? 3 : 1),
         label: a.label,
-        stroke: a.color ? resolveColor(a.color, colors) : colors.muted,
+        // uPlot writes an axis' values and label in its stroke, so a coloured axis takes the colour's text token
+        stroke: a.color ? textColor(a.color, colors) : colors.muted,
         grid: i === 0,
         count: counts.has(a.scale || 'y'),
         values: a.values || ((u, splits) => splits.map((s) => tickText(a.scale || 'y', s))),

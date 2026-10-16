@@ -1,7 +1,11 @@
 // app.css: the theme sets the colour scheme the browser draws its own controls in (ui.adoc#palette).
+import './browser-env.js';
+import { document } from './fake-dom.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
+import { timeSeries } from '../../main/resources/public/assets/js/charts.js';
+import { state } from '../../main/resources/public/assets/js/api.js';
 
 const css = readFileSync(new URL('../../main/resources/public/assets/app.css', import.meta.url), 'utf8');
 const JS_DIR = new URL('../../main/resources/public/assets/js/', import.meta.url);
@@ -78,6 +82,47 @@ test('no text is dimmed with an opacity, which would take it under 4.5:1; only w
     for (const m of source.matchAll(/(?<![-\w])opacity:\s*['"]?([\d.]+)/g)) if (+m[1] > 0 && +m[1] < 1) faded.push(file + ': ' + m[0]);
   }
   assert.deepEqual(faded, []);
+});
+
+test('a chart writes its axes\' values and labels, and its marks\' names, in colours that reach 4.5:1 on the panel', () => {
+  const browserStyle = globalThis.getComputedStyle;
+  const t = [Date.now() - 60000, Date.now()];
+  try {
+    for (const light of [false, true]) {
+      const token = palette(light);
+      const name = light ? 'light' : 'dark';
+      globalThis.getComputedStyle = () => ({ getPropertyValue: (n) => token(n) || '', paddingLeft: '0', paddingRight: '0' });
+      // uPlot writes an axis' values and its label in the axis' stroke, whatever colour a spec gives the axis.
+      for (const color of ['accent', 'ok', 'warn', 'err', 'silk', 'text', 'muted', 'bucket2', 'series1', 'series5', undefined]) {
+        const chart = timeSeries(document.createElement('div'), {
+          t, series: [{ label: 'v', values: [1, 2] }], axes: [{ scale: 'y', label: 'n' }, { scale: 'y', side: 1, label: 'right', color }],
+        });
+        for (const axis of chart.plot.opts.axes) {
+          const ratio = contrast(axis.stroke, token('--bg-panel'));
+          assert.ok(ratio >= 4.5, `${name} axis in ${color}: ${axis.stroke} on --bg-panel is ${ratio.toFixed(2)}:1`);
+        }
+        chart.destroy();
+      }
+      // A mark's name is written on the canvas beside its line.
+      state.marks = [{ name: 'start', at: 100000 }, { name: 'before', at: 300000 }];
+      const chart = timeSeries(document.createElement('div'), { t: [0, 500000], series: [{ label: 'v', values: [1, 2] }] });
+      const written = [];
+      chart.plot.ctx = new Proxy({}, {
+        get: (c, k) => (k === 'fillText' ? (text) => written.push([text, c.fillStyle]) : k === 'measureText' ? () => ({ width: 10 }) : k in c ? c[k] : () => {}),
+        set: (c, k, v) => { c[k] = v; return true; },
+      });
+      for (const hook of chart.plot.opts.hooks.draw) hook(chart.plot);
+      assert.deepEqual(written.map(([text]) => text), ['start', 'before']);
+      for (const [text, color] of written) {
+        const ratio = contrast(color, token('--bg-panel'));
+        assert.ok(ratio >= 4.5, `${name} mark ${text}: ${color} on --bg-panel is ${ratio.toFixed(2)}:1`);
+      }
+      chart.destroy();
+    }
+  } finally {
+    globalThis.getComputedStyle = browserStyle;
+    state.marks = [];
+  }
 });
 
 /** `#rrggbb` laid at `alpha` over the #rrggbb `under`, as the browser composites a tint. */
