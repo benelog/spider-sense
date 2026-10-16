@@ -214,6 +214,52 @@ class MarksTest {
     }
 
     /**
+     * The same after a restart of the writing process, the standalone Spider Sense both
+     * processes send to, whose memory of the marks it found is gone: the service row keeps
+     * the process id of the service's last export, so that process is not new either.
+     * A process the store has never seen still is.
+     */
+    @Test
+    void theProcessOfTheLastExportIsNotMarkedAgainAfterTheWriterRestarts() {
+        long hour = 3_600_000L;
+        String url = TestStore.memoryUrl();
+        try (Store first = new Store(Store.Settings.defaults(url).withClock(() -> NOW))) {
+            exportTo(first, 100, NOW);
+            exportTo(first, 200, NOW + hour);
+            exportTo(first, 100, NOW + 2 * hour);
+            new Sweeper(first.sql(), 24, 0, () -> NOW + 25 * hour).sweep();
+            assertThat(startNotes(first)).containsExactly("pid 200");
+        }
+
+        try (Store restarted = new Store(Store.Settings.defaults(url).withClock(() -> NOW))) {
+            exportTo(restarted, 100, NOW + 26 * hour);
+
+            assertThat(startNotes(restarted)).as("since=start stays at the newest process's start")
+                    .containsExactly("pid 200");
+
+            exportTo(restarted, 300, NOW + 27 * hour);
+
+            assertThat(startNotes(restarted)).containsExactly("pid 300", "pid 200");
+        }
+    }
+
+    /** A span of {@code orders} from process {@code pid}, received and written by {@code store} at {@code at}. */
+    private static void exportTo(Store store, long pid, long at) {
+        Batch batch = new Batch();
+        store.sawService(batch, "orders", Map.of("telemetry.sdk.language", "java", "process.pid", pid), at);
+        batch.add(new SpanRecord("%032x".formatted(at), "%016x".formatted(at), null, "orders", "GET /orders",
+                "SERVER", at * 1_000_000L, at * 1_000_000L + 5_000_000L, "UNSET", null, Map.of(), List.of(), "test"));
+        store.submit(batch);
+        store.writer().awaitIdle(5_000);
+    }
+
+    /** The notes of the start marks {@code store} holds, newest first. */
+    private static List<String> startNotes(Store store) {
+        return store.marks().list(50).stream().filter(mark -> Marks.START.equals(mark.name()))
+                .map(Marks.Mark::note).toList();
+    }
+
+    /**
      * An exporter batches for seconds, so a run's first request arrives after it
      * began: the start mark takes that request's start, and since=start keeps it.
      */

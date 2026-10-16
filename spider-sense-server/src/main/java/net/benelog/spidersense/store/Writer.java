@@ -721,6 +721,11 @@ public final class Writer implements AutoCloseable {
      * loses its own, and a mark written again at its next export would move
      * {@code since=start} to that moment. Only a found mark is remembered, never one
      * this flush inserts, since the flush may yet roll back.
+     *
+     * <p>That memory ends with the writer, so a restart of the standalone Spider Sense
+     * both processes send to would forget it. The process of the service's last
+     * export is not new after one either: the service row keeps its pid, and the
+     * flush that wrote the row marked it ({@link #lastExportedBy}).
      */
     private void markRestart(Connection connection, ServiceRow service, long at) throws SQLException {
         Long pid = service.pid();
@@ -744,9 +749,33 @@ public final class Writer implements AutoCloseable {
                 }
             }
         }
+        if (lastExportedBy(connection, service.name(), pid)) {
+            markedStarts.add(marked);
+            return;
+        }
         try (PreparedStatement insert = connection.prepareStatement(MarkRow.INSERT)) {
             mark.bind(insert);
             insert.executeUpdate();
+        }
+    }
+
+    /**
+     * Whether the stored row of {@code service} names {@code pid}, the process of its
+     * last export, while the service has a start mark: the flush that wrote that pid
+     * into the row marked the process, whatever became of the mark since. A service
+     * with no start mark at all gets one, since {@code since=start} needs it, which also
+     * covers a row an import wrote with the pid of a process on another machine.
+     */
+    private static boolean lastExportedBy(Connection connection, String service, long pid) throws SQLException {
+        try (PreparedStatement select = connection.prepareStatement(
+                "SELECT COUNT(*) FROM service s WHERE s.name = ? AND s.pid = ?"
+                        + " AND EXISTS (SELECT 1 FROM mark m WHERE m.name = ? AND m.service = s.name)")) {
+            select.setString(1, service);
+            select.setLong(2, pid);
+            select.setString(3, Marks.START);
+            try (ResultSet rs = select.executeQuery()) {
+                return rs.next() && rs.getLong(1) > 0;
+            }
         }
     }
 
