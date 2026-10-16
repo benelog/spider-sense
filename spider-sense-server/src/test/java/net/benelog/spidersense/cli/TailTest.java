@@ -172,6 +172,23 @@ class TailTest {
                 .doesNotContain("after the count grew");
     }
 
+    /** Zero new traces is what the first stats already shows, so the watch ends there, on an idle server too. */
+    @Test
+    void untilZeroTracesEndsAtTheFirstStats() {
+        Run run = read(new Tail.Watch(null, null, 0L, null, false));
+
+        assertThat(run.exit()).isZero();
+        assertThat(run.out()).isEmpty();
+    }
+
+    @Test
+    void aNegativeUntilTracesIsAUsageError() {
+        Run run = cli(closedUrl(), "tail", "--until-traces=-1");
+
+        assertThat(run.exit()).isEqualTo(2);
+        assertThat(run.err()).startsWith("spider-sense: --until-traces must be at least 0: -1\n");
+    }
+
     @Test
     void jsonPrintsTheEventObjectWithItsNameAddedOnePerLine() {
         Run run = read(new Tail.Watch(null, null, null, null, true));

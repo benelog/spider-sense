@@ -111,8 +111,11 @@ final class Tail {
         Long timeout = options.has("timeout")
                 ? Selectors.durationMillis(options.valueOrNull("timeout"))
                 : null;
-        return new Watch(kind, options.valueOrNull("service"), options.optionalLong("until-traces"),
-                timeout, options.flag("json"));
+        Long untilTraces = options.optionalLong("until-traces");
+        if (untilTraces != null && untilTraces < 0) {
+            throw new Options.Usage("--until-traces must be at least 0: " + options.valueOrNull("until-traces"));
+        }
+        return new Watch(kind, options.valueOrNull("service"), untilTraces, timeout, options.flag("json"));
     }
 
     /**
@@ -234,8 +237,9 @@ final class Tail {
         }
         long traces = event.getLong("traces", 0);
         if (baseline < 0) {
+            // The frame the stream opens with, which --until-traces=0 asks for and nothing else does:
+            // the next one comes only once something was ingested.
             baseline = traces;
-            return false;
         }
         return watch.untilTraces() != null && traces - baseline >= watch.untilTraces();
     }

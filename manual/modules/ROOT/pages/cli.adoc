@@ -949,6 +949,7 @@ The columns are local time with milliseconds, kind, service, title, detail and t
 
 `--until-traces=<n>` ends with exit `0` once the `stats` events have shown `n` new traces since the command started, `traces` on a `stats` event being the store's count.
 A `stats` event comes after the tingles of the traces it counts, so the lines of those traces are printed before it ends.
+The stream opens with a `stats` event, so `--until-traces=0` ends there, on an idle server too, and a negative `n` is a usage error.
 `--timeout=<duration>` takes a selector duration such as `30s` or `5m`, and ends with exit `0` when it elapses.
 Without either, `tail` runs until it is interrupted.
 A stream the server closes first, as an embedded Spider Sense does when its application restarts, prints `spider-sense: the Spider Sense at <url> closed the stream` on stderr and exits `2`, so a script never reads the traces it waited for as arrived.
