@@ -172,6 +172,10 @@ final class Options {
                     // and --url=$UNSET a URI the HTTP client refuses in its own words.
                     throw new Usage("--" + key + " needs a value: --" + key + "=<value>", command);
                 }
+                if (FLAGS.contains(key) && equals >= 0) {
+                    // --json=$UNSET or --full=1 would otherwise be a flag silently off.
+                    throw new Usage("--" + key + " takes no value: " + arg, command);
+                }
                 values.put(key, equals < 0 ? "true" : arg.substring(equals + 1));
             } else if (argument == null && (label != null || HELP.equals(command))) {
                 argument = arg;
@@ -297,7 +301,7 @@ final class Options {
         return values.get(key);
     }
 
-    /** A flag is true when named, unless it was given a value that is not "true". */
+    /** A flag is true when named; {@link #parse} refuses one given a value. */
     boolean flag(String key) {
         return Boolean.parseBoolean(value(key, "false"));
     }

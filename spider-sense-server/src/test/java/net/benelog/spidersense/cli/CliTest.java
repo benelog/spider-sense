@@ -381,6 +381,19 @@ class CliTest {
         assertThat(Options.parse(new String[] {"init", "--no-skill", "--mcp"}).flag("mcp")).isTrue();
     }
 
+    /** A flag given a value, even an empty one, is a usage error rather than a flag silently off. */
+    @Test
+    void aFlagGivenAValueIsAUsageError() {
+        for (String word : List.of("--json=", "--full=1", "--hide-acked=yes", "--json=true")) {
+            Run run = run("findings", word);
+            String key = word.substring(2, word.indexOf('='));
+            assertThat(run.exit()).as(word).isEqualTo(2);
+            assertThat(run.err()).as(word).isEqualTo("spider-sense: --" + key + " takes no value: " + word
+                    + "\nsee: java -jar spider-sense.jar findings --help\n");
+        }
+        assertThat(run("init", "--mcp=no").err()).startsWith("spider-sense: --mcp takes no value: --mcp=no\n");
+    }
+
     @Test
     void everyCommandAsksTheUrlItsSectionOfApiMdNames() {
         assertThat(path("status")).isEqualTo("/api/status?format=text");

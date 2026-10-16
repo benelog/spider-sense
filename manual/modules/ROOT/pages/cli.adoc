@@ -688,6 +688,7 @@ A server that answers uses its own settings, so a line on stderr then says that 
 
 An option a command does not take is a usage error rather than a silently ignored word, so a mistyped `--sinse` is reported, with `did you mean --since?`, rather than answered for the last 15 minutes.
 An option that takes a value is a usage error without one, so a bare `--since` is reported rather than read as the mark name `true`, and so is an empty one, such as the `--url=` of an unset variable, except `--note=`, which is no note; only `--json`, `--full`, `--hide-acked`, `--no-git` and `init`'s `--gradle`, `--no-skill` and `--mcp` are named bare.
+A flag given a value is a usage error too, such as `--json=` or `--full=1`, rather than a flag read as off.
 A command's own word, such as the trace id of `trace` or the finding id of `unack`, is a usage error when it is empty, as when it is missing, so `trace "$ID"` with `ID` unset is `trace needs a trace id` rather than the list of traces.
 
 [#exit-codes]
