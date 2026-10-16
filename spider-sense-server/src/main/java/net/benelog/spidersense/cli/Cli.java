@@ -6,10 +6,13 @@ import java.io.PrintStream;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
 import net.benelog.spidersense.api.Reports;
@@ -74,7 +77,8 @@ public final class Cli {
         PrintStream out = new PrintStream(System.out, true, StandardCharsets.UTF_8);
         PrintStream err = new PrintStream(System.err, true, StandardCharsets.UTF_8);
         try {
-            return run(args, defaultUrl(err::println), System.in, out, err);
+            return run(args, DefaultUrl.configured(err), System.in, out, err,
+                    findings -> withSuspectChanges(findings, err));
         } finally {
             out.flush();
             err.flush();
@@ -104,6 +108,60 @@ public final class Cli {
      *                         production {@link #withSuspectChanges}
      */
     static int run(String[] args, String defaultUrl, InputStream in, PrintStream out,
+            PrintStream err, Function<String, String> annotateFindings) {
+        return run(args, DefaultUrl.fixed(defaultUrl, err), in, out, err, annotateFindings);
+    }
+
+    /**
+     * Where a Spider Sense is when no {@code --url} says, resolved on first use and only then: a
+     * command that asks no server, and one whose {@code --url} or {@code --db} says where to ask,
+     * never reads the {@code spidersense.*} settings that imply it, nor warns about a malformed one
+     * (cli.adoc#invocation).
+     *
+     * <p>It is also where a malformed setting is reported, each line once: the file path's
+     * {@code Config} reads the same {@code spidersense.port} and warns in the same words.
+     */
+    static final class DefaultUrl implements Supplier<String> {
+
+        private final @Nullable String fixed;
+        private final PrintStream err;
+        private final Set<String> warned = new HashSet<>();
+        private @Nullable String resolved;
+
+        private DefaultUrl(@Nullable String fixed, PrintStream err) {
+            this.fixed = fixed;
+            this.err = err;
+        }
+
+        /** The URL the environment and the {@code spidersense.*} properties imply, see {@link Cli#defaultUrl}. */
+        static DefaultUrl configured(PrintStream err) {
+            return new DefaultUrl(null, err);
+        }
+
+        /** A URL named outright, as a test names a port nothing listens on. */
+        static DefaultUrl fixed(String url, PrintStream err) {
+            return new DefaultUrl(url, err);
+        }
+
+        @Override
+        public String get() {
+            String url = resolved;
+            if (url == null) {
+                url = fixed != null ? fixed : defaultUrl(this::warn);
+                resolved = url;
+            }
+            return url;
+        }
+
+        /** Prints a warning on stderr unless the same line was printed already. */
+        void warn(String line) {
+            if (warned.add(line)) {
+                err.println(line);
+            }
+        }
+    }
+
+    private static int run(String[] args, DefaultUrl defaultUrl, InputStream in, PrintStream out,
             PrintStream err, Function<String, String> annotateFindings) {
         quietLoggingUnlessTold();
         Options options;
@@ -164,7 +222,7 @@ public final class Cli {
      * of messages rather than one question, and it makes the same choice again for
      * each tool call it is asked to answer.
      */
-    private static int dispatch(Options options, String defaultUrl, InputStream in, PrintStream out,
+    private static int dispatch(Options options, DefaultUrl defaultUrl, InputStream in, PrintStream out,
             PrintStream err, Function<String, String> annotateFindings) {
         if (Options.INIT.equals(options.command())) {
             return Init.run(options, out, err);
@@ -187,7 +245,7 @@ public final class Cli {
      * frame (cli.adoc#suspect-change): the one addition the CLI makes to an answer, because
      * the repository is where the CLI runs and not necessarily where the server does.
      */
-    private static int findingsWithSuspects(Options options, String defaultUrl, PrintStream out,
+    private static int findingsWithSuspects(Options options, DefaultUrl defaultUrl, PrintStream out,
             PrintStream err, Function<String, String> annotateFindings) {
         ByteArrayOutputStream captured = new ByteArrayOutputStream();
         int code;
@@ -221,7 +279,7 @@ public final class Cli {
     }
 
     /** HTTP first, the file second, as {@link #dispatch} describes. */
-    private static int answer(Options options, String defaultUrl, PrintStream out, PrintStream err) {
+    private static int answer(Options options, DefaultUrl defaultUrl, PrintStream out, PrintStream err) {
         if (Options.TRACE.equals(options.command()) && !TRACE_ID.matcher(options.requiredArgument()).matches()) {
             // A trace id travels as a path segment, which the server checks before any handler runs:
             // a word no trace id can be, such as "..", would be refused there in other words and with
@@ -233,7 +291,7 @@ public final class Cli {
             return Local.run(options, out, err);
         }
         String named = options.valueOrNull("url");
-        String base = Remote.base(named == null ? defaultUrl : named);
+        String base = Remote.base(named == null ? defaultUrl.get() : named);
         try {
             int code = Remote.run(options, base, out, err);
             unappliedSettings(options, base, err);
@@ -248,7 +306,7 @@ public final class Cli {
                 err.println("spider-sense: " + e.line(base) + (e.answered() ? "" : STOPPED));
                 return USAGE;
             }
-            Config config = Local.config(options);
+            Config config = Local.config(options, defaultUrl::warn);
             err.println(Local.fallbackNotice(base, config));
             return Local.run(options, config, out, err);
         }

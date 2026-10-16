@@ -7,6 +7,7 @@ import java.io.InputStreamReader;
 import java.io.PrintStream;
 import java.io.UncheckedIOException;
 import java.util.Map;
+import java.util.function.Consumer;
 
 import net.benelog.spidersense.api.Reports;
 import net.benelog.spidersense.mcp.McpServer;
@@ -46,13 +47,17 @@ final class Mcp {
     /** A named {@code --url} is a statement that there is a server there. */
     private final boolean urlNamed;
 
+    /** Where a malformed setting is reported, once for the line the default URL already printed. */
+    private final Consumer<String> warn;
+
     /** Opened on the first call that needs it, and only if one does. */
     private @Nullable Config config;
     private @Nullable Reports reports;
 
-    private Mcp(Options options, @Nullable String base, boolean urlNamed, PrintStream out,
-            PrintStream err) {
+    private Mcp(Options options, @Nullable String base, boolean urlNamed, Consumer<String> warn,
+            PrintStream out, PrintStream err) {
         this.options = options;
+        this.warn = warn;
         this.base = base;
         this.urlNamed = urlNamed;
         this.out = out;
@@ -60,12 +65,12 @@ final class Mcp {
         this.server = new McpServer(McpTools.TOOLS, this::inProcess, Version.CURRENT);
     }
 
-    static int run(Options options, String defaultUrl, InputStream in, PrintStream out,
+    static int run(Options options, Cli.DefaultUrl defaultUrl, InputStream in, PrintStream out,
             PrintStream err) {
         String url = options.valueOrNull("url");
         // --db says where to read, which leaves no question to ask a server.
-        String base = options.has("db") ? null : Remote.base(url == null ? defaultUrl : url);
-        Mcp mcp = new Mcp(options, base, url != null, out, err);
+        String base = options.has("db") ? null : Remote.base(url == null ? defaultUrl.get() : url);
+        Mcp mcp = new Mcp(options, base, url != null, defaultUrl::warn, out, err);
         try {
             return mcp.serve(in);
         } finally {
@@ -141,7 +146,7 @@ final class Mcp {
     private Config config() {
         Config opened = config;
         if (opened == null) {
-            opened = Local.config(options);
+            opened = Local.config(options, warn);
             config = opened;
         }
         return opened;

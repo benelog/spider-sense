@@ -37,6 +37,8 @@ When the `spiderSense` block names a collector, a host or a port, the task also 
 `SPIDERSENSE_URL` names the Spider Sense to ask whenever `--url` is not given.
 Without either, the `spidersense.*` properties decide: `spidersense.collector` when set, else `http://<host>:<port>` with the defaults filled in, which is `http://127.0.0.1:4000` when nothing is set.
 A `spidersense.port` that is not a port from 0 to 65535, such as `abc`, is read as the application reads it: a warning on stderr, `[spider-sense] spidersense.port=abc is not a number; using 4000`, and the default port.
+The warning comes once, and only from a command that reads the setting: one that needs the default URL, or one that reads the file, whose configuration holds the port too.
+`help`, `version`, `init` and a command whose `--url` names the server print none.
 The launcher reads xref:configuration.adoc#properties-file[the properties file] before a command runs, so a command run from the project's directory asks the Spider Sense the application in that directory sends to.
 
 [#commands]

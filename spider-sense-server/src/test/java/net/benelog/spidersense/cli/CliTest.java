@@ -186,6 +186,51 @@ class CliTest {
         });
     }
 
+    /**
+     * The malformed port is read where the default URL is needed and nowhere else: a command that
+     * asks no server, and one whose {@code --url} says where to ask, prints no warning, and the file
+     * path prints its own once rather than beside the CLI's (cli.adoc#invocation).
+     */
+    @Test
+    void aMalformedPortIsWarnedAboutOnceAndOnlyWhereTheDefaultUrlIsAsked(@TempDir Path project) {
+        String before = System.getProperty("spidersense.port");
+        System.setProperty("spidersense.port", "abc");
+        try {
+            assertThat(throughTheEntryPoint("version").err()).isEmpty();
+            assertThat(throughTheEntryPoint("help").err()).isEmpty();
+            assertThat(throughTheEntryPoint("init", "--dir=" + project, "--jar=/x/spider-sense.jar", "--no-skill")
+                    .err()).isEmpty();
+            assertThat(throughTheEntryPoint("status", "--url=" + closedUrl()).err())
+                    .doesNotContain("spidersense.port");
+            assertThat(throughTheEntryPoint("status", "--db=" + TestStore.writtenUrl()).err())
+                    .isEqualTo("[spider-sense] spidersense.port=abc is not a number; using 4000\n");
+        } finally {
+            if (before == null) {
+                System.clearProperty("spidersense.port");
+            } else {
+                System.setProperty("spidersense.port", before);
+            }
+        }
+    }
+
+    /** One command through the launcher's entry point, which reads the properties, with the process's streams captured. */
+    private static Run throughTheEntryPoint(String... args) {
+        PrintStream platformOut = System.out;
+        PrintStream platformErr = System.err;
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        int exit;
+        try {
+            System.setOut(new PrintStream(out, true, UTF_8));
+            System.setErr(new PrintStream(err, true, UTF_8));
+            exit = Cli.run(args);
+        } finally {
+            System.setOut(platformOut);
+            System.setErr(platformErr);
+        }
+        return new Run(exit, out.toString(UTF_8), err.toString(UTF_8));
+    }
+
     /** The URL the properties imply, which a well-formed set implies without a warning. */
     private static String configured(java.util.Properties properties) {
         List<String> warnings = new ArrayList<>();

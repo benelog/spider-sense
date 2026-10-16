@@ -84,8 +84,13 @@ public record Config(
 
     /** The configuration this JVM was given: its arguments, system properties and environment. */
     public static Config parse(String[] args) {
+        return parse(args, System.err::println);
+    }
+
+    /** The same, with a malformed property or variable reported to {@code warn}. */
+    public static Config parse(String[] args, Consumer<String> warn) {
         return parse(args, System::getProperty, System::getenv,
-                Path.of(System.getProperty("user.home", "")), System.err::println);
+                Path.of(System.getProperty("user.home", "")), warn);
     }
 
     /**

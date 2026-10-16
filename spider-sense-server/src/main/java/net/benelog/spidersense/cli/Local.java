@@ -7,6 +7,7 @@ import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 
 import net.benelog.spidersense.api.Reports;
 import net.benelog.spidersense.query.Selectors;
@@ -46,13 +47,18 @@ final class Local {
      * no server to ask, and the file is the one the server would have opened.
      */
     static Config config(Options options) {
+        return config(options, System.err::println);
+    }
+
+    /** The same, with a malformed {@code spidersense.*} setting reported to {@code warn}. */
+    static Config config(Options options, Consumer<String> warn) {
         List<String> args = new ArrayList<>();
         for (String key : Options.SETTINGS) {
             if (options.has(key)) {
                 args.add("--" + key + "=" + options.value(key, ""));
             }
         }
-        return Config.parse(args.toArray(new String[0]));
+        return Config.parse(args.toArray(new String[0]), warn);
     }
 
     /** What the fallback line on stderr names: the {@code .mv.db}, or the URL of a memory database. */

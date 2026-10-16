@@ -19,6 +19,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Supplier;
 
 import net.benelog.spidersense.api.Printable;
 import net.benelog.spidersense.query.Selectors;
@@ -71,8 +72,9 @@ final class Tail {
         this.out = out;
     }
 
-    static int run(Options options, String defaultUrl, PrintStream out, PrintStream err) {
-        String base = Remote.base(options.value("url", defaultUrl));
+    static int run(Options options, Supplier<String> defaultUrl, PrintStream out, PrintStream err) {
+        String named = options.valueOrNull("url");
+        String base = Remote.base(named == null ? defaultUrl.get() : named);
         Watch watch = watch(options);
         Long timeoutMs = watch.timeoutMs();
         // --timeout counts from here, so it bounds the wait for the first answer too: a Spider Sense
