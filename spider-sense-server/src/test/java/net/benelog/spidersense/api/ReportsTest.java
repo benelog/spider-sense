@@ -266,6 +266,22 @@ class ReportsTest {
         }
     }
 
+    /** The services a filter could have named are listed on the note's one line, whatever their names hold. */
+    @Test
+    void aServiceNameWithALineBreakKeepsTheNoteOnItsLine() {
+        Config config = TestStore.config();
+        try (Store store = new Store(config.storeSettings(System::currentTimeMillis))) {
+            Reports reports = new Reports(config, store, config::port);
+            new OtlpDecoder(store, () -> 4000).ingest(Otlp.traces(Otlp.service("line\nbreak svc"),
+                    Otlp.span("%032x".formatted(1), "%016x".formatted(1), "GET /orders",
+                            Span.SpanKind.SPAN_KIND_SERVER, NOW, 20)));
+            store.writer().awaitIdle(5_000);
+
+            assertThat(reports.endpoints(Window.of(NOW - 60_000, NOW + 60_000), "no\npe").text())
+                    .endsWith("\nNo service is named `no pe`; the services are `line break svc`.\n");
+        }
+    }
+
     @Test
     void statusReportsTheRetentionCapTheIngestCapAndWhatTheCapDropped() {
         Config config = TestStore.config("--retention.spans=250000",

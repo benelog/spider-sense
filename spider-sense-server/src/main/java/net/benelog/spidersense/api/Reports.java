@@ -276,9 +276,11 @@ public final class Reports implements AutoCloseable {
             return null;
         }
         List<String> names = new ArrayList<>();
-        services.all().forEach(known -> names.add("`" + known.name() + "`"));
+        // One line, as every line of a text answer is: a name may hold a line break.
+        services.all().forEach(known -> names.add("`" + Text.oneLine(known.name()) + "`"));
         return names.isEmpty() ? null
-                : "No service is named `" + service + "`; the services are " + String.join(", ", names) + ".";
+                : "No service is named `" + Text.oneLine(service) + "`; the services are "
+                        + String.join(", ", names) + ".";
     }
 
     /**

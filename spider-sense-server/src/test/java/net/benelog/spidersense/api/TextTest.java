@@ -181,6 +181,20 @@ class TextTest {
                 .endsWith(" — a|b\n");
     }
 
+    /** A logger, a severity or a service name with a line break keeps its line whole. */
+    @Test
+    void aLoggerOrAServiceNameWithALineBreakStaysOnItsLine() {
+        String logs = Text.logs(WINDOW, "line\nbreak svc", List.of(new LogRecord(1, 1_000_000L, "svc",
+                "WA\nRN", 13, "plain info", "orders.web.Misc|Logger\nx", null, null, Map.of())), 1, 1,
+                "http://localhost:4000");
+        assertThat(logs.lines().toList()).hasSize(5)
+                .anySatisfy(line -> assertThat(line).endsWith("  WA RN  orders.web.Misc|Logger x  plain info"));
+        assertThat(logs.lines().findFirst().orElseThrow()).endsWith("(1m, line break svc)");
+
+        assertThat(Text.mark(new Marks.Mark(1, 1_000_000L, "before", "line\nbreak svc", null)))
+                .endsWith(" (line break svc)\n").hasLineCount(1);
+    }
+
     @Test
     void compareErrorsCellsAreOneLineToo() {
         Compare.Comparison comparison = new Compare.Comparison(WINDOW, WINDOW,

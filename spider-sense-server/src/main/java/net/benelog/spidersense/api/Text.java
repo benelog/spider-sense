@@ -265,9 +265,9 @@ final class Text {
         return instant(from) + " → " + clock(to);
     }
 
-    /** {@code all services}, or the one service an answer is narrowed to. */
+    /** {@code all services}, or the one service an answer is narrowed to, on one line. */
     static String scope(@Nullable String service) {
-        return service == null ? "all services" : service;
+        return service == null ? "all services" : singleLine(service);
     }
 
     /** {@code 1 request}, {@code 3 requests}: a count as written, with its noun. */
@@ -697,7 +697,7 @@ final class Text {
 
     static String mark(Marks.Mark mark) {
         return "mark " + mark.name() + " at " + instantMillis(mark.at())
-                + (mark.service() == null ? "" : " (" + mark.service() + ")")
+                + (mark.service() == null ? "" : " (" + oneLine(mark.service()) + ")")
                 + (mark.note() == null ? "" : " — " + oneLine(mark.note())) + "\n";
     }
 
@@ -971,11 +971,13 @@ final class Text {
     /**
      * {@code 10:15:02.123  ERROR  com.acme.Orders  Payment failed  trace 4bf9…}: one log record on
      * one line, its trace id at the end when it has one and the list is not already one trace's.
+     * The severity and the logger are the application's text as much as the body is, so each is
+     * kept to the line too.
      */
     private static String logLine(LogRecord log, boolean withTrace) {
         StringBuilder line = new StringBuilder(clockMillis(log.at())).append("  ")
-                .append(pad(log.severity(), 6)).append(' ')
-                .append(orDash(log.logger())).append("  ")
+                .append(pad(oneLine(log.severity()), 6)).append(' ')
+                .append(oneLine(orDash(log.logger()))).append("  ")
                 .append(oneLine(log.body()));
         if (withTrace && log.traceId() != null) {
             line.append("  trace ").append(log.traceId());
@@ -1046,10 +1048,14 @@ final class Text {
             }
         }
 
+        List<String> services = new ArrayList<>(trace.services().size());
+        for (String service : trace.services()) {
+            services.add(singleLine(service));
+        }
         StringBuilder text = new StringBuilder("# trace ").append(trace.traceId()).append("  ")
                 .append(instantMillis(trace.start())).append("  ")
                 .append(Numbers.millis(trace.durationMs())).append("  ")
-                .append(String.join(" → ", trace.services())).append("  ")
+                .append(String.join(" → ", services)).append("  ")
                 .append(trace.spans().size()).append(" spans, ").append(dbCount).append(" db, ")
                 .append(plural(errorCount, "error")).append("\n\n");
         text.append(pad("offset", OFFSET_WIDTH)).append(pad("duration", DURATION_WIDTH))
@@ -1167,10 +1173,10 @@ final class Text {
         return (span.startNanos() - startNs) / 1_000_000.0;
     }
 
-    /** The span as the tree says it; the service is named only where it changes. */
+    /** The span as the tree says it, on one line; the service is named only where it changes. */
     private static String spanText(SpanRecord span, @Nullable String parentService) {
         return prefix(span)
-                + (span.service().equals(parentService) ? "" : span.service() + " ")
+                + (span.service().equals(parentService) ? "" : singleLine(span.service()) + " ")
                 + summaryLine(span);
     }
 

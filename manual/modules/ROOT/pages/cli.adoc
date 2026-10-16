@@ -800,7 +800,7 @@ The range is rounded to the second and written in its largest units (`6s`, `2m 3
 * A cell with nothing in it is `—`, and in `compare` the two sides of a row share one cell, `before → after`.
 * A cell is one line whatever text it holds: its newlines and runs of whitespace collapse to one space, and a `|` in it is escaped, so an exception message, a note or a span name never splits a row.
 A finding's `why` line and its `numbers` line collapse the same way, with no escape since they are not table rows, so an error message never spills onto a line of its own.
-So does every other line that is not a table row, again with no escape: a finding's statement, a trace's statement and exception, a log line and the note after a mark or an acknowledgement, so a statement reads as SQL that can be pasted into `EXPLAIN`.
+So does every other line that is not a table row, again with no escape: a finding's statement, a trace's statement and exception, a log line with its severity and logger, a service name in a heading, a span line or a mark, and the note after a mark or an acknowledgement, so a statement reads as SQL that can be pasted into `EXPLAIN`.
 * A statement is cut at 200 characters with `…`, and `--full` keeps it whole.
 This cut, and those of a `sql` cell and a finding's title, stop before a surrogate pair they would split, such as an emoji, as the store's cuts do (xref:storage.adoc#writer[The writer]), since half of one has no UTF-8 form.
 A statement of 1,999 characters or more may have been cut by the store, which keeps at most 2,000 of them, one fewer when the cut falls inside a surrogate pair, and records nothing when it cuts (xref:api.adoc#query-stats[`statementCut`]).

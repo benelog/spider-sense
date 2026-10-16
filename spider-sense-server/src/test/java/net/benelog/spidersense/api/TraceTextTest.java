@@ -106,6 +106,20 @@ class TraceTextTest {
                 "16.0 ms    5.0 ms      INTERNAL line|break in a name");
     }
 
+    /** A service name with a line break keeps the heading and the span line each on one line. */
+    @Test
+    void aServiceNameWithALineBreakSplitsNoLine() {
+        SpanRecord root = new SpanRecord(TRACE, "0000000000000001", null, "line\nbreak svc", "GET /y",
+                "SERVER", BASE_NS, BASE_NS + 10_000_000L, "UNSET", null, Map.of(), List.of(), "test");
+        Queries.TraceDetail trace = new Queries.TraceDetail(TRACE, 1_700_000_000_000L, 1_700_000_000_010L,
+                10.0, List.of("line\nbreak svc", "orders"), List.of(root), List.of());
+
+        String text = Text.trace(trace, TINGLES, FRAMES, false);
+
+        assertThat(text.lines().findFirst().orElseThrow()).contains("  10.0 ms  line break svc → orders  1 spans");
+        assertThat(spanLines(text)).containsExactly("0.0 ms     10.0 ms   SERVER line break svc GET /y");
+    }
+
     @Test
     void theDiffAlignsASummaryOnItsOneLineText() {
         Queries.TraceDetail a = trace(List.of(
