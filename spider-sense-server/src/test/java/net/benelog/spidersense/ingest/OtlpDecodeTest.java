@@ -85,11 +85,12 @@ class OtlpDecodeTest {
     }
 
     @Test
-    void ourOwnTrafficIsAServerSpanOnOurPortOfTheEmbeddedServiceOrOfAnyWhileItIsUnknown() {
+    void ourOwnTrafficIsAServerSpanOnOurPortOfTheEmbeddedService() {
         SpanRecord served = record(Span.SpanKind.SPAN_KIND_SERVER, 4000, "orders");
 
         assertThat(OtlpDecoder.isOurOwnTraffic(served, 4000, "orders")).isTrue();
-        assertThat(OtlpDecoder.isOurOwnTraffic(served, 4000, null)).as("embedded not known yet").isTrue();
+        assertThat(OtlpDecoder.isOurOwnTraffic(served, 4000, null)).as("standalone, embedded in nothing")
+                .isFalse();
         assertThat(OtlpDecoder.isOurOwnTraffic(served, 4000, "billing")).as("another service's port").isFalse();
         assertThat(OtlpDecoder.isOurOwnTraffic(served, 4001, "orders")).as("another port").isFalse();
         assertThat(OtlpDecoder.isOurOwnTraffic(record(Span.SpanKind.SPAN_KIND_CLIENT, 4000, "orders"), 4000,

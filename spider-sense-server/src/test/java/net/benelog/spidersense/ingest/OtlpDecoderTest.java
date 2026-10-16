@@ -150,10 +150,28 @@ class OtlpDecoderTest {
         Span.Builder theirs = Otlp.span(TRACE, CHILD, "GET /orders", Span.SpanKind.SPAN_KIND_SERVER,
                 1_700_000_000_000L, 5, Otlp.attr("server.port", 8081));
 
-        Batch batch = decoder.ingest(Otlp.traces(Otlp.service("silk-bookstore"), ours, theirs));
+        // The process the server is embedded in: its export reports this JVM's own pid.
+        Batch batch = decoder.ingest(Otlp.traces(Otlp.resource(Otlp.attr("service.name", "silk-bookstore"),
+                Otlp.attr("process.pid", ProcessHandle.current().pid())), ours, theirs));
 
         assertThat(batch.spans()).hasSize(1);
         assertThat(batch.spans().get(0).spanId()).isEqualTo(CHILD);
+    }
+
+    /**
+     * A standalone server runs inside no application, so no span served on its port is its
+     * own: another host's or container's application serving on the same port keeps its
+     * requests, and so does any service but the embedded one in agent mode.
+     */
+    @Test
+    void anotherServicesServerSpansOnOurPortAreKept() {
+        Span.Builder phoenix = Otlp.span(TRACE, ROOT, "GET /", Span.SpanKind.SPAN_KIND_SERVER,
+                1_700_000_000_000L, 5, Otlp.attr("server.port", 4000));
+
+        Batch batch = decoder.ingest(Otlp.traces(Otlp.service("phoenix-app"), phoenix));
+
+        assertThat(store.services().embeddedService()).isNull();
+        assertThat(batch.spans()).extracting(SpanRecord::spanId).containsExactly(ROOT);
     }
 
     @Test

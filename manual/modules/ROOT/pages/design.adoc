@@ -115,6 +115,7 @@ It also sets the system property `spidersense.jar` to its own jar's absolute pat
 
 Even with the class-loader exclusion in place, the collector drops any `SERVER` span whose `server.port` attribute equals its own port and whose service is the one it is embedded in.
 This second guard ensures that a misconfiguration never shows the UI monitoring itself.
+A standalone server runs inside no application, so the guard drops nothing there, where a span served on its port can only be another application's.
 `CLIENT` spans are kept: an application that calls Spider Sense's port is doing something real, and that call belongs in its trace.
 
 The UI server's Jetty thread pool is marked daemon in agent mode (`JettyServer.threadPool(...)` with `QueuedThreadPool.setDaemon(true)`) and with `shutdownHook(false)`, so a short-lived command-line application still exits when its `main` returns.

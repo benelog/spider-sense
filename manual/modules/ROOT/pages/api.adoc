@@ -841,7 +841,8 @@ The members of a group keyed by its frame may differ in them, and the group show
 For an in-memory database, `/api/status.storage.path` is `null` and `sizeBytes` is `0`.
 The in-memory database is the fallback, and the one the tests use.
 `counts.spans` counts stored spans, so spans dropped by the self-monitoring rule are not in it.
-That rule drops only `SERVER` spans on the server's own port.
+That rule drops only the `SERVER` spans on the server's own port of the service it is embedded in, `embeddedService`.
+A standalone server is embedded in nothing, so it drops none, and an application on another host or in a container that serves on the same port keeps its requests.
 A `CLIENT` span calling that port is an application genuinely talking to Spider Sense, and it stays in its trace.
 A request body that is neither `application/x-protobuf` (also accepted as `application/protobuf`) nor `application/json` is `415`.
 An undecodable body of an accepted type is `400`.

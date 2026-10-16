@@ -147,20 +147,25 @@ public final class OtlpDecoder {
      * genuinely calling Spider Sense (posting OTLP, reading the API), and that call
      * belongs in its trace.
      *
-     * <p>When the embedded service is not known yet, any service counts: a span
-     * served on our own port cannot be anyone else's work.
+     * <p>Only the service the server is embedded in counts (design.adoc#premain). A
+     * standalone server runs inside no application, so none of the spans served on its
+     * port is its own: an application on another host or in a container may serve on
+     * the same port. In agent mode the embedded service is adopted from the first
+     * sighting that reports this process's pid, which the sightings of an export
+     * register before its spans come here.
      *
-     * @param embedded the service this server runs inside, or null when that is not known
+     * @param embedded the service this server runs inside, or null when it runs inside
+     *                 none or that is not known
      */
     static boolean isOurOwnTraffic(SpanRecord span, int ownPort, @Nullable String embedded) {
-        if (!"SERVER".equals(span.kind())) {
+        if (embedded == null || !"SERVER".equals(span.kind())) {
             return false;
         }
         Long port = span.serverPort();
         if (port == null || port.intValue() != ownPort) {
             return false;
         }
-        return embedded == null || embedded.equals(span.service());
+        return embedded.equals(span.service());
     }
 
     /**

@@ -823,7 +823,9 @@ class ApiTest {
     void aSpanAimedAtOurOwnPortIsNeverStored() {
         serve((client, assembly) -> {
             assembly.boundPort().set(assembly.app().port());
-            byte[] ours = Otlp.traces(Otlp.service("silk-bookstore"),
+            // The server's own process, monitored by mistake: its export reports this JVM's pid.
+            byte[] ours = Otlp.traces(Otlp.resource(Otlp.attr("service.name", "silk-bookstore"),
+                            Otlp.attr("process.pid", ProcessHandle.current().pid())),
                     Otlp.span(TRACE, ROOT, "GET /api/overview", Span.SpanKind.SPAN_KIND_SERVER, NOW, 3,
                             Otlp.attr("server.port", assembly.app().port())),
                     Otlp.span(FAILING_TRACE, CHILD, "GET /books", Span.SpanKind.SPAN_KIND_SERVER, NOW, 3,
