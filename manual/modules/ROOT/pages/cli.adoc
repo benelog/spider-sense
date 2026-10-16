@@ -274,7 +274,7 @@ A failed span carries its exception and the application frames underneath, and t
 [source]
 ----
 $ java -jar spider-sense.jar trace 5e6769395a77c8f192949af91cbdedf2
-# trace 5e6769395a77c8f192949af91cbdedf2  2026-09-17T08:19:28.962+09:00  22.0 ms  spring-orders  1 spans, 0 db, 1 error
+# trace 5e6769395a77c8f192949af91cbdedf2  2026-09-17T08:19:28.962+09:00  22.0 ms  spring-orders  1 span, 0 db, 1 error
 
 offset     duration  span
 0.0 ms     22.0 ms   SERVER spring-orders GET /api/flaky → 500  [error]
@@ -805,6 +805,7 @@ The range is rounded to the second and written in its largest units (`6s`, `2m 3
 * Lists are Markdown tables, and ids are complete: a trace id is 32 hex characters, an endpoint, query or error id 12, because they are passed back.
 * A trace and `logs` are lines rather than a table, and `status` and `mark` answer in their own shape.
 * Durations are milliseconds with one decimal and a thousands separator (`1,532.4 ms`), counts are integers, rates are percentages with one decimal, and an Apdex is a score with three decimals.
+A count with its noun takes the singular for one alone, as in `1 span` or `# sql  1 row`, and the plural for any other count, as in the UI.
 * A cell with nothing in it is `—`, and in `compare` the two sides of a row share one cell, `before → after`.
 * A cell is one line whatever text it holds: its newlines and runs of whitespace collapse to one space, and a `|` in it is escaped, so an exception message, a note or a span name never splits a row.
 A finding's `why` line and its `numbers` line collapse the same way, with no escape since they are not table rows, so an error message never spills onto a line of its own.

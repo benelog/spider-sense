@@ -683,11 +683,11 @@ final class Text {
      */
     static String imported(Importer.Result result) {
         StringBuilder line = new StringBuilder("imported ")
-                .append(Numbers.count(result.spans())).append(" spans, ")
-                .append(Numbers.count(result.logs())).append(" logs, ")
-                .append(Numbers.count(result.metricPoints())).append(" metric points, ")
-                .append(Numbers.count(result.tingles())).append(" tingles, ")
-                .append(Numbers.count(result.marks())).append(" marks");
+                .append(Numbers.plural(result.spans(), "span")).append(", ")
+                .append(Numbers.plural(result.logs(), "log")).append(", ")
+                .append(Numbers.plural(result.metricPoints(), "metric point")).append(", ")
+                .append(Numbers.plural(result.tingles(), "tingle")).append(", ")
+                .append(Numbers.plural(result.marks(), "mark"));
         if (result.skippedTraces() > 0) {
             line.append(" (").append(Numbers.plural(result.skippedTraces(), "trace"))
                     .append(" already present)");
@@ -1071,7 +1071,7 @@ final class Text {
                 .append(instantMillis(trace.start())).append("  ")
                 .append(Numbers.millis(trace.durationMs())).append("  ")
                 .append(String.join(" → ", services)).append("  ")
-                .append(trace.spans().size()).append(" spans, ").append(dbCount).append(" db, ")
+                .append(plural(trace.spans().size(), "span")).append(", ").append(dbCount).append(" db, ")
                 .append(plural(errorCount, "error")).append("\n\n");
         text.append(pad("offset", OFFSET_WIDTH)).append(pad("duration", DURATION_WIDTH))
                 .append("span\n");
@@ -1412,7 +1412,7 @@ final class Text {
      */
     static String sql(ReadOnlyQuery.Result result, int limit, boolean full) {
         StringBuilder text = new StringBuilder("# sql  ")
-                .append(result.rows().size()).append(" rows");
+                .append(plural(result.rows().size(), "row"));
         if (result.truncated()) {
             text.append(" (truncated at ").append(limit).append(')');
         }

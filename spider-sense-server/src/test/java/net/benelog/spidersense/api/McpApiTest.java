@@ -322,7 +322,7 @@ class McpApiTest {
 
             assertThat(text(call(client, "sql",
                     "{\"sql\":\"SELECT service, COUNT(*) AS spans FROM span GROUP BY service\"}")))
-                    .startsWith("# sql  1 rows").contains("| orders | 7 |");
+                    .startsWith("# sql  1 row").contains("| orders | 7 |");
         });
     }
 

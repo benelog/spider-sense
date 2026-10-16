@@ -86,7 +86,7 @@ class ReportsTest {
                 Reports.Report sql = reports.sql(
                         "SELECT endpoint, http_status FROM span WHERE entry", 200, false);
                 assertThat(sql.json().asObject().getLong("rowCount")).isEqualTo(1);
-                assertThat(sql.text()).startsWith("# sql  1 rows");
+                assertThat(sql.text()).startsWith("# sql  1 row");
                 assertThat(sql.text()).contains("| GET /orders/report | 200 |");
                 assertThatThrownBy(() -> reports.sql("DELETE FROM span", 200, false))
                         .isInstanceOf(ReadOnlyQuery.Refused.class);

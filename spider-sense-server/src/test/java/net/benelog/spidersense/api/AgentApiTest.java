@@ -731,7 +731,7 @@ class AgentApiTest {
             assertThat(row.get(1).asLong()).isEqualTo(9);
 
             String text = postJson(client, "/api/sql?format=text", group).body();
-            assertThat(text).startsWith("# sql  1 rows\n\n");
+            assertThat(text).startsWith("# sql  1 row\n\n");
             assertThat(text).contains("| SERVICE | SPANS |");
             assertThat(text).contains("| orders | 9 |");
             assertThat(postJson(client, "/api/sql?format=text", group).body())

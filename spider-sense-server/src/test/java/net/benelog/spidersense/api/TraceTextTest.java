@@ -116,7 +116,7 @@ class TraceTextTest {
 
         String text = Text.trace(trace, TINGLES, FRAMES, false);
 
-        assertThat(text.lines().findFirst().orElseThrow()).contains("  10.0 ms  line break svc → orders  1 spans");
+        assertThat(text.lines().findFirst().orElseThrow()).contains("  10.0 ms  line break svc → orders  1 span, ");
         assertThat(spanLines(text)).containsExactly("0.0 ms     10.0 ms   SERVER line break svc GET /y");
     }
 

@@ -1071,7 +1071,7 @@ class CliTest {
             Run rows = runAt(base, "sql",
                     "SELECT service, COUNT(*) AS spans FROM span GROUP BY service", "--url=" + base);
             assertThat(rows.exit()).isZero();
-            assertThat(rows.out()).startsWith("# sql  1 rows");
+            assertThat(rows.out()).startsWith("# sql  1 row");
             assertThat(rows.out()).contains("| SERVICE | SPANS |").contains("| orders |");
 
             Run json = runAt(base, "sql", "SELECT COUNT(*) AS spans FROM span", "--json",
@@ -1087,7 +1087,7 @@ class CliTest {
                     "--url=" + base);
             assertThat(commented.exit()).as("a leading SQL comment is the statement's, not an option")
                     .isZero();
-            assertThat(commented.out()).startsWith("# sql  1 rows");
+            assertThat(commented.out()).startsWith("# sql  1 row");
             assertThat(runAt(base, "sql", "--url=" + base, "--", "--x\nSELECT 1").exit())
                     .as("after --, every word is the statement").isZero();
 
@@ -1130,7 +1130,7 @@ class CliTest {
 
             Run rows = run("sql", "SELECT name, at_ms FROM mark ORDER BY at_ms", "--db=" + url);
             assertThat(rows.exit()).isZero();
-            assertThat(rows.out()).startsWith("# sql  1 rows");
+            assertThat(rows.out()).startsWith("# sql  1 row");
             assertThat(rows.out()).contains("| NAME | AT_MS |").contains("| before | 1 |");
 
             Run refused = run("sql", "DROP TABLE mark", "--db=" + url);

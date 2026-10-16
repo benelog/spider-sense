@@ -277,7 +277,7 @@ It is the one line of any answer the CLI adds itself, so the HTTP API and MCP ne
 
 ```
 $ java -jar spider-sense.jar trace 5e6769395a77c8f192949af91cbdedf2
-# trace 5e6769395a77c8f192949af91cbdedf2  2026-09-17T08:19:28.962+09:00  22.0 ms  spring-orders  1 spans, 0 db, 1 error
+# trace 5e6769395a77c8f192949af91cbdedf2  2026-09-17T08:19:28.962+09:00  22.0 ms  spring-orders  1 span, 0 db, 1 error
 
 offset     duration  span
 0.0 ms     22.0 ms   SERVER spring-orders GET /api/flaky → 500  [error]
