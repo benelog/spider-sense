@@ -242,7 +242,8 @@ Set `-Dotel.service.name=` when the default is not the name you want, such as tw
 An entry span whose endpoint matches one of them is written with `entry` false, exactly as a root `INTERNAL` span is (xref:design.adoc#endpoint-identity[Endpoint identity]).
 It is stored, is in its trace and is in the trace list, but it is not an endpoint, not a request, not in the Apdex, never a slow-request tingle, never a finding and never a `check` verdict.
 Neither is what it ran: its own failure, and every failure of a trace it is the root of, is in no error group, so the errors page, `compare`, `findings` and `check` all leave a 503 from a health check whose dependency is down locally out, and the statements and outbound calls of such a trace make no `slow-query`, `slow-external` or N+1 finding, although the queries page still lists the statements.
-An ignored span inside another request's trace, a health check that request called, leaves out only its own failure; what ran under it belongs to the request that made the call.
+Its `ERROR` log records, and those of a trace it is the root of, make no `log-error` finding and count to no `--max-log-errors`, although the logs page still lists them.
+An ignored span inside another request's trace, a health check that request called, leaves out only its own failure and the log records written on it; what ran under it belongs to the request that made the call.
 
 A health check polled every few seconds is the most frequent request of a typical Spring Boot application and the least interesting one.
 It is fast, it never fails, and it dilutes the request count, the Apdex, `check` and every `slow-endpoint` judgement.

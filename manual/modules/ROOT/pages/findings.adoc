@@ -30,7 +30,7 @@ A list the limit cut says so: the JSON carries `total`, the number of findings b
 
 Two thresholds decide the slow kinds: `slow.request.ms` is 500 milliseconds by default and `slow.query.ms` is 100.
 `status` prints the thresholds in force, and xref:configuration.adoc#properties[Configuration] says how to change them.
-An endpoint that `spidersense.ignore.endpoints` excludes (xref:configuration.adoc#ignored-endpoints[Ignored endpoints]) is not an entry span and produces no finding of any kind, and neither does what its trace ran: its failure, the failures under it, its statements and its outbound calls.
+An endpoint that `spidersense.ignore.endpoints` excludes (xref:configuration.adoc#ignored-endpoints[Ignored endpoints]) is not an entry span and produces no finding of any kind, and neither does what its trace ran: its failure, the failures under it, its statements, its outbound calls and its `ERROR` log records.
 An entry span is what xref:design.adoc#endpoint-identity[Endpoint identity] defines, and it is what every count of requests below counts.
 
 The three JVM kinds, `gc-pause`, `heap-pressure` and `thread-growth`, read the same `metric_point` series the xref:pages.adoc#jvm[JVM page] draws.
@@ -623,6 +623,8 @@ A message that carries the identifier (`Order 42 is already shipped`) still grou
 === log-error
 
 Log records of severity `ERROR` or above, grouped by service, logger and normalised message, counting only the *uncovered* ones: records without a trace id, or with a trace id whose trace has no error span.
+A record an ignored endpoint's request wrote (xref:configuration.adoc#ignored-endpoints[Ignored endpoints]) is not counted: one on the ignored span itself, and one of a trace whose root is an ignored span, which is how a record with a trace id and no span id is judged.
+A health check that answers 200 while its indicator logs a failed dependency at `ERROR` is therefore no `log-error` and fails no `check --max-log-errors`.
 A group with at least one uncovered record in the window is a finding.
 It is always `high`, and the impact it is ranked by is the uncovered count.
 

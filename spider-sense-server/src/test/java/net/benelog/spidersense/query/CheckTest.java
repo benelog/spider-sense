@@ -176,6 +176,19 @@ class CheckTest {
         assertThat(result.pass()).isTrue();
     }
 
+    /** The ERROR records of a health check that answered 200 fail no {@code --max-log-errors}. */
+    @Test
+    void anIgnoredEndpointsErrorRecordsFailNoLogErrorRule() {
+        FindingsTest.loggingHealthCheck(decoder);
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), entry("/orders/{id}", 10)));
+        flush();
+
+        Check.CheckResult result = check.check(window, null, null, Map.of(Check.MAX_LOG_ERRORS, 0.0));
+
+        assertThat(rule(result, Check.MAX_LOG_ERRORS).actual()).isZero();
+        assertThat(result.pass()).isTrue();
+    }
+
     /** A statement run slow by one endpoint does not count against another that runs it fast. */
     @Test
     void anEndpointsSlowQueriesAreTheOnesItsOwnRequestsMade() {

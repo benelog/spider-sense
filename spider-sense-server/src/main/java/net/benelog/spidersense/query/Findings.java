@@ -1014,6 +1014,9 @@ public final class Findings {
      * leaves behind: no span error, no exception event, one line in the log. A
      * record whose trace does carry an error span is already an {@code error}
      * finding, so the join drops it rather than reporting it twice (findings.adoc#log-error).
+     * A record an ignored endpoint's request wrote is no finding either
+     * (configuration.adoc#ignored-endpoints): one on the ignored span itself, or one of a trace
+     * whose root is ignored, which a record with a trace id and no span id is judged by alone.
      *
      * <p>The grouping is the one {@link Ids#normaliseMessage} defines, which is a
      * Java regular expression rather than SQL, so the rows are read and grouped
@@ -1024,7 +1027,10 @@ public final class Findings {
     private List<Ranked> logErrors(Window window, @Nullable String service, SharedScans reads,
             boolean evidence) {
         Where where = new Where("l.at_ms BETWEEN ? AND ? AND l.severity_number >= " + ERROR_SEVERITY
-                + " AND (t.trace_id IS NULL OR t.error_count = 0)", window.from(), window.to());
+                + " AND (t.trace_id IS NULL OR t.error_count = 0)"
+                + " AND (r.span_id IS NULL OR NOT (" + SpanSql.ignored("r.") + "))"
+                + " AND (s.span_id IS NULL OR NOT (" + SpanSql.ignored("s.") + "))",
+                window.from(), window.to());
         if (service != null) {
             where = where.and("l.service = ?", service);
         }
@@ -1033,7 +1039,10 @@ public final class Findings {
                 + " l.trace_id AS trace_id, l.span_id AS span_id,"
                 + (evidence ? " l.attributes AS attributes," : "")
                 + " t.root_name AS root_name FROM log l"
-                + " LEFT JOIN trace t ON t.trace_id = l.trace_id WHERE " + where.sql()
+                + " LEFT JOIN trace t ON t.trace_id = l.trace_id"
+                + " LEFT JOIN span r ON r.trace_id = t.trace_id AND r.span_id = t.root_span_id"
+                + " LEFT JOIN span s ON s.trace_id = l.trace_id AND s.span_id = l.span_id"
+                + " WHERE " + where.sql()
                 + " ORDER BY l.at_ms, l.id", where.params(), rs -> {
                     String serviceName = rs.getString("service");
                     String logger = logger(rs.getString("logger"));

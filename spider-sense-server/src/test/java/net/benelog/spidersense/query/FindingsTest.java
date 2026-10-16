@@ -170,6 +170,38 @@ class FindingsTest {
     }
 
     /**
+     * A health check that answers 200 while its indicator logs at ERROR, which it does whenever
+     * a dependency is down locally: neither the record on its own span, nor one on a span under
+     * it, nor one with its trace id alone is a {@code log-error}.
+     */
+    @Test
+    void anIgnoredEndpointsErrorRecordsAreNoLogError() {
+        loggingHealthCheck(decoder);
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), entry(1, "/orders/{id}", 10)));
+        flush();
+
+        assertThat(findings.findings(window, null, 20)).isEmpty();
+    }
+
+    /**
+     * A 200 {@code GET /actuator/health} with a statement under it, and three ERROR records of
+     * its trace: on its own span, on the statement's, and with the trace id alone.
+     */
+    static void loggingHealthCheck(OtlpDecoder decoder) {
+        Span.Builder health = Otlp.span(traceId(300), spanId(300), "GET /actuator/health",
+                Span.SpanKind.SPAN_KIND_SERVER, NOW, 5,
+                Otlp.attr("http.request.method", "GET"),
+                Otlp.attr("http.route", "/actuator/health"),
+                Otlp.attr("http.response.status_code", 200));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), health,
+                query(health, 301, "SELECT 1", "dual", NOW + 1, 2)));
+        decoder.ingest(Otlp.logs(Otlp.service("orders"), "orders.health.RedisHealthIndicator",
+                Otlp.log(NOW, 17, "Redis health check failed", traceId(300), spanId(300)),
+                Otlp.log(NOW + 1, 17, "Validation query failed", traceId(300), spanId(301)),
+                Otlp.log(NOW + 2, 17, "Health contributor failed", traceId(300), "")));
+    }
+
+    /**
      * Health checks as the agent records them when the application reports itself DOWN: a 503
      * {@code GET /actuator/health} with a slow validation query and a slow call under it.
      */
