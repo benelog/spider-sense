@@ -90,6 +90,21 @@ public final class Numbers {
         return fixed(value, places);
     }
 
+    /**
+     * A fraction as the percentage it was given: the decimal point moves two places in the
+     * decimal the fraction reads as, not in the double it is, so {@code 0.07} is {@code 7.0}
+     * and never the {@code 7.000000000000} of {@code 0.07 * 100}; at least {@code decimals}
+     * decimals and as many more as the percentage has, up to twelve, as {@link #exactly} says.
+     */
+    public static String exactlyPercent(double fraction, int decimals) {
+        if (!Double.isFinite(fraction)) {
+            return "—";
+        }
+        BigDecimal percent = BigDecimal.valueOf(fraction).movePointRight(2);
+        int places = Math.min(MOST_DECIMALS, Math.max(decimals, percent.stripTrailingZeros().scale()));
+        return String.format(Locale.US, "%,." + places + "f", percent);
+    }
+
     private static String fixed(double value, int places) {
         return String.format(Locale.US, "%,." + places + "f", value);
     }

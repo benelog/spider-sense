@@ -116,6 +116,7 @@ A window that reaches back before the change drags the old numbers into the verd
 The heading carries the verdict, then the window.
 One row follows per rule, with its limit, its actual value, its own verdict and a detail naming what decided it.
 The limit reads as it was given, an Apdex is a score with three decimals, and the error rate's limit and actual value are percentages, as every rate in a rendering is.
+The error rate's limit moves the decimal point of the number given, so `--max-error-rate=0.07` reads `7.0%` and `0.0005` reads `0.05%`, never the `7.000000000000%` that `0.07 * 100` is in binary.
 An actual value that is not its limit carries as many more decimals as it takes to read differently from it, in the row and in the detail alike, so a rule that fails by less than the usual precision reads `| maxQueriesPerRequest | 1 | 1.04 | fail |` rather than `1.0` beside its limit.
 A detail names its worst offender the way `findings` does: `maxErrors` gives the occurrences of the scope, then the largest error group by the title of its `error` finding and its own occurrences (`2 occurrences: IllegalStateException in GET /api/flaky ×2`), and `maxNPlusOne` and `maxLogErrors` give the title of their first finding.
 

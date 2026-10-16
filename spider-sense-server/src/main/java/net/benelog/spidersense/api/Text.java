@@ -828,7 +828,7 @@ final class Text {
      */
     private static String threshold(String rule, double limit) {
         if (Check.MAX_ERROR_RATE.equals(rule)) {
-            return Numbers.exactly(limit * 100, 1) + "%";
+            return Numbers.exactlyPercent(limit, 1) + "%";
         }
         return Numbers.exactly(limit, Check.MIN_APDEX.equals(rule) ? 3 : 0);
     }

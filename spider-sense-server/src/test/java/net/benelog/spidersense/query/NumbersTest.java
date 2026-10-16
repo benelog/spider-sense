@@ -2,6 +2,9 @@ package net.benelog.spidersense.query;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+
 import org.junit.jupiter.api.Test;
 
 class NumbersTest {
@@ -38,5 +41,22 @@ class NumbersTest {
         assertThat(Numbers.exactly(2_000, 0)).isEqualTo("2,000");
         assertThat(Numbers.exactly(0.05, 1)).isEqualTo("0.05");
         assertThat(Numbers.exactly(0.9, 3)).isEqualTo("0.900");
+    }
+
+    /** A rate's limit reads as the percentage it was given, whatever {@code limit * 100} is in binary. */
+    @Test
+    void aFractionReadsAsThePercentageItWasGiven() {
+        assertThat(Numbers.exactlyPercent(0.07, 1)).isEqualTo("7.0");
+        assertThat(Numbers.exactlyPercent(0.29, 1)).isEqualTo("29.0");
+        assertThat(Numbers.exactlyPercent(0.0005, 1)).isEqualTo("0.05");
+        assertThat(Numbers.exactlyPercent(0, 1)).isEqualTo("0.0");
+        assertThat(Numbers.exactlyPercent(12.5, 1)).isEqualTo("1,250.0");
+        assertThat(Numbers.exactlyPercent(Double.NaN, 1)).isEqualTo("—");
+        for (int basisPoints = 1; basisPoints < 10_000; basisPoints++) {
+            String percent = new BigDecimal(basisPoints).movePointLeft(2)
+                    .setScale(basisPoints % 10 == 0 ? 1 : 2, RoundingMode.UNNECESSARY).toPlainString();
+            assertThat(Numbers.exactlyPercent(basisPoints / 10_000.0, 1)).as("%d basis points", basisPoints)
+                    .isEqualTo(percent);
+        }
     }
 }
