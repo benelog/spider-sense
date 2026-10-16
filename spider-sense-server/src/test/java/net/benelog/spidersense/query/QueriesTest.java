@@ -344,6 +344,30 @@ class QueriesTest {
                 .containsExactly("h2", "postgresql:payments");
     }
 
+    /** A call a service makes to its own endpoint is no call to an outside host. */
+    @Test
+    void aCallToTheServicesOwnPortIsNoExternalHost() {
+        Span.Builder job = Otlp.span(traceId(1), spanId(1), "RefreshJob.run", Span.SpanKind.SPAN_KIND_INTERNAL,
+                NOW, 300);
+        Span.Builder call = Otlp.child(job, spanId(2), "GET", Span.SpanKind.SPAN_KIND_CLIENT, NOW + 5, 200,
+                Otlp.attr("http.request.method", "GET"), Otlp.attr("url.full", "http://localhost:8090/api/items"),
+                Otlp.attr("server.address", "localhost"), Otlp.attr("server.port", 8090));
+        Span.Builder items = Otlp.child(call, spanId(3), "GET /api/items", Span.SpanKind.SPAN_KIND_SERVER,
+                NOW + 6, 190, Otlp.attr("http.request.method", "GET"), Otlp.attr("http.route", "/api/items"));
+        decoder.ingest(Otlp.traces(Otlp.service("inventory"), job, call, items,
+                Otlp.child(items, spanId(4), "SELECT items", Span.SpanKind.SPAN_KIND_CLIENT, NOW + 7, 20,
+                        Otlp.attr("db.system", "h2"), Otlp.attr("db.name", "inventory"),
+                        Otlp.attr("db.statement", "select * from items"))));
+        flush();
+
+        Stats.ServiceMap map = queries.map(window);
+
+        assertThat(map.nodes()).extracting(Stats.Node::id)
+                .containsExactlyInAnyOrder("svc:inventory", "db:h2:inventory");
+        assertThat(map.edges()).extracting(edge -> edge.from() + " -> " + edge.to())
+                .containsExactly("svc:inventory -> db:h2:inventory");
+    }
+
     /** A traced load generator's requests are root CLIENT spans to a host nobody traces. */
     @Test
     void aServiceWhoseRequestsAreRootCallsIsOnTheMapWithWhatItCalls() {

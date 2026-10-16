@@ -1769,9 +1769,10 @@ public final class Queries {
      * calls between two traced services; the entry spans with no stored parent are
      * the traffic from outside, which becomes the {@code user} node; the outbound
      * spans are the databases, hosts and queues nobody traces. An outbound span
-     * whose child is another service's entry span is already one of the first kind,
-     * so it is dropped from the third: a call to {@code localhost:8081} shows as a
-     * call to the bookstore when the bookstore is traced too.
+     * whose child is an entry span called a traced service, so it is dropped from the
+     * third: a call to {@code localhost:8081} shows as a call to the bookstore when
+     * the bookstore is traced too, and a call a service makes to itself shows as
+     * nothing, as the first read draws no edge from a service to itself.
      *
      * <p>A service node's numbers are the {@link Stats.ServiceSummary} numbers, so
      * the map and the service page can never disagree.
@@ -1890,20 +1891,21 @@ public final class Queries {
 
     /**
      * The databases, hosts and queues every service calls, and one edge per caller.
-     * The outbound spans that turned out to be calls to another traced service are
-     * left out: they are already {@code service → service} edges. They are keyed by
-     * trace id and span id together, as {@link Ancestry} keys a span: a span id is
-     * unique within its trace only.
+     * An outbound span whose child is an entry span called a traced service, and is
+     * left out: a call to another service is already a {@code service → service} edge,
+     * and a call a service makes to itself is no edge at all. They are keyed by trace
+     * id and span id together, as {@link Ancestry} keys a span: a span id is unique
+     * within its trace only.
      */
     private Targets targets(Window window) {
-        Set<String> crossService = new HashSet<>(sql.query(
+        Set<String> toTracedServices = new HashSet<>(sql.query(
                 "SELECT DISTINCT c.trace_id, c.parent_span_id FROM span c JOIN span p"
                         + " ON p.trace_id = c.trace_id AND p.span_id = c.parent_span_id"
-                        + " WHERE c.start_ms BETWEEN ? AND ? AND c.entry AND p.service <> c.service",
+                        + " WHERE c.start_ms BETWEEN ? AND ? AND c.entry",
                 List.of(window.from(), window.to()),
                 rs -> Ancestry.key(rs.getString(1), rs.getString(2))));
 
-        Map<CallerKey, Calls> byCaller = dependencyCalls(window, null, crossService);
+        Map<CallerKey, Calls> byCaller = dependencyCalls(window, null, toTracedServices);
         Map<TargetKey, Calls> byTarget = new LinkedHashMap<>();
         byCaller.forEach((caller, calls) ->
                 byTarget.computeIfAbsent(caller.target(), key -> new Calls()).addAll(calls));
