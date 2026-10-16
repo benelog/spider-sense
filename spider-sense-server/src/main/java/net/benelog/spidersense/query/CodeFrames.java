@@ -35,6 +35,9 @@ public final class CodeFrames {
     /** What is framework rather than application when no allowlist is given. */
     public static final List<String> FRAMEWORK_PREFIXES = ExceptionChain.FRAMEWORK_PREFIXES;
 
+    /** What a generated class's frame holds, which is never application code, allowlist or not. */
+    public static final List<String> GENERATED_MARKERS = ExceptionChain.GENERATED_MARKERS;
+
     private final List<String> appPackages;
 
     /** @param appPackages the comma-separated {@code spidersense.app.packages}; empty means unset */
@@ -119,8 +122,14 @@ public final class CodeFrames {
         return ofAttributes(attributes);
     }
 
-    /** Whether a frame is the application's: the allowlist when there is one, else not a framework. */
+    /**
+     * Whether a frame is the application's: never a generated class's, whatever its package
+     * (a Hibernate or CGLIB proxy), then the allowlist when there is one, else not a framework.
+     */
     public boolean isApplication(String frame) {
+        if (ExceptionChain.generated(frame)) {
+            return false;
+        }
         if (!appPackages.isEmpty()) {
             for (String prefix : appPackages) {
                 if (frame.startsWith(prefix)) {

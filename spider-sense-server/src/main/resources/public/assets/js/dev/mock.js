@@ -911,7 +911,7 @@ function statusBody() {
       logs: ENDPOINT_BASE + '/v1/logs',
     },
     embeddedService: null,
-    codeFrames: { appPackages: [], frameworkPrefixes: FRAMEWORK },
+    codeFrames: { appPackages: [], frameworkPrefixes: FRAMEWORK, generatedMarkers: GENERATED },
     jar: '/home/me/tools/spider-sense-' + VERSION + '.jar',
     thresholds: { slowRequestMs: SLOW_REQUEST_MS, slowQueryMs: SLOW_QUERY_MS, responseBucketsMs: RESPONSE_BUCKETS },
     ignore: { endpoints: ['/actuator/**', '/health', '/healthz', '/livez', '/readyz'] },
@@ -1023,6 +1023,8 @@ const FRAMEWORK = ['java.', 'javax.', 'jdk.', 'sun.', 'com.sun.', 'jakarta.', 'o
   'org.junit.', 'gg.jte.', 'org.postgresql.', 'com.mysql.', 'org.mariadb.', 'oracle.', 'com.microsoft.sqlserver.',
   'org.sqlite.', 'org.hsqldb.', 'org.jooq.', 'org.mybatis.', 'com.mongodb.', 'io.lettuce.', 'redis.clients.',
   'com.fasterxml.', 'com.google.', 'kotlinx.', 'okhttp3.', 'feign.', 'io.grpc.', 'org.jboss.'];
+const GENERATED = ['$HibernateProxy', '$$SpringCGLIB$$', '$$EnhancerBySpringCGLIB$$', '$$FastClassBySpringCGLIB$$',
+  '$ByteBuddy$', '(<generated>)'];
 
 /** A stack trace as its exception chain, innermost first, as api.adoc#cause answers it. */
 function chainOf(stack) {
@@ -1048,7 +1050,8 @@ function chainOf(stack) {
 /** The application frames of a stack trace, root cause first, as findings.adoc#code reduces them. */
 function appFrames(stack) {
   const frames = chainOf(stack).flatMap((cause) => cause.frames)
-    .filter((frame) => !FRAMEWORK.some((prefix) => frame.startsWith(prefix)));
+    .filter((frame) => !FRAMEWORK.some((prefix) => frame.startsWith(prefix))
+      && !GENERATED.some((marker) => frame.includes(marker)));
   return [...new Set(frames)].slice(0, 5);
 }
 

@@ -16,7 +16,7 @@ class StatusSnapshotTest {
 
     private static final StatusSnapshot STATUS = new StatusSnapshot("standalone", "http://127.0.0.1:4000",
             0, 1_700_000_000_000L, null, 500, 100, new ResponseBuckets(500), List.of(), List.of("com.acme"),
-            List.of("org.springframework."), null, 24, 1_000_000, 1_500L,
+            List.of("org.springframework."), List.of("$HibernateProxy"), null, 24, 1_000_000, 1_500L,
             new Database.Storage("jdbc:h2:mem:x", null, 4096, false, null),
             0, 7, 0, 12, 3, 40, 5, 2, List.of("spring-orders", "silk-bookstore"), 0, 0);
 
@@ -38,11 +38,11 @@ class StatusSnapshotTest {
     @Test
     void moreServicesThanItNamesAreCountedAndTheNamesSaySoInTheText() {
         StatusSnapshot many = new StatusSnapshot("standalone", null, 0, 0, null, 500, 100,
-                new ResponseBuckets(500), List.of(), List.of(), List.of(), null, 24, 1_000_000, null,
+                new ResponseBuckets(500), List.of(), List.of(), List.of(), List.of(), null, 24, 1_000_000, null,
                 new Database.Storage("jdbc:h2:mem:x", null, 0, false, null),
                 0, 0, 0, 0, 0, 0, 0, 25, List.of("a", "b"), 0, 0);
         StatusSnapshot none = new StatusSnapshot("standalone", null, 0, 0, null, 500, 100,
-                new ResponseBuckets(500), List.of(), List.of(), List.of(), null, 24, 1_000_000, null,
+                new ResponseBuckets(500), List.of(), List.of(), List.of(), List.of(), null, 24, 1_000_000, null,
                 new Database.Storage("jdbc:h2:mem:x", null, 0, false, null),
                 0, 0, 0, 0, 0, 0, 0, 0, List.of(), 0, 0);
 

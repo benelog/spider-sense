@@ -34,6 +34,32 @@ class CodeFramesTest {
                 .containsExactly("com.acme.billing.Invoices.total(Invoices.java:12)");
     }
 
+    /**
+     * A Hibernate lazy-loading proxy and a Spring CGLIB proxy are generated classes in the
+     * application's own package: the line that issues the statement is the one under them.
+     */
+    @Test
+    void aGeneratedClassIsNoApplicationCodeWhateverItsPackage() {
+        String lazyLoad = """
+                \tat org.hibernate.engine.jdbc.internal.ResultSetReturnImpl.extract(ResultSetReturnImpl.java:57)
+                \tat orders.domain.Product$HibernateProxy.getName(Unknown Source)
+                \tat orders.service.OrderService.getWithLazyNPlusOne(OrderService.java:78)
+                \tat orders.service.OrderService$$SpringCGLIB$$0.getWithLazyNPlusOne(<generated>)
+                \tat orders.service.LegacyService$$EnhancerBySpringCGLIB$$5f3a.run(LegacyService.java)
+                \tat orders.service.Generated$ByteBuddy$Accessor.call(Unknown Source)
+                \tat orders.web.OrderController.one(OrderController.java:47)
+                """;
+
+        assertThat(new CodeFrames("").ofAttributes(Map.of("code.stacktrace", lazyLoad))).containsExactly(
+                "orders.service.OrderService.getWithLazyNPlusOne(OrderService.java:78)",
+                "orders.web.OrderController.one(OrderController.java:47)");
+        assertThat(new CodeFrames("orders").ofAttributes(Map.of("code.stacktrace", lazyLoad)))
+                .as("an allowlist that names the package does not make a proxy the application's")
+                .containsExactly(
+                        "orders.service.OrderService.getWithLazyNPlusOne(OrderService.java:78)",
+                        "orders.web.OrderController.one(OrderController.java:47)");
+    }
+
     @Test
     void atMostFiveFramesInnermostFirst() {
         StringBuilder deep = new StringBuilder("java.lang.IllegalStateException: deep\n");

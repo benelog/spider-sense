@@ -53,6 +53,25 @@ test('frameworkOf folds by the framework prefixes, or by an application allowlis
   assert.equal(frameworkOf('org.hibernate.internal.Session.load(Session.java:9)', byApp), 'org.hibernate');
 });
 
+test('frameworkOf folds a generated class under generated, whatever its package', () => {
+  const generated = ['$HibernateProxy', '$$SpringCGLIB$$', '(<generated>)'];
+  const byPrefix = { app: [], framework: ['java.'], generated };
+  assert.equal(frameworkOf('orders.domain.Product$HibernateProxy.getName(Unknown Source)', byPrefix), 'generated');
+  assert.equal(frameworkOf('orders.OrderService$$SpringCGLIB$$0.load(<generated>)', byPrefix), 'generated');
+  assert.equal(frameworkOf('orders.Thing.run(<generated>)', byPrefix), 'generated');
+  assert.equal(frameworkOf('orders.OrderService.load(OrderService.java:78)', byPrefix), null);
+  const byApp = { app: ['orders.'], framework: [], generated };
+  assert.equal(frameworkOf('orders.domain.Product$HibernateProxy.getName(Unknown Source)', byApp), 'generated');
+  const status = { codeFrames: { appPackages: [], frameworkPrefixes: ['java.'], generatedMarkers: generated } };
+  const stack = [
+    '\tat orders.domain.Product$HibernateProxy.getName(Unknown Source)',
+    '\tat orders.OrderService.load(OrderService.java:78)',
+    '\tat orders.OrderService$$SpringCGLIB$$0.load(<generated>)',
+  ].join('\n');
+  assert.deepEqual(appFrames(stack, status), ['orders.OrderService.load(OrderService.java:78)'],
+    'what the span drawer lists is the finding\'s code');
+});
+
 test('foldLabel counts the frames and names at most three packages', () => {
   const run = (pkgs) => pkgs.map((pkg) => ({ line: '', pkg }));
   assert.equal(foldLabel(run(['org.a', 'org.a', 'org.b'])), '3 frames from org.a, org.b');

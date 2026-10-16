@@ -188,7 +188,7 @@ The frame is the first application frame met reading the chain from the root cau
 The same line throwing the same exception is then one error whatever wraps it.
 Spring's `DataAccessException` subclasses and `ServletException` carry one outer type for every cause and a message that embeds the SQL or the request, so grouping on the outer type and message spread one bug over several groups and merged unrelated ones.
 The frame is keyed without its `(File.java:41)` and with every `$<digits>` of a synthetic name (`lambda$load$0`, `Orders$1`) made `$?`, so moving the line or adding a lambda above it keeps the group.
-It is judged by the default framework prefixes, never by `spidersense.app.packages`, so the id does not depend on a setting of the process that wrote the span.
+It is judged by the default framework prefixes and the markers of a generated class (xref:findings.adoc#code[Code locations]), never by `spidersense.app.packages`, so the id does not depend on a setting of the process that wrote the span.
 A trace without an application frame, and an error without a trace, fall back to the service, the exception type or `error.type`, and the message with digits and quoted strings replaced by `?`.
 The normalised message stays in the group as its `message` either way (xref:api.adoc#errors[Errors]).
 

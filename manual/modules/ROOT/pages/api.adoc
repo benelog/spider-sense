@@ -83,7 +83,8 @@ It is stored as a `db_table` row rather than as a log (xref:storage.adoc#schema[
   "embeddedService": "silk-bookstore" | null,
   "thresholds": { "slowRequestMs": 500, "slowQueryMs": 100, "responseBucketsMs": [125, 500, 2000] },
   "ignore": { "endpoints": ["/actuator/**", "/health", "/healthz", "/livez", "/readyz"] },
-  "codeFrames": { "appPackages": [] | ["com.acme."], "frameworkPrefixes": ["java.", "javax.", …] },
+  "codeFrames": { "appPackages": [] | ["com.acme."], "frameworkPrefixes": ["java.", "javax.", …],
+                  "generatedMarkers": ["$HibernateProxy", "$$SpringCGLIB$$", …] },
   "jar": "/home/me/tools/spider-sense-{project-version}.jar" | null,
   "retention": { "hours": 24, "spans": 1000000 },
   "ingest": { "maxSpansPerSecond": null | 5000 },
@@ -98,7 +99,7 @@ It is stored as a `db_table` row rather than as a log (xref:storage.adoc#schema[
 `embeddedService` is the service whose JVM the server runs inside: `spidersense.service` when the launcher was given one, else the first service that reports the server's own process id.
 It is always `null` in standalone mode, which runs inside no application, even when `spidersense.service` is set for the applications beside it.
 `ignore.endpoints` is the configured value of `spidersense.ignore.endpoints`, which xref:configuration.adoc#ignored-endpoints[Ignored endpoints] describes.
-`codeFrames` carries the rules that make a frame the application's (xref:findings.adoc#code[Code locations]): `appPackages` is `spidersense.app.packages` as prefixes ending in a dot, empty when unset, and `frameworkPrefixes` the prefixes that count as framework when it is unset.
+`codeFrames` carries the rules that make a frame the application's (xref:findings.adoc#code[Code locations]): `appPackages` is `spidersense.app.packages` as prefixes ending in a dot, empty when unset, `frameworkPrefixes` the prefixes that count as framework when it is unset, and `generatedMarkers` what a generated class's frame holds, which is never the application's either way.
 The error page folds its stack trace by them (xref:pages.adoc#stack-traces[Stack traces]).
 `services` names the services the store has seen, the most recently seen first and then by name, at most 20 of them; `counts.services` is how many there are in all.
 They are what tells a reader that the application just started is the one sending.

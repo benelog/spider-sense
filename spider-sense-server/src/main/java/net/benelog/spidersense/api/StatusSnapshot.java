@@ -35,6 +35,7 @@ record StatusSnapshot(
         List<String> ignoredEndpoints,
         List<String> appPackages,
         List<String> frameworkPrefixes,
+        List<String> generatedMarkers,
         @Nullable String jar,
         int retentionHours,
         long retentionSpans,

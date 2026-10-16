@@ -104,6 +104,25 @@ class ExceptionChainTest {
         }
     }
 
+    /** A lazy load outside its session throws in the entity's generated proxy; the group is the caller's line. */
+    @Test
+    void aGeneratedClassIsNoApplicationFrameOfTheGroupKey() {
+        String lazy = """
+                org.hibernate.LazyInitializationException: could not initialize proxy [orders.domain.Product#7] - no Session
+                \tat org.hibernate.proxy.AbstractLazyInitializer.initialize(AbstractLazyInitializer.java:165)
+                \tat orders.domain.Product$HibernateProxy.getName(Unknown Source)
+                \tat orders.service.OrderService.describe(OrderService.java:91)
+                \tat orders.service.OrderService$$SpringCGLIB$$0.describe(<generated>)""";
+
+        assertThat(ExceptionChain.parse(lazy).innermost(ExceptionChain::notFramework))
+                .isEqualTo("orders.service.OrderService.describe(OrderService.java:91)");
+        assertThat(ExceptionChain.notFramework("orders.domain.Product$HibernateProxy.getName(Unknown Source)"))
+                .isFalse();
+        assertThat(ExceptionChain.notFramework("orders.service.OrderService$$SpringCGLIB$$0.describe(<generated>)"))
+                .isFalse();
+        assertThat(ExceptionChain.notFramework("orders.Thing.run(<generated>)")).isFalse();
+    }
+
     @Test
     void withoutAnApplicationFrameTheKeyIsTheOuterTypeAndTheNormalisedMessage() {
         String framework = "java.lang.IllegalStateException: Order 42 is shipped\n"

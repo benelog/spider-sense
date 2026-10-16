@@ -128,7 +128,8 @@ export function codeFrames(container, frames) {
 function rules(status) {
   const frames = (status || {}).codeFrames;
   if (!frames) return null;
-  return { app: frames.appPackages || [], framework: frames.frameworkPrefixes || [] };
+  return { app: frames.appPackages || [], framework: frames.frameworkPrefixes || [],
+    generated: frames.generatedMarkers || [] };
 }
 
 /** The `/0x…` a JVM writes after the name of a hidden class, such as a lambda's. */
@@ -154,10 +155,12 @@ export function frameOf(line) {
 }
 
 /**
- * The package a framework frame is folded under: the framework prefix it matched, or, with an
- * allowlist, its first two segments. Null for an application frame.
+ * The package a framework frame is folded under: `generated` for a generated class's frame, such
+ * as a Hibernate or CGLIB proxy in the application's own package, the framework prefix it
+ * matched, or, with an allowlist, its first two segments. Null for an application frame.
  */
 export function frameworkOf(frame, r) {
+  if ((r.generated || []).some((marker) => frame.includes(marker))) return 'generated';
   if (r.app.length) {
     if (r.app.some((p) => frame.startsWith(p))) return null;
     return frame.split('.').slice(0, 2).join('.');

@@ -1001,6 +1001,7 @@ class AgentApiTest {
             JsonObject frames = status.getObject("codeFrames");
             assertThat(frames.getArray("appPackages").size()).isZero();
             assertThat(frames.getArray("frameworkPrefixes").get(0).asString()).isEqualTo("java.");
+            assertThat(frames.getArray("generatedMarkers").get(0).asString()).isEqualTo("$HibernateProxy");
             assertThat(status.has("jar")).isTrue();
         });
     }

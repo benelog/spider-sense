@@ -47,6 +47,16 @@ public record ExceptionChain(List<Cause> causes) {
             "io.grpc.", "org.jboss.");
 
     /**
+     * What a frame of a generated class holds, whatever its package (findings.adoc#code): a
+     * Hibernate proxy, a Spring CGLIB proxy, a ByteBuddy class, or a method whose position the JVM
+     * writes as {@code <generated>}. Such a class sits in the application's own package, but its
+     * frame is never the line that issued a statement or threw.
+     */
+    public static final List<String> GENERATED_MARKERS = List.of(
+            "$HibernateProxy", "$$SpringCGLIB$$", "$$EnhancerBySpringCGLIB$$", "$$FastClassBySpringCGLIB$$",
+            "$ByteBuddy$", "(<generated>)");
+
+    /**
      * One exception of the chain.
      *
      * @param type    the exception class, empty when the section had no header
@@ -151,8 +161,11 @@ public record ExceptionChain(List<Cause> causes) {
         return null;
     }
 
-    /** Whether a frame is none of the {@link #FRAMEWORK_PREFIXES}. */
+    /** Whether a frame is none of the {@link #FRAMEWORK_PREFIXES} and no {@link #generated} class's. */
     public static boolean notFramework(String frame) {
+        if (generated(frame)) {
+            return false;
+        }
         String lower = frame.toLowerCase(Locale.ROOT);
         for (String prefix : FRAMEWORK_PREFIXES) {
             if (lower.startsWith(prefix)) {
@@ -160,6 +173,16 @@ public record ExceptionChain(List<Cause> causes) {
             }
         }
         return true;
+    }
+
+    /** Whether a frame is a generated class's: it holds one of the {@link #GENERATED_MARKERS}. */
+    public static boolean generated(String frame) {
+        for (String marker : GENERATED_MARKERS) {
+            if (frame.contains(marker)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

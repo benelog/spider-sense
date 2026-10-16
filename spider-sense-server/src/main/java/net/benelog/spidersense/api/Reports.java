@@ -253,7 +253,7 @@ public final class Reports implements AutoCloseable {
         StatusSnapshot status = new StatusSnapshot(mode, endpoint, startedAt, clock.getAsLong(),
                 services.embeddedService(), tingles.slowRequestMs(), tingles.slowQueryMs(),
                 queries.responseBuckets(), tingles.ignored().patterns(), frames.appPackages(),
-                CodeFrames.FRAMEWORK_PREFIXES, config.jar(), config.retentionHours(),
+                CodeFrames.FRAMEWORK_PREFIXES, CodeFrames.GENERATED_MARKERS, config.jar(), config.retentionHours(),
                 config.retentionSpans(), config.maxSpansPerSecond(), database.storage(),
                 store == null ? 0 : store.writer().droppedBatches(), droppedSpans(),
                 store == null ? 0 : store.writer().queuedBatches(),

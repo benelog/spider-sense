@@ -466,7 +466,8 @@ The Overview's one frame per finding stays text, because the whole row is alread
 
 The error page's sample stack trace is a `<pre>` that folds the framework frames out of the way.
 A frame is the application's by the rules a finding's `code` follows (xref:findings.adoc#code[Code locations]).
-With `appPackages` set, a frame is the application's when it starts with one of them.
+A frame that holds one of `generatedMarkers`, a generated class's, is never the application's.
+With `appPackages` set, any other frame is the application's when it starts with one of them.
 Otherwise it is the application's unless it starts, case-insensitively, with one of `frameworkPrefixes`.
 The page reads those rules from `/api/status.codeFrames` (xref:api.adoc#status[Status]) rather than keeping a list of its own, so it never disagrees with the server.
 
@@ -477,7 +478,7 @@ The panel head has a toggle, *App frames* | *All*, which decides what is folded 
 *App frames* is the default.
 Under it, every run of two or more consecutive framework frames becomes one dimmed, italic line at the run's indentation, such as `⋯ 12 frames from org.springframework, org.apache`.
 The line gives the count, then the packages in order of first appearance, three at most and `+n` for the rest.
-A package is the framework prefix the frame matched, without its dot, or, under `appPackages`, the frame's first two segments.
+A package is `generated` for a generated class's frame, else the framework prefix the frame matched, without its dot, or, under `appPackages`, the frame's first two segments.
 A single framework frame between two application frames is not folded, since its fold line would be no shorter.
 A click on a fold line, or Enter, expands that run in place.
 The focus the line had moves to the run's first frame, so a keyboard user carries on from there rather than from the top of the page.
