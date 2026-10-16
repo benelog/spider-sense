@@ -10,6 +10,7 @@ A version on Central is permanent, so every step before the upload is a check th
 2. Edit by hand every file that writes the version out: `README.md`, `manual/antora.yml` (`project-version`, which every manual page reads), `skills/spider-sense/SKILL.md` (`metadata.version` and the plugin line in the table) and `skills/spider-sense/references/running.md`.
    `git grep -n '<old version>'` names them.
 3. Run `./gradlew build`, commit, and push to `main`.
+   When `protobufVersion` in `spider-sense-server/build.gradle` changed, run an application under the new jar on Java 25: once the four `sun.misc.Unsafe` warning lines no longer appear, drop their row from the table in [When it does not work](manual/modules/ROOT/pages/modes.adoc#when-it-does-not-work) and the sentence in Agent that points to it.
    If the UI, the API or the queries changed since the demo was recorded (the Docs build warns when they did), record it again with `scripts/demo-site.sh record`, and the agent demo with `scripts/agent-demo.sh record` for each agent and language, then `scripts/agent-demo.sh push` ([The published demo](manual/modules/ROOT/pages/design.adoc#the-published-demo)).
 4. Build the bundle, in two commands because nothing orders the plugin build's publish against the clean:
    ```bash

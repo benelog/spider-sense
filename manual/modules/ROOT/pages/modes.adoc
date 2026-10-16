@@ -48,6 +48,7 @@ Before the application's own output, the launcher prints one line on stdout:
 ----
 
 It names the UI, the service the telemetry carries, and the command that asks this Spider Sense from a terminal, with the jar's own absolute path.
+A few seconds later the JVM may print four `WARNING:` lines about `sun.misc.Unsafe` on stderr, which come from Spider Sense's receiver and are harmless (<<when-it-does-not-work,When it does not work>>).
 `-Dspidersense.port=4001` moves the UI when 4000 is taken, and the line's command then carries `--url=http://127.0.0.1:4001`, because the CLI asks port 4000 when it is not told otherwise.
 Spider Sense never prevents the application from starting: a failure in its own startup is logged to the application's stderr and swallowed.
 
@@ -357,6 +358,7 @@ A restart also writes an automatic `start` mark for the service, so `marks` show
 `--since=start` therefore means the current run.
 xref:marks-and-compare.adoc#marks[Marks] describes them.
 
+[#when-it-does-not-work]
 == When it does not work
 
 [cols="2,3",options="header"]
@@ -392,6 +394,9 @@ xref:marks-and-compare.adoc#marks[Marks] describes them.
 
 | The window is full of another run
 | Windows default to `15m`. Use `--since=start`, or mark a moment and use `--since=<mark>`.
+
+| Four `WARNING:` lines on stderr a few seconds after the start, beginning `A terminally deprecated method in sun.misc.Unsafe has been called` and naming `com.google.protobuf.UnsafeUtil (file:…/spider-sense-<user>/server-<version>-<crc>.jar)`
+| The protobuf library of Spider Sense's own OTLP receiver calls `sun.misc.Unsafe` when it decodes the first export, and the JVM warns about that from Java 24 on. The jar is the server the launcher extracted under `java.io.tmpdir`, in the application's JVM in agent mode and in the standalone's own. The warning is harmless, and `--sun-misc-unsafe-memory-access=allow` on the JVM's own command line silences it. `deny` replaces it with a warning of protobuf's own, which then runs without `Unsafe`, and it denies `Unsafe` to the application's libraries as well.
 |===
 
 When the application runs but Spider Sense collects nothing, the cause is in the configuration.
