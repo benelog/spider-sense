@@ -125,6 +125,27 @@ export function isUnreachable(e) {
   return !!e && e.name === 'UnreachableError';
 }
 
+const answerListeners = new Set();
+let answering = true;
+
+/**
+ * Calls `listener()` when a request is answered after one got no answer at all, such as the one
+ * Try again sends once the server is back (ui.adoc#not-answering). Returns what stops it.
+ */
+export function onAnsweringAgain(listener) {
+  answerListeners.add(listener);
+  return () => answerListeners.delete(listener);
+}
+
+function noteAnswer(answered) {
+  const again = answered && !answering;
+  answering = answered;
+  if (!again) return;
+  for (const listener of answerListeners) {
+    try { listener(); } catch (e) { console.error(e); }
+  }
+}
+
 /**
  * One request and its answer's text. `query` goes into the URL as compactQuery leaves it and
  * `body` is sent as JSON. A status outside 2xx throws an ApiError whose message is the server's
@@ -141,8 +162,10 @@ async function request(method, path, { query, body, accept = 'application/json' 
     res = await fetch(path + qs(query), init);
   } catch (e) {
     // fetch rejects only when no answer came at all; an HTTP error status is an answer.
+    noteAnswer(false);
     throw new UnreachableError(globalThis.location ? location.origin : '');
   }
+  noteAnswer(true);
   const text = await res.text();
   if (!res.ok) throw errorFrom(res, text);
   return text;

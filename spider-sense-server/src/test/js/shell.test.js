@@ -141,6 +141,36 @@ test('a link a page built once carries the service, the range and Live the top b
   follow('#/');
 });
 
+test('Try again after the server came back brings the foot and the service filter back with it (ui.adoc#not-answering)', async () => {
+  const served = globalThis.fetch;
+  const foot = () => document.getElementById('foot-mode').textContent;
+  const offered = () => document.getElementById('service-select').options.map((o) => o.textContent);
+  await settle(80);                  // the mock's answers still on their way, which a new read would share
+  globalThis.fetch = () => Promise.reject(new TypeError('Failed to fetch'));
+  try {
+    follow('#/errors');
+    await until(() => main().querySelector('.error-box'), 'the error box');
+    assert.equal(foot(), 'not answering');
+  } finally {
+    // The server is back, and knows a service it did not before.
+    globalThis.fetch = async (url, init) => {
+      const res = await served(url, init);
+      if (String(url).split('?')[0] !== '/api/services') return res;
+      const body = await res.json();
+      body.services.push({ name: 'late-service' });
+      return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+    };
+  }
+  try {
+    main().querySelector('.error-box button').click();
+    await until(() => offered().includes('late-service'), 'the service filter');
+    await until(() => foot() !== 'not answering', 'the foot');
+  } finally {
+    globalThis.fetch = served;
+    follow('#/');
+  }
+});
+
 /** A key pressed on the page, outside any field. */
 function press(key) {
   const event = { key, target: document.body, preventDefault() {} };

@@ -292,6 +292,7 @@ A change of filter, range or page is no tick, and always loads at once.
 A request that gets no answer at all, because the Spider Sense the page came from has stopped, shows an error box headed `Not answering`.
 It says `Spider Sense at <origin> is not answering. Start it again and reload, or try again.`, with the page's own origin, and carries a *Try again* button.
 The sidebar foot's mode reads `not answering` until the status answers again.
+The first answer after a request that got none, such as the one *Try again* sends once the server is back, makes the shell read `/api/status` and `/api/services` again, so the foot and the service filter come back with the server.
 A refusal, an answer with an error status, keeps the `Request failed` heading and the server's sentence.
 
 [#numbers-and-times]

@@ -123,6 +123,15 @@ function carryQuery() {
 
 let knownServices = [];
 
+/** Reads the services the service filter offers; a failure leaves the filter as it is. */
+function loadServices() {
+  return api.services().then((res) => {
+    const names = (res.services || []).map((s) => s.name);
+    ui.seedServices(names);
+    fillServiceSelect(names);
+  }).catch(() => {});
+}
+
 /**
  * The service filter's options: every known service, and the one the URL names when it is none
  * of them, as `<name> (not seen)`, so a filter that matches nothing stays visible and can be cleared.
@@ -389,13 +398,7 @@ function connectEvents() {
     shell.rateReadout.title = 'Spans per second, and ' + fmt.rate(perSecond.logs || 0) + ' logs/s';
     noteDroppedSpans(data.droppedSpans);
   });
-  events.addEventListener('service', () => {
-    api.services().then((res) => {
-      const names = (res.services || []).map((s) => s.name);
-      ui.seedServices(names);
-      fillServiceSelect(names);
-    }).catch(() => {});
-  });
+  events.addEventListener('service', () => loadServices());
   events.onerror = () => { /* the browser retries on its own */ };
 }
 
@@ -494,6 +497,10 @@ async function boot() {
 
   for (const { pattern } of PAGES) router.register(pattern);
 
+  // A server that did not answer, at boot or since, is read again once it does, whichever
+  // request finds it back: the foot and the service filter come back with it (ui.adoc#not-answering).
+  api.onAnsweringAgain(() => { freshStatus(); loadServices(); });
+
   try {
     await api.refreshStatus();
     paintFoot();
@@ -501,12 +508,8 @@ async function boot() {
     noteStatusFailure(e);
   }
 
-  try {
-    const res = await api.services();
-    const names = (res.services || []).map((s) => s.name);
-    ui.seedServices(names);
-    fillServiceSelect(names);
-  } catch (e) { /* the page will show its own error */ }
+  // A failure leaves the filter on All services; the page shows its own error.
+  await loadServices();
 
   router.start(onRoute);
   connectEvents();
