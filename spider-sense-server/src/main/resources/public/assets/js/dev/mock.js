@@ -1824,6 +1824,13 @@ shimFetch(async (url, method, init) => {
     tingles.length = 0;
     acks.clear();
     spanTotal = 0;
+    // Every mark goes but each service's newest start, as on the server (api.adoc#data).
+    const starts = new Map();
+    for (const mk of marks) {
+      const kept = starts.get(mk.service);
+      if (mk.name === 'start' && (!kept || mk.at > kept.at)) starts.set(mk.service, mk);
+    }
+    marks.splice(0, marks.length, ...starts.values());
     return new Response(null, { status: 204 });
   }
 

@@ -382,8 +382,10 @@ The mock under `dev/` counts toward that, since it is served too.
 [#mock]
 === The mock
 
-`?mock=1` loads `assets/js/dev/mock.js`, which answers every endpoint of xref:api.adoc[the HTTP API], so every page can be developed without a server.
+`?mock=1` loads `assets/js/dev/mock.js`, which answers every endpoint of xref:api.adoc[the HTTP API] the UI asks for, so every page can be developed without a server.
 That includes `/api/map`, `/api/scatter`, `/api/findings`, `+/api/findings/{id}+`, `/api/marks` (`GET` and `POST`), `/api/compare`, `/api/source`, `ErrorGroup.series`, `/api/status.codeFrames` and `jar`, the histograms, and the connection pools.
+`DELETE /api/data` deletes the mock's traces, logs, tingles, notes and marks, and keeps each service's newest `start` mark, as the server does.
+The endpoints the UI never asks for, `/api/check`, `POST /api/sql` and `POST /api/import`, are not mocked.
 Under the mock every source frame resolves, under a made-up project directory.
 The mock has no text renderer: a `format=text` request answers a stand-in naming the path, with the JSON in a fenced block.
 

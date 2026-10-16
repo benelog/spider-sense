@@ -62,3 +62,17 @@ test('a database span\'s summary is the operation and the table, as the server w
   assert.ok(summaries.length > 0, 'a trace with a database span');
   for (const s of summaries) assert.match(s, /^[A-Z]+ \w+$/, s);
 });
+
+// Last, since it clears what the tests above read.
+test('Clear data deletes the marks but each service\'s newest start mark, as DELETE /api/data does (api.adoc#data)', async () => {
+  const post = (body) => fetch('/api/marks', { method: 'POST', body: JSON.stringify(body) });
+  await post({ name: 'start', service: 'silk-bookstore', at: Date.now() - 1000 });
+  await post({ name: 'checkpoint' });
+  const before = (await get('/api/marks')).body.marks;
+  assert.ok(before.filter((mk) => mk.name === 'start' && mk.service === 'silk-bookstore').length >= 2);
+  assert.equal((await fetch('/api/data', { method: 'DELETE' })).status, 204);
+  const after = (await get('/api/marks')).body.marks;
+  assert.deepEqual(after.map((mk) => [mk.name, mk.service]).sort(), [['start', 'silk-bookstore'], ['start', 'spring-orders']]);
+  const newest = before.filter((mk) => mk.name === 'start' && mk.service === 'silk-bookstore').sort((a, b) => b.at - a.at)[0];
+  assert.equal(after.find((mk) => mk.service === 'silk-bookstore').id, newest.id);
+});
