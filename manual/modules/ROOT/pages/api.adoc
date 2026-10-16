@@ -377,9 +377,11 @@ Its numbers are the `ServiceSummary` numbers.
 `kind` is `db`, `http`, `messaging` or `rpc`, and `name` is the dependency's `target`.
 An edge runs from each service that calls it.
 A root `CLIENT` or `PRODUCER` span, such as a traced load generator's request, is a call too, so a service whose requests go to a host nobody traces is on the map with that host, and has it among its `dependencies`.
-An outbound span whose child is an entry span called a traced service, so it is no external target.
+An outbound span whose child is a `SERVER` or `CONSUMER` span called a traced service, so it is no external target.
 A call to another service counts as that `service → service` edge: a call to `localhost:8081` therefore shows as a call to `silk-bookstore` when the bookstore is traced too.
 A call a service makes to itself, such as a job calling its own endpoint, counts as nothing, since no edge runs from a service to itself.
+A call to an ignored endpoint of a traced service (xref:configuration.adoc#ignored-endpoints[Ignored endpoints]) counts as nothing too, since that endpoint answered no request.
+An ignored endpoint's own span is a request the service answered rather than a call it made, so it is neither a dependency nor an edge: a health check never shows as a call to the service's own host and port.
 * A node with no edge is not listed, so a service whose only traffic is calls to itself does not appear.
 * A parent is "not stored" only when it is absent from the database, whatever the window.
 A parent that was traced but starts before the window still counts as a traced caller, not as a user.

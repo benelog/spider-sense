@@ -390,6 +390,39 @@ class QueriesTest {
                 .containsExactly("svc:inventory -> db:h2:inventory");
     }
 
+    /**
+     * A health check a service answers is an ignored SERVER span, written with {@code entry}
+     * false: no call the service made, and a traced caller's call to it is no external host.
+     */
+    @Test
+    void anIgnoredEndpointIsNoDependencyAndNoHostOnTheMap() {
+        Span.Builder[] served = new Span.Builder[4];
+        served[0] = Otlp.span(traceId(1), spanId(1), "GET /orders", Span.SpanKind.SPAN_KIND_SERVER, NOW, 10,
+                Otlp.attr("http.request.method", "GET"), Otlp.attr("http.route", "/orders"));
+        for (int n = 2; n <= 4; n++) {
+            served[n - 1] = Otlp.span(traceId(n), spanId(n), "GET /health", Span.SpanKind.SPAN_KIND_SERVER,
+                    NOW + n, 3, Otlp.attr("http.request.method", "GET"), Otlp.attr("http.route", "/health"),
+                    Otlp.attr("server.address", "localhost"), Otlp.attr("server.port", 8083));
+        }
+        decoder.ingest(Otlp.traces(Otlp.service("warehouse"), served));
+        Span.Builder poll = Otlp.span(traceId(5), spanId(5), "GET", Span.SpanKind.SPAN_KIND_CLIENT, NOW + 5, 5,
+                Otlp.attr("http.request.method", "GET"), Otlp.attr("url.full", "http://localhost:8083/health"),
+                Otlp.attr("server.address", "localhost"), Otlp.attr("server.port", 8083));
+        Span.Builder health = Otlp.child(poll, spanId(6), "GET /health", Span.SpanKind.SPAN_KIND_SERVER,
+                NOW + 6, 3, Otlp.attr("http.request.method", "GET"), Otlp.attr("http.route", "/health"),
+                Otlp.attr("server.address", "localhost"), Otlp.attr("server.port", 8083));
+        decoder.ingest(Otlp.traces(
+                Otlp.resourceSpans(Otlp.service("load-gen"), poll),
+                Otlp.resourceSpans(Otlp.service("warehouse"), health)));
+        flush();
+
+        assertThat(queries.dependencies("warehouse", window)).isEmpty();
+        Stats.ServiceMap map = queries.map(window);
+        assertThat(map.nodes()).extracting(Stats.Node::id).noneMatch(id -> id.startsWith("http:"));
+        assertThat(map.edges()).extracting(edge -> edge.from() + " -> " + edge.to() + " " + edge.calls())
+                .containsExactly("user -> svc:warehouse 1");
+    }
+
     /** A traced load generator's requests are root CLIENT spans to a host nobody traces. */
     @Test
     void aServiceWhoseRequestsAreRootCallsIsOnTheMapWithWhatItCalls() {

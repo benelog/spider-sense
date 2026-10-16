@@ -1348,11 +1348,14 @@ public final class Queries {
      * one, grouped by the service that called and what it called, with no cap
      * (storage.adoc#reads).
      *
-     * <p>A root {@code CLIENT} or {@code PRODUCER} span is one too: an entry span, as a traced
-     * load generator's request is, and a call all the same. The spans are read one by one,
-     * because the target of an HTTP call, a queue or an RPC service lives in the
-     * attributes ({@link #target}); a database's is two columns, so its attributes are left
-     * unread. A group keeps the duration of each call and the count of the failed ones,
+     * <p>An outbound span is one of any kind but {@code SERVER} and {@code CONSUMER}, chosen by
+     * kind rather than by the {@code entry} flag, because an ignored endpoint's span is written
+     * with {@code entry} false and is still a request the service answered, not a call it made
+     * (configuration.adoc#ignored-endpoints). A root {@code CLIENT} or {@code PRODUCER} span is
+     * one too: an entry span, as a traced load generator's request is, and a call all the same.
+     * The spans are read one by one, because the target of an HTTP call, a queue or an RPC
+     * service lives in the attributes ({@link #target}); a database's is two columns, so its
+     * attributes are left unread. A group keeps the duration of each call and the count of the failed ones,
      * and nothing of the span.
      *
      * @param skipped the outbound spans to leave out, by {@link Ancestry#key}
@@ -1360,7 +1363,7 @@ public final class Queries {
     private Map<CallerKey, Calls> dependencyCalls(Window window, @Nullable String service,
             Set<String> skipped) {
         Where where = Where.window(window, service)
-                .and("(NOT entry OR kind IN ('CLIENT', 'PRODUCER'))")
+                .and("kind NOT IN ('SERVER', 'CONSUMER')")
                 .and("category IN " + DEPENDENCY_CATEGORIES);
         Map<CallerKey, Calls> byCaller = new LinkedHashMap<>();
         sql.forEach("SELECT trace_id, span_id, parent_span_id, service, name, kind, start_ns, duration_ns,"
@@ -2018,9 +2021,10 @@ public final class Queries {
 
     /**
      * The databases, hosts and queues every service calls, and one edge per caller.
-     * An outbound span whose child is an entry span called a traced service, and is
-     * left out: a call to another service is already a {@code service → service} edge,
-     * and a call a service makes to itself is no edge at all. They are keyed by trace
+     * An outbound span whose child is a {@code SERVER} or {@code CONSUMER} span called a
+     * traced service, and is left out: a call to another service is already a
+     * {@code service → service} edge, a call a service makes to itself is no edge at all,
+     * and neither is a call to an ignored endpoint, which is no request. They are keyed by trace
      * id and span id together, as {@link Ancestry} keys a span: a span id is unique
      * within its trace only.
      */
@@ -2028,7 +2032,7 @@ public final class Queries {
         Set<String> toTracedServices = new HashSet<>(sql.query(
                 "SELECT DISTINCT c.trace_id, c.parent_span_id FROM span c JOIN span p"
                         + " ON p.trace_id = c.trace_id AND p.span_id = c.parent_span_id"
-                        + " WHERE c.start_ms BETWEEN ? AND ? AND c.entry",
+                        + " WHERE c.start_ms BETWEEN ? AND ? AND c.kind IN ('SERVER', 'CONSUMER')",
                 List.of(window.from(), window.to()),
                 rs -> Ancestry.key(rs.getString(1), rs.getString(2))));
 

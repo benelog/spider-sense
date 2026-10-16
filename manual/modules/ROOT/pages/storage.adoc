@@ -333,8 +333,9 @@ The response-time histogram is four more `SUM(CASE WHEN NOT error AND duration_n
 Apdex is arithmetic over them in Java.
 * Time series: `GROUP BY start_ms / :bucket` for counts, errors, histogram buckets and percentiles per bucket.
 * The service map: `service → service` edges are one self-join, `span c JOIN span p ON p.trace_id = c.trace_id AND p.span_id = c.parent_span_id WHERE c.entry AND p.service <> c.service`, grouped by the two services.
-The external targets reuse the dependency scan, minus the outbound spans whose child is an entry span: a call to another service, which that self-join counts, or to the service's own endpoint, which is no edge.
+The external targets reuse the dependency scan, minus the outbound spans whose child is a `SERVER` or `CONSUMER` span: a call to another service, which that self-join counts, to the service's own endpoint, which is no edge, or to an ignored endpoint, which is no request.
 The dependency scan, which a service's `dependencies` read too, is every outbound span of the window, with no cap, read row by row because the target of an HTTP call, a queue or an RPC service lives in the attributes.
+An outbound span is one of a dependency category whose kind is neither `SERVER` nor `CONSUMER`, chosen by kind rather than by `entry`, because an ignored endpoint's span has `entry` false and is still a request the service answered.
 A database's target is its `db_system` and `db_namespace` columns, so a database span's attributes are not read.
 A group keeps the duration of each call and the number that failed, which is what its percentiles need, so a busy window costs a number per call rather than a span.
 * A trace: `SELECT ... FROM span WHERE trace_id = ? ORDER BY start_ns, span_id`, plus its logs.
