@@ -189,6 +189,27 @@ class CheckTest {
         assertThat(result.pass()).isTrue();
     }
 
+    /**
+     * A health check's slow validation query is no {@code slow-query} finding, and the
+     * whole-window {@code --max-slow-queries} counts what that rule counts.
+     */
+    @Test
+    void anIgnoredEndpointsSlowStatementsCountToNoSlowQueryRule() {
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), FindingsTest.failingHealthChecks(12)));
+        Span.Builder order = entry("/orders/{id}", 300);
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), order, query(order, 200, NOW)));
+        flush();
+
+        Check.RuleCheck all = rule(check.check(window, null, null, Map.of(Check.MAX_SLOW_QUERIES, 0.0)),
+                Check.MAX_SLOW_QUERIES);
+        Check.RuleCheck orders = rule(check.check(window, null, "GET /orders/{id}",
+                Map.of(Check.MAX_SLOW_QUERIES, 0.0)), Check.MAX_SLOW_QUERIES);
+
+        assertThat(all.actual()).isEqualTo(1.0);
+        assertThat(all.detail()).isEqualTo("1 call over 100 ms");
+        assertThat(orders.actual()).isEqualTo(1.0);
+    }
+
     /** A statement run slow by one endpoint does not count against another that runs it fast. */
     @Test
     void anEndpointsSlowQueriesAreTheOnesItsOwnRequestsMade() {

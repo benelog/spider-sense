@@ -43,7 +43,7 @@ A value counts every group and every finding of the window, never the top of a l
 
 | `--max-slow-queries`
 | none
-| Query calls over `slow.query.ms`; with `--endpoint`, the ones that endpoint's own requests made, as `--max-queries-per-request` counts them.
+| Query calls over `slow.query.ms`, leaving out the statements of an ignored endpoint's trace as the `slow-query` finding does (xref:configuration.adoc#ignored-endpoints[Ignored endpoints]); with `--endpoint`, the ones that endpoint's own requests made, as `--max-queries-per-request` counts them.
 
 | `--max-n-plus-one`
 | `0`

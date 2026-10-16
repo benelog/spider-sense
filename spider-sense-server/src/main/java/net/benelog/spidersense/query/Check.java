@@ -201,10 +201,9 @@ public final class Check {
             case MAX_SLOW_QUERIES -> {
                 long slow = 0;
                 if (endpoint == null) {
-                    for (Stats.QueryStats query
-                            : queries.queryGroups(window, service, "total", Queries.ALL_GROUPS, null)) {
-                        slow += query.slowCalls();
-                    }
+                    // Over the spans the slow-query rule reads: an ignored endpoint's
+                    // statements are no finding and no verdict (configuration.adoc#ignored-endpoints).
+                    slow = queries.slowStatements(window, service);
                 } else {
                     // The slow calls the endpoint's own requests made, by the join
                     // --max-queries-per-request reads, not every slow call of a statement

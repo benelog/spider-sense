@@ -602,6 +602,17 @@ public final class Queries {
     }
 
     /**
+     * The statements of the window slower than {@code slow.query.ms}, counted over the spans
+     * no ignored endpoint ran, as the {@code slow-query} rule reads them: what
+     * {@code check --max-slow-queries} counts over the whole window (check.adoc#rules).
+     */
+    long slowStatements(Window window, @Nullable String service) {
+        Where where = Where.window(window, service).and("query_id IS NOT NULL")
+                .and(SpanSql.slowerThan(tingles.slowQueryMs())).and(SpanSql.NOT_IGNORED);
+        return sql.count("SELECT COUNT(*) FROM span WHERE " + where.sql(), where.params());
+    }
+
+    /**
      * The query groups alone: the aggregate, with no callers and no schema block.
      *
      * <p>What a finding's state needs from the previous run, where only which groups

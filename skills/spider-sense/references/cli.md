@@ -486,7 +486,7 @@ Rules and the value each one measures:
 | `--max-errors` | error groups' occurrences summed |
 | `--max-error-rate` | failed entry spans over entry spans |
 | `--max-queries-per-request` | database spans per entry span, the highest of any endpoint |
-| `--max-slow-queries` | query calls over `slow.query.ms`; with `--endpoint`, the ones that endpoint's own requests made |
+| `--max-slow-queries` | query calls over `slow.query.ms`, an ignored endpoint's trace left out; with `--endpoint`, the ones that endpoint's own requests made |
 | `--max-n-plus-one` | `n-plus-one` and `n-plus-one-http` findings |
 | `--max-log-errors` | `log-error` findings' uncovered records summed |
 | `--max-regressions` | `regression` findings: resolved findings that came back; `0` in the default set |
