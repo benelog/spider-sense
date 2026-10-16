@@ -162,7 +162,7 @@ public final class Check {
                 }
                 double actual = worst == null ? 0 : worst.p95Ms();
                 String detail = worst == null ? "no endpoint in the window"
-                        : worst.name() + " p95 " + Numbers.millis(worst.p95Ms()) + " over "
+                        : worst.name() + " p95 " + Numbers.apart(actual, limit, 1) + " ms over "
                                 + Numbers.plural(worst.calls(), "call");
                 yield atMost(rule, limit, actual, detail);
             }
@@ -177,7 +177,8 @@ public final class Check {
             case MAX_ERROR_RATE -> {
                 double actual = requests == 0 ? 0 : (double) errors / requests;
                 yield atMost(rule, limit, actual, errors + " of "
-                        + Numbers.plural(requests, "request") + " failed (" + Numbers.percent(actual) + ")");
+                        + Numbers.plural(requests, "request") + " failed ("
+                        + Numbers.apart(actual * 100, limit * 100, 1) + "%)");
             }
             case MAX_QUERIES_PER_REQUEST -> {
                 Map<String, Queries.DbWork> byEndpoint = queries.databaseWork(window, service);
@@ -192,7 +193,7 @@ public final class Check {
                     }
                 }
                 String detail = worst == null ? "no endpoint in the window"
-                        : worst.name() + " runs " + Numbers.number(actual)
+                        : worst.name() + " runs " + Numbers.apart(actual, limit, 1)
                                 + " database calls per request";
                 yield atMost(rule, limit, actual, detail);
             }
@@ -258,7 +259,7 @@ public final class Check {
             case MIN_APDEX -> {
                 Double apdex = apdex(endpoints, endpoint, totals);
                 String detail = apdex == null ? "no request to score"
-                        : "Apdex " + Numbers.score(apdex) + " over "
+                        : "Apdex " + Numbers.apart(apdex, limit, 3) + " over "
                                 + Numbers.plural(requests, "request");
                 boolean pass = apdex == null || apdex >= limit;
                 yield new RuleCheck(rule, limit, apdex, pass, detail);

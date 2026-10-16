@@ -334,6 +334,29 @@ class TextTest {
         assertThat(Text.check(one, WINDOW, null, null)).contains("1 request)\n\n| rule |");
     }
 
+    /**
+     * A limit reads as it was given, an error rate as a percentage, and an actual value that is
+     * not its limit with the decimals that tell the two apart, so no rule fails beside its limit.
+     */
+    @Test
+    void aChecksActualValueNeverReadsAsItsLimitUnlessItIsIt() {
+        Check.CheckResult result = new Check.CheckResult(false, 2_500, null, List.of(
+                new Check.RuleCheck(Check.MAX_QUERIES_PER_REQUEST, 1, 1.04, false, "q"),
+                new Check.RuleCheck(Check.MAX_ERROR_RATE, 0, 1.0 / 2_500, false, "e"),
+                new Check.RuleCheck(Check.MIN_APDEX, 0.9, 0.8999, false, "a"),
+                new Check.RuleCheck(Check.MAX_P95_MS, 500, 500.0, true, "p"),
+                new Check.RuleCheck(Check.MAX_P95_MS, 300, 1_202.5, false, "s"),
+                new Check.RuleCheck(Check.MAX_ERROR_RATE, 0.0005, 0.0004, true, "r")));
+
+        assertThat(rows(Text.check(result, WINDOW, null, null))).containsSubsequence(
+                "| maxQueriesPerRequest | 1 | 1.04 | fail | q |",
+                "| maxErrorRate | 0.0% | 0.04% | fail | e |",
+                "| minApdex | 0.900 | 0.8999 | fail | a |",
+                "| maxP95Ms | 500 | 500 | pass | p |",
+                "| maxP95Ms | 300 | 1,202.5 | fail | s |",
+                "| maxErrorRate | 0.05% | 0.0% | pass | r |");
+    }
+
     @Test
     void theSmallPiecesOfAHeading() {
         assertThat(Text.plural(1, "request")).isEqualTo("1 request");

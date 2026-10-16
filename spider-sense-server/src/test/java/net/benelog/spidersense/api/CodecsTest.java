@@ -7,8 +7,10 @@ import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
+import net.benelog.spidersense.query.Check;
 import net.benelog.spidersense.query.MetricQueries;
 import net.benelog.spidersense.store.MetricPoint;
+import net.benelog.silkjson.JsonArray;
 import net.benelog.silkjson.JsonObject;
 
 /**
@@ -20,6 +22,19 @@ class CodecsTest {
     @Test
     void aDurationIsRoundedToThreeDecimals() {
         assertThat(Codecs.round(12.34567)).isEqualTo(12.346);
+    }
+
+    /** A check's limit and actual value are unrounded, so a rule failing by a hair never reads as its limit. */
+    @Test
+    void aChecksLimitAndActualValueAreNotRounded() {
+        JsonArray checks = Codecs.checkResult(new Check.CheckResult(false, 2_500, null, List.of(
+                new Check.RuleCheck(Check.MAX_ERROR_RATE, 0.0005, 0.0004, true, "r"),
+                new Check.RuleCheck(Check.MIN_APDEX, 0.9, null, true, "a"))))
+                .getArray("checks");
+
+        assertThat(checks.get(0).asObject().getDouble("limit")).isEqualTo(0.0005);
+        assertThat(checks.get(0).asObject().getDouble("actual")).isEqualTo(0.0004);
+        assertThat(checks.get(1).asObject().get("actual").isNull()).as("no request to score").isTrue();
     }
 
     @Test

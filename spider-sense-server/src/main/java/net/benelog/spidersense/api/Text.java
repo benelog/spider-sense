@@ -813,24 +813,39 @@ final class Text {
         }
         table(text, List.of("rule", "limit", "actual", "verdict", "detail"));
         for (Check.RuleCheck check : result.checks()) {
+            Double actual = check.actual();
             row(text, List.of(check.rule(), threshold(check.rule(), check.limit()),
-                    check.actual() == null ? "—" : threshold(check.rule(), check.actual()),
+                    actual == null ? "—" : actual(check.rule(), actual, check.limit()),
                     check.pass() ? "pass" : "fail", check.detail()));
         }
         return text.toString();
     }
 
     /**
-     * A rule's limit and its actual value, said as that rule means them: an Apdex
-     * is a score, a count of errors is a count, and a millisecond threshold is a
-     * number rather than {@code 500.0}.
+     * A rule's limit as it was given, said as that rule means it: an Apdex is a
+     * score, an error rate a percentage as every rate is, and a count or a
+     * millisecond threshold a number rather than {@code 500.0}.
      */
-    private static String threshold(String rule, double value) {
-        if (Check.MIN_APDEX.equals(rule) || Check.MAX_ERROR_RATE.equals(rule)) {
-            return Numbers.score(value);
+    private static String threshold(String rule, double limit) {
+        if (Check.MAX_ERROR_RATE.equals(rule)) {
+            return Numbers.exactly(limit * 100, 1) + "%";
         }
-        return value == Math.rint(value) && Math.abs(value) < 1e12
-                ? Numbers.count((long) value) : Numbers.number(value);
+        return Numbers.exactly(limit, Check.MIN_APDEX.equals(rule) ? 3 : 0);
+    }
+
+    /**
+     * A rule's actual value, said as its limit is, with as many more decimals as it
+     * takes to read differently from the limit when it is not equal to it: a rule
+     * never fails beside a value that reads as its limit.
+     */
+    private static String actual(String rule, double actual, double limit) {
+        if (Check.MAX_ERROR_RATE.equals(rule)) {
+            return Numbers.apart(actual * 100, limit * 100, 1) + "%";
+        }
+        if (Check.MIN_APDEX.equals(rule)) {
+            return Numbers.apart(actual, limit, 3);
+        }
+        return Numbers.apart(actual, limit, actual == Math.rint(actual) ? 0 : 1);
     }
 
     // --- lists ----------------------------------------------------------------

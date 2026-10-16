@@ -924,9 +924,15 @@ public final class Codecs {
     static JsonObject checkResult(Check.CheckResult result) {
         JsonArray checks = Json.array();
         for (Check.RuleCheck check : result.checks()) {
-            JsonObject object = Json.object().put("rule", check.rule());
-            put(object, "limit", check.limit());
-            put(object, "actual", check.actual());
+            // Unrounded, unlike a duration: a rule that fails by less than a thousandth, an error
+            // rate of 0.0004 over a limit of 0, must not read as its limit beside pass: false.
+            JsonObject object = Json.object().put("rule", check.rule()).put("limit", check.limit());
+            Double actual = check.actual();
+            if (actual == null || !Double.isFinite(actual)) {
+                object.putNull("actual");
+            } else {
+                object.put("actual", actual.doubleValue());
+            }
             checks.add(object.put("pass", check.pass()).put("detail", check.detail()));
         }
         JsonObject object = Json.object();

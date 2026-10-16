@@ -92,6 +92,32 @@ class CheckTest {
         assertThat(rule(result, Check.MAX_ERRORS).pass()).isTrue();
     }
 
+    /** A rule that fails by less than the usual decimal says by how much, rather than the limit. */
+    @Test
+    void aRuleThatFailsByAHairSaysTheDecimalsThatTellItFromItsLimit() {
+        List<Span.Builder> spans = new ArrayList<>();
+        for (int i = 0; i < 25; i++) {
+            Span.Builder request = entry("/items", 10);
+            spans.add(i == 0 ? Otlp.failing(request, "java.lang.IllegalStateException", "gone",
+                    "at items.Items.get(Items.java:1)") : request);
+            spans.add(query(request, 2, NOW + i));
+        }
+        spans.add(query(spans.get(0), 2, NOW + 30));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), spans.toArray(new Span.Builder[0])));
+        flush();
+
+        Check.CheckResult result = check.check(window, null, null,
+                Map.of(Check.MAX_QUERIES_PER_REQUEST, 1.0, Check.MAX_ERROR_RATE, 0.0399));
+
+        Check.RuleCheck perRequest = rule(result, Check.MAX_QUERIES_PER_REQUEST);
+        assertThat(perRequest.actual()).isEqualTo(1.04);
+        assertThat(perRequest.pass()).isFalse();
+        assertThat(perRequest.detail()).isEqualTo("GET /items runs 1.04 database calls per request");
+        Check.RuleCheck rate = rule(result, Check.MAX_ERROR_RATE);
+        assertThat(rate.pass()).isFalse();
+        assertThat(rate.detail()).isEqualTo("1 of 25 requests failed (4.00%)");
+    }
+
     @Test
     void everyRuleGivenIsEvaluatedAndNoOther() {
         decoder.ingest(Otlp.traces(Otlp.service("orders"),

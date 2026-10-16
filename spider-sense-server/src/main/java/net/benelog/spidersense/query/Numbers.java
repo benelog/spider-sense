@@ -1,5 +1,6 @@
 package net.benelog.spidersense.query;
 
+import java.math.BigDecimal;
 import java.util.Locale;
 
 import org.jspecify.annotations.Nullable;
@@ -15,6 +16,9 @@ import org.jspecify.annotations.Nullable;
  * between two runs on two machines.
  */
 public final class Numbers {
+
+    /** The most decimals a limit, or a value judged against one, is said with. */
+    private static final int MOST_DECIMALS = 12;
 
     private Numbers() {
     }
@@ -54,5 +58,39 @@ public final class Numbers {
     /** {@code 0.931}, the way an Apdex is written; {@code null} is a dash. */
     public static String score(@Nullable Double value) {
         return finite(value) ? String.format(Locale.US, "%.3f", value) : "—";
+    }
+
+    /**
+     * {@code 1,532.45}: a value with {@code decimals} decimals and a thousands separator, and with
+     * as many more as it takes, up to twelve, to read differently from {@code limit} when it is not
+     * equal to it. 26 calls over 25 requests is {@code 1.04} beside a limit of 1, never the
+     * {@code 1.0} that would read as the limit beside a fail (check.adoc#text-rendering).
+     */
+    public static String apart(double value, double limit, int decimals) {
+        if (!Double.isFinite(value)) {
+            return "—";
+        }
+        int places = decimals;
+        while (value != limit && places < MOST_DECIMALS && fixed(value, places).equals(fixed(limit, places))) {
+            places++;
+        }
+        return fixed(value, places);
+    }
+
+    /**
+     * A limit as it was given: at least {@code decimals} decimals, and as many more as the value
+     * has, up to twelve, so a limit of {@code 0.0005} is never said as {@code 0.001}.
+     */
+    public static String exactly(double value, int decimals) {
+        if (!Double.isFinite(value)) {
+            return "—";
+        }
+        int places = Math.min(MOST_DECIMALS,
+                Math.max(decimals, BigDecimal.valueOf(value).stripTrailingZeros().scale()));
+        return fixed(value, places);
+    }
+
+    private static String fixed(double value, int places) {
+        return String.format(Locale.US, "%,." + places + "f", value);
     }
 }
