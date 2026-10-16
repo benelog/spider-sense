@@ -96,6 +96,34 @@ class WriterTest {
     }
 
     /**
+     * {@code tail --until-traces} waits for arrivals: a trace counts once, when its row is
+     * inserted, however many exports carry its spans, and a sweep that deletes it does not
+     * take it back, as it does the store's row count.
+     */
+    @Test
+    void aTraceIsCountedAsIngestedOnceAndASweepDoesNotUncountIt() {
+        Span.Builder root = Otlp.span("%032x".formatted(1), "%016x".formatted(1), "GET /orders",
+                Span.SpanKind.SPAN_KIND_SERVER, AT, 50);
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), root));
+        store.writer().awaitIdle(5_000);
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), root));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), Otlp.child(root, "%016x".formatted(2), "SELECT",
+                Span.SpanKind.SPAN_KIND_CLIENT, AT + 1, 1)));
+        store.writer().awaitIdle(5_000);
+        assertThat(store.events().tracesIngested()).as("one trace in three exports").isEqualTo(1);
+
+        // AT is years before the wall clock the store's retention counts back from.
+        store.sweeper().sweep();
+        assertThat(store.sql().count("SELECT COUNT(*) FROM trace", List.of())).isZero();
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), Otlp.span("%032x".formatted(2), "%016x".formatted(3),
+                "GET /orders", Span.SpanKind.SPAN_KIND_SERVER, System.currentTimeMillis(), 5)));
+        store.writer().awaitIdle(5_000);
+
+        assertThat(store.sql().count("SELECT COUNT(*) FROM trace", List.of())).isEqualTo(1);
+        assertThat(store.events().tracesIngested()).isEqualTo(2);
+    }
+
+    /**
      * The UI answers a {@code service} event by asking {@code /api/services}, which reads
      * the {@code service} table: the event goes out once the flush that inserted the row
      * has committed, and only for that flush.

@@ -173,6 +173,26 @@ class TailTest {
                 .doesNotContain("after the count grew");
     }
 
+    /**
+     * A sweep between two frames lowers the store's count of traces, and the arrivals still count:
+     * the watch compares the count of traces the server ingested, which nothing takes back.
+     */
+    @Test
+    void untilTracesCountsArrivalsThatASweepBetweenTwoFramesHides() throws IOException {
+        String stream = """
+                event: stats
+                data: {"at":1,"spans":32,"traces":5,"logs":0,"droppedSpans":0,"tracesIngested":5}
+
+                event: stats
+                data: {"at":2,"spans":7,"traces":1,"logs":0,"droppedSpans":0,"tracesIngested":6}
+
+                """;
+        try (PrintStream toOut = new PrintStream(new ByteArrayOutputStream(), true, UTF_8)) {
+            assertThat(Tail.read(new ByteArrayInputStream(stream.getBytes(UTF_8)),
+                    new Tail.Watch(null, null, 1L, null, false), toOut)).isTrue();
+        }
+    }
+
     /** Zero new traces is what the first stats already shows, so the watch ends there, on an idle server too. */
     @Test
     void untilZeroTracesEndsAtTheFirstStats() {

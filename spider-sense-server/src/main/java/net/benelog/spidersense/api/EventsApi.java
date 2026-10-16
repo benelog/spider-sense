@@ -149,12 +149,13 @@ public final class EventsApi {
         }
     }
 
-    record Counts(long spans, long traces, long logs, long droppedSpans) {
+    /** @param tracesIngested {@link EventBus#tracesIngested()}, which a sweep does not lower */
+    record Counts(long spans, long traces, long logs, long droppedSpans, long tracesIngested) {
     }
 
     private Counts counts() {
         return new Counts(queries.spanCount(), queries.traceCount(), queries.logCount(),
-                store.droppedSpans());
+                store.droppedSpans(), store.events().tracesIngested());
     }
 
     /**
@@ -168,6 +169,7 @@ public final class EventsApi {
                 .put("traces", current.traces())
                 .put("logs", current.logs())
                 .put("droppedSpans", current.droppedSpans())
+                .put("tracesIngested", current.tracesIngested())
                 .put("perSecond", Json.object()
                         .put("spans", Codecs.round(Math.max(0, current.spans() - previous.spans()) / seconds))
                         .put("logs", Codecs.round(Math.max(0, current.logs() - previous.logs()) / seconds)));

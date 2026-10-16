@@ -460,11 +460,13 @@ public final class Writer implements AutoCloseable {
     private Stored writeOneByOne(List<Batch> batches) {
         List<Batch.Sighting> services = new ArrayList<>();
         List<Tingle> tingles = new ArrayList<>();
+        int newTraces = 0;
         for (int b = 0; b < batches.size(); b++) {
             try {
                 Stored one = writeThroughPool(List.of(batches.get(b)));
                 services.addAll(one.services());
                 tingles.addAll(one.tingles());
+                newTraces += one.newTraces();
             } catch (SQLException | RuntimeException | StackOverflowError e) {
                 if (exiting) {
                     unwritten.addAll(batches.subList(b, batches.size()));
@@ -477,14 +479,14 @@ public final class Writer implements AutoCloseable {
                 throw e;
             }
         }
-        return new Stored(services, tingles);
+        return new Stored(services, tingles, newTraces);
     }
 
     /**
      * What a committed flush announces on the live stream: the services whose rows it
-     * inserted, and the tingles it stored.
+     * inserted, the tingles it stored, and how many {@code trace} rows it inserted.
      */
-    private record Stored(List<Batch.Sighting> services, List<Tingle> tingles) {
+    private record Stored(List<Batch.Sighting> services, List<Tingle> tingles, int newTraces) {
     }
 
     /**
@@ -521,8 +523,8 @@ public final class Writer implements AutoCloseable {
             mergeCatalogs(c, batches);
             List<Batch.Sighting> services = mergeServices(c, batches);
             writeMetrics(c, batches);
-            traces.merge(c, touched);
-            return new Stored(services, tingles);
+            int newTraces = traces.merge(c, touched);
+            return new Stored(services, tingles, newTraces);
         });
     }
 
@@ -535,6 +537,8 @@ public final class Writer implements AutoCloseable {
         long now = clock.getAsLong();
         events.publishAll("service", stored.services());
         events.publishAll("tingle", stored.tingles());
+        // After the tingles, as the ingest is: a stats frame that counts these traces follows them.
+        events.tracesIngested(stored.newTraces());
         events.ingested(now);
     }
 

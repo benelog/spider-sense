@@ -134,7 +134,7 @@ event: tingle
 data: {"kind":"slow-request"|"slow-query"|"error","at":1758000000000,"service":"spring-orders","title":"GET /orders/report","detail":"1,532 ms","traceId":"...","spanId":"...","durationMs":1532.4}
 
 event: stats
-data: {"at":1758000000000,"spans":12345,"traces":2345,"logs":456,"droppedSpans":0,"perSecond":{"spans":12.5,"logs":3.0}}
+data: {"at":1758000000000,"spans":12345,"traces":2345,"logs":456,"droppedSpans":0,"tracesIngested":2400,"perSecond":{"spans":12.5,"logs":3.0}}
 
 event: service
 data: {"name":"spring-orders","firstSeen":1758000000000}
@@ -142,6 +142,7 @@ data: {"name":"spring-orders","firstSeen":1758000000000}
 
 `stats` is sent at most every second while data arrives, and a flush that commits while a frame is being counted is in the next frame, whatever the millisecond.
 A `stats` frame goes out after the `tingle` events of the traces it counts, so a client that waits for a count has their tingles by then.
+`spans`, `traces` and `logs` are the store's row counts, which a retention sweep or a clear lowers; `tracesIngested` is the number of traces whose `trace` row this server's writer inserted since it started, which nothing lowers, so a client that waits for new traces compares it.
 `service` is sent once for a service the store had no row of, when the row is stored, so `/api/services` lists the service by the time the event arrives; `firstSeen` is the row's `first_seen`.
 A `: keepalive` comment is sent every 15 s.
 

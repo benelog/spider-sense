@@ -31,6 +31,7 @@ public final class EventBus {
     private final CopyOnWriteArrayList<Subscription> subscriptions = new CopyOnWriteArrayList<>();
     private final AtomicLong lastIngestAt = new AtomicLong();
     private final AtomicLong ingests = new AtomicLong();
+    private final AtomicLong tracesIngested = new AtomicLong();
 
     public Subscription subscribe() {
         Subscription subscription = new Subscription();
@@ -63,6 +64,20 @@ public final class EventBus {
      */
     public long ingests() {
         return ingests.get();
+    }
+
+    /** Adds {@code inserted}, the trace rows a committed flush of this process inserted. */
+    public void tracesIngested(int inserted) {
+        tracesIngested.addAndGet(inserted);
+    }
+
+    /**
+     * The traces whose {@code trace} row a flush of this process inserted since it started:
+     * the arrivals {@code tail --until-traces} waits for, which no sweep or clear takes back,
+     * as they do the store's row count (cli.adoc#tail).
+     */
+    public long tracesIngested() {
+        return tracesIngested.get();
     }
 
     public long lastIngestAt() {

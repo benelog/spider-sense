@@ -5,6 +5,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -42,13 +43,21 @@ final class TraceSummaries {
         this.slowRequestMs = slowRequestMs;
     }
 
-    /** Recomputes the rows of {@code traceIds} in the caller's transaction, which commits them. */
-    void merge(Connection connection, Set<String> traceIds) throws SQLException {
+    /**
+     * Recomputes the rows of {@code traceIds} in the caller's transaction, which commits them.
+     *
+     * @return how many of them had no row before, which the merge inserted
+     */
+    int merge(Connection connection, Set<String> traceIds) throws SQLException {
         if (traceIds.isEmpty()) {
-            return;
+            return 0;
         }
         // Sorted, so two writers locking overlapping sets take the locks in one order.
         List<String> ids = traceIds.stream().sorted().toList();
+        Set<String> stored = new HashSet<>();
+        for (List<String> chunk : Sql.chunks(ids)) {
+            readStored(connection, chunk, stored);
+        }
         lock(connection, ids);
         Map<String, List<TraceSummary.Span>> byTrace = new LinkedHashMap<>();
         // In chunks: a flush after a burst, or an import, touches tens of thousands of traces.
@@ -62,6 +71,27 @@ final class TraceSummaries {
             }
             if (!byTrace.isEmpty()) {
                 statement.executeBatch();
+            }
+        }
+        int inserted = 0;
+        for (String id : byTrace.keySet()) {
+            if (!stored.contains(id)) {
+                inserted++;
+            }
+        }
+        return inserted;
+    }
+
+    /** The ids of {@code ids} that have a {@code trace} row already. */
+    private static void readStored(Connection connection, List<String> ids, Set<String> stored)
+            throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT trace_id FROM trace WHERE trace_id IN (" + Sql.placeholders(ids.size()) + ")")) {
+            Sql.bind(statement, ids);
+            try (ResultSet rs = statement.executeQuery()) {
+                while (rs.next()) {
+                    stored.add(rs.getString(1));
+                }
             }
         }
     }

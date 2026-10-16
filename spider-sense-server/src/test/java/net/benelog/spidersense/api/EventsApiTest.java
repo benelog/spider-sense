@@ -120,8 +120,8 @@ class EventsApiTest {
 
     @Test
     void theRatesAreWhatArrivedPerSecondAndNeverNegative() {
-        EventsApi.Counts before = new EventsApi.Counts(100, 10, 50, 0);
-        EventsApi.Counts after = new EventsApi.Counts(300, 20, 60, 2);
+        EventsApi.Counts before = new EventsApi.Counts(100, 10, 50, 0, 10);
+        EventsApi.Counts after = new EventsApi.Counts(300, 20, 60, 2, 20);
 
         JsonObject stats = EventsApi.stats(after, before, 2.0, T0);
         assertThat(stats.getLong("at")).isEqualTo(T0);
@@ -130,7 +130,7 @@ class EventsApiTest {
         assertThat(stats.getObject("perSecond").getDouble("spans")).isEqualTo(100.0);
         assertThat(stats.getObject("perSecond").getDouble("logs")).isEqualTo(5.0);
 
-        JsonObject cleared = EventsApi.stats(new EventsApi.Counts(0, 0, 0, 0), after, 1.0, T0);
+        JsonObject cleared = EventsApi.stats(new EventsApi.Counts(0, 0, 0, 0, 20), after, 1.0, T0);
         assertThat(cleared.getObject("perSecond").getDouble("spans")).as("a clear in between").isZero();
     }
 }

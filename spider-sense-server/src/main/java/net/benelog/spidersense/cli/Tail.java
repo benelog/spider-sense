@@ -253,7 +253,9 @@ final class Tail {
         if (watch.json() && !print(json(name, event))) {
             return true;
         }
-        long traces = event.getLong("traces", 0);
+        // The traces this server stored since it started, which a sweep between two frames does not
+        // lower as it does the row count; a server older than the count has only the row count.
+        long traces = event.has("tracesIngested") ? event.getLong("tracesIngested", 0) : event.getLong("traces", 0);
         if (baseline < 0) {
             // The frame the stream opens with, which --until-traces=0 asks for and nothing else does:
             // the next one comes only once something was ingested.
