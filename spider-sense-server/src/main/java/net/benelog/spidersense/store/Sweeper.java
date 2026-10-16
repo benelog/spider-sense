@@ -33,7 +33,7 @@ import org.jspecify.annotations.Nullable;
  */
 public final class Sweeper implements AutoCloseable {
 
-    private static final System.Logger LOG = System.getLogger(Sweeper.class.getName());
+    private static final System.Logger LOG = LazyLogger.of(Sweeper.class);
     private static final long FIRST_RUN_SECONDS = 60;
     private static final long INTERVAL_SECONDS = 300;
     private static final long HOUR_MS = 3_600_000L;

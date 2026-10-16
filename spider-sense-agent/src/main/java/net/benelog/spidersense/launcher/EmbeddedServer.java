@@ -24,6 +24,20 @@ final class EmbeddedServer {
      */
     static final int JAVA_FLOOR = 25;
 
+    /**
+     * How many references Jetty's {@code MemoryUtils} pads a cache line with. Unless this property
+     * says, it asks the platform MBean server whether oops are compressed, and creating that server
+     * initialises {@code java.util.logging}, which reads {@code java.util.logging.manager} once: in
+     * agent mode, inside {@code premain}, before the application's {@code main} could name its own
+     * manager (configuration.adoc). The answer only sizes padding against false
+     * sharing, so in agent mode the property is set to {@link #JETTY_REFERENCES_FALLBACK} while the
+     * embedded server starts, when the user has not set it, and removed again.
+     */
+    static final String JETTY_REFERENCES = "org.eclipse.jetty.util.referencesPerCacheLine";
+
+    /** What Jetty answers itself with compressed oops, or when it cannot ask: a 64-byte line of 4-byte references. */
+    static final String JETTY_REFERENCES_FALLBACK = "16";
+
     /** Non-null once started; keeps the loader alive and makes a second attach a no-op. */
     private static volatile @Nullable SenseClassLoader started;
 
@@ -59,7 +73,18 @@ final class EmbeddedServer {
             if (own != null) {
                 args.add("--jar=" + own.toAbsolutePath());
             }
-            bound = loader.invokeStatic(SERVER_CLASS, "launch", args.toArray(new String[0]));
+            // Answered for the moment the server starts, and no longer: see the constant.
+            boolean answered = Config.AGENT.equals(config.mode()) && System.getProperty(JETTY_REFERENCES) == null;
+            if (answered) {
+                System.setProperty(JETTY_REFERENCES, JETTY_REFERENCES_FALLBACK);
+            }
+            try {
+                bound = loader.invokeStatic(SERVER_CLASS, "launch", args.toArray(new String[0]));
+            } finally {
+                if (answered) {
+                    System.clearProperty(JETTY_REFERENCES);
+                }
+            }
         } catch (InvocationTargetException e) {
             started = null;
             Throwable cause = e.getCause();

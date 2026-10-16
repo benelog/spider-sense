@@ -227,6 +227,33 @@ class SingleJarIT {
                 .contains("[spider-sense] UI: http://127.0.0.1:" + port + "  service: spider-sense-agent  CLI: ");
     }
 
+    /**
+     * {@code java.util.logging} reads {@code java.util.logging.manager} once, when it is first
+     * initialised, so the embedded server must leave it alone in {@code premain}: an application
+     * that names its own manager in {@code main} gets that one (configuration.adoc).
+     */
+    @Test
+    void anApplicationStillPicksItsOwnLogManagerInMain() throws Exception {
+        int port = freePort();
+        Path log = work.resolve("jul.log");
+        Process app = start(log,
+                javaBinary.toString(),
+                "-javaagent:" + senseJar,
+                "-Dspidersense.port=" + port,
+                "-Dspidersense.db=" + throwawayDatabase(),
+                "-Dotel.service.name=jul",
+                "-cp", testClasses,
+                "net.benelog.spidersense.launcher.JulApp");
+        if (!app.waitFor(60, TimeUnit.SECONDS)) {
+            app.destroyForcibly();
+            throw new AssertionError("the application did not finish\n--- output ---\n" + read(log));
+        }
+        String output = read(log);
+        assertThat(output).as("the embedded UI started in premain\n%s", output)
+                .contains("[spider-sense] UI: http://127.0.0.1:" + port + "  service: jul");
+        assertThat(output).as(output).contains("log manager: net.benelog.spidersense.launcher.JulApp$Manager");
+    }
+
     // --- the extension ------------------------------------------------------------------------
 
     /**

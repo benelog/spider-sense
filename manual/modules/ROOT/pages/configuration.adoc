@@ -208,6 +208,8 @@ A key in the file `-Dotel.javaagent.configuration-file` names counts as set too,
 
 Beyond this table, Spider Sense sets in the application's JVM only the `spidersense.*` keys of <<properties-file,the properties file>>, each as the system property of the same name, and no other system property.
 Its own server logs at `warn` through a `simplelogger.properties` only its class loader sees, so an application that logs through slf4j-simple keeps its own level, and `-Dorg.slf4j.simpleLogger.defaultLogLevel=` still raises the server's.
+In agent mode the embedded server touches no `java.util.logging` inside `premain`, so an application that names its own `java.util.logging.manager` in `main`, as JBoss Modules does, gets that manager.
+To that end the launcher sets `org.eclipse.jetty.util.referencesPerCacheLine` to `16` while the server starts, unless you set it, and removes it again before `premain` returns: without it Jetty would ask the platform MBean server, which initialises `java.util.logging`.
 
 [#service-name]
 == The service name

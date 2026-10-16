@@ -33,7 +33,7 @@ public final class AttrJson {
     /** What a cut string value ends with, so the span drawer shows that it was cut. */
     static final String CUT_MARK = "\u2026";
 
-    private static final System.Logger LOG = System.getLogger(AttrJson.class.getName());
+    private static final System.Logger LOG = LazyLogger.of(AttrJson.class);
     private static final AtomicBoolean WARNED = new AtomicBoolean();
 
     private AttrJson() {

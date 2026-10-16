@@ -65,7 +65,7 @@ public final class Writer implements AutoCloseable {
     /** How often the flush at exit tries before it gives up. */
     private static final int EXIT_ATTEMPTS = 3;
 
-    private static final System.Logger LOG = System.getLogger(Writer.class.getName());
+    private static final System.Logger LOG = LazyLogger.of(Writer.class);
 
     private final BlockingQueue<Batch> queue = new ArrayBlockingQueue<>(QUEUE_CAPACITY);
     private final Map<String, Long> seriesIds = new ConcurrentHashMap<>();

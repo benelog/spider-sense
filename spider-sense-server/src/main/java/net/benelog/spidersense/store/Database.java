@@ -49,7 +49,7 @@ public final class Database implements AutoCloseable {
         }
     }
 
-    private static final System.Logger LOG = System.getLogger(Database.class.getName());
+    private static final System.Logger LOG = LazyLogger.of(Database.class);
     private static final int MAX_CONNECTIONS = 8;
 
     /** H2's own page cache, which this never goes below, in KiB. */

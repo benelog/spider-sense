@@ -45,7 +45,7 @@ public final class Sql {
         }
     }
 
-    private static final System.Logger LOG = System.getLogger(Sql.class.getName());
+    private static final System.Logger LOG = LazyLogger.of(Sql.class);
 
     private final DataSource dataSource;
 
