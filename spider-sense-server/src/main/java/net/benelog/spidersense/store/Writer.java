@@ -29,7 +29,10 @@ import org.jspecify.annotations.Nullable;
  * I/O into backpressure on its telemetry. So the queue is bounded and lossy: when
  * it is full the oldest batch goes, and {@code /api/status} says how many were
  * dropped. Losing a second of local development telemetry is a fair price for
- * never slowing the application down.
+ * never slowing the application down. It is bounded by records as well as by
+ * batches, and a flush takes a few thousand records at a time, so a burst the
+ * writer cannot keep up with costs its oldest batches, counted, rather than the
+ * heap, which in agent mode is the monitored application's.
  *
  * <p>Every flush is one transaction. After the span inserts it recomputes the
  * {@code trace} summary rows of the trace ids the flush touched — a trace arrives
@@ -39,10 +42,24 @@ import org.jspecify.annotations.Nullable;
  */
 public final class Writer implements AutoCloseable {
 
-    /** Batches, not records: the queue holds whole exports so a drop loses a coherent chunk. */
+    /** Batches: the queue holds whole exports so a drop loses a coherent chunk. */
     private static final int QUEUE_CAPACITY = 10_000;
+
+    /**
+     * Records, whatever the number of batches: 10,000 exports of the 512 spans an
+     * exporter sends at most would be five million spans in the heap.
+     */
+    static final int QUEUE_RECORDS = 50_000;
+
     private static final long FLUSH_INTERVAL_MS = 200;
     private static final int FLUSH_RECORDS = 500;
+
+    /**
+     * The records a flush takes off the queue into its one transaction, a batch that
+     * crosses it included: a backlog waits in the queue, where the drop of the oldest
+     * applies, rather than in one transaction that builds every row of it at once.
+     */
+    private static final int FLUSH_MAX_RECORDS = 5_000;
 
     /** How often the flush at exit tries before it gives up. */
     private static final int EXIT_ATTEMPTS = 3;
@@ -68,6 +85,11 @@ public final class Writer implements AutoCloseable {
     private final LongSupplier clock;
     private final Thread thread;
 
+    /**
+     * The records of the queued batches: added once a batch is queued, taken away
+     * when a flush takes it or the queue drops it, so it may be off by a batch on its
+     * way in, never for longer.
+     */
     private final AtomicInteger queuedRecords = new AtomicInteger();
 
     /** What a flush could not write once the JVM had begun to exit; guarded by {@link #flushLock}. */
@@ -109,18 +131,26 @@ public final class Writer implements AutoCloseable {
         return this;
     }
 
-    /** Hands a decoded export over. Never blocks, never throws. */
+    /**
+     * Hands a decoded export over. Never blocks, never throws.
+     *
+     * <p>When the queue is full of batches, or the batch would take it past
+     * {@link #QUEUE_RECORDS} records, the oldest batches go first, each counted.
+     */
     public void submit(Batch batch) {
         if (batch.isEmpty()) {
             return;
         }
-        while (!queue.offer(batch)) {
-            if (queue.poll() == null) {
-                return;
+        int records = batch.recordCount();
+        while (queuedRecords.get() + records > QUEUE_RECORDS) {
+            if (!dropOldest()) {
+                break;
             }
-            droppedBatches.incrementAndGet();
         }
-        int queued = queuedRecords.addAndGet(batch.recordCount());
+        while (!queue.offer(batch)) {
+            dropOldest();
+        }
+        int queued = queuedRecords.addAndGet(records);
         if (queued >= FLUSH_RECORDS) {
             synchronized (wakeUp) {
                 wakeUp.notifyAll();
@@ -128,6 +158,21 @@ public final class Writer implements AutoCloseable {
         }
     }
 
+    /** Drops the oldest queued batch and counts it, returning false when there was none. */
+    private boolean dropOldest() {
+        Batch oldest = queue.poll();
+        if (oldest == null) {
+            return false;
+        }
+        queuedRecords.addAndGet(-oldest.recordCount());
+        droppedBatches.incrementAndGet();
+        return true;
+    }
+
+    /**
+     * The batches the writer has lost: dropped by the full queue, refused by the
+     * database, or taken by a flush that an {@link Error} ended.
+     */
     public long droppedBatches() {
         return droppedBatches.get();
     }
@@ -138,7 +183,7 @@ public final class Writer implements AutoCloseable {
 
     /** Writes everything queued, on the calling thread. The tests' synchronisation point. */
     public void flushNow() {
-        flush();
+        flushQueued();
     }
 
     /** Flushes until the queue stays empty, or the timeout passes. */
@@ -155,7 +200,7 @@ public final class Writer implements AutoCloseable {
         synchronized (wakeUp) {
             wakeUp.notifyAll();
         }
-        flush();
+        flushQueued();
         Thread hook = exitHook;
         if (hook != null) {
             try {
@@ -192,38 +237,67 @@ public final class Writer implements AutoCloseable {
         synchronized (flushLock) {
             List<Batch> batches = new ArrayList<>(unwritten);
             unwritten.clear();
-            queue.drainTo(batches);
-            queuedRecords.set(0);
+            batches.addAll(take(Integer.MAX_VALUE));
             if (batches.isEmpty() && !wroteWhileExiting && !database.mayNeedCompaction()) {
                 return;
             }
-            Throwable failure = null;
-            for (int attempt = 0; attempt < EXIT_ATTEMPTS; attempt++) {
-                try (Connection connection = database.connectOutsidePool()) {
-                    if (!batches.isEmpty()) {
-                        writeInTransaction(connection, batches);
-                        batches = List.of();
-                    }
-                    database.shutdownEngine(connection);
-                    return;
-                } catch (SQLException | RuntimeException | StackOverflowError e) {
-                    if (failure != null) {
-                        e.addSuppressed(failure);
-                    }
-                    failure = e;
-                }
-            }
-            LOG.log(System.Logger.Level.WARNING, batches.isEmpty()
-                    ? "Spider Sense could not close its database at exit"
-                    : "Spider Sense could not store its last batch at exit", failure);
+            writeOutsidePool(database, batches);
         }
+    }
+
+    /**
+     * Writes {@code batches} through a connection of its own, in transactions of at most
+     * {@link #FLUSH_MAX_RECORDS} records as a flush takes them, and then shuts the engine
+     * down. A failure is tried again from the first batch not yet written, as a write
+     * that H2's own exit hook closed under it is; what still fails is lost, and counted.
+     */
+    private void writeOutsidePool(Database database, List<Batch> batches) {
+        int written = 0;
+        Throwable failure = null;
+        for (int attempt = 0; attempt < EXIT_ATTEMPTS; attempt++) {
+            try (Connection connection = database.connectOutsidePool()) {
+                while (written < batches.size()) {
+                    List<Batch> transaction = upTo(batches, written, FLUSH_MAX_RECORDS);
+                    writeInTransaction(connection, transaction);
+                    written += transaction.size();
+                }
+                database.shutdownEngine(connection);
+                return;
+            } catch (SQLException | RuntimeException | StackOverflowError e) {
+                if (failure != null) {
+                    e.addSuppressed(failure);
+                }
+                failure = e;
+            }
+        }
+        droppedBatches.addAndGet(batches.size() - written);
+        LOG.log(System.Logger.Level.WARNING, written == batches.size()
+                ? "Spider Sense could not close its database at exit"
+                : "Spider Sense could not store its last batch at exit", failure);
+    }
+
+    /**
+     * The batches of {@code batches} from {@code from} on, as many as hold
+     * {@code maxRecords} records, the batch that crosses it included.
+     */
+    private static List<Batch> upTo(List<Batch> batches, int from, int maxRecords) {
+        int records = 0;
+        int to = from;
+        while (to < batches.size() && records < maxRecords) {
+            records += batches.get(to).recordCount();
+            to++;
+        }
+        return batches.subList(from, to);
     }
 
     private void loop() {
         while (running) {
             try {
                 synchronized (wakeUp) {
-                    wakeUp.wait(FLUSH_INTERVAL_MS);
+                    // Behind a backlog, the next flush follows at once.
+                    if (queuedRecords.get() < FLUSH_RECORDS || exiting) {
+                        wakeUp.wait(FLUSH_INTERVAL_MS);
+                    }
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -247,18 +321,22 @@ public final class Writer implements AutoCloseable {
         }
     }
 
-    private void flush() {
+    /**
+     * One flush: the batches at the head of the queue, up to {@link #FLUSH_MAX_RECORDS}
+     * records, in one transaction.
+     *
+     * @return how many batches it took off the queue, stored or not
+     */
+    int flush() {
         synchronized (flushLock) {
             if (exiting) {
                 // The flush at exit writes what is queued. Through the pool, after H2
                 // closed the file, this would open it again behind that flush's back.
-                return;
+                return 0;
             }
-            List<Batch> batches = new ArrayList<>();
-            queue.drainTo(batches);
-            queuedRecords.set(0);
+            List<Batch> batches = take(FLUSH_MAX_RECORDS);
             if (batches.isEmpty()) {
-                return;
+                return 0;
             }
             List<Tingle> stored;
             try {
@@ -269,24 +347,65 @@ public final class Writer implements AutoCloseable {
                 if (exiting) {
                     // Most likely H2's own exit hook closing the database; the flush at exit writes it.
                     unwritten.addAll(batches);
-                    return;
+                    return batches.size();
                 }
                 if (batches.size() == 1) {
+                    droppedBatches.incrementAndGet();
                     LOG.log(System.Logger.Level.WARNING, "Spider Sense could not store a batch", e);
-                    return;
+                    return 1;
                 }
                 // A value the store refuses costs the export that carried it, not every export drained beside it.
                 stored = writeOneByOne(batches);
+            } catch (Error e) {
+                // An OutOfMemoryError: the transaction rolled back, and what the flush took
+                // off the queue is gone, counted as the batches a full queue drops are.
+                droppedBatches.addAndGet(batches.size());
+                throw e;
             }
             if (exiting) {
                 // Possibly into a file the pool opened again after H2 closed it; the flush at exit closes it.
                 wroteWhileExiting = true;
             }
             publish(stored);
+            return batches.size();
         }
     }
 
-    /** Each batch of a failed flush in a transaction of its own, returning the tingles stored. */
+    /** Flushes until what was queued when it began has been taken off the queue. */
+    private void flushQueued() {
+        int left = queue.size();
+        while (left > 0) {
+            int taken = flush();
+            if (taken == 0) {
+                return;
+            }
+            left -= taken;
+        }
+    }
+
+    /**
+     * The batches at the head of the queue, taken off it, up to {@code maxRecords}
+     * records, the batch that crosses it included.
+     */
+    private List<Batch> take(int maxRecords) {
+        List<Batch> batches = new ArrayList<>();
+        int records = 0;
+        while (records < maxRecords) {
+            Batch next = queue.poll();
+            if (next == null) {
+                break;
+            }
+            batches.add(next);
+            records += next.recordCount();
+        }
+        queuedRecords.addAndGet(-records);
+        return batches;
+    }
+
+    /**
+     * Each batch of a failed flush in a transaction of its own, returning the tingles
+     * stored; a batch that fails again is lost, and counted.
+     */
     private List<Tingle> writeOneByOne(List<Batch> batches) {
         List<Tingle> stored = new ArrayList<>();
         for (int b = 0; b < batches.size(); b++) {
@@ -297,7 +416,11 @@ public final class Writer implements AutoCloseable {
                     unwritten.addAll(batches.subList(b, batches.size()));
                     break;
                 }
+                droppedBatches.incrementAndGet();
                 LOG.log(System.Logger.Level.WARNING, "Spider Sense could not store a batch", e);
+            } catch (Error e) {
+                droppedBatches.addAndGet(batches.size() - b);
+                throw e;
             }
         }
         return stored;
@@ -668,7 +791,7 @@ public final class Writer implements AutoCloseable {
      */
     public void clear(Runnable deleteAll) {
         synchronized (flushLock) {
-            flush();
+            flushQueued();
             deleteAll.run();
             seriesIds.clear();
         }

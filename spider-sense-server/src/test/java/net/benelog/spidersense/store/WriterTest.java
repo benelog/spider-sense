@@ -333,6 +333,83 @@ class WriterTest {
 
         assertThat(database.sql().count("SELECT COUNT(*) FROM span", List.of())).isEqualTo(2);
         assertThat(database.sql().count("SELECT COUNT(*) FROM tingle", List.of())).isZero();
+        assertThat(writer.droppedBatches()).as("the refused batch is lost, and counted").isEqualTo(1);
+        database.close();
+    }
+
+    /**
+     * An {@link Error} such as an {@code OutOfMemoryError} ends a flush with nothing
+     * stored: every batch it took off the queue is lost, and counted where
+     * {@code /api/status.storage.droppedBatches} reads it.
+     */
+    @Test
+    void theBatchesAFlushLosesToAnErrorAreCountedAsDropped() {
+        Database database = Database.open(fileUrl(), dir.resolve("sense.mv.db"));
+        Writer writer = writer(database);
+        Batch exhausting = new Batch();
+        exhausting.add(new LogRecord(0, AT, "orders", "INFO", 9, "out of heap", null, null, null,
+                java.util.Map.of("value", new Object() {
+                    @Override
+                    public String toString() {
+                        throw new OutOfMemoryError("Java heap space");
+                    }
+                })));
+        writer.submit(spans(1));
+        writer.submit(exhausting);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(writer::flushNow).isInstanceOf(OutOfMemoryError.class);
+
+        assertThat(writer.droppedBatches()).isEqualTo(2);
+        assertThat(writer.queuedBatches()).isZero();
+        database.close();
+    }
+
+    /**
+     * A burst leaves a backlog. A flush takes a few thousand records off the head of
+     * the queue into its transaction, never the whole backlog, which would build every
+     * row and the JDBC batch of hundreds of thousands of spans in the heap at once.
+     */
+    @Test
+    void aFlushTakesAFewThousandRecordsAndLeavesTheBacklogQueued() {
+        Database database = Database.open(fileUrl(), dir.resolve("sense.mv.db"));
+        Writer writer = writer(database);
+        for (int b = 0; b < 12; b++) {
+            writer.submit(tracesOfOneSpan(b * 500, 500));
+        }
+
+        assertThat(writer.flush()).as("batches of 500 records the first transaction takes").isEqualTo(10);
+        assertThat(writer.queuedBatches()).isEqualTo(2);
+
+        writer.flushNow();
+        assertThat(writer.queuedBatches()).isZero();
+        assertThat(database.sql().count("SELECT COUNT(*) FROM span", List.of())).isEqualTo(6_000);
+        assertThat(writer.droppedBatches()).isZero();
+        database.close();
+    }
+
+    /**
+     * The queue is bounded by records as well as by batches: 10,000 exports of 512
+     * spans would hold five million spans in the heap. Past the bound the oldest
+     * batches are dropped and counted, as they are when the queue is full of batches.
+     */
+    @Test
+    void theQueueHoldsAtMostItsRecordsAndDropsTheOldestBeyondThem() {
+        Database database = Database.open(fileUrl(), dir.resolve("sense.mv.db"));
+        Writer writer = writer(database);
+        SpanRecord span = new SpanRecord("%032x".formatted(1), "%016x".formatted(1), null, "orders", "GET /orders",
+                "SERVER", AT * 1_000_000L, AT * 1_000_000L + 5_000_000L, "UNSET", null, java.util.Map.of(),
+                List.of(), "test");
+        int batches = Writer.QUEUE_RECORDS / 500;
+        for (int b = 0; b < batches + 7; b++) {
+            Batch batch = new Batch();
+            for (int i = 0; i < 500; i++) {
+                batch.add(span);
+            }
+            writer.submit(batch);
+        }
+
+        assertThat(writer.queuedBatches()).isEqualTo(batches);
+        assertThat(writer.droppedBatches()).isEqualTo(7);
         database.close();
     }
 
@@ -479,6 +556,17 @@ class WriterTest {
                     Span.SpanKind.SPAN_KIND_SERVER, AT, 5, Otlp.attr("http.route", "/orders"));
         }
         return decoder.ingest(Otlp.traces(Otlp.service("orders"), spans));
+    }
+
+    /** A batch of {@code count} traces of one span each, the first numbered {@code first}, built without a decoder. */
+    private static Batch tracesOfOneSpan(int first, int count) {
+        Batch batch = new Batch();
+        for (int i = first; i < first + count; i++) {
+            batch.add(new SpanRecord("%032x".formatted(i + 1), "%016x".formatted(1), null, "orders", "GET /orders",
+                    "SERVER", AT * 1_000_000L, AT * 1_000_000L + 5_000_000L, "UNSET", null, java.util.Map.of(),
+                    List.of(), "test"));
+        }
+        return batch;
     }
 
     private String fileUrl() {

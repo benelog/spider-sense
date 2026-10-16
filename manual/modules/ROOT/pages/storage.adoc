@@ -245,9 +245,12 @@ H2 turns most of those settings into a `SET` at connect time.
 
 Ingest never touches the database on the request thread.
 The OTLP handler decodes the request into records and hands them to a `Writer`.
-The `Writer` is a bounded queue of 10,000 batches drained by one daemon thread.
-When the queue is full, the oldest batch is dropped and `/api/status.storage.droppedBatches` increments.
+The `Writer` is a bounded queue of 10,000 batches or 50,000 records, whichever comes first, drained by one daemon thread.
+A record is a span, a log record, a metric point or a catalog row.
+When the queue is full, the oldest batches are dropped, and `/api/status.storage.droppedBatches` counts each.
 The thread flushes every 200 ms, or as soon as 500 records are waiting, in one transaction per flush with JDBC batch inserts.
+A flush takes at most 5,000 records off the queue, the batch that crosses that count included, and the next flush follows at once while 500 or more are waiting.
+A burst the thread cannot keep up with therefore waits in the queue, where the oldest batches are dropped and counted, rather than in one transaction that builds every row of it in the heap, which in agent mode is the monitored application's.
 Every text value is cut to its column before it is bound: a service or metric name at 255 characters as it is decoded, so every table holds the same name, and a trace's `services` by leaving out the names past its width.
 A cut that would fall between the two halves of a surrogate pair, such as an emoji, leaves the pair out whole, since half of one has no UTF-8 form and every answer would end the value in `?`.
 A histogram point whose buckets do not fit their column keeps its count, sum, min and max and is stored without buckets.
@@ -259,6 +262,8 @@ A metric series' attributes are cut in the same way before they are hashed, so t
 The import hashes a document's attributes with their keys sorted and their values as the document writes them, not read into the store's values and written again, so a whole-valued double such as `2.0` or a nested object finds the series it came from.
 When a flush still fails, each of its batches is written again in a transaction of its own, so a row the database refuses costs only the export that carried it.
 A failed flush is rolled back whole before that, whatever failed, a stack overflow on an attribute nested thousands of levels deep included, so no batch is stored twice.
+A batch that fails on its own as well is lost, and `droppedBatches` counts it.
+So does every batch of a flush that an `Error` other than a stack overflow ends, such as an `OutOfMemoryError`, since nothing of that flush is stored.
 A span is merged on its `(trace_id, span_id)`, the unique key of `span` (`MERGE INTO span … KEY (trace_id, span_id)`), so an export the exporter sends again, because the answer to the first was lost to a timeout or a reset connection, stores each of its spans once.
 A tingle is keyed by the span it was raised from and its kind, the unique key `(trace_id, span_id, kind)` of `tingle`, and is inserted only when no row of that key is stored (`INSERT INTO tingle … SELECT … WHERE NOT EXISTS (…)`).
 The copy of an export therefore raises no second tingle, whether it lands in a later flush or in the same one, since the inserts of a flush run in order.
@@ -276,7 +281,7 @@ It compares with the marks rather than with the one `pid` the `service` row stor
 A JVM shutdown hook flushes what is queued, and then closes the database.
 H2 closes a file database from an exit hook of its own, and the JVM runs its hooks concurrently in no set order, so H2 may close the pool's connections under that flush.
 `DB_CLOSE_ON_EXIT=FALSE`, which turns H2's hook off, is refused beside `AUTO_SERVER=TRUE`, so the flush survives the race instead of avoiding it.
-It writes through a connection of its own outside the pool.
+It writes through a connection of its own outside the pool, in transactions of at most 5,000 records as a flush takes them.
 Opened while H2 is closing the file, that connection waits for the close to finish and opens the file again, and a write that H2 closed under it is tried again the same way.
 Once the rows are in, the flush shuts down the engine this process holds, so the file is written and closed before the JVM halts, whichever hook ran first; a file that has grown past its data is compacted on the way (<<file-size,The size of the file>>).
 After the flush at exit has begun, the writer's thread writes nothing more, since writing through the pool after H2 closed the file would open it again behind that flush.
