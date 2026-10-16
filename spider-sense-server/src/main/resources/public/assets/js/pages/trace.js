@@ -48,6 +48,14 @@ function runTitle(run) {
   return run.count + ' × ' + summaryOf(run.spans[0]) + ', ' + dur(run.totalMs / run.count) + ' avg, ' + dur(run.totalMs) + ' total';
 }
 
+/**
+ * The length the bars and the shares of a trace are measured against: its own duration, however
+ * far under a millisecond. A trace of no length takes 1 ms, against which every span is 0%.
+ */
+function scaleOf(trace) {
+  return trace.durationMs > 0 ? trace.durationMs : 1;
+}
+
 export function render(root, ctx) {
   const traceId = ctx.params.id;
   let data = null;
@@ -105,10 +113,10 @@ export function render(root, ctx) {
 
   function paintWaterfall() {
     const t0 = traceStartMs(data);
-    const total = Math.max(1, data.durationMs || 1);
+    const total = scaleOf(data);
     const rows = flattenTree(spanTree(data.spans || []), collapsed, expandedRuns);
     const box = h('div.waterfall',
-      h('div.wf-head', h('span', 'Span'), h('span', 'Timeline'), h('span.right', dur(total) + ' total')));
+      h('div.wf-head', h('span', 'Span'), h('span', 'Timeline'), h('span.right', dur(data.durationMs) + ' total')));
     for (const { span, depth, hasChildren, run } of rows) {
       box.appendChild(run ? runRow(run, depth, t0, total) : waterfallRow(span, depth, hasChildren, t0, total));
     }
@@ -200,7 +208,7 @@ export function render(root, ctx) {
   // --- profile ----------------------------------------------------------
 
   function paintProfile() {
-    const total = Math.max(1, data.durationMs || 1);
+    const total = scaleOf(data);
     const slowMs = slowRequestMs();
     const rows = profileRows(data, profileSort, expandedRuns);
     // The three steps that actually spent the time, and only when they spent enough of it to be worth reading.
@@ -273,7 +281,7 @@ export function render(root, ctx) {
 
   function spanBody(span) {
     const t0 = traceStartMs(data);
-    const total = Math.max(1, data.durationMs || 1);
+    const total = scaleOf(data);
     const selfMs = selfTimes(data.spans || []).get(span.spanId) || 0;
     const all = span.attributes || {};
     // The statement and the captured stack are read, not scanned: each gets a section of its own,
