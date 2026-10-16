@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import net.benelog.spidersense.Otlp;
 import net.benelog.spidersense.TestStore;
 import net.benelog.spidersense.ingest.OtlpDecoder;
+import net.benelog.spidersense.store.Ids;
 import net.benelog.spidersense.store.Store;
 
 /** The rules of findings.adoc#rules, each over the data that makes it fire and data that does not. */
@@ -757,6 +758,36 @@ class FindingsTest {
         assertThat(finding.traces()).containsExactly(traceId(11), traceId(12), traceId(13));
     }
 
+    /** A job that calls an endpoint of its own service: that request's statements are the request's. */
+    @Test
+    void aRequestAJobMakesToItsOwnServiceIsNotTheJobsWork() {
+        Span.Builder run = job(11, "ReportJob.run", 900);
+        Span.Builder outbound = call(run, 101, "/api/items", NOW + 100, 300);
+        Span.Builder items = Otlp.child(outbound, spanId(102), "GET /api/items", Span.SpanKind.SPAN_KIND_SERVER,
+                NOW + 110, 280,
+                Otlp.attr("http.request.method", "GET"),
+                Otlp.attr("http.route", "/api/items"),
+                Otlp.attr("http.response.status_code", 200));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), run,
+                query(run, 100, "update stock set qty = ? where id = ?", "stock", NOW + 1, 20),
+                outbound, items,
+                query(items, 103, "select * from item", "item", NOW + 120, 15)));
+        flush();
+
+        Findings.Finding finding = of(Findings.SLOW_JOB).get(0);
+
+        assertThat((Double) finding.numbers().get("dbCallsPerRun")).isEqualTo(1.0);
+        assertThat((Double) finding.numbers().get("dbMsPerRun")).isEqualTo(20.0);
+        @SuppressWarnings("unchecked")
+        Map<String, Double> breakdown = (Map<String, Double>) finding.numbers().get("breakdown");
+        assertThat(breakdown.get("http"))
+                .as("the wait on the call is the job's, and the request it made is not")
+                .isCloseTo(300.0 / 900, within(1e-9));
+        assertThat(breakdown.get("db")).isCloseTo(20.0 / 900, within(1e-9));
+        assertThat(queries.databaseWork(window, "orders"))
+                .containsEntry(Ids.endpointId("orders", "GET /api/items"), new Queries.DbWork(1, 15.0, 0));
+    }
+
     @Test
     void aSlowJobTakesItsCodeFromItsNewestRun() {
         Span.Builder older = Otlp.span(traceId(11), spanId(11), "ReportJob.run",
@@ -1013,6 +1044,31 @@ class FindingsTest {
         assertThat((Double) hot.get("share")).isCloseTo(0.8, within(1e-9));
     }
 
+    /** An {@code @Async} span that runs on after the response counts only what it did before it. */
+    @Test
+    void theHotSpanCountsOnlyWhatAnAsyncSpanDidBeforeTheResponse() {
+        Span.Builder root = entry(1, "/checkout", 700);
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), root,
+                query(root, 100, "update stock set qty = qty - 1 where id = ?", "stock", NOW + 10, 600),
+                Otlp.child(root, spanId(101), "Mailer.sendConfirmation", Span.SpanKind.SPAN_KIND_INTERNAL,
+                        NOW + 650, 3000)));
+        flush();
+
+        Findings.Finding finding = of(Findings.SLOW_ENDPOINT).get(0);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> hot = (Map<String, Object>) finding.numbers().get("hotSpan");
+        assertThat(hot.get("name")).isEqualTo("SELECT stock");
+        assertThat((Double) hot.get("selfMs")).isEqualTo(600.0);
+        assertThat((Double) hot.get("share")).isCloseTo(600.0 / 700, within(1e-9));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> hotSpans = (List<Map<String, Object>>) finding.numbers().get("hotSpans");
+        assertThat(hotSpans.get(1).get("name")).isEqualTo("Mailer.sendConfirmation");
+        assertThat((Double) hotSpans.get(1).get("selfMs"))
+                .as("the 50 ms of the mail inside the request, as the hot span counts it")
+                .isCloseTo(50.0, within(1e-9));
+    }
+
     @Test
     void aSlowEndpointSumsItsHotSpansOverEveryTraceOfTheSample() {
         // Two requests, each one slow query and then one outbound call to a different item.
@@ -1101,6 +1157,57 @@ class FindingsTest {
                 .isEqualTo("http");
         assertThat((Double) hotSpan.get("selfMs")).isCloseTo(900.0, within(1e-9));
         assertThat((Double) hotSpan.get("share")).isCloseTo(0.9, within(1e-9));
+    }
+
+    /**
+     * POST /orders publishes a message its own listener consumes, in the same trace: each
+     * request is the top span of its own work, and neither is credited with the other's.
+     */
+    @Test
+    void aMessageTheServiceConsumesItselfIsARequestOfItsOwn() {
+        Span.Builder post = Otlp.span(traceId(1), spanId(1), "POST /orders", Span.SpanKind.SPAN_KIND_SERVER,
+                NOW, 30,
+                Otlp.attr("http.request.method", "POST"),
+                Otlp.attr("http.route", "/orders"),
+                Otlp.attr("http.response.status_code", 201));
+        Span.Builder publish = Otlp.child(post, spanId(101), "orders publish", Span.SpanKind.SPAN_KIND_PRODUCER,
+                NOW + 15, 3, Otlp.attr("messaging.system", "kafka"),
+                Otlp.attr("messaging.destination.name", "orders"));
+        Span.Builder process = Otlp.child(publish, spanId(102), "orders process",
+                Span.SpanKind.SPAN_KIND_CONSUMER, NOW + 20, 900, Otlp.attr("messaging.system", "kafka"),
+                Otlp.attr("messaging.destination.name", "orders"));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), post,
+                query(post, 100, "insert into orders (id) values (?)", "orders", NOW + 2, 10),
+                publish, process,
+                query(process, 103, "update shipment set status = ? where id = ?", "shipment", NOW + 21, 5),
+                Otlp.child(process, spanId(104), "Mailer.send", Span.SpanKind.SPAN_KIND_INTERNAL, NOW + 30, 880)));
+        flush();
+
+        Findings.Finding consumer = of(Findings.SLOW_ENDPOINT).get(0);
+
+        assertThat(consumer.title()).isEqualTo("orders process is slow");
+        assertThat((Double) consumer.numbers().get("dbCallsPerRequest"))
+                .as("the listener's one statement, not the request's insert too")
+                .isEqualTo(1.0);
+        assertThat((Double) consumer.numbers().get("dbMsPerRequest")).isEqualTo(5.0);
+        assertThat((Double) consumer.numbers().get("dbShare")).isCloseTo(5.0 / 900, within(1e-9));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> hot = (List<Map<String, Object>>) consumer.numbers().get("hotSpans");
+        assertThat(hot).extracting(row -> row.get("name")).containsExactly("Mailer.send", "SELECT shipment");
+        assertThat((Double) hot.get(0).get("selfMs")).isCloseTo(880.0, within(1e-9));
+        @SuppressWarnings("unchecked")
+        Map<String, Double> breakdown = (Map<String, Double>) consumer.numbers().get("breakdown");
+        assertThat(breakdown.get("internal")).isCloseTo(880.0 / 900, within(1e-9));
+        assertThat(breakdown.get("db")).isCloseTo(5.0 / 900, within(1e-9));
+        assertThat(breakdown.get("self")).isCloseTo(15.0 / 900, within(1e-9));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> hotSpan = (Map<String, Object>) consumer.numbers().get("hotSpan");
+        assertThat(hotSpan.get("name")).isEqualTo("Mailer.send");
+        assertThat((Double) hotSpan.get("share")).isCloseTo(880.0 / 900, within(1e-9));
+        assertThat(queries.databaseWork(window, "orders"))
+                .as("the request that published the message ran its insert alone")
+                .containsEntry(Ids.endpointId("orders", "POST /orders"), new Queries.DbWork(1, 10.0, 0))
+                .containsEntry(Ids.endpointId("orders", "orders process"), new Queries.DbWork(1, 5.0, 0));
     }
 
     /**

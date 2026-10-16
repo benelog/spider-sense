@@ -5,6 +5,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -1385,8 +1386,8 @@ public final class Findings {
         if (slow.isEmpty()) {
             return List.of();
         }
-        // Only the endpoints that crossed the threshold become findings, so only they
-        // are joined with their database spans.
+        // Only the endpoints that crossed the threshold become findings, so only their
+        // database work is counted.
         List<String> slowIds = new ArrayList<>();
         for (Stats.EndpointStats endpoint : slow) {
             slowIds.add(endpoint.endpointId());
@@ -1398,9 +1399,9 @@ public final class Findings {
         for (Stats.EndpointStats endpoint : slow) {
             SlowGroup group = SlowGroup.of(endpoint);
             Queries.DbWork work = databaseWork.getOrDefault(endpoint.endpointId(), Queries.DbWork.NONE);
-            TimeEvidence time = timeEvidence(window, endpoint.service(), evidence
-                    ? traceIds(queries.tracesContaining(window,
-                            Queries.SpanMatch.endpoint(endpoint.endpointId()), SAMPLE_TRACES,
+            Queries.SpanMatch requests = Queries.SpanMatch.endpoint(endpoint.endpointId());
+            TimeEvidence time = timeEvidence(window, endpoint.service(), requests, evidence
+                    ? traceIds(queries.tracesContaining(window, requests, SAMPLE_TRACES,
                             Queries.TraceOrder.SLOWEST))
                     : List.of());
 
@@ -1477,10 +1478,16 @@ public final class Findings {
         }
     }
 
-    /** The time evidence of a sample; an empty sample, when only the ids matter, reads nothing. */
-    private TimeEvidence timeEvidence(Window window, String service, List<String> sample) {
+    /**
+     * The time evidence of a sample; an empty sample, when only the ids matter, reads nothing.
+     *
+     * @param tops the group's own top spans: the endpoint's entry spans, the job's runs
+     */
+    private TimeEvidence timeEvidence(Window window, String service, Queries.SpanMatch tops,
+            List<String> sample) {
         List<String> traces = evidenceOf(sample);
-        return new TimeEvidence(traces, hotSpan(traces, service), queries.timeSplit(window, service, sample));
+        return new TimeEvidence(traces, hotSpan(window, service, tops, traces),
+                queries.timeSplit(window, service, tops, sample));
     }
 
     // --- slow job ------------------------------------------------------------
@@ -1499,8 +1506,8 @@ public final class Findings {
         if (slow.isEmpty()) {
             return List.of();
         }
-        // Only the jobs that crossed the threshold become findings, so only they are
-        // joined with their database spans, one service at a time.
+        // Only the jobs that crossed the threshold become findings, so only their
+        // database work is counted, one service at a time.
         Map<String, Set<String>> slowNames = new LinkedHashMap<>();
         for (Queries.JobRuns runs : slow) {
             slowNames.computeIfAbsent(runs.group().service(), name -> new LinkedHashSet<>())
@@ -1517,9 +1524,9 @@ public final class Findings {
             SlowGroup job = runs.group();
             String key = job.service() + "\0" + job.name();
             Queries.DbWork work = databaseWork.getOrDefault(key, Queries.DbWork.NONE);
-            TimeEvidence time = timeEvidence(window, job.service(), evidence
-                    ? traceIds(queries.tracesContaining(window,
-                            Queries.SpanMatch.job(job.service(), job.name()), SAMPLE_TRACES,
+            Queries.SpanMatch jobRuns = Queries.SpanMatch.job(job.service(), job.name());
+            TimeEvidence time = timeEvidence(window, job.service(), jobRuns, evidence
+                    ? traceIds(queries.tracesContaining(window, jobRuns, SAMPLE_TRACES,
                             Queries.TraceOrder.SLOWEST))
                     : List.of());
 
@@ -2039,44 +2046,40 @@ public final class Findings {
      * Where the time went in the finding's first evidence trace.
      *
      * <p>A span's self time is its duration less the time its direct children
-     * cover within it — the Profile view's definition — and the hot span
-     * is the largest of them, with that time's share of the top spans' duration. It is
-     * the first clue when {@code dbShare} is low: the trace says "here", not "somewhere".
+     * cover within it — the Profile view's definition — taken inside the top span as
+     * the time split takes it, and the hot span is the largest of them, with that
+     * time's share of the top spans' duration. It is the first clue when
+     * {@code dbShare} is low: the trace says "here", not "somewhere".
      *
-     * <p>Only the spans of {@code service} count, the rule the time split and
-     * {@code dbShare} use: a downstream service's spans belong to its own endpoint, and
-     * the caller's own code is not the callee's. A span whose parent is not among them
-     * is a top span, the endpoint's entry span or the job's root span.
+     * <p>Only the spans of {@code service} under the group's own top spans count, the
+     * rule the time split and {@code dbShare} use: a downstream service's spans belong
+     * to its own endpoint, a request the service makes to itself is a request of its
+     * own, and the caller's own code is not the callee's.
      *
+     * @param tops the group's own top spans: the endpoint's entry spans, the job's runs
      * @return null when the finding has no trace
      */
-    private @Nullable Map<String, Object> hotSpan(List<String> traces, String service) {
+    private @Nullable Map<String, Object> hotSpan(Window window, String service, Queries.SpanMatch tops,
+            List<String> traces) {
         if (traces.isEmpty()) {
             return null;
         }
-        Queries.TraceDetail detail = queries.trace(traces.get(0));
-        if (detail == null) {
-            return null;
-        }
-        List<SpanRecord> spans = new ArrayList<>();
-        Set<String> ids = new HashSet<>();
-        for (SpanRecord span : detail.spans()) {
-            if (span.service().equals(service)) {
-                spans.add(span);
-                ids.add(span.spanId());
-            }
-        }
-        Map<String, Long> self = Queries.selfNanos(spans);
+        Queries.SampleSpans read = queries.sampleSpans(window, service, tops, List.of(traces.get(0)));
+        IdentityHashMap<SpanRecord, Long> self = read.selfUnderTheTops();
         SpanRecord hottest = null;
         long selfNanos = -1;
         long topNanos = 0;
-        for (SpanRecord span : spans) {
-            long nanos = self.getOrDefault(span.spanId(), 0L);
+        // In the trace's own order, so a tie goes to the span the waterfall draws first.
+        for (SpanRecord span : Queries.sorted(read.spans())) {
+            Long nanos = self.get(span);
+            if (nanos == null) {
+                continue;
+            }
             if (nanos > selfNanos) {
                 selfNanos = nanos;
                 hottest = span;
             }
-            if (span.parentSpanId() == null || !ids.contains(span.parentSpanId())) {
+            if (read.tops().contains(span)) {
                 topNanos += span.durationNanos();
             }
         }

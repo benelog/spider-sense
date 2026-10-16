@@ -163,6 +163,7 @@ A window with no request has no p95 and no Apdex, so both read `—` rather than
 Endpoints::
 One row per endpoint, with `calls`, `errors`, `p95`, `db/req` and `db ms/req` for both windows.
 The JSON side of a row is `{ "calls", "errors", "p50Ms", "p95Ms", "maxMs", "dbCallsPerRequest", "dbMsPerRequest" }`.
+`db/req` and `db ms/req` are the endpoint's own database work, as a xref:findings.adoc#slow-endpoint[`slow-endpoint`] finding counts it.
 
 Queries::
 One row per query group, with `calls`, `calls/req`, `p95` and `total` for both windows.

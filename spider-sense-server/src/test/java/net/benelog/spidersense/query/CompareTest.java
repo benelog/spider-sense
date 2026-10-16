@@ -346,6 +346,34 @@ class CompareTest {
         assertThat(comparison.after()).isEqualTo(after);
     }
 
+    /** A request a service makes to itself runs its own statements, on both sides. */
+    @Test
+    void eachRequestOfOneTraceIsCreditedWithItsOwnStatementsOnly() {
+        for (long at : new long[] {BEFORE + 1000, AFTER + 1000}) {
+            Span.Builder a = entry("/a", at, 50);
+            Span.Builder call = Otlp.child(a, "%016x".formatted(ids++), "GET", Span.SpanKind.SPAN_KIND_CLIENT,
+                    at + 5, 40, Otlp.attr("http.request.method", "GET"),
+                    Otlp.attr("url.full", "http://localhost:8080/b"));
+            Span.Builder b = Otlp.child(call, "%016x".formatted(ids++), "GET /b", Span.SpanKind.SPAN_KIND_SERVER,
+                    at + 6, 38, Otlp.attr("http.request.method", "GET"), Otlp.attr("http.route", "/b"));
+            send(a, statement(a, at + 1), call, b, statement(b, at + 7));
+        }
+        flush();
+
+        List<Compare.EndpointDiff> endpoints = compare.compare(before, after, null).endpoints();
+
+        assertThat(endpoints).extracting(Compare.EndpointDiff::name).containsExactlyInAnyOrder("GET /a", "GET /b");
+        for (Compare.EndpointDiff diff : endpoints) {
+            assertThat(diff.before().dbCallsPerRequest()).as(diff.name()).isEqualTo(1.0);
+            assertThat(diff.after().dbCallsPerRequest()).as(diff.name()).isEqualTo(1.0);
+        }
+    }
+
+    private Span.Builder statement(Span.Builder parent, long at) {
+        return Otlp.child(parent, "%016x".formatted(ids++), "SELECT items", Span.SpanKind.SPAN_KIND_CLIENT, at, 2,
+                Otlp.attr("db.system", "h2"), Otlp.attr("db.statement", "select * from items where id = ?"));
+    }
+
     @Test
     void aSideReadsItsDatabaseWorkAndAMissingSideIsNull() {
         Compare.Snapshot one = snapshot(before, 10, Map.of("e", endpointStats("e", 10, 0, 100, 10)),

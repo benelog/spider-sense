@@ -127,8 +127,10 @@ A `regression` carries the traces of its original kind, taken after the resoluti
 ----
 
 `hotSpan` is the span with the largest self time, that is its duration minus the time its direct children cover within it, as the xref:pages.adoc#profile[Profile view] computes it.
-Only the spans of the finding's own service count, the rule <<time,`hotSpans` and `breakdown`>> follow: a downstream service's query belongs to that service's endpoint, and the caller's code around the call is not the callee's time.
-`share` is that self time over the duration of the service's top spans in that trace, which is the endpoint's entry span or the job's root span.
+It reads the spans <<time,`hotSpans` and `breakdown`>> read, the same way: the spans of the finding's own service under its top spans in that trace, each counting only the part of it that lies inside its parent.
+A downstream service's query belongs to that service's endpoint, a request the service makes to itself belongs to that request, and the caller's code around the call is not the callee's time.
+An `@Async` span that runs on after the response counts only what it did before it.
+`share` is that self time over the duration of the top spans in that trace, which are the endpoint's entry spans or the job's run.
 `category` is `db`, `http`, `internal` or another span category.
 It is the first clue when `dbShare` is low.
 In the text rendering it is one line, `hot span: <name> · <selfMs> self · <share>`, such as `hot span: SELECT order_line · 312.4 ms self · 62.0%`.
@@ -274,14 +276,15 @@ Both are computed over the finding's sample: the 20 slowest traces of the endpoi
 The sample is twenty traces rather than every trace because the answer is read out of the spans themselves rather than out of an aggregate, and the slowest twenty are where a slow endpoint's time is.
 A share is therefore a share of those traces' time, while the finding's own `totalMs` stays the window's.
 Each trace is read whole or not at all: when the service's spans in the twenty pass 20,000, the sample stops at the last whole trace under that count, slowest first, and the slowest is always read.
-A trace read in part would turn the children of every parent it missed into top spans and move their time into the wrong share.
-Only the spans of the finding's own service count, which is the rule `dbShare` already uses.
-The database work of a downstream service belongs to that service's own endpoint.
-Leaving the downstream server span out makes the wait on an outbound call land in `http`, where the caller can see it.
+A trace read in part would cut off whatever lies under a parent it missed and move that time into the wrong share.
+Only the spans of the finding's own service under its top spans count, which is the rule `dbShare` already uses.
+The top spans are the endpoint's own entry spans in each trace, or the job's run, and what lies under one stops at the next entry span, which is a request of its own.
+The database work of a downstream service belongs to that service's own endpoint, and the work of a request a service makes to itself, or of a message it consumes itself, belongs to the endpoint that serves it.
+Leaving the entry span below out makes the wait on an outbound call land in `http`, where the caller can see it.
 
 Self time is a span's duration less the time its direct children within that set cover inside it, as the xref:pages.adoc#profile[Profile view] computes it.
-A span whose parent is not in the set is a top span: the entry span of a request, or the root span of a job.
 Here each span counts only the part of it that lies inside its parent, down from the top span, so an `@Async` child that runs on after the response adds only what it did before it.
+A top span is never cut to its parent: a listener that runs on after its message was published is still its whole request.
 The shares are taken over the sum of the self times, which is the top spans' summed duration.
 Children that run at once each count their overlap, which makes the sum the larger, and the shares still sum to 1.
 
@@ -491,7 +494,9 @@ The impact it is ranked by is total time.
 
 The title is `<endpoint> is slow`.
 
-`numbers`: `calls`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `apdex`, `dbCallsPerRequest`, `dbMsPerRequest`, `dbShare` (from 0 to 1, the part of the endpoint's total time spent in database spans of the same trace and service, printed as a percentage), <<hot-span,`hotSpan`>>, and <<time,`hotSpans` and `breakdown`>>.
+`numbers`: `calls`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `apdex`, `dbCallsPerRequest`, `dbMsPerRequest`, `dbShare` (from 0 to 1, the part of the endpoint's total time spent in its own database spans, printed as a percentage), <<hot-span,`hotSpan`>>, and <<time,`hotSpans` and `breakdown`>>.
+The endpoint's own database spans are the ones whose nearest entry span up the parent chain is one of its requests, of their own service.
+A downstream service's statements are that service's endpoint's, and so are the statements of a request the service makes to itself or of a message it consumes itself, which is an entry span of its own.
 
 `dbShare` decides where to look next.
 
@@ -523,6 +528,7 @@ Severity and impact are the same as `slow-endpoint`.
 `subject.job` is the span name, and the title is `<job> is slow`.
 
 `numbers`: `runs`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `dbCallsPerRun`, `dbMsPerRun`, `dbShare`, which are the measures of `slow-endpoint` over the job's runs, then `hotSpan`, `hotSpans` and `breakdown`.
+A database span is the run's when its parent chain reaches the run without passing an entry span: a request the job makes to its own service is that request's work, not the job's.
 
 A job is work the application did to itself, so it is never an entry span.
 It is in no request count, in no Apdex and in no `check` verdict, and this finding is the one place a slow scheduler tick or batch step is reported.

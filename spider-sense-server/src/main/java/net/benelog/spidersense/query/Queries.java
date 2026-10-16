@@ -21,6 +21,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.function.BiConsumer;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.function.ToDoubleFunction;
@@ -347,14 +348,13 @@ public final class Queries {
     /**
      * How much database work each endpoint's requests did, by endpoint id.
      *
-     * <p>The join is "a database span of the same trace and the same service"
-     * (storage.adoc): the database work of a downstream service belongs to that
-     * service's own endpoint, not to the one that called it. A finding's
-     * {@code dbShare} and a comparison's {@code dbCallsPerRequest} are the same
-     * question, so they are one statement.
-     *
-     * <p>{@code d} is read by its trace: left to itself, H2 reads it by service and
-     * instant, every span of the service in the window once per entry span.
+     * <p>A database span is the work of its nearest entry span up the parent chain, the
+     * walk the query callers and the N+1 rules read ({@link Ancestry#entryOf}), when that
+     * entry span is of its own service (storage.adoc#reads): the database work of a
+     * downstream service belongs to that service's own endpoint, and so does the work of
+     * a request a service makes to itself or of a message it consumes itself. A
+     * finding's {@code dbShare} and a comparison's {@code dbCallsPerRequest} are the
+     * same question, so they are one read.
      */
     public Map<String, DbWork> databaseWork(Window window, @Nullable String service) {
         return databaseWork(window, service, null);
@@ -365,61 +365,128 @@ public final class Queries {
      * {@code endpointIds} is null.
      *
      * <p>A {@code slow-endpoint} finding needs the endpoints that crossed the
-     * threshold and nothing else, and the join costs every trace it reads.
+     * threshold and nothing else, so only the traces that hold one of their requests
+     * are read, by the trace index.
      */
     public Map<String, DbWork> databaseWork(Window window, @Nullable String service,
             @Nullable Collection<String> endpointIds) {
         if (endpointIds != null && endpointIds.isEmpty()) {
             return Map.of();
         }
-        Where where = new Where("e.entry AND e.endpoint_id IS NOT NULL AND e.start_ms BETWEEN ? AND ?"
-                + " AND d.start_ms BETWEEN ? AND ?", window.from(), window.to(), window.from(), window.to());
-        if (service != null) {
-            where = where.and("e.service = ?", service);
-        }
-        if (endpointIds != null) {
-            where = where.andIn("e.endpoint_id", endpointIds);
-        }
-        Map<String, DbWork> work = new HashMap<>();
-        sql.forEach("SELECT e.endpoint_id AS id, COUNT(*) AS calls, SUM(d.duration_ns) AS total_ns, "
-                + slowCalls("d") + " AS slow_calls"
-                + " FROM span e JOIN span d USE INDEX (span_trace) ON d.trace_id = e.trace_id AND d.service = e.service"
-                + " AND d.query_id IS NOT NULL WHERE " + where.sql() + " GROUP BY e.endpoint_id",
-                where.params(), rs ->
-                        work.put(rs.getString("id"), new DbWork(rs.getLong("calls"), Rows.ms(rs, "total_ns"),
-                                rs.getLong("slow_calls"))));
-        return work;
+        Set<String> wanted = endpointIds == null ? null : new HashSet<>(endpointIds);
+        Where requests = wanted == null ? null
+                : Where.entries(window, service).andIn("endpoint_id", wanted);
+        long slowNs = nanos(tingles.slowQueryMs());
+        Map<String, DbSum> work = new HashMap<>();
+        forEachStatement(window, service, requests, (statement, ancestry) -> {
+            Ancestry.Entry entry = ancestry.entryOf(statement.traceId(), statement.spanId());
+            if (entry == null || !entry.service().equals(statement.service())) {
+                return;
+            }
+            String endpointId = entry.endpointId();
+            if (endpointId != null && (wanted == null || wanted.contains(endpointId))) {
+                work.computeIfAbsent(endpointId, id -> new DbSum()).add(statement, slowNs);
+            }
+        });
+        return summed(work);
     }
 
     /**
      * How much database work each job's runs did, by {@code service\0name}.
      *
-     * <p>The same join as {@link #databaseWork}, over the root {@code INTERNAL} spans
-     * a {@code slow-job} finding is about (storage.adoc): a job is not an endpoint, so
-     * it is keyed by the service and the span name rather than by an endpoint id.
+     * <p>A database span is the work of a job's run when its parent chain reaches the
+     * run, the root {@code INTERNAL} span a {@code slow-job} finding is about, without
+     * passing an entry span (storage.adoc#reads): a request the job makes to its own
+     * service is that request's work. A job is not an endpoint, so it is keyed by the
+     * service and the span name rather than by an endpoint id.
      *
-     * <p>Only the jobs of one service named {@code names} are joined, which are the
-     * ones a {@code slow-job} finding is about: the runs are then read by the
-     * service's {@code (service, start_ms)} index rather than out of every span of
-     * the window.
+     * <p>Only the traces of the runs of one service's jobs named {@code names} are read:
+     * the runs by the service's {@code (service, start_ms)} index, their spans by the
+     * trace index, rather than every span of the window.
      */
     public Map<String, DbWork> jobDatabaseWork(Window window, String service,
             Collection<String> names) {
         if (names.isEmpty()) {
             return Map.of();
         }
-        Where where = new Where(SpanSql.job("r.")
-                + " AND r.start_ms BETWEEN ? AND ? AND d.start_ms BETWEEN ? AND ? AND r.service = ?",
-                window.from(), window.to(), window.from(), window.to(), service)
-                .andIn("r.name", names);
+        Set<String> wanted = new HashSet<>(names);
+        long slowNs = nanos(tingles.slowQueryMs());
+        Map<String, DbSum> work = new HashMap<>();
+        forEachStatement(window, service, Where.jobs(window, service).andIn("name", wanted),
+                (statement, ancestry) -> {
+                    Ancestry.Entry run = ancestry.placeOf(statement.traceId(), statement.spanId());
+                    if (run != null && run.job() && run.service().equals(statement.service())
+                            && wanted.contains(run.endpoint())) {
+                        work.computeIfAbsent(run.service() + "\0" + run.endpoint(), key -> new DbSum())
+                                .add(statement, slowNs);
+                    }
+                });
+        return summed(work);
+    }
+
+    /** A database span as the database work reads it: which span, whose, and how long it took. */
+    private record Statement(String traceId, String spanId, String service, long durationNs) {
+    }
+
+    /**
+     * Every database span of the window, of one service or of every one, handed out with
+     * the parent-chain walk over the spans it was read with.
+     *
+     * <p>A database span's nearest entry span of its own service, and a job's run, lie
+     * on its parent chain before the chain leaves the service, so the spans of the
+     * service are all the walk needs.
+     *
+     * @param tops the spans whose traces are read, by the trace index, or null for every
+     *        trace of the window, which is then read in the order of the window's index
+     */
+    private void forEachStatement(Window window, @Nullable String service, @Nullable Where tops,
+            BiConsumer<Statement, Ancestry> consumer) {
+        Where where = Where.window(window, service);
+        String index = "";
+        if (tops != null) {
+            where = where.and("trace_id IN (SELECT trace_id FROM span WHERE " + tops.sql() + ")",
+                    tops.params().toArray());
+            index = " USE INDEX (span_trace)";
+        }
+        Ancestry.Builder walk = new Ancestry.Builder();
+        List<Statement> statements = new ArrayList<>();
+        sql.forEach("SELECT " + Ancestry.COLUMNS + ", query_id, duration_ns FROM span" + index
+                + " WHERE " + where.sql(), where.params(), rs -> {
+                    walk.add(rs);
+                    if (rs.getString("query_id") != null) {
+                        statements.add(new Statement(rs.getString("trace_id"), rs.getString("span_id"),
+                                rs.getString("service"), rs.getLong("duration_ns")));
+                    }
+                });
+        Ancestry ancestry = walk.build();
+        for (Statement statement : statements) {
+            consumer.accept(statement, ancestry);
+        }
+    }
+
+    /** The database work of one endpoint or job, summed a statement at a time. */
+    private static final class DbSum {
+        private long calls;
+        private long totalNs;
+        private long slowCalls;
+
+        /** @param slowNs {@code slow.query.ms} in nanoseconds, which a slow call runs past */
+        void add(Statement statement, long slowNs) {
+            calls++;
+            totalNs += statement.durationNs();
+            if (statement.durationNs() > slowNs) {
+                slowCalls++;
+            }
+        }
+
+        DbWork work() {
+            return new DbWork(calls, Rows.ms(totalNs), slowCalls);
+        }
+    }
+
+    private static Map<String, DbWork> summed(Map<String, DbSum> sums) {
         Map<String, DbWork> work = new HashMap<>();
-        sql.forEach("SELECT r.service AS service, r.name AS name, COUNT(d.id) AS calls,"
-                + " SUM(d.duration_ns) AS total_ns, " + slowCalls("d") + " AS slow_calls"
-                + " FROM span r JOIN span d USE INDEX (span_trace) ON d.trace_id = r.trace_id AND d.service = r.service"
-                + " AND d.query_id IS NOT NULL WHERE " + where.sql() + " GROUP BY r.service, r.name",
-                where.params(), rs ->
-                        work.put(rs.getString("service") + "\0" + rs.getString("name"),
-                                new DbWork(rs.getLong("calls"), Rows.ms(rs, "total_ns"), rs.getLong("slow_calls"))));
+        sums.forEach((key, sum) -> work.put(key, sum.work()));
         return work;
     }
 
@@ -453,12 +520,6 @@ public final class Queries {
                 where.params(), rs -> new JobRuns(new SlowGroup(rs.getString("service"), rs.getString("name"),
                         rs.getLong("runs"), Rows.ms(rs, "p50_ns"), Rows.ms(rs, "p95_ns"),
                         Rows.ms(rs, "max_ns"), Rows.ms(rs, "total_ns")), rs.getLong("newest_ms")));
-    }
-
-    /** How many of {@code alias}'s spans ran past {@code slow.query.ms}, as an aggregate. */
-    private String slowCalls(String alias) {
-        return "SUM(CASE WHEN " + SpanSql.slowerThan(alias + ".duration_ns", tingles.slowQueryMs())
-                + " THEN 1 ELSE 0 END)";
     }
 
     private Map<String, Map<String, Long>> statusCodes(Where where) {
@@ -1351,10 +1412,12 @@ public final class Queries {
          * The split of a set of spans, whole traces of one service as {@link #timeSplit}
          * reads them.
          *
-         * <p>A span whose parent is not among them is a top span: the entry span of a
-         * request, the root span of a job. Its own self time is {@code self}. Every
-         * other span's self time goes to {@code db}, {@code http} or {@code internal} by
-         * its category, and to the summary it is named by.
+         * <p>The top spans are the ones {@code top} picks: the endpoint's own entry spans,
+         * the job's runs. Only what lies under them counts, down to the next entry span,
+         * which is a request of its own: a call the service makes to itself, a message
+         * it consumes itself. A top span's own self time is {@code self}. Every other
+         * span's self time goes to {@code db}, {@code http} or {@code internal} by its
+         * category, and to the summary it is named by.
          *
          * <p>The self times are taken inside the top span: each child counts only the
          * part of it that lies inside its parent, so an {@code @Async} child that runs
@@ -1362,15 +1425,16 @@ public final class Queries {
          * the sum of the self times, which is the top spans' summed duration unless
          * children ran at once; then their overlap counts in each, and the four shares
          * still sum to 1.
+         *
+         * @param top   the group's own top spans
+         * @param entry the entry spans among the spans, each of which is a request's top span
          */
-        static TimeSplit of(List<SpanRecord> spans) {
+        static TimeSplit of(List<SpanRecord> spans, Predicate<SpanRecord> top,
+                Predicate<SpanRecord> entry) {
             if (spans.isEmpty()) {
                 return NONE;
             }
-            SpanTree tree = SpanTree.of(spans);
-            IdentityHashMap<SpanRecord, Long> self = selfInsideTheTop(tree);
-            Set<SpanRecord> top = Collections.newSetFromMap(new IdentityHashMap<>());
-            top.addAll(tree.roots());
+            IdentityHashMap<SpanRecord, Long> self = selfUnderTheTops(spans, top, entry);
 
             double totalMs = 0;
             // Insertion order is the order the JSON and the text print, so it is written out
@@ -1381,9 +1445,14 @@ public final class Queries {
             }
             Map<String, HotSpanSum> hottest = new LinkedHashMap<>();
             for (SpanRecord span : spans) {
-                double selfMs = Rows.ms(self.getOrDefault(span, 0L));
+                Long nanos = self.get(span);
+                if (nanos == null) {
+                    // Under none of the top spans: another request of the service, or another job.
+                    continue;
+                }
+                double selfMs = Rows.ms(nanos);
                 totalMs += selfMs;
-                if (top.contains(span)) {
+                if (top.test(span)) {
                     // A top span: the entry span of a request, the root span of a job. Its own
                     // self time is the request's own code.
                     shares.merge("self", selfMs, Double::sum);
@@ -1422,19 +1491,34 @@ public final class Queries {
         }
 
         /**
-         * The self time of every span of the tree, each span clipped to the part of its
-         * parent it ran in, down from its top span; walked with a stack, as a deep trace
+         * The self time of every span under the top spans {@code top} picks, down to the
+         * next entry span, each span clipped to the part of its parent it ran in; a top span
+         * is not clipped, as it is a request of its own. Walked with a stack, as a deep trace
          * nests further than the call stack goes.
+         *
+         * <p>A span under none of the top spans is not in the answer.
          */
-        private static IdentityHashMap<SpanRecord, Long> selfInsideTheTop(SpanTree tree) {
+        static IdentityHashMap<SpanRecord, Long> selfUnderTheTops(List<SpanRecord> spans,
+                Predicate<SpanRecord> top, Predicate<SpanRecord> entry) {
+            SpanTree tree = SpanTree.of(spans);
             IdentityHashMap<SpanRecord, Long> self = new IdentityHashMap<>();
             Deque<Clipped> stack = new ArrayDeque<>();
-            for (SpanRecord root : tree.roots()) {
-                stack.push(new Clipped(root, root.startNanos(), root.startNanos() + root.durationNanos()));
+            for (SpanRecord span : spans) {
+                if (top.test(span)) {
+                    stack.push(new Clipped(span, span.startNanos(), span.endNanos()));
+                }
             }
             while (!stack.isEmpty()) {
                 Clipped clipped = stack.pop();
-                List<SpanRecord> children = tree.children(clipped.span());
+                if (self.containsKey(clipped.span())) {
+                    continue;
+                }
+                List<SpanRecord> children = new ArrayList<>();
+                for (SpanRecord child : tree.children(clipped.span())) {
+                    if (!entry.test(child)) {
+                        children.add(child);
+                    }
+                }
                 long covered = coveredNanos(children, clipped.from(), clipped.to());
                 self.put(clipped.span(), Math.max(0, clipped.to() - clipped.from() - covered));
                 for (SpanRecord child : children) {
@@ -1446,39 +1530,28 @@ public final class Queries {
             return self;
         }
 
-        /** A span and the part of it inside its parent, as {@link #selfInsideTheTop} walks it. */
+        /** A span and the part of it inside its parent, as {@link #selfUnderTheTops} walks it. */
         private record Clipped(SpanRecord span, long from, long to) {
         }
     }
 
     /**
-     * The self time of every span, by span id: its duration less the time its direct
-     * children among these spans cover within it.
-     *
-     * <p>It is the Profile view's definition, which the hot span of a finding and the
-     * time split both use (findings.adoc#hot-span): two children that run at once take
-     * their overlap once, a child that outlives its parent takes only the part inside
-     * it, and a child whose parent is not among the spans takes nothing from anyone.
+     * The spans of a sample as a time split reads them (findings.adoc#time): the spans of
+     * one service in whole traces, which of them are entry spans, and which are the
+     * group's own top spans. Both sets go by identity, as {@link SpanTree} does.
      */
-    static Map<String, Long> selfNanos(List<SpanRecord> spans) {
-        Set<String> known = new HashSet<>();
-        for (SpanRecord span : spans) {
-            known.add(span.spanId());
+    record SampleSpans(List<SpanRecord> spans, Set<SpanRecord> tops, Set<SpanRecord> entries) {
+
+        static final SampleSpans NONE = new SampleSpans(List.of(), Set.of(), Set.of());
+
+        TimeSplit split() {
+            return TimeSplit.of(spans, tops::contains, entries::contains);
         }
-        Map<String, List<SpanRecord>> children = new HashMap<>();
-        for (SpanRecord span : spans) {
-            String parent = span.parentSpanId();
-            if (parent != null && known.contains(parent)) {
-                children.computeIfAbsent(parent, key -> new ArrayList<>()).add(span);
-            }
+
+        /** The self time of every span under the top spans, as {@link #split} takes it. */
+        IdentityHashMap<SpanRecord, Long> selfUnderTheTops() {
+            return TimeSplit.selfUnderTheTops(spans, tops::contains, entries::contains);
         }
-        Map<String, Long> self = new LinkedHashMap<>();
-        for (SpanRecord span : spans) {
-            long covered = coveredNanos(children.getOrDefault(span.spanId(), List.of()),
-                    span.startNanos(), span.endNanos());
-            self.put(span.spanId(), Math.max(0, span.durationNanos() - covered));
-        }
-        return self;
     }
 
     /** How much of {@code from} to {@code to} the spans cover together, each clipped to it. */
@@ -1503,10 +1576,10 @@ public final class Queries {
      * sample's order, each whole, until the next would take the read past
      * {@value #MAX_DEPENDENCY_ROWS} spans (findings.adoc#time).
      *
-     * <p>A trace read in part would make the children of every parent cut off top
-     * spans, which inflates the total the shares are taken over and moves database
-     * time into {@code self}; a whole trace fewer keeps every share true of the traces
-     * it names. The first trace is always read, as the trace page reads it.
+     * <p>A trace read in part would cut off whatever lies under a parent it missed,
+     * which moves database time into {@code self}; a whole trace fewer keeps every
+     * share true of the traces it names. The first trace is always read, as the trace
+     * page reads it.
      */
     private List<String> wholeTraces(Window window, String service, List<String> traceIds) {
         if (traceIds.isEmpty()) {
@@ -1569,21 +1642,46 @@ public final class Queries {
      * built from the attributes and not from a column, which is why the sample is
      * bounded rather than the window.
      *
-     * <p>Only the spans of {@code service} count, the rule {@link #databaseWork}
-     * already uses: the database work of a downstream service belongs to that
-     * service's own endpoint, and leaving its server span out is what makes the wait
-     * on an outbound call land in {@code http} where the caller can see it.
+     * <p>Only the spans of {@code service} under the group's own top spans count, the
+     * rule {@link #databaseWork} already uses: the database work of a downstream
+     * service belongs to that service's own endpoint, and leaving its server span out
+     * is what makes the wait on an outbound call land in {@code http} where the caller
+     * can see it. A request the service makes to itself, or a message it consumes
+     * itself, is a request of its own in the same way.
+     *
+     * @param tops the group's own top spans: an endpoint's entry spans, a job's runs
      */
-    public TimeSplit timeSplit(Window window, String service, List<String> traceIds) {
+    public TimeSplit timeSplit(Window window, String service, SpanMatch tops, List<String> traceIds) {
+        return sampleSpans(window, service, tops, traceIds).split();
+    }
+
+    /** The spans of a sample a time split reads, the whole traces of {@link #wholeTraces}. */
+    SampleSpans sampleSpans(Window window, String service, SpanMatch tops, List<String> traceIds) {
         List<String> whole = wholeTraces(window, service, traceIds);
         if (whole.isEmpty()) {
-            return TimeSplit.NONE;
+            return SampleSpans.NONE;
         }
         Where where = Where.window(window, service).andIn("trace_id", whole);
+        List<Object> params = new ArrayList<>(tops.params);
+        params.addAll(where.params());
+        List<SpanRecord> spans = new ArrayList<>();
+        Set<SpanRecord> own = Collections.newSetFromMap(new IdentityHashMap<>());
+        Set<SpanRecord> entries = Collections.newSetFromMap(new IdentityHashMap<>());
         // By trace: the sample is a few traces out of the service's window, and the
         // trace index reads their spans alone where the service's reads the window.
-        return TimeSplit.of(sql.query("SELECT " + Rows.SPAN_COLUMNS + " FROM span USE INDEX (span_trace) WHERE "
-                + where.sql(), where.params(), Rows::span));
+        sql.forEach("SELECT " + Rows.SPAN_COLUMNS + ", entry, CASE WHEN " + tops.predicate
+                + " THEN TRUE ELSE FALSE END AS own FROM span s USE INDEX (span_trace) WHERE " + where.sql(),
+                params, rs -> {
+                    SpanRecord span = Rows.span(rs);
+                    spans.add(span);
+                    if (rs.getBoolean("entry")) {
+                        entries.add(span);
+                    }
+                    if (rs.getBoolean("own")) {
+                        own.add(span);
+                    }
+                });
+        return new SampleSpans(spans, own, entries);
     }
 
     // --- the service map -----------------------------------------------------
@@ -1839,13 +1937,19 @@ public final class Queries {
          */
         static final String NO_ENDPOINT = "(no endpoint)";
 
+        /** The columns of a span a walk reads, which {@link Builder#add} takes. */
+        static final String COLUMNS = "trace_id, span_id, parent_span_id, entry, endpoint, endpoint_id, service, name, kind";
+
         /**
          * The entry span itself, so a finding can count the requests it affected.
          *
          * @param endpointId the stored {@code endpoint_id}, null when the entry span has
          *        no endpoint name and {@code endpoint} is its span name
+         * @param job        whether it is no entry span but the run of a job, a root
+         *        {@code INTERNAL} span (design.adoc#endpoint-identity)
          */
-        record Entry(String spanId, String endpoint, String service, @Nullable String endpointId) {
+        record Entry(String spanId, String endpoint, String service, @Nullable String endpointId,
+                boolean job) {
         }
 
         /**
@@ -1858,36 +1962,47 @@ public final class Queries {
          * most of the rows (storage.adoc#reads).
          */
         static Ancestry of(Sql sql, Window window, @Nullable String service) {
-            Map<String, Entry> entries = new HashMap<>();
-            Map<String, String> parents = new HashMap<>();
-            Map<String, Entry> roots = new HashMap<>();
             Where where = Where.window(window, null);
             if (service != null) {
                 Where traced = Where.window(window, service);
                 where = where.and("trace_id IN (SELECT trace_id FROM span WHERE " + traced.sql() + ")",
                         traced.params().toArray());
             }
-            sql.forEach("SELECT trace_id, span_id, parent_span_id, entry, endpoint, endpoint_id, service, name"
-                    + " FROM span WHERE " + where.sql(), where.params(), rs -> {
-                        String traceId = rs.getString("trace_id");
-                        String spanId = rs.getString("span_id");
-                        String parent = rs.getString("parent_span_id");
-                        if (parent != null) {
-                            parents.put(key(traceId, spanId), key(traceId, parent));
-                        }
-                        if (rs.getBoolean("entry")) {
-                            String endpoint = rs.getString("endpoint");
-                            entries.put(key(traceId, spanId), new Entry(spanId,
-                                    endpoint == null ? rs.getString("name") : endpoint,
-                                    rs.getString("service"),
-                                    endpoint == null ? null : rs.getString("endpoint_id")));
-                        } else if (parent == null) {
-                            // A root that is no entry span: a job, named by its span name.
-                            roots.put(key(traceId, spanId), new Entry(spanId, rs.getString("name"),
-                                    rs.getString("service"), null));
-                        }
-                    });
-            return new Ancestry(entries, parents, roots);
+            Builder builder = new Builder();
+            sql.forEach("SELECT " + COLUMNS + " FROM span WHERE " + where.sql(), where.params(), builder::add);
+            return builder.build();
+        }
+
+        /** The maps of a walk, filled from rows that carry {@link #COLUMNS}, in any order. */
+        static final class Builder {
+
+            private final Map<String, Entry> entries = new HashMap<>();
+            private final Map<String, String> parents = new HashMap<>();
+            private final Map<String, Entry> roots = new HashMap<>();
+
+            void add(ResultSet rs) throws SQLException {
+                String traceId = rs.getString("trace_id");
+                String spanId = rs.getString("span_id");
+                String parent = rs.getString("parent_span_id");
+                if (parent != null) {
+                    parents.put(key(traceId, spanId), key(traceId, parent));
+                }
+                if (rs.getBoolean("entry")) {
+                    String endpoint = rs.getString("endpoint");
+                    entries.put(key(traceId, spanId), new Entry(spanId,
+                            endpoint == null ? rs.getString("name") : endpoint,
+                            rs.getString("service"),
+                            endpoint == null ? null : rs.getString("endpoint_id"), false));
+                } else if (parent == null) {
+                    // A root that is no entry span: a job, named by its span name.
+                    roots.put(key(traceId, spanId), new Entry(spanId, rs.getString("name"),
+                            rs.getString("service"), null, "INTERNAL".equals(rs.getString("kind"))));
+                }
+            }
+
+            Ancestry build() {
+                return new Ancestry(entries, parents, roots);
+            }
         }
 
         /**

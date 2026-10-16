@@ -250,14 +250,15 @@ Re-run the same exercise and check the query's `p95` and `total` columns in `com
 
 ## `slow-endpoint`
 
-`numbers`: `calls`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `apdex`, `dbCallsPerRequest`, `dbMsPerRequest`, `dbShare` (0..1 in the JSON, the part of the endpoint's total time spent in database spans of the same trace and service; the text prints it as a percentage, `93.0%`), `hotSpan`, `hotSpans`, `breakdown`.
+`numbers`: `calls`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `apdex`, `dbCallsPerRequest`, `dbMsPerRequest`, `dbShare` (0..1 in the JSON, the part of the endpoint's total time spent in its own database spans, those whose nearest entry span is one of its requests; the text prints it as a percentage, `93.0%`), `hotSpan`, `hotSpans`, `breakdown`.
+A request the service makes to itself, or a message it consumes itself, is an entry span of its own, so its statements are not the caller's.
 
-`hotSpan` is where the time went in the first evidence trace: the span of the finding's own service with the largest self time (its duration minus the time its direct children cover within it), that time, and its share of the endpoint's own span in that trace.
+`hotSpan` is where the time went in the first evidence trace: the span under the endpoint's own entry span with the largest self time (its duration minus the time its direct children cover within it, counting only the part of it inside its parent), that time, and its share of the endpoint's own span in that trace.
 It reads as one line, `hot span: SELECT order_line · 312.4 ms self · 62.0%`, and it is the first clue when `dbShare` is low, because it names the span instead of leaving the trace to be read.
 It is `null` only when the finding has no trace.
 
 `hotSpans` and `breakdown` answer the same question over many traces rather than one: the 20 slowest traces of the endpoint in the window, of which the first three are `traces`.
-Only the spans of the endpoint's own service count, so the wait on an outbound call lands in `http` rather than in the callee's queries.
+Only the spans of the endpoint's own service under its own entry spans count, down to the next entry span, so the wait on an outbound call lands in `http` rather than in the callee's queries, even when the callee is the same service.
 
 ```
    hot spans: SELECT order_line · 4,210.5 ms · 44.0% · ×126
@@ -296,7 +297,7 @@ An endpoint that fans out to several independent calls can run them together rat
 
 ## `slow-job`
 
-`numbers`: `runs`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `dbCallsPerRun`, `dbMsPerRun`, `dbShare` (0..1 in the JSON, the part of the job's total time spent in database spans of the same trace and service; the text prints it as a percentage), `hotSpan`, `hotSpans` and `breakdown` (the same three `slow-endpoint` carries, over the job's 20 slowest runs).
+`numbers`: `runs`, `p50Ms`, `p95Ms`, `maxMs`, `totalMs`, `dbCallsPerRun`, `dbMsPerRun`, `dbShare` (0..1 in the JSON, the part of the job's total time spent in its own database spans, those whose parent chain reaches the run without passing an entry span; the text prints it as a percentage), `hotSpan`, `hotSpans` and `breakdown` (the same three `slow-endpoint` carries, over the job's 20 slowest runs).
 
 A job is a root `INTERNAL` span: a scheduled method, an `@Async` call, a batch step.
 It is work the application did to itself, so it is never an entry span: it is in no request count, in no Apdex and in no `check` verdict, and this finding is the one place a slow scheduler tick or batch step is reported.

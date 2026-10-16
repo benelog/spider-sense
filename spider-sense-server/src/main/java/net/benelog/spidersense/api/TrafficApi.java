@@ -121,8 +121,8 @@ public final class TrafficApi {
         // The same breakdown a slow-endpoint finding carries, over the same traces
         // (findings.adoc#time), so the page and the finding agree.
         JsonObject breakdown = Json.object();
-        queries.timeSplit(window, endpoint.service(), sample).breakdown()
-                .forEach(breakdown::put);
+        queries.timeSplit(window, endpoint.service(), Queries.SpanMatch.endpoint(endpointId), sample)
+                .breakdown().forEach(breakdown::put);
         return WebResponse.json(Json.object()
                 .put("endpoint", Codecs.endpoint(endpoint))
                 .put("series", Codecs.serviceSeries(queries.buckets(window, null, endpointId)))

@@ -185,6 +185,34 @@ class CheckTest {
         assertThat(fromA.actual()).isEqualTo(3.0);
     }
 
+    /**
+     * GET /a runs one statement and calls GET /b of its own service, which runs one: each
+     * request ran one statement, though the trace holds two of the service's.
+     */
+    @Test
+    void aRequestToItsOwnServiceIsNotCountedAgainstTheCaller() {
+        Span.Builder a = entry("/a", 300);
+        Span.Builder call = Otlp.child(a, "%016x".formatted(ids++), "GET", Span.SpanKind.SPAN_KIND_CLIENT,
+                NOW + 5, 280, Otlp.attr("http.request.method", "GET"),
+                Otlp.attr("url.full", "http://localhost:8080/b"));
+        Span.Builder b = Otlp.child(call, "%016x".formatted(ids++), "GET /b", Span.SpanKind.SPAN_KIND_SERVER,
+                NOW + 6, 270, Otlp.attr("http.request.method", "GET"), Otlp.attr("http.route", "/b"),
+                Otlp.attr("http.response.status_code", 200));
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), a, query(a, 2, NOW + 1), call, b,
+                query(b, 200, NOW + 7)));
+        flush();
+
+        Check.CheckResult result = check.check(window, null, null, Map.of(Check.MAX_QUERIES_PER_REQUEST, 1.0));
+        Check.RuleCheck slowFromA = rule(check.check(window, null, "GET /a", Map.of(Check.MAX_SLOW_QUERIES, 0.0)),
+                Check.MAX_SLOW_QUERIES);
+
+        assertThat(rule(result, Check.MAX_QUERIES_PER_REQUEST).actual()).isEqualTo(1.0);
+        assertThat(rule(result, Check.MAX_QUERIES_PER_REQUEST).pass()).isTrue();
+        assertThat(slowFromA.actual())
+                .as("the slow statement is the one GET /b ran")
+                .isZero();
+    }
+
     private Span.Builder query(Span.Builder parent, long durationMs, long at) {
         int n = ids++;
         return Otlp.child(parent, "%016x".formatted(n), "SELECT items", Span.SpanKind.SPAN_KIND_CLIENT, at, durationMs,

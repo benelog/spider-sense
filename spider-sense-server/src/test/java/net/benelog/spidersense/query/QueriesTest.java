@@ -570,7 +570,9 @@ class QueriesTest {
         traceWithQueries(2, 10_000, 9_999);
         flush();
 
-        Queries.TimeSplit split = queries.timeSplit(window, "orders", List.of(traceId(1), traceId(2)));
+        Queries.TimeSplit split = queries.timeSplit(window, "orders",
+                Queries.SpanMatch.endpoint(Ids.endpointId("orders", "GET /orders")),
+                List.of(traceId(1), traceId(2)));
 
         assertThat(split.breakdown().get("db")).isCloseTo(14_999 / 30_000.0, within(1e-9));
         assertThat(split.breakdown().get("self")).isCloseTo(15_001 / 30_000.0, within(1e-9));
