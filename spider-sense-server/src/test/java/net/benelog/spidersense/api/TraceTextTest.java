@@ -155,6 +155,62 @@ class TraceTextTest {
                 .contains("  exception IllegalStateException: rate|limit hit\n");
     }
 
+    /** One of the six {@code SELECT product} spans of an N+1, failed when {@code failed} says so. */
+    private static SpanRecord product(int n, long durationMs, boolean failed) {
+        long start = BASE_NS + (10L + 10L * n) * 1_000_000L;
+        Map<String, Object> attributes = Map.of("db.system", "h2", "db.statement",
+                "select * from product where id=?", "db.operation", "SELECT", "db.sql.table", "product");
+        return new SpanRecord(TRACE, "%016x".formatted(100 + n), "0000000000000001", "orders",
+                "SELECT product", "CLIENT", start, start + durationMs * 1_000_000L,
+                failed ? "ERROR" : "UNSET", null, attributes,
+                failed ? List.of(new SpanRecord.SpanEvent("exception", start, Map.of(
+                        "exception.type", "org.h2.jdbc.JdbcSQLTimeoutException",
+                        "exception.message", "Timeout trying to lock table PRODUCT",
+                        "exception.stacktrace", """
+                                org.h2.jdbc.JdbcSQLTimeoutException: Timeout
+                                \tat org.h2.message.DbException.get(DbException.java:1)
+                                \tat orders.Repo.find(Repo.java:12)""")))
+                        : List.of(),
+                "test");
+    }
+
+    /**
+     * A failed or a slow span among repeated siblings that are neither keeps a line of its own,
+     * its exception or its statement under it, as the waterfall keeps a row for it; a run of
+     * failed spans collapses, marked, with the first one's exception (cli.adoc#trace-rendering).
+     */
+    @Test
+    void aFailedOrSlowSpanIsNeverFoldedIntoARunOfSpansThatAreNeither() {
+        List<SpanRecord> lastFails = new ArrayList<>(List.of(span("0000000000000001", null, "GET /a", 0, 300, Map.of())));
+        List<SpanRecord> thirdSlow = new ArrayList<>(lastFails);
+        List<SpanRecord> allFail = new ArrayList<>(lastFails);
+        for (int n = 0; n < 6; n++) {
+            lastFails.add(product(n, 1, n == 5));
+            thirdSlow.add(product(n, n == 2 ? 150 : 1, false));
+            allFail.add(product(n, 1, true));
+        }
+
+        assertThat(spanLines(Text.trace(trace(lastFails), TINGLES, FRAMES, false)).subList(1, 6)).containsExactly(
+                "10.0 ms    5.0 ms      db SELECT product  × 5, 1.0 ms avg, 5.0 ms total",
+                "                         select * from product where id=?",
+                "60.0 ms    1.0 ms      db SELECT product  [error]",
+                "                         exception JdbcSQLTimeoutException: Timeout trying to lock table PRODUCT",
+                "                         orders.Repo.find(Repo.java:12)");
+        assertThat(spanLines(Text.trace(trace(thirdSlow), TINGLES, FRAMES, false)).subList(1, 8)).containsExactly(
+                "10.0 ms    1.0 ms      db SELECT product",
+                "20.0 ms    1.0 ms      db SELECT product",
+                "30.0 ms    150.0 ms    db SELECT product  [slow]",
+                "                         select * from product where id=?",
+                "40.0 ms    1.0 ms      db SELECT product",
+                "50.0 ms    1.0 ms      db SELECT product",
+                "60.0 ms    1.0 ms      db SELECT product");
+        assertThat(spanLines(Text.trace(trace(allFail), TINGLES, FRAMES, false)).subList(1, 5)).containsExactly(
+                "10.0 ms    6.0 ms      db SELECT product  × 6, 1.0 ms avg, 6.0 ms total  [error]",
+                "                         select * from product where id=?",
+                "                         exception JdbcSQLTimeoutException: Timeout trying to lock table PRODUCT",
+                "                         orders.Repo.find(Repo.java:12)");
+    }
+
     /**
      * The store keeps {@value SpanRecord#MAX_STATEMENT} characters of a statement, so one that
      * long says it may be cut, {@code --full} included, rather than read as the whole statement.

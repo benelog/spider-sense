@@ -340,8 +340,9 @@ The head above the rows reads that duration, such as `0.4 ms total`.
 An error has a red bar and a bolt, and a slow database span a `--warn` ring.
 A row click opens the span drawer.
 
-Repeated siblings fold as the xref:cli.adoc#trace-rendering[CLI's tree] collapses them: more than three consecutive children of one span, none with children of its own, with the same category, service and summary, are one row, such as `SELECT product × 21`.
+Repeated siblings fold as the xref:cli.adoc#trace-rendering[CLI's tree] collapses them: more than three consecutive children of one span, none with children of its own, with the same category, service and summary, and alike in whether they failed and whether they are slow, are one row, such as `SELECT product × 21`.
 Its bar runs from the first span's start to the last one's end, its duration is the total of the spans, and its title gives the count, the average and the total.
+A failed or slow span among repeats that are neither keeps a row of its own, with its bolt or its ring.
 A click on the row or its chevron, or Enter, expands it in place, with the spans one level deeper under it, and another folds it again.
 The expanded runs stay across a Live refresh and are the same in the profile.
 

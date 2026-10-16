@@ -152,6 +152,23 @@ test('more than three repeated childless siblings fold into one run, as the CLI 
   assert.equal(siblingRuns(spanTree(nPlusOne.filter((s) => !['p4', 'p5'].includes(s.spanId)))).size, 0, 'three are not a run');
 });
 
+test('a failed or slow span never folds into a run of spans that are neither, as the CLI keeps its line (cli.adoc#trace-rendering)', () => {
+  const marked = (ids, flag) => nPlusOne.map((s) => (ids.includes(s.spanId) ? { ...s, [flag]: true } : s));
+  const lastFails = siblingRuns(spanTree(marked(['p5'], 'error')));
+  assert.deepEqual(lastFails.get('p1').spans.map((s) => s.spanId), ['p1', 'p2', 'p3', 'p4']);
+  assert.equal(lastFails.has('p5'), false, 'the failed span stands on its own row');
+  assert.equal(siblingRuns(spanTree(marked(['p3'], 'slow'))).size, 0, 'p1 p2, then p3, then p4 p5: no run');
+  assert.equal(siblingRuns(spanTree(marked(['p1', 'p2', 'p3', 'p4', 'p5'], 'error'))).get('p1').count, 5,
+    'spans that all failed fold');
+});
+
+test('a summary folds on the whitespace the CLI collapses and no other (cli.adoc#trace-rendering)', () => {
+  const nbsp = nPlusOne.map((s) => (s.spanId === 'p3' ? { ...s, summary: 'SELECT product (h2)' } : s));
+  assert.equal(siblingRuns(spanTree(nbsp)).size, 0, 'a no-break space is no space to the CLI');
+  const tabbed = nPlusOne.map((s) => (s.spanId === 'p3' ? { ...s, summary: ' SELECT\tproduct (h2) ' } : s));
+  assert.equal(siblingRuns(spanTree(tabbed)).get('p1').count, 5);
+});
+
 test('flattenTree shows a run as one row and its spans one level deeper when it is expanded', () => {
   const tree = spanTree(nPlusOne);
   const rowsOf = (expanded) => flattenTree(tree, new Set(), expanded).map((r) => (r.run ? r.run.key : r.span.spanId) + ':' + r.depth);

@@ -847,9 +847,10 @@ offset     duration  span
 
 Two spaces of indentation mark each level of depth, and the service is named only where it changes from the parent.
 A span's summary collapses its newlines and runs of whitespace to one space, so a statement written over several lines still takes one.
-Consecutive sibling spans of one service with the same summary and category, none with children of its own, collapse after the third into one line with `× n`, the average and the total, as the waterfall folds them (xref:pages.adoc#waterfall[Waterfall]).
+Consecutive sibling spans of one service with the same summary and category, alike in whether they failed and whether they are slow, none with children of its own, collapse after the third into one line with `× n`, the average and the total, as the waterfall folds them (xref:pages.adoc#waterfall[Waterfall]).
+A failed or slow span among repeats that are neither therefore keeps a line of its own, and a collapsed line is marked `[error]` or `[slow]` only when every span in it is.
 A database span that is slow, or the first of a collapsed group, shows its statement on the next line.
-An error span shows its exception and the application frames under it, and the trace's log lines follow, oldest first.
+An error span shows its exception and the application frames under it, a collapsed line of failed spans its first span's, and the trace's log lines follow, oldest first.
 `--full` lists every repeated span and keeps the statements whole.
 <<trace,trace and traces>> shows a failed trace with its exception, its frames and its log lines.
 

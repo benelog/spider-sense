@@ -309,6 +309,7 @@ offset     duration  span
 ```
 
 Two spaces of indentation per depth, the service named only where it changes from the parent, consecutive identical siblings collapsed after the third into `× n` with the average and the total, and the statement of a slow or collapsed database span on the line below it.
+A failed or slow span is never collapsed into repeats that are neither: it keeps its own line, with its exception or its statement under it.
 `--full` expands the group and keeps the statements whole.
 
 ### `traces`

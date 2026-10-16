@@ -68,20 +68,31 @@ export function spanTree(spans) {
 /** A run of repeated siblings folds when it has more spans than this, as the CLI's trace tree does (cli.adoc#trace-rendering). */
 export const FOLD_AFTER = 3;
 
-/** A span's summary on one line, as the CLI compares it: its whitespace runs made one space. */
+/**
+ * A span's summary on one line, as the CLI compares it: each run of the whitespace Java's `\s`
+ * matches (space, tab, the line breaks, vertical tab, form feed) made one space, and no space at
+ * either end, so the two fold exactly the same spans.
+ */
 function summaryLine(span) {
-  return String(span.summary || span.name || '').replace(/\s+/g, ' ').trim();
+  return String(span.summary || span.name || '').replace(/[ \t\n\v\f\r]+/g, ' ').replace(/^ | $/g, '');
 }
 
+/**
+ * Two siblings are one line of a run when they agree on category, service and summary, and on
+ * whether they failed and whether they are slow: a failed or slow span among spans that are
+ * neither keeps a row of its own, as it keeps a line of the CLI's tree.
+ */
 function sameLine(a, b) {
-  return a.category === b.category && a.service === b.service && summaryLine(a) === summaryLine(b);
+  return a.category === b.category && a.service === b.service && summaryLine(a) === summaryLine(b)
+    && !!a.error === !!b.error && !!a.slow === !!b.slow;
 }
 
 /**
  * The runs of repeated siblings the CLI's tree collapses into one `× n` line (cli.adoc#trace-rendering):
  * more than FOLD_AFTER consecutive children of one parent, none with children of its own, with
- * the same category, service and summary. Each is `{ key, spans, count, start, end, totalMs }`,
- * keyed `run:` and its first span's id, by the id of every span in it.
+ * the same category, service and summary, and all failed or none, all slow or none. Each is
+ * `{ key, spans, count, start, end, totalMs }`, keyed `run:` and its first span's id, by the id
+ * of every span in it.
  */
 export function siblingRuns(tree) {
   const runs = new Map();

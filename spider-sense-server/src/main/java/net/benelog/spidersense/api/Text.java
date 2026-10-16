@@ -1116,25 +1116,15 @@ final class Text {
             }
             SpanRecord first = siblings.get(i);
             int run = 1;
-            while (i + run < siblings.size() && sameLine(first, siblings.get(i + run))
+            while (i + run < siblings.size() && sameLine(first, siblings.get(i + run), tingles)
                     && tree.children(siblings.get(i + run)).isEmpty()) {
                 run++;
             }
             boolean collapse = !full && run > COLLAPSE_AFTER && tree.children(first).isEmpty();
-            if (collapse) {
-                double total = 0;
-                for (int j = i; j < i + run; j++) {
-                    total += siblings.get(j).durationMillis();
-                }
-                lines.add(new TraceLine(group.depth, first, spanText(first, group.parentService),
-                        offset(first, startNs), total, run,
-                        first.dbStatement() == null ? List.of()
-                                : List.of(statementLine(first.dbStatement(), full))));
-                group.next = i + run;
-                continue;
-            }
+            // A collapsed line's spans all failed or none did, and all are slow or none is, so
+            // the first one's statement, exception and frames speak for the line.
             List<String> under = new ArrayList<>();
-            if (first.dbStatement() != null && (full || tingles.isSlow(first))) {
+            if (first.dbStatement() != null && (collapse || full || tingles.isSlow(first))) {
                 under.add(statementLine(first.dbStatement(), full));
             }
             if (first.isError()) {
@@ -1142,6 +1132,16 @@ final class Text {
                 under.add("exception " + Findings.simpleName(first.errorType())
                         + (message == null || message.isBlank() ? "" : ": " + oneLine(message)));
                 under.addAll(frames.of(first.stacktrace(), first.attributes()));
+            }
+            if (collapse) {
+                double total = 0;
+                for (int j = i; j < i + run; j++) {
+                    total += siblings.get(j).durationMillis();
+                }
+                lines.add(new TraceLine(group.depth, first, spanText(first, group.parentService),
+                        offset(first, startNs), total, run, List.copyOf(under)));
+                group.next = i + run;
+                continue;
             }
             lines.add(new TraceLine(group.depth, first, spanText(first, group.parentService),
                     offset(first, startNs), first.durationMillis(), 1, List.copyOf(under)));
@@ -1197,10 +1197,18 @@ final class Text {
         text.append(" ".repeat(columns)).append("  ".repeat(depth + 1)).append(content).append('\n');
     }
 
-    private static boolean sameLine(SpanRecord one, SpanRecord two) {
+    /**
+     * Whether two siblings are one line of a run: the same category, service and summary, and
+     * alike in whether they failed and whether they are slow, so a failed or slow span among
+     * spans that are neither keeps a line of its own, its exception or its statement under it,
+     * as the waterfall keeps a row for it (trace-model.js, {@code sameLine}).
+     */
+    private static boolean sameLine(SpanRecord one, SpanRecord two, Tingles tingles) {
         return one.category().equals(two.category())
                 && one.service().equals(two.service())
-                && summaryLine(one).equals(summaryLine(two));
+                && summaryLine(one).equals(summaryLine(two))
+                && one.isError() == two.isError()
+                && tingles.isSlow(one) == tingles.isSlow(two);
     }
 
     // --- two traces aligned ---------------------------------------------------
