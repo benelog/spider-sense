@@ -146,6 +146,24 @@ test('the Metrics and JVM charts take the new palette when the theme flips (ui.a
   }
 });
 
+test('the JVM page draws every CPU point as a percentage, a sum above 1.0 too (pages.adoc#jvm)', async () => {
+  const served = globalThis.fetch;
+  const t = [Date.now() - 30000, Date.now() - 20000, Date.now() - 10000, Date.now()];
+  globalThis.fetch = async (input, init) => {
+    if (new URL(input, 'http://localhost:4000').pathname !== '/api/jvm') return served(input, init);
+    return new Response(JSON.stringify({ service: ids.service, runtime: {}, threads: { t, count: [40, 40, 40, 40], daemon: [20, 20, 20, 20] }, cpu: { t, utilization: [0.95, 1.2, 0.6, 1], systemLoad1m: [] } }), { status: 200 });
+  };
+  try {
+    const jvm = await visit('jvm', {}, ids.service);
+    const cpu = jvm.root.querySelectorAll('section.panel').find((p) => (p.querySelector('.panel-title') || {}).textContent === 'CPU');
+    const plot = cpu.querySelector('div.chart').children[0].plot;
+    assert.deepEqual(plot.data[1].map((v) => Math.round(v * 10) / 10), [95, 120, 60, 100]);
+    jvm.instance.destroy();
+  } finally {
+    globalThis.fetch = served;
+  }
+});
+
 test('the query page\'s callers and the error page\'s endpoints link to the endpoint page (api.adoc#callers)', async () => {
   for (const [name, id] of [['query', ids.query], ['error', ids.error]]) {
     const { root, instance } = await visit(name, { id });

@@ -134,7 +134,7 @@ export function render(root, ctx) {
       series: [
         {
           label: 'utilisation', legendLabel: 'process CPU utilisation',
-          values: (cpu.utilization || []).map((v) => (v == null ? null : v <= 1 ? v * 100 : v)), color: 'ok', type: 'area', scale: 'pct', width: 2,
+          values: (cpu.utilization || []).map((v) => (v == null ? null : v * 100)), color: 'ok', type: 'area', scale: 'pct', width: 2,
         },
         {
           label: 'load 1m', legendLabel: 'system load, 1 min, right axis',

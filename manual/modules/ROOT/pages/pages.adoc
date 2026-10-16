@@ -531,8 +531,9 @@ While the filter is on all services, the page offers a picker of the services th
 image::jvm.jpg[JVM heap, non-heap, memory pools and garbage collection,800]
 
 A runtime header gives the JVM, the pid, the host and the CPU count.
-Under it is a two-column grid of uPlot charts: heap used, committed and limit, non-heap used and committed, the memory pools with one line per pool, GC collections per bucket as bars with each collector's collection time as an accent line on a right-hand `ms` axis, threads, CPU utilisation from 0 to 100% with the system load, and loaded classes.
+Under it is a two-column grid of uPlot charts: heap used, committed and limit, non-heap used and committed, the memory pools with one line per pool, GC collections per bucket as bars with each collector's collection time as an accent line on a right-hand `ms` axis, threads, CPU utilisation in percent with the system load, and loaded classes.
 A service that two processes export at once, an application and its tests, is charted as the sum of the two, each process's collections counted on their own (xref:api.adoc#jvm[JVM]).
+Every point of the CPU chart is the utilisation fraction times 100, so the sum of two busy processes reads above 100%.
 One *Connection pool* chart follows per pool in `connectionPools`, with the pool's name in the panel title.
 It draws the connections in use as an accent area, the idle ones as a silk line, the maximum as a dashed `--warn` line, and the pending requests as `--err` bars on a right-hand axis.
 The axes carry their units, `MiB`, `ms`, `%`, and connections.
