@@ -313,6 +313,37 @@ class QueriesTest {
         assertThat(edges).noneSatisfy(edge -> assertThat(edge).contains("localhost:8081"));
     }
 
+    /**
+     * Past twenty thousand outbound spans, the targets called later in the window are still on
+     * the map and in the dependencies, and the busiest one counts every call.
+     */
+    @Test
+    void theMapCountsEveryOutboundSpanOfABusyWindow() {
+        traceWithQueries(1, 30_000, 20_001);
+        Span.Builder charge = Otlp.span(traceId(2), spanId(2), "POST /charge", Span.SpanKind.SPAN_KIND_SERVER,
+                NOW + 30_000, 20, Otlp.attr("http.request.method", "POST"), Otlp.attr("http.route", "/charge"));
+        Span.Builder job = Otlp.span(traceId(3), spanId(3), "archive-events", Span.SpanKind.SPAN_KIND_INTERNAL,
+                NOW + 40_000, 900);
+        decoder.ingest(Otlp.traces(Otlp.service("orders"), charge,
+                Otlp.child(charge, spanId(20), "INSERT payments", Span.SpanKind.SPAN_KIND_CLIENT, NOW + 30_001, 5,
+                        Otlp.attr("db.system", "postgresql"), Otlp.attr("db.name", "payments"),
+                        Otlp.attr("db.statement", "insert into payments values (?)"))));
+        decoder.ingest(Otlp.traces(Otlp.service("batch-worker"), job,
+                Otlp.child(job, spanId(30), "DELETE events", Span.SpanKind.SPAN_KIND_CLIENT, NOW + 40_001, 50,
+                        Otlp.attr("db.system", "h2"), Otlp.attr("db.name", "worker"),
+                        Otlp.attr("db.statement", "delete from events where at < ?"))));
+        flush();
+
+        Stats.ServiceMap map = queries.map(window);
+
+        List<String> ids = map.nodes().stream().map(Stats.Node::id).toList();
+        assertThat(ids).contains("db:postgresql:payments", "svc:batch-worker", "db:h2:worker");
+        assertThat(map.edges()).filteredOn(edge -> edge.to().equals("db:h2"))
+                .extracting(Stats.Edge::calls).containsExactly(20_001L);
+        assertThat(queries.dependencies("orders", window)).extracting(Stats.Dependency::target)
+                .containsExactly("h2", "postgresql:payments");
+    }
+
     @Test
     void errorsGroupOnTheNormalisedMessage() {
         for (int i = 1; i <= 2; i++) {

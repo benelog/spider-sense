@@ -51,10 +51,10 @@ import org.jspecify.annotations.Nullable;
 public final class Queries {
 
     /**
-     * A guard on the reads of whole rows rather than an aggregate: the dependency scan,
-     * and the spans a time split reads, which stop at a whole trace under it.
+     * A guard on the spans a time split reads, whole rows rather than an aggregate, which
+     * stop at the last whole trace under it.
      */
-    private static final int MAX_DEPENDENCY_ROWS = 20_000;
+    private static final int MAX_SAMPLE_SPANS = 20_000;
 
     /**
      * The limit that asks for every group or finding of a window, not the top of it: a
@@ -1205,16 +1205,11 @@ public final class Queries {
 
     /** What one service calls: its outbound spans grouped by target. */
     public List<Stats.Dependency> dependencies(String service, Window window) {
-        Map<TargetKey, List<SpanRecord>> byTarget = new LinkedHashMap<>();
-        for (SpanRecord span : dependencySpans(window, service)) {
-            byTarget.computeIfAbsent(new TargetKey(span.category(), target(span)), k -> new ArrayList<>())
-                    .add(span);
-        }
         List<Stats.Dependency> dependencies = new ArrayList<>();
-        byTarget.forEach((key, group) -> {
-            CallStats stats = CallStats.ofSpans(group);
-            dependencies.add(new Stats.Dependency(key.category(), key.target(), stats.calls(),
-                    stats.errors(), stats.avgMs(), stats.p95Ms()));
+        dependencyCalls(window, service, Set.of()).forEach((caller, calls) -> {
+            CallStats stats = calls.stats();
+            dependencies.add(new Stats.Dependency(caller.target().category(), caller.target().target(),
+                    stats.calls(), stats.errors(), stats.avgMs(), stats.p95Ms()));
         });
         dependencies.sort((a, b) -> Long.compare(b.calls(), a.calls()));
         return dependencies;
@@ -1224,15 +1219,70 @@ public final class Queries {
     private static final String DEPENDENCY_CATEGORIES = "('http', 'db', 'messaging', 'rpc')";
 
     /**
-     * The outbound spans of the window that call a dependency, of one service or of every
-     * one, at most {@value #MAX_DEPENDENCY_ROWS} of them.
+     * Every outbound span of the window that calls a dependency, of one service or of every
+     * one, grouped by the service that called and what it called, with no cap
+     * (storage.adoc#reads).
+     *
+     * <p>The spans are read one by one, because the target of an HTTP call, a queue or an
+     * RPC service lives in the attributes ({@link #target}); a database's is two columns,
+     * so its attributes are left unread. A group keeps the duration of each call and the
+     * count of the failed ones, and nothing of the span.
+     *
+     * @param skipped the outbound spans to leave out, by {@link Ancestry#key}
      */
-    private List<SpanRecord> dependencySpans(Window window, @Nullable String service) {
+    private Map<CallerKey, Calls> dependencyCalls(Window window, @Nullable String service,
+            Set<String> skipped) {
         Where where = Where.window(window, service)
                 .and("NOT entry")
                 .and("category IN " + DEPENDENCY_CATEGORIES);
-        return sql.query("SELECT " + Rows.SPAN_COLUMNS + " FROM span WHERE "
-                + where.sql() + " LIMIT " + MAX_DEPENDENCY_ROWS, where.params(), Rows::span);
+        Map<CallerKey, Calls> byCaller = new LinkedHashMap<>();
+        sql.forEach("SELECT trace_id, span_id, parent_span_id, service, name, kind, start_ns, duration_ns,"
+                + " status, status_message, scope, error, category, db_system, db_namespace,"
+                + " CASE WHEN category = 'db' THEN NULL ELSE attributes END AS attributes,"
+                + " CASE WHEN category = 'db' THEN NULL ELSE events END AS events"
+                + " FROM span WHERE " + where.sql(), where.params(), rs -> {
+                    if (skipped.contains(Ancestry.key(rs.getString("trace_id"), rs.getString("span_id")))) {
+                        return;
+                    }
+                    String category = rs.getString("category");
+                    String target = "db".equals(category)
+                            ? dbTarget(rs.getString("db_system"), rs.getString("db_namespace"))
+                            : target(Rows.span(rs));
+                    byCaller.computeIfAbsent(new CallerKey(new TargetKey(category, target), rs.getString("service")),
+                            key -> new Calls()).add(Rows.ms(rs, "duration_ns"), rs.getBoolean("error"));
+                });
+        return byCaller;
+    }
+
+    /**
+     * The calls of one group, as the map and the dependency list read them: the duration of
+     * each and how many failed, which is all {@link CallStats} needs.
+     */
+    private static final class Calls {
+        private double[] durations = new double[8];
+        private int size;
+        private long errors;
+
+        void add(double durationMs, boolean error) {
+            if (size == durations.length) {
+                durations = Arrays.copyOf(durations, size * 2);
+            }
+            durations[size++] = durationMs;
+            if (error) {
+                errors++;
+            }
+        }
+
+        void addAll(Calls other) {
+            for (int i = 0; i < other.size; i++) {
+                add(other.durations[i], false);
+            }
+            errors += other.errors;
+        }
+
+        CallStats stats() {
+            return CallStats.of(Arrays.copyOf(durations, size), errors);
+        }
     }
 
     /** What an outbound span called and what kind of dependency it is: one group of calls. */
@@ -1254,11 +1304,7 @@ public final class Queries {
      */
     public static String target(SpanRecord span) {
         return switch (span.category()) {
-            case "db" -> {
-                String system = span.dbSystem() == null ? "db" : span.dbSystem();
-                String namespace = span.dbNamespace();
-                yield namespace == null ? system : system + ":" + namespace;
-            }
+            case "db" -> dbTarget(span.dbSystem(), span.dbNamespace());
             case "messaging" -> {
                 String destination = span.attr("messaging.destination.name", "messaging.destination");
                 yield destination == null ? String.valueOf(span.attr("messaging.system")) : destination;
@@ -1269,6 +1315,12 @@ public final class Queries {
             }
             default -> hostPort(span);
         };
+    }
+
+    /** A database as a target: {@code h2:orders}, the system alone when there is no namespace. */
+    private static String dbTarget(@Nullable String dbSystem, @Nullable String dbNamespace) {
+        String system = dbSystem == null ? "db" : dbSystem;
+        return dbNamespace == null ? system : system + ":" + dbNamespace;
     }
 
     private static String hostPort(SpanRecord span) {
@@ -1596,7 +1648,7 @@ public final class Queries {
     /**
      * The traces of the sample whose spans of {@code service} are read: in the
      * sample's order, each whole, until the next would take the read past
-     * {@value #MAX_DEPENDENCY_ROWS} spans (findings.adoc#time).
+     * {@value #MAX_SAMPLE_SPANS} spans (findings.adoc#time).
      *
      * <p>A trace read in part would cut off whatever lies under a parent it missed,
      * which moves database time into {@code self}; a whole trace fewer keeps every
@@ -1621,7 +1673,7 @@ public final class Queries {
             if (spans == 0) {
                 continue;
             }
-            if (!whole.isEmpty() && read + spans > MAX_DEPENDENCY_ROWS) {
+            if (!whole.isEmpty() && read + spans > MAX_SAMPLE_SPANS) {
                 break;
             }
             whole.add(traceId);
@@ -1849,26 +1901,19 @@ public final class Queries {
                 List.of(window.from(), window.to()),
                 rs -> Ancestry.key(rs.getString(1), rs.getString(2))));
 
-        Map<TargetKey, List<SpanRecord>> byTarget = new LinkedHashMap<>();
-        Map<CallerKey, List<SpanRecord>> byCaller = new LinkedHashMap<>();
-        for (SpanRecord span : dependencySpans(window, null)) {
-            if (crossService.contains(Ancestry.key(span.traceId(), span.spanId()))) {
-                continue;
-            }
-            TargetKey target = new TargetKey(span.category(), target(span));
-            byTarget.computeIfAbsent(target, k -> new ArrayList<>()).add(span);
-            byCaller.computeIfAbsent(new CallerKey(target, span.service()), k -> new ArrayList<>())
-                    .add(span);
-        }
+        Map<CallerKey, Calls> byCaller = dependencyCalls(window, null, crossService);
+        Map<TargetKey, Calls> byTarget = new LinkedHashMap<>();
+        byCaller.forEach((caller, calls) ->
+                byTarget.computeIfAbsent(caller.target(), key -> new Calls()).addAll(calls));
         List<Stats.Node> nodes = new ArrayList<>();
-        byTarget.forEach((target, group) -> {
-            CallStats stats = CallStats.ofSpans(group);
+        byTarget.forEach((target, calls) -> {
+            CallStats stats = calls.stats();
             nodes.add(Stats.Node.target(target.category(), target.target(),
                     stats.calls(), stats.errors(), stats.avgMs(), stats.p95Ms()));
         });
         List<Stats.Edge> edges = new ArrayList<>();
-        byCaller.forEach((caller, group) -> {
-            CallStats stats = CallStats.ofSpans(group);
+        byCaller.forEach((caller, calls) -> {
+            CallStats stats = calls.stats();
             edges.add(new Stats.Edge(Stats.Node.serviceId(caller.service()), caller.target().nodeId(),
                     stats.calls(), stats.errors(), stats.avgMs(), stats.p95Ms()));
         });
@@ -1883,10 +1928,6 @@ public final class Queries {
     record CallStats(long calls, long errors, double avgMs, double p50Ms, double p95Ms,
             double maxMs, double totalMs) {
 
-        static CallStats ofSpans(List<SpanRecord> spans) {
-            return of(spans, SpanRecord::durationMillis, SpanRecord::isError);
-        }
-
         static CallStats ofCalls(List<OutboundCall> calls) {
             return of(calls, OutboundCall::durationMillis, OutboundCall::error);
         }
@@ -1894,16 +1935,23 @@ public final class Queries {
         static <T> CallStats of(List<T> calls, ToDoubleFunction<T> durationMs, Predicate<T> failed) {
             double[] durations = new double[calls.size()];
             long errors = 0;
-            double total = 0;
             for (int i = 0; i < calls.size(); i++) {
                 durations[i] = durationMs.applyAsDouble(calls.get(i));
-                total += durations[i];
                 if (failed.test(calls.get(i))) {
                     errors++;
                 }
             }
+            return of(durations, errors);
+        }
+
+        /** The same over the durations of the calls in milliseconds, which it sorts, and the count that failed. */
+        static CallStats of(double[] durations, long errors) {
+            double total = 0;
+            for (double duration : durations) {
+                total += duration;
+            }
             Arrays.sort(durations);
-            return new CallStats(calls.size(), errors, calls.isEmpty() ? 0 : total / calls.size(),
+            return new CallStats(durations.length, errors, durations.length == 0 ? 0 : total / durations.length,
                     percentile(durations, 0.5), percentile(durations, 0.95),
                     durations.length == 0 ? 0 : durations[durations.length - 1], total);
         }
