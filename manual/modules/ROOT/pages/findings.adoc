@@ -589,7 +589,8 @@ The title is `<type short name> in <endpoint>`, the endpoint being the first of 
 An error group whose occurrences are mostly failed outbound HTTP calls (`CLIENT` spans of category `http`) is an error *from a call*.
 Such a span carries `error.type` `500` and no message, so its title names the call instead: `500 from GET localhost:8081/api/flaky`, the call being the span name, the target and the path with its digits made `?`, the most frequent of the group.
 The caller's endpoint follows as `in <endpoint>` when it is another span than the call itself, which a client root span, such as a load generator's request, is not.
-When the service it called also has a failed `SERVER` span in every one of the finding's `traces`, `numbers` ends with `failedIn`, that service's name, and the `why` says so: the callee's own `error` finding is the cause, and this one is its echo in the caller.
+When the service it called also failed, the `SERVER` span under the call failing in every one of the finding's `traces`, `numbers` ends with `failedIn`, that service's name, and the `why` says so: the callee's own `error` finding is the cause, and this one is its echo in the caller.
+Only the server span a call of the group reached counts, so a service in the middle of a chain names the service it called, never its own caller or a service further down.
 Such an echo is ranked after every `error` that is not one, whatever its count, so the failure is read where it happened first.
 
 The group is the service, the root cause's type and the innermost application frame, so one row is one line throwing one exception rather than one occurrence.

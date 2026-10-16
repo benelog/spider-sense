@@ -215,6 +215,71 @@ class FindingsTest {
         assertThat(errors.get(0).numbers()).doesNotContainKey(Findings.FAILED_IN);
     }
 
+    /** A failed call under {@code parent} to {@code port}, as the http-client instrumentation records one. */
+    private static Span.Builder failedCallUnder(Span.Builder parent, int id, long port, String path) {
+        return Otlp.child(parent, spanId(id), "GET", Span.SpanKind.SPAN_KIND_CLIENT, NOW + 1, 20,
+                        Otlp.attr("http.request.method", "GET"),
+                        Otlp.attr("url.full", "http://localhost:" + port + path),
+                        Otlp.attr("server.address", "localhost"),
+                        Otlp.attr("server.port", port),
+                        Otlp.attr("http.response.status_code", 500),
+                        Otlp.attr("error.type", "500"))
+                .setStatus(io.opentelemetry.proto.trace.v1.Status.newBuilder()
+                        .setCode(io.opentelemetry.proto.trace.v1.Status.StatusCode.STATUS_CODE_ERROR));
+    }
+
+    /**
+     * Three services in a chain, each failing: a call's {@code failedIn} is the service that
+     * call reached, never the caller above it nor a service further down.
+     */
+    @Test
+    void anErrorFromACallNamesTheServiceThatCallReached() {
+        List<Span.Builder> gateway = new ArrayList<>();
+        List<Span.Builder> orders = new ArrayList<>();
+        List<Span.Builder> bookstore = new ArrayList<>();
+        for (int n = 1; n <= 3; n++) {
+            Span.Builder edge = entry(n, "/orders/{id}", 100)
+                    .setStatus(io.opentelemetry.proto.trace.v1.Status.newBuilder()
+                            .setCode(io.opentelemetry.proto.trace.v1.Status.StatusCode.STATUS_CODE_ERROR))
+                    .addAttributes(Otlp.attr("error.type", "502"));
+            Span.Builder toOrders = failedCallUnder(edge, 100 + n, 8082, "/orders/" + n);
+            Span.Builder served = Otlp.failing(Otlp.child(toOrders, spanId(200 + n), "GET /orders/{id}",
+                    Span.SpanKind.SPAN_KIND_SERVER, NOW + 2, 15,
+                    Otlp.attr("http.request.method", "GET"),
+                    Otlp.attr("http.route", "/orders/{id}"),
+                    Otlp.attr("http.response.status_code", 500)),
+                    "java.lang.IllegalStateException", "no book for order " + n, STACKTRACE);
+            Span.Builder toBooks = failedCallUnder(served, 300 + n, 8081, "/api/books/" + n);
+            Span.Builder book = Otlp.failing(Otlp.child(toBooks, spanId(400 + n), "GET /api/books/{id}",
+                    Span.SpanKind.SPAN_KIND_SERVER, NOW + 3, 5,
+                    Otlp.attr("http.request.method", "GET"),
+                    Otlp.attr("http.route", "/api/books/{id}"),
+                    Otlp.attr("http.response.status_code", 500)),
+                    "java.lang.IllegalStateException", "flaky", STACKTRACE);
+            gateway.add(edge);
+            gateway.add(toOrders);
+            orders.add(served);
+            orders.add(toBooks);
+            bookstore.add(book);
+        }
+        decoder.ingest(Otlp.traces(
+                Otlp.resourceSpans(Otlp.service("api-gateway"), gateway.toArray(Span.Builder[]::new)),
+                Otlp.resourceSpans(Otlp.service("orders"), orders.toArray(Span.Builder[]::new)),
+                Otlp.resourceSpans(Otlp.service("bookstore"), bookstore.toArray(Span.Builder[]::new))));
+        flush();
+
+        Map<String, Object> failedIn = new java.util.HashMap<>();
+        for (Findings.Finding finding : of(Findings.ERROR)) {
+            if (finding.numbers().containsKey(Findings.FAILED_IN)) {
+                failedIn.put(finding.title(), finding.numbers().get(Findings.FAILED_IN));
+            }
+        }
+
+        assertThat(failedIn).containsExactlyInAnyOrderEntriesOf(Map.of(
+                "500 from GET localhost:8082/orders/? in GET /orders/{id}", "orders",
+                "500 from GET localhost:8081/api/books/? in GET /orders/{id}", "bookstore"));
+    }
+
     @Test
     void anErrorFromACallNobodyReportsIsRankedByItsCount() {
         decoder.ingest(Otlp.traces(Otlp.service("load-gen"), failedCall(1, "/api/books/42"),

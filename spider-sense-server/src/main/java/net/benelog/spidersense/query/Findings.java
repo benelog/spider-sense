@@ -841,7 +841,7 @@ public final class Findings {
             // another span than the call itself, which a client root span is not.
             String place = call == null ? " in " + where : " from " + call.call()
                     + (group.endpoints().isEmpty() || where.equals(call.name()) ? "" : " in " + where);
-            String failedIn = call == null ? null : failedServerIn(traces, group.service());
+            String failedIn = call == null ? null : failedServerIn(traces, group);
 
             Map<String, Object> numbers = new LinkedHashMap<>();
             numbers.put("count", group.count());
@@ -932,17 +932,25 @@ public final class Findings {
     }
 
     /**
-     * The service another than {@code service} whose {@code SERVER} span failed in every one
-     * of these traces, the first by name when there are several; null when there is none.
+     * The service the group's calls reached, when its {@code SERVER} span under one of the
+     * group's failed calls failed in every one of these traces: another service than the
+     * group's, the first by name when there are several; null when there is none.
+     *
+     * <p>Only a server span whose parent is one of the group's calls counts, so neither the
+     * caller above the group's service nor a service further down the chain is named
+     * (findings.adoc#error).
      */
-    private @Nullable String failedServerIn(List<String> traces, String service) {
+    private @Nullable String failedServerIn(List<String> traces, Stats.ErrorGroup group) {
         if (traces.isEmpty()) {
             return null;
         }
-        Where where = new Where("kind = 'SERVER' AND error AND service <> ?", service)
-                .andIn("trace_id", traces);
+        Where where = new Where("s.kind = 'SERVER' AND s.error AND s.service <> ?", group.service())
+                .and("c.kind = 'CLIENT' AND c.error_id = ?", group.errorId())
+                .andIn("s.trace_id", traces);
         Map<String, Set<String>> tracesByService = new HashMap<>();
-        sql.forEach("SELECT DISTINCT trace_id, service FROM span WHERE " + where.sql(), where.params(),
+        sql.forEach("SELECT DISTINCT s.trace_id, s.service FROM span s JOIN span c"
+                + " ON c.trace_id = s.trace_id AND c.span_id = s.parent_span_id WHERE " + where.sql(),
+                where.params(),
                 rs -> tracesByService.computeIfAbsent(rs.getString("service"), name -> new HashSet<>())
                         .add(rs.getString("trace_id")));
         String failed = null;
